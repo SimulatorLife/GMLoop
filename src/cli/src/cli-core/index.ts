@@ -9,7 +9,6 @@ export * from "./commander-error-utils.js";
 export * from "./commander-types.js";
 export * from "./env-overrides.js";
 export * from "./errors.js";
-export * from "./extension-normalizer.js";
 export * from "./format-command-options.js";
 export * from "./main-module-runner.js";
 export * from "./node-version.js";
