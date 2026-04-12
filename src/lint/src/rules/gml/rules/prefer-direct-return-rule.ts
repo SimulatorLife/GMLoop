@@ -11,15 +11,10 @@ import {
     getNodeStartIndex,
     isAstNodeRecord,
     isAstNodeWithType,
+    isIdentifierNode,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
-
-type IdentifierNode = AstNodeRecord &
-    Readonly<{
-        type: "Identifier";
-        name: string;
-    }>;
 
 type VariableDeclaratorNode = AstNodeRecord &
     Readonly<{
@@ -52,10 +47,6 @@ type DirectReturnCandidate = Readonly<{
     replacementEnd: number;
     replacementText: string;
 }>;
-
-function isIdentifierNode(node: unknown): node is IdentifierNode {
-    return isAstNodeRecord(node) && node.type === "Identifier" && typeof node.name === "string";
-}
 
 function isVariableDeclaratorNode(node: unknown): node is VariableDeclaratorNode {
     return (
