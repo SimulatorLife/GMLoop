@@ -248,6 +248,13 @@ function printComment(commentPath, options) {
                     previousSignificantCharacter === "}" &&
                     previousSignificantIndex !== null &&
                     isSourceIndexInsideLineComment(previousSignificantIndex, options?.originalText);
+                // When the nearest non-whitespace content before this comment
+                // lives inside another line comment, Prettier's own inter-comment
+                // spacing already emits a blank line.  Adding one here too would
+                // produce a double blank line, so we suppress the duplicate.
+                const previousContentIsLineComment =
+                    previousSignificantIndex !== null &&
+                    isSourceIndexInsideLineComment(previousSignificantIndex, options?.originalText);
                 const isRegionDirectiveComment = /^#(?:end)?region\b/u.test(rawText.trimStart());
                 const followsRegionDirective =
                     isRegionDirectiveComment !== true &&
@@ -262,7 +269,7 @@ function printComment(commentPath, options) {
                     !hasTopLevelDocLineImmediatelyBeforeComment(comment, options?.originalText);
                 const shouldPrependBlankLine =
                     comment._gmlForceLeadingBlankLine === true ||
-                    hasLeadingBlankLineInWhitespace(comment) ||
+                    (hasLeadingBlankLineInWhitespace(comment) && !previousContentIsLineComment) ||
                     (allowSourceDrivenBlankLinePrepend &&
                         !hasLeadingBlankLineInWhitespace(comment) &&
                         hasSimpleLeadingBlankLineInSource(comment, options?.originalText));
