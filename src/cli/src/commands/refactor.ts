@@ -23,6 +23,7 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
+import { isRefactorResourcePath } from "../modules/refactor/gml-resource-path.js";
 import { GmlParserBridge, GmlSemanticBridge, GmlTranspilerBridge } from "../modules/refactor/index.js";
 import {
     discoverProjectRoot,
@@ -301,10 +302,7 @@ async function collectGmlFilesFromTarget(
                         continue;
                     }
 
-                    if (
-                        entry.isFile() &&
-                        (entry.name.toLowerCase().endsWith(".gml") || entry.name.toLowerCase().endsWith(".yy"))
-                    ) {
+                    if (entry.isFile() && isRefactorResourcePath(entry.name)) {
                         collectedFiles.add(path.relative(projectRoot, entryPath));
                     }
                 }
@@ -317,11 +315,7 @@ async function collectGmlFilesFromTarget(
         return;
     }
 
-    if (
-        !stats.isFile() ||
-        (path.extname(absoluteTargetPath).toLowerCase() !== ".gml" &&
-            path.extname(absoluteTargetPath).toLowerCase() !== ".yy")
-    ) {
+    if (!stats.isFile() || !isRefactorResourcePath(absoluteTargetPath)) {
         return;
     }
 
