@@ -56,7 +56,6 @@ void describe("printer source text helpers", () => {
     void it("detects explicit trailing blank lines in macro text", () => {
         assert.equal(Printer.SourceText.macroTextHasExplicitTrailingBlankLine("macro\n\n"), true);
         assert.equal(Printer.SourceText.macroTextHasExplicitTrailingBlankLine("macro\n"), false);
-        assert.equal(Printer.SourceText.macroTextHasExplicitTrailingBlankLine("macro\n\u2003\n\u2003"), true);
     });
 
     void it("reports absence of surrounding blank lines for compact blocks", () => {

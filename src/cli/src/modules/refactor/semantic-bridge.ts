@@ -420,17 +420,8 @@ function isResourceMetadataRecord(value: unknown): value is ResourceMetadataReco
     return record.assetReferences.every((reference) => isResourceAssetReferenceRecord(reference));
 }
 
-const normalizedMetadataReferenceTargetPathCache = new Map<string, string>();
-
 function normalizeMetadataReferenceTargetPath(targetPath: string): string {
-    const cachedNormalizedPath = normalizedMetadataReferenceTargetPathCache.get(targetPath);
-    if (cachedNormalizedPath !== undefined) {
-        return cachedNormalizedPath;
-    }
-
-    const normalizedPath = targetPath.replaceAll("\\", "/").toLowerCase();
-    normalizedMetadataReferenceTargetPathCache.set(targetPath, normalizedPath);
-    return normalizedPath;
+    return targetPath.replaceAll("\\", "/").toLowerCase();
 }
 
 function metadataReferenceTargetsMatch(leftPath: string, rightPath: string): boolean {
@@ -545,10 +536,6 @@ export class GmlSemanticBridge {
     > | null = null;
     private scriptResourceIndexes: ScriptResourceIndexes | null = null;
     private readonly localReferenceOccurrencesByFilePath = new Map<string, LocalReferenceIndex>();
-    private readonly latestBatchMetadataDocumentsByEdit = new WeakMap<
-        WorkspaceEdit,
-        { documents: Map<string, Record<string, unknown>>; metadataObjectCount: number }
-    >();
 
     constructor(projectIndex: unknown, projectRoot: string = process.cwd()) {
         this.projectIndex = Core.isObjectLike(projectIndex) ? (projectIndex as Record<string, unknown>) : {};
@@ -1360,22 +1347,12 @@ export class GmlSemanticBridge {
     }
 
     private collectLatestBatchMetadataDocuments(edit: WorkspaceEdit): Map<string, Record<string, unknown>> {
-        const metadataObjectCount = edit.metadataObjects?.length ?? 0;
-        const cachedEntry = this.latestBatchMetadataDocumentsByEdit.get(edit);
-        if (cachedEntry && cachedEntry.metadataObjectCount === metadataObjectCount) {
-            return cachedEntry.documents;
-        }
-
         const latestBatchMetadataDocuments = new Map<string, Record<string, unknown>>();
 
         for (const metadataObject of edit.metadataObjects ?? []) {
             latestBatchMetadataDocuments.set(metadataObject.path, metadataObject.document);
         }
 
-        this.latestBatchMetadataDocumentsByEdit.set(edit, {
-            documents: latestBatchMetadataDocuments,
-            metadataObjectCount
-        });
         return latestBatchMetadataDocuments;
     }
 
