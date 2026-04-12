@@ -6,8 +6,10 @@ import {
     createMeta,
     getNodeEndIndex,
     getNodeStartIndex,
+    type IdentifierNode,
     isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
+    isIdentifierNode,
     walkAstNodes
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
@@ -16,12 +18,6 @@ type SupportedArithmeticOperator = "+" | "-" | "*" | "/";
 type SupportedNullishOperator = "??";
 type SupportedBinaryOperator = SupportedArithmeticOperator | SupportedNullishOperator;
 type CompoundAssignmentOperator = "+=" | "-=" | "*=" | "/=" | "??=";
-
-type IdentifierNode = AstNodeRecord &
-    Readonly<{
-        type: "Identifier";
-        name: string;
-    }>;
 
 type BinaryExpressionNode = AstNodeRecord &
     Readonly<{
@@ -56,10 +52,6 @@ const COMPOUND_OPERATOR_BY_BINARY_OPERATOR = Object.freeze({
     "/": "/=",
     "??": "??="
 } as const satisfies Readonly<Record<SupportedBinaryOperator, CompoundAssignmentOperator>>);
-
-function isIdentifierNode(node: unknown): node is IdentifierNode {
-    return isAstNodeRecord(node) && node.type === "Identifier" && typeof node.name === "string";
-}
 
 function isSupportedBinaryOperator(operator: unknown): operator is SupportedBinaryOperator {
     return operator === "+" || operator === "-" || operator === "*" || operator === "/" || operator === "??";

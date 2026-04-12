@@ -7,18 +7,12 @@ import {
     getNodeStartIndex,
     isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
+    isMemberIndexExpressionNode,
     isStandaloneStatementParentKey,
     sourceRangeContainsCommentToken,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
-
-type MemberIndexExpressionNode = Readonly<{
-    type: "MemberIndexExpression";
-    object?: unknown;
-    property?: Array<unknown> | null;
-    accessor?: string | null;
-}>;
 
 type AssignmentExpressionNode = Readonly<{
     type: "AssignmentExpression";
@@ -42,10 +36,6 @@ type UnwrapParenthesizedExpressionInput = Parameters<typeof CoreWorkspace.Core.u
 
 function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
     return isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=");
-}
-
-function isMemberIndexExpressionNode(node: unknown): node is MemberIndexExpressionNode {
-    return isAstNodeRecord(node) && node.type === "MemberIndexExpression";
 }
 
 function isCallExpressionNode(node: unknown): node is CallExpressionNode {
