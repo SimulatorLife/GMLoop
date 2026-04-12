@@ -1,4 +1,4 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { gmlRuleDocCommentServices } from "../gml-rule-services.js";
@@ -19,9 +19,9 @@ const {
     resolveParameterName
 } = gmlRuleDocCommentServices;
 
-const { applyJsDocTagAliasReplacements } = CoreWorkspace.Core;
+const { applyJsDocTagAliasReplacements } = Core;
 
-const { getNodeStartIndex } = CoreWorkspace.Core;
+const { getNodeStartIndex } = Core;
 
 function normalizeDocCommentPrefixLine(line: string): string {
     // support the legacy "// /" notation used by some fixtures/legacy code
@@ -983,7 +983,7 @@ function synthesizeFunctionDocCommentBlock(
     for (let i = block.length - 1; i >= 0; i--) {
         if (
             name.length > 0 &&
-            new RegExp(String.raw`^\s*///\s*@description\s+${CoreWorkspace.Core.escapeRegExp(name)}\s*$`).test(block[i])
+            new RegExp(String.raw`^\s*///\s*@description\s+${Core.escapeRegExp(name)}\s*$`).test(block[i])
         ) {
             block.splice(i, 1);
         }
@@ -1258,7 +1258,7 @@ function collectExistingParamNames(docLines: ReadonlyArray<string>): Set<string>
 }
 
 function updateExistingParamDocWithDefault(docBlock: Array<string>, parameterName: string, defaultVal: string): void {
-    const escapedParameterName = CoreWorkspace.Core.escapeRegExp(parameterName);
+    const escapedParameterName = Core.escapeRegExp(parameterName);
     const normalizedDocName = isFunctionDefaultValueText(defaultVal)
         ? `[${parameterName}]`
         : formatOptionalParamDocName(parameterName, defaultVal);
@@ -1288,7 +1288,7 @@ function updateExistingParamDocWithDefault(docBlock: Array<string>, parameterNam
 }
 
 function updateExistingParamDocWithoutDefault(docBlock: Array<string>, parameterName: string): void {
-    const escapedParameterName = CoreWorkspace.Core.escapeRegExp(parameterName);
+    const escapedParameterName = Core.escapeRegExp(parameterName);
     for (const [index, line] of docBlock.entries()) {
         const optionalParamMatch = new RegExp(
             String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[${escapedParameterName}(?:=[^\]]*)?\](.*)$`
@@ -1480,7 +1480,7 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
             return Object.freeze({
                 Program(programNode) {
                     const text = context.sourceCode.text;
-                    const lineEnding = CoreWorkspace.Core.dominantLineEnding(text);
+                    const lineEnding = Core.dominantLineEnding(text);
                     const lines = text.split(/\r?\n/u);
                     const lineStartOffsets = computeLineStartOffsets(text);
                     const functionNodesByLineIndex = collectFunctionNodesByStartLine(programNode, lineStartOffsets);
