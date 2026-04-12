@@ -78,7 +78,7 @@ const TEXT_EDIT_IDENTITY_DELIMITER = "\u0000";
 const DUPLICATE_EDIT_CHECK_MAX_SET_SIZE = 1024;
 
 function createTextEditIdentityKey(path: string, start: number, end: number, newText: string): string {
-    return [path, String(start), String(end), newText].join(TEXT_EDIT_IDENTITY_DELIMITER);
+    return `${path}${TEXT_EDIT_IDENTITY_DELIMITER}${start}${TEXT_EDIT_IDENTITY_DELIMITER}${end}${TEXT_EDIT_IDENTITY_DELIMITER}${newText}`;
 }
 
 function getExactEditKeys(workspace: WorkspaceEdit): Set<string> {
