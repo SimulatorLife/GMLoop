@@ -17,7 +17,3 @@ export function shouldReportUnsafe(context: Rule.RuleContext): boolean {
     const option = readObjectOption(context).reportUnsafe;
     return option === undefined ? true : option === true;
 }
-
-export function isIdentifier(value: string): boolean {
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
-}
