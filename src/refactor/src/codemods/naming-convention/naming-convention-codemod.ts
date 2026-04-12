@@ -6,7 +6,9 @@ import type {
     ApplyWorkspaceEditOptions,
     BatchRenamePlanSummary,
     BatchRenameValidation,
-    CodemodEngine,
+    CodemodRenameOperations,
+    CodemodSemanticProvider,
+    CodemodWorkspaceEditor,
     MacroExpansionDependency,
     NamingCategory,
     NamingConventionCodemodPlan,
@@ -365,7 +367,7 @@ function formatTopLevelRenameSkipWarning(rename: RenameRequest, reason: string):
 }
 
 async function selectExecutableTopLevelRenames(
-    engine: CodemodEngine,
+    engine: CodemodRenameOperations,
     renames: ReadonlyArray<RenameRequest>
 ): Promise<TopLevelRenameSelection> {
     const warnings: Array<string> = [];
@@ -616,7 +618,7 @@ async function listNamingConventionTargetsResilient(parameters: {
  * Plan naming-policy-driven edits for the selected project paths.
  */
 export async function planNamingConventionCodemod(
-    engine: CodemodEngine,
+    engine: CodemodSemanticProvider & CodemodRenameOperations,
     parameters: {
         projectRoot: string;
         config: RefactorProjectConfig;
@@ -796,7 +798,7 @@ export async function planNamingConventionCodemod(
  * Execute a naming-convention codemod plan when it contains no blocking errors.
  */
 export async function executeNamingConventionCodemod(
-    engine: CodemodEngine,
+    engine: CodemodSemanticProvider & CodemodRenameOperations & CodemodWorkspaceEditor,
     parameters: {
         projectRoot: string;
         config: RefactorProjectConfig;
