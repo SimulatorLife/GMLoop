@@ -434,8 +434,10 @@ export class SemanticQueryCache {
 
     /**
      * Remove an occurrence cache entry and its associated primed status.
-     * Does not update the reverse index — callers must handle that separately
-     * (e.g. {@link invalidateFile} iterates the affected keys from the index).
+     * Does **not** update the reverse index ({@link occurrenceFileIndex}) —
+     * callers are responsible for cleaning up index entries.
+     * {@link invalidateFile} handles this by deleting the filePath's index
+     * set after iterating its affected keys.
      * @private
      */
     private removeOccurrenceCacheEntry(key: string): void {
@@ -447,7 +449,6 @@ export class SemanticQueryCache {
      * Populate the reverse index for the given occurrence cache key.
      * Extracts distinct file paths from the occurrence array and records
      * the cache key under each path so {@link invalidateFile} can find it.
-     * Also clears any stale primed status for the key.
      * @private
      */
     private addOccurrenceIndexEntries(cacheKey: string, occurrences: ReadonlyArray<SymbolOccurrence>): void {
