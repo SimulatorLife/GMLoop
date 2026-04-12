@@ -1,4 +1,4 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import {
@@ -28,7 +28,7 @@ type PreferIncrementDecrementCandidate = Readonly<{
     operator: IncrementDecrementOperator;
 }>;
 
-type UnwrapParenthesizedExpressionInput = Parameters<typeof CoreWorkspace.Core.unwrapParenthesizedExpression>[0];
+type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
 
 const INCREMENT_DECREMENT_OPERATOR_BY_ASSIGNMENT_OPERATOR = Object.freeze({
     "+=": "++",
@@ -44,7 +44,7 @@ function isAssignmentExpressionNode(node: unknown): node is AssignmentExpression
 }
 
 function isNumericLiteralOne(node: unknown, sourceText: string): boolean {
-    const unwrappedNode = CoreWorkspace.Core.unwrapParenthesizedExpression(node as UnwrapParenthesizedExpressionInput);
+    const unwrappedNode = Core.unwrapParenthesizedExpression(node as UnwrapParenthesizedExpressionInput);
     if (!isAstNodeRecord(unwrappedNode) || unwrappedNode.type !== "Literal") {
         return false;
     }
