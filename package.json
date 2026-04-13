@@ -49,7 +49,7 @@
     "node": ">=22.5.0"
   },
   "scripts": {
-    "clean": "find . -name node_modules -type d -prune -exec rm -rf '{}' + && rm -rf .eslintcache tsconfig.eslint.tsbuildinfo reports tmp node_debug.log eslint-suppressions.json test/dist && pnpm -r run clean:types && pnpm run clean:src-js && pnpm store prune",
+    "clean": "find . -name node_modules -type d -prune -exec rm -rf '{}' + && find . -maxdepth 1 -type f \\( -name '*.js' -o -name '*.log' -o -name '*.txt' \\) -not -name 'eslint.config.js' -delete && rm -rf .eslintcache tsconfig.eslint.tsbuildinfo reports tmp node_debug.log eslint-suppressions.json test/dist && pnpm -r run clean:types && pnpm run clean:src-js && pnpm store prune",
     "clean:src-js:preview": "find . -type f -path '*/src/*' -not -path '*/generated/*' -not -path '*/node_modules/*' -not -path '*/types/*' -not -path '*/dist/*' \\( -name '*.js' -o -name '*.js.map' -o -name '*.d.ts' -o -name '*.d.ts.map' \\)",
     "clean:src-js": "find . -type f -path '*/src/*' -not -path '*/generated/*' -not -path '*/node_modules/*' -not -path '*/types/*' -not -path '*/dist/*' \\( -name '*.js' -o -name '*.js.map' -o -name '*.d.ts' -o -name '*.d.ts.map' \\) -delete",
     "clean:generated": "rm -rf src/parser/generated",

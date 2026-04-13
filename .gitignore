@@ -36,12 +36,13 @@ src/**/*.js
 # Make sure we keep the ESLint config file which is intentionally committed
 !/eslint.config.js
 
-# gemini-cli
+# AI / agents
 .gemini/*
 !.gemini/settings.json
-
 .qwen/*
 !.qwen/settings.json
+.codex/*
+!.codex/config.toml
 
 # GitHub App credentials
 gha-creds-*.json
@@ -173,6 +174,8 @@ dist
 # Stores VSCode versions used for testing VSCode extensions
 .vscode
 .vscode-test
+!.vscode/settings.json
+!.vscode/tasks.json
 
 # yarn v2
 .yarn/cache

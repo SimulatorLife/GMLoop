@@ -1,0 +1,24 @@
+model = "gpt-5.4"
+model_verbosity = "low"
+approval_policy = "never"
+model_reasoning_effort = "medium"
+model_supports_reasoning_summaries = true # Force reasoning
+personality = "pragmatic"
+sandbox_mode = "workspace-write"
+
+[features]
+shell_snapshot = true           # Speed up repeated commands
+unified_exec = true
+steer = true
+
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[plugins."github@openai-curated"]
+enabled = true
+
+[projects."/Users/henrykirk/GMLoop"]
+trust_level = "trusted"
