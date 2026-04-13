@@ -54,7 +54,10 @@ git clone https://github.com/SimulatorLife/GMLoop.git
 cd GMLoop
 nvm use
 pnpm install
+pnpm run cli -- --help
 ```
+
+Need contributor-focused setup and validation expectations? Continue with [`docs/contributor-onboarding.md`](docs/contributor-onboarding.md).
 
 ### Format from a local clone
 
@@ -128,6 +131,7 @@ pnpm run cli -- transpile --write --path /absolute/path/to/MyGame
 | `@gmloop/runtime-wrapper` | `src/runtime-wrapper/` | HTML5 runtime hot-reload bridge |
 | `@gmloop/core` | `src/core/` | Shared AST/types/helpers |
 | `@gmloop/cli` | `src/cli/` | Unified command-line entrypoints |
+| `@gmloop/mcp` | `src/mcp/` | MCP server surface for AI tooling integrations |
 
 ## Everyday commands
 
@@ -208,7 +212,7 @@ The formatter is Prettier-based. Scope formatter config to `.gml` files.
 }
 ```
 
-Current formatter-specific options exposed by `@gml-modules/format`:
+Current formatter-specific options exposed by `@gmloop/format`:
 - `allowInlineControlFlowBlocks` — allow short, comment-free braced control-flow blocks (`if`, `while`, `repeat`, `with`) to stay on one line when the complete statement fits within `printWidth`; defaults to `false`
 - `logicalOperatorsStyle` (`"keywords"` or `"symbols"`)
 
@@ -250,7 +254,7 @@ Supported `lintRuleset` values are `"recommended"`, `"feather"`, and
 `"performance"`. `lintRules` remains optional and overrides rules from the
 selected ruleset when both are present.
 
-See [`docs/formatter-linter-split-plan.md`](docs/formatter-linter-split-plan.md) for pinned lint/format ownership contracts.
+See [Workspace ownership boundaries](docs/target-state.md#22-workspace-ownership-boundaries) for the current formatter/lint/refactor ownership contract.
 
 ## Development
 
@@ -288,7 +292,7 @@ Generated artifacts live in `dist/` and are disposable.
 Start here for deeper context and plans:
 
 - [`docs/README.md`](docs/README.md) (documentation index)
-- [`docs/target-state.md`](docs/docs/target-state.md) (project architecture target state)
+- [`docs/target-state.md`](docs/target-state.md) (project architecture target state)
 - [`src/cli/README.md`](src/cli/README.md)
 - [`src/semantic/README.md`](src/semantic/README.md)
 - [`src/refactor/README.md`](src/refactor/README.md)

@@ -2,6 +2,8 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
+import { REPO_ROOT } from "../shared/workspace-paths.js";
+
 const { getNonEmptyTrimmedString, isNonEmptyString, isPathWithinBoundary, toArray, uniqueArray, compactArray } = Core;
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u;
 const WINDOWS_UNC_PATH_PATTERN = /^\\\\[^\\]+\\[^\\]+/u;
@@ -41,6 +43,14 @@ export interface WorkflowPathFilter {
 }
 
 /**
+ * Canonical fixture directories used by workflow-based fixture discovery.
+ */
+export const DEFAULT_FIXTURE_DIRECTORIES = Object.freeze([
+    path.resolve(REPO_ROOT, "src", "parser", "test", "input"),
+    path.resolve(REPO_ROOT, "src", "format", "test")
+]);
+
+/**
  * Normalize workflow path lists into absolute, deduplicated entries.
  *
  * @param {Iterable<unknown> | null | undefined} paths
@@ -52,6 +62,21 @@ export function normalizeWorkflowPathList(paths: Iterable<unknown> | null | unde
     );
     const resolved = trimmed.map((candidate) => resolveWorkflowPathCandidate(candidate));
     return [...(uniqueArray(resolved, { freeze: false }) as Array<string>)];
+}
+
+/**
+ * Normalize fixture roots by combining default fixture directories with
+ * caller-provided entries, then applying the workflow path filter.
+ */
+export function normalizeFixtureRoots(
+    additionalRoots: Iterable<unknown> | Array<unknown> = [],
+    filterOptions: WorkflowPathFilterOptions = {}
+): Array<string> {
+    const pathFilter = createWorkflowPathFilter(filterOptions);
+    const additionalRootEntries = Array.isArray(additionalRoots) ? additionalRoots : toArray(additionalRoots);
+    const normalizedCandidates = normalizeWorkflowPathList([...DEFAULT_FIXTURE_DIRECTORIES, ...additionalRootEntries]);
+
+    return normalizedCandidates.filter((candidate) => pathFilter.allowsDirectory(candidate));
 }
 
 /**
