@@ -29,7 +29,7 @@
     "eslint-min": "npm:eslint@9.39.0"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.5.0"
   },
   "packageManager": "pnpm@10.28.0"
 }

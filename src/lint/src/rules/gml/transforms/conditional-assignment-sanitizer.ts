@@ -10,26 +10,47 @@ const ASSIGNMENT_GUARD_CHARACTERS = new Set(["*", "+", "-", "/", "%", "|", "&", 
 /**
  * Returns a helper to translate character positions after insertions happen during sanitization.
  */
+function toSortedUniqueInsertPositions(
+    insertPositions: Array<number | null | undefined> | null | undefined
+): ReadonlyArray<number> {
+    if (!Core.isNonEmptyArray(insertPositions)) {
+        return [];
+    }
+
+    return [...new Set(insertPositions)]
+        .filter((position): position is number => typeof position === "number" && Number.isFinite(position))
+        .toSorted((left, right) => left - right);
+}
+
+function readInsertionsBeforeIndex(sortedInsertPositions: ReadonlyArray<number>, index: number): number {
+    let lowerBound = 0;
+    let upperBound = sortedInsertPositions.length;
+
+    while (lowerBound < upperBound) {
+        const midpoint = lowerBound + Math.floor((upperBound - lowerBound) / 2);
+        if (sortedInsertPositions[midpoint] < index) {
+            lowerBound = midpoint + 1;
+            continue;
+        }
+
+        upperBound = midpoint;
+    }
+
+    return lowerBound;
+}
+
 function createIndexMapper(
     insertPositions: Array<number | null | undefined> | null | undefined
 ): (index: number) => number {
-    const offsets = Core.isNonEmptyArray(insertPositions)
-        ? [
-              ...new Set(
-                  insertPositions.filter(
-                      (position): position is number => typeof position === "number" && Number.isFinite(position)
-                  )
-              )
-          ].toSorted((a, b) => a - b)
-        : [];
+    const sortedInsertPositions = toSortedUniqueInsertPositions(insertPositions);
 
-    if (offsets.length === 0) {
+    if (sortedInsertPositions.length === 0) {
         return (index) => index;
     }
 
     return (index: number) => {
-        const precedingInsertions = offsets.filter((offset) => index > offset).length;
-        return index - precedingInsertions;
+        const insertionsBeforeIndex = readInsertionsBeforeIndex(sortedInsertPositions, index);
+        return index - insertionsBeforeIndex;
     };
 }
 

@@ -7,6 +7,7 @@ import { Semantic } from "@gmloop/semantic";
 
 import { listConstructorRuntimeTypeReferenceRecords } from "./constructor-runtime-type-references.js";
 import { GmlIdentifierOccurrenceIndex } from "./gml-identifier-occurrence-index.js";
+import { isRefactorOwnerMetadataPath, isRefactorResourcePath } from "./gml-resource-path.js";
 import { collectImplicitInstanceVariableTargets } from "./implicit-instance-variable-targets.js";
 import {
     listMacroDeclarationReferenceRecords,
@@ -287,7 +288,7 @@ function createNamingTargetPathPredicate(
     );
     const selectedOwnerDirectories = new Set(
         [...normalizedIncludedPaths]
-            .filter((candidatePath) => candidatePath.endsWith(".gml") || candidatePath.endsWith(".yy"))
+            .filter((candidatePath) => isRefactorResourcePath(candidatePath))
             .map((candidatePath) => path.posix.dirname(candidatePath))
     );
 
@@ -302,7 +303,7 @@ function createNamingTargetPathPredicate(
         }
 
         return (
-            normalizedCandidatePath.endsWith(".yy") &&
+            isRefactorOwnerMetadataPath(normalizedCandidatePath) &&
             selectedOwnerDirectories.has(path.posix.dirname(normalizedCandidatePath))
         );
     };

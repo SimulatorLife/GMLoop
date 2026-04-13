@@ -683,6 +683,42 @@ void test("readTestResults counts deduplicated records when canonical report rep
     assert.strictEqual(head.stats.skipped, 0);
 });
 
+void test("readTestResults removes auxiliary wrapper-drift duplicates when canonical tests.xml has the logical test", () => {
+    const resultsDir = path.join(workspace, "reports");
+
+    writeXml(
+        resultsDir,
+        "tests",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="stable test" classname="suite" file="/repo/src/cli/dist/test/stable.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        resultsDir,
+        "performance",
+        `<testsuites>
+      <undefined name="wrapper drift">
+        <testsuite name="root">
+          <testcase name="stable test" classname="suite" file="/repo/src/cli/dist/test/stable.test.js">
+            <failure message="transient worker failure" />
+          </testcase>
+        </testsuite>
+      </undefined>
+    </testsuites>`
+    );
+
+    const head = readTestResults(["reports"], { workspace });
+
+    assert.strictEqual(head.results.size, 1);
+    assert.strictEqual(head.stats.total, 1);
+    assert.strictEqual(head.stats.passed, 1);
+    assert.strictEqual(head.stats.failed, 0);
+    assert.strictEqual([...head.results.keys()][0], "root :: suite :: stable test");
+});
+
 void test("does not report regressions when only auxiliary performance.xml differs for the same test key", () => {
     const baseDir = path.join(workspace, "base/reports");
     const headDir = path.join(workspace, "reports");
@@ -795,6 +831,46 @@ void test("readTestResults preserves project health stats when present", () => {
     const result = readTestResults(["reports"], { workspace });
 
     assert.deepStrictEqual(result.health, health);
+});
+
+void test("quality report does not count head-only performance report cases as newly added PR tests", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    const stableSuite = `<testsuites>
+      <testsuite name="sample">
+        <testcase name="stable test" classname="suite" file="/repo/src/cli/dist/test/stable.test.js" />
+      </testsuite>
+    </testsuites>`;
+
+    writeXml(baseDir, "tests", stableSuite);
+    writeXml(headDir, "tests", stableSuite);
+    writeXml(
+        headDir,
+        "performance",
+        `<testsuites>
+      <testsuite name="performance">
+        <testcase name="head-only perf gate" classname="suite" file="/repo/src/cli/dist/test/perf-gate.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+    writeXml(mergeDir, "tests", stableSuite);
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: mergeDir,
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 0);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /\| PR \(Head\) \| 2 \| 2 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
 });
 
 void test("quality report explains merged snapshot gate semantics when merge artifacts are present", () => {

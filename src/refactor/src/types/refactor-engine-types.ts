@@ -439,19 +439,37 @@ export interface RefactorEngineDependencies {
 }
 
 /**
- * Minimal engine surface used by codemod orchestration modules.
+ * Semantic analysis access.
  *
- * This boundary keeps codemod planning/execution decoupled from the concrete
- * `RefactorEngine` implementation and prevents registry ↔ engine import cycles.
+ * Provides read-only access to the semantic analyzer instance without
+ * coupling to codemod execution, rename, or workspace edit operations.
  */
-export interface CodemodEngine {
+export interface CodemodSemanticProvider {
     readonly semantic: PartialSemanticAnalyzer | null;
+}
+
+/**
+ * File-level codemod transform execution.
+ *
+ * Provides the ability to run file-transforming codemods (globalvar-to-global,
+ * loop-length-hoisting) without coupling to rename or workspace edit operations.
+ */
+export interface CodemodTransformExecutor {
     executeGlobalvarToGlobalCodemod(
         request: ExecuteGlobalvarToGlobalCodemodRequest
     ): Promise<ExecuteGlobalvarToGlobalCodemodResult>;
     executeLoopLengthHoistingCodemod(
         request: ExecuteLoopLengthHoistingCodemodRequest
     ): Promise<ExecuteLoopLengthHoistingCodemodResult>;
+}
+
+/**
+ * Rename validation and planning.
+ *
+ * Provides rename lifecycle operations (validate, plan, execute) without
+ * coupling to codemod transform execution or workspace edit application.
+ */
+export interface CodemodRenameOperations {
     validateRenameRequest(
         request: RenameRequest,
         options?: ValidateRenameRequestOptions
@@ -467,9 +485,47 @@ export interface CodemodEngine {
         options?: PrepareBatchRenamePlanOptions
     ): Promise<BatchRenamePlanSummary>;
     executeBatchRename(request: ExecuteBatchRenameRequest): Promise<ExecuteRenameResult>;
+}
+
+/**
+ * Workspace edit application.
+ *
+ * Provides the ability to apply workspace edits without coupling to
+ * rename validation or codemod transform operations.
+ */
+export interface CodemodWorkspaceEditor {
     applyWorkspaceEdit(workspace: WorkspaceEdit, options: ApplyWorkspaceEditOptions): Promise<Map<string, string>>;
+}
+
+/**
+ * Cache management.
+ *
+ * Provides query cache invalidation without coupling to other engine
+ * operations.
+ */
+export interface CodemodCacheController {
     clearQueryCaches(): void;
 }
+
+/**
+ * Complete codemod engine interface.
+ *
+ * Combines all role-focused interfaces for consumers that need full
+ * codemod capabilities. This boundary keeps codemod planning/execution
+ * decoupled from the concrete `RefactorEngine` implementation and
+ * prevents registry ↔ engine import cycles.
+ *
+ * Consumers should prefer depending on the minimal interface they need
+ * (CodemodSemanticProvider, CodemodTransformExecutor, CodemodRenameOperations,
+ * CodemodWorkspaceEditor, CodemodCacheController) rather than this composite
+ * interface when possible.
+ */
+export interface CodemodEngine
+    extends CodemodSemanticProvider,
+        CodemodTransformExecutor,
+        CodemodRenameOperations,
+        CodemodWorkspaceEditor,
+        CodemodCacheController {}
 
 export interface ApplyWorkspaceEditOptions {
     dryRun?: boolean;

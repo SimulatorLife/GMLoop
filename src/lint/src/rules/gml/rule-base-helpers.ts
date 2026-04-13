@@ -67,6 +67,110 @@ export function isAssignmentExpressionNodeWithOperator<TOperator extends string>
     );
 }
 
+/**
+ * Structural type for identifier nodes in lint rule contexts.
+ *
+ * Matches nodes with `type: "Identifier"` and a string `name` property.
+ */
+export type IdentifierNode = AstNodeRecord & Readonly<{ type: "Identifier"; name: string }>;
+
+/**
+ * Type guard for identifier nodes.
+ *
+ * Matches any node-like value where `type` is `"Identifier"` and `name` is a
+ * string. This guard is shared across lint rules that inspect identifiers for
+ * rename, compound-assignment, or invariant-expression analysis.
+ *
+ * @param node Candidate value to inspect.
+ * @returns `true` when `node` is an identifier with a string `name`.
+ */
+export function isIdentifierNode(node: unknown): node is IdentifierNode {
+    return isAstNodeRecord(node) && node.type === "Identifier" && typeof node.name === "string";
+}
+
+/**
+ * Structural type for member-index expression nodes in lint rule contexts.
+ *
+ * Matches nodes with `type: "MemberIndexExpression"` and optional
+ * `object`, `property`, and `accessor` properties.
+ */
+export type MemberIndexExpressionNode = AstNodeRecord &
+    Readonly<{
+        type: "MemberIndexExpression";
+        object?: unknown;
+        property?: unknown;
+        accessor?: unknown;
+    }>;
+
+/**
+ * Type guard for member-index expression nodes.
+ *
+ * Matches any node-like value where `type` is `"MemberIndexExpression"`.
+ * Used by lint rules that normalise data-structure accessors or rewrite
+ * member-index patterns (e.g. `array[| i]` → `array[i]`).
+ *
+ * @param node Candidate value to inspect.
+ * @returns `true` when `node` is a member-index expression.
+ */
+export function isMemberIndexExpressionNode(node: unknown): node is MemberIndexExpressionNode {
+    return isAstNodeRecord(node) && node.type === "MemberIndexExpression";
+}
+
+/**
+ * Structural type for variable declarator nodes in lint rule contexts.
+ *
+ * Matches nodes with `type: "VariableDeclarator"` and optional `id` and
+ * `init` properties.
+ */
+export type VariableDeclaratorNode = AstNodeRecord &
+    Readonly<{
+        type: "VariableDeclarator";
+        id?: unknown;
+        init?: unknown;
+    }>;
+
+/**
+ * Type guard for variable declarator nodes.
+ *
+ * Matches any node-like value where `type` is `"VariableDeclarator"`.
+ * Used by lint rules and shared helpers that inspect variable declarations
+ * for direct-return, data-structure-accessor, or assignment analysis.
+ *
+ * @param node Candidate value to inspect.
+ * @returns `true` when `node` is a variable declarator.
+ */
+export function isVariableDeclaratorNode(node: unknown): node is VariableDeclaratorNode {
+    return isAstNodeRecord(node) && node.type === "VariableDeclarator";
+}
+
+/**
+ * Structural type for assignment expression nodes in lint rule contexts.
+ *
+ * For operator-specific narrowing, use
+ * {@link isAssignmentExpressionNodeWithOperator} instead.
+ */
+export type AssignmentExpressionNode = AstNodeRecord &
+    Readonly<{
+        type: "AssignmentExpression";
+        operator?: unknown;
+        left?: unknown;
+        right?: unknown;
+    }>;
+
+/**
+ * Type guard for assignment expression nodes (any operator).
+ *
+ * Matches any node-like value where `type` is `"AssignmentExpression"`,
+ * regardless of the specific operator. For narrowing to a particular
+ * operator, use {@link isAssignmentExpressionNodeWithOperator}.
+ *
+ * @param node Candidate value to inspect.
+ * @returns `true` when `node` is an assignment expression.
+ */
+export function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
+    return isAstNodeRecord(node) && node.type === "AssignmentExpression";
+}
+
 export function isCommentOnlyLine(line: string): boolean {
     // returns true if the line consists solely of whitespace and/or comment tokens
     // (single-line comments or block comments). This is a simple heuristic used by
@@ -593,32 +697,28 @@ export function readLineIndentationBeforeOffset(sourceText: string, offset: numb
 export function collectIdentifierNamesInSubtree(root: unknown): ReadonlySet<string> {
     const identifierNames = new Set<string>();
     walkAstNodes(root, (node) => {
-        if (!isAstNodeRecord(node) || node.type !== "Identifier" || typeof node.name !== "string") {
-            return;
+        if (isIdentifierNode(node)) {
+            identifierNames.add(node.name);
         }
-
-        identifierNames.add(node.name);
     });
 
     return identifierNames;
 }
 
 export function getVariableDeclarator(statement: unknown): AstNodeRecord | null {
-    if (!isAstNodeRecord(statement)) {
-        return null;
-    }
-
-    if (statement.type === "VariableDeclarator") {
+    if (isVariableDeclaratorNode(statement)) {
         return statement;
     }
 
-    if (statement.type === "VariableDeclaration") {
-        const declarations = statement.declarations;
-        if (Array.isArray(declarations) && declarations.length === 1) {
-            const firstChild = declarations[0];
-            if (isAstNodeRecord(firstChild) && firstChild.type === "VariableDeclarator") {
-                return firstChild;
-            }
+    if (!isAstNodeRecord(statement) || statement.type !== "VariableDeclaration") {
+        return null;
+    }
+
+    const declarations = statement.declarations;
+    if (Array.isArray(declarations) && declarations.length === 1) {
+        const firstChild = declarations[0];
+        if (isVariableDeclaratorNode(firstChild)) {
+            return firstChild;
         }
     }
 

@@ -12,6 +12,7 @@ import {
     getNodeStartIndex,
     isAstNodeRecord,
     isAstNodeWithType,
+    isIdentifierNode,
     rangeContainsCommentToken,
     walkAstNodes,
     walkAstNodesWithParent
@@ -90,10 +91,6 @@ function normalizeIdentifierName(identifierName: string): string {
 
 function isLoopNode(node: unknown): node is LoopNode {
     return Core.isLoopLikeNode(node);
-}
-
-function isIdentifierNode(node: unknown): node is AstNodeRecord & Readonly<{ type: "Identifier"; name: string }> {
-    return isAstNodeRecord(node) && node.type === "Identifier" && typeof node.name === "string";
 }
 
 function isGeneratedHoistIdentifierName(identifierName: string): boolean {

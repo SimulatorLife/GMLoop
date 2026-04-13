@@ -1,4 +1,4 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { createMeta, getNodeStartIndex, isAstNodeRecord, resolveLocFromIndex } from "../rule-base-helpers.js";
@@ -26,7 +26,7 @@ function collectGlobalVarStatementStartOffsets(programNode: unknown): ReadonlyAr
             }
         }
 
-        CoreWorkspace.Core.forEachNodeChild(node, (childNode) => visit(childNode));
+        Core.forEachNodeChild(node, (childNode) => visit(childNode));
     };
 
     visit(programNode);

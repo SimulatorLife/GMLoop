@@ -53,6 +53,60 @@ function validateStageBudgetMap(value: unknown, context: string): Partial<Record
     return budgets;
 }
 
+function validateOptionalEnumValue<ValueType extends string>(
+    value: unknown,
+    validValues: Set<ValueType>,
+    context: string,
+    propertyName: string
+): ValueType | undefined {
+    if (value !== undefined) {
+        if (typeof value !== "string" || !validValues.has(value as ValueType)) {
+            throw new TypeError(`${context}.${propertyName} must be one of ${[...validValues].join(", ")}.`);
+        }
+
+        return value as ValueType;
+    }
+    return undefined;
+}
+
+function validateFixtureProfile(value: unknown, context: string): NonNullable<FixtureProjectConfigMetadata["profile"]> {
+    const profileObject = assertPlainObject(value, `${context}.profile`);
+    for (const key of Object.keys(profileObject)) {
+        if (!FIXTURE_PROFILE_KEYS.has(key)) {
+            throw new TypeError(`${context}.profile contains unknown property ${JSON.stringify(key)}.`);
+        }
+    }
+
+    const profile: NonNullable<FixtureProjectConfigMetadata["profile"]> = {};
+    if (profileObject.deepCpuProfile !== undefined) {
+        if (typeof profileObject.deepCpuProfile !== "boolean") {
+            throw new TypeError(`${context}.profile.deepCpuProfile must be a boolean.`);
+        }
+        profile.deepCpuProfile = profileObject.deepCpuProfile;
+    }
+
+    if (profileObject.budgets === undefined) {
+        return profile;
+    }
+
+    const budgetsObject = assertPlainObject(profileObject.budgets, `${context}.profile.budgets`);
+    const budgets: FixtureProfileBudgets = {};
+
+    for (const [metricName, rawMetricBudgets] of Object.entries(budgetsObject)) {
+        if (!FIXTURE_PROFILE_BUDGET_KEYS.has(metricName)) {
+            throw new TypeError(`${context}.profile.budgets contains unknown metric ${JSON.stringify(metricName)}.`);
+        }
+
+        budgets[metricName as keyof FixtureProfileBudgets] = validateStageBudgetMap(
+            rawMetricBudgets,
+            `${context}.profile.budgets.${metricName}`
+        );
+    }
+
+    profile.budgets = budgets;
+    return profile;
+}
+
 function validateFixtureMetadata(value: unknown, context: string): FixtureProjectConfigMetadata {
     const object = assertPlainObject(value, context);
 
@@ -71,63 +125,18 @@ function validateFixtureMetadata(value: unknown, context: string): FixtureProjec
         kind: kind as FixtureKind
     };
 
-    if (object.assertion !== undefined) {
-        if (
-            typeof object.assertion !== "string" ||
-            !FIXTURE_ASSERTION_VALUES.has(object.assertion as FixtureAssertion)
-        ) {
-            throw new TypeError(`${context}.assertion must be one of ${[...FIXTURE_ASSERTION_VALUES].join(", ")}.`);
-        }
-        metadata.assertion = object.assertion as FixtureAssertion;
+    const assertion = validateOptionalEnumValue(object.assertion, FIXTURE_ASSERTION_VALUES, context, "assertion");
+    if (assertion !== undefined) {
+        metadata.assertion = assertion;
     }
 
-    if (object.comparison !== undefined) {
-        if (
-            typeof object.comparison !== "string" ||
-            !FIXTURE_COMPARISON_VALUES.has(object.comparison as FixtureComparison)
-        ) {
-            throw new TypeError(`${context}.comparison must be one of ${[...FIXTURE_COMPARISON_VALUES].join(", ")}.`);
-        }
-        metadata.comparison = object.comparison as FixtureComparison;
+    const comparison = validateOptionalEnumValue(object.comparison, FIXTURE_COMPARISON_VALUES, context, "comparison");
+    if (comparison !== undefined) {
+        metadata.comparison = comparison;
     }
 
     if (object.profile !== undefined) {
-        const profileObject = assertPlainObject(object.profile, `${context}.profile`);
-        for (const key of Object.keys(profileObject)) {
-            if (!FIXTURE_PROFILE_KEYS.has(key)) {
-                throw new TypeError(`${context}.profile contains unknown property ${JSON.stringify(key)}.`);
-            }
-        }
-
-        const profile: NonNullable<FixtureProjectConfigMetadata["profile"]> = {};
-        if (profileObject.deepCpuProfile !== undefined) {
-            if (typeof profileObject.deepCpuProfile !== "boolean") {
-                throw new TypeError(`${context}.profile.deepCpuProfile must be a boolean.`);
-            }
-            profile.deepCpuProfile = profileObject.deepCpuProfile;
-        }
-
-        if (profileObject.budgets !== undefined) {
-            const budgetsObject = assertPlainObject(profileObject.budgets, `${context}.profile.budgets`);
-            const budgets: FixtureProfileBudgets = {};
-
-            for (const [metricName, rawMetricBudgets] of Object.entries(budgetsObject)) {
-                if (!FIXTURE_PROFILE_BUDGET_KEYS.has(metricName)) {
-                    throw new TypeError(
-                        `${context}.profile.budgets contains unknown metric ${JSON.stringify(metricName)}.`
-                    );
-                }
-
-                budgets[metricName as keyof FixtureProfileBudgets] = validateStageBudgetMap(
-                    rawMetricBudgets,
-                    `${context}.profile.budgets.${metricName}`
-                );
-            }
-
-            profile.budgets = budgets;
-        }
-
-        metadata.profile = profile;
+        metadata.profile = validateFixtureProfile(object.profile, context);
     }
 
     return metadata;

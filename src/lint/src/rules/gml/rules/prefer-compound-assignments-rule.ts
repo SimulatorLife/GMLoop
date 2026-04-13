@@ -1,4 +1,4 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import {
@@ -6,8 +6,10 @@ import {
     createMeta,
     getNodeEndIndex,
     getNodeStartIndex,
+    type IdentifierNode,
     isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
+    isIdentifierNode,
     walkAstNodes
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
@@ -16,12 +18,6 @@ type SupportedArithmeticOperator = "+" | "-" | "*" | "/";
 type SupportedNullishOperator = "??";
 type SupportedBinaryOperator = SupportedArithmeticOperator | SupportedNullishOperator;
 type CompoundAssignmentOperator = "+=" | "-=" | "*=" | "/=" | "??=";
-
-type IdentifierNode = AstNodeRecord &
-    Readonly<{
-        type: "Identifier";
-        name: string;
-    }>;
 
 type BinaryExpressionNode = AstNodeRecord &
     Readonly<{
@@ -47,7 +43,7 @@ type CompoundAssignmentCandidate = Readonly<{
     compoundOperator: CompoundAssignmentOperator;
 }>;
 
-type UnwrapParenthesizedExpressionInput = Parameters<typeof CoreWorkspace.Core.unwrapParenthesizedExpression>[0];
+type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
 
 const COMPOUND_OPERATOR_BY_BINARY_OPERATOR = Object.freeze({
     "+": "+=",
@@ -56,10 +52,6 @@ const COMPOUND_OPERATOR_BY_BINARY_OPERATOR = Object.freeze({
     "/": "/=",
     "??": "??="
 } as const satisfies Readonly<Record<SupportedBinaryOperator, CompoundAssignmentOperator>>);
-
-function isIdentifierNode(node: unknown): node is IdentifierNode {
-    return isAstNodeRecord(node) && node.type === "Identifier" && typeof node.name === "string";
-}
 
 function isSupportedBinaryOperator(operator: unknown): operator is SupportedBinaryOperator {
     return operator === "+" || operator === "-" || operator === "*" || operator === "/" || operator === "??";
@@ -92,14 +84,12 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
         return null;
     }
 
-    const rightExpressionNode = CoreWorkspace.Core.unwrapParenthesizedExpression(
-        node.right as UnwrapParenthesizedExpressionInput
-    );
+    const rightExpressionNode = Core.unwrapParenthesizedExpression(node.right as UnwrapParenthesizedExpressionInput);
     if (!isBinaryExpressionNode(rightExpressionNode)) {
         return null;
     }
 
-    const rightLeftNode = CoreWorkspace.Core.unwrapParenthesizedExpression(
+    const rightLeftNode = Core.unwrapParenthesizedExpression(
         rightExpressionNode.left as UnwrapParenthesizedExpressionInput
     );
 
@@ -124,7 +114,7 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
         return null;
     }
 
-    const rightRightNode = CoreWorkspace.Core.unwrapParenthesizedExpression(
+    const rightRightNode = Core.unwrapParenthesizedExpression(
         rightExpressionNode.right as UnwrapParenthesizedExpressionInput
     );
     if (!isIdentifierNode(rightRightNode) || rightRightNode.name !== node.left.name) {

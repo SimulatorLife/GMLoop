@@ -1,10 +1,10 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { createMeta, getNodeEndIndex, getNodeStartIndex, isAstNodeRecord } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
-const { unwrapParenthesizedExpression } = CoreWorkspace.Core;
+const { unwrapParenthesizedExpression } = Core;
 
 function isUndefinedIdentifier(expression: unknown): boolean {
     if (!isAstNodeRecord(expression)) {

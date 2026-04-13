@@ -1,4 +1,4 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import {
@@ -27,7 +27,7 @@ function collectLoopLengthAccessorCallsFromTestExpression(parameters: {
     testNode: unknown;
     enabledFunctionNames: ReadonlySet<string>;
 }) {
-    return CoreWorkspace.Core.collectLoopLengthAccessorCallsFromAstNode({
+    return Core.collectLoopLengthAccessorCallsFromAstNode({
         sourceText: parameters.sourceText,
         rootNode: parameters.testNode,
         enabledFunctionNames: parameters.enabledFunctionNames
@@ -65,10 +65,7 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
             const minOccurrences = typeof options.minOccurrences === "number" ? options.minOccurrences : 2;
             const functionSuffixes = options.functionSuffixes as Record<string, string | null> | undefined;
             const shouldReportUnsafeFixes = shouldReportUnsafe(context);
-            const suffixMap = CoreWorkspace.Core.resolveIdentifierKeyedSuffixMap(
-                DEFAULT_HOIST_ACCESSORS,
-                functionSuffixes
-            );
+            const suffixMap = Core.resolveIdentifierKeyedSuffixMap(DEFAULT_HOIST_ACCESSORS, functionSuffixes);
 
             return Object.freeze({
                 Program(programNode) {
@@ -128,7 +125,7 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
                             }
                         }
 
-                        const loopCalls = CoreWorkspace.Core.collectLoopLengthAccessorCallsFromAstNode({
+                        const loopCalls = Core.collectLoopLengthAccessorCallsFromAstNode({
                             sourceText,
                             rootNode: loopNode,
                             enabledFunctionNames: new Set(["array_length"])
@@ -138,7 +135,7 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
                         }
 
                         if (loopNode.type === "ForStatement") {
-                            const testCalls = CoreWorkspace.Core.collectLoopLengthAccessorCallsFromAstNode({
+                            const testCalls = Core.collectLoopLengthAccessorCallsFromAstNode({
                                 sourceText,
                                 rootNode: (loopNode as any).test,
                                 enabledFunctionNames: new Set(["array_length"])

@@ -41,6 +41,25 @@ void test("loadFixtureProjectConfig validates fixture metadata", async () => {
     }
 });
 
+void test("loadFixtureProjectConfig rejects invalid fixture comparison values", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-config-invalid-comparison-"));
+    const configPath = path.join(rootPath, "gmloop.json");
+    await writeFile(
+        configPath,
+        `${JSON.stringify({ fixture: { kind: "format", comparison: "unsupported" } }, null, 2)}\n`,
+        "utf8"
+    );
+
+    try {
+        await assert.rejects(
+            FixtureRunner.loadFixtureProjectConfig(configPath),
+            /gmloop\.json fixture config\.comparison must be one of exact/u
+        );
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
 void test("discoverFixtureCases normalizes directory-per-case fixtures", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-discovery-"));
     await createTextFixtureCase(

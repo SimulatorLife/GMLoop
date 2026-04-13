@@ -1,4 +1,4 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 
 import { forEachScientificNotationToken } from "../malformed/scientific-notation-scan.js";
 import { recoverParseSourceFromMissingBrace } from "../malformed/source-preprocessing.js";
@@ -257,19 +257,13 @@ function projectScientificNotationForRecovery(sourceText: string): string {
 
 function projectUppercaseLogicalAliasesForRecovery(sourceText: string): string {
     const chunks: Array<string> = [];
-    const scanState = CoreWorkspace.Core.createStringCommentScanState();
+    const scanState = Core.createStringCommentScanState();
     const sourceLength = sourceText.length;
 
     let copiedThrough = 0;
     let index = 0;
     while (index < sourceLength) {
-        const scannedIndex = CoreWorkspace.Core.advanceStringCommentScan(
-            sourceText,
-            sourceLength,
-            index,
-            scanState,
-            true
-        );
+        const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
         if (scannedIndex !== index) {
             index = scannedIndex;
             continue;
@@ -286,8 +280,8 @@ function projectUppercaseLogicalAliasesForRecovery(sourceText: string): string {
         const start = match.index;
         const end = start + alias.length;
         if (
-            !CoreWorkspace.Core.isIdentifierBoundaryCharacter(sourceText[start - 1]) ||
-            !CoreWorkspace.Core.isIdentifierBoundaryCharacter(sourceText[end])
+            !Core.isIdentifierBoundaryCharacter(sourceText[start - 1]) ||
+            !Core.isIdentifierBoundaryCharacter(sourceText[end])
         ) {
             index += 1;
             continue;

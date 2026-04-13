@@ -6,7 +6,9 @@ import type {
     ApplyWorkspaceEditOptions,
     BatchRenamePlanSummary,
     BatchRenameValidation,
-    CodemodEngine,
+    CodemodRenameOperations,
+    CodemodSemanticProvider,
+    CodemodWorkspaceEditor,
     MacroExpansionDependency,
     NamingCategory,
     NamingConventionCodemodPlan,
@@ -99,14 +101,37 @@ function getLocalDeclarationKey(target: { category: NamingCategory; name: string
 
 type ScopeDataCollectionResult = {
     localScopeNames: Map<string, Map<string, number>>;
-    duplicateScopedDeclarationKeys: Set<string>;
+    duplicateScopedDeclarations: Map<string, Set<string>>;
 };
 
 function createEmptyScopeDataCollectionResult(): ScopeDataCollectionResult {
     return {
         localScopeNames: new Map<string, Map<string, number>>(),
-        duplicateScopedDeclarationKeys: new Set<string>()
+        duplicateScopedDeclarations: new Map<string, Set<string>>()
     };
+}
+
+function hasDuplicateScopedDeclaration(
+    duplicateScopedDeclarations: Map<string, Set<string>>,
+    scopeKey: string,
+    declarationKey: string
+): boolean {
+    const scopedDeclarations = duplicateScopedDeclarations.get(scopeKey);
+    if (scopedDeclarations === undefined) {
+        return false;
+    }
+
+    return scopedDeclarations.has(declarationKey);
+}
+
+function addDuplicateScopedDeclaration(
+    duplicateScopedDeclarations: Map<string, Set<string>>,
+    scopeKey: string,
+    declarationKey: string
+): void {
+    const scopedDeclarations = duplicateScopedDeclarations.get(scopeKey) ?? new Set<string>();
+    scopedDeclarations.add(declarationKey);
+    duplicateScopedDeclarations.set(scopeKey, scopedDeclarations);
 }
 
 /**
@@ -134,7 +159,7 @@ function collectScopeDataFromTargets(
 ): ScopeDataCollectionResult {
     const declarationsByScope = new Map<string, string | Set<string>>();
     const scopeKeysRequiringNameConflictChecks = new Set<string>();
-    const duplicateScopedDeclarationKeys = new Set<string>();
+    const duplicateScopedDeclarations = new Map<string, Set<string>>();
 
     // Single first pass: compute scope keys and declaration keys while identifying
     // both duplicate declaration rows and scopes that host multiple unique declarations.
@@ -157,7 +182,7 @@ function collectScopeDataFromTargets(
 
         if (typeof declarations === "string") {
             if (declarations === declarationKey) {
-                duplicateScopedDeclarationKeys.add(`${scopeKey}:${declarationKey}`);
+                addDuplicateScopedDeclaration(duplicateScopedDeclarations, scopeKey, declarationKey);
                 continue;
             }
 
@@ -167,7 +192,7 @@ function collectScopeDataFromTargets(
         }
 
         if (declarations.has(declarationKey)) {
-            duplicateScopedDeclarationKeys.add(`${scopeKey}:${declarationKey}`);
+            addDuplicateScopedDeclaration(duplicateScopedDeclarations, scopeKey, declarationKey);
         } else {
             declarations.add(declarationKey);
         }
@@ -206,7 +231,7 @@ function collectScopeDataFromTargets(
 
     return {
         localScopeNames,
-        duplicateScopedDeclarationKeys
+        duplicateScopedDeclarations
     };
 }
 
@@ -227,18 +252,26 @@ function processLocalNamingConventionRename(parameters: {
     workspace: WorkspaceEdit;
     warnings: Array<string>;
     localScopeNames: Map<string, Map<string, number>>;
-    localDeclarationRenameDecisions: Map<string, LocalDeclarationRenameDecision>;
+    localDeclarationRenameDecisions: LocalDeclarationRenameDecisionByScope;
     macroDependencyNamesByFile: MacroDependencyNamesByFile | null;
-    duplicateScopedDeclarationKeys: Set<string>;
+    duplicateScopedDeclarations: Map<string, Set<string>>;
     hasDuplicateScopedDeclarations: boolean;
 }): number {
     const { target, suggestedName } = parameters;
     const needsScopeKey = parameters.hasDuplicateScopedDeclarations || parameters.localScopeNames.size > 0;
     const scopeKey = needsScopeKey ? `${target.path}:${target.scopeId ?? "root"}` : null;
     const declarationKey = parameters.hasDuplicateScopedDeclarations ? getLocalDeclarationKey(target) : null;
-    const scopedDeclarationKey = scopeKey !== null && declarationKey !== null ? `${scopeKey}:${declarationKey}` : null;
-    if (scopedDeclarationKey !== null && parameters.duplicateScopedDeclarationKeys.has(scopedDeclarationKey)) {
-        const plannedDecision = parameters.localDeclarationRenameDecisions.get(scopedDeclarationKey);
+    const hasDuplicateDeclaration =
+        scopeKey !== null &&
+        declarationKey !== null &&
+        hasDuplicateScopedDeclaration(parameters.duplicateScopedDeclarations, scopeKey, declarationKey);
+    const scopeDecisions =
+        scopeKey === null
+            ? undefined
+            : (parameters.localDeclarationRenameDecisions.get(scopeKey) ??
+              new Map<string, LocalDeclarationRenameDecision>());
+    if (scopeKey !== null && declarationKey !== null && hasDuplicateDeclaration) {
+        const plannedDecision = scopeDecisions.get(declarationKey);
         if (plannedDecision) {
             if (!plannedDecision.shouldApply) {
                 return 0;
@@ -273,11 +306,12 @@ function processLocalNamingConventionRename(parameters: {
             parameters.warnings.push(
                 `Skipping local rename '${target.name}' -> '${suggestedName}' in ${target.path} because the target name already exists in the same scope.`
             );
-            if (scopedDeclarationKey !== null) {
-                parameters.localDeclarationRenameDecisions.set(scopedDeclarationKey, {
+            if (scopeKey !== null && declarationKey !== null) {
+                scopeDecisions.set(declarationKey, {
                     shouldApply: false,
                     suggestedName
                 });
+                parameters.localDeclarationRenameDecisions.set(scopeKey, scopeDecisions);
             }
             return 0;
         }
@@ -290,11 +324,12 @@ function processLocalNamingConventionRename(parameters: {
         parameters.warnings.push(
             `Skipping local rename '${target.name}' -> '${suggestedName}' in ${target.path} because '${suggestedName}' is a reserved GameMaker identifier.`
         );
-        if (scopedDeclarationKey !== null) {
-            parameters.localDeclarationRenameDecisions.set(scopedDeclarationKey, {
+        if (scopeKey !== null && declarationKey !== null) {
+            scopeDecisions.set(declarationKey, {
                 shouldApply: false,
                 suggestedName
             });
+            parameters.localDeclarationRenameDecisions.set(scopeKey, scopeDecisions);
         }
         return 0;
     }
@@ -311,11 +346,12 @@ function processLocalNamingConventionRename(parameters: {
         parameters.warnings.push(
             `Skipping local rename '${target.name}' -> '${suggestedName}' in ${target.path} because macro expansion${dependentMacroNames.length === 1 ? "" : "s"} ${dependentMacroNames.map((macroName) => `'${macroName}'`).join(", ")} ${dependentMacroNames.length === 1 ? "depends" : "depend"} on '${target.name}'.`
         );
-        if (scopedDeclarationKey !== null) {
-            parameters.localDeclarationRenameDecisions.set(scopedDeclarationKey, {
+        if (scopeKey !== null && declarationKey !== null) {
+            scopeDecisions.set(declarationKey, {
                 shouldApply: false,
                 suggestedName
             });
+            parameters.localDeclarationRenameDecisions.set(scopeKey, scopeDecisions);
         }
         return 0;
     }
@@ -324,11 +360,12 @@ function processLocalNamingConventionRename(parameters: {
         parameters.workspace.addEdit(occurrence.path, occurrence.start, occurrence.end, suggestedName);
     }
 
-    if (scopedDeclarationKey !== null && parameters.duplicateScopedDeclarationKeys.has(scopedDeclarationKey)) {
-        parameters.localDeclarationRenameDecisions.set(scopedDeclarationKey, {
+    if (scopeKey !== null && declarationKey !== null && hasDuplicateDeclaration) {
+        scopeDecisions.set(declarationKey, {
             shouldApply: true,
             suggestedName
         });
+        parameters.localDeclarationRenameDecisions.set(scopeKey, scopeDecisions);
     }
     if (existingNames !== undefined) {
         normalizedSuggestedName ??= suggestedName.toLowerCase();
@@ -351,6 +388,7 @@ type LocalDeclarationRenameDecision = {
     shouldApply: boolean;
     suggestedName: string;
 };
+type LocalDeclarationRenameDecisionByScope = Map<string, Map<string, LocalDeclarationRenameDecision>>;
 type LocalNamingConventionTarget = {
     category: NamingCategory;
     name: string;
@@ -365,7 +403,7 @@ function formatTopLevelRenameSkipWarning(rename: RenameRequest, reason: string):
 }
 
 async function selectExecutableTopLevelRenames(
-    engine: CodemodEngine,
+    engine: CodemodRenameOperations,
     renames: ReadonlyArray<RenameRequest>
 ): Promise<TopLevelRenameSelection> {
     const warnings: Array<string> = [];
@@ -616,7 +654,7 @@ async function listNamingConventionTargetsResilient(parameters: {
  * Plan naming-policy-driven edits for the selected project paths.
  */
 export async function planNamingConventionCodemod(
-    engine: CodemodEngine,
+    engine: CodemodSemanticProvider & CodemodRenameOperations,
     parameters: {
         projectRoot: string;
         config: RefactorProjectConfig;
@@ -662,7 +700,7 @@ export async function planNamingConventionCodemod(
     const warnings: Array<string> = [];
     const errors: Array<string> = [];
     const violations: Array<NamingConventionViolation> = [];
-    const localDeclarationRenameDecisions = new Map<string, LocalDeclarationRenameDecision>();
+    const localDeclarationRenameDecisions = new Map<string, Map<string, LocalDeclarationRenameDecision>>();
     const topLevelRenames: Array<{ symbolId: string; newName: string }> = [];
     const seenTopLevelRenames = new Set<string>();
     let localRenameCount = 0;
@@ -694,10 +732,10 @@ export async function planNamingConventionCodemod(
     // Skip local-scope collection entirely when the current run only contains
     // top-level symbols. This is the dominant `refactor codemod --write` path on
     // large projects and avoids an otherwise redundant full scan of selectedTargets.
-    const { localScopeNames, duplicateScopedDeclarationKeys } = hasLocalNamingTargets
+    const { localScopeNames, duplicateScopedDeclarations } = hasLocalNamingTargets
         ? collectScopeDataFromTargets(selectedTargets)
         : createEmptyScopeDataCollectionResult();
-    const hasDuplicateScopedDeclarations = duplicateScopedDeclarationKeys.size > 0;
+    const hasDuplicateScopedDeclarations = duplicateScopedDeclarations.size > 0;
 
     for (const target of selectedTargets) {
         const evaluation = evaluateNamingConvention(target.name, target.category, policy, resolvedRules, {
@@ -743,7 +781,7 @@ export async function planNamingConventionCodemod(
             localScopeNames,
             localDeclarationRenameDecisions,
             macroDependencyNamesByFile,
-            duplicateScopedDeclarationKeys,
+            duplicateScopedDeclarations,
             hasDuplicateScopedDeclarations
         });
     }
@@ -796,7 +834,7 @@ export async function planNamingConventionCodemod(
  * Execute a naming-convention codemod plan when it contains no blocking errors.
  */
 export async function executeNamingConventionCodemod(
-    engine: CodemodEngine,
+    engine: CodemodSemanticProvider & CodemodRenameOperations & CodemodWorkspaceEditor,
     parameters: {
         projectRoot: string;
         config: RefactorProjectConfig;
