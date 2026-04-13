@@ -115,6 +115,38 @@ export type GraphContextBundle = Readonly<{
     target: GraphNodeRecord;
 }>;
 
+/** Payload embedded in the visualization HTML as inline JSON. */
+export type GraphVisualizationData = Readonly<{
+    generatedAt: string;
+    graphs: ReadonlyArray<
+        Readonly<{
+            edgeCount: number;
+            graphId: GraphIndexScope;
+            nodeCount: number;
+            rootPath: string;
+        }>
+    >;
+    edges: ReadonlyArray<
+        Readonly<{
+            source: string;
+            target: string;
+            type: GraphEdgeType;
+        }>
+    >;
+    nodes: ReadonlyArray<
+        Readonly<{
+            displayName: string;
+            graphId: GraphIndexScope;
+            id: string;
+            kind: GraphNodeKind;
+            name: string;
+            snippet: string;
+            summary: string;
+        }>
+    >;
+    projectRoot: string;
+}>;
+
 export type GraphDoctorIssue = Readonly<{
     code: string;
     message: string;

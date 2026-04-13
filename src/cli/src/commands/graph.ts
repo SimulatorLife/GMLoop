@@ -1,4 +1,5 @@
-import { access, constants } from "node:fs/promises";
+import child_process from "node:child_process";
+import { access, constants, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -9,6 +10,7 @@ import { applyStandardCommandOptions } from "../cli-core/command-standard-option
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
+import { renderGraphVisualizationHtml } from "./graph-visualize-template.js";
 
 type GraphCommandSharedOptions = {
     config?: string;
@@ -20,6 +22,8 @@ type GraphCommandSharedOptions = {
     rebuild?: boolean;
     toolsetRoot?: string;
     verbose?: boolean;
+    open?: boolean;
+    output?: string;
 };
 
 type GraphResolutionContext = Readonly<{
@@ -107,6 +111,21 @@ async function ensureGraphIndexForQuery(
     } catch {
         throw new Error(`Graph database not found at ${config.databasePath}. Run 'gmloop graph index' first.`);
     }
+}
+
+function openHtmlInDefaultBrowser(filePath: string): void {
+    const platform = process.platform;
+    let cmd = "";
+    if (platform === "darwin") {
+        cmd = "open";
+    } else if (platform === "win32") {
+        cmd = "start";
+    } else {
+        cmd = "xdg-open";
+    }
+    // Expected behavior: we want to open a dynamic path provided by user args
+    // eslint-disable-next-line security/detect-child-process -- Intentionally opening default browser
+    child_process.exec(`${cmd} "${filePath}"`);
 }
 
 function createGraphEnvelope<TPayload>(
@@ -289,6 +308,43 @@ async function runGraphDoctorAction(options: GraphCommandSharedOptions): Promise
     );
 }
 
+async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Promise<void> {
+    const context = await resolveGraphContext(options);
+    await ensureGraphIndexForQuery(options, context);
+
+    const config = Semantic.resolveGraphIndexConfig({
+        databasePath: options.databasePath,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+
+    const dbPath = config.databasePath;
+    const db = Semantic.openExistingGraphIndexDatabase(dbPath);
+    let payloadStr = "";
+    try {
+        const payload = Semantic.exportGraphVisualizationData(db, config.projectRoot);
+        payloadStr = JSON.stringify(payload);
+    } finally {
+        db.close();
+    }
+
+    const htmlContent = renderGraphVisualizationHtml(payloadStr, config.projectRoot);
+    const outputPath = options.output ?? path.join(path.dirname(dbPath), "graph.html");
+
+    await writeFile(outputPath, htmlContent, "utf8");
+
+    printGraphOutput(
+        createGraphEnvelope("graph visualize", context, options, { outputPath }),
+        options.json === true,
+        `Exported graph visualization to ${outputPath}`
+    );
+
+    if (options.open) {
+        openHtmlInDefaultBrowser(outputPath);
+    }
+}
+
 function addGraphSharedOptions(
     command: Command,
     { includeDepth = false, includeLimit = false, includeRebuild = false } = {}
@@ -423,6 +479,22 @@ export function createGraphCommand(): Command {
         });
     });
 
+    const visualizeCommand = addGraphSharedOptions(
+        applyStandardCommandOptions(new Command("visualize")).description(
+            "Render an interactive graph index visualization HTML file."
+        ),
+        { includeRebuild: true }
+    );
+    visualizeCommand
+        .addOption(new Option("--output <path>", "Output HTML file path").default(undefined))
+        .addOption(new Option("--open", "Open the generated file in your default browser").default(true))
+        .addOption(new Option("--no-open", "Do not open the generated file").default(false))
+        .action(async function graphVisualizeCommandAction() {
+            await runGraphCommandAction(async () => {
+                await runGraphVisualizeAction(this.opts<GraphCommandSharedOptions>());
+            });
+        });
+
     graphCommand.addCommand(indexCommand);
     graphCommand.addCommand(searchCommand);
     graphCommand.addCommand(symbolCommand);
@@ -430,6 +502,7 @@ export function createGraphCommand(): Command {
     graphCommand.addCommand(neighborsCommand);
     graphCommand.addCommand(usagesCommand);
     graphCommand.addCommand(doctorCommand);
+    graphCommand.addCommand(visualizeCommand);
 
     return graphCommand;
 }

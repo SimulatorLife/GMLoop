@@ -23,6 +23,7 @@ export {
     ensureGraphEmbeddingModelAssets,
     serializeEmbeddingVector
 } from "./embeddings.js";
+export { exportGraphVisualizationData } from "./export-visualization-data.js";
 export {
     createGraphAliases,
     createGraphNodeSnippet,
@@ -47,5 +48,6 @@ export type {
     GraphNodeRecord,
     GraphSearchResponse,
     GraphSearchResult,
-    GraphUsageRecord
+    GraphUsageRecord,
+    GraphVisualizationData
 } from "./types.js";
