@@ -28,29 +28,37 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     .link-calls { stroke: #1f77b4; stroke-width: 1.5px; }
     .link-references { stroke: #999; stroke-width: 1px; stroke-dasharray: 4,4; }
     .link-contains { stroke: #2ca02c; stroke-width: 1px; stroke-dasharray: 2,2; }
-    .link-defines { stroke: #2ca02c; stroke-width: 1px; stroke-dasharray: 2,2; }
+    .link-defines { stroke: #17a2b8; stroke-width: 1px; stroke-dasharray: 6,2; }
     .link-inherits { stroke: #d62728; stroke-width: 2px; }
     .link-uses_toolset { stroke: #ff7f0e; stroke-width: 1px; stroke-dasharray: 4,4; }
     .link-depends_on { stroke: #7f7f7f; stroke-width: 1.5px; }
     .link-placed_in_room { stroke: #9467bd; stroke-width: 1px; stroke-dasharray: 2,2; }
     
     /* Node colors */
+    .node-project { fill: #ffffff; }
     .node-script { fill: #1f77b4; }
     .node-object { fill: #2ca02c; }
-    .node-enum, .node-enum_member { fill: #9467bd; }
+    .node-enum { fill: #9467bd; }
+    .node-enum_member { fill: #7b61b3; }
     .node-macro { fill: #ff7f0e; }
-    .node-file { fill: #c7c7c7; }
-    .node-struct, .node-constructor { fill: #e377c2; }
-    .node-global_variable, .node-instance_variable { fill: #17becf; }
-    .node-resource, .node-sprite, .node-shader, .node-room { fill: #8c564b; }
+    .node-struct { fill: #e377c2; }
+    .node-constructor { fill: #c63fa0; }
+    .node-global_variable { fill: #17becf; }
+    .node-instance_variable { fill: #00a2af; }
+    .node-resource { fill: #8c564b; }
+    .node-sprite { fill: #8c564b; }
+    .node-shader { fill: #6b3f26; }
+    .node-room { fill: #a9744f; }
     .node-object_event { fill: #bcbd22; }
     .node-default { fill: #7f7f7f; }
     
     text { font-size: 10px; pointer-events: none; fill: #e0e0e0; text-shadow: 0 1px 2px #1e1e1e, 0 -1px 2px #1e1e1e, 1px 0 2px #1e1e1e, -1px 0 2px #1e1e1e; }
     
-    #tooltip { position: absolute; background: #252526; padding: 10px; border: 1px solid #444; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); pointer-events: none; font-size: 12px; z-index: 20; max-width: 300px; display: none; color: #eee; }
+    #tooltip { position: absolute; background: #252526; padding: 10px; border: 1px solid #444; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); pointer-events: auto; font-size: 12px; z-index: 20; max-width: 300px; display: none; color: #eee; user-select: text; }
     #tooltip.visible { display: block; }
     #tooltip h3 { margin: 0 0 5px 0; font-size: 14px; word-break: break-all; color: #fff; }
+    #json-view { position: absolute; inset: 58px 0 0 0; overflow: auto; margin: 0; padding: 10px 20px 20px; font-size: 12px; background: #181818; color: #eaeaea; display: none; }
+    .hidden { display: none !important; }
     
     #legend { position: absolute; bottom: 20px; right: 20px; background: rgba(37, 37, 38, 0.9); padding: 10px; border: 1px solid #444; border-radius: 4px; font-size: 12px; z-index: 10; color: #eee; max-height: 80%; overflow-y: auto; }
     
@@ -67,6 +75,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
   <header>
     <h1>Graph Index</h1>
     <input type="search" id="search" placeholder="Search nodes…" />
+    <button id="toggle-view">JSON</button>
+    <button id="toggle-labels">Labels: Auto</button>
     <button id="reset-default">Reset</button>
   </header>
   <main>
@@ -80,6 +90,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
       <g id="container"></g>
     </svg>
     <div id="tooltip"></div>
+    <pre id="json-view"></pre>
     <aside id="legend">
         <!-- Rendered by JS -->
     </aside>
@@ -91,8 +102,11 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     const height = window.innerHeight;
     
     const svg = d3.select("#graph");
+    const jsonView = d3.select("#json-view");
     const container = d3.select("#container");
     const tooltip = d3.select("#tooltip");
+    let labelMode = "auto";
+    let activeView = "visual";
     
     // Setup Zoom
     const zoom = d3.zoom()
@@ -101,7 +115,11 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
             container.attr("transform", e.transform);
             
             // Progressive label rendering
-            if (e.transform.k > 0.8) {
+            if (labelMode === "on") {
+                nodeLabels.style("display", "block");
+            } else if (labelMode === "off") {
+                nodeLabels.style("display", "none");
+            } else if (e.transform.k > 0.8) {
                 nodeLabels.style("display", "block");
             } else {
                 nodeLabels.style("display", "none");
@@ -109,6 +127,44 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         });
         
     svg.call(zoom);
+
+    d3.select("#toggle-view").on("click", () => {
+        activeView = activeView === "visual" ? "json" : "visual";
+        const isVisualView = activeView === "visual";
+        svg.classed("hidden", !isVisualView);
+        d3.select("#legend").classed("hidden", !isVisualView);
+        d3.select("#tooltip").classed("hidden", !isVisualView);
+        jsonView.classed("hidden", isVisualView).style("display", isVisualView ? "none" : "block");
+        d3.select("#toggle-view").text(isVisualView ? "JSON" : "Visual");
+        if (!isVisualView) {
+            jsonView.text(JSON.stringify({
+                graphs: DATA.graphs,
+                nodes: nodesRaw.filter((nodeValue) => activeNodeFilters.has(nodeValue.kind)),
+                edges: linksRaw.filter((edgeValue) => activeFilters.has(edgeValue.type))
+            }, null, 2));
+        }
+    });
+
+    d3.select("#toggle-labels").on("click", () => {
+        if (labelMode === "auto") {
+            labelMode = "on";
+        } else if (labelMode === "on") {
+            labelMode = "off";
+        } else {
+            labelMode = "auto";
+        }
+        d3.select("#toggle-labels").text(
+            labelMode === "auto" ? "Labels: Auto" : labelMode === "on" ? "Labels: On" : "Labels: Off"
+        );
+        const currentTransform = d3.zoomTransform(svg.node());
+        if (labelMode === "on") {
+            nodeLabels.style("display", "block");
+        } else if (labelMode === "off") {
+            nodeLabels.style("display", "none");
+        } else {
+            nodeLabels.style("display", currentTransform.k > 0.8 ? "block" : "none");
+        }
+    });
     
     d3.select("#reset-default").on("click", () => {
        svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
@@ -116,8 +172,14 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
        
        // Reset filters
        activeFilters = new Set(edgeTypes);
-       activeNodeFilters = new Set(DATA.nodes.map(n => n.kind));
-       d3.selectAll("#legend input[type='checkbox']").property("checked", true).property("indeterminate", false);
+       activeNodeFilters = new Set(defaultEnabledNodeKinds);
+       d3.selectAll("#legend input[type='checkbox']").property("indeterminate", false);
+       allNodeKinds.forEach((kindValue) => {
+            d3.select(\`#filter-node-\${kindValue}\`).property("checked", defaultEnabledNodeKinds.includes(kindValue));
+       });
+       edgeTypes.forEach((edgeTypeValue) => {
+            d3.select(\`#filter-edge-\${edgeTypeValue}\`).property("checked", true);
+       });
        
        updateGraph();
     });
@@ -131,17 +193,25 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     const edgeTypes = Array.from(new Set(DATA.edges.map(e => e.type)));
     let activeFilters = new Set(edgeTypes);
     
-    const resourceKinds = new Set(["resource", "script", "object", "room", "sprite", "shader"]);
-    const resourceTypesPresent = Array.from(new Set(DATA.nodes.map(n => n.kind).filter(k => resourceKinds.has(k))));
-    const otherTypesPresent = Array.from(new Set(DATA.nodes.map(n => n.kind).filter(k => !resourceKinds.has(k))));
-    let activeNodeFilters = new Set(DATA.nodes.map(n => n.kind));
+    const allNodes = DATA.nodes.filter((nodeValue) => nodeValue.kind !== "file" && nodeValue.kind !== "resource");
+    const allNodeKinds = Array.from(new Set(allNodes.map((nodeValue) => nodeValue.kind)));
+    const resourceKinds = new Set(["script", "object", "room", "sprite", "shader"]);
+    const variableKinds = new Set(["global_variable", "instance_variable"]);
+    const defaultDisabledNodeKinds = new Set(["instance_variable", "global_variable", "script", "function", "data_file"]);
+    const defaultEnabledNodeKinds = allNodeKinds.filter((kindValue) => !defaultDisabledNodeKinds.has(kindValue));
+    const resourceTypesPresent = allNodeKinds.filter((kindValue) => resourceKinds.has(kindValue));
+    const enumTypesPresent = allNodeKinds.filter((kindValue) => kindValue === "enum" || kindValue === "enum_member");
+    const otherTypesPresent = allNodeKinds.filter(
+        (kindValue) => !resourceKinds.has(kindValue) && kindValue !== "enum" && kindValue !== "enum_member"
+    );
+    let activeNodeFilters = new Set(defaultEnabledNodeKinds);
 
     function createFilterCheckbox(container, id, labelText, category, typeVal, changeHandler, customClass="") {
         const wrap = container.append("label").attr("class", \`filter-item \${customClass}\`);
         const checkbox = wrap.append("input")
             .attr("type", "checkbox")
             .attr("id", id)
-            .attr("checked", true)
+            .attr("checked", defaultEnabledNodeKinds.includes(typeVal))
             .on("change", function() {
                 changeHandler(this.checked, typeVal);
                 updateGraph();
@@ -153,11 +223,10 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
              else if (typeVal === 'object') color = "#2ca02c";
              else if (typeVal === 'enum') color = "#9467bd";
              else if (typeVal === 'macro') color = "#ff7f0e";
-             else if (typeVal === 'file') color = "#c7c7c7";
              else if (typeVal === 'struct') color = "#e377c2";
-             else if (typeVal === 'constructor') color = "#e377c2";
-             else if (typeVal === 'enum_member') color = "#9467bd";
-             else if (typeVal.includes('variable')) color = "#17becf";
+             else if (typeVal === 'constructor') color = "#c63fa0";
+             else if (typeVal === 'enum_member') color = "#7b61b3";
+             else if (variableKinds.has(typeVal)) color = typeVal === "global_variable" ? "#17becf" : "#00a2af";
              else if (typeVal === 'object_event') color = "#bcbd22";
              else if (resourceKinds.has(typeVal)) color = "#8c564b";
              wrap.append("span").html(\`<span style="color:\${color}">■</span> \${labelText}\`);
@@ -166,7 +235,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
              if (typeVal === 'calls') strokeStyle = "border-bottom: 2px solid #1f77b4;";
              else if (typeVal === 'references') strokeStyle = "border-bottom: 1px dashed #999;";
              else if (typeVal === 'contains') strokeStyle = "border-bottom: 1px dashed #2ca02c;";
-             else if (typeVal === 'defines') strokeStyle = "border-bottom: 1px dashed #2ca02c;";
+             else if (typeVal === 'defines') strokeStyle = "border-bottom: 1px dashed #17a2b8;";
              else if (typeVal === 'inherits') strokeStyle = "border-bottom: 2px solid #d62728;";
              else if (typeVal === 'uses_toolset') strokeStyle = "border-bottom: 1px dashed #ff7f0e;";
              else if (typeVal === 'depends_on') strokeStyle = "border-bottom: 2px solid #7f7f7f;";
@@ -204,6 +273,25 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
             }, "sub-filter");
         });
     }
+
+    let enumCheckbox;
+    if (enumTypesPresent.length > 0) {
+        enumCheckbox = createFilterCheckbox(nodesSection, "filter-enum", "Enums", "node-group", "enum-group", (checked) => {
+            enumTypesPresent.forEach(t => {
+                checked ? activeNodeFilters.add(t) : activeNodeFilters.delete(t);
+                d3.select(\`#filter-node-\${t}\`).property("checked", checked);
+            });
+        });
+
+        enumTypesPresent.forEach(t => {
+            createFilterCheckbox(nodesSection, \`filter-node-\${t}\`, formatLabel(t), "node", t, (checked, val) => {
+                checked ? activeNodeFilters.add(val) : activeNodeFilters.delete(val);
+                const allEnumChecked = enumTypesPresent.every(k => activeNodeFilters.has(k));
+                enumCheckbox.property("checked", allEnumChecked);
+                enumCheckbox.property("indeterminate", !allEnumChecked && enumTypesPresent.some(k => activeNodeFilters.has(k)));
+            }, "sub-filter");
+        });
+    }
     
     otherTypesPresent.forEach(t => {
         createFilterCheckbox(nodesSection, \`filter-node-\${t}\`, formatLabel(t), "node", t, (checked, val) => {
@@ -231,8 +319,17 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         .velocityDecay(0.3);
         
     // Map data for D3
-    let nodesRaw = DATA.nodes.map(d => Object.assign({}, d));
+    let nodesRaw = allNodes.map(d => Object.assign({}, d));
     let linksRaw = DATA.edges.map(d => Object.assign({}, d));
+    const centerNode = {
+        id: "project::center",
+        kind: "project",
+        name: "game",
+        displayName: "game",
+        graphId: "project",
+        summary: "Project root node",
+        snippet: ""
+    };
     
     // Compute node degrees
     const incomingCount = new Map();
@@ -271,7 +368,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         });
         
         // Find visible nodes
-        const activeNodeIds = new Set();
+        const activeNodeIds = new Set(validNodeIds);
         filteredLinks.forEach(l => {
             activeNodeIds.add(typeof l.source === 'object' ? l.source.id : l.source);
             activeNodeIds.add(typeof l.target === 'object' ? l.target.id : l.target);
@@ -285,9 +382,16 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         });
         
         const filteredNodes = nodesRaw.filter(n => activeNodeIds.has(n.id) && activeNodeFilters.has(n.kind));
+        if (filteredNodes.length > 0) {
+            filteredNodes.push(centerNode);
+        }
+        const syntheticLinks = filteredNodes
+            .filter((nodeValue) => nodeValue.id !== centerNode.id)
+            .map((nodeValue) => ({ source: centerNode.id, target: nodeValue.id, type: "contains" }));
+        const graphLinks = filteredLinks.concat(syntheticLinks);
         
         // Update links
-        link = link.data(filteredLinks, d => {
+        link = link.data(graphLinks, d => {
             const sid = typeof d.source === 'object' ? d.source.id : d.source;
             const tid = typeof d.target === 'object' ? d.target.id : d.target;
             return sid + "-" + tid + "-" + d.type;
@@ -322,7 +426,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
             .classed("node", true)
             .classed("toolset", d => d.graphId === 'toolset')
             .on("mouseover", showTooltip)
-            .on("mouseout", hideTooltip)
+            .on("mouseout", hideTooltipWithDelay)
             .on("click", handleNodeClick)
             .on("dblclick", handleNodeDblClick);
             
@@ -343,13 +447,12 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
             let k = "default";
             if (
                 [
+                    "project",
                     "script",
                     "object",
                     "enum",
                     "enum_member",
                     "macro",
-                    "file",
-                    "resource",
                     "sprite",
                     "shader",
                     "room",
@@ -367,7 +470,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         
         // Restart simulation
         simulation.nodes(filteredNodes).on("tick", ticked);
-        simulation.force("link").links(filteredLinks);
+        simulation.force("link").links(graphLinks);
         simulation.alpha(0.3).restart();
         
         applyHighlights();
@@ -423,6 +526,14 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     
     function hideTooltip() {
         tooltip.classed("visible", false);
+    }
+
+    function hideTooltipWithDelay() {
+        setTimeout(() => {
+            if (!tooltip.node().matches(":hover")) {
+                hideTooltip();
+            }
+        }, 120);
     }
     
     function handleNodeClick(event, d) {
@@ -513,6 +624,9 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
             return !(highlightIds.has(sid) && highlightIds.has(tid));
         });
     }
+
+    tooltip.on("mouseenter", () => tooltip.classed("visible", true));
+    tooltip.on("mouseleave", hideTooltip);
 
     // Initial render
     updateGraph();
