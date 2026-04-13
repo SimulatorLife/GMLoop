@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import * as WorkflowFixtureRoots from "../src/workflow/fixture-roots.js";
-import { DEFAULT_FIXTURE_DIRECTORIES, normalizeFixtureRoots } from "../src/workflow/fixture-roots.js";
+import * as WorkflowFixtureRoots from "../src/workflow/path-filter.js";
+import { DEFAULT_FIXTURE_DIRECTORIES, normalizeFixtureRoots } from "../src/workflow/path-filter.js";
 
 void describe("workflow fixture root normalization", () => {
     void it("deduplicates additional roots that overlap defaults", () => {
