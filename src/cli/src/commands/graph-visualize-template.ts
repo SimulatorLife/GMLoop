@@ -186,7 +186,12 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     let focusNodeId = null;
     
     function updateGraph() {
-        const filteredLinks = linksRaw.filter(l => activeFilters.has(l.type));
+        const validNodeIds = new Set(nodesRaw.map(n => n.id));
+        const filteredLinks = linksRaw.filter(l => {
+            const sid = typeof l.source === 'object' ? l.source.id : l.source;
+            const tid = typeof l.target === 'object' ? l.target.id : l.target;
+            return activeFilters.has(l.type) && validNodeIds.has(sid) && validNodeIds.has(tid);
+        });
         
         // Find visible nodes
         const activeNodeIds = new Set();
@@ -203,7 +208,11 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         const filteredNodes = nodesRaw.filter(n => activeNodeIds.has(n.id));
         
         // Update links
-        link = link.data(filteredLinks, d => d.source.id + "-" + d.target.id + "-" + d.type);
+        link = link.data(filteredLinks, d => {
+            const sid = typeof d.source === 'object' ? d.source.id : d.source;
+            const tid = typeof d.target === 'object' ? d.target.id : d.target;
+            return sid + "-" + tid + "-" + d.type;
+        });
         link.exit().remove();
         
         const linkEnter = link.enter().append("path")
@@ -229,7 +238,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
                 
         // Add circles
         nodeEnter.append("circle")
-            .attr("class", d => {\`node node-\${d.kind} \${d.graphId === 'toolset' ? 'toolset' : ''}\`})
+            .attr("class", d => \`node node-\${d.kind} \${d.graphId === 'toolset' ? 'toolset' : ''}\`)
             .attr("r", getRadius)
             .classed("node", true)
             .classed("toolset", d => d.graphId === 'toolset')
