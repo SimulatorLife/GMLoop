@@ -37,10 +37,13 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     /* Node colors */
     .node-script { fill: #1f77b4; }
     .node-object { fill: #2ca02c; }
-    .node-enum { fill: #9467bd; }
+    .node-enum, .node-enum_member { fill: #9467bd; }
     .node-macro { fill: #ff7f0e; }
     .node-file { fill: #c7c7c7; }
+    .node-struct, .node-constructor { fill: #e377c2; }
+    .node-global_variable, .node-instance_variable { fill: #17becf; }
     .node-resource, .node-sprite, .node-shader, .node-room { fill: #8c564b; }
+    .node-object_event { fill: #bcbd22; }
     .node-default { fill: #7f7f7f; }
     
     text { font-size: 10px; pointer-events: none; fill: #e0e0e0; text-shadow: 0 1px 2px #1e1e1e, 0 -1px 2px #1e1e1e, 1px 0 2px #1e1e1e, -1px 0 2px #1e1e1e; }
@@ -128,7 +131,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     const edgeTypes = Array.from(new Set(DATA.edges.map(e => e.type)));
     let activeFilters = new Set(edgeTypes);
     
-    const resourceKinds = new Set(["script", "object", "room", "sprite", "shader"]);
+    const resourceKinds = new Set(["resource", "script", "object", "room", "sprite", "shader"]);
     const resourceTypesPresent = Array.from(new Set(DATA.nodes.map(n => n.kind).filter(k => resourceKinds.has(k))));
     const otherTypesPresent = Array.from(new Set(DATA.nodes.map(n => n.kind).filter(k => !resourceKinds.has(k))));
     let activeNodeFilters = new Set(DATA.nodes.map(n => n.kind));
@@ -150,9 +153,13 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
              else if (typeVal === 'object') color = "#2ca02c";
              else if (typeVal === 'enum') color = "#9467bd";
              else if (typeVal === 'macro') color = "#ff7f0e";
-             else if (typeVal === 'file') color = "#c7c7c7";             else if (typeVal === 'struct') color = "#e377c2";
+             else if (typeVal === 'file') color = "#c7c7c7";
+             else if (typeVal === 'struct') color = "#e377c2";
              else if (typeVal === 'constructor') color = "#e377c2";
-             else if (typeVal.includes('variable')) color = "#17becf";             else if (resourceKinds.has(typeVal) || typeVal === 'resource') color = "#8c564b";
+             else if (typeVal === 'enum_member') color = "#9467bd";
+             else if (typeVal.includes('variable')) color = "#17becf";
+             else if (typeVal === 'object_event') color = "#bcbd22";
+             else if (resourceKinds.has(typeVal)) color = "#8c564b";
              wrap.append("span").html(\`<span style="color:\${color}">■</span> \${labelText}\`);
         } else {
              let strokeStyle = "border-bottom: 2px solid #555;";
@@ -334,7 +341,25 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         // Re-assign classes based on kind
         node.attr("class", d => {
             let k = "default";
-            if (["script", "object", "enum", "macro", "file", "resource", "sprite", "shader", "room"].includes(d.kind)) {
+            if (
+                [
+                    "script",
+                    "object",
+                    "enum",
+                    "enum_member",
+                    "macro",
+                    "file",
+                    "resource",
+                    "sprite",
+                    "shader",
+                    "room",
+                    "struct",
+                    "constructor",
+                    "instance_variable",
+                    "global_variable",
+                    "object_event"
+                ].includes(d.kind)
+            ) {
                 k = d.kind;
             }
             return \`node node-\${k} \${d.graphId === 'toolset' ? 'toolset' : ''}\`;
