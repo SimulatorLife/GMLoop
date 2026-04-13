@@ -8,10 +8,10 @@ import {
     getNodeEndIndex,
     getNodeStartIndex,
     isAstNodeRecord,
-    isAstNodeWithType
+    isAstNodeWithType,
+    shouldReportUnsafe
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
-import { shouldReportUnsafe } from "../rule-helpers.js";
 
 const { unwrapParenthesizedExpression } = Core;
 type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];

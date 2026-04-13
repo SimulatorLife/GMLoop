@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { defaultGmlFormatComponentImplementations } from "../src/components/default-component-instances.js";
-import { createDefaultGmlFormatComponents } from "../src/components/default-format-components.js";
+import {
+    createDefaultGmlFormatComponents,
+    defaultGmlFormatComponentImplementations
+} from "../src/components/default-format-components.js";
 
 const SAMPLE_SOURCE = "function example() { return 1; }";
 

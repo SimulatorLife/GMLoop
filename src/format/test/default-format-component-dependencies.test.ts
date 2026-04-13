@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { defaultGmlFormatComponentImplementations } from "../src/components/default-component-instances.js";
+import { defaultGmlFormatComponentImplementations } from "../src/components/default-format-components.js";
 import { LogicalOperatorsStyle } from "../src/options/logical-operators-style.js";
 import { gmlParserAdapter } from "../src/parsers/index.js";
 import { print } from "../src/printer/index.js";
