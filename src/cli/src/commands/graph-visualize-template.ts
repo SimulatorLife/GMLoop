@@ -150,8 +150,9 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
              else if (typeVal === 'object') color = "#2ca02c";
              else if (typeVal === 'enum') color = "#9467bd";
              else if (typeVal === 'macro') color = "#ff7f0e";
-             else if (typeVal === 'file') color = "#c7c7c7";
-             else if (resourceKinds.has(typeVal) || typeVal === 'resource') color = "#8c564b";
+             else if (typeVal === 'file') color = "#c7c7c7";             else if (typeVal === 'struct') color = "#e377c2";
+             else if (typeVal === 'constructor') color = "#e377c2";
+             else if (typeVal.includes('variable')) color = "#17becf";             else if (resourceKinds.has(typeVal) || typeVal === 'resource') color = "#8c564b";
              wrap.append("span").html(\`<span style="color:\${color}">■</span> \${labelText}\`);
         } else {
              let strokeStyle = "border-bottom: 2px solid #555;";
@@ -168,6 +169,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         return checkbox;
     }
 
+    const formatLabel = (t) => t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ');
+
     const legendDiv = d3.select("#legend");
     legendDiv.html("");
     
@@ -178,7 +181,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     // Setup resource overarching toggle
     let resourceCheckbox;
     if (resourceTypesPresent.length > 0) {
-        resourceCheckbox = createFilterCheckbox(nodesSection, "filter-resource", "Resource", "node-group", "resource", (checked) => {
+        resourceCheckbox = createFilterCheckbox(nodesSection, "filter-resource", "Resources", "node-group", "resource-group", (checked) => {
             resourceTypesPresent.forEach(t => {
                 checked ? activeNodeFilters.add(t) : activeNodeFilters.delete(t);
                 d3.select(\`#filter-node-\${t}\`).property("checked", checked);
@@ -186,7 +189,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         });
         
         resourceTypesPresent.forEach(t => {
-            createFilterCheckbox(nodesSection, \`filter-node-\${t}\`, t.charAt(0).toUpperCase() + t.slice(1), "node", t, (checked, val) => {
+            createFilterCheckbox(nodesSection, \`filter-node-\${t}\`, formatLabel(t), "node", t, (checked, val) => {
                 checked ? activeNodeFilters.add(val) : activeNodeFilters.delete(val);
                 const allResChecked = resourceTypesPresent.every(k => activeNodeFilters.has(k));
                 resourceCheckbox.property("checked", allResChecked);
@@ -196,7 +199,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     }
     
     otherTypesPresent.forEach(t => {
-        createFilterCheckbox(nodesSection, \`filter-node-\${t}\`, t.charAt(0).toUpperCase() + t.slice(1), "node", t, (checked, val) => {
+        createFilterCheckbox(nodesSection, \`filter-node-\${t}\`, formatLabel(t), "node", t, (checked, val) => {
             checked ? activeNodeFilters.add(val) : activeNodeFilters.delete(val);
         });
     });
@@ -206,7 +209,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     edgesSection.append("strong").text("Edges");
     
     edgeTypes.forEach(type => {
-        createFilterCheckbox(edgesSection, \`filter-edge-\${type}\`, type.charAt(0).toUpperCase() + type.slice(1), "edge", type, (checked, val) => {
+        createFilterCheckbox(edgesSection, \`filter-edge-\${type}\`, formatLabel(type), "edge", type, (checked, val) => {
             checked ? activeFilters.add(val) : activeFilters.delete(val);
         });
     });
