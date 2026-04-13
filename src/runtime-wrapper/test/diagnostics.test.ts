@@ -79,9 +79,11 @@ void describe("registry helpers", () => {
     });
 
     void it("getRegistryEntry returns the function when entry exists", () => {
-        const fn = () => 42;
-        const registry = createMockRegistry({ scripts: { myFn: fn } });
-        assert.strictEqual(getRegistryEntry(registry, "script", "myFn"), fn);
+        function testFunction() {
+            return 42;
+        }
+        const registry = createMockRegistry({ scripts: { myFn: testFunction } });
+        assert.strictEqual(getRegistryEntry(registry, "script", "myFn"), testFunction);
     });
 
     void it("getRegistryEntry returns undefined when entry does not exist", () => {
