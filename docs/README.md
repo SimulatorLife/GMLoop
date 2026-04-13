@@ -36,7 +36,7 @@ then return here for deeper context.
   rebuilding the generated parser artifacts with the vendored toolchain plus
   pointers to the extension hooks that keep custom behaviour outside the
   generated directory.
-- [Contributor onboarding checklist](contributor-onboarding.md#3-validate-the-workspace) — Profiling and validation commands used before opening a pull request.
+- [Validation command reference](contributor-onboarding.md#3-validate-the-workspace) — Profiling and validation commands used before opening a pull request.
 
 ## Extension hooks & overrides
 
