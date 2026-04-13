@@ -10,13 +10,10 @@ import {
 } from "./constants.js";
 import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
 import { normalizeProjectResourcePath } from "./path-normalization.js";
+import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { extractAssetReferencesFromMetadataDocument } from "./resource-reference-extractor.js";
 
 const RESOURCE_ANALYSIS_ABORT_MESSAGE = "Project index build was aborted.";
-type ProjectIndexLogger = {
-    log?: (...args: Array<unknown>) => void;
-    debug?: (...args: Array<unknown>) => void;
-} | null;
 
 function normalizeResourceDocumentMetadata(resourceData) {
     if (!Core.isObjectLike(resourceData)) {
@@ -384,26 +381,4 @@ export async function analyseResourceFiles({
     annotateAssetReferenceTargets(context.assetReferences, context.resourcesMap);
 
     return context;
-}
-
-function logProjectIndexDebug(logger: ProjectIndexLogger, message: string, payload?: unknown) {
-    if (!logger) {
-        return;
-    }
-
-    if (typeof logger.debug === "function") {
-        logger.debug(message, payload);
-        return;
-    }
-
-    if (typeof logger.log !== "function") {
-        return;
-    }
-
-    if (payload === undefined) {
-        logger.log(message);
-        return;
-    }
-
-    logger.log(message, payload);
 }

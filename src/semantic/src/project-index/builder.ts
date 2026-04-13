@@ -12,6 +12,7 @@ import { resolveProjectIndexParser } from "./gml-parser-facade.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
 import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metrics.js";
+import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
 
@@ -20,11 +21,6 @@ type BuildProjectIndexFunction = (
     fsFacade?: ProjectIndexFsFacade,
     options?: Record<string, unknown>
 ) => Promise<unknown>;
-
-type ProjectIndexLogger = {
-    log?: (...args: Array<unknown>) => void;
-    debug?: (...args: Array<unknown>) => void;
-} | null;
 
 type ProjectIndexCoordinatorOptions = {
     fsFacade?: ProjectIndexFsFacade | null;
@@ -1991,27 +1987,6 @@ function finalizeProjectIndexResult({ metricsReporting, options, projectIndex })
         options?.onMetrics?.(metricsReport, projectIndex);
     }
     return projectIndex;
-}
-function logProjectIndexDebug(logger: ProjectIndexLogger, message: string, payload?: unknown) {
-    if (!logger) {
-        return;
-    }
-
-    if (typeof logger.debug === "function") {
-        logger.debug(message, payload);
-        return;
-    }
-
-    if (typeof logger.log !== "function") {
-        return;
-    }
-
-    if (payload === undefined) {
-        logger.log(message);
-        return;
-    }
-
-    logger.log(message, payload);
 }
 export async function buildProjectIndex(projectRoot, fsFacade = defaultFsFacade, options = {} as any) {
     if (!projectRoot) {
