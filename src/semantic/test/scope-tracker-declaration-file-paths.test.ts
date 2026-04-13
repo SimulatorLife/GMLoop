@@ -180,4 +180,49 @@ void describe("ScopeTracker.getBatchFilePathsDeclaringSymbols", () => {
         const disabledResults = disabledTracker.getBatchFilePathsDeclaringSymbols(["util"]);
         assert.equal(disabledResults.size, 0);
     });
+
+    void it("reuses normalized-path computations across declaration symbol batches", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        tracker.enterScope("file", { path: String.raw`C:\project\scripts\shared.gml` });
+        tracker.declare("alpha", { name: "alpha" });
+        tracker.declare("beta", { name: "beta" });
+        tracker.exitScope();
+
+        tracker.enterScope("file", { path: String.raw`C:\project\scripts\extra.gml` });
+        tracker.declare("beta", { name: "beta" });
+        tracker.exitScope();
+
+        const trackerPrototype = Object.getPrototypeOf(tracker) as {
+            normalizeTrackedPath(path: string): string;
+        };
+        const originalNormalizeTrackedPath = trackerPrototype.normalizeTrackedPath.bind(tracker);
+        const seenInputs = new Set<string>();
+        let repeatedPathNormalizations = 0;
+        Object.defineProperty(tracker, "normalizeTrackedPath", {
+            value: (path: string): string => {
+                if (seenInputs.has(path)) {
+                    repeatedPathNormalizations += 1;
+                } else {
+                    seenInputs.add(path);
+                }
+                return originalNormalizeTrackedPath(path);
+            },
+            configurable: true
+        });
+
+        const results = tracker.getBatchFilePathsDeclaringSymbols(["alpha", "beta"]);
+
+        Object.defineProperty(tracker, "normalizeTrackedPath", {
+            value: originalNormalizeTrackedPath,
+            configurable: true
+        });
+
+        assert.deepEqual([...(results.get("alpha") ?? [])], ["C:/project/scripts/shared.gml"]);
+        assert.deepEqual(
+            [...(results.get("beta") ?? [])],
+            ["C:/project/scripts/shared.gml", "C:/project/scripts/extra.gml"]
+        );
+        assert.equal(repeatedPathNormalizations, 0, "each source path should be normalized at most once per batch");
+    });
 });

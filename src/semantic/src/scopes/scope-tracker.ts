@@ -104,7 +104,8 @@ export class ScopeTracker {
 
     private collectFilePathsForSymbolSummaries(
         scopeSummaryMap: Map<string, ScopeSummary>,
-        occurrenceKind: "declaration" | "reference"
+        occurrenceKind: "declaration" | "reference",
+        normalizedPathCache?: Map<string, string>
     ): Set<string> {
         const paths = new Set<string>();
 
@@ -120,7 +121,15 @@ export class ScopeTracker {
             const scope = this.scopesById.get(scopeId);
             const path = scope?.metadata.path;
             if (path) {
-                paths.add(this.normalizeTrackedPath(path));
+                const cachedPath = normalizedPathCache?.get(path);
+                if (cachedPath) {
+                    paths.add(cachedPath);
+                    continue;
+                }
+
+                const normalizedPath = this.normalizeTrackedPath(path);
+                normalizedPathCache?.set(path, normalizedPath);
+                paths.add(normalizedPath);
             }
         }
 
@@ -1747,6 +1756,7 @@ export class ScopeTracker {
             return results;
         }
 
+        const normalizedPathCache = new Map<string, string>();
         const uniqueNames = this.collectUniqueSymbolNames(names);
         for (const name of uniqueNames) {
             const scopeSummaryMap = this.symbolToScopesIndex.get(name);
@@ -1754,7 +1764,7 @@ export class ScopeTracker {
                 continue;
             }
 
-            const paths = this.collectFilePathsForSymbolSummaries(scopeSummaryMap, "reference");
+            const paths = this.collectFilePathsForSymbolSummaries(scopeSummaryMap, "reference", normalizedPathCache);
             if (paths.size > 0) {
                 results.set(name, paths);
             }
@@ -1809,6 +1819,7 @@ export class ScopeTracker {
             return results;
         }
 
+        const normalizedPathCache = new Map<string, string>();
         const uniqueNames = this.collectUniqueSymbolNames(names);
         for (const name of uniqueNames) {
             const scopeSummaryMap = this.symbolToScopesIndex.get(name);
@@ -1816,7 +1827,7 @@ export class ScopeTracker {
                 continue;
             }
 
-            const paths = this.collectFilePathsForSymbolSummaries(scopeSummaryMap, "declaration");
+            const paths = this.collectFilePathsForSymbolSummaries(scopeSummaryMap, "declaration", normalizedPathCache);
             if (paths.size > 0) {
                 results.set(name, paths);
             }
