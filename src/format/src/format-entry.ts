@@ -7,7 +7,7 @@
 
 import prettier, { type SupportLanguage, type SupportOptions } from "prettier";
 
-import { gmlFormatComponents } from "./components/format-components.js";
+import { gmlFormatComponents } from "./components/default-format-components.js";
 import type { GmlFormat, GmlFormatDefaultOptions } from "./components/format-types.js";
 import { resolveCoreOptionOverrides } from "./options/core-option-overrides.js";
 import { extractProjectFormatOptions } from "./options/project-config.js";

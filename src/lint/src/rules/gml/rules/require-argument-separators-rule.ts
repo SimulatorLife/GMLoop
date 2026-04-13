@@ -1,9 +1,8 @@
 import type { Rule } from "eslint";
 
 import { gmlRuleLanguageServices } from "../gml-rule-services.js";
-import { createMeta } from "../rule-base-helpers.js";
+import { createMeta, readObjectOption } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
-import { readObjectOption } from "../rule-helpers.js";
 
 const { createLimitedRecoveryProjection } = gmlRuleLanguageServices;
 

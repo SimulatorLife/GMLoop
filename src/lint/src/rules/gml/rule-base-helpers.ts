@@ -781,3 +781,29 @@ export function getVariableDeclarator(statement: unknown): AstNodeRecord | null 
 
     return null;
 }
+
+/**
+ * Read the first element of `context.options` as a plain object, returning an
+ * empty frozen object when no valid object option is present.
+ */
+export function readObjectOption(context: Rule.RuleContext): Record<string, unknown> {
+    if (!Array.isArray(context.options)) {
+        return Object.freeze({});
+    }
+
+    const [rawOption] = context.options;
+    if (!rawOption || typeof rawOption !== "object") {
+        return Object.freeze({});
+    }
+
+    return rawOption as Record<string, unknown>;
+}
+
+/**
+ * Determine whether the rule should report "unsafe" diagnostics based on the
+ * `reportUnsafe` option (defaults to `true` when the option is absent).
+ */
+export function shouldReportUnsafe(context: Rule.RuleContext): boolean {
+    const option = readObjectOption(context).reportUnsafe;
+    return option === undefined ? true : option === true;
+}

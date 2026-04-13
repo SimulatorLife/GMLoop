@@ -1,5 +1,12 @@
 import { featherManifest } from "../rules/feather/manifest.js";
-import { PERFORMANCE_OVERRIDE_RULE_IDS } from "./performance-rule-ids.js";
+
+export const PERFORMANCE_OVERRIDE_RULE_IDS = Object.freeze([
+    "gml/prefer-hoistable-loop-accessors",
+    "gml/prefer-loop-invariant-expressions",
+    "gml/prefer-struct-literal-assignments",
+    "gml/no-globalvar",
+    "gml/prefer-string-interpolation"
+]);
 
 export type LintRuleLevel = "off" | "warn" | "error";
 export type LintRulesetName = "recommended" | "feather" | "performance";
