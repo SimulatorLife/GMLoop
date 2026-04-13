@@ -53,8 +53,8 @@ void test("agent weights separate initial actions from follow-up routing pools",
     assertPoolCanSelectAgent("actions", config.agentPools.actions);
     assertPoolCanSelectAgent("followUps", config.agentPools.followUps);
 
-    assert.equal(config.agentPools.actions.default, "copilot");
-    assert.equal(config.agentPools.followUps.default, "codex");
+    assert.equal(config.agentPools.actions.default, "codex");
+    assert.equal(config.agentPools.followUps.default, "copilot");
 });
 
 void test("scheduler still has weighted workflows after agent pool migration", async () => {
