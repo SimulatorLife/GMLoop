@@ -198,6 +198,18 @@ jobs:
         id: read-node-version
         run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
 
+      - name: Read pnpm version from package.json
+        id: read-pnpm-version
+        run: |
+          version=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).packageManager.split('@')[1]")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.read-pnpm-version.outputs.version }}
+          run_install: false
+
       - name: Use Node from .nvmrc
         uses: actions/setup-node@v6
         with:
@@ -206,11 +218,6 @@ jobs:
           cache-dependency-path: |
             pnpm-lock.yaml
             **/pnpm-lock.yaml
-
-      - name: Enable pnpm via Corepack
-        run: |
-          corepack enable
-          corepack prepare $(node -p "require('./package.json').packageManager") --activate
 
       - name: Install dependencies and build (root/workspaces)
         run: |
