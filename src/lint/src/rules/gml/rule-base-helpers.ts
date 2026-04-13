@@ -28,6 +28,63 @@ export function getLineIndentationAtOffset(sourceText: string, offset: number): 
     return sourceText.slice(lineStart, cursor);
 }
 
+/**
+ * Finds the nearest non-whitespace character before a source offset.
+ *
+ * This helper supports call sites that need to inspect prefix tokens (for
+ * example, detecting `else if` chains) while optionally treating line breaks as
+ * hard boundaries.
+ *
+ * @param sourceText Full source text to scan.
+ * @param startIndex Offset whose preceding text should be inspected.
+ * @param stopAtLineBreak Whether `\n`/`\r` should terminate scanning.
+ * @returns Index of the nearest non-whitespace character before `startIndex`.
+ */
+export function findPreviousNonWhitespaceIndex(
+    sourceText: string,
+    startIndex: number,
+    stopAtLineBreak: boolean
+): number | null {
+    let cursor = startIndex - 1;
+
+    while (cursor >= 0) {
+        const character = sourceText[cursor];
+        if (stopAtLineBreak && (character === "\n" || character === "\r")) {
+            return null;
+        }
+
+        if (/\s/u.test(character)) {
+            cursor -= 1;
+            continue;
+        }
+
+        return cursor;
+    }
+
+    return null;
+}
+
+/**
+ * Finds the nearest non-whitespace character before a source offset.
+ *
+ * @param sourceText Full source text to scan.
+ * @param startIndex Offset whose preceding text should be inspected.
+ * @param stopAtLineBreak Whether `\n`/`\r` should terminate scanning.
+ * @returns The nearest non-whitespace character before `startIndex`, or `null`.
+ */
+export function findPreviousNonWhitespaceCharacter(
+    sourceText: string,
+    startIndex: number,
+    stopAtLineBreak: boolean
+): string | null {
+    const previousIndex = findPreviousNonWhitespaceIndex(sourceText, startIndex, stopAtLineBreak);
+    if (previousIndex === null) {
+        return null;
+    }
+
+    return sourceText[previousIndex];
+}
+
 export type AstNodeRecord = Record<string, unknown>;
 
 export function isAstNodeRecord(value: unknown): value is AstNodeRecord {

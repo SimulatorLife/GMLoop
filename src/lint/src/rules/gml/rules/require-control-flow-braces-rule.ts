@@ -1,6 +1,11 @@
 import type { Rule } from "eslint";
 
-import { createMeta, getNodeEndIndex, getNodeStartIndex } from "../rule-base-helpers.js";
+import {
+    createMeta,
+    findPreviousNonWhitespaceIndex,
+    getNodeEndIndex,
+    getNodeStartIndex
+} from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type ControlFlowStatementNode = Readonly<Record<string, unknown> & { type: string }>;
@@ -23,9 +28,9 @@ function isElseIfBranchBySourceContext(sourceText: string, node: ControlFlowStat
         return false;
     }
 
-    let cursor = nodeStartIndex - 1;
-    while (cursor >= 0 && (sourceText[cursor] === " " || sourceText[cursor] === "\t")) {
-        cursor -= 1;
+    const cursor = findPreviousNonWhitespaceIndex(sourceText, nodeStartIndex, true);
+    if (cursor === null) {
+        return false;
     }
 
     const elseText = "else";

@@ -8,6 +8,8 @@ import {
     collectIdentifierNamesInSubtree,
     createCommentTokenRangeIndex,
     findFirstAstNodeBy,
+    findPreviousNonWhitespaceCharacter,
+    findPreviousNonWhitespaceIndex,
     isAssignmentExpressionNode,
     isAssignmentExpressionNodeWithOperator,
     isIdentifierNode,
@@ -140,6 +142,26 @@ void test("sourceRangeContainsCommentToken detects line and block comment marker
     assert.equal(sourceRangeContainsCommentToken(sourceText, plainStart, plainEnd), false);
     assert.equal(sourceRangeContainsCommentToken(sourceText, lineStart, lineEnd), true);
     assert.equal(sourceRangeContainsCommentToken(sourceText, blockStart, blockEnd), true);
+});
+
+void test("findPreviousNonWhitespaceIndex skips whitespace and returns the closest token index", () => {
+    const sourceText = "if   (value)";
+    const ifIndex = sourceText.indexOf("(");
+
+    assert.equal(findPreviousNonWhitespaceIndex(sourceText, ifIndex, false), 1);
+});
+
+void test("findPreviousNonWhitespaceIndex honors line boundaries when requested", () => {
+    const sourceText = "else\n  if (value)";
+    const ifIndex = sourceText.indexOf("if");
+
+    assert.equal(findPreviousNonWhitespaceIndex(sourceText, ifIndex, true), null);
+    assert.equal(findPreviousNonWhitespaceIndex(sourceText, ifIndex, false), 3);
+});
+
+void test("findPreviousNonWhitespaceCharacter returns null when no prior token exists", () => {
+    assert.equal(findPreviousNonWhitespaceCharacter("   \t", 2, false), null);
+    assert.equal(findPreviousNonWhitespaceCharacter("x + y", 4, false), "+");
 });
 
 void test("rangeContainsCommentToken uses the prefix index to detect comment markers without rescanning", () => {
