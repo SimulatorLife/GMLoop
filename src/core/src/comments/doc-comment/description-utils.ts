@@ -1,4 +1,4 @@
-import { type MutableDocCommentLines } from "./utils.js";
+import type { MutableDocCommentLines } from "../comment-utils.js";
 
 const STRING_TYPE = "string";
 
