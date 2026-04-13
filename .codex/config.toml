@@ -5,6 +5,7 @@ model_reasoning_effort = "medium"
 model_supports_reasoning_summaries = true # Force reasoning
 personality = "pragmatic"
 sandbox_mode = "workspace-write"
+background_terminal_max_timeout = 600000
 
 [features]
 shell_snapshot = true           # Speed up repeated commands
