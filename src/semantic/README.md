@@ -1092,12 +1092,16 @@ without diluting the formatter’s standard behavior.
   - **FEAT**: We should have distinct shapes for nodes (instead of all being circles) to visually indicate similarity; for instance, all resource types (sprite, font, object, etc.) could be squares. And all variables could be diamond shaped. Each node type would all still have its own distinct colors though.
   - **FEAT**: Similar to the way that, in the key/legend, `Resource` is displayed hierarchically with resource types underneath it with individual toggles, `Enum` and `Enum member` should be arranged the same way
   - **FEAT**: Add a toggle in the graph-index html page/UI to switch between visual (default) and JSON view.
-- The graph-index and/or visualization currently omits/missing the following nodes:
-  - `Struct`
+- **BUG**: The graph-index and/or visualization currently omits/missing the following nodes:
+  - `Struct` (should be selected/enabled by default)
   - `Struct variable` (should be de-selected/disabled by default)
   - `Instance variable` (should be de-selected/disabled by default)
   - `Local variable` (should be de-selected/disabled by default)
   - `Function` (should be de-selected/disabled by default)
   - `Data file` (should be de-selected/disabled by default)
-  - Many resource types are missing like `sound`, `path`, `sequence`, `note`, `particle system`, etc.
-- BUG: `Resource` should **NOT** be a node type in the index/visualization; `Resource` should only exist in the key/legend as a sort of parent to all of the specific resource types (e.g. sprite, script, object, sound, shader, font, particle system, etc.). There should still be a toggle for `Resource` in the key/legend, which should enable/disable all the resource types/children. But no node should have type `Resource`
+  - Many resource types are missing like `sound`, `path`, `sequence`, `note`, `particle system`, etc. (should be selected/enabled by default)
+- **BUG**: `Resource` should **NOT** be a node type in the index/visualization; `Resource` should only exist in the key/legend as a sort of parent to all of the specific resource types (e.g. sprite, script, object, sound, shader, font, particle system, etc.). There should still be a toggle for `Resource` in the key/legend, which should enable/disable all the resource types/children. But no node should have type `Resource`
+- **BUG**: The graph-index and/or visualization currently has `File` as a node type
+- **BUG**: A few node types like `Macro`, `Enum`, `global variable`, etc. do not show in the visualzation if their parent is disabled. So, for instance, if a global variable is defined in a script, the `global variable` node-type is enabled and the `script` node-type is *disabled*, then `global variable` are not viewable. Instead, do we want a way for the leaf-node (e.g. `global variable`) to go up a level in the hirerarchy to the next non-disabled ancestor? For instance, if ALL node types are disabled in the visualization EXCEPT `global variable`, then it would link directly to the center node; the `game` node itself.
+   are currently not showing in the graph index UI/html (could be a bug with the graph-index generation itself and/or the visualization)
+- **BUG**: The center node – the game itself should NOT be of type `Resource`. It should also not be disable-able.
