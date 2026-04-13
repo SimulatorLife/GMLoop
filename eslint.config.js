@@ -586,9 +586,9 @@ export default [
         ignores: baseIgnorePatterns
     },
 
-    // YAML: use the plugin’s flat preset (scoped to *.yml/*.yaml)
+    // YAML: use the plugin’s flat preset for tracked project YAML files.
     {
-        files: [".github/workflows/**/*.{yml,yaml}"],
+        files: ["**/*.{yml,yaml}"],
         languageOptions: {
             parser: yamlParser
         },

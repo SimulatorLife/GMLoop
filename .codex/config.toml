@@ -1,3 +1,6 @@
+# OpenAI Codex configuration file
+# See https://developers.openai.com/codex/config-basic
+
 model = "gpt-5.4"
 model_verbosity = "low"
 approval_policy = "never"

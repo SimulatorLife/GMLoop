@@ -27,6 +27,8 @@ on:
     secrets:
       api_key: # may contain one key OR multiple newline-separated keys
         required: true
+      GH_USER_TOKEN:
+        required: true
 
 concurrency:
   group: '${{ github.workflow }}-invoke-${{ inputs.pr_number }}'
