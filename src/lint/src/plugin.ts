@@ -6,11 +6,6 @@ import {
 import { gmlLanguage } from "./language/index.js";
 import { featherLintRules, gmlLintRules } from "./rules/index.js";
 
-export type LintPluginShape = {
-    rules: Record<string, unknown>;
-    languages?: Record<string, unknown>;
-};
-
 const gmlPluginObject = Object.freeze({
     rules: gmlLintRules,
     languages: Object.freeze({

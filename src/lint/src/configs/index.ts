@@ -1,4 +1,4 @@
-import type { LintPluginShape } from "../plugin.js";
+import type { LintPluginShape } from "../contracts/index.js";
 import {
     FEATHER_RULE_LEVELS,
     PERFORMANCE_RULE_LEVELS,
