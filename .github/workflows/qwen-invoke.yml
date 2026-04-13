@@ -38,14 +38,11 @@ jobs:
         fi
 
         export OPENAI_API_KEY="${API_KEY}"
-        
-        # Option 1: Alibaba Cloud ModelStudio
-        # export OPENAI_BASE_URL="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-        # export OPENAI_MODEL="qwen3-coder-plus"
 
-        # Option 2: OpenRouter
-        export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
+        # OpenRouter defaults. Override with repository variables
+        # QWEN_OPENAI_BASE_URL and QWEN_OPENAI_MODEL when routing elsewhere.
+        export OPENAI_BASE_URL="${{ vars.QWEN_OPENAI_BASE_URL || 'https://openrouter.ai/api/v1' }}"
         export OPENROUTER_API_KEY="${API_KEY}"
-        export OPENAI_MODEL="qwen/qwen3-coder:free"
+        export OPENAI_MODEL="${{ vars.QWEN_OPENAI_MODEL || 'qwen/qwen3-coder' }}"
 
-        qwen --yolo --openai-api-key "${OPENAI_API_KEY}" --openai-base-url="${OPENAI_BASE_URL}" --model="${OPENAI_MODEL}" --prompt "${ADDITIONAL_CONTEXT}" --debug
+        qwen --yolo --auth-type openai --openai-api-key "${OPENAI_API_KEY}" --openai-base-url="${OPENAI_BASE_URL}" --model="${OPENAI_MODEL}" --prompt "${ADDITIONAL_CONTEXT}"

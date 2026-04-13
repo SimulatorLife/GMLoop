@@ -6,7 +6,7 @@ This `src/semantic` subsystem is a semantic layer that annotates parse tree(s) t
 
 `@gmloop/semantic` is analysis-only.
 
-- Owns project indexing, scope/symbol metadata, identifier occurrence discovery, and semantic classification.
+- Owns project indexing, scope/symbol metadata, identifier occurrence discovery, semantic classification, graph-index building and visualization
 - Does **not** own refactor edit planning or rename application.
 - Does **not** depend on `@gmloop/refactor`.
 
@@ -1084,5 +1084,20 @@ without diluting the formatter’s standard behavior.
 
 ## TODO
 
-- Align the structure of `semantic` with the plan outlined in
-  [../../docs/semantic-scope-plan.md](../../docs/semantic-scope-plan.md).
+- Add the following to the graph visualization UI:
+  - **FEAT**: A toggle to enable/disable visibility of node labels
+  - **BUG**: When hovering over a node and the node's info is shown in a popup, hovering the cursor over that box does not count as still hovering over the node, so the box is dismissed. This makes it impossible to select text in the box.
+  - **BUG**: Many of the node colors are the same/similar and so cannot be distinguished (e.g. `Resource`, `Room`, `Shader`, and `Sprite`).
+  - **BUG**: In the key/legend, the lines `Contains` and `Defines` use the same/similar colors and so cannot be visually distinguished
+  - **FEAT**: We should have distinct shapes for nodes (instead of all being circles) to visually indicate similarity; for instance, all resource types (sprite, font, object, etc.) could be squares. And all variables could be diamond shaped. Each node type would all still have its own distinct colors though.
+  - **FEAT**: Similar to the way that, in the key/legend, `Resource` is displayed hierarchically with resource types underneath it with individual toggles, `Enum` and `Enum member` should be arranged the same way
+  - **FEAT**: Add a toggle in the graph-index html page/UI to switch between visual (default) and JSON view.
+- The graph-index and/or visualization currently omits/missing the following nodes:
+  - `Struct`
+  - `Struct variable` (should be de-selected/disabled by default)
+  - `Instance variable` (should be de-selected/disabled by default)
+  - `Local variable` (should be de-selected/disabled by default)
+  - `Function` (should be de-selected/disabled by default)
+  - `Data file` (should be de-selected/disabled by default)
+  - Many resource types are missing like `sound`, `path`, `sequence`, `note`, `particle system`, etc.
+- BUG: `Resource` should **NOT** be a node type in the index/visualization; `Resource` should only exist in the key/legend as a sort of parent to all of the specific resource types (e.g. sprite, script, object, sound, shader, font, particle system, etc.). There should still be a toggle for `Resource` in the key/legend, which should enable/disable all the resource types/children. But no node should have type `Resource`
