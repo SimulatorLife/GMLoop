@@ -7,5 +7,6 @@ export { safeStatOrNull, writeFileArtifact, writeJsonArtifact } from "./fs-artif
 export * from "./module.js";
 export * from "./package-resolution.js";
 export * from "./repo-root.js";
-export * from "./time-utils.js";
+export * as Timing from "./timing/index.js";
+export * from "./timing/index.js";
 export * from "./workspace-paths.js";

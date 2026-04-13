@@ -56,6 +56,44 @@ export function getIdentifierFromParameterNode(param: any) {
     return null;
 }
 
+/**
+ * Resolves the declared name of a function parameter AST node.
+ *
+ * Handles three parameter shapes produced by the GML parser:
+ * - `Identifier` → returns `param.name`
+ * - `DefaultParameter` / `AssignmentPattern` → returns the name from
+ *   `param.left.name` (or `param.left.id.name` as fallback)
+ * - Any other node with a string `.name` property (fallback)
+ *
+ * @param param A function parameter AST node (may be `null`/`undefined`).
+ * @returns The parameter name string, or `undefined` when no name can be
+ *   extracted.
+ */
+export function resolveParameterName(param: any): string | undefined {
+    if (!param || typeof param !== "object") {
+        return undefined;
+    }
+
+    if (param.type === "Identifier") {
+        return typeof param.name === STRING_TYPE ? param.name : undefined;
+    }
+
+    if (param.type === "DefaultParameter" || param.type === "AssignmentPattern") {
+        const left = param.left;
+        if (left && typeof left === "object") {
+            if (typeof left.name === STRING_TYPE) {
+                return left.name;
+            }
+            if (left.id && typeof left.id === "object" && typeof left.id.name === STRING_TYPE) {
+                return left.id.name;
+            }
+        }
+        return undefined;
+    }
+
+    return typeof param.name === STRING_TYPE ? param.name : undefined;
+}
+
 export function getArgumentIndexFromIdentifier(name: unknown) {
     if (typeof name !== STRING_TYPE) {
         return null;

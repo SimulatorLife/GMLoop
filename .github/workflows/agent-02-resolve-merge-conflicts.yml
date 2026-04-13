@@ -190,6 +190,10 @@ jobs:
               mergeableState: candidate.mergeable_state || "unknown",
             });
 
+      - name: Checkout repository
+        if: ${{ steps.select_pr.outputs.found == 'true' }}
+        uses: actions/checkout@v5
+
       - name: Comment to request conflict resolution (as your user)
         id: comment
         uses: actions/github-script@v8
@@ -203,9 +207,14 @@ jobs:
           MANUAL_RUN: ${{ steps.select_pr.outputs.manual_run }}
           ALLOW_REPEAT: ${{ steps.select_pr.outputs.allow_repeat }}
           AGENT: ${{ github.event.inputs.agent }}
+          WEIGHTS_PATH: .github/workflows/weights.json
         with:
           github-token: ${{ secrets.GH_USER_TOKEN }}
           script: |
+            const fs = require("fs");
+            const path = require("path");
+            const crypto = require("crypto");
+
             if (process.env.FOUND !== "true") {
               core.info("No eligible PR selected; skipping comment.");
               core.setOutput("commented", "false");
@@ -222,6 +231,103 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const marker = "<!-- agent-resolve-merge-conflicts -->";
+            const FOLLOW_UP_AGENT_POOL = "followUps";
+            const DEFAULT_FOLLOW_UP_AGENT = "codex";
+
+            const normalize = (value) => {
+              const trimmed = (value || "").trim();
+              if (!trimmed) return "";
+              return trimmed
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-+|-+$/g, "")
+                || "";
+            };
+
+            const chooseWeighted = (items) => {
+              const total = items.reduce((sum, item) => sum + item.weight, 0);
+              if (!Number.isFinite(total) || total <= 0) return null;
+
+              const random = parseInt(crypto.randomBytes(6).toString("hex"), 16) / 0xFFFFFFFFFFFF;
+              let threshold = random * total;
+              for (const item of items) {
+                threshold -= item.weight;
+                if (threshold <= 0) {
+                  return { ...item, random, total };
+                }
+              }
+              return { ...items[items.length - 1], random, total };
+            };
+
+            const parseAgentCandidates = (pool) => {
+              if (!pool || !Array.isArray(pool.agents)) {
+                return [];
+              }
+
+              return pool.agents
+                .map((agent) => ({
+                  name: typeof agent?.name === "string" ? agent.name : "",
+                  weight: Number(agent?.weight),
+                }))
+                .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
+                .map((agent) => ({
+                  name: agent.name,
+                  weight: agent.weight,
+                  slug: normalize(agent.name),
+                }))
+                .filter((agent) => agent.slug);
+            };
+
+            const loadWeightsConfig = () => {
+              const weightsPath = path.resolve(process.cwd(), process.env.WEIGHTS_PATH || ".github/workflows/weights.json");
+              const raw = fs.readFileSync(weightsPath, "utf8");
+              return JSON.parse(raw);
+            };
+
+            const selectAgent = (poolName, requestedAgent) => {
+              if (requestedAgent) {
+                return {
+                  agent: requestedAgent,
+                  reason: "manual override",
+                };
+              }
+
+              let poolDefault = DEFAULT_FOLLOW_UP_AGENT;
+              let candidates = [];
+              try {
+                const parsed = loadWeightsConfig();
+                const pool = parsed?.agentPools?.[poolName] ?? null;
+                const configuredDefault = normalize(pool?.default);
+                if (configuredDefault) {
+                  poolDefault = configuredDefault;
+                }
+                candidates = parseAgentCandidates(pool);
+              } catch (error) {
+                core.warning(`Falling back to default follow-up agent due to configuration error: ${error.message}`);
+              }
+
+              if (!candidates.length) {
+                return {
+                  agent: poolDefault,
+                  reason: `${poolName} pool default fallback`,
+                };
+              }
+
+              const chosen = chooseWeighted(candidates);
+              if (!chosen) {
+                return {
+                  agent: poolDefault,
+                  reason: `${poolName} weighted selection fallback`,
+                };
+              }
+
+              const { slug, name, weight, random, total } = chosen;
+              core.info(`Random draw ${random.toFixed(6)} selected agent "${name}" from ${poolName} pool (slug=${slug}, weight=${weight}) from total weight ${total.toFixed(6)}.`);
+              return {
+                agent: slug,
+                reason: `${poolName} weighted selection`,
+              };
+            };
 
             async function fetchPullRequest(attempts = 6) {
               for (let attempt = 0; attempt < attempts; attempt++) {
@@ -281,9 +387,11 @@ jobs:
               core.info(`Manual run requested another conflict resolution comment on PR #${prNumber}.`);
             }
 
-            const rawAgent = (process.env.AGENT || "").trim();
-            const agent = rawAgent ? rawAgent.toLowerCase() : "copilot";
-            const mention = `@${rawAgent || agent}`;
+            const rawAgent = normalize(process.env.AGENT);
+            const selection = selectAgent(FOLLOW_UP_AGENT_POOL, rawAgent);
+            const agent = selection.agent;
+            const mention = `@${agent}`;
+            core.info(`Using follow-up agent "${agent}" (${selection.reason}).`);
 
             const lines = [
               marker,

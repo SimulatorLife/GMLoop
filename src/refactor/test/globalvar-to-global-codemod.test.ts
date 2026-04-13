@@ -258,4 +258,5 @@ void test("executeGlobalvarToGlobalCodemod de-duplicates repeated file paths", a
 
     // De-duplication: only one changed file entry even though path was listed twice.
     assert.equal(result.changedFiles.length, 1);
+    assert.equal(readCount.value, 1);
 });

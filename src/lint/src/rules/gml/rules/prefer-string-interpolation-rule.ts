@@ -1,4 +1,4 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { printExpression } from "../print-expression.js";
@@ -13,8 +13,8 @@ import {
 import type { GmlRuleDefinition } from "../rule-definition.js";
 import { shouldReportUnsafe } from "../rule-helpers.js";
 
-const { unwrapParenthesizedExpression } = CoreWorkspace.Core;
-type UnwrapParenthesizedExpressionInput = Parameters<typeof CoreWorkspace.Core.unwrapParenthesizedExpression>[0];
+const { unwrapParenthesizedExpression } = Core;
+type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
 
 function isStringLiteralExpression(expression: unknown): boolean {
     if (!isAstNodeRecord(expression) || expression.type !== "Literal") {

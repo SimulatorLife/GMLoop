@@ -4,36 +4,6 @@ import { Core } from "@gmloop/core";
 
 import { isWin32Path, resolveProjectPathInfo } from "./path-info.js";
 
-/** @typedef {NonNullable<ReturnType<typeof resolveProjectPathInfo>>} ProjectPathInfo */
-
-/**
- * Resolve metadata for {@link filePath} relative to {@link projectRoot} and
- * forward it to {@link projector}. Centralizing this wrapper keeps the guard
- * logic consistent across the normalization helpers below so each exported
- * function can focus on its specific return value shape.
- *
- * @template TResult
- * @param {string | null | undefined} filePath Absolute or project-relative path
- *        being normalized.
- * @param {string | null | undefined} projectRoot Root directory of the
- *        GameMaker project.
- * @param {(info: ProjectPathInfo) => TResult}
- *        projector Callback that derives the final value from the resolved
- *        metadata.
- * @returns {TResult | null} Result of {@link projector} when path resolution
- *          succeeds; otherwise `null` when the path falls outside the project.
- */
-function withProjectPathInfo(filePath, projectRoot, projector) {
-    Core.assertFunction(projector, "projector");
-
-    const info = resolveProjectPathInfo(filePath, projectRoot);
-    if (!info) {
-        return null;
-    }
-
-    return projector(info);
-}
-
 /**
  * Normalize a raw resource path into a POSIX-style path relative to the
  * current project root when available.
@@ -60,7 +30,12 @@ export function normalizeProjectResourcePath(
     const pathApi = useWin32 ? path.win32 : path;
     const absoluteCandidate = pathApi.isAbsolute(normalized) ? normalized : pathApi.join(projectRoot, normalized);
 
-    return withProjectPathInfo(absoluteCandidate, projectRoot, (info) => Core.toPosixPath(info.relativePath));
+    const info = resolveProjectPathInfo(absoluteCandidate, projectRoot);
+    if (!info) {
+        return null;
+    }
+
+    return Core.toPosixPath(info.relativePath);
 }
 
 /**
@@ -74,9 +49,12 @@ export function normalizeProjectResourcePath(
  *          normalized absolute path when no relationship exists.
  */
 export function resolveProjectRelativeFilePath(projectRoot, absoluteFilePath) {
-    return withProjectPathInfo(absoluteFilePath, projectRoot, (info) =>
-        Core.toPosixPath(info.hasProjectRoot ? info.relativePath : info.absolutePath)
-    );
+    const info = resolveProjectPathInfo(absoluteFilePath, projectRoot);
+    if (!info) {
+        return null;
+    }
+
+    return Core.toPosixPath(info.hasProjectRoot ? info.relativePath : info.absolutePath);
 }
 
 /**
@@ -96,11 +74,14 @@ export function resolveProjectDisplayPath(filePath, projectRoot) {
         return null;
     }
 
-    return withProjectPathInfo(normalizedFilePath, projectRoot, (info) => {
-        if (!info.inputWasAbsolute || !info.hasProjectRoot || !info.isInsideProjectRoot) {
-            return normalizedFilePath;
-        }
+    const info = resolveProjectPathInfo(normalizedFilePath, projectRoot);
+    if (!info) {
+        return null;
+    }
 
-        return info.relativePath || normalizedFilePath;
-    });
+    if (!info.inputWasAbsolute || !info.hasProjectRoot || !info.isInsideProjectRoot) {
+        return normalizedFilePath;
+    }
+
+    return info.relativePath || normalizedFilePath;
 }

@@ -83,7 +83,7 @@ async function resolveTranspileTarget(command: CommanderCommandLike): Promise<Re
     if (normalizedTargetStats.isFile()) {
         if (path.extname(normalizedTargetPath).toLowerCase() !== ".gml") {
             throw createUsageError(
-                `Transpile only accepts .gml files or directories. Received: ${normalizedTargetPath}`,
+                `Transpile only accepts .gml files, .yyp files, or directories. Received: ${normalizedTargetPath}`,
                 command
             );
         }

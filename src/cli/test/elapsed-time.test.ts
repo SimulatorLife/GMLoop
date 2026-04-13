@@ -5,7 +5,7 @@ import {
     calculateElapsedNanoseconds,
     formatElapsedNanosecondsAsMilliseconds,
     readMonotonicNanoseconds
-} from "../src/utils/elapsed-time.js";
+} from "../src/shared/timing/elapsed-time.js";
 
 void test("readMonotonicNanoseconds returns a bigint timestamp", () => {
     const timestamp = readMonotonicNanoseconds();

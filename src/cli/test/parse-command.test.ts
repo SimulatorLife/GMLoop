@@ -141,7 +141,7 @@ void test("parse accepts a .yyp target path and parses project .gml files", asyn
         await writeFile(path.join(temporaryDirectory, "scripts", "demo", "demo.gml"), "var demo = 1;\n", "utf8");
 
         const result = await runCliTestCommand({
-            argv: ["parse", "--path", path.join(temporaryDirectory, "MyGame.yyp"), "--fix"]
+            argv: ["parse", "--path", path.join(temporaryDirectory, "MyGame.yyp"), "--write"]
         });
 
         assert.equal(result.exitCode, 0);

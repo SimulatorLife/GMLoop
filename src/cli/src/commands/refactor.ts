@@ -23,11 +23,13 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
+import { isRefactorResourcePath } from "../modules/refactor/gml-resource-path.js";
 import { GmlParserBridge, GmlSemanticBridge, GmlTranspilerBridge } from "../modules/refactor/index.js";
 import {
     discoverProjectRoot,
     resolveExistingGmloopConfigPath,
-    resolveExplicitWorkflowTargetPath} from "../workflow/project-root.js";
+    resolveExplicitWorkflowTargetPath
+} from "../workflow/project-root.js";
 import { resolveIndexedRootTargetGmlFiles } from "./refactor-target-gml-files.js";
 
 const { buildProjectIndex } = Semantic;
@@ -36,6 +38,7 @@ const {
     formatRenamePlanReport,
     generateRenamePreview,
     listConfiguredCodemods,
+    listSemanticProjectIndexDependentCodemodIds,
     listRegisteredCodemods,
     normalizeRefactorProjectConfig
 } = Refactor;
@@ -277,20 +280,42 @@ async function collectGmlFilesFromTarget(
 ): Promise<void> {
     const stats = await lstat(absoluteTargetPath);
     if (stats.isDirectory()) {
-        const entries = await readdir(absoluteTargetPath, {
-            withFileTypes: true
-        });
-        await Core.runSequentially(entries, async (entry) => {
-            await collectGmlFilesFromTarget(projectRoot, path.join(absoluteTargetPath, entry.name), collectedFiles);
-        });
+        const pendingDirectories = [absoluteTargetPath];
+        const processPendingDirectories = async (): Promise<void> => {
+            if (pendingDirectories.length === 0) {
+                return;
+            }
+            const currentDirectories = pendingDirectories.splice(0, 16);
+            const entriesByDirectory = await Core.runInParallel(currentDirectories, async (directoryPath) => {
+                return await readdir(directoryPath, {
+                    withFileTypes: true
+                });
+            });
+
+            for (const [directoryIndex, directoryPath] of currentDirectories.entries()) {
+                const entries = entriesByDirectory[directoryIndex];
+
+                for (const entry of entries) {
+                    const entryPath = path.join(directoryPath, entry.name);
+                    if (entry.isDirectory()) {
+                        pendingDirectories.push(entryPath);
+                        continue;
+                    }
+
+                    if (entry.isFile() && isRefactorResourcePath(entry.name)) {
+                        collectedFiles.add(path.relative(projectRoot, entryPath));
+                    }
+                }
+            }
+
+            await processPendingDirectories();
+        };
+
+        await processPendingDirectories();
         return;
     }
 
-    if (
-        !stats.isFile() ||
-        (path.extname(absoluteTargetPath).toLowerCase() !== ".gml" &&
-            path.extname(absoluteTargetPath).toLowerCase() !== ".yy")
-    ) {
+    if (!stats.isFile() || !isRefactorResourcePath(absoluteTargetPath)) {
         return;
     }
 
@@ -306,10 +331,16 @@ async function collectTargetGmlFiles(projectRoot: string, targetPaths: Array<str
 }
 
 function createRefactorEngineForProject(
-    projectIndex: unknown,
-    projectRoot: string
+    projectRoot: string,
+    projectIndex: object | null,
+    includeSemanticBridge: boolean = projectIndex !== null
 ): InstanceType<typeof RefactorEngine> {
-    const semantic = new GmlSemanticBridge(projectIndex, projectRoot);
+    const semantic =
+        includeSemanticBridge && projectIndex !== null
+            ? new GmlSemanticBridge(projectIndex, projectRoot)
+            : includeSemanticBridge
+              ? new GmlSemanticBridge({}, projectRoot)
+              : null;
     const parser = new GmlParserBridge();
     const formatter = new GmlTranspilerBridge();
 
@@ -331,7 +362,7 @@ async function performRename(options: ValidatedRenameOptions): Promise<void> {
 
     try {
         const projectIndex = await buildProjectIndexWithParseTolerance(projectRoot, undefined, verbose);
-        const engine = createRefactorEngineForProject(projectIndex, projectRoot);
+        const engine = createRefactorEngineForProject(projectRoot, projectIndex);
         const semantic = engine.semantic as GmlSemanticBridge;
 
         if (!targetSymbolId && oldName) {
@@ -435,6 +466,15 @@ function formatCodemodSelectionSummary(
     });
 }
 
+function selectConfiguredCodemodIds(
+    config: LoadedGmloopProjectConfig,
+    onlyCodemods: Array<RegisteredCodemodId>
+): Array<RegisteredCodemodId> {
+    return listConfiguredCodemods(config.refactor ?? {}, onlyCodemods)
+        .filter((codemod) => codemod.configured && codemod.selected)
+        .map((codemod) => codemod.id);
+}
+
 async function performConfiguredCodemods(options: ValidatedCodemodOptions): Promise<void> {
     const { projectRoot, verbose, configPath, targetPaths, dryRun, onlyCodemods, list } = options;
 
@@ -464,13 +504,29 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         return;
     }
 
-    const projectIndex = await buildProjectIndexWithParseTolerance(projectRoot, undefined, verbose);
-    const engine = createRefactorEngineForProject(projectIndex, projectRoot);
-    const indexedRootTargetGmlFiles = resolveIndexedRootTargetGmlFiles(projectRoot, targetPaths, projectIndex);
+    const selectedCodemodIds = selectConfiguredCodemodIds(config, onlyCodemods);
+    const semanticIndexDependentCodemodIds = new Set(listSemanticProjectIndexDependentCodemodIds());
+    const requiresSemanticProjectIndex = selectedCodemodIds.some((codemodId) =>
+        semanticIndexDependentCodemodIds.has(codemodId)
+    );
+    const firstSemanticCodemodIndex = selectedCodemodIds.findIndex((codemodId) =>
+        semanticIndexDependentCodemodIds.has(codemodId)
+    );
+    const shouldDeferInitialSemanticIndexBuild =
+        firstSemanticCodemodIndex > 0 &&
+        selectedCodemodIds
+            .slice(0, firstSemanticCodemodIndex)
+            .some((codemodId) => !semanticIndexDependentCodemodIds.has(codemodId));
+
+    const projectIndex =
+        requiresSemanticProjectIndex && !shouldDeferInitialSemanticIndexBuild
+            ? await buildProjectIndexWithParseTolerance(projectRoot, undefined, verbose)
+            : null;
+    const engine = createRefactorEngineForProject(projectRoot, projectIndex, requiresSemanticProjectIndex);
+    const indexedRootTargetGmlFiles =
+        projectIndex === null ? null : resolveIndexedRootTargetGmlFiles(projectRoot, targetPaths, projectIndex);
     const gmlFilePaths = indexedRootTargetGmlFiles ?? (await collectTargetGmlFiles(projectRoot, targetPaths));
-    const selectedCodemodIds = listConfiguredCodemods(config.refactor ?? {}, onlyCodemods)
-        .filter((codemod) => codemod.configured && codemod.selected)
-        .map((codemod) => codemod.id);
+    const remainingSelectedCodemodIds = [...selectedCodemodIds];
 
     if (selectedCodemodIds.length === 0) {
         console.log("No configured codemods were selected. Nothing to do.");
@@ -482,8 +538,8 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         console.log(`Selected GML files: ${gmlFilePaths.length}`);
     }
 
-    const finalSelectedCodemodId = selectedCodemodIds.at(-1) ?? null;
     const resolvePath = (filePath: string) => path.resolve(projectRoot, filePath);
+    let hasPendingSemanticIndexRefresh = shouldDeferInitialSemanticIndexBuild;
     const result = await engine.executeConfiguredCodemods({
         projectRoot,
         targetPaths,
@@ -495,28 +551,44 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         dryRun,
         onlyCodemods: selectedCodemodIds,
         onAfterCodemod: async (summary, context) => {
-            if (!summary.changed || summary.id === finalSelectedCodemodId) {
-                return;
+            const completedCodemodId = remainingSelectedCodemodIds.shift();
+            if (completedCodemodId !== summary.id) {
+                throw new Error(
+                    `Configured codemod execution order drifted while refreshing semantic index (expected ${completedCodemodId ?? "<none>"}, received ${summary.id}).`
+                );
             }
-            if (verbose) {
-                console.log(`Rebuilding project index after codemod ${summary.id}...`);
+            if (summary.changed && !semanticIndexDependentCodemodIds.has(summary.id)) {
+                hasPendingSemanticIndexRefresh = true;
             }
-            const updatedProjectIndex = await buildProjectIndexWithParseTolerance(
-                projectRoot,
-                {
-                    ...Semantic.defaultFsFacade,
-                    readFile: async (filePath) => {
-                        const content = await context.readFile(filePath);
-                        return content ?? (await readFile(resolvePath(filePath), "utf8"));
-                    }
-                },
-                verbose
-            );
+            const nextCodemodId = remainingSelectedCodemodIds[0];
 
-            // Access the underlying GmlSemanticBridge and update it directly
-            const semanticBridge = engine.semantic as any;
-            if (semanticBridge && typeof semanticBridge.updateProjectIndex === "function") {
-                semanticBridge.updateProjectIndex(updatedProjectIndex);
+            const shouldRefreshBeforeRemainingSemanticCodemods =
+                hasPendingSemanticIndexRefresh &&
+                nextCodemodId !== undefined &&
+                semanticIndexDependentCodemodIds.has(nextCodemodId);
+
+            if (shouldRefreshBeforeRemainingSemanticCodemods) {
+                hasPendingSemanticIndexRefresh = false;
+                if (verbose) {
+                    console.log(`Rebuilding project index after codemod ${summary.id}...`);
+                }
+                const updatedProjectIndex = await buildProjectIndexWithParseTolerance(
+                    projectRoot,
+                    {
+                        ...Semantic.defaultFsFacade,
+                        readFile: async (filePath) => {
+                            const content = await context.readFile(filePath);
+                            return content ?? (await readFile(resolvePath(filePath), "utf8"));
+                        }
+                    },
+                    verbose
+                );
+
+                // Access the underlying GmlSemanticBridge and update it directly
+                const semanticBridge = engine.semantic as any;
+                if (semanticBridge && typeof semanticBridge.updateProjectIndex === "function") {
+                    semanticBridge.updateProjectIndex(updatedProjectIndex);
+                }
             }
         }
     });

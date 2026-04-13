@@ -147,6 +147,28 @@ void test("buildProjectIndex reuses a provided metrics tracker", async () => {
     }
 });
 
+void test("buildProjectIndex supports loggers that only expose a debug method", async () => {
+    const fixture = await createProjectFixture("project-index-debug-logger-");
+    const debugCalls: Array<{ message: string; payload: unknown }> = [];
+
+    try {
+        await buildProjectIndex(fixture.projectRoot, undefined, {
+            logger: {
+                debug(message?: string, payload?: unknown) {
+                    debugCalls.push({
+                        message: message ?? "",
+                        payload: payload ?? null
+                    });
+                }
+            }
+        });
+
+        assert.ok(debugCalls.length > 0, "expected buildProjectIndex to emit debug messages");
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
 void test("createMetricsTracker trims and deduplicates configured cache keys", () => {
     const tracker = Core.createMetricsTracker({
         cacheKeys: new Set([" hits ", "Misses", "custom", "custom", "", null, " stale "])

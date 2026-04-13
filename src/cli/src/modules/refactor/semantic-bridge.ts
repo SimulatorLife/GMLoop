@@ -7,6 +7,7 @@ import { Semantic } from "@gmloop/semantic";
 
 import { listConstructorRuntimeTypeReferenceRecords } from "./constructor-runtime-type-references.js";
 import { GmlIdentifierOccurrenceIndex } from "./gml-identifier-occurrence-index.js";
+import { isRefactorOwnerMetadataPath, isRefactorResourcePath } from "./gml-resource-path.js";
 import { collectImplicitInstanceVariableTargets } from "./implicit-instance-variable-targets.js";
 import {
     listMacroDeclarationReferenceRecords,
@@ -287,7 +288,7 @@ function createNamingTargetPathPredicate(
     );
     const selectedOwnerDirectories = new Set(
         [...normalizedIncludedPaths]
-            .filter((candidatePath) => candidatePath.endsWith(".gml") || candidatePath.endsWith(".yy"))
+            .filter((candidatePath) => isRefactorResourcePath(candidatePath))
             .map((candidatePath) => path.posix.dirname(candidatePath))
     );
 
@@ -302,7 +303,7 @@ function createNamingTargetPathPredicate(
         }
 
         return (
-            normalizedCandidatePath.endsWith(".yy") &&
+            isRefactorOwnerMetadataPath(normalizedCandidatePath) &&
             selectedOwnerDirectories.has(path.posix.dirname(normalizedCandidatePath))
         );
     };
@@ -420,8 +421,17 @@ function isResourceMetadataRecord(value: unknown): value is ResourceMetadataReco
     return record.assetReferences.every((reference) => isResourceAssetReferenceRecord(reference));
 }
 
+const normalizedMetadataReferenceTargetPathCache = new Map<string, string>();
+
 function normalizeMetadataReferenceTargetPath(targetPath: string): string {
-    return targetPath.replaceAll("\\", "/").toLowerCase();
+    const cachedNormalizedPath = normalizedMetadataReferenceTargetPathCache.get(targetPath);
+    if (cachedNormalizedPath !== undefined) {
+        return cachedNormalizedPath;
+    }
+
+    const normalizedPath = targetPath.replaceAll("\\", "/").toLowerCase();
+    normalizedMetadataReferenceTargetPathCache.set(targetPath, normalizedPath);
+    return normalizedPath;
 }
 
 function metadataReferenceTargetsMatch(leftPath: string, rightPath: string): boolean {
@@ -536,6 +546,10 @@ export class GmlSemanticBridge {
     > | null = null;
     private scriptResourceIndexes: ScriptResourceIndexes | null = null;
     private readonly localReferenceOccurrencesByFilePath = new Map<string, LocalReferenceIndex>();
+    private readonly latestBatchMetadataDocumentsByEdit = new WeakMap<
+        WorkspaceEdit,
+        { documents: Map<string, Record<string, unknown>>; metadataObjectCount: number }
+    >();
 
     constructor(projectIndex: unknown, projectRoot: string = process.cwd()) {
         this.projectIndex = Core.isObjectLike(projectIndex) ? (projectIndex as Record<string, unknown>) : {};
@@ -1347,12 +1361,22 @@ export class GmlSemanticBridge {
     }
 
     private collectLatestBatchMetadataDocuments(edit: WorkspaceEdit): Map<string, Record<string, unknown>> {
+        const metadataObjectCount = edit.metadataObjects?.length ?? 0;
+        const cachedEntry = this.latestBatchMetadataDocumentsByEdit.get(edit);
+        if (cachedEntry && cachedEntry.metadataObjectCount === metadataObjectCount) {
+            return cachedEntry.documents;
+        }
+
         const latestBatchMetadataDocuments = new Map<string, Record<string, unknown>>();
 
         for (const metadataObject of edit.metadataObjects ?? []) {
             latestBatchMetadataDocuments.set(metadataObject.path, metadataObject.document);
         }
 
+        this.latestBatchMetadataDocumentsByEdit.set(edit, {
+            documents: latestBatchMetadataDocuments,
+            metadataObjectCount
+        });
         return latestBatchMetadataDocuments;
     }
 

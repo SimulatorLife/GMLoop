@@ -1700,6 +1700,46 @@ void test("refactor codemod --write applies configured loop-length hoisting chan
     }
 });
 
+void test("refactor codemod --write skips semantic project indexing when all selected codemods are non-semantic", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                globalvarToGlobal: {},
+                loopLengthHoisting: {}
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "demo_script",
+            [
+                "function demo_script(items) {",
+                "    globalvar legacy_score;",
+                "    for (var i = 0; i < array_length(items); i++) {",
+                "        legacy_score += items[i];",
+                "    }",
+                "    return legacy_score;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write", "--verbose"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout, /\[globalvarToGlobal\] changed/);
+        assert.match(result.stdout, /\[loopLengthHoisting\] changed/);
+        assert.doesNotMatch(result.stdout, /DEBUG: Starting buildProjectIndex/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write only rebuilds the project index between changed codemods", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {
@@ -1740,6 +1780,58 @@ void test("refactor codemod --write only rebuilds the project index between chan
         assert.equal(result.exitCode, 0);
         assert.match(result.stdout, /Rebuilding project index after codemod loopLengthHoisting/);
         assert.doesNotMatch(result.stdout, /Rebuilding project index after codemod namingConvention/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write batches semantic index rebuild until all non-semantic codemods finish", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                globalvarToGlobal: {},
+                loopLengthHoisting: {},
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "demo_script",
+            [
+                "function demo_script(items) {",
+                "    globalvar total_score;",
+                "    var bad_name = 0;",
+                "    for (var i = 0; i < array_length(items); i++) {",
+                "        bad_name += items[i] + total_score;",
+                "    }",
+                "    return bad_name;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write", "--verbose"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout, /\[globalvarToGlobal\] changed/);
+        assert.match(result.stdout, /\[loopLengthHoisting\] changed/);
+        assert.match(result.stdout, /\[namingConvention\] changed/);
+
+        const rebuildLines = result.stdout.match(/Rebuilding project index after codemod /g) ?? [];
+        assert.equal(rebuildLines.length, 1);
+        assert.match(result.stdout, /Rebuilding project index after codemod loopLengthHoisting/);
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
@@ -1836,7 +1928,7 @@ void test("refactor codemod --path accepts a single .gml file and scopes rewrite
 
         const selectedScriptPath = path.join(projectRoot, "scripts", "selected_script", "selected_script.gml");
         const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--path", selectedScriptPath, "--fix"]
+            argv: ["refactor", "codemod", "--path", selectedScriptPath, "--write"]
         });
 
         assert.equal(result.exitCode, 0);

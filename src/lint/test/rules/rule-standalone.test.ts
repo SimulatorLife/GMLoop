@@ -1815,3 +1815,54 @@ void test("no-unary-plus-on-identifier does not flag prefix increment (++)", () 
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
+
+void test("no-negative-zero autofixes -0 to 0", () => {
+    const input = "var x = -0;\n";
+    const expected = "var x = 0;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages[0]?.messageId, "noNegativeZero");
+    assertEquals(result.output, expected);
+});
+
+void test("no-negative-zero handles multiple negative zero usages in one file", () => {
+    const input = ["var a = -0;", "var b = -0;", ""].join("\n");
+    const expected = ["var a = 0;", "var b = 0;", ""].join("\n");
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 2);
+    assertEquals(result.output, expected);
+});
+
+void test("no-negative-zero does not flag non-zero negative literals", () => {
+    const input = "var x = -5;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero does not flag bare zero without unary minus", () => {
+    const input = "var x = 0;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero does not flag unary minus on identifiers", () => {
+    const input = "var x = -count;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero does not flag unary minus on non-zero expressions", () => {
+    const input = "var x = -(a + b);\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});

@@ -1,4 +1,21 @@
-import { Core, type GameMakerAstNode } from "@gmloop/core";
+/**
+ * Deep structural equivalence comparison for GameMaker AST nodes.
+ *
+ * Compares two AST subtrees for structural identity while ignoring
+ * position/metadata keys (start, end, range, loc, parent, comments, tokens)
+ * that differ between two otherwise identical subtrees at different source
+ * positions. Optionally unwraps `ParenthesizedExpression` wrappers before
+ * comparison so parenthesised and non-parenthesised forms are treated as
+ * equivalent.
+ *
+ * **Prior location**: `src/lint/src/rules/gml/ast-node-equivalence.ts`.
+ * Moved here because Core owns "Clone / equality helpers" (target-state.md
+ * §2.1) and this module has zero lint-specific dependencies—it only relies
+ * on `unwrapParenthesizedExpression` from Core's own node helpers.
+ */
+
+import { unwrapParenthesizedExpression } from "./node-helpers/index.js";
+import type { GameMakerAstNode } from "./types.js";
 
 /**
  * AST metadata keys that carry position/token data and should be excluded
@@ -87,7 +104,7 @@ export function areAstValuesEquivalentIgnoringParentheses(left: unknown, right: 
  */
 export function areExpressionNodesEquivalentIgnoringParentheses(left: unknown, right: unknown): boolean {
     return areAstValuesEquivalentIgnoringParentheses(
-        Core.unwrapParenthesizedExpression(left as GameMakerAstNode | null | undefined),
-        Core.unwrapParenthesizedExpression(right as GameMakerAstNode | null | undefined)
+        unwrapParenthesizedExpression(left as GameMakerAstNode | null | undefined),
+        unwrapParenthesizedExpression(right as GameMakerAstNode | null | undefined)
     );
 }

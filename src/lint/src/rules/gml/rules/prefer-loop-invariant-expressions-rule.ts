@@ -1,7 +1,6 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { areExpressionNodesEquivalentIgnoringParentheses } from "../ast-node-equivalence.js";
 import {
     type AstNodeRecord,
     type AstNodeWithType,
@@ -13,6 +12,7 @@ import {
     getNodeStartIndex,
     isAstNodeRecord,
     isAstNodeWithType,
+    isIdentifierNode,
     rangeContainsCommentToken,
     walkAstNodes,
     walkAstNodesWithParent
@@ -91,10 +91,6 @@ function normalizeIdentifierName(identifierName: string): string {
 
 function isLoopNode(node: unknown): node is LoopNode {
     return Core.isLoopLikeNode(node);
-}
-
-function isIdentifierNode(node: unknown): node is AstNodeRecord & Readonly<{ type: "Identifier"; name: string }> {
-    return isAstNodeRecord(node) && node.type === "Identifier" && typeof node.name === "string";
 }
 
 function isGeneratedHoistIdentifierName(identifierName: string): boolean {
@@ -734,7 +730,7 @@ function collectEquivalentLoopReplacementTargets(
     const replacementTargets: LoopReplacementTarget[] = [];
 
     for (const candidate of replacementCandidates) {
-        if (!areExpressionNodesEquivalentIgnoringParentheses(candidate.expressionNode, targetExpressionNode)) {
+        if (!Core.areExpressionNodesEquivalentIgnoringParentheses(candidate.expressionNode, targetExpressionNode)) {
             continue;
         }
 

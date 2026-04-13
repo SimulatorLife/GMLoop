@@ -2,42 +2,23 @@ import type { Rule } from "eslint";
 
 import {
     applySourceTextEdits,
+    type AssignmentExpressionNode,
     createMeta,
     getCallExpressionIdentifierName,
     getNodeEndIndex,
     getNodeStartIndex,
-    isAstNodeRecord,
+    isAssignmentExpressionNode,
+    isIdentifierNode,
+    isMemberIndexExpressionNode,
+    isVariableDeclaratorNode,
+    type MemberIndexExpressionNode,
     reportFullTextRewrite,
+    type VariableDeclaratorNode,
     walkAstNodes
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type ProvenAccessorToken = "[#" | "[?" | "[|";
-
-type MemberIndexExpressionNode = Readonly<{
-    type: "MemberIndexExpression";
-    object?: unknown;
-    property?: unknown;
-    accessor?: unknown;
-}>;
-
-type VariableDeclaratorNode = Readonly<{
-    type: "VariableDeclarator";
-    id?: unknown;
-    init?: unknown;
-}>;
-
-type AssignmentExpressionNode = Readonly<{
-    type: "AssignmentExpression";
-    operator?: unknown;
-    left?: unknown;
-    right?: unknown;
-}>;
-
-type IdentifierNode = Readonly<{
-    type: "Identifier";
-    name: string;
-}>;
 
 type AccessorEventNode = AssignmentExpressionNode | MemberIndexExpressionNode | VariableDeclaratorNode;
 
@@ -46,22 +27,6 @@ const EXPLICIT_DATA_STRUCTURE_CONSTRUCTOR_ACCESSORS = new Map<string, ProvenAcce
     ["ds_list_create", "[|"],
     ["ds_map_create", "[?"]
 ]);
-
-function isMemberIndexExpressionNode(node: unknown): node is MemberIndexExpressionNode {
-    return isAstNodeRecord(node) && node.type === "MemberIndexExpression";
-}
-
-function isVariableDeclaratorNode(node: unknown): node is VariableDeclaratorNode {
-    return isAstNodeRecord(node) && node.type === "VariableDeclarator";
-}
-
-function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
-    return isAstNodeRecord(node) && node.type === "AssignmentExpression";
-}
-
-function isIdentifierNode(node: unknown): node is IdentifierNode {
-    return isAstNodeRecord(node) && node.type === "Identifier" && typeof node.name === "string";
-}
 
 function getPropertyCount(node: MemberIndexExpressionNode): number {
     return Array.isArray(node.property) ? node.property.length : 0;

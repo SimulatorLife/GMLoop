@@ -172,7 +172,7 @@ void test("executeConfiguredCodemods deduplicates repeated target and gml file p
         }
     });
 
-    assert.equal(reads.get("scripts/example.gml"), 2);
+    assert.equal(reads.get("scripts/example.gml"), 1);
     assert.deepEqual(result.summaries, [
         {
             id: "loopLengthHoisting",

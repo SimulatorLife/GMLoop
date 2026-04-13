@@ -9,32 +9,21 @@
 
 import { Core, type EmptyTransformOptions, type MutableGameMakerAstNode } from "@gmloop/core";
 
+import {
+    type AssignmentExpressionNode,
+    isAssignmentExpressionNode,
+    isIdentifierNode,
+    isMemberIndexExpressionNode,
+    isVariableDeclaratorNode,
+    type MemberIndexExpressionNode,
+    type VariableDeclaratorNode
+} from "../rule-base-helpers.js";
+
 const { isObjectLike } = Core;
 
 type ProvenAccessorToken = "[#" | "[?" | "[|";
 
-type MemberIndexNode = {
-    type?: string;
-    accessor?: string;
-    object?: unknown;
-    property?: unknown;
-    [key: string]: unknown;
-};
-
-type VariableDeclaratorNode = {
-    type?: string;
-    id?: unknown;
-    init?: unknown;
-};
-
-type AssignmentExpressionNode = {
-    type?: string;
-    operator?: unknown;
-    left?: unknown;
-    right?: unknown;
-};
-
-type AccessorEventNode = AssignmentExpressionNode | MemberIndexNode | VariableDeclaratorNode;
+type AccessorEventNode = AssignmentExpressionNode | MemberIndexExpressionNode | VariableDeclaratorNode;
 
 const EXPLICIT_DATA_STRUCTURE_CONSTRUCTOR_ACCESSORS = new Map<string, ProvenAccessorToken>([
     ["ds_grid_create", "[#"],
@@ -42,7 +31,7 @@ const EXPLICIT_DATA_STRUCTURE_CONSTRUCTOR_ACCESSORS = new Map<string, ProvenAcce
     ["ds_map_create", "[?"]
 ]);
 
-function shouldNormalizeMemberIndexAccessorToGrid(memberNode: MemberIndexNode): boolean {
+function shouldNormalizeMemberIndexAccessorToGrid(memberNode: MemberIndexExpressionNode): boolean {
     if (memberNode.accessor === "[#") {
         return false;
     }
@@ -50,20 +39,12 @@ function shouldNormalizeMemberIndexAccessorToGrid(memberNode: MemberIndexNode): 
     return Array.isArray(memberNode.property) && memberNode.property.length > 1;
 }
 
-function isIdentifierName(value: unknown): value is { type?: string; name?: string } {
-    return (
-        Core.isObjectLike(value) &&
-        (value as { type?: string }).type === "Identifier" &&
-        typeof (value as { name?: string }).name === "string"
-    );
-}
-
 function getNormalizedIdentifierName(node: unknown): string | null {
-    if (!isIdentifierName(node)) {
+    if (!isIdentifierNode(node)) {
         return null;
     }
 
-    return node.name?.toLowerCase() ?? null;
+    return node.name.toLowerCase();
 }
 
 function resolveExplicitConstructorAccessor(node: unknown): ProvenAccessorToken | null {
@@ -73,18 +54,6 @@ function resolveExplicitConstructorAccessor(node: unknown): ProvenAccessorToken 
     }
 
     return EXPLICIT_DATA_STRUCTURE_CONSTRUCTOR_ACCESSORS.get(callIdentifierName.toLowerCase()) ?? null;
-}
-
-function isVariableDeclaratorNode(node: unknown): node is VariableDeclaratorNode {
-    return Core.isObjectLike(node) && (node as { type?: string }).type === "VariableDeclarator";
-}
-
-function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
-    return Core.isObjectLike(node) && (node as { type?: string }).type === "AssignmentExpression";
-}
-
-function isMemberIndexNode(node: unknown): node is MemberIndexNode {
-    return Core.isObjectLike(node) && (node as { type?: string }).type === "MemberIndexExpression";
 }
 
 function resolveAssignmentTargetIdentifierName(node: AssignmentExpressionNode | VariableDeclaratorNode): string | null {
@@ -103,12 +72,12 @@ function resolveAssignmentSource(node: AssignmentExpressionNode | VariableDeclar
     return isVariableDeclaratorNode(node) ? node.init : node.right;
 }
 
-function getPropertyCount(memberNode: MemberIndexNode): number {
+function getPropertyCount(memberNode: MemberIndexExpressionNode): number {
     return Array.isArray(memberNode.property) ? memberNode.property.length : 0;
 }
 
 function resolveProvenAccessorForMemberIndex(
-    memberNode: MemberIndexNode,
+    memberNode: MemberIndexExpressionNode,
     explicitConstructorAccessorsByIdentifier: ReadonlyMap<string, ProvenAccessorToken>
 ): ProvenAccessorToken | null {
     if (shouldNormalizeMemberIndexAccessorToGrid(memberNode)) {
@@ -144,7 +113,7 @@ function collectAccessorEventNodes(node: unknown, collectedNodes: Array<Accessor
         return;
     }
 
-    if (isMemberIndexNode(node) || isVariableDeclaratorNode(node) || isAssignmentExpressionNode(node)) {
+    if (isMemberIndexExpressionNode(node) || isVariableDeclaratorNode(node) || isAssignmentExpressionNode(node)) {
         collectedNodes.push(node);
     }
 

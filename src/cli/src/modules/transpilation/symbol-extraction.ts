@@ -34,10 +34,21 @@ interface AstNode {
     init?: AstNode | null;
     left?: AstNode | null;
     right?: AstNode | null;
-    // body may be a statement array (Program, BlockStatement) or a nested BlockStatement node
-    // (FunctionDeclaration.body) — handle both shapes during traversal.
+    // body may be a statement array (Program, BlockStatement, SwitchCase) or a nested
+    // BlockStatement node (FunctionDeclaration.body) — handle both shapes during traversal.
     body?: Array<unknown> | AstNode | null;
     declarations?: Array<AstNode> | null;
+    // SwitchStatement: `discriminant` is the expression being tested; `cases` is the list of
+    // SwitchCase nodes. Neither maps to `body` or a standard prop, so they are tracked separately.
+    discriminant?: AstNode | null;
+    cases?: Array<AstNode> | null;
+    // ForStatement: `update` is the post-iteration step expression (e.g. `i = next(i)`).
+    update?: AstNode | null;
+    // TryStatement: `block` is the try body, `handler` is the CatchClause, `finalizer` is the
+    // Finalizer. None of these map to `body`, so they must be walked explicitly.
+    block?: AstNode | null;
+    handler?: AstNode | null;
+    finalizer?: AstNode | null;
 }
 
 /**
@@ -173,11 +184,34 @@ function walkNode(node: unknown, filePath: string, symbols: Array<string>): void
         }
     }
 
-    // Walk common AST properties that might contain nested nodes
-    for (const prop of ["init", "left", "right", "argument", "test", "consequent", "alternate"] as const) {
+    // Walk common single-node AST properties that might contain nested function definitions.
+    // Includes: SwitchStatement.discriminant, ForStatement.update, TryStatement.block/handler/finalizer.
+    for (const prop of [
+        "init",
+        "left",
+        "right",
+        "argument",
+        "test",
+        "consequent",
+        "alternate",
+        "expression",
+        "discriminant",
+        "update",
+        "block",
+        "handler",
+        "finalizer"
+    ] as const) {
         const value = astNode[prop];
         if (value) {
             walkNode(value, filePath, symbols);
+        }
+    }
+
+    // Walk SwitchStatement.cases — an array of SwitchCase nodes that is not covered
+    // by `body` or `declarations`, so it requires its own traversal step.
+    if (Array.isArray(astNode.cases)) {
+        for (const switchCase of astNode.cases) {
+            walkNode(switchCase, filePath, symbols);
         }
     }
 }
@@ -275,7 +309,8 @@ function walkNodeForReferences(node: unknown, references: Set<string>): void {
         }
     }
 
-    // Walk common AST properties that may contain nested call expressions.
+    // Walk common single-node AST properties that may contain nested call expressions.
+    // Includes: SwitchStatement.discriminant, ForStatement.update, TryStatement.block/handler/finalizer.
     for (const prop of [
         "init",
         "left",
@@ -284,11 +319,24 @@ function walkNodeForReferences(node: unknown, references: Set<string>): void {
         "test",
         "consequent",
         "alternate",
-        "expression"
+        "expression",
+        "discriminant",
+        "update",
+        "block",
+        "handler",
+        "finalizer"
     ] as const) {
         const value = astNode[prop];
         if (value) {
             walkNodeForReferences(value, references);
+        }
+    }
+
+    // Walk SwitchStatement.cases — an array of SwitchCase nodes that is not covered
+    // by `body` or `declarations`, so it requires its own traversal step.
+    if (Array.isArray(astNode.cases)) {
+        for (const switchCase of astNode.cases) {
+            walkNodeForReferences(switchCase, references);
         }
     }
 }

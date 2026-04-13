@@ -5,6 +5,7 @@ const NUMBER_TYPE = "number" as const;
 const FUNCTION_TYPE = "function" as const;
 const TRAILING_BLANK_LINE_PATTERN = /\r?\n[^\S\r\n]*\r?\n[^\S\r\n]*$/;
 const INTERIOR_BLANK_LINE_PATTERN = /\r?\n[^\S\r\n]*\r?\n/;
+const NON_NEWLINE_WHITESPACE_REGEX = /[^\S\r\n]/u;
 
 export type PrinterSourceMetadataOptions = {
     originalText?: unknown;
@@ -173,6 +174,14 @@ function hasBlankLineInSlice(text: string | null, pattern: "trailing" | "interio
     return hasBlankLineMatch(text, pattern);
 }
 
+function isNonNewlineWhitespaceCharacterCode(characterCode: number): boolean {
+    if (characterCode < 0x80) {
+        return characterCode === 0x20 || characterCode === 0x09 || characterCode === 0x0b || characterCode === 0x0c;
+    }
+
+    return NON_NEWLINE_WHITESPACE_REGEX.test(String.fromCharCode(characterCode));
+}
+
 /**
  * Determine whether a macro body explicitly contains a trailing blank line.
  */
@@ -187,7 +196,7 @@ export function macroTextHasExplicitTrailingBlankLine(text: string | null): bool
     while (index >= 0) {
         const code = text.charCodeAt(index);
 
-        if (code === 0x20 || code === 0x09) {
+        if (isNonNewlineWhitespaceCharacterCode(code)) {
             index -= 1;
             continue;
         }
@@ -252,25 +261,6 @@ export function hasBlankLineBeforeLeadingComment(
 
     const textBeforeComment = interiorSlice.slice(0, commentMatch.index);
     return hasBlankLineInSlice(textBeforeComment, "trailing", false);
-}
-
-export function hasBlankLineAfterOpeningBrace(
-    blockNode: unknown,
-    sourceMetadata: PrinterSourceMetadata,
-    firstStatementStartIndex: number | null
-): boolean {
-    const interiorSlice = getInteriorSliceForLeadingComment(
-        blockNode,
-        sourceMetadata,
-        sourceMetadata.originalText,
-        firstStatementStartIndex
-    );
-
-    if (!interiorSlice) {
-        return false;
-    }
-
-    return hasBlankLineInSlice(interiorSlice, "trailing", true);
 }
 
 /**

@@ -591,7 +591,7 @@ pnpm run cli -- refactor --symbol-id gml/script/scr_old_name --new-name scr_new_
 pnpm run cli -- refactor --old-name player_hp --new-name playerHealth
 
 # Dry run to preview changes
-pnpm run cli -- refactor --old-name player_hp --new-name playerHealth 
+pnpm run cli -- refactor --old-name player_hp --new-name playerHealth
 
 # Validate hot reload compatibility
 pnpm run cli -- refactor --old-name player_hp --new-name playerHealth --check-hot-reload

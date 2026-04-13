@@ -247,26 +247,16 @@ function normalizeIdentifierDescriptor(name: string, descriptor: unknown): Ident
 
 const DEFAULT_EXCLUDED_TYPES = new Set(["literal", "keyword"]);
 
-type ReservedIdentifierMetadataLoader = () => unknown;
-
-let metadataLoader: ReservedIdentifierMetadataLoader = defaultLoadIdentifierMetadata;
-
-function safelyLoadIdentifierMetadata(loader: ReservedIdentifierMetadataLoader) {
-    try {
-        const metadata = loader();
-        return isObjectLike(metadata) ? metadata : null;
-    } catch {
-        return null;
-    }
-}
-
-function defaultLoadIdentifierMetadata() {
-    return safelyLoadIdentifierMetadata(loadBundledIdentifierMetadata);
-}
+let metadataLoader: () => unknown = loadBundledIdentifierMetadata;
 
 function loadIdentifierMetadata() {
     if (cachedIdentifierMetadata === null) {
-        cachedIdentifierMetadata = safelyLoadIdentifierMetadata(metadataLoader);
+        try {
+            const metadata = metadataLoader();
+            cachedIdentifierMetadata = isObjectLike(metadata) ? metadata : null;
+        } catch {
+            cachedIdentifierMetadata = null;
+        }
     }
 
     return cachedIdentifierMetadata;
@@ -276,7 +266,8 @@ function loadIdentifierMetadata() {
  * Allow advanced integrations to supply alternate metadata at runtime while
  * keeping the default loader pointed at the bundled JSON file.
  *
- * @param {() => unknown} loader
+ * @param loader Custom metadata loader function, or a falsy value to reset
+ *        to the default bundled JSON loader.
  * @returns {() => void} Cleanup handler that restores the previous loader when
  *          invoked. The handler intentionally degrades to a no-op when another
  *          caller swapped the loader before cleanup runs. Identifier casing
@@ -284,22 +275,20 @@ function loadIdentifierMetadata() {
  *          reinstating `previousLoader` would roll back those newer overrides
  *          and leave the formatter reading stale metadata mid-run.
  */
-export function setReservedIdentifierMetadataLoader(loader) {
+export function setReservedIdentifierMetadataLoader(loader: (() => unknown) | null | undefined) {
     if (typeof loader !== "function") {
         resetReservedIdentifierMetadataLoader();
         return noop;
     }
 
     const previousLoader = metadataLoader;
-    const wrappedLoader = () => safelyLoadIdentifierMetadata(loader);
-
-    metadataLoader = wrappedLoader;
+    metadataLoader = loader;
 
     // Clear caches when the loader changes to prevent stale data
     clearIdentifierMetadataCache();
 
     return () => {
-        if (metadataLoader === wrappedLoader) {
+        if (metadataLoader === loader) {
             metadataLoader = previousLoader;
             // Clear caches when restoring to prevent using cached data from the custom loader
             clearIdentifierMetadataCache();
@@ -312,7 +301,7 @@ export function setReservedIdentifierMetadataLoader(loader) {
  * implementation.
  */
 export function resetReservedIdentifierMetadataLoader() {
-    metadataLoader = defaultLoadIdentifierMetadata;
+    metadataLoader = loadBundledIdentifierMetadata;
     // Clear caches when resetting to ensure fresh data from default loader
     clearIdentifierMetadataCache();
 }

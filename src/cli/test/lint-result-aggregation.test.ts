@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ESLint } from "eslint";
+
 import { __lintCommandTest__ } from "../src/commands/lint.js";
 
 const {
@@ -172,7 +174,7 @@ void test("createRetainedLintResult drops heavyweight source payloads while pres
         usedDeprecatedRules: [],
         source: "var value = 1;",
         output: "var value = 2;"
-    } as unknown as import("eslint").ESLint.LintResult);
+    } as unknown as ESLint.LintResult);
 
     assert.deepEqual(retained, {
         filePath: "/tmp/example.gml",

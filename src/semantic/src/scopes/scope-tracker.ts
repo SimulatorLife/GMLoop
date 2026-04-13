@@ -247,6 +247,26 @@ export class ScopeTracker {
         return results;
     }
 
+    private collectSymbolReadWriteOccurrences(
+        name: string | null | undefined,
+        options: {
+            cloneOccurrences: boolean;
+            accessKind: "read" | "write";
+        }
+    ): SymbolOccurrence[] {
+        const { cloneOccurrences, accessKind } = options;
+
+        return this.collectSymbolOccurrencesForName(name, {
+            cloneOccurrences,
+            includeDeclarations: false,
+            includeReferences: true,
+            referenceFilter: (occurrence) =>
+                accessKind === "write"
+                    ? Boolean(occurrence.usageContext?.isWrite)
+                    : Boolean(occurrence.usageContext?.isRead)
+        });
+    }
+
     constructor({
         enabled = true,
         lookupCacheMaxEntries = DEFAULT_LOOKUP_CACHE_MAX_ENTRIES,
@@ -2041,20 +2061,16 @@ export class ScopeTracker {
     }
 
     public getSymbolWrites(name: string | null | undefined): SymbolOccurrence[] {
-        return this.collectSymbolOccurrencesForName(name, {
+        return this.collectSymbolReadWriteOccurrences(name, {
             cloneOccurrences: true,
-            includeDeclarations: false,
-            includeReferences: true,
-            referenceFilter: (occurrence) => Boolean(occurrence.usageContext?.isWrite)
+            accessKind: "write"
         });
     }
 
     public getSymbolReads(name: string | null | undefined): SymbolOccurrence[] {
-        return this.collectSymbolOccurrencesForName(name, {
+        return this.collectSymbolReadWriteOccurrences(name, {
             cloneOccurrences: true,
-            includeDeclarations: false,
-            includeReferences: true,
-            referenceFilter: (occurrence) => Boolean(occurrence.usageContext?.isRead)
+            accessKind: "read"
         });
     }
 
@@ -2071,11 +2087,9 @@ export class ScopeTracker {
      * @returns Array of write occurrences with internal references (DO NOT MODIFY)
      */
     public getSymbolWritesUnsafe(name: string | null | undefined): SymbolOccurrence[] {
-        return this.collectSymbolOccurrencesForName(name, {
+        return this.collectSymbolReadWriteOccurrences(name, {
             cloneOccurrences: false,
-            includeDeclarations: false,
-            includeReferences: true,
-            referenceFilter: (occurrence) => Boolean(occurrence.usageContext?.isWrite)
+            accessKind: "write"
         });
     }
 
@@ -2092,11 +2106,9 @@ export class ScopeTracker {
      * @returns Array of read occurrences with internal references (DO NOT MODIFY)
      */
     public getSymbolReadsUnsafe(name: string | null | undefined): SymbolOccurrence[] {
-        return this.collectSymbolOccurrencesForName(name, {
+        return this.collectSymbolReadWriteOccurrences(name, {
             cloneOccurrences: false,
-            includeDeclarations: false,
-            includeReferences: true,
-            referenceFilter: (occurrence) => Boolean(occurrence.usageContext?.isRead)
+            accessKind: "read"
         });
     }
 

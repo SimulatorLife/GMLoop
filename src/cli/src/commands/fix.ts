@@ -19,7 +19,8 @@ import { SKIP_CLI_RUN_ENV_VAR } from "../shared/skip-cli-run.js";
 import {
     discoverProjectRoot,
     resolveExistingGmloopConfigPath,
-    resolveExplicitWorkflowTargetPath} from "../workflow/project-root.js";
+    resolveExplicitWorkflowTargetPath
+} from "../workflow/project-root.js";
 import { runFormatCommand } from "./format.js";
 import { runLintCommand } from "./lint.js";
 import { executeRefactorCommand } from "./refactor.js";

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { rm } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import test from "node:test";
 
 import { createTempFileStorageBackend } from "../src/backends/index.js";
@@ -140,4 +140,52 @@ void test("TempFileStorageBackend returns null for reads after disposal", async 
     await backend.dispose();
 
     assert.equal(await backend.readEntry("before-dispose"), null);
+});
+
+void test("TempFileStorageBackend dispose cleans up temp directory when mkdtemp is in-flight", async () => {
+    const backend = createTempFileStorageBackend({ readCacheMaxEntries: 2 });
+
+    // Start a write that triggers mkdtemp() internally, but do NOT await it
+    // yet — this simulates the race where dispose() is called while the
+    // directory creation is still in-flight.
+    const writePromise = backend.writeEntry("race-key", "race-payload");
+
+    // Dispose immediately, before the write (and mkdtemp) can settle.
+    await backend.dispose();
+
+    // The write may reject because the backend is now disposed, but it must
+    // not leave an orphaned temp directory on disk.
+    await writePromise.catch(() => {
+        // Expected: the write may fail after disposal.
+    });
+
+    // Access the private tempRootPath to verify it was not set after disposal.
+    const leakedPath = (backend as unknown as { tempRootPath: string | null }).tempRootPath;
+    assert.equal(leakedPath, null, "tempRootPath must be null after dispose — the directory should not leak");
+});
+
+void test("TempFileStorageBackend dispose awaits in-flight mkdtemp and removes the directory", async () => {
+    const backend = createTempFileStorageBackend({ readCacheMaxEntries: 2 });
+
+    // Trigger directory creation by starting a write.
+    const writePromise = backend.writeEntry("inflight-key", "inflight-payload");
+
+    // Allow the write to settle so mkdtemp completes and we can capture the path.
+    await writePromise;
+    const createdPath = (backend as unknown as { tempRootPath: string | null }).tempRootPath;
+    assert.ok(createdPath, "Expected tempRootPath to be set after a successful write");
+
+    // Verify the directory exists before disposal.
+    const existsBeforeDispose = await stat(createdPath)
+        .then((s) => s.isDirectory())
+        .catch(() => false);
+    assert.ok(existsBeforeDispose, "Temp directory should exist before dispose");
+
+    await backend.dispose();
+
+    // Verify the directory was removed by dispose.
+    const existsAfterDispose = await stat(createdPath)
+        .then((s) => s.isDirectory())
+        .catch(() => false);
+    assert.equal(existsAfterDispose, false, "Temp directory must be removed after dispose");
 });

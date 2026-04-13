@@ -1,7 +1,7 @@
 {
   "fixture": {
     "kind": "integration",
-    "assertion": "idempotent",
+    "assertion": "transform",
     "comparison": "exact"
   },
   "lintRules": {

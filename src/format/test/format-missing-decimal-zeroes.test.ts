@@ -45,13 +45,18 @@ void test("pads negative bare decimal literals by default", async () => {
 
     const formatted = await Format.format(source);
 
+    // After decimal normalization `-.5` becomes `-0.5`, `-5.` becomes `-5`,
+    // and `-0.` becomes `-0`.  The formatter no longer collapses `-0` to `0`
+    // because that is a semantic rewrite (removing a unary operator); the
+    // `gml/no-negative-zero` lint rule owns that transformation instead.
+    // (target-state.md §2.1, §3.2)
     assert.strictEqual(
         formatted,
         [
             "function coefficients() {",
             "    var a = -0.5;",
             "    var b = -5;",
-            "    var c = 0;",
+            "    var c = -0;",
             "    return a + b + c;",
             "}",
             ""

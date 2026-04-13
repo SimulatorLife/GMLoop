@@ -166,6 +166,55 @@ void test("constant folding: string inequality", () => {
     assert.strictEqual(result, true, "Should fold string inequality checks");
 });
 
+void test("constant folding: parser-quoted string concatenation", () => {
+    // The GML parser stores string literal values WITH surrounding double quotes.
+    // This test verifies that constant folding correctly strips parser quotes
+    // before concatenating, producing "hello world" instead of '"hello"" world"'.
+    const ast = {
+        type: "BinaryExpression" as const,
+        left: { type: "Literal" as const, value: '"hello"' },
+        right: { type: "Literal" as const, value: '" world"' },
+        operator: "+"
+    };
+    const result = tryFoldConstantExpression(ast);
+    assert.strictEqual(result, "hello world", "Should strip parser quotes before concatenating strings");
+});
+
+void test("constant folding: parser-quoted string equality", () => {
+    const ast = {
+        type: "BinaryExpression" as const,
+        left: { type: "Literal" as const, value: '"player"' },
+        right: { type: "Literal" as const, value: '"player"' },
+        operator: "=="
+    };
+    const result = tryFoldConstantExpression(ast);
+    assert.strictEqual(result, true, "Should strip parser quotes before comparing strings");
+});
+
+void test("constant folding: parser-quoted string inequality", () => {
+    const ast = {
+        type: "BinaryExpression" as const,
+        left: { type: "Literal" as const, value: '"hello"' },
+        right: { type: "Literal" as const, value: '"world"' },
+        operator: "!="
+    };
+    const result = tryFoldConstantExpression(ast);
+    assert.strictEqual(result, true, "Should strip parser quotes for string inequality");
+});
+
+void test("constant folding: mixed parser-quoted and unquoted string concatenation", () => {
+    // When one operand has parser quotes and the other doesn't (e.g., from a
+    // hand-crafted AST), both should be handled gracefully.
+    const ast = {
+        type: "BinaryExpression" as const,
+        left: { type: "Literal" as const, value: '"hello"' },
+        right: { type: "Literal" as const, value: " suffix" },
+        operator: "+"
+    };
+    const result = tryFoldConstantExpression(ast);
+    assert.strictEqual(result, "hello suffix", "Should strip quotes from parser-quoted side and keep unquoted side");
+});
+
 void test("constant folding: boolean AND", () => {
     const ast = {
         type: "BinaryExpression" as const,

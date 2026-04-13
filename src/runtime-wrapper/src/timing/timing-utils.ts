@@ -13,6 +13,16 @@
  * co-located with either sublayer's runtime or websocket implementation files.
  */
 
+// Resolve the high-resolution timer once at module load. The availability of
+// `performance.now()` is determined by the host environment and cannot change
+// during the lifetime of the process. Eagerly binding here eliminates a
+// `typeof` check on every call — a meaningful saving when the function is
+// invoked multiple times per hot-reload cycle at 60 fps.
+const resolvedTimeFn: () => number =
+    typeof performance !== "undefined" && typeof performance.now === "function"
+        ? () => performance.now()
+        : () => Date.now();
+
 /**
  * Returns a high-resolution timestamp suitable for measuring durations.
  * Uses performance.now() when available (browser/modern Node), falls back to Date.now().
@@ -20,10 +30,7 @@
  * @returns Timestamp in milliseconds with sub-millisecond precision when supported
  */
 export function getHighResolutionTime(): number {
-    if (typeof performance !== "undefined" && typeof performance.now === "function") {
-        return performance.now();
-    }
-    return Date.now();
+    return resolvedTimeFn();
 }
 
 /**

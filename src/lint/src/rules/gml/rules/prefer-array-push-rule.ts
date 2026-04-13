@@ -1,4 +1,4 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import {
@@ -7,18 +7,12 @@ import {
     getNodeStartIndex,
     isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
+    isMemberIndexExpressionNode,
     isStandaloneStatementParentKey,
     sourceRangeContainsCommentToken,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
-
-type MemberIndexExpressionNode = Readonly<{
-    type: "MemberIndexExpression";
-    object?: unknown;
-    property?: Array<unknown> | null;
-    accessor?: string | null;
-}>;
 
 type AssignmentExpressionNode = Readonly<{
     type: "AssignmentExpression";
@@ -38,14 +32,10 @@ type PreferArrayPushCandidate = Readonly<{
     valueExpression: unknown;
 }>;
 
-type UnwrapParenthesizedExpressionInput = Parameters<typeof CoreWorkspace.Core.unwrapParenthesizedExpression>[0];
+type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
 
 function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
     return isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=");
-}
-
-function isMemberIndexExpressionNode(node: unknown): node is MemberIndexExpressionNode {
-    return isAstNodeRecord(node) && node.type === "MemberIndexExpression";
 }
 
 function isCallExpressionNode(node: unknown): node is CallExpressionNode {
@@ -77,7 +67,7 @@ function isSafeArrayReceiver(node: unknown): boolean {
                 return false;
             }
 
-            const propertyEntry = CoreWorkspace.Core.getSingleMemberIndexPropertyEntry(node as never);
+            const propertyEntry = Core.getSingleMemberIndexPropertyEntry(node as never);
             return propertyEntry !== null && isSafeArrayReceiver(propertyEntry);
         }
         default: {
@@ -105,27 +95,25 @@ function tryGetPreferArrayPushCandidate(node: unknown, sourceText: string): Pref
         return null;
     }
 
-    const arrayExpression = CoreWorkspace.Core.unwrapParenthesizedExpression(
-        node.left.object as UnwrapParenthesizedExpressionInput
-    );
+    const arrayExpression = Core.unwrapParenthesizedExpression(node.left.object as UnwrapParenthesizedExpressionInput);
     if (!arrayExpression || !isSafeArrayReceiver(arrayExpression)) {
         return null;
     }
 
-    const indexExpression = CoreWorkspace.Core.getSingleMemberIndexPropertyEntry(node.left as never);
+    const indexExpression = Core.getSingleMemberIndexPropertyEntry(node.left as never);
     if (!isCallExpressionNode(indexExpression)) {
         return null;
     }
 
     if (
-        !CoreWorkspace.Core.isCallExpressionIdentifierMatch(indexExpression as never, "array_length", {
+        !Core.isCallExpressionIdentifierMatch(indexExpression as never, "array_length", {
             caseInsensitive: true
         })
     ) {
         return null;
     }
 
-    const indexArguments = CoreWorkspace.Core.getCallExpressionArguments(indexExpression as never);
+    const indexArguments = Core.getCallExpressionArguments(indexExpression as never);
     if (indexArguments.length !== 1) {
         return null;
     }

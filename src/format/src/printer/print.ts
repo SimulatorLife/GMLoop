@@ -672,14 +672,6 @@ function printBinaryExpressionNode(node, path, options, print) {
 
 function printUnaryLikeExpressionNode(node, _path, _options, print) {
     if (node.prefix) {
-        // Normalize `-0` to `0`: when a unary minus is applied to a literal zero
-        // (including normalized forms like `0.` → `0`), the result is numerically
-        // identical to positive zero in GML. Keeping `-0` would generate incorrect
-        // output after decimal normalization strips the fractional part.
-        if (node.operator === "-" && node.argument?.type === "Literal" && Number(node.argument.value) === 0) {
-            return concat(["0"]);
-        }
-
         return concat([node.operator, print("argument")]);
     }
 
@@ -2331,6 +2323,7 @@ function handleIntermediateTrailingSpacing({
         isLoopStatement &&
         (nextNodeIsVariableDeclaration || nextNodeIsLoop);
     const shouldForceVariableBlockLoopPadding =
+        isTopLevel &&
         hasAutomaticPaddingCapacityWithSuppressionGuard &&
         shouldForceVariableBlockBeforeLoopPadding(
             statements,

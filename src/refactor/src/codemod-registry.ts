@@ -23,6 +23,7 @@ import type {
 type RegisteredCodemodDefinition<T extends RefactorCodemodId> = {
     id: T;
     description: string;
+    requiresSemanticProjectIndex: boolean;
     normalizeConfig: (value: unknown, context: string) => RefactorCodemodConfigEntry<T>;
     execute: (
         engine: CodemodEngine,
@@ -128,6 +129,7 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
         id: "globalvarToGlobal",
         description:
             "Remove legacy `globalvar` declarations and replace all bare identifier references with `global.<name>`.",
+        requiresSemanticProjectIndex: false,
         normalizeConfig: normalizeGlobalvarToGlobalConfig,
         async execute(
             engine: CodemodEngine,
@@ -170,6 +172,7 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
     loopLengthHoisting: Object.freeze({
         id: "loopLengthHoisting",
         description: "Hoist repeated loop-length helper calls out of for-loop test expressions.",
+        requiresSemanticProjectIndex: false,
         normalizeConfig: normalizeLoopLengthHoistingConfig,
         async execute(
             engine: CodemodEngine,
@@ -212,6 +215,7 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
     namingConvention: Object.freeze({
         id: "namingConvention",
         description: "Plan and apply naming-policy-driven renames.",
+        requiresSemanticProjectIndex: true,
         normalizeConfig: normalizeNamingConventionConfig,
         async execute(
             engine: CodemodEngine,
@@ -280,6 +284,16 @@ export function normalizeRegisteredCodemodConfig<T extends RefactorCodemodId>(
     context: string
 ): RefactorCodemodConfigEntry<T> {
     return getRegisteredCodemodDefinition(codemodId).normalizeConfig(value, context);
+}
+
+/**
+ * Return the codemod ids that require an up-to-date semantic project index
+ * before they execute.
+ */
+export function listSemanticProjectIndexDependentCodemodIds(): Array<RefactorCodemodId> {
+    return Object.values(REGISTERED_CODEMOD_DEFINITIONS)
+        .filter((definition) => definition.requiresSemanticProjectIndex)
+        .map((definition) => definition.id);
 }
 
 /**

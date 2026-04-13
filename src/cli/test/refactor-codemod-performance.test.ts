@@ -10,7 +10,7 @@ import {
 } from "./test-helpers/refactor-top-level-naming-performance.js";
 
 const FUNCTION_COUNT = 2400;
-const PERFORMANCE_THRESHOLD_MS = 900;
+const PERFORMANCE_THRESHOLD_MS = 700;
 
 type RenameValidationCacheStats = {
     evictions: number;

@@ -189,19 +189,30 @@ function createLoopLengthHoistRewrite(parameters: {
     });
 }
 
+/**
+ * Apply a list of non-overlapping edits to `sourceText` using a left-to-right
+ * string builder.  Edits are sorted in **ascending** order so the result is
+ * assembled in a single forward pass without intermediate string copies,
+ * matching the same pattern used by `applyGroupedTextEditsToContent` in the
+ * refactor engine.
+ */
 function applySourceTextEdits(sourceText: string, edits: ReadonlyArray<LoopLengthHoistingEdit>): string {
     if (edits.length === 0) {
         return sourceText;
     }
 
-    const sorted = [...edits].toSorted((left, right) => right.start - left.start || right.end - left.end);
-    let output = sourceText;
+    const sorted = [...edits].toSorted((left, right) => left.start - right.start || left.end - right.end);
+    let result = "";
+    let cursor = 0;
 
     for (const edit of sorted) {
-        output = `${output.slice(0, edit.start)}${edit.text}${output.slice(edit.end)}`;
+        result += sourceText.slice(cursor, edit.start);
+        result += edit.text;
+        cursor = edit.end;
     }
 
-    return output;
+    result += sourceText.slice(cursor);
+    return result;
 }
 
 /**

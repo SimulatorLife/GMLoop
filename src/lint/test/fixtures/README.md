@@ -17,13 +17,13 @@ enable the rule(s) under test via `lintRules`, then identify the fixture kind:
 
 ```json
 {
-  "fixture": {
-    "kind": "lint",
-    "assertion": "transform"
-  },
-  "lintRules": {
-    "gml/rule-name-under-test": "error"
-  }
+    "fixture": {
+        "kind": "lint",
+        "assertion": "transform"
+    },
+    "lintRules": {
+        "gml/rule-name-under-test": "error"
+    }
 }
 ```
 
@@ -34,13 +34,13 @@ Feather fixtures use the `feather/` namespace:
 
 ```json
 {
-  "fixture": {
-    "kind": "lint",
-    "assertion": "transform"
-  },
-  "lintRules": {
-    "feather/gm1000": "error"
-  }
+    "fixture": {
+        "kind": "lint",
+        "assertion": "transform"
+    },
+    "lintRules": {
+        "feather/gm1000": "error"
+    }
 }
 ```
 

@@ -10,6 +10,7 @@ import {
 } from "./constants.js";
 import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
 import { normalizeProjectResourcePath } from "./path-normalization.js";
+import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { extractAssetReferencesFromMetadataDocument } from "./resource-reference-extractor.js";
 
 const RESOURCE_ANALYSIS_ABORT_MESSAGE = "Project index build was aborted.";
@@ -342,7 +343,7 @@ export async function analyseResourceFiles({
     yyFiles: Array<{ relativePath: string; absolutePath: string }>;
     fsFacade?: Required<Pick<ProjectIndexFsFacade, "readFile">>;
     signal?: AbortSignal | null;
-    logger?: { log: typeof console.log } | null;
+    logger?: ProjectIndexLogger;
 }) {
     const context = createResourceAnalysisContext();
 
@@ -371,7 +372,8 @@ export async function analyseResourceFiles({
     });
 
     if (logger) {
-        logger.log(
+        logProjectIndexDebug(
+            logger,
             `DEBUG: analyseResourceFiles parsed ${parsedCount}, skipped ${skippedCount}, resourcesMap size = ${context.resourcesMap.size}`
         );
     }

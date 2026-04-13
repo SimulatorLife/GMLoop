@@ -1,8 +1,8 @@
-import { Core } from "@gmloop/core";
+import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { printNodeForAutofix } from "../print-expression.js";
-import { cloneAstNodeWithoutTraversalLinks, createMeta, resolveLocFromIndex } from "../rule-base-helpers.js";
+import { createMeta, resolveLocFromIndex } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../transforms/logical-expression-traversal-normalization.js";
 
@@ -456,7 +456,7 @@ export function createOptimizeLogicalFlowRule(definition: GmlRuleDefinition): Ru
                         return;
                     }
 
-                    const cloned = cloneAstNodeWithoutTraversalLinks(node);
+                    const cloned = Core.cloneAstNode(node) as MutableGameMakerAstNode;
                     if (!cloned) {
                         return;
                     }

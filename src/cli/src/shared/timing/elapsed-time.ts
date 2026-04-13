@@ -1,3 +1,15 @@
+/**
+ * Nanosecond-precision monotonic timing helpers used by CLI commands to report
+ * per-file and overall processing durations.
+ *
+ * Previously lived in `@gmloop/core` (`src/core/src/utils/elapsed-time.ts`)
+ * despite its only consumers being CLI commands (`format` and `lint`).  Core is
+ * intentionally kept to AST types, traversal helpers, and workspace-agnostic
+ * primitives — CLI-specific timing utilities that surface verbose progress
+ * messages to a command-line user do not belong there.  This module is now
+ * co-located with the CLI commands that rely on it.
+ */
+
 const NANOSECONDS_PER_MILLISECOND = 1_000_000n;
 const NANOSECONDS_PER_CENTI_MILLISECOND = 10_000n;
 

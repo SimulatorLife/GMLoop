@@ -33,7 +33,6 @@ import { Command, Option } from "commander";
 import { createMinimumValueValidator, portValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { formatCliError } from "../cli-core/errors.js";
-import { normalizeExtensions } from "../cli-core/extension-normalizer.js";
 import { DEFAULT_GM_TEMP_ROOT, prepareHotReloadInjection } from "../modules/hot-reload/inject-runtime.js";
 import {
     type RuntimeStaticServerHandle,
@@ -69,6 +68,7 @@ import {
 } from "../modules/transpilation/runtime-identifiers.js";
 import { extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
+import { normalizeExtensions } from "../workflow/extension-normalizer.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
@@ -510,7 +510,7 @@ export function resolveUnknownScanConcurrency(configuredMaximum: number): number
  * @returns {number} Safe retranspile concurrency value (minimum 1).
  */
 export function resolveDependentRetranspileConcurrency(configuredMaximum: number): number {
-    return Math.max(1, Math.trunc(configuredMaximum));
+    return resolveUnknownScanConcurrency(configuredMaximum);
 }
 
 /**

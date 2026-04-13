@@ -10,6 +10,7 @@ import {
     getWorkspaceEditRevision,
     getWorkspaceEditTelemetry,
     isWorkspaceEditLike,
+    mergeWorkspaceEditInto,
     validateFileRenameOperations,
     WORKSPACE_EDIT_REVISION_TOKEN,
     WorkspaceEdit
@@ -297,4 +298,96 @@ void test("WORKSPACE_EDIT_REVISION_TOKEN on WorkspaceEdit returns the same value
     workspace.addEdit("scripts/a.gml", 0, 4, "test");
 
     assert.equal(workspace[WORKSPACE_EDIT_REVISION_TOKEN](), getWorkspaceEditRevision(workspace));
+});
+
+void test("mergeWorkspaceEditInto is a no-op when source is null", () => {
+    const target = new WorkspaceEdit();
+    target.addEdit("a.gml", 0, 3, "foo");
+
+    mergeWorkspaceEditInto(target, null);
+
+    assert.equal(target.edits.length, 1);
+    assert.equal(target.fileRenames.length, 0);
+    assert.equal(target.metadataEdits.length, 0);
+});
+
+void test("mergeWorkspaceEditInto is a no-op when source is undefined", () => {
+    const target = new WorkspaceEdit();
+    target.addEdit("a.gml", 0, 3, "foo");
+
+    mergeWorkspaceEditInto(target, undefined);
+
+    assert.equal(target.edits.length, 1);
+    assert.equal(target.fileRenames.length, 0);
+    assert.equal(target.metadataEdits.length, 0);
+});
+
+void test("mergeWorkspaceEditInto merges text edits into target", () => {
+    const target = new WorkspaceEdit();
+    target.addEdit("a.gml", 0, 3, "foo");
+
+    const source = new WorkspaceEdit();
+    source.addEdit("b.gml", 10, 15, "bar");
+
+    mergeWorkspaceEditInto(target, source);
+
+    assert.equal(target.edits.length, 2);
+    assert.ok(target.edits.some((e) => e.path === "a.gml"));
+    assert.ok(target.edits.some((e) => e.path === "b.gml" && e.newText === "bar"));
+});
+
+void test("mergeWorkspaceEditInto merges file renames into target", () => {
+    const target = new WorkspaceEdit();
+
+    const source = new WorkspaceEdit();
+    source.addFileRename("old.gml", "new.gml");
+
+    mergeWorkspaceEditInto(target, source);
+
+    assert.equal(target.fileRenames.length, 1);
+    assert.equal(target.fileRenames[0]?.oldPath, "old.gml");
+    assert.equal(target.fileRenames[0]?.newPath, "new.gml");
+});
+
+void test("mergeWorkspaceEditInto merges metadata edits into target", () => {
+    const target = new WorkspaceEdit();
+
+    const source = new WorkspaceEdit();
+    source.addMetadataEdit("resource.yy", '{"name":"foo"}');
+
+    mergeWorkspaceEditInto(target, source);
+
+    assert.equal(target.metadataEdits.length, 1);
+    assert.equal(target.metadataEdits[0]?.path, "resource.yy");
+    assert.equal(target.metadataEdits[0]?.content, '{"name":"foo"}');
+});
+
+void test("mergeWorkspaceEditInto merges all edit types simultaneously", () => {
+    const target = new WorkspaceEdit();
+    target.addEdit("existing.gml", 0, 5, "existing");
+
+    const source = new WorkspaceEdit();
+    source.addEdit("src.gml", 1, 4, "hello");
+    source.addFileRename("old_dir/res.yy", "new_dir/res.yy");
+    source.addMetadataEdit("res.yy", '{"name":"updated"}');
+
+    mergeWorkspaceEditInto(target, source);
+
+    assert.equal(target.edits.length, 2);
+    assert.equal(target.fileRenames.length, 1);
+    assert.equal(target.metadataEdits.length, 1);
+});
+
+void test("mergeWorkspaceEditInto respects the exact-duplicate guard on target", () => {
+    const target = new WorkspaceEdit();
+    target.addEdit("a.gml", 0, 3, "foo");
+
+    // Source carries an exact copy of the same edit that is already in target.
+    const source = new WorkspaceEdit();
+    source.addEdit("a.gml", 0, 3, "foo");
+
+    mergeWorkspaceEditInto(target, source);
+
+    // The duplicate guard on WorkspaceEdit should suppress the second insertion.
+    assert.equal(target.edits.length, 1);
 });

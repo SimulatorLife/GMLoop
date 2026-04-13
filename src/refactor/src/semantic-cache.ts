@@ -28,7 +28,7 @@ interface CacheEntry<T> {
 export interface SemanticCacheConfig {
     /**
      * Maximum number of entries to store per cache type.
-     * When exceeded, oldest entries are evicted (FIFO).
+     * When exceeded, least-recently-used entries are evicted (LRU).
      * A value of `0` keeps the cache active but gives it zero capacity, so
      * fetched results are returned without being retained.
      * Default: 100
@@ -106,6 +106,15 @@ export class SemanticQueryCache {
      * {@link invalidateAll}, {@link invalidateFile}, cache eviction, and TTL expiry.
      */
     private primedOccurrenceKeys = new Set<string>();
+
+    /**
+     * Reverse index mapping file paths to the set of occurrence cache keys that
+     * reference them.  Maintained on cache insert and eviction so that
+     * {@link invalidateFile} can locate affected entries in O(k) where k is the
+     * number of cache keys referencing that file, instead of scanning all
+     * occurrence cache entries O(n×m).
+     */
+    private occurrenceFileIndex = new Map<string, Set<string>>();
 
     private stats = {
         hits: 0,
@@ -254,6 +263,7 @@ export class SemanticQueryCache {
         this.dependentsCache.clear();
         this.existenceCache.clear();
         this.primedOccurrenceKeys.clear();
+        this.occurrenceFileIndex.clear();
     }
 
     /**
@@ -261,7 +271,7 @@ export class SemanticQueryCache {
      * Useful when a file changes but others remain valid.
      */
     invalidateFile(filePath: string): void {
-        const cachedSymbols = this.getCached(this.fileSymbolsCache, filePath);
+        const cachedSymbols = this.getCached(this.fileSymbolsCache, filePath, false);
         this.fileSymbolsCache.delete(filePath);
 
         if (cachedSymbols) {
@@ -281,13 +291,14 @@ export class SemanticQueryCache {
             }
         }
 
-        // Clear occurrence cache entries that reference this file and remove their
-        // primed status so the next fetch goes through deduplication again.
-        for (const [key, entry] of this.occurrenceCache.entries()) {
-            if (entry.value.some((occ) => occ.path === filePath)) {
-                this.occurrenceCache.delete(key);
-                this.primedOccurrenceKeys.delete(key);
+        // Clear occurrence cache entries that reference this file using the
+        // reverse index for O(k) lookup instead of scanning all entries.
+        const affectedKeys = this.occurrenceFileIndex.get(filePath);
+        if (affectedKeys) {
+            for (const key of affectedKeys) {
+                this.removeOccurrenceCacheEntry(key);
             }
+            this.occurrenceFileIndex.delete(filePath);
         }
     }
 
@@ -355,7 +366,7 @@ export class SemanticQueryCache {
      * Get a cached value if it exists and hasn't expired.
      * @private
      */
-    private getCached<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+    private getCached<T>(cache: Map<string, CacheEntry<T>>, key: string, promoteOnHit = true): T | null {
         const entry = cache.get(key);
         if (!entry) {
             return null;
@@ -364,11 +375,15 @@ export class SemanticQueryCache {
         const age = Date.now() - entry.timestamp;
         if (age > this.config.ttlMs) {
             cache.delete(key);
-            // Keep primed status in sync: a re-fetched (raw) entry is no longer deduped.
+            // Keep primed status and reverse index in sync: a re-fetched (raw) entry is no longer deduped.
             if (cache === this.occurrenceCache) {
-                this.primedOccurrenceKeys.delete(key);
+                this.removeOccurrenceIndexEntries(key);
             }
             return null;
+        }
+
+        if (promoteOnHit) {
+            this.promoteCacheEntry(cache, key, entry);
         }
 
         return entry.value;
@@ -384,16 +399,18 @@ export class SemanticQueryCache {
             return;
         }
 
-        // Evict oldest entry if cache is full (simple FIFO, not true LRU)
+        // Evict least-recently-used entry if cache is full (Map preserves insertion order;
+        // `getCached` promotes entries on hit by deleting + re-inserting them).
         if (cache.size >= this.config.maxSize) {
             const firstKey = cache.keys().next().value as string | undefined;
             if (firstKey !== undefined) {
                 cache.delete(firstKey);
                 this.stats.evictions++;
-                // Clear primed status for the evicted occurrence entry so a future
-                // re-fetch goes through deduplication before being re-primed.
+                // Clear primed status and reverse index for the evicted occurrence
+                // entry so a future re-fetch goes through deduplication before being
+                // re-primed.
                 if (cache === this.occurrenceCache) {
-                    this.primedOccurrenceKeys.delete(firstKey);
+                    this.removeOccurrenceIndexEntries(firstKey);
                 }
             }
         }
@@ -402,6 +419,75 @@ export class SemanticQueryCache {
             value,
             timestamp: Date.now()
         });
+
+        // Populate the reverse index so invalidateFile can locate affected entries
+        // in O(k) instead of scanning all occurrence cache values.
+        if (cache === this.occurrenceCache && Array.isArray(value)) {
+            this.addOccurrenceIndexEntries(key, value as Array<SymbolOccurrence>);
+        }
+    }
+
+    private promoteCacheEntry<T>(cache: Map<string, CacheEntry<T>>, key: string, entry: CacheEntry<T>): void {
+        cache.delete(key);
+        cache.set(key, entry);
+    }
+
+    /**
+     * Remove an occurrence cache entry and its associated primed status.
+     * Does **not** update the reverse index ({@link occurrenceFileIndex}) —
+     * callers are responsible for cleaning up index entries.
+     * {@link invalidateFile} handles this by deleting the filePath's index
+     * set after iterating its affected keys.
+     * @private
+     */
+    private removeOccurrenceCacheEntry(key: string): void {
+        this.occurrenceCache.delete(key);
+        this.primedOccurrenceKeys.delete(key);
+    }
+
+    /**
+     * Populate the reverse index for the given occurrence cache key.
+     * Extracts distinct file paths from the occurrence array and records
+     * the cache key under each path so {@link invalidateFile} can find it.
+     * @private
+     */
+    private addOccurrenceIndexEntries(cacheKey: string, occurrences: ReadonlyArray<SymbolOccurrence>): void {
+        for (const occurrence of occurrences) {
+            if (occurrence.path === undefined) {
+                continue;
+            }
+            let keys = this.occurrenceFileIndex.get(occurrence.path);
+            if (!keys) {
+                keys = new Set();
+                this.occurrenceFileIndex.set(occurrence.path, keys);
+            }
+            keys.add(cacheKey);
+        }
+    }
+
+    /**
+     * Remove a cache key from the primed set and from every reverse-index entry
+     * that references it.  Called on eviction, TTL expiry, and explicit invalidation.
+     * @private
+     */
+    private removeOccurrenceIndexEntries(cacheKey: string): void {
+        this.primedOccurrenceKeys.delete(cacheKey);
+        const entry = this.occurrenceCache.get(cacheKey);
+        if (!entry) {
+            return;
+        }
+        for (const occurrence of entry.value) {
+            if (occurrence.path === undefined) {
+                continue;
+            }
+            const keys = this.occurrenceFileIndex.get(occurrence.path);
+            if (keys) {
+                keys.delete(cacheKey);
+                if (keys.size === 0) {
+                    this.occurrenceFileIndex.delete(occurrence.path);
+                }
+            }
+        }
     }
 
     /**

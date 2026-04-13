@@ -208,34 +208,30 @@ function simplifyStatementList(body: any[]): boolean {
 }
 
 function simplifyIfStatement(node: any): boolean {
-    // 1. if (cond) return true; else return false; -> return cond;
-    // 2. if (cond) return false; else return true; -> return !cond;
-
     if (!node.consequent) {
         return false;
     }
 
-    // Normalize blocks to single statements if they contain only one statement
+    // Normalize blocks to single statements if they contain only one statement.
     const consequent = unwrapBlock(node.consequent);
     const alternate = node.alternate ? unwrapBlock(node.alternate) : null;
 
-    if (alternate && consequent.type === "ReturnStatement" && alternate.type === "ReturnStatement") {
-        const consArg = consequent.argument;
-        const altArg = alternate.argument;
-
-        const consBool = getBooleanValue(consArg);
-        const altBool = getBooleanValue(altArg);
-
-        const shouldNegate = resolveBooleanReturnNegation(consBool, altBool);
-        if (shouldNegate !== null) {
-            const newReturn = createBooleanReturnStatement(node.test, node.start, node.end, shouldNegate);
-            replaceNode(node, newReturn);
-            return true;
+    if (alternate !== null) {
+        // Rules 1 & 2: if (cond) return true/false; else return false/true; -> return cond/!cond;
+        // These apply even inside else-if chains (a return collapses the entire branch).
+        if (consequent.type === "ReturnStatement" && alternate.type === "ReturnStatement") {
+            const consBool = getBooleanValue(consequent.argument);
+            const altBool = getBooleanValue(alternate.argument);
+            const shouldNegate = resolveBooleanReturnNegation(consBool, altBool);
+            if (shouldNegate !== null) {
+                const newReturn = createBooleanReturnStatement(node.test, node.start, node.end, shouldNegate);
+                replaceNode(node, newReturn);
+                return true;
+            }
         }
-    }
 
-    // 3. if (cond) x = A; else x = B; -> x = cond ? A : B;
-    if (alternate) {
+        // Rule 3: if (cond) x = A; else x = B; -> x = cond ? A : B;
+        // Skip else-if chains: folding them into a ternary harms readability more than it helps.
         if (isElseIfAlternateChainNode(node)) {
             return false;
         }
@@ -266,37 +262,37 @@ function simplifyIfStatement(node: any): boolean {
             replaceNode(node, statement);
             return true;
         }
+
+        return false;
     }
 
+    // Rules 4 & 5 (no else branch):
     // 4. if (is_undefined(x)) x = y; -> x ??= y;
     // 5. if (x == undefined) x = y; -> x ??= y;
-    if (!node.alternate) {
-        const assignment = getAssignmentExpressionFromStatementLikeNode(consequent);
-        if (!assignment || assignment.operator !== "=") {
-            return false;
-        }
+    const assignment = getAssignmentExpressionFromStatementLikeNode(consequent);
+    if (!assignment || assignment.operator !== "=") {
+        return false;
+    }
 
-        const target = assignment.left;
-        const value = assignment.right;
+    const target = assignment.left;
+    const value = assignment.right;
 
-        // Check condition: is_undefined(x) or x == undefined
-        if (isUndefinedCheck(node.test, target)) {
-            // x ??= value;
-            const coalesceAssign = {
-                type: "AssignmentExpression",
-                operator: "??=",
-                left: target,
-                right: value
-            };
-            const statement = {
-                type: "ExpressionStatement",
-                expression: coalesceAssign,
-                start: node.start,
-                end: node.end
-            };
-            replaceNode(node, statement);
-            return true;
-        }
+    if (isUndefinedCheck(node.test, target)) {
+        // x ??= value;
+        const coalesceAssign = {
+            type: "AssignmentExpression",
+            operator: "??=",
+            left: target,
+            right: value
+        };
+        const statement = {
+            type: "ExpressionStatement",
+            expression: coalesceAssign,
+            start: node.start,
+            end: node.end
+        };
+        replaceNode(node, statement);
+        return true;
     }
 
     return false;

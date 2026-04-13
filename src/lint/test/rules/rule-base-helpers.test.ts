@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { Core } from "@gmloop/core";
+import type { Rule } from "eslint";
+
 import {
-    cloneAstNodeWithoutTraversalLinks,
+    collectIdentifierNamesInSubtree,
     createCommentTokenRangeIndex,
     findFirstAstNodeBy,
+    isAssignmentExpressionNode,
     isAssignmentExpressionNodeWithOperator,
+    isIdentifierNode,
+    isMemberIndexExpressionNode,
+    isVariableDeclaratorNode,
     rangeContainsCommentToken,
     resolveLocFromIndex,
     sourceRangeContainsCommentToken,
@@ -68,7 +75,7 @@ void test("walkAstNodes preserves source order when traversing array children", 
     assert.deepEqual(visitedIdentifiers, ["alpha", "beta", "gamma"]);
 });
 
-void test("cloneAstNodeWithoutTraversalLinks keeps local parent links without cloning ancestors", () => {
+void test("Core.cloneAstNode keeps local parent links without cloning ancestors", () => {
     const identifierNode: { type: string; name: string; parent?: unknown } = {
         type: "Identifier",
         name: "value"
@@ -84,7 +91,7 @@ void test("cloneAstNodeWithoutTraversalLinks keeps local parent links without cl
     identifierNode.parent = astRoot;
     (astRoot as { parent?: unknown }).parent = externalParent;
 
-    const clonedRoot = cloneAstNodeWithoutTraversalLinks(astRoot);
+    const clonedRoot = Core.cloneAstNode(astRoot) as Record<string, unknown>;
     const clonedIdentifier = (clonedRoot.body as Array<Record<string, unknown>>)[0];
 
     assert.equal("parent" in clonedRoot, false);
@@ -92,7 +99,7 @@ void test("cloneAstNodeWithoutTraversalLinks keeps local parent links without cl
     assert.equal(clonedIdentifier.parent, clonedRoot);
 });
 
-void test("cloneAstNodeWithoutTraversalLinks preserves nested node values", () => {
+void test("Core.cloneAstNode preserves nested node values", () => {
     const astRoot = {
         type: "AssignmentExpression",
         operator: "=",
@@ -100,7 +107,7 @@ void test("cloneAstNodeWithoutTraversalLinks preserves nested node values", () =
         right: { type: "Literal", value: "42" }
     };
 
-    const clonedRoot = cloneAstNodeWithoutTraversalLinks(astRoot);
+    const clonedRoot = Core.cloneAstNode(astRoot) as Record<string, unknown>;
     const clonedLeft = clonedRoot.left as Record<string, unknown>;
     const clonedRight = clonedRoot.right as Record<string, unknown>;
 
@@ -193,18 +200,108 @@ void test("isAssignmentExpressionNodeWithOperator rejects non-assignment and mis
     );
 });
 
+// ── Shared node type guard tests ──────────────────────────────────────
+
+void test("isIdentifierNode accepts a well-formed Identifier node", () => {
+    const node = { type: "Identifier", name: "count" };
+    assert.equal(isIdentifierNode(node), true);
+});
+
+void test("isIdentifierNode rejects a node without a string name", () => {
+    assert.equal(isIdentifierNode({ type: "Identifier" }), false);
+    assert.equal(isIdentifierNode({ type: "Identifier", name: 42 }), false);
+});
+
+void test("isIdentifierNode rejects non-Identifier node types", () => {
+    assert.equal(isIdentifierNode({ type: "Literal", value: "hello" }), false);
+    assert.equal(isIdentifierNode(null), false);
+    assert.equal(isIdentifierNode("string"), false);
+    assert.equal(isIdentifierNode([{ type: "Identifier", name: "x" }]), false);
+});
+
+void test("isMemberIndexExpressionNode accepts a MemberIndexExpression node", () => {
+    const node = { type: "MemberIndexExpression", object: {}, property: [{}], accessor: "[" };
+    assert.equal(isMemberIndexExpressionNode(node), true);
+});
+
+void test("isMemberIndexExpressionNode accepts minimal MemberIndexExpression (type only)", () => {
+    assert.equal(isMemberIndexExpressionNode({ type: "MemberIndexExpression" }), true);
+});
+
+void test("isMemberIndexExpressionNode rejects non-matching types and non-objects", () => {
+    assert.equal(isMemberIndexExpressionNode({ type: "CallExpression" }), false);
+    assert.equal(isMemberIndexExpressionNode(null), false);
+    assert.equal(isMemberIndexExpressionNode(undefined), false);
+    assert.equal(isMemberIndexExpressionNode(42), false);
+});
+
+void test("isVariableDeclaratorNode accepts a VariableDeclarator node", () => {
+    const node = { type: "VariableDeclarator", id: { type: "Identifier", name: "x" }, init: null };
+    assert.equal(isVariableDeclaratorNode(node), true);
+});
+
+void test("isVariableDeclaratorNode accepts minimal VariableDeclarator (type only)", () => {
+    assert.equal(isVariableDeclaratorNode({ type: "VariableDeclarator" }), true);
+});
+
+void test("isVariableDeclaratorNode rejects non-matching types and non-objects", () => {
+    assert.equal(isVariableDeclaratorNode({ type: "VariableDeclaration" }), false);
+    assert.equal(isVariableDeclaratorNode(null), false);
+    assert.equal(isVariableDeclaratorNode([]), false);
+});
+
+void test("isAssignmentExpressionNode accepts any assignment operator", () => {
+    const equals = { type: "AssignmentExpression", operator: "=", left: {}, right: {} };
+    const plusEquals = { type: "AssignmentExpression", operator: "+=", left: {}, right: {} };
+    assert.equal(isAssignmentExpressionNode(equals), true);
+    assert.equal(isAssignmentExpressionNode(plusEquals), true);
+});
+
+void test("isAssignmentExpressionNode accepts minimal AssignmentExpression (type only)", () => {
+    assert.equal(isAssignmentExpressionNode({ type: "AssignmentExpression" }), true);
+});
+
+void test("isAssignmentExpressionNode rejects non-matching types and non-objects", () => {
+    assert.equal(isAssignmentExpressionNode({ type: "BinaryExpression", operator: "=" }), false);
+    assert.equal(isAssignmentExpressionNode(null), false);
+    assert.equal(isAssignmentExpressionNode("AssignmentExpression"), false);
+});
+
+// ── Shared guard integration: collectIdentifierNamesInSubtree ─────────
+
+void test("collectIdentifierNamesInSubtree uses the shared isIdentifierNode guard", () => {
+    const ast = {
+        type: "Program",
+        body: [
+            {
+                type: "VariableDeclaration",
+                declarations: [
+                    {
+                        type: "VariableDeclarator",
+                        id: { type: "Identifier", name: "alpha" },
+                        init: { type: "Identifier", name: "beta" }
+                    }
+                ]
+            }
+        ]
+    };
+
+    const names = collectIdentifierNamesInSubtree(ast);
+    assert.deepEqual([...names].sort(), ["alpha", "beta"]);
+});
+
 // Helper that produces a minimal Rule.RuleContext stub for resolveLocFromIndex tests.
 // The stub can optionally expose a getLocFromIndex implementation on sourceCode.
 function createStubRuleContext(
     sourceText: string,
     getLocFromIndex?: (index: number) => { line: number; column: number } | undefined
-): import("eslint").Rule.RuleContext {
+): Rule.RuleContext {
     return {
         sourceCode: {
             text: sourceText,
             ...(getLocFromIndex === undefined ? {} : { getLocFromIndex })
         }
-    } as unknown as import("eslint").Rule.RuleContext;
+    } as unknown as Rule.RuleContext;
 }
 
 void test("resolveLocFromIndex returns line 1 column 0 for index 0 in a single-line source", () => {

@@ -8,7 +8,7 @@ import {
     isCommentOnlyLine
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
-import { isIdentifier, shouldReportUnsafe } from "../rule-helpers.js";
+import { shouldReportUnsafe } from "../rule-helpers.js";
 
 type StructAssignmentRecord = Readonly<{
     indentation: string;
@@ -48,7 +48,7 @@ function parseStructAssignmentLine(line: string): StructAssignmentRecord | null 
     }
 
     const propertyName = staticIndexAssignmentMatch[3] ?? staticIndexAssignmentMatch[4] ?? "";
-    if (!isIdentifier(propertyName)) {
+    if (!Core.isGmlIdentifierName(propertyName)) {
         return null;
     }
 
@@ -140,7 +140,7 @@ export function createPreferStructLiteralAssignmentsRule(definition: GmlRuleDefi
                         if (
                             !firstAssignment ||
                             nestedSelfAssignmentCluster ||
-                            !isIdentifier(firstAssignment.objectName) ||
+                            !Core.isGmlIdentifierName(firstAssignment.objectName) ||
                             firstAssignment.objectName.toLowerCase() === "global"
                         ) {
                             rewrittenLines.push(lines[lineIndex]);

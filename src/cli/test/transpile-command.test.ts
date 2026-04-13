@@ -94,3 +94,22 @@ void test("transpile --write writes JavaScript output files", async () => {
         await rm(temporaryDirectory, { recursive: true, force: true });
     }
 });
+
+void test("transpile reports supported target types when passed a non-GML file", async () => {
+    const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-transpile-invalid-target-"));
+    const invalidTargetPath = path.join(temporaryDirectory, "notes.txt");
+
+    try {
+        await writeFile(invalidTargetPath, "not gml", "utf8");
+
+        const result = await runCliTestCommand({
+            argv: ["transpile", "--path", invalidTargetPath]
+        });
+
+        assert.equal(result.exitCode, 1);
+        assert.match(result.stderr, /Transpile only accepts \.gml files, \.yyp files, or directories\./);
+        assert.match(result.stderr, /notes\.txt/);
+    } finally {
+        await rm(temporaryDirectory, { recursive: true, force: true });
+    }
+});

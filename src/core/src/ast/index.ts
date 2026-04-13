@@ -1,3 +1,4 @@
+export * from "./ast-node-equivalence.js";
 export * from "./binary-operators.js";
 export * from "./index-adjustments.js";
 export * from "./location-keys.js";

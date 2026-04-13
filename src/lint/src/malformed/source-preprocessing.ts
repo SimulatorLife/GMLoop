@@ -33,7 +33,7 @@ export function fixMalformedComments(sourceText: string): CommentFixResult {
         return { sourceText, indexMapper: (i) => i };
     }
 
-    const pattern = /^(\s*)\/\s+(@.+)$/gm;
+    const malformedCommentPattern = /^(\s*)\/\s+(@.+)$/gm;
     const changes: Array<{
         newStart: number;
         newLength: number;
@@ -42,21 +42,24 @@ export function fixMalformedComments(sourceText: string): CommentFixResult {
     }> = [];
     let accumulatedDiff = 0;
 
-    const newText = sourceText.replaceAll(pattern, (match, p1, p2, index) => {
-        const replacement = `${p1}// ${p2}`;
-        const diff = replacement.length - match.length;
+    const newText = sourceText.replaceAll(
+        malformedCommentPattern,
+        (match, indentationPrefix, annotationText, index) => {
+            const replacement = `${indentationPrefix}// ${annotationText}`;
+            const diff = replacement.length - match.length;
 
-        if (diff !== 0) {
-            changes.push({
-                newStart: index + accumulatedDiff,
-                newLength: replacement.length,
-                oldLength: match.length,
-                diff
-            });
-            accumulatedDiff += diff;
+            if (diff !== 0) {
+                changes.push({
+                    newStart: index + accumulatedDiff,
+                    newLength: replacement.length,
+                    oldLength: match.length,
+                    diff
+                });
+                accumulatedDiff += diff;
+            }
+            return replacement;
         }
-        return replacement;
-    });
+    );
 
     const indexMapper = (index: number): number => {
         let currentShift = 0;

@@ -229,9 +229,6 @@ importers:
       '@gmloop/cli':
         specifier: workspace:*
         version: link:../cli
-      '@gmloop/core':
-        specifier: workspace:*
-        version: link:../core
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.3.6)

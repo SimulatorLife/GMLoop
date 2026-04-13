@@ -4,15 +4,8 @@ import test from "node:test";
 
 import { planNamingConventionCodemod } from "../src/codemods/naming-convention/index.js";
 import type {
-    ApplyWorkspaceEditOptions,
-    BatchRenamePlanSummary,
-    CodemodEngine,
-    ExecuteBatchRenameRequest,
-    ExecuteGlobalvarToGlobalCodemodRequest,
-    ExecuteGlobalvarToGlobalCodemodResult,
-    ExecuteLoopLengthHoistingCodemodRequest,
-    ExecuteLoopLengthHoistingCodemodResult,
-    ExecuteRenameResult,
+    CodemodRenameOperations,
+    CodemodSemanticProvider,
     PartialSemanticAnalyzer,
     RenameRequest,
     ValidationSummary
@@ -43,7 +36,7 @@ function createTopLevelTargets(count: number): NonNullable<PartialSemanticAnalyz
         });
 }
 
-class ValidationDelayEngine implements CodemodEngine {
+class ValidationDelayEngine implements CodemodSemanticProvider, CodemodRenameOperations {
     public readonly semantic: PartialSemanticAnalyzer;
     public activeValidations = 0;
     public maxConcurrentValidations = 0;
@@ -52,18 +45,6 @@ class ValidationDelayEngine implements CodemodEngine {
         this.semantic = {
             listNamingConventionTargets: listTargets
         };
-    }
-
-    public async executeGlobalvarToGlobalCodemod(
-        _request: ExecuteGlobalvarToGlobalCodemodRequest
-    ): Promise<ExecuteGlobalvarToGlobalCodemodResult> {
-        throw new Error("Not used by naming-convention validation performance test.");
-    }
-
-    public async executeLoopLengthHoistingCodemod(
-        _request: ExecuteLoopLengthHoistingCodemodRequest
-    ): Promise<ExecuteLoopLengthHoistingCodemodResult> {
-        throw new Error("Not used by naming-convention validation performance test.");
     }
 
     public async validateRenameRequest(request: RenameRequest): Promise<
@@ -85,22 +66,13 @@ class ValidationDelayEngine implements CodemodEngine {
         };
     }
 
-    public async prepareBatchRenamePlan(_request: Array<RenameRequest>): Promise<BatchRenamePlanSummary> {
+    public async prepareBatchRenamePlan(): Promise<never> {
         throw new Error("Not used by naming-convention validation performance test.");
     }
 
-    public async executeBatchRename(_request: ExecuteBatchRenameRequest): Promise<ExecuteRenameResult> {
+    public async executeBatchRename(): Promise<never> {
         throw new Error("Not used by naming-convention validation performance test.");
     }
-
-    public async applyWorkspaceEdit(
-        _workspace: Parameters<CodemodEngine["applyWorkspaceEdit"]>[0],
-        _options: ApplyWorkspaceEditOptions
-    ): Promise<Map<string, string>> {
-        throw new Error("Not used by naming-convention validation performance test.");
-    }
-
-    public clearQueryCaches(): void {}
 }
 
 void test("namingConvention top-level validation uses bounded parallelism for large rename sets", async () => {

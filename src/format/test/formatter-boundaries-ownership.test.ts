@@ -779,4 +779,21 @@ void describe("formatter boundaries ownership", () => {
             "Formatter must not silently rewrite `+counter` to `counter` (§2.1, §3.2)."
         );
     });
+
+    void it("preserves unary minus before zero literals (semantic rewrite belongs in lint)", async () => {
+        // Collapsing `-0` to `0` removes a unary operator, which is a structural
+        // and semantic change — not a layout transform. The lint rule
+        // `gml/no-negative-zero` now owns this rewrite.
+        // (target-state.md §2.1, §3.2 — "Formatter must not perform semantic/content rewrites")
+        const source = ["var x = -0;", ""].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.match(
+            formatted,
+            /-0/,
+            "Formatter must preserve `-0` verbatim — collapsing to `0` is a lint-workspace responsibility (gml/no-negative-zero)."
+        );
+        assert.doesNotMatch(formatted, /var x = 0;/, "Formatter must not silently rewrite `-0` to `0` (§2.1, §3.2).");
+    });
 });

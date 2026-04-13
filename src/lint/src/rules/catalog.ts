@@ -239,6 +239,12 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         shortName: "no-unary-plus-on-identifier",
         fullId: "gml/no-unary-plus-on-identifier",
         messageId: "noUnaryPlusOnIdentifier"
+    },
+    {
+        mapKey: "GmlNoNegativeZero",
+        shortName: "no-negative-zero",
+        fullId: "gml/no-negative-zero",
+        messageId: "noNegativeZero"
     }
 ]);
 

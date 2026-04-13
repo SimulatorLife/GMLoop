@@ -3,7 +3,6 @@ export * from "./array.js";
 export * from "./async.js";
 export * from "./capability-probes.js";
 export * from "./date.js";
-export * from "./elapsed-time.js";
 export * from "./enumerated-options.js";
 export * from "./environment.js";
 export * from "./error.js";

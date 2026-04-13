@@ -16,7 +16,7 @@ void test("format accepts a .yyp --path target and formats project .gml files", 
         await writeFile(sourcePath, "function demo( ) {\nif(true){\nreturn 1;\n}\n}\n", "utf8");
 
         const result = await runCliTestCommand({
-            argv: ["format", "--fix", "--path", yypPath]
+            argv: ["format", "--write", "--path", yypPath]
         });
 
         assert.equal(result.exitCode, 0);

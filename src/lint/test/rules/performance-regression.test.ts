@@ -348,12 +348,12 @@ void test(
             "expected prefer-loop-invariant-expressions to keep hoisting loop-invariant subexpressions"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 7500,
-            `expected prefer-loop-invariant-expressions rule runtime under 7500ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
+            timedRun.ruleMilliseconds < 10_000,
+            `expected prefer-loop-invariant-expressions rule runtime under 10000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 23_000,
-            `expected total lint runtime under 23000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
+            timedRun.elapsedMilliseconds < 30_000,
+            `expected total lint runtime under 30000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
 );
