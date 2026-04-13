@@ -49,6 +49,10 @@ function createErrorOccurrence(overrides: Partial<PatchErrorOccurrence> = {}): P
     };
 }
 
+function stubRegistryFunction() {
+    return 42;
+}
+
 void describe("registry helpers", () => {
     void it("getRegistryCollectionForPatchKind returns scripts for 'script' kind", () => {
         const scripts = { fn1: () => 1 };
@@ -79,11 +83,8 @@ void describe("registry helpers", () => {
     });
 
     void it("getRegistryEntry returns the function when entry exists", () => {
-        function testFunction() {
-            return 42;
-        }
-        const registry = createMockRegistry({ scripts: { myFn: testFunction } });
-        assert.strictEqual(getRegistryEntry(registry, "script", "myFn"), testFunction);
+        const registry = createMockRegistry({ scripts: { myFn: stubRegistryFunction } });
+        assert.strictEqual(getRegistryEntry(registry, "script", "myFn"), stubRegistryFunction);
     });
 
     void it("getRegistryEntry returns undefined when entry does not exist", () => {
