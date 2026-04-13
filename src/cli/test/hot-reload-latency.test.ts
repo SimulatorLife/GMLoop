@@ -14,7 +14,8 @@ import type { WatchListener } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { after, before, describe, it } from "node:test";
 
-import { computeHotReloadLatencyStats, runWatchCommand } from "../src/commands/watch.js";
+import { runWatchCommand } from "../src/commands/watch.js";
+import { computeHotReloadLatencyStats } from "../src/commands/watch-source-analysis.js";
 import { findAvailablePort } from "./test-helpers/free-port.js";
 import {
     fetchStatusPayload,

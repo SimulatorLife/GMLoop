@@ -11,4 +11,5 @@ export * from "./prepare-hot-reload.js";
 export * from "./refactor.js";
 export * from "./transpile.js";
 export * from "./watch.js";
+export * from "./watch-source-analysis.js";
 export * from "./watch-status.js";
