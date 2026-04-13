@@ -1,4 +1,5 @@
-import { isObjectLike, isSetLike, shouldSkipTraversal } from "./utils.js";
+import { shouldSkipTraversal } from "../../ast/index.js";
+import { isObjectLike, isSetLike } from "../../utils/index.js";
 
 /**
  * Metadata stored on an AST node related to its doc comments.

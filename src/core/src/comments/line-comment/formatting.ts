@@ -1,3 +1,4 @@
+import { isNonEmptyString, isObjectLike, isRegExpLike, toTrimmedString } from "../../utils/index.js";
 import { getCommentBoundaryIndex, getCommentValue } from "../comment-utils.js";
 import { applyJsDocReplacements } from "../doc-comment/type-normalization.js";
 import { evaluateBannerCommentPolicy, isBelowBannerSlashThreshold } from "./banner-comment-policy.js";
@@ -6,7 +7,6 @@ import {
     DEFAULT_LINE_COMMENT_OPTIONS,
     normalizeLineCommentOptions
 } from "./options.js";
-import { isNonEmptyString, isObjectLike, isRegExpLike, toTrimmedString } from "./utils.js";
 
 // BANNER DECORATION PATTERN DESIGN:
 //
