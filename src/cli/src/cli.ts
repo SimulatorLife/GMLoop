@@ -361,8 +361,8 @@ export async function runCliCommandCapture({ argv = [], env = {}, cwd }: RunCliC
     };
 }
 
-export async function runCliTestCommand(options: RunCliTestCommandOptions = {}) {
-    return await runCliCommandCapture(options);
+export function runCliTestCommand(options: RunCliTestCommandOptions = {}) {
+    return runCliCommandCapture(options);
 }
 
 export function getCliCommandCatalog(): ReadonlyArray<CliCatalogEntry> {
