@@ -22,6 +22,7 @@
     {"weight":1,"name":"agent-02-resolve-merge-conflicts"},
     {"weight":0.7,"name":"agent-03-dry"},
     {"weight":0.2,"name":"agent-04-style"},
+    {"weight":0.2,"name":"agent-05-consolidate-files"},
     {"weight":0.2,"name":"agent-06-decouple"},
     {"weight":0.014,"name":"agent-09-dependencies"},
     {"weight":0.02,"name":"agent-10-documentation"},
