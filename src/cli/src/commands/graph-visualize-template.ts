@@ -6,20 +6,20 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GMLoop Graph Index - ${title}</title>
   <style>
-    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #fafafa; }
-    header { position: absolute; top: 0; left: 0; right: 0; padding: 10px 20px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 10; display: flex; gap: 15px; align-items: center; }
-    h1 { margin: 0; font-size: 16px; font-weight: 600; color: #333; }
-    #search { padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 200px; }
-    button { padding: 4px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; }
-    button:hover { background: #eee; }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #1e1e1e; color: #e0e0e0; }
+    header { position: absolute; top: 0; left: 0; right: 0; padding: 10px 20px; background: #252526; box-shadow: 0 1px 3px rgba(0,0,0,0.5); z-index: 10; display: flex; gap: 15px; align-items: center; }
+    h1 { margin: 0; font-size: 16px; font-weight: 600; color: #e0e0e0; }
+    #search { padding: 4px 8px; border: 1px solid #555; border-radius: 4px; font-size: 14px; width: 200px; background: #333; color: #eee; }
+    button { padding: 4px 10px; border: 1px solid #555; border-radius: 4px; background: #333; color: #eee; cursor: pointer; font-size: 14px; }
+    button:hover { background: #444; }
     main { width: 100%; height: 100%; }
     svg { width: 100%; height: 100%; cursor: grab; }
     svg:active { cursor: grabbing; }
     
-    .node { stroke: #fff; stroke-width: 1.5px; cursor: pointer; }
-    .node.toolset { stroke-dasharray: 2,2; stroke: #333; stroke-width: 2px; }
+    .node { stroke: #1e1e1e; stroke-width: 1.5px; cursor: pointer; }
+    .node.toolset { stroke-dasharray: 2,2; stroke: #aaa; stroke-width: 2px; }
     .node.dimmed { opacity: 0.1 !important; }
-    .node.highlighted { stroke: #000; stroke-width: 3px; }
+    .node.highlighted { stroke: #fff; stroke-width: 3px; }
     
     .link { stroke-opacity: 0.6; fill: none; }
     .link.dimmed { stroke-opacity: 0.05 !important; }
@@ -43,16 +43,18 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     .node-resource, .node-sprite, .node-shader, .node-room { fill: #8c564b; }
     .node-default { fill: #7f7f7f; }
     
-    text { font-size: 10px; pointer-events: none; text-shadow: 0 1px 2px #fff, 0 -1px 2px #fff, 1px 0 2px #fff, -1px 0 2px #fff; }
+    text { font-size: 10px; pointer-events: none; fill: #e0e0e0; text-shadow: 0 1px 2px #1e1e1e, 0 -1px 2px #1e1e1e, 1px 0 2px #1e1e1e, -1px 0 2px #1e1e1e; }
     
-    #tooltip { position: absolute; background: white; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); pointer-events: none; font-size: 12px; z-index: 20; max-width: 300px; display: none; }
+    #tooltip { position: absolute; background: #252526; padding: 10px; border: 1px solid #444; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); pointer-events: none; font-size: 12px; z-index: 20; max-width: 300px; display: none; color: #eee; }
     #tooltip.visible { display: block; }
-    #tooltip h3 { margin: 0 0 5px 0; font-size: 14px; word-break: break-all; }
+    #tooltip h3 { margin: 0 0 5px 0; font-size: 14px; word-break: break-all; color: #fff; }
     
-    #legend { position: absolute; bottom: 20px; right: 20px; background: rgba(255,255,255,0.9); padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; z-index: 10; pointer-events: none; }
+    #legend { position: absolute; bottom: 20px; right: 20px; background: rgba(37, 37, 38, 0.9); padding: 10px; border: 1px solid #444; border-radius: 4px; font-size: 12px; z-index: 10; color: #eee; max-height: 80%; overflow-y: auto; }
     
-    #filters { display: flex; gap: 10px; flex-wrap: wrap; margin-left: 10px; align-items: center; border-left: 1px solid #ccc; padding-left: 15px; }
-    .filter-item { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; }
+    .filter-item { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; margin-top: 2px; }
+    .filter-section { margin-bottom: 10px; }
+    .filter-section strong { display: block; margin-bottom: 5px; cursor: pointer; }
+    .sub-filter { margin-left: 15px; }
     
     /* Marker definitions */
   </style>
@@ -62,8 +64,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
   <header>
     <h1>Graph Index</h1>
     <input type="search" id="search" placeholder="Search nodes…" />
-    <button id="reset-zoom">Reset Zoom</button>
-    <div id="filters"></div>
+    <button id="reset-default">Reset</button>
   </header>
   <main>
     <svg id="graph">
@@ -77,17 +78,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     </svg>
     <div id="tooltip"></div>
     <aside id="legend">
-      <strong>Nodes</strong>
-      <div style="color:#1f77b4">■ Script</div>
-      <div style="color:#2ca02c">■ Object</div>
-      <div style="color:#9467bd">■ Enum</div>
-      <div style="color:#ff7f0e">■ Macro</div>
-      <div style="color:#8c564b">■ Resource</div>
-      <br>
-      <strong>Edges</strong>
-      <div style="color:#1f77b4">— Calls</div>
-      <div style="color:#999; border-bottom:1px dashed">References</div>
-      <div style="color:#d62728">— Inherits</div>
+        <!-- Rendered by JS -->
     </aside>
   </main>
   <script>
@@ -116,9 +107,16 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         
     svg.call(zoom);
     
-    d3.select("#reset-zoom").on("click", () => {
+    d3.select("#reset-default").on("click", () => {
        svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
-       clearFocus();
+       if (typeof clearFocus === 'function') clearFocus();
+       
+       // Reset filters
+       activeFilters = new Set(edgeTypes);
+       activeNodeFilters = new Set(DATA.nodes.map(n => n.kind));
+       d3.selectAll("#legend input[type='checkbox']").property("checked", true).property("indeterminate", false);
+       
+       updateGraph();
     });
     
     // Performance guardrails
@@ -126,22 +124,91 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         console.warn("Large graph detected:", DATA.nodes.length, "nodes. Adjusting rendering parameters.");
     }
     
-    // Extract unique edge types for filters
+    // Extract filters
     const edgeTypes = Array.from(new Set(DATA.edges.map(e => e.type)));
-    const activeFilters = new Set(edgeTypes);
+    let activeFilters = new Set(edgeTypes);
     
-    const filtersDiv = d3.select("#filters");
-    edgeTypes.forEach(type => {
-        const label = filtersDiv.append("label").attr("class", "filter-item");
-        label.append("input")
+    const resourceKinds = new Set(["script", "object", "room", "sprite", "shader"]);
+    const resourceTypesPresent = Array.from(new Set(DATA.nodes.map(n => n.kind).filter(k => resourceKinds.has(k))));
+    const otherTypesPresent = Array.from(new Set(DATA.nodes.map(n => n.kind).filter(k => !resourceKinds.has(k))));
+    let activeNodeFilters = new Set(DATA.nodes.map(n => n.kind));
+
+    function createFilterCheckbox(container, id, labelText, category, typeVal, changeHandler, customClass="") {
+        const wrap = container.append("label").attr("class", \`filter-item \${customClass}\`);
+        const checkbox = wrap.append("input")
             .attr("type", "checkbox")
+            .attr("id", id)
             .attr("checked", true)
             .on("change", function() {
-                if (this.checked) activeFilters.add(type);
-                else activeFilters.delete(type);
+                changeHandler(this.checked, typeVal);
                 updateGraph();
             });
-        label.append("span").text(type);
+        
+        if (category === 'node' || category === 'node-group') {
+             let color = "#7f7f7f"; // default
+             if (typeVal === 'script') color = "#1f77b4";
+             else if (typeVal === 'object') color = "#2ca02c";
+             else if (typeVal === 'enum') color = "#9467bd";
+             else if (typeVal === 'macro') color = "#ff7f0e";
+             else if (typeVal === 'file') color = "#c7c7c7";
+             else if (resourceKinds.has(typeVal) || typeVal === 'resource') color = "#8c564b";
+             wrap.append("span").html(\`<span style="color:\${color}">■</span> \${labelText}\`);
+        } else {
+             let strokeStyle = "border-bottom: 2px solid #555;";
+             if (typeVal === 'calls') strokeStyle = "border-bottom: 2px solid #1f77b4;";
+             else if (typeVal === 'references') strokeStyle = "border-bottom: 1px dashed #999;";
+             else if (typeVal === 'contains') strokeStyle = "border-bottom: 1px dashed #2ca02c;";
+             else if (typeVal === 'defines') strokeStyle = "border-bottom: 1px dashed #2ca02c;";
+             else if (typeVal === 'inherits') strokeStyle = "border-bottom: 2px solid #d62728;";
+             else if (typeVal === 'uses_toolset') strokeStyle = "border-bottom: 1px dashed #ff7f0e;";
+             else if (typeVal === 'depends_on') strokeStyle = "border-bottom: 2px solid #7f7f7f;";
+             else if (typeVal === 'placed_in_room') strokeStyle = "border-bottom: 1px dashed #9467bd;";
+             wrap.append("span").html(\`<span style="display:inline-block; width:12px; margin-right:4px; \${strokeStyle}"></span>\${labelText}\`);
+        }
+        return checkbox;
+    }
+
+    const legendDiv = d3.select("#legend");
+    legendDiv.html("");
+    
+    // --- Nodes Section ---
+    const nodesSection = legendDiv.append("div").attr("class", "filter-section");
+    nodesSection.append("strong").text("Nodes");
+    
+    // Setup resource overarching toggle
+    let resourceCheckbox;
+    if (resourceTypesPresent.length > 0) {
+        resourceCheckbox = createFilterCheckbox(nodesSection, "filter-resource", "Resource", "node-group", "resource", (checked) => {
+            resourceTypesPresent.forEach(t => {
+                checked ? activeNodeFilters.add(t) : activeNodeFilters.delete(t);
+                d3.select(\`#filter-node-\${t}\`).property("checked", checked);
+            });
+        });
+        
+        resourceTypesPresent.forEach(t => {
+            createFilterCheckbox(nodesSection, \`filter-node-\${t}\`, t.charAt(0).toUpperCase() + t.slice(1), "node", t, (checked, val) => {
+                checked ? activeNodeFilters.add(val) : activeNodeFilters.delete(val);
+                const allResChecked = resourceTypesPresent.every(k => activeNodeFilters.has(k));
+                resourceCheckbox.property("checked", allResChecked);
+                resourceCheckbox.property("indeterminate", !allResChecked && resourceTypesPresent.some(k => activeNodeFilters.has(k)));
+            }, "sub-filter");
+        });
+    }
+    
+    otherTypesPresent.forEach(t => {
+        createFilterCheckbox(nodesSection, \`filter-node-\${t}\`, t.charAt(0).toUpperCase() + t.slice(1), "node", t, (checked, val) => {
+            checked ? activeNodeFilters.add(val) : activeNodeFilters.delete(val);
+        });
+    });
+    
+    // --- Edges Section ---
+    const edgesSection = legendDiv.append("div").attr("class", "filter-section").style("margin-top", "15px");
+    edgesSection.append("strong").text("Edges");
+    
+    edgeTypes.forEach(type => {
+        createFilterCheckbox(edgesSection, \`filter-edge-\${type}\`, type.charAt(0).toUpperCase() + type.slice(1), "edge", type, (checked, val) => {
+            checked ? activeFilters.add(val) : activeFilters.delete(val);
+        });
     });
     
     // D3 Force Simulation
@@ -186,7 +253,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     let focusNodeId = null;
     
     function updateGraph() {
-        const validNodeIds = new Set(nodesRaw.map(n => n.id));
+        const validNodeIds = new Set(nodesRaw.filter(n => activeNodeFilters.has(n.kind)).map(n => n.id));
         const filteredLinks = linksRaw.filter(l => {
             const sid = typeof l.source === 'object' ? l.source.id : l.source;
             const tid = typeof l.target === 'object' ? l.target.id : l.target;
@@ -200,12 +267,14 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
             activeNodeIds.add(typeof l.target === 'object' ? l.target.id : l.target);
         });
         
-        // Keep nodes that match search even if isolated
+        // Keep nodes that match search even if isolated (and their kind is checked)
         nodesRaw.forEach(n => {
-            if (searchHighlightNodeIds.has(n.id)) activeNodeIds.add(n.id);
+            if (searchHighlightNodeIds.has(n.id) && activeNodeFilters.has(n.kind)) {
+                activeNodeIds.add(n.id);
+            }
         });
         
-        const filteredNodes = nodesRaw.filter(n => activeNodeIds.has(n.id));
+        const filteredNodes = nodesRaw.filter(n => activeNodeIds.has(n.id) && activeNodeFilters.has(n.kind));
         
         // Update links
         link = link.data(filteredLinks, d => {
