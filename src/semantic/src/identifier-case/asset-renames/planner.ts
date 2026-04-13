@@ -2,6 +2,10 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
+import { ConflictSeverity } from "../conflict-severity.js";
+import type { defaultIdentifierCaseFsFacade } from "../fs-facade.js";
+import { formatIdentifierCase } from "../identifier-case-utils.js";
+import { IdentifierCaseStyle, normalizeIdentifierCaseAssetStyle } from "../options.js";
 import {
     COLLISION_CONFLICT_CODE,
     createConflict,
@@ -9,11 +13,7 @@ import {
     RESERVED_CONFLICT_CODE,
     resolveIdentifierConfigurationConflict,
     summarizeReferenceFileOccurrences
-} from "../common.js";
-import { ConflictSeverity } from "../conflict-severity.js";
-import type { defaultIdentifierCaseFsFacade } from "../fs-facade.js";
-import { formatIdentifierCase } from "../identifier-case-utils.js";
-import { IdentifierCaseStyle, normalizeIdentifierCaseAssetStyle } from "../options.js";
+} from "../planning-helpers.js";
 import { createAssetRenameExecutor } from "./executor.js";
 
 const RESERVED_IDENTIFIER_NAMES = Core.loadReservedIdentifierNames();

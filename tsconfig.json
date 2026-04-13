@@ -11,6 +11,7 @@
     { "path": "./src/cli" },
     { "path": "./src/runtime-wrapper" },
     { "path": "./src/refactor" },
+    { "path": "./src/mcp" },
     { "path": "./test" }
   ]
 }

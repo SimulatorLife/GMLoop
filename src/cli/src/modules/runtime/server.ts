@@ -8,7 +8,7 @@ import { Core } from "@gmloop/core";
 
 import type { ServerEndpoint, ServerLifecycle } from "../server/index.js";
 
-const { isFsErrorCode, getErrorMessage } = Core;
+const { isErrorWithCode, getErrorMessage } = Core;
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 0;
@@ -241,7 +241,7 @@ export async function startRuntimeStaticServer({
     const resolvedRoot = path.resolve(runtimeRoot);
 
     const initialStats = await fs.stat(resolvedRoot).catch((error) => {
-        if (isFsErrorCode(error, "ENOENT")) {
+        if (isErrorWithCode(error, "ENOENT")) {
             throw new Error(`Runtime root '${resolvedRoot}' does not exist. Did hydration succeed?`);
         }
         throw error;
@@ -280,7 +280,7 @@ export async function startRuntimeStaticServer({
         }
 
         sendFileResponse(res, targetPath, { method }).catch((error) => {
-            const statusCode = getRuntimeHttpErrorStatus(error) ?? (isFsErrorCode(error, "ENOENT") ? 404 : 500);
+            const statusCode = getRuntimeHttpErrorStatus(error) ?? (isErrorWithCode(error, "ENOENT") ? 404 : 500);
             const fallbackMessage =
                 statusCode === 404
                     ? "Not Found"

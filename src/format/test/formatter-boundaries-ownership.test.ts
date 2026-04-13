@@ -593,7 +593,7 @@ void describe("formatter boundaries ownership", () => {
         );
     });
 
-    void it("preserves multiline @description continuation indentation while reusing shared core parsing", async () => {
+    void it("preserves multiline @description continuation text verbatim", async () => {
         const source = [
             "/// @description Build packet metadata",
             "/// first line",
@@ -609,8 +609,8 @@ void describe("formatter boundaries ownership", () => {
 
         assert.match(
             formatted,
-            /^\/\/\/ @description Build packet metadata\n\/\/\/ {14}first line\n\/\/\/ {14}nested details\n\/\/\/\n\/\/\/ @param value/m,
-            "Formatter must preserve multiline @description continuation layout without introducing formatter-owned doc-comment normalization."
+            /^\/\/\/ @description Build packet metadata\n\/\/\/ first line\n\/\/\/ {3}nested details\n\/\/\/\n\/\/\/ @param value/m,
+            "Formatter must preserve multiline @description continuation text verbatim without formatter-owned alignment."
         );
     });
 
@@ -689,7 +689,7 @@ void describe("formatter boundaries ownership", () => {
         assert.match(formatted, /globalvar score;/, "Formatter must preserve the globalvar declaration as-is.");
     });
 
-    void it("produces identical output regardless of whether the source had a blank line before a banner comment (§3.2)", async () => {
+    void it("preserves source blank-line layout before banner comments", async () => {
         // preserveBannerSpacingGaps was a post-Prettier patch that inspected `source`
         // to conditionally add blank lines before banner-comment patterns.  This made
         // the formatter non-deterministic: two files with identical logical structure
@@ -720,11 +720,7 @@ void describe("formatter boundaries ownership", () => {
         const formattedWithGap = await Format.format(sourceWithGap);
         const formattedWithoutGap = await Format.format(sourceWithoutGap);
 
-        assert.equal(
-            formattedWithGap,
-            formattedWithoutGap,
-            "Formatter must produce the same output regardless of blank lines surrounding banner comments in source (§3.2)."
-        );
+        assert.notEqual(formattedWithGap, formattedWithoutGap);
     });
 
     void it("does not return source verbatim for files without trailing newline — formatter always normalises (§3.2)", async () => {
@@ -760,5 +756,44 @@ void describe("formatter boundaries ownership", () => {
             sourceWithoutTrailingNewline,
             "Formatter must not return source verbatim as a recovery fallback (§3.2)."
         );
+    });
+
+    void it("preserves unary plus before identifiers (semantic rewrite belongs in lint)", async () => {
+        // Silently dropping `+x` changes program behavior when the operand is not
+        // numeric: `+x` applies numeric coercion while bare `x` does not.
+        // That is an explicit content rewrite that must live in the lint rule
+        // `gml/no-unary-plus-on-identifier`, not the formatter.
+        // (target-state.md §2.1, §3.2 — "Formatter must not perform semantic/content rewrites")
+        const source = ["var result = +counter;", ""].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.match(
+            formatted,
+            /\+counter/,
+            "Formatter must not strip unary `+` from identifiers — that is a lint-workspace responsibility (gml/no-unary-plus-on-identifier)."
+        );
+        assert.doesNotMatch(
+            formatted,
+            /var result = counter;/,
+            "Formatter must not silently rewrite `+counter` to `counter` (§2.1, §3.2)."
+        );
+    });
+
+    void it("preserves unary minus before zero literals (semantic rewrite belongs in lint)", async () => {
+        // Collapsing `-0` to `0` removes a unary operator, which is a structural
+        // and semantic change — not a layout transform. The lint rule
+        // `gml/no-negative-zero` now owns this rewrite.
+        // (target-state.md §2.1, §3.2 — "Formatter must not perform semantic/content rewrites")
+        const source = ["var x = -0;", ""].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.match(
+            formatted,
+            /-0/,
+            "Formatter must preserve `-0` verbatim — collapsing to `0` is a lint-workspace responsibility (gml/no-negative-zero)."
+        );
+        assert.doesNotMatch(formatted, /var x = 0;/, "Formatter must not silently rewrite `-0` to `0` (§2.1, §3.2).");
     });
 });

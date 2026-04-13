@@ -31,15 +31,13 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         mapKey: "GmlPreferLoopInvariantExpressions",
         shortName: "prefer-loop-invariant-expressions",
         fullId: "gml/prefer-loop-invariant-expressions",
-        messageId: "preferLoopInvariantExpressions",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "preferLoopInvariantExpressions"
     },
     {
         mapKey: "GmlPreferRepeatLoops",
         shortName: "prefer-repeat-loops",
         fullId: "gml/prefer-repeat-loops",
-        messageId: "preferRepeatLoops",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "preferRepeatLoops"
     },
     {
         mapKey: "GmlPreferStructLiteralAssignments",
@@ -60,29 +58,25 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         mapKey: "GmlPreferArrayPush",
         shortName: "prefer-array-push",
         fullId: "gml/prefer-array-push",
-        messageId: "preferArrayPush",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "preferArrayPush"
     },
     {
         mapKey: "GmlPreferCompoundAssignments",
         shortName: "prefer-compound-assignments",
         fullId: "gml/prefer-compound-assignments",
-        messageId: "preferCompoundAssignments",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "preferCompoundAssignments"
     },
     {
         mapKey: "GmlPreferIncrementDecrementOperators",
         shortName: "prefer-increment-decrement-operators",
         fullId: "gml/prefer-increment-decrement-operators",
-        messageId: "preferIncrementDecrementOperators",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "preferIncrementDecrementOperators"
     },
     {
         mapKey: "GmlPreferDirectReturn",
         shortName: "prefer-direct-return",
         fullId: "gml/prefer-direct-return",
-        messageId: "preferDirectReturn",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "preferDirectReturn"
     },
     {
         mapKey: "GmlOptimizeLogicalFlow",
@@ -100,6 +94,8 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         ])
     },
     {
+        // Read-only rule with NO auto-fix
+        // globalvar replacement cannot be done safely on a per-file bases
         mapKey: "GmlNoGlobalvar",
         shortName: "no-globalvar",
         fullId: "gml/no-globalvar",
@@ -110,92 +106,85 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         mapKey: "GmlNoEmptyRegions",
         shortName: "no-empty-regions",
         fullId: "gml/no-empty-regions",
-        messageId: "noEmptyRegions",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "noEmptyRegions"
     },
     {
         mapKey: "GmlNoLegacyApi",
         shortName: "no-legacy-api",
         fullId: "gml/no-legacy-api",
-        messageId: "noLegacyApi",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "noLegacyApi"
     },
     {
         mapKey: "GmlNoScientificNotation",
         shortName: "no-scientific-notation",
         fullId: "gml/no-scientific-notation",
-        messageId: "noScientificNotation",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "noScientificNotation"
     },
     {
         mapKey: "GmlNoUnnecessaryStringInterpolation",
         shortName: "no-unnecessary-string-interpolation",
         fullId: "gml/no-unnecessary-string-interpolation",
-        messageId: "noUnnecessaryStringInterpolation",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "noUnnecessaryStringInterpolation"
     },
     {
         mapKey: "GmlRemoveDefaultComments",
         shortName: "remove-default-comments",
         fullId: "gml/remove-default-comments",
-        messageId: "removeDefaultComments",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "removeDefaultComments"
     },
     {
         mapKey: "GmlNormalizeDocComments",
         shortName: "normalize-doc-comments",
         fullId: "gml/normalize-doc-comments",
-        messageId: "normalizeDocComments",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "normalizeDocComments"
     },
     {
         mapKey: "GmlNormalizeBannerComments",
         shortName: "normalize-banner-comments",
         fullId: "gml/normalize-banner-comments",
-        messageId: "normalizeBannerComments",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "normalizeBannerComments"
     },
     {
         mapKey: "GmlNormalizeDirectives",
         shortName: "normalize-directives",
         fullId: "gml/normalize-directives",
-        messageId: "normalizeDirectives",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "normalizeDirectives"
     },
     {
         mapKey: "GmlRequireControlFlowBraces",
         shortName: "require-control-flow-braces",
         fullId: "gml/require-control-flow-braces",
-        messageId: "requireControlFlowBraces",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "requireControlFlowBraces"
+    },
+    {
+        mapKey: "GmlRequireRegionPairs",
+        shortName: "require-region-pairs",
+        fullId: "gml/require-region-pairs",
+        messageId: "requireRegionPairs"
     },
     {
         mapKey: "GmlNoAssignmentInCondition",
         shortName: "no-assignment-in-condition",
         fullId: "gml/no-assignment-in-condition",
-        messageId: "noAssignmentInCondition",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "noAssignmentInCondition"
     },
     {
         mapKey: "GmlPreferIsUndefinedCheck",
         shortName: "prefer-is-undefined-check",
         fullId: "gml/prefer-is-undefined-check",
-        messageId: "preferIsUndefinedCheck",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "preferIsUndefinedCheck"
     },
     {
         mapKey: "GmlPreferEpsilonComparisons",
         shortName: "prefer-epsilon-comparisons",
         fullId: "gml/prefer-epsilon-comparisons",
-        messageId: "preferEpsilonComparisons",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "preferEpsilonComparisons"
     },
     {
         mapKey: "GmlNormalizeOperatorAliases",
         shortName: "normalize-operator-aliases",
         fullId: "gml/normalize-operator-aliases",
-        messageId: "normalizeOperatorAliases",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "normalizeOperatorAliases"
     },
     {
         mapKey: "GmlPreferStringInterpolation",
@@ -216,8 +205,7 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         mapKey: "GmlOptimizeMathExpressions",
         shortName: "optimize-math-expressions",
         fullId: "gml/optimize-math-expressions",
-        messageId: "optimizeMathExpressions",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "optimizeMathExpressions"
     },
     {
         mapKey: "GmlRequireArgumentSeparators",
@@ -232,22 +220,31 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         mapKey: "GmlNormalizeDataStructureAccessors",
         shortName: "normalize-data-structure-accessors",
         fullId: "gml/normalize-data-structure-accessors",
-        messageId: "normalizeDataStructureAccessors",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "normalizeDataStructureAccessors"
     },
     {
         mapKey: "GmlRequireTrailingOptionalDefaults",
         shortName: "require-trailing-optional-defaults",
         fullId: "gml/require-trailing-optional-defaults",
-        messageId: "requireTrailingOptionalDefaults",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "requireTrailingOptionalDefaults"
     },
     {
         mapKey: "GmlSimplifyRealCalls",
         shortName: "simplify-real-calls",
         fullId: "gml/simplify-real-calls",
-        messageId: "simplifyRealCalls",
-        schema: Object.freeze([{ type: "object", additionalProperties: false, properties: {} }])
+        messageId: "simplifyRealCalls"
+    },
+    {
+        mapKey: "GmlNoUnaryPlusOnIdentifier",
+        shortName: "no-unary-plus-on-identifier",
+        fullId: "gml/no-unary-plus-on-identifier",
+        messageId: "noUnaryPlusOnIdentifier"
+    },
+    {
+        mapKey: "GmlNoNegativeZero",
+        shortName: "no-negative-zero",
+        fullId: "gml/no-negative-zero",
+        messageId: "noNegativeZero"
     }
 ]);
 

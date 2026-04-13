@@ -5,6 +5,7 @@ const STRING_TYPE = "string" as const;
 
 const JSDOC_REPLACEMENTS = {
     "@func": "@function",
+    "@funct": "@function",
     "@method": "@function",
     "@yield": "@returns",
     "@yields": "@returns",

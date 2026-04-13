@@ -18,21 +18,6 @@ export interface FileSystemStatReader {
 }
 
 /**
- * Type-safe wrapper over {@link isErrorWithCode} so callers can narrow thrown
- * filesystem errors to specific Node-style `code` strings without repeating the
- * shared utility import. Accepts the same loose inputs as the underlying
- * helper, mirroring how error guards are typically used in catch blocks.
- *
- * @param {unknown} error Candidate error thrown by the filesystem facade.
- * @param {...string} codes Node-style error codes (for example `"ENOENT"`).
- * @returns {error is NodeJS.ErrnoException} `true` when {@link error} exposes a
- *          matching {@link NodeJS.ErrnoException.code} value.
- */
-export function isFsErrorCode(error, ...codes) {
-    return isErrorWithCode(error, ...codes);
-}
-
-/**
  * Enumerate the entries in {@link directoryPath} while respecting the abort
  * semantics shared by long-running filesystem workflows. Missing directories
  * resolve to an empty array so callers can treat them as already-processed
@@ -64,7 +49,7 @@ export async function listDirectory(
 
         return toArrayFromIterable(entries);
     } catch (error) {
-        if (isFsErrorCode(error, "ENOENT", "ENOTDIR")) {
+        if (isErrorWithCode(error, "ENOENT", "ENOTDIR")) {
             return [];
         }
         throw error;
@@ -100,7 +85,7 @@ export async function getFileMtime(
         guard.ensureNotAborted();
         return typeof stats.mtimeMs === "number" ? stats.mtimeMs : null;
     } catch (error) {
-        if (isFsErrorCode(error, "ENOENT")) {
+        if (isErrorWithCode(error, "ENOENT")) {
             return null;
         }
         throw error;

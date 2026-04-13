@@ -1,0 +1,24 @@
+name: "Agent 05 - Consolidate Files"
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "Optional agent override."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  run:
+    uses: ./.github/workflows/_agent-open-pr-and-ping.yml
+    secrets: inherit
+    with:
+      agent: ${{ inputs.agent }}
+      pr_title: "Agent: Consolidate files and merge similar functions"
+      prompt: >
+        The long-term goal is to keep the codebase compact and cohesive by combining highly similar functions and moving short, related logic into existing files rather than continuously spawning new ones. Review the workspace to identify files that are exceedingly short (e.g., under 50 lines of code) or functions that largely duplicate existing functionality with minor parametric differences. First, consider merging these short files into another file that handles the same domain context. Do not leave placeholder pass-through files behind; instead, fully remove the original small files and update all imports to point to the new combined file. Second, look for pairs of functions that are nearly identical and consolidate them into a single, slightly more flexible function—for instance, by adding a configuration parameter or using generics/union types. Always ensure that the combined behavior acts precisely as the individual components did and that all callers are updated to match the new signature. The objective is to reduce the overall file count without degrading maintainability or structure. Always identify and implement at least one such file or function consolidation to tighten the architecture.

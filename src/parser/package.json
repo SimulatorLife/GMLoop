@@ -16,7 +16,7 @@
     "@gmloop/core": "workspace:*"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.5.0"
   },
   "scripts": {
     "build:types": "pnpm --filter @gmloop/core run build:types && tsc -p tsconfig.json",

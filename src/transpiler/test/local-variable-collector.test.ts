@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { Parser } from "@gmloop/parser";
 
 import type { ProgramNode } from "../src/emitter/ast.js";
-import { collectLocalVariables } from "../src/emitter/local-variable-collector.js";
+import { collectGlobalVarNames, collectLocalVariables } from "../src/emitter/local-variable-collector.js";
 
 function parseProgram(source: string): ProgramNode {
     return Parser.GMLParser.parse(source) as unknown as ProgramNode;
@@ -124,5 +124,57 @@ void describe("collectLocalVariables", () => {
         strictEqual(locals.has("direction"), false, "direction is an instance field, not var-declared");
         strictEqual(locals.has("x"), false, "x is an instance field, not var-declared");
         strictEqual(locals.has("y"), false, "y is an instance field, not var-declared");
+    });
+});
+
+void describe("collectGlobalVarNames", () => {
+    void it("returns empty set when there are no globalvar declarations", () => {
+        const ast = parseProgram("x = 10; var local = 5;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.size, 0);
+    });
+
+    void it("collects a single globalvar-declared name", () => {
+        const ast = parseProgram("globalvar score;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("score"), true);
+        strictEqual(globals.size, 1);
+    });
+
+    void it("collects multiple names from a single globalvar declaration", () => {
+        const ast = parseProgram("globalvar hp, mp, xp;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("hp"), true);
+        strictEqual(globals.has("mp"), true);
+        strictEqual(globals.has("xp"), true);
+        strictEqual(globals.size, 3);
+    });
+
+    void it("collects names from multiple globalvar declarations", () => {
+        const ast = parseProgram("globalvar foo;\nglobalvar bar;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("foo"), true);
+        strictEqual(globals.has("bar"), true);
+        strictEqual(globals.size, 2);
+    });
+
+    void it("collects globalvar names that appear after usage (forward reference)", () => {
+        // This is the core use case: `foo` is used before its globalvar declaration.
+        const ast = parseProgram("foo = 1;\nglobalvar foo;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("foo"), true, "foo must be collected even though declaration comes after usage");
+    });
+
+    void it("crosses function declaration boundaries (globalvar is always global-scoped)", () => {
+        const ast = parseProgram("function init() { globalvar settings; }");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("settings"), true, "globalvar inside a function is still global-scoped");
+    });
+
+    void it("does not include var-declared names", () => {
+        const ast = parseProgram("var local = 1;\nglobalvar g;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("local"), false, "var-declared names should not be in global set");
+        strictEqual(globals.has("g"), true);
     });
 });

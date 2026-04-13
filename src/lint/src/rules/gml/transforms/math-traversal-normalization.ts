@@ -2253,12 +2253,6 @@ function attemptConvertDotProducts(node, context) {
         return false;
     }
 
-    for (const term of terms) {
-        if (isPotentialSquareMultiplication(term)) {
-            return false;
-        }
-    }
-
     const leftVector = [];
     const rightVector = [];
 
@@ -2276,6 +2270,10 @@ function attemptConvertDotProducts(node, context) {
             return false;
         }
 
+        if (!isDotProductOperandCandidate(left) || !isDotProductOperandCandidate(right)) {
+            return false;
+        }
+
         leftVector.push(Core.cloneAstNode(left));
         rightVector.push(Core.cloneAstNode(right));
     }
@@ -2287,35 +2285,12 @@ function attemptConvertDotProducts(node, context) {
     return true;
 }
 
-function isPotentialSquareMultiplication(node) {
+function isDotProductOperandCandidate(node) {
     if (!node || Core.hasComment(node)) {
         return false;
     }
 
-    const expression = Core.unwrapParenthesizedExpression(node);
-    if (!expression || !isBinaryOperator(expression, "*")) {
-        return false;
-    }
-
-    const left = Core.unwrapParenthesizedExpression(expression.left);
-    const right = Core.unwrapParenthesizedExpression(expression.right);
-    if (!left || !right) {
-        return false;
-    }
-
-    if (Core.hasComment(left) || Core.hasComment(right)) {
-        return false;
-    }
-
-    if (!isSafeOperand(left)) {
-        return false;
-    }
-
-    if (!areNodesEquivalent(left, right) && !areNodesApproximatelyEquivalent(left, right)) {
-        return false;
-    }
-
-    return true;
+    return node.type === IDENTIFIER || node.type === MEMBER_DOT_EXPRESSION || node.type === MEMBER_INDEX_EXPRESSION;
 }
 
 function attemptConvertPointDistanceCall(node, context) {

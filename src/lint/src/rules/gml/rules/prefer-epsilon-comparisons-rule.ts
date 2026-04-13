@@ -10,9 +10,33 @@ function expressionLooksMathSensitive(expression: string): boolean {
         normalized.includes("sqr(") ||
         normalized.includes("sqrt(") ||
         normalized.includes("point_distance") ||
+        normalized.includes("dot_product_") ||
         normalized.includes("lengthdir_") ||
         normalized.includes("math_")
     );
+}
+
+type ZeroComparisonOperator = "==" | ">";
+
+type IfZeroComparisonMatch = Readonly<{
+    indentation: string;
+    variableName: string;
+    operator: ZeroComparisonOperator;
+    suffix: string;
+}>;
+
+function readIfZeroComparisonMatch(line: string): IfZeroComparisonMatch | null {
+    const match = /^(\s*)if\s*\(\s*([A-Za-z_]\w*)\s*(==|>)\s*0\s*\)(.*)$/u.exec(line);
+    if (!match) {
+        return null;
+    }
+
+    return Object.freeze({
+        indentation: match[1] ?? "",
+        variableName: match[2] ?? "",
+        operator: (match[3] as ZeroComparisonOperator | undefined) ?? "==",
+        suffix: match[4] ?? ""
+    });
 }
 
 export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition): Rule.RuleModule {
@@ -46,17 +70,20 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
                     const rewrittenLines: Array<string> = [];
                     let insertedEpsilonDeclaration = hasEpsilonDeclaration;
                     for (const line of lines) {
-                        const zeroCheckMatch = /^(\s*)if\s*\(\s*([A-Za-z_]\w*)\s*==\s*0\s*\)(.*)$/u.exec(line);
-                        if (!zeroCheckMatch) {
+                        const ifZeroComparisonMatch = readIfZeroComparisonMatch(line);
+                        if (!ifZeroComparisonMatch) {
                             rewrittenLines.push(line);
                             continue;
                         }
 
-                        const indentation = zeroCheckMatch[1] ?? "";
-                        const variableName = zeroCheckMatch[2] ?? "";
-                        const suffix = zeroCheckMatch[3] ?? "";
+                        const { indentation, variableName, operator, suffix } = ifZeroComparisonMatch;
                         if (!mathSensitiveVariables.has(variableName)) {
                             rewrittenLines.push(line);
+                            continue;
+                        }
+
+                        if (operator === ">") {
+                            rewrittenLines.push(`${indentation}if (${variableName} > math_get_epsilon())${suffix}`);
                             continue;
                         }
 

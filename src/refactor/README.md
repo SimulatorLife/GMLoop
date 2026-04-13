@@ -45,6 +45,8 @@ Current guardrails focus on the two hottest naming-convention paths that showed 
 - Resource rename metadata planning now indexes inbound metadata references once per semantic bridge and reuses parsed `.yy/.yyp` documents across the batch instead of rescanning and reparsing them for every rename.
 - `WorkspaceEdit` now caches grouped text edits per revision and skips the second structural validation pass when the same immutable workspace is applied immediately after validation.
 - The CLI refactor command now uses the semantic workspace's default GML project-index concurrency instead of forcing a serial build, so large codemod runs do not bottleneck on one-file-at-a-time indexing.
+- Globalvar and loop-length codemod executions now reuse source text captured during planning when applying a workspace edit, eliminating redundant per-file reads in dry-run and write modes.
+- Semantic query caches now use least-recently-used eviction so hot symbol/file lookups survive cache pressure during large codemod batches.
 
 The refactor workspace keeps naming-convention codemod stress tests in the regular TypeScript test suite:
 
@@ -343,7 +345,7 @@ Benefits:
 
 ### Naming Convention Enforcement (Policy Config)
 
-Naming policy lives under `refactor.namingConventionPolicy` inside the unified
+Naming policy lives under `refactor.codemods.namingConvention` inside the unified
 project-root `gmloop.json`. The `namingConvention` codemod reads that policy,
 plans top-level renames through the batch rename engine, merges those edits with
 local single-file renames into one workspace edit, and runs hot-reload
@@ -381,7 +383,7 @@ configures the `function` category.
 #### Contract
 
 - `gmloop.json` is the project config file.
-- `refactor.namingConventionPolicy` is user-authored project config.
+- `refactor.codemods.namingConvention` is user-authored project config.
 - `refactor.codemods.namingConvention` enables the codemod.
 - `rule exists => enabled` is the contract.
 - There is no `enabled` property on naming rules. If a rule is present for a category, that category is enabled. If a category is set to `false`, it is disabled even if a parent has a rule.
@@ -395,35 +397,34 @@ configures the `function` category.
         "gml/no-globalvar": "error"
     },
     "refactor": {
-        "namingConventionPolicy": {
-            "rules": {
-                "resource": {
-                    "caseStyle": "lower"
+        "codemods": {
+            "namingConvention": {
+                "rules": {
+                    "resource": {
+                        "caseStyle": "lower"
+                    },
+                    "roomResourceName": {
+                        "prefix": "rm_"
+                    },
+                    "variable": {
+                        "caseStyle": "camel"
+                    },
+                    "globalVariable": {
+                        "prefix": "g_",
+                        "caseStyle": "lower_snake"
+                    },
+                    "loopIndexVariable": false,
+                    "callable": {
+                        "caseStyle": "camel"
+                    },
+                    "macro": {
+                        "caseStyle": "upper_snake"
+                    }
                 },
-                "roomResourceName": {
-                    "prefix": "rm_"
-                },
-                "variable": {
-                    "caseStyle": "camel"
-                },
-                "globalVariable": {
-                    "prefix": "g_",
-                    "caseStyle": "lower_snake"
-                },
-                "loopIndexVariable": false,
-                "callable": {
-                    "caseStyle": "camel"
-                },
-                "macro": {
-                    "caseStyle": "upper_snake"
+                "exclusivePrefixes": {
+                    "rm_": "roomResourceName"
                 }
             },
-            "exclusivePrefixes": {
-                "rm_": "roomResourceName"
-            }
-        },
-        "codemods": {
-            "namingConvention": {},
             "loopLengthHoisting": {
                 "functionSuffixes": {
                     "array_length": "len"
@@ -452,6 +453,9 @@ filtered semantic query for the whole file set instead of rescanning the full
 project index once per file. The refactor test suite includes a tracked
 stress test for this path, so the existing `pnpm run test:refactor` and
 `pnpm run test:ci` jobs catch regressions in both behavior and runtime.
+Naming-target discovery now also preserves the semantic provider method context
+(`this`) when invoking `listNamingConventionTargets`, so bridge-backed
+project-root resolution keeps working during batched resource rename queries.
 The CLI semantic bridge also keeps indexed name and symbol-id lookup tables for
 rename validation, occurrence gathering, and scope checks, preventing large
 codemod runs from repeatedly scanning every identifier collection for every
@@ -612,6 +616,7 @@ const NAMING_CATEGORY_PARENTS: Record<NamingCategory, NamingCategory | null> = {
 - `lower_snake` and `upper_snake` are both supported to enforce snake-case in either casing.
 - `exclusivePrefixes` and `exclusiveSuffixes` are global reservations that apply even when a category has no required prefix/suffix.
 - If exclusive affixes overlap, use longest-match precedence to avoid ambiguous ownership.
+- Resource naming-prefix enforcement replaces detectable legacy short prefixes when possible instead of duplicating them (for example `oSpider` -> `obj_spider`, `sSpiderHead` -> `spr_spider_head`).
 - `minChars` and `maxChars` are checked against the core name after removing required prefix/suffix.
 - Cache resolved rules by category key so validation and rename previews stay fast.
 - This policy remains centralized so IDE/CLI integrations enforce the same naming behavior.
@@ -1537,5 +1542,6 @@ users type new names, significantly improving performance for complex refactorin
 providing instant feedback in IDE rename dialogs.
 
 ## TODO
-* For the renaming fix, we should support an allow/deny list of prefixes, suffixes, and names that are exempt from renaming. For example, if a project's `gmploop.json` specifies that sprites must use the `spr_` prefix, the rename configuration should also allow exceptions such as sprites with the tex_ prefix so they are not flagged for renaming.
-* Alternatively, instead of requiring a specific prefix or suffix, we could support a denylist of disallowed names, prefixes, or suffixes. So, resources would only be flagged for renaming if they match an entry in the denylist. For example, if a resource is named `__apple` and the denylist includes the prefix `__`, it would be flagged for renaming, since it matches a disallowed naming pattern. In this mode, renaming would follow a default or separately defined naming rule (e.g., a standard prefix/suffix or pattern), applied only when a name violates the denylist. In this mode, a resource that matches the denylist would first check its inheritance tree and try to inherit a valid naming prefix from its parent chain. If no applicable prefix is found, it should attempt to remove the disallowed prefix, provided the result passes all safety checks. If that still fails, it should fall back to the default naming convention.
+
+- For the renaming fix, we should support an allow/deny list of prefixes, suffixes, and names that are exempt from renaming. For example, if a project's `gmploop.json` specifies that sprites must use the `spr_` prefix, the rename configuration should also allow exceptions such as sprites with the tex\_ prefix so they are not flagged for renaming.
+- Alternatively, instead of requiring a specific prefix or suffix, we could support a denylist of disallowed names, prefixes, or suffixes. So, resources would only be flagged for renaming if they match an entry in the denylist. For example, if a resource is named `__apple` and the denylist includes the prefix `__`, it would be flagged for renaming, since it matches a disallowed naming pattern. In this mode, renaming would follow a default or separately defined naming rule (e.g., a standard prefix/suffix or pattern), applied only when a name violates the denylist. In this mode, a resource that matches the denylist would first check its inheritance tree and try to inherit a valid naming prefix from its parent chain. If no applicable prefix is found, it should attempt to remove the disallowed prefix, provided the result passes all safety checks. If that still fails, it should fall back to the default naming convention.

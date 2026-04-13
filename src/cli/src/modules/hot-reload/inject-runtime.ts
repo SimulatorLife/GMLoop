@@ -369,7 +369,7 @@ async function copyRuntimeWrapperAssets(
         force: true,
         filter: shouldCopyRuntimeWrapperAsset
     });
-    await fs.writeFile(manifestPath, `${JSON.stringify(sourceManifest, null, 2)}\n`, "utf8");
+    await fs.writeFile(manifestPath, Core.stringifyJsonForFile(sourceManifest, { space: 2 }), "utf8");
 
     return {
         copiedAssets: true,

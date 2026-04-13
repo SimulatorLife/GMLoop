@@ -34,6 +34,50 @@ type GlobalSnapshot = {
     _cx?: { _dx?: Record<string, unknown> };
 };
 
+type ObjectPatchFixture = {
+    globals: GlobalSnapshot;
+    instanceEntry: Record<string, unknown>;
+    objectEntry: { pName: string; StepNormalEvent: (...args: Array<unknown>) => unknown };
+};
+
+function setupNamedObjectPatchFixture(
+    globals: GlobalSnapshot,
+    runtimeId: "gml_Object_oSpider_Step_0",
+    eventIndexPropertyName: "_uB2" | "EVENT_STEP_NORMAL",
+    eventIndex: number,
+    objectEventFn: (...args: Array<unknown>) => unknown
+): ObjectPatchFixture {
+    const objectEntry = {
+        pName: "oSpider",
+        StepNormalEvent: objectEventFn
+    };
+    const instanceEntry: Record<string, unknown> = {
+        _kx: { pName: "oSpider" },
+        Event: []
+    };
+
+    const jsonGame: JsonGameSnapshot = {
+        ScriptNames: [],
+        Scripts: [],
+        GMObjects: [objectEntry]
+    };
+
+    globals.JSON_game = jsonGame;
+    globals._cx = {
+        _dx: {
+            "100000": instanceEntry
+        }
+    };
+    globals[eventIndexPropertyName] = eventIndex;
+    globals[runtimeId] = objectEventFn;
+
+    return {
+        globals,
+        instanceEntry,
+        objectEntry
+    };
+}
+
 await test("applies script patches to GameMaker script registry", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
 
@@ -175,29 +219,14 @@ await test("object patches enable instance event flags with standard event indic
             return "original";
         }
 
-        const objectEntry = {
-            pName: "oSpider",
-            StepNormalEvent: gml_Object_oSpider_Step_0
-        };
-        const instanceEntry: Record<string, unknown> = {
-            _kx: { pName: "oSpider" },
-            Event: []
-        };
-
-        const jsonGame: JsonGameSnapshot = {
-            ScriptNames: [],
-            Scripts: [],
-            GMObjects: [objectEntry]
-        };
-
         const globals = globalThis as GlobalSnapshot;
-        globals.JSON_game = jsonGame;
-        globals.EVENT_STEP_NORMAL = 4;
-        globals._cx = {
-            _dx: {
-                "100000": instanceEntry
-            }
-        };
+        const { instanceEntry, objectEntry } = setupNamedObjectPatchFixture(
+            globals,
+            "gml_Object_oSpider_Step_0",
+            "EVENT_STEP_NORMAL",
+            4,
+            gml_Object_oSpider_Step_0
+        );
 
         const wrapper = RuntimeWrapper.createRuntimeWrapper();
         wrapper.applyPatch({

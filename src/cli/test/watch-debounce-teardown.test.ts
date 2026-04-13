@@ -34,7 +34,12 @@ import { describe, it } from "node:test";
 
 import { runWatchCommand } from "../src/commands/watch.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
-import { createMockWatchFactory } from "./test-helpers/watch-fixtures.js";
+import {
+    createMockWatchFactory,
+    createRetryTimerCounterState,
+    isolateSigtermListeners,
+    withTrackedRetrySetTimeout
+} from "./test-helpers/watch-fixtures.js";
 
 /**
  * The debounce delay used by `delayFileReadRetry` (not exported from watch.ts).
@@ -69,15 +74,13 @@ void describe("Watch debounce handler teardown (resource-leak regression)", () =
 
         // Track any 25 ms timers created after the cleanup phase begins.
         // A non-zero count indicates that flush() was used and the retry timer leaked.
-        let retryTimersCreatedAfterCleanup = 0;
-        let cleanupPhaseActive = false;
+        const retryTimerCounterState = createRetryTimerCounterState();
 
-        const originalSetTimeout = globalThis.setTimeout;
+        const baseSetTimeout = globalThis.setTimeout;
 
         // Isolate SIGTERM listeners so that emitting SIGTERM only fires the watch
         // command's own handler and does not trigger the test runner's shutdown logic.
-        const savedSigTermListeners = process.rawListeners("SIGTERM").slice();
-        process.removeAllListeners("SIGTERM");
+        const isolatedSigtermListeners = isolateSigtermListeners();
 
         try {
             await withTemporaryProperty(
@@ -88,75 +91,61 @@ void describe("Watch debounce handler teardown (resource-leak regression)", () =
                     // intentional no-op
                 }) as typeof process.exit,
                 () =>
-                    withTemporaryProperty(
-                        globalThis,
-                        "setTimeout",
-                        // Intercept setTimeout to detect retry timers spawned post-cleanup.
-                        ((handler: (...args: Array<unknown>) => void, timeout?: number, ...args: Array<unknown>) => {
-                            const id = originalSetTimeout(handler, timeout, ...args);
-                            if (cleanupPhaseActive && timeout === TRANSIENT_RETRY_DELAY_MS) {
-                                retryTimersCreatedAfterCleanup += 1;
-                            }
-                            return id;
-                        }) as typeof setTimeout,
-                        async () => {
-                            const watchCmdPromise = runWatchCommand(root, {
-                                extensions: [".gml"],
-                                quiet: true,
-                                verbose: false,
-                                runtimeServer: false,
-                                websocketServer: false,
-                                statusServer: false,
-                                watchFactory,
-                                // Long debounce to guarantee the handler is still pending
-                                // when SIGTERM fires; must not expire on its own before
-                                // the signal is emitted.
-                                debounceDelay: 500
-                            });
+                    withTrackedRetrySetTimeout(retryTimerCounterState, TRANSIENT_RETRY_DELAY_MS, async () => {
+                        const watchCmdPromise = runWatchCommand(root, {
+                            extensions: [".gml"],
+                            quiet: true,
+                            verbose: false,
+                            runtimeServer: false,
+                            websocketServer: false,
+                            statusServer: false,
+                            watchFactory,
+                            // Long debounce to guarantee the handler is still pending
+                            // when SIGTERM fires; must not expire on its own before
+                            // the signal is emitted.
+                            debounceDelay: 500
+                        });
 
-                            // Wait for the watcher to initialise and the initial scan of
-                            // the empty directory to complete. Because the directory is
-                            // empty, the scan finishes nearly instantly; 100 ms is a
-                            // conservative buffer that keeps the test fast on CI.
-                            await new Promise<void>((resolve) => {
-                                originalSetTimeout(resolve, 100);
-                            });
+                        // Wait for the watcher to initialise and the initial scan of
+                        // the empty directory to complete. Because the directory is
+                        // empty, the scan finishes nearly instantly; 100 ms is a
+                        // conservative buffer that keeps the test fast on CI.
+                        await new Promise<void>((resolve) => {
+                            baseSetTimeout(resolve, 100);
+                        });
 
-                            // Create a transiently-empty .gml file AFTER the initial scan
-                            // so that runtimeContext.fileSnapshots has no entry for it.
-                            // This ensures the mtime-deduplication guard in handleFileChange
-                            // does not short-circuit the read path.
-                            const gmlPath = path.join(root, "transient.gml");
-                            await writeFile(gmlPath, "", "utf8");
+                        // Create a transiently-empty .gml file AFTER the initial scan
+                        // so that runtimeContext.fileSnapshots has no entry for it.
+                        // This ensures the mtime-deduplication guard in handleFileChange
+                        // does not short-circuit the read path.
+                        const gmlPath = path.join(root, "transient.gml");
+                        await writeFile(gmlPath, "", "utf8");
 
-                            // Fire a synthetic file-change event. This queues a 500 ms
-                            // debounced handler inside runWatchCommand's internal
-                            // runtimeContext.debouncedHandlers map.
-                            listenerCapture.listener?.("change", "transient.gml");
+                        // Fire a synthetic file-change event. This queues a 500 ms
+                        // debounced handler inside runWatchCommand's internal
+                        // runtimeContext.debouncedHandlers map.
+                        listenerCapture.listener?.("change", "transient.gml");
 
-                            // Activate timer tracking and immediately trigger cleanup.
-                            // The 500 ms debounce has not fired yet, so the handler is
-                            // still pending in the map when cleanup runs.
-                            cleanupPhaseActive = true;
-                            process.emit("SIGTERM");
+                        // Activate timer tracking and immediately trigger cleanup.
+                        // The 500 ms debounce has not fired yet, so the handler is
+                        // still pending in the map when cleanup runs.
+                        retryTimerCounterState.cleanupPhaseActive = true;
+                        process.emit("SIGTERM");
 
-                            // Await the watch command completing its cleanup (resolve()
-                            // is called before process.exit, so this settles promptly).
-                            await watchCmdPromise;
+                        // Await the watch command completing its cleanup (resolve()
+                        // is called before process.exit, so this settles promptly).
+                        await watchCmdPromise;
 
-                            // Allow any leaked async work (and the timers it creates) to
-                            // settle before we read the counter.
-                            await new Promise<void>((resolve) => {
-                                originalSetTimeout(resolve, 200);
-                            });
-                        }
-                    )
+                        // Allow any leaked async work (and the timers it creates) to
+                        // settle before we read the counter.
+                        await new Promise<void>((resolve) => {
+                            baseSetTimeout(resolve, 200);
+                        });
+                    })
             );
         } finally {
             // Restore the test runner's SIGTERM listeners unconditionally.
-            for (const listener of savedSigTermListeners) {
-                process.on("SIGTERM", listener as NodeJS.SignalsListener);
-            }
+            isolatedSigtermListeners.restore();
             await rm(root, { recursive: true, force: true });
         }
 
@@ -164,7 +153,7 @@ void describe("Watch debounce handler teardown (resource-leak regression)", () =
         // Without the fix (flush): callback fires → readSourceFileWithTransientEmptyRetry
         //   → file is empty → delayFileReadRetry(25 ms, undefined) → ≥1 timer created.
         assert.equal(
-            retryTimersCreatedAfterCleanup,
+            retryTimerCounterState.retryTimersCreatedAfterCleanup,
             0,
             "pending debounced handlers must be cancelled (not flushed) during shutdown; " +
                 "flush() causes readSourceFileWithTransientEmptyRetry() to run without an " +

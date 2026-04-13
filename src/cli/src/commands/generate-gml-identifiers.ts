@@ -22,14 +22,13 @@ import { getManualRootMetadataPath, readManualText, resolveManualSourceCommitHas
 import { type ManualWorkflowOptions, prepareManualWorkflow } from "../modules/manual/workflow.js";
 import { getDefaultVmEvalTimeoutMs, resolveVmEvalTimeout } from "../runtime-options/vm-eval-timeout.js";
 import { writeJsonArtifact } from "../shared/fs-artifacts.js";
+import { createVerboseDurationLogger, timeSync } from "../shared/timing/verbose-timing.js";
 import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const {
-    createVerboseDurationLogger,
     describeValueWithArticle,
     getErrorMessageOrFallback,
     normalizeIdentifierMetadataEntries,
-    timeSync,
     toMutableArray,
     toNormalizedLowerCaseSet,
     toPosixPath,

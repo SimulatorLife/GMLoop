@@ -7,17 +7,23 @@ import { Semantic } from "@gmloop/semantic";
 const { findProjectRoot } = Semantic;
 
 /**
- * Normalize an explicit project-root style input.
+ * Normalize an explicit workflow target path supplied via `--path`.
  *
- * Accepts either a directory or a `.yyp` file path and always returns the
- * enclosing project directory.
+ * Accepts a `.gml` file, directory, or `.yyp` file path. `.yyp` inputs are
+ * normalized to their enclosing directory so downstream file discovery can
+ * operate on the project root directly.
  */
-export function resolveExplicitProjectRoot(projectRootOption: string | undefined): string | null {
-    if (!projectRootOption) {
+export function resolveExplicitWorkflowTargetPath(pathOption: string | undefined): string | null {
+    if (!pathOption) {
         return null;
     }
 
-    const resolvedPath = path.resolve(projectRootOption);
+    const trimmedPathOption = pathOption.trim();
+    if (trimmedPathOption.length === 0) {
+        return null;
+    }
+
+    const resolvedPath = path.resolve(trimmedPathOption);
     return resolvedPath.toLowerCase().endsWith(".yyp") ? path.dirname(resolvedPath) : resolvedPath;
 }
 
@@ -33,9 +39,9 @@ export async function discoverProjectRoot(parameters: {
     explicitProjectPath?: string;
     configPath?: string;
 }): Promise<string> {
-    const explicitProjectRoot = resolveExplicitProjectRoot(parameters.explicitProjectPath);
-    if (explicitProjectRoot) {
-        return explicitProjectRoot;
+    const explicitTargetPath = resolveExplicitWorkflowTargetPath(parameters.explicitProjectPath);
+    if (explicitTargetPath) {
+        return await resolveProjectRootFromExplicitTargetPath(explicitTargetPath);
     }
 
     if (parameters.configPath) {
@@ -46,7 +52,7 @@ export async function discoverProjectRoot(parameters: {
         filepath: path.resolve(process.cwd(), "gmloop.json")
     });
     if (!discoveredProjectRoot) {
-        throw new Error("Could not locate a GameMaker project root. Pass --project-root or run inside a project tree.");
+        throw new Error("Could not locate a GameMaker project root. Pass --path or run inside a project tree.");
     }
 
     return discoveredProjectRoot;
@@ -74,4 +80,17 @@ async function resolveFileStatsOrNull(filePath: string): Promise<Stats | null> {
     } catch {
         return null;
     }
+}
+
+async function resolveProjectRootFromExplicitTargetPath(explicitTargetPath: string): Promise<string> {
+    const explicitTargetStats = await resolveFileStatsOrNull(explicitTargetPath);
+    if (explicitTargetStats?.isFile()) {
+        const discoveredProjectRoot = await findProjectRoot({
+            filepath: explicitTargetPath
+        });
+
+        return discoveredProjectRoot ?? path.dirname(explicitTargetPath);
+    }
+
+    return explicitTargetPath;
 }

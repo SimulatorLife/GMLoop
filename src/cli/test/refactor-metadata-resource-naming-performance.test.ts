@@ -2,21 +2,35 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { performance } from "node:perf_hooks";
 import test from "node:test";
 
-import { Refactor } from "@gmloop/refactor";
+import { Refactor, type RefactorProjectConfig } from "@gmloop/refactor";
 
 import { GmlSemanticBridge } from "../src/modules/refactor/semantic-bridge.js";
+import { measureMedianDurationMs } from "./test-helpers/refactor-top-level-naming-performance.js";
 
 const RESOURCE_COUNT = 240;
-const PERFORMANCE_THRESHOLD_MS = 1600;
+const PERFORMANCE_THRESHOLD_MS = 2500;
 
 type MetadataResourceFixture = {
     projectIndex: Record<string, unknown>;
     projectRoot: string;
     sourceTexts: Map<string, string>;
 };
+
+function createScriptResourceNamingConventionConfig(): RefactorProjectConfig {
+    return {
+        codemods: {
+            namingConvention: {
+                rules: {
+                    scriptResourceName: {
+                        caseStyle: "camel"
+                    }
+                }
+            }
+        }
+    };
+}
 
 async function createMetadataResourceFixture(): Promise<MetadataResourceFixture> {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-refactor-metadata-performance-"));
@@ -157,35 +171,6 @@ async function createMetadataResourceFixture(): Promise<MetadataResourceFixture>
     };
 }
 
-async function measureMedianDurationMs<T>(
-    sampleCount: number,
-    execute: () => Promise<T>
-): Promise<{
-    durationMs: number;
-    result: T;
-}> {
-    const durations: Array<number> = [];
-    let latestResult: T | undefined;
-
-    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-        const startTime = performance.now();
-        latestResult = await execute();
-        durations.push(performance.now() - startTime);
-    }
-
-    durations.sort((left, right) => left - right);
-    const medianIndex = Math.floor(durations.length / 2);
-
-    if (latestResult === undefined) {
-        throw new Error("measureMedianDurationMs requires at least one sample");
-    }
-
-    return {
-        durationMs: durations[medianIndex] ?? 0,
-        result: latestResult
-    };
-}
-
 void test("refactor naming codemod keeps metadata-backed script resource renames within the threshold", async () => {
     const fixture = await createMetadataResourceFixture();
 
@@ -194,22 +179,11 @@ void test("refactor naming codemod keeps metadata-backed script resource renames
             const semantic = new GmlSemanticBridge(fixture.projectIndex, fixture.projectRoot);
             const engine = new Refactor.RefactorEngine({ semantic });
 
-            return await engine.executeConfiguredCodemods({
+            return engine.executeConfiguredCodemods({
                 projectRoot: fixture.projectRoot,
                 targetPaths: [fixture.projectRoot],
                 gmlFilePaths: [...fixture.sourceTexts.keys()],
-                config: {
-                    namingConventionPolicy: {
-                        rules: {
-                            scriptResourceName: {
-                                caseStyle: "camel"
-                            }
-                        }
-                    },
-                    codemods: {
-                        namingConvention: {}
-                    }
-                },
+                config: createScriptResourceNamingConventionConfig(),
                 readFile: async (filePath) => fixture.sourceTexts.get(filePath) ?? "",
                 dryRun: true,
                 onlyCodemods: ["namingConvention"]

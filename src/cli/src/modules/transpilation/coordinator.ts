@@ -32,6 +32,14 @@ export interface TranspilationMetrics {
     sourceSize: number;
     outputSize: number;
     linesProcessed: number;
+    /**
+     * End-to-end hot-reload latency in milliseconds: from when the filesystem
+     * change event was first detected to when the patch was broadcast to clients.
+     *
+     * Only present when the file change was triggered by the watcher (not during
+     * the initial scan, where no change event fires).
+     */
+    hotReloadLatencyMs?: number;
 }
 
 export type ErrorCategory = "syntax" | "validation" | "internal" | "unknown";
@@ -168,7 +176,9 @@ function classifyTranspilationError(error: unknown): {
         };
     }
 
-    const errorString = error instanceof Error ? error.toString() : "Unknown error";
+    // Use a capability probe rather than `instanceof Error` so that cross-realm
+    // errors (e.g. from sandboxed modules) are handled correctly.
+    const errorString = Core.isErrorLike(error) ? String(error) : "Unknown error";
 
     return {
         category: "unknown",
@@ -287,6 +297,14 @@ export interface TranspilationOptions {
      * the initial scan where the AST was already produced while collecting script names.
      */
     cachedAst?: unknown;
+    /**
+     * Wall-clock timestamp (Date.now()) recorded when the filesystem change event
+     * was first detected. When provided, the transpiler records the end-to-end
+     * hot-reload latency (detection → broadcast) in {@link TranspilationMetrics.hotReloadLatencyMs}.
+     *
+     * Omit for the initial scan pass, where there is no preceding watch event.
+     */
+    fileChangeDetectedAt?: number;
 }
 
 export interface TranspilationResult {
@@ -475,7 +493,7 @@ export function transpileFile(
     lines: number,
     options: TranspilationOptions
 ): TranspilationResult {
-    const { verbose, quiet, cachedAst } = options;
+    const { verbose, quiet, cachedAst, fileChangeDetectedAt } = options;
     const startTime = performance.now();
 
     try {
@@ -551,6 +569,14 @@ export function transpileFile(
             context.totalPatchCount += 1;
 
             const broadcastResult = context.websocketServer?.broadcast(patchPayload);
+
+            // Record end-to-end hot-reload latency after the patch has been broadcast.
+            // This captures the full pipeline delay (file-change detection → broadcast)
+            // so callers can verify the system meets the 120–180 ms latency target.
+            if (fileChangeDetectedAt !== undefined) {
+                metrics.hotReloadLatencyMs = Date.now() - fileChangeDetectedAt;
+            }
+
             if (broadcastResult && !quiet) {
                 if (verbose) {
                     console.log(`  ↳ Broadcasted to ${broadcastResult.successCount} clients`);

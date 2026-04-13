@@ -10,8 +10,8 @@ import { isObjectLike } from "./object.js";
  * @param {string | symbol} property Property name to look up on {@link value}.
  * @returns {boolean} `true` when the property exists and is callable.
  */
-export function hasFunction(value, property) {
-    return typeof value?.[property] === "function";
+export function hasFunction(value: unknown, property: string | symbol): boolean {
+    return typeof (value as Record<string | symbol, unknown>)?.[property] === "function";
 }
 
 /**
@@ -22,8 +22,9 @@ export function hasFunction(value, property) {
  * @param {unknown} iterable Candidate collection to inspect.
  * @returns {number | null} Finite numeric hint when present, otherwise `null`.
  */
-function getLengthHint(iterable): number | null {
-    const sizeCandidate = iterable?.size ?? iterable?.length;
+function getLengthHint(iterable: unknown): number | null {
+    const candidate = iterable as { size?: unknown; length?: unknown } | null | undefined;
+    const sizeCandidate = candidate?.size ?? candidate?.length;
     return typeof sizeCandidate === "number" && Number.isFinite(sizeCandidate) ? sizeCandidate : null;
 }
 
@@ -77,7 +78,7 @@ export function isAggregateErrorLike(value: unknown): value is AggregateError {
  * @param {unknown} value Candidate value to inspect.
  * @returns {value is RegExp} `true` when the value exposes RegExp methods.
  */
-export function isRegExpLike(value) {
+export function isRegExpLike(value: unknown): value is RegExp {
     return isObjectLike(value) && hasFunction(value, "test") && hasFunction(value, "exec");
 }
 
@@ -87,16 +88,17 @@ export function isRegExpLike(value) {
  * @param {unknown} iterable Candidate value to evaluate.
  * @returns {boolean} `true` when an iterator method is present, otherwise `false`.
  */
-function getIterableMethod(iterable): (() => IterableIterator<unknown>) | null {
-    const method = iterable?.[Symbol.iterator] ?? iterable?.entries ?? iterable?.values;
-    return typeof method === "function" ? method : null;
+function getIterableMethod(iterable: unknown): (() => IterableIterator<unknown>) | null {
+    const candidate = iterable as Record<symbol | string, unknown> | null | undefined;
+    const method = candidate?.[Symbol.iterator] ?? candidate?.entries ?? candidate?.values;
+    return typeof method === "function" ? (method as () => IterableIterator<unknown>) : null;
 }
 
-function hasIterator(iterable): boolean {
+function hasIterator(iterable: unknown): boolean {
     return getIterableMethod(iterable) !== null;
 }
 
-function getIterableIterator(iterable): IterableIterator<unknown> | null {
+function getIterableIterator(iterable: unknown): IterableIterator<unknown> | null {
     const method = getIterableMethod(iterable);
     if (method === null) {
         return null;
@@ -119,7 +121,7 @@ function getIterableIterator(iterable): IterableIterator<unknown> | null {
  * @param {unknown} value Candidate value to inspect.
  * @returns {value is Map<unknown, unknown>} `true` when the value behaves like a Map.
  */
-export function isMapLike(value) {
+export function isMapLike(value: unknown): value is Map<unknown, unknown> {
     return (
         isObjectLike(value) &&
         hasFunction(value, "get") &&
@@ -138,7 +140,7 @@ export function isMapLike(value) {
  * @param {unknown} value Candidate value to inspect.
  * @returns {value is Set<unknown>} `true` when the value behaves like a Set.
  */
-export function isSetLike(value) {
+export function isSetLike(value: unknown): value is ReadonlySet<unknown> {
     return isObjectLike(value) && hasFunction(value, "has") && hasFunction(value, "add") && hasIterator(value);
 }
 
@@ -216,25 +218,25 @@ export function getIterableSize(iterable) {
  * @param {unknown} candidate Value to resolve into entries.
  * @returns {Array<[unknown, unknown]>} Array of key-value tuples.
  */
-function resolveMapEntries(candidate) {
+function resolveMapEntries(candidate: unknown): Array<[unknown, unknown]> {
     if (Array.isArray(candidate)) {
-        return candidate;
+        return candidate as Array<[unknown, unknown]>;
     }
 
     const iterator = getIterableIterator(candidate);
     if (iterator !== null) {
-        const entries = [];
+        const entries: Array<[unknown, unknown]> = [];
         for (const entry of iterator) {
             if (!Array.isArray(entry) || entry.length < 2) {
                 return [];
             }
-            entries.push([entry[0], entry[1]]);
+            entries.push([entry[0], entry[1]] as [unknown, unknown]);
         }
         return entries;
     }
 
     // Fallback to Object.entries for plain objects
-    return isObjectLike(candidate) ? Object.entries(candidate) : [];
+    return isObjectLike(candidate) ? (Object.entries(candidate as object) as Array<[unknown, unknown]>) : [];
 }
 
 /**
@@ -247,14 +249,14 @@ function resolveMapEntries(candidate) {
  * @param {unknown} candidate Value to normalize into a Set.
  * @returns {Set<unknown>} Set-like instance or newly constructed Set.
  */
-export function ensureSet(candidate) {
+export function ensureSet(candidate: unknown): ReadonlySet<unknown> {
     if (isSetLike(candidate)) {
         return candidate;
     }
 
     if (Array.isArray(candidate) || (candidate && typeof candidate !== "string" && hasIterator(candidate))) {
         try {
-            return new Set(candidate);
+            return new Set(candidate as Iterable<unknown>);
         } catch {
             return new Set();
         }
@@ -273,7 +275,7 @@ export function ensureSet(candidate) {
  * @param {unknown} candidate Value to normalize into a Map.
  * @returns {Map<unknown, unknown>} Map-like instance or newly constructed Map.
  */
-export function ensureMap(candidate) {
+export function ensureMap(candidate: unknown): Map<unknown, unknown> {
     if (isMapLike(candidate)) {
         return candidate;
     }

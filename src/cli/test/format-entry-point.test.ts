@@ -50,6 +50,18 @@ void describe("resolveFormatEntryPoint", () => {
         assert.strictEqual(resolved, formatPath);
     });
 
+    void it("prefers call-site candidates before environment and default candidates", () => {
+        const callSitePath = createTemporaryFormatModuleFile();
+        const environmentPath = createTemporaryFormatModuleFile();
+
+        const resolved = resolveFormatEntryPoint({
+            candidates: [callSitePath],
+            env: { PRETTIER_PLUGIN_GML_FORMAT_PATH: environmentPath }
+        });
+
+        assert.strictEqual(resolved, callSitePath);
+    });
+
     void it("treats null options bags as absent overrides", () => {
         const expected = resolveFormatEntryPoint();
         const resolved = resolveFormatEntryPoint(null);

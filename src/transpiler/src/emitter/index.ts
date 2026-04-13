@@ -7,7 +7,7 @@ export { emitJavaScript } from "./emitter-entrypoints.js";
 export { lowerEnumDeclaration } from "./enum-lowering.js";
 export { escapeTemplateText, isIdentifierLike, normalizeStructKeyText, stringifyStructKey } from "./js-string-utils.js";
 export { normalizeGmlNumericLiteral } from "./literal-normalization.js";
-export { collectLocalVariables } from "./local-variable-collector.js";
+export { collectGlobalVarNames, collectLocalVariables } from "./local-variable-collector.js";
 export { mapBinaryOperator, mapUnaryOperator } from "./operator-mapping.js";
 export type { SemanticOracleOptions } from "./semantic-factory.js";
 export { createSemanticOracle } from "./semantic-factory.js";

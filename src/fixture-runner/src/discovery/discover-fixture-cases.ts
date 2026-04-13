@@ -218,7 +218,9 @@ export async function discoverFixtureCases(fixtureRoot: string): Promise<Readonl
     const validationErrors = settledCases
         .filter((result): result is PromiseRejectedResult => result.status === "rejected")
         .map((result) => {
-            if (result.reason instanceof Error) {
+            // Use a capability probe rather than `instanceof Error` so that
+            // cross-realm errors and custom error-like objects are handled correctly.
+            if (Core.isErrorLike(result.reason)) {
                 return result.reason.message;
             }
 

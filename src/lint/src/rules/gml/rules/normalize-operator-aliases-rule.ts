@@ -15,6 +15,7 @@ const LOGICAL_NOT_ALIAS = "not";
 const LOGICAL_NOT_OPERATOR = "!";
 const WHITESPACE_PATTERN = /\s/u;
 const INLINE_WHITESPACE_PATTERN = /[ \t]/u;
+const WORD_OPERATOR_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 function resolveReportLocation(context: Rule.RuleContext, index: number): { line: number; column: number } {
     const sourceCodeWithLocator = context.sourceCode as Rule.RuleContext["sourceCode"] & {
@@ -138,6 +139,75 @@ function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string): string {
     return applySourceTextEdits(sourceText, edits);
 }
 
+function locateBinaryOperatorSourceRange(parameters: {
+    sourceText: string;
+    node: Rule.Node;
+    operator: string;
+    normalizedOperator: string;
+    expressionStart: number;
+    expressionEnd: number;
+}): [number, number] | null {
+    const leftNode = (parameters.node as { left?: Rule.Node }).left;
+    const rightNode = (parameters.node as { right?: Rule.Node }).right;
+    const leftEndIndex = leftNode ? getNodeEndIndex(leftNode) : null;
+    const rightStartIndex = rightNode ? getNodeStartIndex(rightNode) : null;
+    const searchStart =
+        typeof leftEndIndex === "number"
+            ? Core.clamp(leftEndIndex, parameters.expressionStart, parameters.expressionEnd)
+            : parameters.expressionStart;
+    const searchEnd =
+        typeof rightStartIndex === "number"
+            ? Core.clamp(rightStartIndex, searchStart, parameters.expressionEnd)
+            : parameters.expressionEnd;
+    if (searchStart >= searchEnd) {
+        return null;
+    }
+
+    const candidates = [
+        ...new Set([parameters.operator, parameters.normalizedOperator].filter((value) => value.length > 0))
+    ].sort((left, right) => right.length - left.length);
+    if (candidates.length === 0) {
+        return null;
+    }
+
+    const scanState = Core.createStringCommentScanState();
+    let cursor = searchStart;
+    while (cursor < searchEnd) {
+        const scannedIndex = Core.advanceStringCommentScan(
+            parameters.sourceText,
+            parameters.sourceText.length,
+            cursor,
+            scanState,
+            true
+        );
+        if (scannedIndex !== cursor) {
+            cursor = scannedIndex;
+            continue;
+        }
+
+        for (const candidate of candidates) {
+            const candidateEnd = cursor + candidate.length;
+            if (candidateEnd > searchEnd || parameters.sourceText.slice(cursor, candidateEnd) !== candidate) {
+                continue;
+            }
+
+            if (
+                WORD_OPERATOR_PATTERN.test(candidate) &&
+                (!Core.isIdentifierBoundaryCharacter(parameters.sourceText[cursor - 1]) ||
+                    !Core.isIdentifierBoundaryCharacter(parameters.sourceText[candidateEnd]))
+            ) {
+                continue;
+            }
+
+            return [cursor, candidateEnd];
+        }
+
+        cursor += 1;
+    }
+
+    return null;
+}
+
 export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
@@ -158,14 +228,19 @@ export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition
                             operator.length > 0 &&
                             normalized !== operator
                         ) {
-                            const source = context.sourceCode.text.slice(start, end);
-                            const operatorIndex = source.indexOf(operator);
-                            if (operatorIndex === -1) {
+                            const operatorRange = locateBinaryOperatorSourceRange({
+                                sourceText: context.sourceCode.text,
+                                node,
+                                operator,
+                                normalizedOperator: normalized,
+                                expressionStart: start,
+                                expressionEnd: end
+                            });
+                            if (operatorRange === null) {
                                 return;
                             }
 
-                            const operatorStart = start + operatorIndex;
-                            const operatorEnd = operatorStart + operator.length;
+                            const [operatorStart, operatorEnd] = operatorRange;
                             const originalOperatorText = context.sourceCode.text.slice(operatorStart, operatorEnd);
                             if (
                                 originalOperatorText.length === operator.length &&

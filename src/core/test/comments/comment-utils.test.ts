@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { Core } from "../../src/index.js";
+import { Core } from "../../index.js";
 
 void describe("suppressTrailingLineComment", () => {
     void it("removes matching line comments from the owner comment list", () => {

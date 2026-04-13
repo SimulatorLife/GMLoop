@@ -3,16 +3,15 @@ import test from "node:test";
 
 import { resolveProjectIndexParser } from "../src/project-index/index.js";
 
-void test("resolveProjectIndexParser prefers facade overrides", () => {
+void test("resolveProjectIndexParser uses parseGml override when provided", () => {
     const calls: Array<string> = [];
-    const facade = {
-        parse(sourceText: string) {
+
+    const parser = resolveProjectIndexParser({
+        parseGml(sourceText: string) {
             calls.push(sourceText);
             return { ok: true };
         }
-    };
-
-    const parser = resolveProjectIndexParser({ gmlParserFacade: facade });
+    });
 
     const result = parser("test_source");
 
@@ -20,7 +19,7 @@ void test("resolveProjectIndexParser prefers facade overrides", () => {
     assert.deepEqual(calls, ["test_source"]);
 });
 
-void test("resolveProjectIndexParser ignores legacy parserFacade alias and uses canonical parseGml", () => {
+void test("resolveProjectIndexParser ignores unrecognised alias properties and uses canonical parseGml", () => {
     const legacyCalls: Array<string> = [];
     const canonicalCalls: Array<string> = [];
 

@@ -1,25 +1,12 @@
 import { Core, type GameMakerAstNode, type MutableGameMakerAstNode } from "@gmloop/core";
 
+import { computeNumericTolerance } from "./math-numeric-utils.js";
 import { matchDegreesToRadians, replaceNodeWith } from "./math-traversal-normalization.js";
 
 const { BINARY_EXPRESSION, LITERAL, PARENTHESIZED_EXPRESSION } = Core;
 
 const MIN_SAFE_DIVISOR = 1e-10;
 const MAX_SAFE_RECIPROCAL = 1e10;
-
-/**
- * Compute a tolerance scaled to a reference value's magnitude. Used to determine
- * when a floating-point number is "close enough" to zero to avoid unsafe division
- * or other arithmetic that would fail with strict equality checks.
- *
- * @param {number} reference Reference value whose magnitude determines scale.
- * @returns {number} Non-negative tolerance value.
- */
-function computeNumericTolerance(reference: number): number {
-    const scale = Math.max(1, Math.abs(reference));
-    // Use a multiplier of 4 to account for cumulative rounding during arithmetic
-    return Number.EPSILON * scale * 4;
-}
 
 type ParenthesizedExpressionNode = GameMakerAstNode & {
     expression?: GameMakerAstNode | null;
@@ -104,6 +91,23 @@ function getMultiplicationFactor(node: GameMakerAstNode | null | undefined): num
     return null;
 }
 
+function formatMultiplierLiteral(multiplier: number): string | null {
+    if (!Number.isFinite(multiplier)) {
+        return null;
+    }
+
+    if (Object.is(multiplier, -0)) {
+        return "0";
+    }
+
+    const literal = String(multiplier);
+    if (literal.includes("e") || literal.includes("E")) {
+        return null;
+    }
+
+    return literal;
+}
+
 function flattenMultiplicativeOperand(node: MutableGameMakerAstNode) {
     const leftOperand = node.left as ParenthesizedExpressionNode | null;
     if (!leftOperand || leftOperand.type !== PARENTHESIZED_EXPRESSION) {
@@ -166,13 +170,17 @@ function attemptConvertDivisionToMultiplication(node: MutableGameMakerAstNode): 
     if (multiplier === null) {
         return false;
     }
+    const formattedMultiplier = formatMultiplierLiteral(multiplier);
+    if (formattedMultiplier === null) {
+        return false;
+    }
 
     // Mutate the node
     node.operator = "*";
     const replacementLiteral = {
         type: LITERAL,
-        value: String(multiplier),
-        raw: String(multiplier)
+        value: formattedMultiplier,
+        raw: formattedMultiplier
     } as MutableGameMakerAstNode;
     Core.assignClonedLocation(replacementLiteral, right);
     node.right = replacementLiteral;

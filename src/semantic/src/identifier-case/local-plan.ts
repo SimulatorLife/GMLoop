@@ -3,14 +3,6 @@ import { Core } from "@gmloop/core";
 import { resolveProjectRelativeFilePath } from "../project-index/path-normalization.js";
 import { applyAssetRenames, planAssetRenames } from "./asset-renames/index.js";
 import { evaluateIdentifierCaseAssetRenamePolicy } from "./asset-renames/policy.js";
-import {
-    buildPatternMatchers,
-    COLLISION_CONFLICT_CODE,
-    createConflict,
-    formatConfigurationConflictMessage,
-    resolveIdentifierConfigurationConflict,
-    summarizeReferenceFileOccurrences
-} from "./common.js";
 import { ConflictSeverity } from "./conflict-severity.js";
 import { defaultIdentifierCaseFsFacade } from "./fs-facade.js";
 import { peekIdentifierCaseDryRunContext } from "./identifier-case-context.js";
@@ -18,6 +10,14 @@ import { formatIdentifierCase } from "./identifier-case-utils.js";
 import { setIdentifierCaseOption } from "./option-store.js";
 import { IdentifierCaseStyle, normalizeIdentifierCaseAssetStyle, normalizeIdentifierCaseOptions } from "./options.js";
 import { buildRenameKey } from "./plan-state.js";
+import {
+    buildPatternMatchers,
+    COLLISION_CONFLICT_CODE,
+    createConflict,
+    formatConfigurationConflictMessage,
+    resolveIdentifierConfigurationConflict,
+    summarizeReferenceFileOccurrences
+} from "./planning-helpers.js";
 import {
     applyBootstrappedIdentifierCaseProjectIndex,
     ensureIdentifierCaseProjectIndex,

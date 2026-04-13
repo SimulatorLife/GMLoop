@@ -153,15 +153,14 @@ void test("coalesceOption respects the fallback when object is not object-like",
     assert.strictEqual(value, "fallback");
 });
 
-void test("coalesceOption can accept null values when requested", () => {
+void test("coalesceOption skips null values and returns the fallback", () => {
     const source = { configured: null };
 
     const value = coalesceOption(source, "configured", {
-        fallback: "fallback",
-        acceptNull: true
+        fallback: "fallback"
     });
 
-    assert.strictEqual(value, null);
+    assert.strictEqual(value, "fallback");
 });
 
 void test("getOrCreateMapEntry initializes values on demand", () => {

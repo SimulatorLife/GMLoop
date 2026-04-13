@@ -4,80 +4,94 @@
   "semi": true,
   "allowInlineControlFlowBlocks": true,
   "logicalOperatorsStyle": "keywords",
+  "lintRuleset": "recommended",
+  "lintRules": {
+    "gml/normalize-doc-comments": "error",
+    "gml/prefer-hoistable-loop-accessors": "error",
+    "gml/optimize-logical-flow": "error"
+  },
   "refactor": {
     "codemods": {
       "loopLengthHoisting": {},
-      "namingConvention": {}
-    },
-    "namingConventionPolicy": {
-      "rules": {
-        "structDeclaration": {
+      "namingConvention": {
+        "rules": {
+          "structDeclaration": {
             "caseStyle": "pascal"
-        },
-        "resource": {
-          "caseStyle": "lower_snake"
-        },
-        "objectResourceName": {
-          "prefix": "obj_"
-        },
-        "roomResourceName": {
-          "prefix": "rm_"
-        },
-        "spriteResourceName": {
-          "prefix": "spr_"
-        },
-        "audioResourceName": {
-          "prefix": "snd_"
-        },
-        "timelineResourceName": {
-          "prefix": "tl_"
-        },
-        "shaderResourceName": {
-          "prefix": "shd_"
-        },
-        "fontResourceName": {
-          "prefix": "fnt_"
-        },
-        "pathResourceName": {
-          "prefix": "pth_"
-        },
-        "animationCurveResourceName": {
-          "prefix": "curve_"
-        },
-        "sequenceResourceName": {
-          "prefix": "seq_"
-        },
-        "tilesetResourceName": {
-          "prefix": "tile_"
-        },
-        "particleSystemResourceName": {
-          "prefix": "ps_"
-        },
-        "enum": {
-          "prefix": "e",
-          "caseStyle": "camel"
-        },
-        "macro": {
-          "caseStyle": "upper_snake"
-        },
-        "variable": {
+          },
+          "resource": {
             "caseStyle": "lower_snake"
+          },
+          "objectResourceName": {
+            "prefix": "obj_"
+          },
+          "roomResourceName": {
+            "prefix": "rm_"
+          },
+          "spriteResourceName": {
+            "prefix": "spr_"
+          },
+          "audioResourceName": {
+            "prefix": "snd_"
+          },
+          "timelineResourceName": {
+            "prefix": "tl_"
+          },
+          "shaderResourceName": {
+            "prefix": "shd_"
+          },
+          "fontResourceName": {
+            "prefix": "fnt_"
+          },
+          "pathResourceName": {
+            "prefix": "pth_"
+          },
+          "animationCurveResourceName": {
+            "prefix": "curve_"
+          },
+          "sequenceResourceName": {
+            "prefix": "seq_"
+          },
+          "tilesetResourceName": {
+            "prefix": "tile_"
+          },
+          "particleSystemResourceName": {
+            "prefix": "ps_"
+          },
+          "enum": {
+            "prefix": "e",
+            "caseStyle": "camel"
+          },
+          "macro": {
+            "caseStyle": "upper_snake"
+          },
+          "variable": {
+            "caseStyle": "lower_snake"
+          }
+        },
+        "exclusivePrefixes": {
+          "obj_": "objectResourceName",
+          "rm_": "roomResourceName",
+          "spr_": "spriteResourceName",
+          "snd_": "audioResourceName",
+          "tl_": "timelineResourceName",
+          "shd_": "shaderResourceName",
+          "fnt_": "fontResourceName",
+          "pth_": "pathResourceName",
+          "curve_": "animationCurveResourceName",
+          "seq_": "sequenceResourceName",
+          "tile_": "tilesetResourceName",
+          "ps_": "particleSystemResourceName"
         }
-      },
-      "exclusivePrefixes": {
-        "obj_": "objectResourceName",
-        "rm_": "roomResourceName",
-        "spr_": "spriteResourceName",
-        "snd_": "audioResourceName",
-        "tl_": "timelineResourceName",
-        "shd_": "shaderResourceName",
-        "fnt_": "fontResourceName",
-        "pth_": "pathResourceName",
-        "curve_": "animationCurveResourceName",
-        "seq_": "sequenceResourceName",
-        "tile_": "tilesetResourceName",
-        "ps_": "particleSystemResourceName"
       }
+    }
+  },
+  "graph": {
+    "toolsetRoot": "../shared-gml-toolset",
+    "databasePath": ".gmloop/graph-index.sqlite",
+    "embeddings": {
+      "enabled": true,
+      "provider": "local-mini-lm",
+      "modelCacheDir": ".gmloop/models"
     }
   }
 }

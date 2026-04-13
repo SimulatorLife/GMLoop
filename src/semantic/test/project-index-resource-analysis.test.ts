@@ -146,3 +146,54 @@ void test("analyseResourceFiles limits object references to supported resource-i
     assert.ok(objectReferences.every((entry) => !entry.targetPath.endsWith(".gml")));
     assert.ok(objectReferences.every((entry) => !entry.targetPath.startsWith("folders/")));
 });
+
+void test("analyseResourceFiles captures sprite keyframe Id references", async () => {
+    const projectRoot = "/project";
+    const relativePath = "sprites/sArm/sArm.yy";
+    const absolutePath = `${projectRoot}/${relativePath}`;
+
+    const context = await analyseResourceFiles({
+        projectRoot,
+        yyFiles: [{ relativePath, absolutePath }],
+        fsFacade: {
+            async readFile(readPath) {
+                assert.equal(readPath, absolutePath);
+
+                return JSON.stringify({
+                    name: "sArm",
+                    resourceType: "GMSprite",
+                    sequence: {
+                        tracks: [
+                            {
+                                keyframes: {
+                                    Keyframes: [
+                                        {
+                                            Channels: {
+                                                "0": {
+                                                    Id: {
+                                                        name: "39cfd82d-bb0b-4447-a5ee-669873fd3d89",
+                                                        path: "sprites/sArm/sArm.yy"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                });
+            }
+        }
+    });
+
+    const spriteReferences = context.assetReferences.filter((entry) => entry.fromResourcePath === relativePath);
+    assert.ok(
+        spriteReferences.some(
+            (entry) =>
+                entry.propertyPath === "sequence.tracks.0.keyframes.Keyframes.0.Channels.0.Id" &&
+                entry.targetPath === relativePath &&
+                entry.targetName === "39cfd82d-bb0b-4447-a5ee-669873fd3d89"
+        )
+    );
+});

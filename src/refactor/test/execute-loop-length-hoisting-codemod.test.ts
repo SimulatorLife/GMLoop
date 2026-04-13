@@ -55,7 +55,7 @@ void test("executeLoopLengthHoistingCodemod de-duplicates repeated file paths", 
         writeFile: async () => {}
     });
 
-    assert.equal(reads.length, 2);
+    assert.equal(reads.length, 1);
     assert.deepEqual(new Set(reads), new Set(["/project/changed.gml"]));
     assert.equal(result.changedFiles.length, 1);
 });

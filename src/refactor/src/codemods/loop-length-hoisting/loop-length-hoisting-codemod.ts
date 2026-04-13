@@ -16,6 +16,18 @@ type ForStatementContainerContext = Readonly<{
     canInsertHoistBeforeLoop: boolean;
 }>;
 
+/**
+ * Result of the combined single-pass AST data collection.
+ * Both identifier names and for-statement contexts are gathered
+ * in one traversal instead of two separate walks.
+ */
+type AstDataCollection = {
+    /** All identifier names found anywhere in the AST (mutable, callers may add hoisted names). */
+    identifierNames: Set<string>;
+    /** For-statement container contexts with hoistability flags. */
+    forStatementContexts: ReadonlyArray<ForStatementContainerContext>;
+};
+
 type LoopLengthHoistRewrite = Readonly<{
     insertionOffset: number;
     insertionText: string;
@@ -37,20 +49,17 @@ function getLineIndentationAtOffset(sourceText: string, offset: number): string 
     return sourceText.slice(lineStart, cursor);
 }
 
-function collectIdentifierNamesInSubtree(rootNode: unknown): ReadonlySet<string> {
-    const names = new Set<string>();
-    Core.walkAst(rootNode, (node) => {
-        if (node?.type !== "Identifier" || typeof node.name !== "string") {
-            return;
-        }
-
-        names.add(node.name);
-    });
-
-    return names;
-}
-
-function collectForStatementContainerContexts(programNode: unknown): ReadonlyArray<ForStatementContainerContext> {
+/**
+ * Collect both identifier names and for-statement container contexts from the
+ * AST in a **single recursive pass**, replacing the previous two-pass approach
+ * (`collectIdentifierNamesInSubtree` via `Core.walkAst` + a separate
+ * `collectForStatementContainerContexts` traversal).
+ *
+ * For files with many identifiers this halves the number of AST node visits,
+ * which is measurable when processing hundreds of GML files in one codemod run.
+ */
+function collectAstData(programNode: unknown): AstDataCollection {
+    const identifierNames = new Set<string>();
     const contexts: Array<ForStatementContainerContext> = [];
 
     const visitValue = (value: unknown, canInsertHoistBeforeLoop: boolean): void => {
@@ -67,6 +76,12 @@ function collectForStatementContainerContexts(programNode: unknown): ReadonlyArr
         }
 
         const node = value as Record<string, unknown>;
+
+        // Collect identifier names in the same traversal pass.
+        if (node.type === "Identifier" && typeof node.name === "string") {
+            identifierNames.add(node.name);
+        }
+
         if (node.type === "ForStatement") {
             contexts.push(
                 Object.freeze({
@@ -94,7 +109,7 @@ function collectForStatementContainerContexts(programNode: unknown): ReadonlyArr
     };
 
     visitValue(programNode, false);
-    return contexts;
+    return { identifierNames, forStatementContexts: contexts };
 }
 
 function resolveLoopLengthHoistIdentifierName(
@@ -174,19 +189,30 @@ function createLoopLengthHoistRewrite(parameters: {
     });
 }
 
+/**
+ * Apply a list of non-overlapping edits to `sourceText` using a left-to-right
+ * string builder.  Edits are sorted in **ascending** order so the result is
+ * assembled in a single forward pass without intermediate string copies,
+ * matching the same pattern used by `applyGroupedTextEditsToContent` in the
+ * refactor engine.
+ */
 function applySourceTextEdits(sourceText: string, edits: ReadonlyArray<LoopLengthHoistingEdit>): string {
     if (edits.length === 0) {
         return sourceText;
     }
 
-    const sorted = [...edits].toSorted((left, right) => right.start - left.start || right.end - left.end);
-    let output = sourceText;
+    const sorted = [...edits].toSorted((left, right) => left.start - right.start || left.end - right.end);
+    let result = "";
+    let cursor = 0;
 
     for (const edit of sorted) {
-        output = `${output.slice(0, edit.start)}${edit.text}${output.slice(edit.end)}`;
+        result += sourceText.slice(cursor, edit.start);
+        result += edit.text;
+        cursor = edit.end;
     }
 
-    return output;
+    result += sourceText.slice(cursor);
+    return result;
 }
 
 /**
@@ -232,9 +258,12 @@ export function applyLoopLengthHoistingCodemod(
         });
     }
 
-    const localIdentifierNames = new Set(collectIdentifierNamesInSubtree(ast));
+    // Collect identifier names and for-statement contexts in a single AST pass
+    // instead of two separate traversals, cutting per-file node visits in half.
+    // The returned `identifierNames` set is mutable and accumulates hoisted
+    // variable names as loops are processed, preventing naming conflicts.
+    const { identifierNames, forStatementContexts: loopContexts } = collectAstData(ast);
     const lineEnding = Core.dominantLineEnding(sourceText);
-    const loopContexts = collectForStatementContainerContexts(ast);
 
     const edits: Array<LoopLengthHoistingEdit> = [];
     const diagnosticOffsets: Array<number> = [];
@@ -244,7 +273,7 @@ export function applyLoopLengthHoistingCodemod(
             sourceText,
             loopContext,
             suffixMap,
-            localIdentifierNames,
+            localIdentifierNames: identifierNames,
             lineEnding
         });
 
@@ -263,7 +292,7 @@ export function applyLoopLengthHoistingCodemod(
 
         const hoistedIdentifierName = rewrite.callRewrites[0]?.text;
         if (Core.isNonEmptyString(hoistedIdentifierName)) {
-            localIdentifierNames.add(hoistedIdentifierName);
+            identifierNames.add(hoistedIdentifierName);
         }
         diagnosticOffsets.push(rewrite.reportOffset);
     }

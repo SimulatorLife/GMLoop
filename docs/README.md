@@ -77,4 +77,4 @@ implementation details:
 
 ## TODO / Ideas
 
-- Create a new workspace for a GML-tooling MCP server that wraps/exposes the CLI's commands (`@gmloop/mcp-server`) so an AI agent can interact/invoke the tools.
+- Create a new workspace for a GML-tooling MCP server that wraps/exposes the CLI's commands (`@gmloop/mcp`) so an AI agent can interact/invoke the tools.

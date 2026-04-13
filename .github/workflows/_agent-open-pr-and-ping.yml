@@ -24,7 +24,7 @@ on:
       agent:
         required: false
         type: string
-        default: ""  # Optional override; blank => weighted random selection
+        default: "" # Optional override; blank => weighted random selection
     outputs:
       pr_number:
         value: ${{ jobs.open_and_ping.outputs.pr_number }}
@@ -82,6 +82,7 @@ jobs:
             const path = require('path');
             const crypto = require('crypto');
 
+            const ACTION_AGENT_POOL = 'actions';
             const DEFAULT_AGENT = 'copilot';
 
             const normalize = (value) => {
@@ -115,6 +116,76 @@ jobs:
               return { ...items[items.length - 1], random, total };
             };
 
+            const parseAgentCandidates = (pool) => {
+              if (!pool || !Array.isArray(pool.agents)) {
+                return [];
+              }
+
+              return pool.agents
+                .map((agent) => ({
+                  name: typeof agent?.name === 'string' ? agent.name : '',
+                  weight: Number(agent?.weight),
+                }))
+                .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
+                .map((agent) => ({
+                  name: agent.name,
+                  weight: agent.weight,
+                  slug: normalize(agent.name),
+                }))
+                .filter((agent) => agent.slug);
+            };
+
+            const loadWeightsConfig = () => {
+              const weightsPath = path.resolve(process.cwd(), process.env.WEIGHTS_PATH || '.github/workflows/weights.json');
+              const raw = fs.readFileSync(weightsPath, 'utf8');
+              return JSON.parse(raw);
+            };
+
+            const selectAgent = (poolName, requestedAgent) => {
+              if (requestedAgent) {
+                return {
+                  agent: requestedAgent,
+                  reason: 'manual override',
+                };
+              }
+
+              let poolDefault = DEFAULT_AGENT;
+              let candidates = [];
+              try {
+                const parsed = loadWeightsConfig();
+                const pool = parsed?.agentPools?.[poolName] ?? null;
+                const configuredDefault = normalize(pool?.default);
+                if (configuredDefault) {
+                  poolDefault = configuredDefault;
+                }
+                candidates = parseAgentCandidates(pool);
+              } catch (error) {
+                core.warning(`Falling back to default agent due to configuration error: ${error.message}`);
+              }
+
+              if (!candidates.length) {
+                return {
+                  agent: poolDefault,
+                  reason: `${poolName} pool default fallback`,
+                };
+              }
+
+              const chosen = chooseWeighted(candidates);
+              if (!chosen) {
+                return {
+                  agent: poolDefault,
+                  reason: `${poolName} weighted selection fallback`,
+                };
+              }
+
+              const { slug, name, weight, random, total } = chosen;
+              core.info(`Random draw ${random.toFixed(6)} selected agent "${name}" from ${poolName} pool (slug=${slug}, weight=${weight}) from total weight ${total.toFixed(6)}.`);
+              return {
+                agent: slug,
+                reason: `${poolName} weighted selection`,
+              };
+            };
+
             const requested = normalize(process.env.REQUESTED_AGENT);
             const suffix = ensureBranchSuffix();
 
@@ -130,48 +201,8 @@ jobs:
               core.setOutput('branch', branchName);
             };
 
-            if (requested) {
-              finalize(requested, 'manual override');
-              return;
-            }
-
-            let candidates = [];
-            try {
-              const weightsPath = path.resolve(process.cwd(), process.env.WEIGHTS_PATH || '.github/workflows/weights.json');
-              const raw = fs.readFileSync(weightsPath, 'utf8');
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed?.agents)) {
-                candidates = parsed.agents
-                  .map((agent) => ({
-                    name: typeof agent?.name === 'string' ? agent.name : '',
-                    weight: Number(agent?.weight),
-                  }))
-                  .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
-                  .map((agent) => ({
-                    name: agent.name,
-                    weight: agent.weight,
-                    slug: normalize(agent.name),
-                  }))
-                  .filter((agent) => agent.slug);
-              }
-            } catch (error) {
-              core.warning(`Falling back to default agent due to configuration error: ${error.message}`);
-            }
-
-            if (!candidates.length) {
-              finalize(DEFAULT_AGENT, 'default fallback');
-              return;
-            }
-
-            const chosen = chooseWeighted(candidates);
-            if (!chosen) {
-              finalize(DEFAULT_AGENT, 'weighted selection fallback');
-              return;
-            }
-
-            const { slug, name, weight, random, total } = chosen;
-            core.info(`Random draw ${random.toFixed(6)} selected agent "${name}" (slug=${slug}, weight=${weight}) from total weight ${total.toFixed(6)}.`);
-            finalize(slug, 'weighted selection');
+            const selection = selectAgent(ACTION_AGENT_POOL, requested);
+            finalize(selection.agent, selection.reason);
 
       - name: Create empty commit on new branch (from latest base)
         run: |

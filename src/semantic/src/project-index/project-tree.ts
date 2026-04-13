@@ -114,7 +114,7 @@ async function resolveEntryStats({ absolutePath, fsFacade, ensureNotAborted, met
         ensureNotAborted();
         return stats;
     } catch (error) {
-        if (Core.isFsErrorCode(error, "ENOENT")) {
+        if (Core.isErrorWithCode(error, "ENOENT")) {
             metrics?.counters?.increment("io.skippedMissingEntries");
             return null;
         }

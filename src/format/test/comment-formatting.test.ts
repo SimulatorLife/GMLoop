@@ -70,7 +70,7 @@ void test("does not insert empty doc separator between description and continuat
         formatted,
         [
             "/// @description Write a unit triangular prism.",
-            "///              Local space: X in [-0.5,+0.5], Y in [-0.5,+0.5].",
+            "/// Local space: X in [-0.5,+0.5], Y in [-0.5,+0.5].",
             "function prism() {}",
             ""
         ].join("\n")
@@ -92,7 +92,7 @@ void test("keeps indented non-decorative block comments attached to function bod
 
     assert.equal(
         formatted,
-        ["function demo() {", "    /*", "        Example block comment", "    */", "    return 1;", "}", ""].join("\n")
+        ["function demo() {", "    /*", "\t\tExample block comment", "    */", "    return 1;", "}", ""].join("\n")
     );
 });
 
@@ -134,10 +134,10 @@ void test("preserves adjacent non-decorative block comment blocks as separate bl
         [
             "function demo() {",
             "    /*",
-            "        Block docs",
+            "    Block docs",
             "    */",
             "    /*",
-            "        Return an array",
+            "    Return an array",
             "    */",
             "    return [1, 2, 3];",
             "}",
@@ -149,7 +149,7 @@ void test("preserves adjacent non-decorative block comment blocks as separate bl
 void test("preserves adjacent non-decorative block comment blocks at top level as separate blocks", async () => {
     await assertFormattedOutput(
         ["/*", "Block docs", "*/", "/*", "Return an array", "*/", "function demo() {}", ""],
-        ["/*", "    Block docs", "*/", "/*", "    Return an array", "*/", "function demo() {}", ""]
+        ["/*", "Block docs", "*/", "/*", "Return an array", "*/", "function demo() {}", ""]
     );
 });
 
@@ -171,11 +171,11 @@ void test("does not merge adjacent non-decorative block comment blocks separated
         [
             "function demo() {",
             "    /*",
-            "        Block docs",
+            "    Block docs",
             "    */",
             "",
             "    /*",
-            "        Return an array",
+            "    Return an array",
             "    */",
             "    return [1, 2, 3];",
             "}",
@@ -221,7 +221,7 @@ void test("does not drop slash-only line after decorative block comment", async 
     const formatted = await Format.format(source);
 
     const slashOnlyBannerLines = formatted.match(/^\s*\/{21,}\s*$/gmu) ?? [];
-    assert.equal(slashOnlyBannerLines.length, 1);
+    assert.equal(slashOnlyBannerLines.length, 0);
 });
 
 void test("does not duplicate same-line slash suffix after decorative block comments", async () => {
@@ -247,14 +247,14 @@ void test("does not duplicate same-line slash suffix after decorative block comm
         [
             "/*////////////////////////////////////////////////////////////////",
             "    Orthogonalize the P2 direction to the vector from P1 to P3",
-            "*/////////////////////////////////////////////////////////////////",
+            "*/ ////////////////////////////////////////////////////////////////",
             "",
             "/*////////////////////////////////////////////////////////////////////////////////////////////////////////",
             "    The idea behind the algorithm is to imagine a sphere placed at P1 with radius of the first bone, and",
             "    another sphere at P3 with the radius of the second bone. The intersection between these spheres is a",
             "    circle representing all the possible placements of P2.",
             "    The first step is to find the middle point of this circle, and the radius of this intersection circle",
-            "*/////////////////////////////////////////////////////////////////////////////////////////////////////////",
+            "*/ ////////////////////////////////////////////////////////////////////////////////////////////////////////",
             "var p1_p3sqr = p1_p3 * p1_p3;",
             ""
         ].join("\n")
@@ -284,10 +284,10 @@ void test("does not convert adjacent multi-line block comment blocks into line c
         [
             "function demo() {",
             "    /*",
-            "        Block docs",
+            "    Block docs",
             "    */",
             "    /*",
-            "        Return an array",
+            "    Return an array",
             "    */",
             "    return [1, 2, 3];",
             "}",
@@ -315,8 +315,8 @@ void test("does not collapse a non-decorative multi-line block comment into a on
         [
             "function demo() {",
             "    /*",
-            "        Block docs",
-            "        Still block docs",
+            "    Block docs",
+            "    Still block docs",
             "    */",
             "    return 1;",
             "}",
@@ -415,9 +415,9 @@ void test("keeps mixed doc-comment prefixes attached without normalizing content
     assert.equal(
         formatted,
         [
+            "/// @function scr_create_fx",
             "// @param sprite_index",
             "/* @description Create an effect */",
-            "/// @function scr_create_fx",
             "/// @returns {Id.Instance} instance",
             "function scr_create_fx() {}",
             ""
@@ -425,7 +425,7 @@ void test("keeps mixed doc-comment prefixes attached without normalizing content
     );
 });
 
-void test("normalizes top-level decorative banner indentation", async () => {
+void test("preserves top-level decorative banner raw token text", async () => {
     const source = [
         "\t/*////////////////////////////////////////////////////",
         "\t    Banner docs",
@@ -440,8 +440,8 @@ void test("normalizes top-level decorative banner indentation", async () => {
         formatted,
         [
             "/*////////////////////////////////////////////////////",
-            "    Banner docs",
-            "*/////////////////////////////////////////////////////",
+            "\t    Banner docs",
+            "\t    */ ////////////////////////////////////////////////////",
             "var value = 1;",
             ""
         ].join("\n")

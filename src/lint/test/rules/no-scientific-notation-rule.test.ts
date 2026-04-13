@@ -36,6 +36,34 @@ void test("no-scientific-notation auto-fixes all scientific notation forms in co
     assertEquals(result.output, "var a = 1000;\nvar b = 50;\nvar c = 0.45;\n");
 });
 
+void test("no-scientific-notation auto-fixes malformed __scribble_random scientific notation source", () => {
+    const input = [
+        "/// @returns {any}",
+        "function __scribble_random() {",
+        "    static _lcg = date_current_datetime() * 100;",
+        "    _lcg = (48271 * _lcg) mod 2147483647; // Lehmer",
+        "    return _lcg * 4.656612873077393e-10;",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = runNoScientificNotationRule(input);
+
+    assertEquals(result.messageCount, 1);
+    assertEquals(
+        result.output,
+        [
+            "/// @returns {any}",
+            "function __scribble_random() {",
+            "    static _lcg = date_current_datetime() * 100;",
+            "    _lcg = (48271 * _lcg) mod 2147483647; // Lehmer",
+            "    return _lcg * 0.0000000004656612873077393;",
+            "}",
+            ""
+        ].join("\n")
+    );
+});
+
 void test("no-scientific-notation does not touch scientific notation text in comments and strings", () => {
     const input = [
         'var message = "value: 1e-11";',

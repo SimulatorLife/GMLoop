@@ -2,29 +2,46 @@ import { spawn } from "node:child_process";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { Core } from "@gmloop/core";
 import { Command, Option } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import type { CommanderCommandLike } from "../cli-core/commander-types.js";
 import { CliUsageError } from "../cli-core/errors.js";
+import {
+    createConfigOption,
+    createListOption,
+    createPathOption,
+    createVerboseOption,
+    createWriteOption
+} from "../cli-core/shared-command-options.js";
 import { SKIP_CLI_RUN_ENV_VAR } from "../shared/skip-cli-run.js";
-import { discoverProjectRoot, resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
+import {
+    discoverProjectRoot,
+    resolveExistingGmloopConfigPath,
+    resolveExplicitWorkflowTargetPath
+} from "../workflow/project-root.js";
 import { runFormatCommand } from "./format.js";
 import { runLintCommand } from "./lint.js";
 import { executeRefactorCommand } from "./refactor.js";
 
 type FixCommandOptions = {
-    projectRoot?: string;
+    path?: string;
     config?: string;
+    write?: boolean;
     only?: string;
     verbose?: boolean;
+    list?: boolean;
 };
 
 type ValidatedFixCommandOptions = {
     projectRoot: string;
+    targetPath: string;
     configPath: string;
+    dryRun: boolean;
     only: string | undefined;
     verbose: boolean;
+    list: boolean;
 };
 
 type FixWorkflowStage = {
@@ -87,17 +104,14 @@ function createStubCommand(parameters: StubCommandParameters): CommanderCommandL
     };
 }
 
-function normalizeFixProjectArgument(command: CommanderCommandLike): string | undefined {
-    const projectArgument = Array.isArray(command.args) ? command.args[0] : undefined;
-    return typeof projectArgument === "string" && projectArgument.length > 0 ? projectArgument : undefined;
-}
-
 function getFixCommandUsage(command: CommanderCommandLike): string {
     return command.helpInformation();
 }
 
 function createFixCommandValidationError(error: unknown, command: CommanderCommandLike): CliUsageError {
-    const message = error instanceof Error ? error.message : "Invalid fix command options.";
+    // Use a capability probe rather than `instanceof Error` so that cross-realm
+    // errors (e.g. from sandboxed modules or commander internals) are handled.
+    const message = Core.isErrorLike(error) ? error.message : "Invalid fix command options.";
     const usage = getFixCommandUsage(command);
 
     if (!message.includes("Could not find gmloop config file")) {
@@ -115,22 +129,21 @@ function createFixCommandValidationError(error: unknown, command: CommanderComma
 
 async function validateFixCommandOptions(command: CommanderCommandLike): Promise<ValidatedFixCommandOptions> {
     const options = (command.opts() ?? {}) as FixCommandOptions;
-    const projectArgument = normalizeFixProjectArgument(command);
-
-    if (projectArgument && options.projectRoot) {
-        throw new Error("Pass either a positional project path or --project-root, not both.");
-    }
+    const explicitTargetPath = resolveExplicitWorkflowTargetPath(options.path);
 
     const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: projectArgument ?? options.projectRoot,
+        explicitProjectPath: options.path,
         configPath: options.config
     });
 
     return {
         projectRoot,
+        targetPath: explicitTargetPath ?? projectRoot,
         configPath: await resolveExistingGmloopConfigPath(projectRoot, options.config),
+        dryRun: options.write !== true,
         only: options.only,
-        verbose: options.verbose === true
+        verbose: options.verbose === true,
+        list: options.list === true
     };
 }
 
@@ -178,17 +191,17 @@ async function runWorkflowStage(parameters: {
     const stageExitCode = typeof process.exitCode === "number" ? process.exitCode : 0;
     process.exitCode = 0;
     if (stageExitCode !== 0) {
-        throw new Error(parameters.failureMessage);
+        throw new Error(`${parameters.failureMessage} Code: ${stageExitCode}`);
     }
 }
 
 function createRefactorStageCommand(options: ValidatedFixCommandOptions): CommanderCommandLike {
     return createStubCommand({
-        args: ["codemod"],
+        args: ["codemod", options.targetPath],
         options: {
-            projectRoot: options.projectRoot,
+            path: options.projectRoot,
             config: options.configPath,
-            write: true,
+            write: !options.dryRun,
             only: options.only,
             list: false,
             verbose: options.verbose
@@ -198,15 +211,11 @@ function createRefactorStageCommand(options: ValidatedFixCommandOptions): Comman
 }
 
 function createRefactorCodemodArgs(options: ValidatedFixCommandOptions): Array<string> {
-    const args = [
-        "refactor",
-        "codemod",
-        "--project-root",
-        options.projectRoot,
-        "--config",
-        options.configPath,
-        "--write"
-    ];
+    const args = ["refactor", "codemod", "--path", options.projectRoot, "--config", options.configPath];
+
+    if (!options.dryRun) {
+        args.push("--write");
+    }
 
     if (options.only) {
         args.push("--only", options.only);
@@ -215,6 +224,8 @@ function createRefactorCodemodArgs(options: ValidatedFixCommandOptions): Array<s
     if (options.verbose) {
         args.push("--verbose");
     }
+
+    args.push(options.targetPath);
 
     return args;
 }
@@ -258,15 +269,28 @@ async function runRefactorCodemodSubprocess(options: ValidatedFixCommandOptions)
     });
 }
 
+function printFixCommandSettings(options: ValidatedFixCommandOptions): void {
+    const normalizedOnly = options.only?.trim();
+    const selectedCodemods = normalizedOnly && normalizedOnly.length > 0 ? normalizedOnly : "(all configured codemods)";
+
+    console.log(`Project root: ${options.projectRoot}`);
+    console.log(`Target path: ${options.targetPath}`);
+    console.log(`Config path: ${options.configPath}`);
+    console.log(`Selected codemods: ${selectedCodemods}`);
+    console.log(`Verbose mode: ${options.verbose ? "enabled" : "disabled"}`);
+    console.log(`Execution mode: ${options.dryRun ? "dry-run (default)" : "apply changes (--write)"}`);
+}
+
 function createLintStageCommand(options: ValidatedFixCommandOptions): CommanderCommandLike {
     return createStubCommand({
-        args: [options.projectRoot],
+        args: [options.targetPath],
         options: {
-            fix: true,
+            write: !options.dryRun,
             formatter: "stylish",
             verbose: options.verbose,
-            project: options.projectRoot,
+            path: options.projectRoot,
             projectStrict: true,
+            allowParseErrors: true,
             quiet: false,
             noDefaultConfig: false
         },
@@ -276,11 +300,14 @@ function createLintStageCommand(options: ValidatedFixCommandOptions): CommanderC
 
 function createFormatStageCommand(options: ValidatedFixCommandOptions): CommanderCommandLike {
     return createStubCommand({
-        args: [options.projectRoot],
+        args: [],
         options: {
+            path: options.targetPath,
+            write: !options.dryRun,
+            onParseError: "skip",
             verbose: options.verbose
         },
-        helpText: "format [targetPath]"
+        helpText: "format [options]"
     });
 }
 
@@ -327,16 +354,18 @@ export function createFixCommand(): Command {
     return applyStandardCommandOptions(
         new Command("fix")
             .description("Run project codemods, lint fixes, and formatting in sequence")
-            .argument("[projectPath]", "Project directory or .yyp path. Defaults to the current project.")
-            .addOption(new Option("--project-root <path>", "Explicit GameMaker project root directory or .yyp path"))
-            .addOption(new Option("--config <path>", "Path to gmloop.json for the refactor codemod stage"))
+            .addOption(createPathOption())
+            .addOption(createConfigOption())
+            .addOption(createWriteOption())
             .addOption(new Option("--only <ids>", "Comma-separated list of configured codemod ids to run"))
-            .addOption(new Option("--verbose", "Enable verbose output with detailed diagnostics").default(false))
+            .addOption(createListOption())
+            .addOption(createVerboseOption())
             .addHelpText("after", () =>
                 [
                     "",
                     "Examples:",
-                    "  pnpm dlx prettier-plugin-gml fix path/to/project",
+                    "  pnpm dlx prettier-plugin-gml fix --path path/to/project",
+                    "  pnpm dlx prettier-plugin-gml fix --write --path path/to/project",
                     "  pnpm dlx prettier-plugin-gml fix --only namingConvention",
                     ""
                 ].join("\n")
@@ -347,7 +376,7 @@ export function createFixCommand(): Command {
 /**
  * Run the project-wide fix workflow:
  * 1. configured refactor codemods
- * 2. lint with `--fix`
+ * 2. lint with `--write`
  * 3. formatting
  */
 export async function runFixCommand(command: CommanderCommandLike): Promise<void> {
@@ -358,9 +387,17 @@ export async function runFixCommand(command: CommanderCommandLike): Promise<void
         throw createFixCommandValidationError(error, command);
     }
 
+    if (options.list) {
+        printFixCommandSettings(options);
+        return;
+    }
+
     console.log(`Project root: ${options.projectRoot}`);
+    console.log(`Target path: ${options.targetPath}`);
 
     await runFixWorkflowStages(options);
 
-    console.log("\nSuccess! Project codemods, lint fixes, and formatting completed.");
+    console.log(
+        `\nSuccess! Project codemods, lint fixes, and formatting completed (${options.dryRun ? "dry-run" : "write mode"}).`
+    );
 }

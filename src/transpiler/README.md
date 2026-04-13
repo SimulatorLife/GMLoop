@@ -57,7 +57,7 @@ import { createSemanticOracle } from "gamemaker-language-transpiler";
 
 // Create an oracle with built-in function knowledge
 const oracle = createSemanticOracle({
-    scriptNames: new Set(['scr_player_move', 'scr_enemy_ai'])
+    scriptNames: new Set(["scr_player_move", "scr_enemy_ai"])
 });
 
 // Use it with the emitter for improved code generation
@@ -68,6 +68,7 @@ const jsCode = emitter.emit(ast);
 ```
 
 The semantic oracle provides:
+
 - **Built-in function recognition**: Automatically recognizes all GameMaker built-in functions from manual metadata
 - **Script call classification**: Routes script calls through the runtime wrapper for hot reload support
 - **Global variable handling**: Properly prefixes global variables with `global.`
@@ -79,11 +80,11 @@ The semantic oracle provides:
 
 - ✅ Number, string, and boolean literals
 - ✅ Identifiers with semantic classification
-- ✅ Binary expressions (+, -, *, /, etc.)
+- ✅ Binary expressions (+, -, \*, /, etc.)
 - ✅ GML operator mapping (div → /, mod → %, and → &&, or → ||, etc.)
 - ✅ Strict equality conversion (== → ===, != → !==)
 - ✅ Assignment expressions
-- ✅ Compound assignment operators (+=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=)
+- ✅ Compound assignment operators (+=, -=, \*=, /=, %=, &=, |=, ^=, <<=, >>=)
 - ✅ Basic statements
 - ✅ Array indexing (arr[0], matrix[i][j])
 - ✅ Property access (obj.prop, nested.property.access)
@@ -91,14 +92,14 @@ The semantic oracle provides:
 - ✅ Variable declarations (var x = 10, y = 20)
 - ✅ Function declarations (function myFunc(a, b) { ... })
 - ✅ Control flow statements:
-  - ✅ if/else statements (including else-if chains)
-  - ✅ for loops
-  - ✅ while loops
-  - ✅ do-until loops (converted to do-while with negated condition)
-  - ✅ switch statements with case and default
+    - ✅ if/else statements (including else-if chains)
+    - ✅ for loops
+    - ✅ while loops
+    - ✅ do-until loops (converted to do-while with negated condition)
+    - ✅ switch statements with case and default
 - ✅ Loop control:
-  - ✅ break statements
-  - ✅ continue statements
+    - ✅ break statements
+    - ✅ continue statements
 - ✅ repeat loops (converted to for loops with countdown)
 - ✅ return statements (with and without values)
 - ✅ Parenthesized expressions
@@ -108,37 +109,37 @@ The semantic oracle provides:
 - ✅ Struct literals ({a: 1, b: 2}) mapped to JavaScript object literals
 - ✅ Ternary expressions (a ? b : c)
 - ✅ Error handling:
-  - ✅ throw statements
-  - ✅ try-catch blocks
-  - ✅ try-finally blocks
-  - ✅ try-catch-finally blocks
+    - ✅ throw statements
+    - ✅ try-catch blocks
+    - ✅ try-finally blocks
+    - ✅ try-catch-finally blocks
 - ✅ Built-in function mapping:
-  - ✅ Mathematical functions: abs, round, floor, ceil, sqrt, sqr, power, exp, ln, log2, log10
-  - ✅ Trigonometric functions: sin, cos, tan, arcsin, arccos, arctan, arctan2
-  - ✅ Angle conversion: degtorad, radtodeg
-  - ✅ Utility functions: min, max, sign, clamp, point_distance, lerp, median, mean
-  - ✅ Random functions: random, random_range, irandom, irandom_range, choose
-  - ✅ String functions:
-    - ✅ Basic operations: string_length, string_char_at, string_ord_at, string_byte_at, string_byte_length
-    - ✅ Searching: string_pos, string_last_pos
-    - ✅ Manipulation: string_copy, string_delete, string_insert, string_replace, string_replace_all
-    - ✅ Case conversion: string_upper, string_lower
-    - ✅ Utility: string_repeat, string_count
-    - ✅ Filtering: string_letters, string_digits, string_lettersdigits
-    - ✅ Conversion: chr, ansi_char, ord, real, string
-    - ✅ Formatting: string_format
+    - ✅ Mathematical functions: abs, round, floor, ceil, sqrt, sqr, power, exp, ln, log2, log10
+    - ✅ Trigonometric functions: sin, cos, tan, arcsin, arccos, arctan, arctan2
+    - ✅ Angle conversion: degtorad, radtodeg
+    - ✅ Utility functions: min, max, sign, clamp, point_distance, lerp, median, mean
+    - ✅ Random functions: random, random_range, irandom, irandom_range, choose
+    - ✅ String functions:
+        - ✅ Basic operations: string_length, string_char_at, string_ord_at, string_byte_at, string_byte_length
+        - ✅ Searching: string_pos, string_last_pos
+        - ✅ Manipulation: string_copy, string_delete, string_insert, string_replace, string_replace_all
+        - ✅ Case conversion: string_upper, string_lower
+        - ✅ Utility: string_repeat, string_count
+        - ✅ Filtering: string_letters, string_digits, string_lettersdigits
+        - ✅ Conversion: chr, ansi_char, ord, real, string
+        - ✅ Formatting: string_format
 - ✅ Semantic analysis integration:
-  - ✅ Built-in function recognition via GameMaker manual metadata
-  - ✅ Script call classification and runtime wrapper routing
-  - ✅ Global variable identification and prefixing
-  - ✅ SCIP symbol generation for dependency tracking
+    - ✅ Built-in function recognition via GameMaker manual metadata
+    - ✅ Script call classification and runtime wrapper routing
+    - ✅ Global variable identification and prefixing
+    - ✅ SCIP symbol generation for dependency tracking
 - ✅ Object-oriented features:
-  - ✅ Constructor calls with `new` keyword (new Vector2(x, y))
-  - ✅ Delete operator for removing struct members (delete obj.prop)
+    - ✅ Constructor calls with `new` keyword (new Vector2(x, y))
+    - ✅ Delete operator for removing struct members (delete obj.prop)
 - ✅ Event transpilation:
-  - ✅ `transpileEvent()` – produces an `EventPatch` for GML object events
-  - ✅ `EventContextOracle` – treats undeclared identifiers as `self.<name>` in event scope
-  - ✅ `collectLocalVariables()` – pre-collects `var`-declared locals to avoid misclassifying them as instance fields
+    - ✅ `transpileEvent()` – produces an `EventPatch` for GML object events
+    - ✅ `EventContextOracle` – treats undeclared identifiers as `self.<name>` in event scope
+    - ✅ `collectLocalVariables()` – pre-collects `var`-declared locals to avoid misclassifying them as instance fields
 
 ### Planned Features
 
@@ -146,7 +147,7 @@ The semantic oracle provides:
 - [x] Built-in function mapping (expanded to 60+ functions including comprehensive string, math, and random number support)
 - [x] Semantic oracle integration for identifier classification
 - [x] Script call indirection through runtime wrapper
-- [x] Compound assignment operators (+=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=)
+- [x] Compound assignment operators (+=, -=, \*=, /=, %=, &=, |=, ^=, <<=, >>=)
 - [x] Event transpilation with `transpileEvent()` and `EventContextOracle`
 - [ ] Additional built-in function mapping (array functions, data structure functions, drawing functions)
 
@@ -155,14 +156,14 @@ The semantic oracle provides:
 The transpiler maps GML-specific operators to their JavaScript equivalents:
 
 | GML Operator | JavaScript Equivalent |
-|--------------|-----------------------|
-| `div`        | `/`                  |
-| `mod`        | `%`                  |
-| `and`        | `&&`                 |
-| `or`         | `||`                 |
-| `xor`        | `^`                  |
-| `==`         | `===`                |
-| `!=`         | `!==`                |
+| ------------ | --------------------- | --- | --- |
+| `div`        | `/`                   |
+| `mod`        | `%`                   |
+| `and`        | `&&`                  |
+| `or`         | `                     |     | `   |
+| `xor`        | `^`                   |
+| `==`         | `===`                 |
+| `!=`         | `!==`                 |
 
 ## Integration
 
@@ -182,6 +183,7 @@ pnpm test
 ```
 
 The test suite includes:
+
 - Literal value handling
 - Operator mapping verification
 - Expression generation

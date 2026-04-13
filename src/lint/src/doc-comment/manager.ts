@@ -38,27 +38,6 @@ type DocCommentManager = DocCommentTraversalManager &
     DocCommentUpdateManager;
 
 const DOC_COMMENT_MANAGERS: WeakMap<object, DocCommentManager> = new WeakMap();
-const DOC_COMMENT_TRAVERSAL_SERVICES: WeakMap<DocCommentManager, DocCommentTraversalManager> = new WeakMap();
-const DOC_COMMENT_COLLECTION_SERVICES: WeakMap<DocCommentManager, DocCommentCollectionManager> = new WeakMap();
-const DOC_COMMENT_PRESENCE_SERVICES: WeakMap<DocCommentManager, DocCommentPresenceManager> = new WeakMap();
-const DOC_COMMENT_DESCRIPTION_SERVICES: WeakMap<DocCommentManager, DocCommentDescriptionManager> = new WeakMap();
-const DOC_COMMENT_UPDATE_SERVICES: WeakMap<DocCommentManager, DocCommentUpdateManager> = new WeakMap();
-
-function resolveDocCommentService<TService>(
-    ast: unknown,
-    cache: WeakMap<DocCommentManager, TService>,
-    createService: (manager: DocCommentManager) => TService
-): TService {
-    const manager = prepareDocCommentEnvironment(ast);
-    let service = cache.get(manager);
-
-    if (!service) {
-        service = Object.freeze(createService(manager));
-        cache.set(manager, service);
-    }
-
-    return service;
-}
 
 const NOOP_DOC_COMMENT_MANAGER = Object.freeze({
     applyUpdates(_docUpdates: unknown) {},
@@ -85,39 +64,48 @@ export function prepareDocCommentEnvironment(ast: unknown): DocCommentManager {
         return manager;
     }
 
-    manager = createDocCommentManager(ast);
+    manager = Object.freeze(createDocCommentManager(ast));
     DOC_COMMENT_MANAGERS.set(ast, manager);
     return manager;
 }
 
+/**
+ * Resolve the doc-comment traversal service for the given AST.
+ *
+ * Returns the cached, frozen {@link DocCommentManager} which implements all
+ * service interfaces. TypeScript narrows the return type so callers only see
+ * the traversal facet at compile time.
+ */
 export function resolveDocCommentTraversalService(ast?: unknown): DocCommentTraversalManager {
-    return resolveDocCommentService(ast, DOC_COMMENT_TRAVERSAL_SERVICES, (manager) => ({
-        forEach: manager.forEach.bind(manager)
-    }));
+    return prepareDocCommentEnvironment(ast);
 }
 
+/**
+ * Resolve the doc-comment collection service for the given AST.
+ */
 export function resolveDocCommentCollectionService(ast?: unknown): DocCommentCollectionManager {
-    return resolveDocCommentService(ast, DOC_COMMENT_COLLECTION_SERVICES, (manager) => ({
-        getComments: manager.getComments.bind(manager)
-    }));
+    return prepareDocCommentEnvironment(ast);
 }
 
+/**
+ * Resolve the doc-comment presence service for the given AST.
+ */
 export function resolveDocCommentPresenceService(ast?: unknown): DocCommentPresenceManager {
-    return resolveDocCommentService(ast, DOC_COMMENT_PRESENCE_SERVICES, (manager) => ({
-        hasDocComment: manager.hasDocComment.bind(manager)
-    }));
+    return prepareDocCommentEnvironment(ast);
 }
 
+/**
+ * Resolve the doc-comment description service for the given AST.
+ */
 export function resolveDocCommentDescriptionService(ast?: unknown): DocCommentDescriptionManager {
-    return resolveDocCommentService(ast, DOC_COMMENT_DESCRIPTION_SERVICES, (manager) => ({
-        extractDescription: manager.extractDescription.bind(manager)
-    }));
+    return prepareDocCommentEnvironment(ast);
 }
 
+/**
+ * Resolve the doc-comment update service for the given AST.
+ */
 export function resolveDocCommentUpdateService(ast?: unknown): DocCommentUpdateManager {
-    return resolveDocCommentService(ast, DOC_COMMENT_UPDATE_SERVICES, (manager) => ({
-        applyUpdates: manager.applyUpdates.bind(manager)
-    }));
+    return prepareDocCommentEnvironment(ast);
 }
 
 function createDocCommentManager(ast: unknown): DocCommentManager {

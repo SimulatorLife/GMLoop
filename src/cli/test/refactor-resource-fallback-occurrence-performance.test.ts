@@ -108,15 +108,14 @@ void test("refactor naming codemod reuses cached fallback identifier indexes for
                 targetPaths: [fixture.projectRoot],
                 gmlFilePaths: [...fixture.sourceTexts.keys()],
                 config: {
-                    namingConventionPolicy: {
-                        rules: {
-                            objectResourceName: {
-                                caseStyle: "camel"
+                    codemods: {
+                        namingConvention: {
+                            rules: {
+                                objectResourceName: {
+                                    caseStyle: "camel"
+                                }
                             }
                         }
-                    },
-                    codemods: {
-                        namingConvention: {}
                     }
                 },
                 readFile: async (filePath) => fixture.sourceTexts.get(filePath) ?? "",

@@ -84,4 +84,28 @@ await describe("timing utilities", async () => {
             );
         }
     });
+
+    await it("getHighResolutionTime returns stable results across rapid successive calls", () => {
+        // Validates that the eagerly-resolved timer function does not degrade
+        // across a burst of calls. Because the implementation binds the timer
+        // once at module load (avoiding a per-call typeof check), rapid
+        // invocations must all return non-negative, weakly increasing values.
+        const results: number[] = [];
+        for (let i = 0; i < 1000; i++) {
+            results.push(getHighResolutionTime());
+        }
+
+        for (const value of results) {
+            assert.strictEqual(typeof value, "number");
+            assert.ok(value >= 0, "each result must be non-negative");
+        }
+
+        // All values should be weakly monotonic
+        for (const [index, value] of results.entries()) {
+            if (index === 0) {
+                continue;
+            }
+            assert.ok(value >= results[index - 1], `result[${index}] must be >= result[${index - 1}]`);
+        }
+    });
 });

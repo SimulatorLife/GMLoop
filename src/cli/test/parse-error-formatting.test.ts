@@ -27,7 +27,7 @@ void test("Parse error messages are user-friendly without stack traces", async (
         );
 
         const { exitCode, stderr } = await runCliTestCommand({
-            argv: ["format", badFile],
+            argv: ["format", "--path", badFile, "--write"],
             cwd: testDir
         });
 
@@ -75,7 +75,7 @@ void test("format command ignores PRETTIER_PLUGIN_GML_ON_PARSE_ERROR fallback an
         );
 
         const { exitCode, stderr } = await runCliTestCommand({
-            argv: ["format", badFile],
+            argv: ["format", "--path", badFile, "--write"],
             cwd: testDir,
             env: {
                 PRETTIER_PLUGIN_GML_ON_PARSE_ERROR: "skip"

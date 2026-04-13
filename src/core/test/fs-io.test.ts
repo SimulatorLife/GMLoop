@@ -2,6 +2,28 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { getFileMtime, listDirectory } from "../src/fs/index.js";
+import { isErrorWithCode } from "../src/utils/error.js";
+
+void test("isErrorWithCode matches Node.js-style error codes", () => {
+    const enoent = new Error("no such file") as NodeJS.ErrnoException;
+    enoent.code = "ENOENT";
+
+    assert.ok(isErrorWithCode(enoent, "ENOENT"), "should match ENOENT");
+    assert.ok(isErrorWithCode(enoent, "ENOENT", "EACCES"), "should match when ENOENT is in a multi-code list");
+    assert.ok(!isErrorWithCode(enoent, "EACCES"), "should not match a different code");
+});
+
+void test("isErrorWithCode returns false for non-Error values", () => {
+    assert.ok(!isErrorWithCode(null, "ENOENT"));
+    assert.ok(!isErrorWithCode(undefined, "ENOENT"));
+    assert.ok(!isErrorWithCode("string error", "ENOENT"));
+    assert.ok(!isErrorWithCode(42, "ENOENT"));
+    assert.ok(!isErrorWithCode({}, "ENOENT"));
+});
+
+void test("isErrorWithCode returns false when error has no code property", () => {
+    assert.ok(!isErrorWithCode(new Error("plain error"), "ENOENT"));
+});
 
 void test("listDirectory snapshots iterable results", async () => {
     const source = ["alpha", "beta"];

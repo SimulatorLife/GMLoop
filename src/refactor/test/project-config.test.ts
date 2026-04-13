@@ -19,15 +19,14 @@ async function writeConfigFile(config: Record<string, unknown>): Promise<string>
 void test("normalizeRefactorProjectConfig accepts a populated refactor section", async () => {
     const configPath = await writeConfigFile({
         refactor: {
-            namingConventionPolicy: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
-                    }
-                }
-            },
             codemods: {
-                namingConvention: {},
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
+                    }
+                },
                 loopLengthHoisting: {
                     functionSuffixes: {
                         array_length: "len"
@@ -41,15 +40,14 @@ void test("normalizeRefactorProjectConfig accepts a populated refactor section",
         const rawConfig = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
         const normalized = Refactor.normalizeRefactorProjectConfig(rawConfig.refactor);
         assert.deepEqual(normalized, {
-            namingConventionPolicy: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
-                    }
-                }
-            },
             codemods: {
-                namingConvention: {},
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
+                    }
+                },
                 loopLengthHoisting: {
                     functionSuffixes: {
                         array_length: "len"
@@ -79,10 +77,12 @@ void test("normalizeRefactorProjectConfig rejects malformed refactor sections", 
     assert.throws(
         () =>
             Refactor.normalizeRefactorProjectConfig({
-                namingConventionPolicy: {
-                    rules: {
-                        localVariable: {
-                            caseStyle: "invalid"
+                codemods: {
+                    namingConvention: {
+                        rules: {
+                            localVariable: {
+                                caseStyle: "invalid"
+                            }
                         }
                     }
                 }

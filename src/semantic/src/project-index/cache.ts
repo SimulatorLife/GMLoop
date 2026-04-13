@@ -244,7 +244,7 @@ export async function loadProjectIndexCache(
     try {
         rawContents = await fsFacade.readFile(cacheFilePath, "utf8");
     } catch (error) {
-        if (Core.isFsErrorCode(error, "ENOENT")) {
+        if (Core.isErrorWithCode(error, "ENOENT")) {
             return createCacheMiss(cacheFilePath, ProjectIndexCacheMissReason.NOT_FOUND);
         }
         throw error;

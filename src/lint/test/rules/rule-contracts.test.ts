@@ -139,6 +139,11 @@ const expectedRules = Object.freeze([
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
+        shortName: "require-region-pairs",
+        messageId: "requireRegionPairs",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
         shortName: "no-assignment-in-condition",
         messageId: "noAssignmentInCondition",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
@@ -195,6 +200,11 @@ const expectedRules = Object.freeze([
         shortName: "simplify-real-calls",
         messageId: "simplifyRealCalls",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
+        shortName: "no-unary-plus-on-identifier",
+        messageId: "noUnaryPlusOnIdentifier",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
     }
 ]);
 
@@ -225,9 +235,8 @@ void test("recommended baseline rules expose stable messageIds and exact schemas
 
         assertEquals(typeof rule.meta?.messages?.[ruleDefinition.messageId], "string");
         assert.deepEqual(rule.meta?.schema, ruleDefinition.schema);
-        if (ruleDefinition.shortName !== "no-globalvar") {
-            assertEquals(rule.meta?.fixable, "code");
-        }
+        const expectedFixable = ruleDefinition.shortName === "no-globalvar" ? undefined : "code";
+        assertEquals(rule.meta?.fixable, expectedFixable);
     }
 });
 

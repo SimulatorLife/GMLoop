@@ -1,9 +1,5 @@
 import { Core } from "@gmloop/core";
 
-type ProjectIndexParserFacade = {
-    parse?: (text: string, filePath?: string) => unknown;
-};
-
 type ProjectIndexConcurrencySettings = {
     gml: number;
     gmlParsing: number;
@@ -16,9 +12,7 @@ type ProjectIndexBuildOptions = {
     // can accept either legacy or current option shapes passed by callers.
     concurrency?: ProjectIndexConcurrencySettings | null;
     projectIndexConcurrency?: number | ProjectIndexConcurrencySettings | null;
-    gmlParserFacade?: ProjectIndexParserFacade | null;
     parserOverride?: {
-        facade?: ProjectIndexParserFacade | null;
         parse?: (text: string, filePath?: string) => unknown;
     } | null;
     parseGml?: (text: string, filePath?: string) => unknown;
@@ -62,11 +56,7 @@ export function createProjectIndexBuildOptions({
         return buildOptions;
     }
 
-    const { facade, parse } = parserOverride;
-
-    if (facade) {
-        buildOptions.gmlParserFacade = facade;
-    }
+    const { parse } = parserOverride;
 
     buildOptions.parseGml = parse as ((text: string, filePath?: string) => unknown) | null;
 

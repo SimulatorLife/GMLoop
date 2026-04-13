@@ -1,3 +1,4 @@
+import { isErrorLike } from "./capability-probes.js";
 import { assertFunction } from "./object.js";
 
 /**
@@ -172,11 +173,13 @@ export function debounce<TArgs extends Array<unknown>>(
             fn(...argsToUse);
         } catch (error) {
             if (options.onError === undefined) {
+                // Use a capability probe rather than `instanceof Error` so that
+                // cross-realm errors (e.g. from sandboxed modules) are handled.
                 process.stderr.write(
-                    `[debounce] Error in debounced function: ${error instanceof Error ? error.message : String(error)}\n`
+                    `[debounce] Error in debounced function: ${isErrorLike(error) ? error.message : String(error)}\n`
                 );
-                if (error instanceof Error && error.stack !== undefined) {
-                    process.stderr.write(`${error.stack}\n`);
+                if (isErrorLike(error) && typeof (error as { stack?: unknown }).stack === "string") {
+                    process.stderr.write(`${(error as { stack: string }).stack}\n`);
                 }
             } else {
                 options.onError(error);

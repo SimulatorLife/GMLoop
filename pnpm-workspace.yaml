@@ -9,3 +9,4 @@ packages:
   - src/runtime-wrapper
   - src/refactor
   - src/fixture-runner
+  - src/mcp

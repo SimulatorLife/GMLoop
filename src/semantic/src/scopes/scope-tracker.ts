@@ -247,6 +247,26 @@ export class ScopeTracker {
         return results;
     }
 
+    private collectSymbolReadWriteOccurrences(
+        name: string | null | undefined,
+        options: {
+            cloneOccurrences: boolean;
+            accessKind: "read" | "write";
+        }
+    ): SymbolOccurrence[] {
+        const { cloneOccurrences, accessKind } = options;
+
+        return this.collectSymbolOccurrencesForName(name, {
+            cloneOccurrences,
+            includeDeclarations: false,
+            includeReferences: true,
+            referenceFilter: (occurrence) =>
+                accessKind === "write"
+                    ? Boolean(occurrence.usageContext?.isWrite)
+                    : Boolean(occurrence.usageContext?.isRead)
+        });
+    }
+
     constructor({
         enabled = true,
         lookupCacheMaxEntries = DEFAULT_LOOKUP_CACHE_MAX_ENTRIES,
@@ -2041,20 +2061,16 @@ export class ScopeTracker {
     }
 
     public getSymbolWrites(name: string | null | undefined): SymbolOccurrence[] {
-        return this.collectSymbolOccurrencesForName(name, {
+        return this.collectSymbolReadWriteOccurrences(name, {
             cloneOccurrences: true,
-            includeDeclarations: false,
-            includeReferences: true,
-            referenceFilter: (occurrence) => Boolean(occurrence.usageContext?.isWrite)
+            accessKind: "write"
         });
     }
 
     public getSymbolReads(name: string | null | undefined): SymbolOccurrence[] {
-        return this.collectSymbolOccurrencesForName(name, {
+        return this.collectSymbolReadWriteOccurrences(name, {
             cloneOccurrences: true,
-            includeDeclarations: false,
-            includeReferences: true,
-            referenceFilter: (occurrence) => Boolean(occurrence.usageContext?.isRead)
+            accessKind: "read"
         });
     }
 
@@ -2071,11 +2087,9 @@ export class ScopeTracker {
      * @returns Array of write occurrences with internal references (DO NOT MODIFY)
      */
     public getSymbolWritesUnsafe(name: string | null | undefined): SymbolOccurrence[] {
-        return this.collectSymbolOccurrencesForName(name, {
+        return this.collectSymbolReadWriteOccurrences(name, {
             cloneOccurrences: false,
-            includeDeclarations: false,
-            includeReferences: true,
-            referenceFilter: (occurrence) => Boolean(occurrence.usageContext?.isWrite)
+            accessKind: "write"
         });
     }
 
@@ -2092,11 +2106,9 @@ export class ScopeTracker {
      * @returns Array of read occurrences with internal references (DO NOT MODIFY)
      */
     public getSymbolReadsUnsafe(name: string | null | undefined): SymbolOccurrence[] {
-        return this.collectSymbolOccurrencesForName(name, {
+        return this.collectSymbolReadWriteOccurrences(name, {
             cloneOccurrences: false,
-            includeDeclarations: false,
-            includeReferences: true,
-            referenceFilter: (occurrence) => Boolean(occurrence.usageContext?.isRead)
+            accessKind: "read"
         });
     }
 
@@ -2424,16 +2436,22 @@ export class ScopeTracker {
      * Use case: Before triggering a full hot-reload, check if any of the symbols
      * referenced by a module have actually changed since the last reload.
      *
-     * @param symbols - Set of symbol names to check for modifications
+     * @param symbols - Set or iterable of symbol names to check for modifications
      * @param sinceTimestamp - Only consider scopes modified after this timestamp
      * @returns Map of symbol names to arrays of scope IDs where they were modified
      */
-    public getModifiedSymbolScopes(symbols: Set<string> | string[], sinceTimestamp: number): Map<string, string[]> {
+    public getModifiedSymbolScopes(
+        symbols: ReadonlySet<string> | Iterable<string>,
+        sinceTimestamp: number
+    ): Map<string, string[]> {
         if (!this.enabled) {
             return new Map();
         }
 
-        const symbolSet = symbols instanceof Set ? symbols : new Set(symbols);
+        // Use a capability probe rather than `instanceof Set` so that cross-realm
+        // Sets, ReadonlySet wrappers, and other Set-like collaborators are accepted
+        // without breaking the Liskov Substitution Principle.
+        const symbolSet: ReadonlySet<string> = Core.isSetLike(symbols) ? symbols : new Set(symbols);
         if (symbolSet.size === 0) {
             return new Map();
         }

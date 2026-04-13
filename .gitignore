@@ -94,7 +94,8 @@ build/Release
 node_modules/
 jspm_packages/
 .husky/_/
-reports/
+reports/*
+!reports/.gitkeep
 report/
 
 # Snowpack dependency directory (https://snowpack.dev/)

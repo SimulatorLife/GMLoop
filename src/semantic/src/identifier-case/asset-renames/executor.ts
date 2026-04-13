@@ -9,7 +9,7 @@ import {
     stringifyProjectMetadataDocument,
     updateProjectMetadataReferenceByPath,
     writeProjectMetadataDocumentToFile
-} from "../../project-metadata/yy-adapter.js";
+} from "../../project-metadata/index.js";
 import { DEFAULT_WRITE_ACCESS_MODE, defaultIdentifierCaseFsFacade as defaultFsFacade } from "../fs-facade.js";
 
 type IdentifierCaseProjectIndex = {
@@ -42,7 +42,7 @@ function tryAccess(fsFacade, method, targetPath, ...args) {
         const result = fn.call(fsFacade, targetPath, ...args);
         return method === "existsSync" ? Boolean(result) : true;
     } catch (error) {
-        if (Core.isFsErrorCode(error, "ENOENT")) {
+        if (Core.isErrorWithCode(error, "ENOENT")) {
             return false;
         }
         throw error;

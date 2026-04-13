@@ -4,7 +4,7 @@ import { isObjectLike, isSetLike, shouldSkipTraversal } from "./utils.js";
  * Metadata stored on an AST node related to its doc comments.
  */
 export type DocCommentNodeMetadata = {
-    documentedParamNames?: Set<string>;
+    documentedParamNames?: ReadonlySet<string>;
     hasDeprecatedDocComment?: boolean;
 };
 
@@ -23,7 +23,7 @@ export function getDocCommentNodeMetadata(node: unknown): DocCommentNodeMetadata
     }
 
     const { documentedParamNames, hasDeprecatedDocComment } = payload as {
-        documentedParamNames?: Set<string>;
+        documentedParamNames?: ReadonlySet<string>;
         hasDeprecatedDocComment?: boolean;
     };
 
@@ -66,7 +66,7 @@ export function setDeprecatedDocCommentFunctionSet(ast: unknown, functions: Set<
     Reflect.set(ast as object, DOC_COMMENT_DEPRECATED_SET_KEY, functions);
 }
 
-export function getDeprecatedDocCommentFunctionSet(ast: unknown): Set<string> | null {
+export function getDeprecatedDocCommentFunctionSet(ast: unknown): ReadonlySet<string> | null {
     if (!isObjectLike(ast)) {
         return null;
     }
@@ -74,7 +74,9 @@ export function getDeprecatedDocCommentFunctionSet(ast: unknown): Set<string> | 
     const functions = Reflect.get(ast as object, DOC_COMMENT_DEPRECATED_SET_KEY);
 
     if (isSetLike(functions)) {
-        return functions;
+        // The set was stored by setDeprecatedDocCommentFunctionSet which accepts
+        // Set<string>, so the contained values are guaranteed to be strings.
+        return functions as ReadonlySet<string>;
     }
 
     return null;

@@ -277,4 +277,61 @@ void describe("Reference extraction from AST", () => {
             "Should return exactly one entry for a repeatedly called function"
         );
     });
+
+    void it("should track function calls inside switch statement cases", () => {
+        const source = `
+            switch (get_state()) {
+                case 0:
+                    case_zero_fn();
+                    break;
+                default:
+                    default_fn();
+                    break;
+            }
+        `;
+
+        const parser = new Parser.GMLParser(source, {});
+        const ast = parser.parse();
+        const refs = extractReferencesFromAst(ast);
+
+        assert.ok(refs.includes("gml_Script_get_state"), "Should track the switch discriminant call");
+        assert.ok(refs.includes("gml_Script_case_zero_fn"), "Should track function call in case body");
+        assert.ok(refs.includes("gml_Script_default_fn"), "Should track function call in default case body");
+    });
+
+    void it("should track function calls in the for-loop update expression", () => {
+        const source = `
+            for (var i = 0; i < array_length(arr); i = step_fn(i)) {
+                body_fn();
+            }
+        `;
+
+        const parser = new Parser.GMLParser(source, {});
+        const ast = parser.parse();
+        const refs = extractReferencesFromAst(ast);
+
+        assert.ok(refs.includes("gml_Script_array_length"), "Should track call in for-loop test");
+        assert.ok(refs.includes("gml_Script_step_fn"), "Should track call in for-loop update");
+        assert.ok(refs.includes("gml_Script_body_fn"), "Should track call in for-loop body");
+    });
+
+    void it("should track function calls in try-catch-finally blocks", () => {
+        const source = `
+            try {
+                try_fn();
+            } catch (e) {
+                catch_fn();
+            } finally {
+                finally_fn();
+            }
+        `;
+
+        const parser = new Parser.GMLParser(source, {});
+        const ast = parser.parse();
+        const refs = extractReferencesFromAst(ast);
+
+        assert.ok(refs.includes("gml_Script_try_fn"), "Should track function call in try block");
+        assert.ok(refs.includes("gml_Script_catch_fn"), "Should track function call in catch block");
+        assert.ok(refs.includes("gml_Script_finally_fn"), "Should track function call in finally block");
+    });
 });

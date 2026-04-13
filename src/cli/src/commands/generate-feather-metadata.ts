@@ -14,16 +14,15 @@ import {
 import { getManualRootMetadataPath, readManualText, resolveManualSourceCommitHash } from "../modules/manual/source.js";
 import { type ManualWorkflowOptions, prepareManualWorkflow } from "../modules/manual/workflow.js";
 import { writeJsonArtifact } from "../shared/fs-artifacts.js";
+import { createVerboseDurationLogger, timeSync } from "../shared/timing/verbose-timing.js";
 import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const {
     compactArray,
-    createVerboseDurationLogger,
     escapeRegExp,
     getNonEmptyTrimmedString,
     isNonEmptyArray,
     isNonEmptyString,
-    timeSync,
     toNormalizedLowerCaseSet
 } = Core;
 

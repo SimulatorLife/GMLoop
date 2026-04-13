@@ -10,12 +10,14 @@ import { __lintCommandTest__, runLintCommand } from "../src/commands/lint.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 
 const { Lint } = LintWorkspace;
+const GML_LANGUAGE = Lint.plugin.languages?.gml;
+assert.ok(GML_LANGUAGE, "Expected canonical GML language wiring in lint plugin tests.");
 
 void test("wiring requires both plugin identity and language", () => {
     assert.equal(
         __lintCommandTest__.isCanonicalGmlWiring({
             plugins: { gml: LintWorkspace.Lint.plugin },
-            language: "gml/gml"
+            language: GML_LANGUAGE
         }),
         true
     );
@@ -23,7 +25,7 @@ void test("wiring requires both plugin identity and language", () => {
     assert.equal(
         __lintCommandTest__.isCanonicalGmlWiring({
             plugins: { gml: {} },
-            language: "gml/gml"
+            language: GML_LANGUAGE
         }),
         false
     );
@@ -573,7 +575,7 @@ void test("fully wired overlay does not trigger guardrail", async () => {
         async calculateConfigForFile(): Promise<unknown> {
             return {
                 plugins: { gml: Lint.plugin },
-                language: "gml/gml",
+                language: GML_LANGUAGE,
                 rules: {
                     [Lint.services.performanceOverrideRuleIds[0]]: "warn"
                 }
@@ -604,7 +606,7 @@ void test("partially wired overlay triggers guardrail", async () => {
 
             return {
                 plugins: { gml: {} },
-                language: "gml/gml",
+                language: GML_LANGUAGE,
                 rules: {
                     [Lint.services.performanceOverrideRuleIds[0]]: [2, {}]
                 }
@@ -685,7 +687,7 @@ void test("overlay guardrail resolves file configs sequentially for large result
 
             return {
                 plugins: { gml: Lint.plugin },
-                language: "gml/gml",
+                language: GML_LANGUAGE,
                 rules: {
                     [Lint.services.performanceOverrideRuleIds[0]]: "warn"
                 }
@@ -761,7 +763,7 @@ void test("processor enforcement emits verbose observability warning when proces
     const evaluation = await __lintCommandTest__.enforceProcessorPolicyForGmlFiles({
         eslint: {
             async calculateConfigForFile() {
-                return { language: "gml/gml" };
+                return { language: GML_LANGUAGE };
             }
         },
         results: [{ filePath: "/tmp/observability.gml" }],
@@ -795,7 +797,7 @@ void test("runLintCommand maps semantic provider prebuild failures to exit code 
                                 quiet: true,
                                 noDefaultConfig: true,
                                 verbose: false,
-                                project: path.join(tempRoot, "missing", "missing.yyp"),
+                                path: path.join(tempRoot, "missing", "missing.yyp"),
                                 projectStrict: false
                             };
                         }
@@ -813,8 +815,7 @@ void test("runLintCommand maps semantic provider prebuild failures to exit code 
 void test("runLintCommand handles large additive-call-chain sources without parser OOM", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gml-lint-large-source-"));
     const sourceFilePath = path.join(tempRoot, "large-chain.gml");
-    const configFilePath = path.join(tempRoot, "eslint.config.mjs");
-    const lintWorkspaceModulePath = path.resolve(process.cwd(), "src/lint/dist/index.js").replaceAll("\\", "\\\\");
+    const configFilePath = path.join(tempRoot, "gmloop.json");
 
     const additiveCallChain = Array.from({ length: 520 }, (_, index) => `string_format(value_${index}, 1, 10)`).join(
         " + "
@@ -822,22 +823,7 @@ void test("runLintCommand handles large additive-call-chain sources without pars
     const sourceText = ["function stress_trace() {", `    return ${additiveCallChain};`, "}", ""].join("\n");
     await fs.writeFile(sourceFilePath, sourceText, "utf8");
 
-    const configText = [
-        `import * as LintWorkspace from "${lintWorkspaceModulePath}";`,
-        "",
-        "export default [",
-        "    {",
-        '        files: ["**/*.gml"],',
-        "        plugins: {",
-        "            gml: LintWorkspace.Lint.plugin",
-        "        },",
-        '        language: "gml/gml",',
-        "        rules: {}",
-        "    }",
-        "];",
-        ""
-    ].join("\n");
-    await fs.writeFile(configFilePath, configText, "utf8");
+    await fs.writeFile(configFilePath, JSON.stringify({}, null, 2), "utf8");
 
     const previousCwd = process.cwd();
     await withTemporaryProperty(process, "exitCode", undefined, async () => {

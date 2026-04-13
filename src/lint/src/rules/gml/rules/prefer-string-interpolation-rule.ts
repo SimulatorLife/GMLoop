@@ -1,6 +1,7 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import { printExpression } from "../print-expression.js";
 import {
     type AstNodeRecord,
     createMeta,
@@ -12,8 +13,8 @@ import {
 import type { GmlRuleDefinition } from "../rule-definition.js";
 import { shouldReportUnsafe } from "../rule-helpers.js";
 
-const { unwrapParenthesizedExpression } = CoreWorkspace.Core;
-type UnwrapParenthesizedExpressionInput = Parameters<typeof CoreWorkspace.Core.unwrapParenthesizedExpression>[0];
+const { unwrapParenthesizedExpression } = Core;
+type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
 
 function isStringLiteralExpression(expression: unknown): boolean {
     if (!isAstNodeRecord(expression) || expression.type !== "Literal") {
@@ -61,6 +62,16 @@ function getNodeTextFromContext(context: Rule.RuleContext, astNode: any): string
         }
     }
     return "";
+}
+
+function printInterpolationExpression(context: Rule.RuleContext, expressionNode: unknown): string {
+    const sourceText = context.sourceCode.text;
+    const printed = printExpression(expressionNode, sourceText).trim();
+    if (printed.length > 0) {
+        return printed;
+    }
+
+    return getNodeTextFromContext(context, expressionNode).trim();
 }
 
 function extractStringLiteralText(context: Rule.RuleContext, literalNode: AstNodeRecord): string | null {
@@ -127,6 +138,21 @@ function isStringFunctionCallExpression(node: unknown): node is AstNodeRecord {
     }
 
     return false;
+}
+
+function extractStringFunctionArgumentText(context: Rule.RuleContext, callNode: AstNodeRecord): string | null {
+    const firstArgument =
+        Array.isArray(callNode.arguments) && callNode.arguments.length > 0 ? callNode.arguments[0] : null;
+    if (firstArgument === null) {
+        return null;
+    }
+
+    const argumentText = printInterpolationExpression(context, firstArgument);
+    if (argumentText.length === 0) {
+        return null;
+    }
+
+    return argumentText;
 }
 
 type TemplateBuildState = {
@@ -212,17 +238,15 @@ function buildTemplateBody(context: Rule.RuleContext, node: AstNodeRecord): stri
         }
 
         if (isStringFunctionCallExpression(segment)) {
-            const firstArgument =
-                Array.isArray(segment.arguments) && segment.arguments.length > 0 ? segment.arguments[0] : segment;
-            const expressionText = getNodeTextFromContext(context, firstArgument);
-            if (expressionText.length === 0) {
+            const expressionText = extractStringFunctionArgumentText(context, segment);
+            if (expressionText === null || expressionText.length === 0) {
                 return null;
             }
             appendTemplateExpression(state, expressionText);
             continue;
         }
 
-        const expressionText = getNodeTextFromContext(context, segment);
+        const expressionText = printInterpolationExpression(context, segment);
         if (expressionText.length === 0) {
             return null;
         }

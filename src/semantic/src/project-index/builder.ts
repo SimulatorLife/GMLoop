@@ -12,6 +12,7 @@ import { resolveProjectIndexParser } from "./gml-parser-facade.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
 import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metrics.js";
+import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
 
@@ -1446,7 +1447,7 @@ async function readProjectGmlFile({ file, fsFacade, metrics }) {
         metrics.counters.increment("io.gmlBytes", Buffer.byteLength(contents));
         return contents;
     } catch (error) {
-        if (Core.isFsErrorCode(error, "ENOENT")) {
+        if (Core.isErrorWithCode(error, "ENOENT")) {
             metrics.counters.increment("files.missingDuringRead");
             return null;
         }
@@ -1608,6 +1609,21 @@ async function processProjectGmlFile({
 function createProjectIndexAggregationState(resourceAnalysis) {
     const scopeMap = new Map();
     const filesMap = new Map();
+
+    // Add default entries for .yy resource files so they are available in the index.
+    for (const [_, resourceRecord] of resourceAnalysis.resourcesMap) {
+        if (!filesMap.has(resourceRecord.path)) {
+            filesMap.set(resourceRecord.path, {
+                filePath: resourceRecord.path,
+                scopeId: null,
+                declarations: [],
+                references: [],
+                ignoredIdentifiers: [],
+                scriptCalls: []
+            });
+        }
+    }
+
     const relationships = {
         scriptCalls: [],
         assetReferences: resourceAnalysis.assetReferences.map((reference) => cloneAssetReference(reference))
@@ -1857,7 +1873,7 @@ async function discoverProjectFilesForIndex({
     metrics: any;
     signal: any;
     ensureNotAborted: () => void;
-    logger?: { log: typeof console.log } | null;
+    logger?: ProjectIndexLogger;
 }) {
     const projectFiles = await metrics.timers.timeAsync("scanProjectTree", () =>
         scanProjectTree(projectRoot, fsFacade, metrics, { signal })
@@ -1867,11 +1883,12 @@ async function discoverProjectFilesForIndex({
     metrics.metadata.setMetadata("gmlFileCount", projectFiles.gmlFiles.length);
 
     if (logger) {
-        logger.log(
+        logProjectIndexDebug(
+            logger,
             `DEBUG: Discovered ${projectFiles.yyFiles.length} yyFiles and ${projectFiles.gmlFiles.length} gmlFiles`
         );
         if (projectFiles.yyFiles.length > 0) {
-            logger.log(`DEBUG: Sample yyFile: ${projectFiles.yyFiles[0].relativePath}`);
+            logProjectIndexDebug(logger, `DEBUG: Sample yyFile: ${projectFiles.yyFiles[0].relativePath}`);
         }
     }
     return projectFiles;
@@ -1891,10 +1908,10 @@ async function analyseProjectResourcesForIndex({
     metrics: any;
     signal: any;
     ensureNotAborted: () => void;
-    logger?: { log: typeof console.log } | null;
+    logger?: ProjectIndexLogger;
 }) {
     if (logger) {
-        logger.log(`DEBUG: analyseProjectResourcesForIndex called with ${yyFiles.length} yyFiles`);
+        logProjectIndexDebug(logger, `DEBUG: analyseProjectResourcesForIndex called with ${yyFiles.length} yyFiles`);
     }
     const resourceAnalysis = await metrics.timers.timeAsync("analyseResourceFiles", () =>
         analyseResourceFiles({
@@ -1906,7 +1923,10 @@ async function analyseProjectResourcesForIndex({
         })
     );
     if (logger) {
-        logger.log(`DEBUG: analyseResourceFiles returned resourcesMap of size: ${resourceAnalysis.resourcesMap.size}`);
+        logProjectIndexDebug(
+            logger,
+            `DEBUG: analyseResourceFiles returned resourcesMap of size: ${resourceAnalysis.resourcesMap.size}`
+        );
     }
     ensureNotAborted();
     metrics.counters.increment("resources.total", resourceAnalysis.resourcesMap.size);
@@ -1996,7 +2016,7 @@ export async function buildProjectIndex(projectRoot, fsFacade = defaultFsFacade,
     recordMemoryHighWater();
 
     if (logger) {
-        logger.log(`DEBUG: Starting buildProjectIndex for project: ${resolvedRoot}`);
+        logProjectIndexDebug(logger, `DEBUG: Starting buildProjectIndex for project: ${resolvedRoot}`);
     }
 
     const builtInNames = await loadBuiltInNamesForProjectIndex({
@@ -2087,10 +2107,14 @@ export async function buildProjectIndex(projectRoot, fsFacade = defaultFsFacade,
         metrics.metadata.setMetadata("memory.maxHeapUsedBytes", maxHeapUsed);
 
         if (logger) {
-            logger.log("DEBUG: identifierCollections keys:", Object.keys(identifierCollections));
-            logger.log("DEBUG: resourceAnalysis keys:", Object.keys(resourceAnalysis));
+            logProjectIndexDebug(logger, "DEBUG: identifierCollections keys:", Object.keys(identifierCollections));
+            logProjectIndexDebug(logger, "DEBUG: resourceAnalysis keys:", Object.keys(resourceAnalysis));
             if (resourceAnalysis.resourcesMap) {
-                logger.log("DEBUG: resourceAnalysis.resourcesMap size:", resourceAnalysis.resourcesMap.size);
+                logProjectIndexDebug(
+                    logger,
+                    "DEBUG: resourceAnalysis.resourcesMap size:",
+                    resourceAnalysis.resourcesMap.size
+                );
             }
         }
 

@@ -41,6 +41,22 @@ function getObjectDirectory(filePath: string): string {
     return path.posix.dirname(filePath.replaceAll("\\", "/"));
 }
 
+function isObjectEventFilePath(filePath: string): boolean {
+    const normalizedPath = filePath.replaceAll("\\", "/");
+    const segments = normalizedPath.split("/");
+    if (segments.length < 3 || segments[0] !== "objects") {
+        return false;
+    }
+
+    const objectName = segments[1];
+    const fileName = segments.at(-1);
+    return Core.isNonEmptyString(objectName) && Core.isNonEmptyString(fileName) && fileName.endsWith(".gml");
+}
+
+function isObjectScopeId(scopeId: unknown): boolean {
+    return typeof scopeId === "string" && (scopeId.startsWith("scope:object:") || /^scope-\d+$/u.test(scopeId));
+}
+
 function readProjectFile(projectRoot: string, filePath: string, cache: Map<string, string>): string | null {
     const cached = cache.get(filePath);
     if (cached !== undefined) {
@@ -192,7 +208,7 @@ export function collectImplicitInstanceVariableTargets(
     const candidatesByName = new Map<string, Array<CandidateOccurrence>>();
 
     for (const [filePath, fileRecord] of Object.entries(parameters.files)) {
-        if (!parameters.shouldIncludePath(filePath)) {
+        if (!parameters.shouldIncludePath(filePath) || !isObjectEventFilePath(filePath)) {
             continue;
         }
 
@@ -205,6 +221,10 @@ export function collectImplicitInstanceVariableTargets(
         const knownNames = parameters.knownNamesByObjectDirectory.get(objectDirectory) ?? new Set<string>();
 
         for (const reference of fileRecord.references ?? []) {
+            if (!isObjectScopeId(reference.scopeId)) {
+                continue;
+            }
+
             const candidate = buildCandidateOccurrence(filePath, reference, source);
             if (candidate === null) {
                 continue;

@@ -189,6 +189,37 @@ void describe("GameMaker parser fixtures", () => {
         assert.doesNotThrow(() => parseFixture(source));
     });
 
+    void it("rejects nested ternary expressions in true branches when not parenthesized", () => {
+        const source = [
+            "function build_values(value1, value2, value3, value4) {",
+            "    value = !is_undefined(value2) ? !is_undefined(value3) ? [value1, value2, value3] : [value1, value2] : [value1];",
+            "}",
+            ""
+        ].join("\n");
+
+        assert.throws(
+            () => parseFixture(source),
+            (error: unknown) => {
+                if (!(error instanceof GameMakerSyntaxError)) {
+                    return false;
+                }
+
+                return error.message.includes("nested ternary in the true branch must be wrapped in parentheses");
+            }
+        );
+    });
+
+    void it("accepts nested ternary expressions in true branches when explicitly parenthesized", () => {
+        const source = [
+            "function build_values(value1, value2, value3, value4) {",
+            "    value = !is_undefined(value2) ? (!is_undefined(value3) ? [value1, value2, value3] : [value1, value2]) : [value1];",
+            "}",
+            ""
+        ].join("\n");
+
+        assert.doesNotThrow(() => parseFixture(source));
+    });
+
     void it("omits location metadata when disabled", async () => {
         const fixtureName = successfulFixture;
 

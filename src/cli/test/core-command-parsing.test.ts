@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { Core } from "@gmloop/core";
 import { Command, InvalidArgumentError } from "commander";
 
-import { parseCommandLine, wrapInvalidArgumentResolver } from "../src/cli-core/command-parsing.js";
+import { parseCommandLine, portValidator, wrapInvalidArgumentResolver } from "../src/cli-core/command-parsing.js";
 import { isCliUsageError } from "../src/cli-core/errors.js";
 
 const { isObjectLike } = Core;
@@ -143,5 +143,88 @@ void describe("wrapInvalidArgumentResolver", () => {
                 error.message === "bad news" &&
                 error.cause instanceof Error
         );
+    });
+});
+
+void describe("portValidator", () => {
+    void it("accepts the minimum valid port (1)", () => {
+        assert.strictEqual(portValidator("1"), 1);
+    });
+
+    void it("accepts a typical HTTP port (80)", () => {
+        assert.strictEqual(portValidator("80"), 80);
+    });
+
+    void it("accepts a common dev server port (8080)", () => {
+        assert.strictEqual(portValidator("8080"), 8080);
+    });
+
+    void it("accepts the maximum valid port (65535)", () => {
+        assert.strictEqual(portValidator("65535"), 65_535);
+    });
+
+    void it("rejects port zero", () => {
+        assert.throws(
+            () => portValidator("0"),
+            (error) => error instanceof InvalidArgumentError && /Port must be between 1 and 65535/.test(error.message)
+        );
+    });
+
+    void it("rejects a port above the maximum", () => {
+        assert.throws(
+            () => portValidator("65536"),
+            (error) => error instanceof InvalidArgumentError && /Port must be between 1 and 65535/.test(error.message)
+        );
+    });
+
+    void it("rejects a negative port number", () => {
+        assert.throws(
+            () => portValidator("-1"),
+            (error) => error instanceof InvalidArgumentError && /Port must be between 1 and 65535/.test(error.message)
+        );
+    });
+
+    void it("rejects non-numeric input", () => {
+        assert.throws(
+            () => portValidator("abc"),
+            (error) => error instanceof InvalidArgumentError && /Port must be between 1 and 65535/.test(error.message)
+        );
+    });
+});
+
+void describe("integer coercion helpers: import from Core, not command-parsing", () => {
+    // coercePositiveInteger, coerceNonNegativeInteger, and resolveIntegerOption
+    // were previously re-exported from command-parsing.ts under the same names,
+    // adding indirection with no extra semantics (the "defaultNow" anti-pattern).
+    // They were removed so callers always import from @gmloop/core directly.
+
+    void it("coercePositiveInteger accepts valid positive integers", () => {
+        assert.strictEqual(Core.coercePositiveInteger(5, { createErrorMessage: () => "too small" }), 5);
+    });
+
+    void it("coercePositiveInteger rejects non-positive values", () => {
+        assert.throws(
+            () => Core.coercePositiveInteger(0, { createErrorMessage: () => "must be positive" }),
+            /must be positive/
+        );
+    });
+
+    void it("coerceNonNegativeInteger accepts zero", () => {
+        assert.strictEqual(Core.coerceNonNegativeInteger(0, { createErrorMessage: () => "negative" }), 0);
+    });
+
+    void it("coerceNonNegativeInteger rejects negative values", () => {
+        assert.throws(
+            () => Core.coerceNonNegativeInteger(-1, { createErrorMessage: () => "must be >= 0" }),
+            /must be >= 0/
+        );
+    });
+
+    void it("resolveIntegerOption returns the coerced value", () => {
+        assert.strictEqual(Core.resolveIntegerOption(42, { coerce: (v) => v }), 42);
+    });
+
+    void it("resolveIntegerOption returns defaultValue for undefined input", () => {
+        assert.strictEqual(Core.resolveIntegerOption(undefined, { defaultValue: 7, coerce: (v) => v }), 7);
     });
 });

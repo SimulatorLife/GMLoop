@@ -85,6 +85,23 @@ void test("recommended config auto-fixes prefer-array-push and prefer-increment-
     assert.equal(result.messages.length, 0);
 });
 
+void test("recommended config auto-fixes malformed region pairs", async () => {
+    const sourceText = ["#region This is my region", "var value = 1;", ""].join("\n");
+
+    const eslint = new ESLint({
+        overrideConfigFile: true,
+        fix: true,
+        overrideConfig: createMutableRecommendedConfig()
+    });
+
+    const [result] = await eslint.lintText(sourceText, {
+        filePath: "recommended-config-regions.gml"
+    });
+
+    assert.equal(result.output, ["#region This is my region", "var value = 1;", "#endregion", ""].join("\n"));
+    assert.equal(result.messages.length, 0);
+});
+
 void test("recommended config applies the conservative feather safe subset", async () => {
     const sourceText = [
         "enum Fruit {",

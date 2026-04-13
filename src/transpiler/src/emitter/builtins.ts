@@ -1,4 +1,4 @@
-import * as Core from "@gmloop/core";
+import { Core } from "@gmloop/core";
 
 /**
  * Lazy-loaded set of builtin function names.
@@ -13,7 +13,7 @@ let cachedBuiltinNames: Set<string> | null = null;
 
 function getBuiltinNames(): Set<string> {
     if (cachedBuiltinNames === null) {
-        cachedBuiltinNames = Core.Core.loadManualFunctionNames();
+        cachedBuiltinNames = Core.loadManualFunctionNames();
     }
     return cachedBuiltinNames;
 }

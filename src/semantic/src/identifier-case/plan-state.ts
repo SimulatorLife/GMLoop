@@ -157,7 +157,7 @@ export function captureIdentifierCasePlanSnapshot(options) {
                         } catch {
                             /* ignore */
                         }
-                        samples.push(`${String(k)}=>${String(v)}`);
+                        samples.push(`${Core.describeValueForError(k)}=>${Core.describeValueForError(v)}`);
                         i += 1;
                         if (i >= 5) break;
                     }

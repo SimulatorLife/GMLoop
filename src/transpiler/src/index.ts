@@ -7,9 +7,11 @@ export const Transpiler = Object.freeze({
 });
 
 export type {
+    ClosurePatch,
     EventPatch,
     GmlTranspiler,
     ScriptPatch,
+    TranspileClosureRequest,
     TranspileEventRequest,
     TranspilerDependencies,
     TranspileScriptRequest

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ESLint } from "eslint";
+
 import { __lintCommandTest__ } from "../src/commands/lint.js";
 
 const {
@@ -9,7 +11,8 @@ const {
     collectOutOfRootFilePaths,
     formatPathSample,
     formatOutOfRootWarning,
-    OUT_OF_ROOT_DISPLAY_LIMIT
+    OUT_OF_ROOT_DISPLAY_LIMIT,
+    emitLintCleanSummary
 } = __lintCommandTest__;
 
 // ---------------------------------------------------------------------------
@@ -17,45 +20,109 @@ const {
 // ---------------------------------------------------------------------------
 
 void test("aggregateLintTotals returns zero totals for an empty results array", () => {
-    const totals = aggregateLintTotals([]);
+    const totals = aggregateLintTotals([], { allowParseErrors: false });
     assert.equal(totals.errorCount, 0);
     assert.equal(totals.warningCount, 0);
 });
 
 void test("aggregateLintTotals sums errorCount across results", () => {
     const results = [
-        { errorCount: 2, fatalErrorCount: 0, warningCount: 0 },
-        { errorCount: 3, fatalErrorCount: 0, warningCount: 0 }
+        { errorCount: 2, fatalErrorCount: 0, warningCount: 0, messages: [] },
+        { errorCount: 3, fatalErrorCount: 0, warningCount: 0, messages: [] }
     ];
-    const totals = aggregateLintTotals(results);
+    const totals = aggregateLintTotals(results, { allowParseErrors: false });
     assert.equal(totals.errorCount, 5);
     assert.equal(totals.warningCount, 0);
 });
 
 void test("aggregateLintTotals folds fatalErrorCount into errorCount", () => {
-    const results = [{ errorCount: 1, fatalErrorCount: 2, warningCount: 0 }];
-    const totals = aggregateLintTotals(results);
+    const results = [{ errorCount: 1, fatalErrorCount: 2, warningCount: 0, messages: [] }];
+    const totals = aggregateLintTotals(results, { allowParseErrors: false });
     assert.equal(totals.errorCount, 3);
 });
 
 void test("aggregateLintTotals sums warningCount across results", () => {
     const results = [
-        { errorCount: 0, fatalErrorCount: 0, warningCount: 4 },
-        { errorCount: 0, fatalErrorCount: 0, warningCount: 6 }
+        { errorCount: 0, fatalErrorCount: 0, warningCount: 4, messages: [] },
+        { errorCount: 0, fatalErrorCount: 0, warningCount: 6, messages: [] }
     ];
-    const totals = aggregateLintTotals(results);
+    const totals = aggregateLintTotals(results, { allowParseErrors: false });
     assert.equal(totals.errorCount, 0);
     assert.equal(totals.warningCount, 10);
 });
 
 void test("aggregateLintTotals handles mixed errors, fatal errors, and warnings", () => {
     const results = [
-        { errorCount: 1, fatalErrorCount: 1, warningCount: 2 },
-        { errorCount: 0, fatalErrorCount: 3, warningCount: 1 }
+        { errorCount: 1, fatalErrorCount: 1, warningCount: 2, messages: [] },
+        { errorCount: 0, fatalErrorCount: 3, warningCount: 1, messages: [] }
     ];
-    const totals = aggregateLintTotals(results);
+    const totals = aggregateLintTotals(results, { allowParseErrors: false });
     assert.equal(totals.errorCount, 5); // 1+1 + 0+3
     assert.equal(totals.warningCount, 3); // 2 + 1
+});
+
+void test("aggregateLintTotals can ignore fatal parsing diagnostics for fix workflows", () => {
+    const results = [
+        {
+            errorCount: 0,
+            fatalErrorCount: 1,
+            warningCount: 0,
+            messages: [
+                {
+                    fatal: true as const,
+                    message: "Parsing error: unexpected symbol",
+                    line: 1,
+                    column: 1,
+                    ruleId: null,
+                    severity: 2 as const
+                }
+            ]
+        },
+        {
+            errorCount: 1,
+            fatalErrorCount: 1,
+            warningCount: 2,
+            messages: [
+                {
+                    fatal: true as const,
+                    message: "Occurred while linting file.gml",
+                    line: 1,
+                    column: 1,
+                    ruleId: null,
+                    severity: 2 as const
+                }
+            ]
+        }
+    ];
+    const totals = aggregateLintTotals(results, { allowParseErrors: true });
+    assert.equal(totals.errorCount, 2);
+    assert.equal(totals.warningCount, 2);
+});
+
+void test("aggregateLintTotals ignores parse fatals when ESLint also increments errorCount", () => {
+    const totals = aggregateLintTotals(
+        [
+            {
+                errorCount: 1,
+                fatalErrorCount: 1,
+                warningCount: 0,
+                messages: [
+                    {
+                        fatal: true as const,
+                        message: "Parsing error: Syntax Error (line 1, column 1): unexpected symbol ';'",
+                        line: 1,
+                        column: 1,
+                        ruleId: null,
+                        severity: 2 as const
+                    }
+                ]
+            }
+        ],
+        { allowParseErrors: true }
+    );
+
+    assert.equal(totals.errorCount, 0);
+    assert.equal(totals.warningCount, 0);
 });
 
 void test("createRetainedLintResult drops heavyweight source payloads while preserving reporting fields", () => {
@@ -107,7 +174,7 @@ void test("createRetainedLintResult drops heavyweight source payloads while pres
         usedDeprecatedRules: [],
         source: "var value = 1;",
         output: "var value = 2;"
-    } as unknown as import("eslint").ESLint.LintResult);
+    } as unknown as ESLint.LintResult);
 
     assert.deepEqual(retained, {
         filePath: "/tmp/example.gml",
@@ -230,4 +297,38 @@ void test("formatOutOfRootWarning delegates truncation to formatPathSample", () 
     const output = formatOutOfRootWarning(paths);
     assert.ok(output.startsWith("GML_PROJECT_OUT_OF_ROOT:\n"));
     assert.ok(output.includes("and 7 more..."), `expected suffix in: ${output}`);
+});
+
+// ---------------------------------------------------------------------------
+// emitLintCleanSummary
+// ---------------------------------------------------------------------------
+
+void test("emitLintCleanSummary logs singular 'file' label for fileCount of 1", () => {
+    const logged: Array<string> = [];
+    const original = console.log;
+    console.log = (...args: unknown[]) => {
+        logged.push(args.map(String).join(" "));
+    };
+    try {
+        emitLintCleanSummary(1);
+    } finally {
+        console.log = original;
+    }
+    assert.equal(logged.length, 1);
+    assert.match(logged[0], /✓ 1 file checked, no problems found\./);
+});
+
+void test("emitLintCleanSummary logs plural 'files' label for fileCount greater than 1", () => {
+    const logged: Array<string> = [];
+    const original = console.log;
+    console.log = (...args: unknown[]) => {
+        logged.push(args.map(String).join(" "));
+    };
+    try {
+        emitLintCleanSummary(3);
+    } finally {
+        console.log = original;
+    }
+    assert.equal(logged.length, 1);
+    assert.match(logged[0], /✓ 3 files checked, no problems found\./);
 });

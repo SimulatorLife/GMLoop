@@ -43,7 +43,7 @@ if (edtSMFSel >= 0) {
 }
 
 for (var i = 0; i < armNum; i++) {
-    var a = i / armNum * 4 * pi;
+    var a = i / (armNum * 4 * pi);
     armPos[i] = [x + 150 * cos(a), y + 150 * sin(a), 0];
     armMoving[i] = -1;
     armSpeed[i] = 0.1;

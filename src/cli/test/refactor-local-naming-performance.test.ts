@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { performance } from "node:perf_hooks";
 import test from "node:test";
 
-import { Refactor } from "@gmloop/refactor";
+import { Refactor, type RefactorProjectConfig } from "@gmloop/refactor";
 
 import { GmlSemanticBridge } from "../src/modules/refactor/semantic-bridge.js";
+import { measureMedianDurationMs } from "./test-helpers/refactor-top-level-naming-performance.js";
 
 const FILE_COUNT = 60;
 const LOCAL_DECLARATION_COUNT = 120;
@@ -19,6 +19,20 @@ type LocalNamingFixture = {
     scopes: Record<string, { kind: string }>;
     sourceTexts: Map<string, string>;
 };
+
+function createLocalVariableNamingConventionConfig(): RefactorProjectConfig {
+    return {
+        codemods: {
+            namingConvention: {
+                rules: {
+                    localVariable: {
+                        caseStyle: "camel"
+                    }
+                }
+            }
+        }
+    };
+}
 
 async function createDiskBackedLocalNamingFixture(): Promise<LocalNamingFixture> {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-refactor-local-perf-"));
@@ -124,18 +138,7 @@ async function executeLocalNamingCodemod(fixture: LocalNamingFixture) {
         projectRoot: fixture.projectRoot,
         targetPaths: [fixture.projectRoot],
         gmlFilePaths: [...fixture.sourceTexts.keys()],
-        config: {
-            namingConventionPolicy: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
-                    }
-                }
-            },
-            codemods: {
-                namingConvention: {}
-            }
-        },
+        config: createLocalVariableNamingConventionConfig(),
         readFile: async (filePath) => fixture.sourceTexts.get(filePath) ?? "",
         dryRun: true,
         onlyCodemods: ["namingConvention"]
@@ -144,35 +147,6 @@ async function executeLocalNamingCodemod(fixture: LocalNamingFixture) {
     return {
         getLocalReferenceOccurrencesCallCount,
         result
-    };
-}
-
-async function measureMedianDurationMs<T>(
-    sampleCount: number,
-    execute: () => Promise<T>
-): Promise<{
-    durationMs: number;
-    result: T;
-}> {
-    const durations: Array<number> = [];
-    let latestResult: T | undefined;
-
-    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-        const startTime = performance.now();
-        latestResult = await execute();
-        durations.push(performance.now() - startTime);
-    }
-
-    durations.sort((left, right) => left - right);
-    const medianIndex = Math.floor(durations.length / 2);
-
-    if (latestResult === undefined) {
-        throw new Error("measureMedianDurationMs requires at least one sample");
-    }
-
-    return {
-        durationMs: durations[medianIndex] ?? 0,
-        result: latestResult
     };
 }
 

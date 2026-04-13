@@ -86,7 +86,7 @@ void describe("Prettier wrapper CLI", () => {
             const targetFile = path.join(tempDirectory, "SCRIPT.GML");
             await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             const formatted = await fs.readFile(targetFile, "utf8");
             assert.strictEqual(formatted, "var a = 1;\n");
@@ -117,7 +117,7 @@ void describe("Prettier wrapper CLI", () => {
                 PRETTIER_PLUGIN_GML_LOG_LEVEL: "silent"
             };
 
-            await execFileAsync("node", [wrapperPath], {
+            await execFileAsync("node", [wrapperPath, "--write"], {
                 cwd: tempDirectory,
                 env,
                 maxBuffer: 1024 * 1024 * 64
@@ -125,7 +125,7 @@ void describe("Prettier wrapper CLI", () => {
 
             const baseline = await fs.readFile(fixturePath, "utf8");
 
-            await execFileAsync("node", [wrapperPath], {
+            await execFileAsync("node", [wrapperPath, "--write"], {
                 cwd: tempDirectory,
                 env,
                 maxBuffer: 1024 * 1024 * 64
@@ -149,7 +149,7 @@ void describe("Prettier wrapper CLI", () => {
             const targetFile = path.join(tempDirectory, "script.gml");
             await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, targetFile]);
+            await execFileAsync("node", [wrapperPath, "--path", targetFile, "--write"]);
 
             const formatted = await fs.readFile(targetFile, "utf8");
             assert.strictEqual(formatted, "var a = 1;\n");
@@ -177,7 +177,7 @@ void describe("Prettier wrapper CLI", () => {
             const targetFile = path.join(tempDirectory, "script.gml");
             await fs.writeFile(targetFile, source, "utf8");
 
-            await execFileAsync("node", [wrapperPath, tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             const actual = await fs.readFile(targetFile, "utf8");
             const expected = await Format.format(source, pluginOptions);
@@ -202,7 +202,7 @@ void describe("Prettier wrapper CLI", () => {
                 PRETTIER_PLUGIN_GML_DEFAULT_EXTENSIONS: ".txt,.scr"
             };
 
-            await execFileAsync("node", [wrapperPath, tempDirectory], { env });
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"], { env });
 
             assert.strictEqual(await fs.readFile(gmlFile, "utf8"), "var a = 1;\n");
             assert.strictEqual(await fs.readFile(txtFile, "utf8"), "var    b=2;\n");
@@ -218,7 +218,7 @@ void describe("Prettier wrapper CLI", () => {
             const targetFile = path.join(tempDirectory, "script.gml");
             await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, "--log-level=debug", tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--log-level=debug", "--path", tempDirectory, "--write"]);
 
             const formatted = await fs.readFile(targetFile, "utf8");
             assert.strictEqual(formatted, "var a = 1;\n");
@@ -239,7 +239,7 @@ void describe("Prettier wrapper CLI", () => {
                 PRETTIER_PLUGIN_GML_LOG_LEVEL: "silent"
             };
 
-            await execFileAsync("node", [wrapperPath, tempDirectory], { env });
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"], { env });
 
             const formatted = await fs.readFile(targetFile, "utf8");
             assert.strictEqual(formatted, "var a = 1;\n");
@@ -256,7 +256,7 @@ void describe("Prettier wrapper CLI", () => {
             await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
 
             try {
-                await execFileAsync("node", [wrapperPath, "--log-level=verbose", tempDirectory]);
+                await execFileAsync("node", [wrapperPath, "--log-level=verbose", "--path", tempDirectory]);
                 assert.fail("Expected the wrapper to exit with a non-zero status code");
             } catch (error) {
                 assert.ok(error, "Expected an error to be thrown");
@@ -277,7 +277,7 @@ void describe("Prettier wrapper CLI", () => {
 
         try {
             try {
-                await execFileAsync("node", [wrapperPath, "--extensions=.txt", tempDirectory]);
+                await execFileAsync("node", [wrapperPath, "--extensions=.txt", "--path", tempDirectory]);
                 assert.fail("Expected the wrapper to reject unknown options");
             } catch (error) {
                 assert.ok(error, "Expected an error to be thrown");
@@ -299,7 +299,7 @@ void describe("Prettier wrapper CLI", () => {
             const configPath = path.join(tempDirectory, ".prettierrc");
             await fs.writeFile(configPath, JSON.stringify({ tabWidth: 2 }, null, 2), "utf8");
 
-            await execFileAsync("node", [wrapperPath, tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             const formatted = await fs.readFile(targetFile, "utf8");
             assert.strictEqual(formatted, ["if (true) {", "  a = 1;", "}", ""].join("\n"));
@@ -332,7 +332,7 @@ void describe("Prettier wrapper CLI", () => {
             const configPath = path.join(tempDirectory, ".prettierrc");
             await fs.writeFile(configPath, JSON.stringify({ plugins: pluginPath }), "utf8");
 
-            await execFileAsync("node", [wrapperPath, tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             const pluginOutputPath = path.join(tempDirectory, "plugin-loaded.txt");
             const pluginOutput = await fs.readFile(pluginOutputPath, "utf8");
@@ -352,7 +352,7 @@ void describe("Prettier wrapper CLI", () => {
             const configPath = path.join(tempDirectory, ".prettierrc");
             await fs.writeFile(configPath, JSON.stringify({ parser: "babel" }), "utf8");
 
-            await execFileAsync("node", [wrapperPath, tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             const formatted = await fs.readFile(targetFile, "utf8");
             // Accept both compact single-line formatting or the indented multi-
@@ -378,7 +378,7 @@ void describe("Prettier wrapper CLI", () => {
             const ignorePath = path.join(tempDirectory, ".prettierignore");
             await fs.writeFile(ignorePath, "script.gml\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             const formatted = await fs.readFile(targetFile, "utf8");
             assert.strictEqual(formatted, "var    a=1;\n");
@@ -397,7 +397,7 @@ void describe("Prettier wrapper CLI", () => {
             const ignorePath = path.join(tempDirectory, ".prettierignore");
             await fs.writeFile(ignorePath, "script.gml\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, targetFile]);
+            await execFileAsync("node", [wrapperPath, "--path", targetFile, "--write"]);
 
             const formatted = await fs.readFile(targetFile, "utf8");
             assert.strictEqual(formatted, "var    a=1;\n");
@@ -419,7 +419,7 @@ void describe("Prettier wrapper CLI", () => {
             const ignorePath = path.join(tempDirectory, ".prettierignore");
             await fs.writeFile(ignorePath, "ignored/*\n!ignored/script.gml\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             const formatted = await fs.readFile(targetFile, "utf8");
             assert.strictEqual(formatted, "var a = 1;\n");
@@ -444,7 +444,7 @@ void describe("Prettier wrapper CLI", () => {
             const ignorePath = path.join(tempDirectory, ".prettierignore");
             await fs.writeFile(ignorePath, "ignored/\n", "utf8");
 
-            const { stdout } = await execFileAsync("node", [wrapperPath, tempDirectory]);
+            const { stdout } = await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             assert.match(
                 stdout,
@@ -479,7 +479,9 @@ void describe("Prettier wrapper CLI", () => {
                 wrapperPath,
                 "--unsupported-extension-sample-limit",
                 "0",
-                tempDirectory
+                "--path",
+                tempDirectory,
+                "--write"
             ]);
 
             const unsupportedSummaryLine = stdout
@@ -508,7 +510,7 @@ void describe("Prettier wrapper CLI", () => {
             const ignorePath = path.join(tempDirectory, ".prettierignore");
             await fs.writeFile(ignorePath, "script.gml\n", "utf8");
 
-            const { stdout } = await execFileAsync("node", [wrapperPath, tempDirectory]);
+            const { stdout } = await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             assert.ok(
                 stdout.includes('All files matching ".gml" were skipped'),
@@ -539,7 +541,7 @@ void describe("Prettier wrapper CLI", () => {
             const ignorePath = path.join(tempDirectory, ".prettierignore");
             await fs.writeFile(ignorePath, "script.gml\n", "utf8");
 
-            const { stdout } = await execFileAsync("node", [wrapperPath, targetFile]);
+            const { stdout } = await execFileAsync("node", [wrapperPath, "--path", targetFile, "--write"]);
 
             assert.match(
                 stdout,
@@ -584,7 +586,9 @@ void describe("Prettier wrapper CLI", () => {
                 wrapperPath,
                 "--ignored-directory-sample-limit",
                 "0",
-                tempDirectory
+                "--path",
+                tempDirectory,
+                "--write"
             ]);
 
             const summaryLines = stdout.split("\n").filter((line) => line.length > 0);
@@ -624,7 +628,9 @@ void describe("Prettier wrapper CLI", () => {
                 wrapperPath,
                 "--ignored-file-sample-limit",
                 "1",
-                tempDirectory
+                "--path",
+                tempDirectory,
+                "--write"
             ]);
 
             const skipMatches = stdout.match(/Skipping .* \(ignored by .*\)/g) ?? [];
@@ -660,7 +666,7 @@ void describe("Prettier wrapper CLI", () => {
             const ignorePath = path.join(tempDirectory, ".prettierignore");
             await fs.writeFile(ignorePath, "nested/script.gml\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, nestedDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", nestedDirectory, "--write"]);
 
             const formatted = await fs.readFile(targetFile, "utf8");
             assert.strictEqual(formatted, "var    a=1;\n");
@@ -682,7 +688,7 @@ void describe("Prettier wrapper CLI", () => {
             const nestedIgnorePath = path.join(nestedDirectory, ".prettierignore");
             await fs.writeFile(nestedIgnorePath, "*.gml\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             const formatted = await fs.readFile(targetFile, "utf8");
             assert.strictEqual(formatted, "var    a=1;\n");
@@ -702,7 +708,7 @@ void describe("Prettier wrapper CLI", () => {
             const targetFile = path.join(projectDirectory, "script.gml");
             await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, projectDirectory], {
+            await execFileAsync("node", [wrapperPath, "--path", projectDirectory, "--write"], {
                 cwd: outerDirectory
             });
 
@@ -727,7 +733,7 @@ void describe("Prettier wrapper CLI", () => {
             const targetFile = path.join(projectDirectory, "script.gml");
             await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath], {
+            await execFileAsync("node", [wrapperPath, "--write"], {
                 cwd: projectDirectory,
                 env: {
                     ...process.env,
@@ -742,6 +748,59 @@ void describe("Prettier wrapper CLI", () => {
         }
     });
 
+    void it("stops inheriting ancestor ignore rules at nested project boundaries", async () => {
+        const workspaceDirectory = await createTemporaryDirectory();
+        const nestedProjectDirectory = path.join(workspaceDirectory, "vendor", "3DSpider");
+
+        try {
+            await fs.mkdir(path.join(nestedProjectDirectory, "scripts"), { recursive: true });
+
+            await fs.writeFile(path.join(workspaceDirectory, ".prettierignore"), "vendor/\n", "utf8");
+            await fs.writeFile(
+                path.join(nestedProjectDirectory, "3D-ish spider thing 2.yyp"),
+                `${JSON.stringify({ name: "3D-ish spider thing 2", resourceType: "GMProject", resources: [] }, null, 2)}\n`,
+                "utf8"
+            );
+            await fs.writeFile(path.join(nestedProjectDirectory, "gmloop.json"), "{}\n", "utf8");
+
+            const targetFile = path.join(nestedProjectDirectory, "scripts", "draw.gml");
+            await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
+
+            await execFileAsync("node", [wrapperPath, "--path", nestedProjectDirectory, "--write"], {
+                cwd: workspaceDirectory
+            });
+
+            const formatted = await fs.readFile(targetFile, "utf8");
+            assert.strictEqual(formatted, "var a = 1;\n");
+        } finally {
+            await fs.rm(workspaceDirectory, { recursive: true, force: true });
+        }
+    });
+
+    void it("resolves nested project ignore boundaries across canonical path aliases", async () => {
+        const realWorkspaceDirectory = await createTemporaryDirectory();
+        const aliasWorkspaceDirectory = `${realWorkspaceDirectory}-alias`;
+        const nestedProjectDirectory = path.join(aliasWorkspaceDirectory, "vendor", "3DSpider");
+        const originalWorkingDirectory = process.cwd();
+
+        try {
+            await fs.symlink(realWorkspaceDirectory, aliasWorkspaceDirectory, "dir");
+            await fs.mkdir(path.join(realWorkspaceDirectory, "vendor", "3DSpider"), { recursive: true });
+            await fs.writeFile(path.join(realWorkspaceDirectory, ".prettierignore"), "vendor/\n", "utf8");
+            await fs.writeFile(path.join(realWorkspaceDirectory, "vendor", "3DSpider", "gmloop.json"), "{}\n", "utf8");
+
+            process.chdir(realWorkspaceDirectory);
+            const { __test__ } = await import("../src/cli.js");
+            const ignorePaths = await __test__.resolveProjectIgnorePathsForTests(nestedProjectDirectory);
+
+            assert.deepStrictEqual(ignorePaths, []);
+        } finally {
+            process.chdir(originalWorkingDirectory);
+            await fs.rm(aliasWorkspaceDirectory, { recursive: true, force: true });
+            await fs.rm(realWorkspaceDirectory, { recursive: true, force: true });
+        }
+    });
+
     void it("does not rewrite files when formatting produces no changes", async () => {
         const tempDirectory = await createTemporaryDirectory();
 
@@ -749,10 +808,10 @@ void describe("Prettier wrapper CLI", () => {
             const targetFile = path.join(tempDirectory, "script.gml");
             await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
             const { mtimeMs: initialMtime } = await fs.stat(targetFile);
 
-            const { stdout } = await execFileAsync("node", [wrapperPath, tempDirectory]);
+            const { stdout } = await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
             const { mtimeMs: finalMtime } = await fs.stat(targetFile);
 
             assert.strictEqual(finalMtime, initialMtime);
@@ -763,7 +822,7 @@ void describe("Prettier wrapper CLI", () => {
         }
     });
 
-    void it("reports files that need formatting when --check is enabled", async () => {
+    void it("reports files needing formatting in default dry-run mode", async () => {
         const tempDirectory = await createTemporaryDirectory();
 
         try {
@@ -771,7 +830,7 @@ void describe("Prettier wrapper CLI", () => {
             await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
 
             try {
-                await execFileAsync("node", [wrapperPath, "--check", tempDirectory]);
+                await execFileAsync("node", [wrapperPath, "--path", tempDirectory]);
                 assert.fail("Expected the wrapper to exit with a non-zero status code");
             } catch (error) {
                 assert.ok(error, "Expected the wrapper to throw when changes are needed");
@@ -785,29 +844,29 @@ void describe("Prettier wrapper CLI", () => {
                 );
                 assert.match(
                     error.stdout,
-                    /1 file requires formatting\. Re-run without --check to write changes\./,
+                    /1 file requires formatting\. Re-run with --write to write changes\./,
                     "Expected stdout to summarize the pending change count"
                 );
                 assert.match(error.stdout, /Skipped 0 files\./, "Expected stdout to retain the skip summary");
 
                 const contents = await fs.readFile(targetFile, "utf8");
-                assert.strictEqual(contents, "var    a=1;\n", "Expected --check not to modify file contents");
+                assert.strictEqual(contents, "var    a=1;\n", "Expected dry-run mode not to modify file contents");
             }
         } finally {
             await fs.rm(tempDirectory, { recursive: true, force: true });
         }
     });
 
-    void it("confirms when all files are formatted in --check mode", async () => {
+    void it("confirms when all files are formatted in default dry-run mode", async () => {
         const tempDirectory = await createTemporaryDirectory();
 
         try {
             const targetFile = path.join(tempDirectory, "script.gml");
             await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
 
-            await execFileAsync("node", [wrapperPath, tempDirectory]);
+            await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
-            const { stdout } = await execFileAsync("node", [wrapperPath, "--check", tempDirectory]);
+            const { stdout } = await execFileAsync("node", [wrapperPath, "--path", tempDirectory]);
 
             assert.ok(
                 stdout.includes("All matched files are already formatted."),
@@ -822,7 +881,7 @@ void describe("Prettier wrapper CLI", () => {
         }
     });
 
-    void it("explains when --check only encounters ignored files", async () => {
+    void it("explains when dry-run mode only encounters ignored files", async () => {
         const tempDirectory = await createTemporaryDirectory();
 
         try {
@@ -832,7 +891,7 @@ void describe("Prettier wrapper CLI", () => {
             const ignorePath = path.join(tempDirectory, ".prettierignore");
             await fs.writeFile(ignorePath, "*.gml\n", "utf8");
 
-            const { stdout } = await execFileAsync("node", [wrapperPath, "--check", tempDirectory]);
+            const { stdout } = await execFileAsync("node", [wrapperPath, "--path", tempDirectory]);
 
             assert.ok(
                 stdout.includes('All files matching ".gml" were skipped'),
@@ -870,7 +929,7 @@ void describe("Prettier wrapper CLI", () => {
                 }
             }
 
-            const { stdout } = await execFileAsync("node", [wrapperPath, tempDirectory]);
+            const { stdout } = await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
             if (shouldSkip) {
                 assert.ok(
                     !stdout.includes(`Skipping ${symlinkPath} (symbolic link)`),
@@ -901,7 +960,13 @@ void describe("Prettier wrapper CLI", () => {
             await fs.writeFile(parseFailure, "if (\n", "utf8");
 
             try {
-                await execFileAsync("node", [wrapperPath, "--on-parse-error=revert", tempDirectory]);
+                await execFileAsync("node", [
+                    wrapperPath,
+                    "--on-parse-error=revert",
+                    "--path",
+                    tempDirectory,
+                    "--write"
+                ]);
                 assert.fail("Expected the wrapper to exit with a non-zero status code");
             } catch (error) {
                 assert.ok(error, "Expected an error to be thrown");
@@ -939,7 +1004,13 @@ void describe("Prettier wrapper CLI", () => {
             await fs.writeFile(pendingFormat, "var    b=2;\n", "utf8");
 
             try {
-                await execFileAsync("node", [wrapperPath, "--on-parse-error=abort", tempDirectory]);
+                await execFileAsync("node", [
+                    wrapperPath,
+                    "--on-parse-error=abort",
+                    "--path",
+                    tempDirectory,
+                    "--write"
+                ]);
                 assert.fail("Expected the wrapper to exit with a non-zero status code");
             } catch (error) {
                 assert.ok(error, "Expected an error to be thrown");
@@ -966,7 +1037,7 @@ void describe("Prettier wrapper CLI", () => {
             await fs.writeFile(targetFile, "if (\n", "utf8");
 
             try {
-                await execFileAsync("node", [wrapperPath, tempDirectory]);
+                await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
                 assert.fail("Expected the wrapper to exit with a non-zero status code");
             } catch (error) {
                 assert.ok(error, "Expected an error to be thrown for a failing format");
@@ -1047,7 +1118,7 @@ void describe("Prettier wrapper CLI", () => {
             const targetFile = path.join(tempDirectory, "script.gml");
             await fs.writeFile(targetFile, "var    a=1;\n", "utf8");
 
-            const { stdout, stderr } = await execFileAsync("node", [wrapperPath], {
+            const { stdout, stderr } = await execFileAsync("node", [wrapperPath, "--write"], {
                 cwd: tempDirectory,
                 env: {
                     ...process.env,
@@ -1073,7 +1144,7 @@ void describe("Prettier wrapper CLI", () => {
             const ignoredFile = path.join(tempDirectory, "notes.txt");
             await fs.writeFile(ignoredFile, "hello", "utf8");
 
-            const { stdout, stderr } = await execFileAsync("node", [wrapperPath, tempDirectory]);
+            const { stdout, stderr } = await execFileAsync("node", [wrapperPath, "--path", tempDirectory, "--write"]);
 
             assert.strictEqual(stderr, "", "Expected stderr to be empty");
             assert.match(
@@ -1101,7 +1172,7 @@ void describe("Prettier wrapper CLI", () => {
         const tempDirectory = await createTemporaryDirectory();
 
         try {
-            const { stdout, stderr } = await execFileAsync("node", [wrapperPath], {
+            const { stdout, stderr } = await execFileAsync("node", [wrapperPath, "--write"], {
                 cwd: tempDirectory,
                 env: {
                     ...process.env,
@@ -1161,7 +1232,7 @@ void describe("Prettier wrapper CLI", () => {
                 PRETTIER_PLUGIN_GML_LOG_LEVEL: "silent"
             };
 
-            const { stdout, stderr } = await execFileAsync("node", [wrapperPath], {
+            const { stdout, stderr } = await execFileAsync("node", [wrapperPath, "--write"], {
                 cwd: tempDirectory,
                 // 8MB max buffer is sufficient in CI for reduced logging; keep it
                 // modest to avoid masking legitimate issues while still preventing
@@ -1221,7 +1292,7 @@ void describe("Prettier wrapper CLI", () => {
                 "Expected stdout to show help usage"
             );
             assert.match(stdout, /Commands:/, "Expected stdout to list available commands");
-            assert.match(stdout, /format \[options\] \[targetPath\]/, "Expected stdout to include format command");
+            assert.match(stdout, /format \[options\]/, "Expected stdout to include format command");
             assert.ok(
                 stdout.includes("Run with a command name to get started (e.g., 'format --help' for formatting"),
                 "Expected stdout to guide users on how to get started"
@@ -1250,9 +1321,27 @@ void describe("Prettier wrapper CLI", () => {
             "Expected help output to include the workspace wrapper example"
         );
         assert.ok(
-            stdout.includes("  pnpm dlx prettier-plugin-gml format --check path/to/script.gml"),
-            "Expected help output to include the --check example"
+            stdout.includes("  pnpm dlx prettier-plugin-gml format --write --path path/to/script.gml"),
+            "Expected help output to include the --write example"
         );
+    });
+
+    void it("rejects positional target arguments for the format subcommand and directs users to --path", async () => {
+        const tempDirectory = await createTemporaryDirectory();
+
+        try {
+            try {
+                await execFileAsync("node", [wrapperPath, "format", tempDirectory]);
+                assert.fail("Expected format subcommand positional arguments to be rejected");
+            } catch (error) {
+                assert.ok(error, "Expected an error to be thrown");
+                assert.strictEqual(error.code, 1);
+                assert.match(error.stderr, /too many arguments for 'format'/i);
+                assert.match(error.stderr, /--path <path>/);
+            }
+        } finally {
+            await fs.rm(tempDirectory, { recursive: true, force: true });
+        }
     });
 
     void it("prints CLI version information without triggering error handling", async () => {

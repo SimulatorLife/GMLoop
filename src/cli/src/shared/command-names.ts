@@ -15,14 +15,17 @@ export const CLI_COMMAND_NAMES = Object.freeze(
     new Set([
         "format",
         "fix",
+        "graph",
         "lint",
-        "performance",
+        "lookup-gml-identifier",
+        "parse",
         "generate-gml-identifiers",
         "generate-quality-report",
         "collect-stats",
         "generate-feather-metadata",
         "prepare-hot-reload",
         "refactor",
+        "transpile",
         "watch",
         "watch-status",
         "help"

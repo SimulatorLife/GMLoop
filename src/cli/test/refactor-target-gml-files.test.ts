@@ -12,6 +12,6 @@ void test("indexed root-target gml discovery only runs when all targets resolve 
         }
     };
 
-    assert.equal(resolveIndexedRootTargetGmlFiles(projectRoot, [projectRoot], projectIndex)?.length, 1);
+    assert.equal(resolveIndexedRootTargetGmlFiles(projectRoot, [projectRoot], projectIndex)?.length, 2);
     assert.equal(resolveIndexedRootTargetGmlFiles(projectRoot, ["/project/scripts"], projectIndex), null);
 });

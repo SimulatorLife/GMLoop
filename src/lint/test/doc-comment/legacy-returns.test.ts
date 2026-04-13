@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { MutableDocCommentLines } from "@gmloop/core";
+
 import { convertLegacyReturnsDescriptionLinesToMetadata } from "../../src/doc-comment/index.js";
 
 void test("convertLegacyReturnsDescriptionLinesToMetadata ignores non-return descriptions with hyphens", () => {
@@ -33,4 +35,19 @@ void test("convertLegacyReturnsDescriptionLinesToMetadata converts hyphen style 
     const output = convertLegacyReturnsDescriptionLinesToMetadata(input);
 
     assert.deepStrictEqual(output, expected);
+});
+
+void test("convertLegacyReturnsDescriptionLinesToMetadata preserves doc-comment flags after conversion", () => {
+    const input = ["/// @function my_func", "/// Returns: real, the result"] as MutableDocCommentLines;
+    input._suppressLeadingBlank = true;
+    input._preserveDescriptionBreaks = true;
+    input._blockCommentDocs = true;
+
+    const output = convertLegacyReturnsDescriptionLinesToMetadata(input);
+    const outputWithFlags = output as MutableDocCommentLines;
+
+    assert.deepStrictEqual(Array.from(output), ["/// @returns {real} The result"]);
+    assert.equal(outputWithFlags._suppressLeadingBlank, true);
+    assert.equal(outputWithFlags._preserveDescriptionBreaks, true);
+    assert.equal(outputWithFlags._blockCommentDocs, true);
 });

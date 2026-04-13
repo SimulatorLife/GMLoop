@@ -1,10 +1,9 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { printExpression, readNodeText } from "../print-expression.js";
 import {
     applySourceTextEdits,
-    cloneAstNodeWithoutTraversalLinks,
     createCommentTokenRangeIndex,
     createMeta,
     getVariableDeclarator,
@@ -38,7 +37,7 @@ const {
     isLogicalAndOperator,
     isLogicalOrOperator,
     unwrapParenthesizedExpression: unwrapParenthesized
-} = CoreWorkspace.Core;
+} = Core;
 
 type MultiplicativeComponents = Readonly<{
     coefficient: number;
@@ -51,79 +50,10 @@ const SUPPORTED_OPAQUE_MATH_FACTOR_TYPES = new Set([
     "MemberIndexExpression",
     "CallExpression"
 ]);
-const IGNORED_AST_METADATA_KEYS = new Set(["start", "end", "range", "loc", "parent", "comments", "tokens"]);
 const COMMENT_SEQUENCE_PATTERN = /\/\/|\/\*|\*\//u;
 const MANUAL_MATH_CALL_SIGNAL_PATTERN =
     /\b(?:arccos|arcsin|arctan|arctan2|cos|darccos|darcsin|darctan|darctan2|dcos|degtorad|dsin|dtan|exp|lengthdir_[xy]|ln|log2|mean|point_direction|point_distance(?:_3d)?|power|radtodeg|sin|sqr|sqrt|tan)\s*\(/u;
 const NUMERIC_LITERAL_SIGNAL_PATTERN = /(?<![\w.])(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?(?![\w.])/iu;
-
-function areAstValuesEquivalentIgnoringParentheses(left: unknown, right: unknown): boolean {
-    if (left === right) {
-        return true;
-    }
-
-    if (left === null || right === null) {
-        return false;
-    }
-
-    if (Array.isArray(left) || Array.isArray(right)) {
-        if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
-            return false;
-        }
-
-        for (const [index, element] of left.entries()) {
-            if (!areExpressionNodesEquivalentIgnoringParentheses(element, right[index])) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    if (typeof left !== typeof right) {
-        return false;
-    }
-
-    if (typeof left !== "object" || typeof right !== "object") {
-        return false;
-    }
-
-    const leftRecord = left as Record<string, unknown>;
-    const rightRecord = right as Record<string, unknown>;
-
-    for (const [leftKey, leftValue] of Object.entries(leftRecord)) {
-        if (IGNORED_AST_METADATA_KEYS.has(leftKey)) {
-            continue;
-        }
-
-        if (!(leftKey in rightRecord)) {
-            return false;
-        }
-
-        if (!areExpressionNodesEquivalentIgnoringParentheses(leftValue, rightRecord[leftKey])) {
-            return false;
-        }
-    }
-
-    for (const rightKey of Object.keys(rightRecord)) {
-        if (IGNORED_AST_METADATA_KEYS.has(rightKey)) {
-            continue;
-        }
-
-        if (!(rightKey in leftRecord)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-function areExpressionNodesEquivalentIgnoringParentheses(left: unknown, right: unknown): boolean {
-    return areAstValuesEquivalentIgnoringParentheses(
-        unwrapParenthesized(left as Parameters<typeof unwrapParenthesized>[0]),
-        unwrapParenthesized(right as Parameters<typeof unwrapParenthesized>[0])
-    );
-}
 
 function tryEvaluateExpression(node: any): any {
     const unwrapped = unwrapParenthesized(node);
@@ -138,7 +68,7 @@ function tryEvaluateExpression(node: any): any {
         if (unwrapped.value === "false") {
             return false;
         }
-        const num = CoreWorkspace.Core.getLiteralNumberValue(unwrapped);
+        const num = Core.getLiteralNumberValue(unwrapped);
         if (num !== null) {
             return num;
         }
@@ -306,7 +236,7 @@ function collectMultiplicativeComponents(sourceText: string, node: any): Multipl
         return null;
     }
 
-    const num = CoreWorkspace.Core.getLiteralNumberValue(unwrapped);
+    const num = Core.getLiteralNumberValue(unwrapped);
     if (num !== null) {
         return { coefficient: num, factors: new Map() };
     }
@@ -353,13 +283,35 @@ function collectMultiplicativeComponents(sourceText: string, node: any): Multipl
     return null;
 }
 
-function buildMultiplicativeExpression(components: MultiplicativeComponents): string {
+function formatNonScientificNumericLiteral(value: number): string | null {
+    if (!Number.isFinite(value)) {
+        return null;
+    }
+
+    if (Object.is(value, -0)) {
+        return "0";
+    }
+
+    const literal = value.toString();
+    if (literal.includes("e") || literal.includes("E")) {
+        return null;
+    }
+
+    return literal;
+}
+
+function buildMultiplicativeExpression(components: MultiplicativeComponents): string | null {
     const { coefficient, factors } = components;
     if (coefficient === 0) {
         return "0";
     }
 
     const terms: string[] = [];
+    const coefficientText = coefficient === 1 ? "1" : formatNonScientificNumericLiteral(coefficient);
+    if (coefficient !== 1 && coefficientText === null) {
+        return null;
+    }
+
     // Normally we prefer to render the numeric coefficient first to canonicalize
     // expressions (e.g. "2 * x" instead of "x * 2"). However, when the
     // coefficient is a positive fraction less than 1, moving it to the front
@@ -371,7 +323,7 @@ function buildMultiplicativeExpression(components: MultiplicativeComponents): st
     const shouldPrefixCoefficient =
         coefficient !== 1 && (factors.size === 0 || coefficient <= -1 || coefficient >= 1 || coefficient < 0);
     if (shouldPrefixCoefficient) {
-        terms.push(coefficient.toString());
+        terms.push(coefficientText);
     }
 
     for (const [factor, power] of factors) {
@@ -391,7 +343,7 @@ function buildMultiplicativeExpression(components: MultiplicativeComponents): st
     // was a small positive fraction) then append it now so the term sequence
     // still includes the numeric factor.
     if (!shouldPrefixCoefficient && coefficient !== 1) {
-        terms.push(coefficient.toString());
+        terms.push(coefficientText);
     }
 
     return terms.join(" * ");
@@ -429,7 +381,12 @@ function simplifyMathExpression(sourceText: string, node: any, _source?: string)
         return "0";
     }
 
-    const simplified = normalizeLeadingNumericCoefficientOrder(buildMultiplicativeExpression(components));
+    const multiplicativeExpression = buildMultiplicativeExpression(components);
+    if (!multiplicativeExpression) {
+        return null;
+    }
+
+    const simplified = normalizeLeadingNumericCoefficientOrder(multiplicativeExpression);
     const originalText = readNodeText(sourceText, node);
     if (originalText && trimOuterParentheses(originalText) === trimOuterParentheses(simplified)) {
         return null;
@@ -522,7 +479,10 @@ function rewriteManualMathCanonicalForms(sourceText: string): string {
         /sqrt\(\s*([A-Za-z0-9_.[\]]+)\s*\*\s*\1\s*\+\s*([A-Za-z0-9_.[\]]+)\s*\*\s*\2\s*\+\s*([A-Za-z0-9_.[\]]+)\s*\*\s*\3\s*\)/g,
         "point_distance_3d(0, 0, 0, $1, $2, $3)"
     );
-
+    rewritten = rewritten.replaceAll(
+        /sqrt\(\s*dot_product_3d\(\s*([A-Za-z0-9_.[\]]+)\s*,\s*([A-Za-z0-9_.[\]]+)\s*,\s*([A-Za-z0-9_.[\]]+)\s*,\s*\1\s*,\s*\2\s*,\s*\3\s*\)\s*\)/g,
+        "point_distance_3d(0, 0, 0, $1, $2, $3)"
+    );
     // Collapse explicit undefined guard multiplication into the nullish-coalescing
     // shorthand.
     rewritten = rewritten.replaceAll(
@@ -540,6 +500,14 @@ function rewriteManualMathCanonicalForms(sourceText: string): string {
 
 function hasOverlappingRange(start: number, end: number, edits: ReadonlyArray<SourceTextEdit>): boolean {
     return edits.some((edit) => start < edit.end && end > edit.start);
+}
+
+function hasOverlapWithLastScheduledEdit(
+    start: number,
+    end: number,
+    lastScheduledEdit: SourceTextEdit | null
+): boolean {
+    return lastScheduledEdit !== null && start < lastScheduledEdit.end && end > lastScheduledEdit.start;
 }
 
 type SourceTextRange = Readonly<{ start: number; end: number }>;
@@ -607,7 +575,7 @@ function tryReadNumericLiteralValue(node: unknown): number | null {
         return null;
     }
 
-    return CoreWorkspace.Core.getLiteralNumberValue(expression);
+    return Core.getLiteralNumberValue(expression);
 }
 
 function isCanonicalNumericLiteralText(sourceText: string, node: unknown): boolean {
@@ -616,7 +584,7 @@ function isCanonicalNumericLiteralText(sourceText: string, node: unknown): boole
         return false;
     }
 
-    const numericValue = CoreWorkspace.Core.getLiteralNumberValue(expression);
+    const numericValue = Core.getLiteralNumberValue(expression);
     if (numericValue === null) {
         return false;
     }
@@ -698,7 +666,7 @@ function tryReadSquaredOperandText(sourceText: string, node: unknown): string | 
         return null;
     }
 
-    if (!areExpressionNodesEquivalentIgnoringParentheses(expression.left, expression.right)) {
+    if (!Core.areExpressionNodesEquivalentIgnoringParentheses(expression.left, expression.right)) {
         return null;
     }
 
@@ -718,7 +686,7 @@ function tryBuildGroupedSquareSumReplacement(sourceText: string, node: unknown):
     }
 
     const [first, second, third] = operandTexts as [string, string, string];
-    return `(sqr(${first}) + sqr(${second})) + sqr(${third})`;
+    return `dot_product_3d(${first}, ${second}, ${third}, ${first}, ${second}, ${third})`;
 }
 
 function tryReadHalfScaledBase(node: unknown) {
@@ -790,8 +758,8 @@ function tryBuildHalfLengthdirDifferenceReplacement(sourceText: string, node: un
     }
 
     if (
-        !areExpressionNodesEquivalentIgnoringParentheses(baseExpression, subtrahendBaseExpression) ||
-        !areExpressionNodesEquivalentIgnoringParentheses(baseExpression, callBaseExpression)
+        !Core.areExpressionNodesEquivalentIgnoringParentheses(baseExpression, subtrahendBaseExpression) ||
+        !Core.areExpressionNodesEquivalentIgnoringParentheses(baseExpression, callBaseExpression)
     ) {
         return null;
     }
@@ -929,6 +897,19 @@ function collectAdditiveTermsForDotProduct(node: any, terms: any[]): boolean {
     return true;
 }
 
+function isFastDotProductOperandCandidate(node: unknown): boolean {
+    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    if (!expression || hasComment(expression)) {
+        return false;
+    }
+
+    return (
+        expression.type === "Identifier" ||
+        expression.type === "MemberDotExpression" ||
+        expression.type === "MemberIndexExpression"
+    );
+}
+
 function tryBuildFastDotProductReplacement(sourceText: string, node: any): string | null {
     const expression = unwrapParenthesized(node);
     if (
@@ -969,9 +950,7 @@ function tryBuildFastDotProductReplacement(sourceText: string, node: any): strin
             return null;
         }
 
-        // Preserve existing behavior: avoid rewriting square-style terms (x*x)
-        // so those cases can continue through the full normalization pipeline.
-        if (areExpressionNodesEquivalentIgnoringParentheses(leftOperand, rightOperand)) {
+        if (!isFastDotProductOperandCandidate(leftOperand) || !isFastDotProductOperandCandidate(rightOperand)) {
             return null;
         }
 
@@ -1190,7 +1169,7 @@ function performDeadCodeElimination(bodyStatements: any[], sourceText: string, e
  * expression node and return the resulting source text if it changed.
  */
 function attemptManualNormalization(sourceText: string, node: any): string | null {
-    const clone = cloneAstNodeWithoutTraversalLinks(node);
+    const clone = Core.cloneAstNode(node) as MutableGameMakerAstNode;
     if (!clone) {
         return null;
     }
@@ -1203,7 +1182,7 @@ function attemptManualNormalization(sourceText: string, node: any): string | nul
     cleanupMultiplicativeIdentityParentheses(clone, context as any);
 
     const original = readNodeText(sourceText, node) || "";
-    if (areExpressionNodesEquivalentIgnoringParentheses(node, clone)) {
+    if (Core.areExpressionNodesEquivalentIgnoringParentheses(node, clone)) {
         return null;
     }
 
@@ -1254,6 +1233,7 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
     const normalizedExpressionRanges: SourceTextRange[] = [];
     const commentTokenRangeIndex = createCommentTokenRangeIndex(sourceText);
     const replacementByCandidateText = new Map<string, string | null>();
+    let lastScheduledEdit: SourceTextEdit | null = null;
 
     walkAstNodesWithParent(node, (visitContext) => {
         const { node: visitedNode, parent, parentKey } = visitContext;
@@ -1304,6 +1284,24 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                 return;
             }
 
+            const fastDotProductReplacement = tryBuildFastDotProductReplacement(sourceText, targetNode);
+            if (
+                fastDotProductReplacement &&
+                !rangeContainsCommentToken(commentTokenRangeIndex, start, end) &&
+                !hasOverlapWithLastScheduledEdit(start, end, lastScheduledEdit) &&
+                !hasOverlappingRange(start, end, edits)
+            ) {
+                const replacementText =
+                    isIfTest && !fastDotProductReplacement.startsWith("(")
+                        ? `(${fastDotProductReplacement})`
+                        : fastDotProductReplacement;
+                const scheduledEdit = { start, end, text: replacementText };
+                edits.push(scheduledEdit);
+                lastScheduledEdit = scheduledEdit;
+                normalizedExpressionRanges.push(targetRange);
+                return;
+            }
+
             const sourceTextOfNode = readNodeText(sourceText, targetNode);
             if (sourceTextOfNode) {
                 if (hasComment(targetNode)) {
@@ -1331,13 +1329,23 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                 const replacementCacheKey = `${targetNode.type}:${sourceTextOfNode}`;
                 let replacement = replacementByCandidateText.get(replacementCacheKey);
                 if (replacement === undefined) {
-                    replacement = tryBuildConstantNumericReplacement(sourceText, targetNode);
+                    let shouldApplyCanonicalSourceAwareReplacement = true;
+
+                    if (NUMERIC_LITERAL_SIGNAL_PATTERN.test(sourceTextOfNode)) {
+                        replacement = tryBuildConstantNumericReplacement(sourceText, targetNode);
+                    }
+
                     if (!replacement) {
                         replacement = tryBuildFastDotProductReplacement(sourceText, targetNode);
+                        if (replacement) {
+                            shouldApplyCanonicalSourceAwareReplacement = false;
+                        }
                     }
+
                     if (!replacement && shouldAttemptManualNormalization(sourceTextOfNode)) {
                         replacement = attemptManualNormalization(sourceText, targetNode);
                     }
+
                     if (!replacement && DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode)) {
                         replacement = simplifyMathExpression(sourceText, targetNode, sourceTextOfNode);
                     } else if (replacement && DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode)) {
@@ -1352,12 +1360,15 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                                 countDivisionLikeOperators(replacement)
                         ) {
                             replacement = divisionFallbackReplacement;
+                            shouldApplyCanonicalSourceAwareReplacement = true;
                         }
                     }
 
                     replacement =
                         replacement && replacement !== sourceTextOfNode
-                            ? applySourceAwareCanonicalMathReplacement(sourceText, targetNode, replacement)
+                            ? shouldApplyCanonicalSourceAwareReplacement
+                                ? applySourceAwareCanonicalMathReplacement(sourceText, targetNode, replacement)
+                                : replacement
                             : null;
 
                     replacementByCandidateText.set(replacementCacheKey, replacement);
@@ -1368,8 +1379,13 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                         replacement = `(${replacement})`;
                     }
 
-                    if (!hasOverlappingRange(start, end, edits)) {
-                        edits.push({ start, end, text: replacement });
+                    if (
+                        !hasOverlapWithLastScheduledEdit(start, end, lastScheduledEdit) &&
+                        !hasOverlappingRange(start, end, edits)
+                    ) {
+                        const scheduledEdit = { start, end, text: replacement };
+                        edits.push(scheduledEdit);
+                        lastScheduledEdit = scheduledEdit;
                         normalizedExpressionRanges.push(targetRange);
                     }
                 }
@@ -1405,14 +1421,16 @@ export function createOptimizeMathExpressionsRule(definition: GmlRuleDefinition)
                     let rewrittenByAstEdits = sourceText;
                     if (edits.length > 0) {
                         const deduplicated: SourceTextEdit[] = [];
+                        let deduplicatedLastEnd = -1;
                         for (const edit of edits.toSorted(
                             (left, right) => left.start - right.start || left.end - right.end
                         )) {
-                            if (hasOverlappingRange(edit.start, edit.end, deduplicated)) {
+                            if (edit.start < deduplicatedLastEnd) {
                                 continue;
                             }
 
                             deduplicated.push(edit);
+                            deduplicatedLastEnd = edit.end;
                         }
 
                         rewrittenByAstEdits = applySourceTextEdits(sourceText, deduplicated);

@@ -12,7 +12,8 @@
     "src/transpiler",
     "src/runtime-wrapper",
     "src/refactor",
-    "src/fixture-runner"
+    "src/fixture-runner",
+    "src/mcp"
   ],
   "type": "module",
   "imports": {
@@ -45,7 +46,7 @@
   ],
   "author": "Two Scoop Studio",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.5.0"
   },
   "scripts": {
     "clean": "find . -name node_modules -type d -prune -exec rm -rf '{}' + && rm -rf .eslintcache tsconfig.eslint.tsbuildinfo reports tmp node_debug.log eslint-suppressions.json test/dist && pnpm -r run clean:types && pnpm run clean:src-js && pnpm store prune",
@@ -66,9 +67,9 @@
     "test:ensure-junit": "node -e \"const fs=require('fs'); const p='reports/tests.xml'; const status=process.env.TEST_STATUS ?? 'unknown'; const xml=fs.existsSync(p)?fs.readFileSync(p,'utf8').trim():''; const ok=xml.startsWith('<?xml')&&xml.includes('<testsuites')&&xml.includes('</testsuites>'); if(!ok){const m='Test runner exited with status '+status+' before producing a valid JUnit report.'; const e=m.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\\"/g,'&quot;').replace(/'/g,'&apos;'); const fallback='<?xml version=\\\"1.0\\\" encoding=\\\"utf-8\\\"?>\\n' + '<testsuites>\\n' + '  <testsuite name=\\\"test-runner\\\" tests=\\\"1\\\" failures=\\\"1\\\" errors=\\\"0\\\" skipped=\\\"0\\\">\\n' + '    <testcase name=\\\"test-runner\\\"><failure message=\\\"' + e + '\\\">' + e + '</failure></testcase>\\n' + '  </testsuite>\\n' + '</testsuites>\\n'; fs.writeFileSync(p,fallback,'utf8'); }\"",
     "test": "pnpm run build:ts && bash -lc 'mapfile -t tests < <(pnpm -s test:files); ((${#tests[@]})) || { echo \"No compiled test files found under dist/ or test/\" >&2; exit 1; }; node --test --test-timeout=120000 \"${tests[@]}\"'",
     "test:quiet": "pnpm run build:ts && bash -lc 'set -o pipefail; mapfile -t tests < <(pnpm -s test:files); ((${#tests[@]})) || { echo \"No compiled test files found under dist/ or test/\" >&2; exit 1; }; node --test --test-timeout=120000 --test-reporter=tap \"${tests[@]}\" 2>/dev/null | grep -E \"^# (tests|suites|pass|fail|cancelled|skipped|todo|duration_ms)\"'",
-    "test:report": "bash -lc 'mkdir -p reports; rm -f reports/tests.xml; mapfile -t tests < <(pnpm -s test:files); ((${#tests[@]})) || { echo \"No compiled test files found under dist/ or test/\" >&2; exit 1; }; node --test --test-reporter=junit --test-reporter-destination=reports/tests.xml \"${tests[@]}\"; status=$?; TEST_STATUS=$status pnpm -s test:ensure-junit; exit $status'",
+    "test:report": "bash -lc 'mkdir -p reports; rm -f reports/tests.xml; mapfile -t tests < <(pnpm -s test:files); if ((${#tests[@]})); then node --test --test-reporter=junit --test-reporter-destination=reports/tests.xml \"${tests[@]}\"; status=$?; else echo \"No compiled test files found under dist/ or test/\" >&2; status=1; fi; TEST_STATUS=$status pnpm -s test:ensure-junit; exit $status'",
     "test:coverage": "bash -lc 'rm -f reports/lcov.info && mkdir -p reports && ./node_modules/.bin/c8 --reporter=lcovonly --report-dir=reports node --test \"**/*.test.js\"; status=$?; rm -rf .nyc_output reports/tmp reports/lcov-report; exit $status'",
-    "test:ci": "bash -lc 'mkdir -p reports; rm -f reports/lcov.info reports/tests.xml; mapfile -t tests < <(pnpm -s test:files); ((${#tests[@]})) || { echo \"No compiled test files found under dist/ or test/\" >&2; exit 1; }; ./node_modules/.bin/c8 --reporter=lcovonly --report-dir=reports node --test --test-reporter=junit --test-reporter-destination=reports/tests.xml \"${tests[@]}\"; status=$?; TEST_STATUS=$status pnpm -s test:ensure-junit; rm -rf .nyc_output reports/tmp reports/lcov-report; exit $status'",
+    "test:ci": "bash -lc 'mkdir -p reports; rm -f reports/lcov.info reports/tests.xml; mapfile -t tests < <(pnpm -s test:files); if ((${#tests[@]})); then ./node_modules/.bin/c8 --reporter=lcovonly --report-dir=reports node --test --test-reporter=junit --test-reporter-destination=reports/tests.xml \"${tests[@]}\"; status=$?; else echo \"No compiled test files found under dist/ or test/\" >&2; status=1; fi; TEST_STATUS=$status pnpm -s test:ensure-junit; rm -rf .nyc_output reports/tmp reports/lcov-report; exit $status'",
     "test:core": "pnpm --filter @gmloop/core run build:types && node --test src/core/dist/test/*.test.js",
     "test:core:report": "pnpm --filter @gmloop/core run build:types && node --test --test-reporter=junit --test-reporter-destination=./reports/core.xml src/core/dist/test/*.test.js",
     "test:parser": "pnpm --filter @gmloop/parser run build:types && node --test src/parser/dist/test/*.test.js",
@@ -84,15 +85,14 @@
     "test:format": "pnpm run build:ts && bash -lc 'mapfile -t tests < <(pnpm -s test:format:files); ((${#tests[@]})) || { echo \"No compiled format test files found\" >&2; exit 1; }; node --test \"${tests[@]}\"'",
     "test:format:report": "bash -lc 'mkdir -p reports; rm -f reports/format.xml; pnpm run build:ts; mapfile -t tests < <(pnpm -s test:format:files); ((${#tests[@]})) || { echo \"No compiled format test files found\" >&2; exit 1; }; node --test --test-reporter=junit --test-reporter-destination=./reports/format.xml \"${tests[@]}\"'",
     "test:cli": "pnpm --filter @gmloop/cli run build:types && node --test src/cli/dist/test/*.test.js",
+    "test:mcp": "pnpm --filter @gmloop/mcp run build:types && node --test src/mcp/dist/test/*.test.js",
     "test:cli:report": "pnpm --filter @gmloop/cli run build:types && node --test --test-reporter=junit --test-reporter-destination=./reports/cli.xml src/cli/dist/test/*.test.js",
     "test:root": "pnpm run build:ts && node --test test/dist/*.test.js",
     "test:lint": "pnpm --filter @gmloop/lint run build:types && node --test 'src/lint/dist/test/**/*.test.js'",
     "test:root:report": "pnpm run build:ts && node --test --test-reporter=junit --test-reporter-destination=./reports/root.xml test/dist/*.test.js",
     "test:fixtures:files": "echo test/dist/fixture-suites.js",
     "test:fixtures": "pnpm run build:ts && bash -lc 'mapfile -t tests < <(pnpm -s test:fixtures:files); ((${#tests[@]})) || { echo \"No compiled fixture test files found\" >&2; exit 1; }; node --test --test-timeout=120000 \"${tests[@]}\"'",
-    "test:performance:files": "find src test -type f \\( -path '*/dist/test/*performance*.test.js' -o -path '*/dist/test/*perf*.test.js' -o -path '*/dist/test/performance/*.test.js' \\) -not -path '*/node_modules/*'",
-    "test:performance": "pnpm run build:ts && bash -lc 'mapfile -t tests < <(pnpm -s test:performance:files); ((${#tests[@]})) || { echo \"No compiled performance test files found under dist/\" >&2; exit 1; }; node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=reports/performance.xml --test-concurrency=1 --test-timeout=120000 \"${tests[@]}\"'",
-    "test:fixtures:profile": "pnpm run build:ts:incremental && GMLOOP_FIXTURE_PROFILE=1 node --test test/dist/fixture-profile-report.js",
+    "test:performance": "pnpm run build:ts && bash -lc 'mapfile -t tests < <(find src test -type f \\( -path '\\''*/dist/test/*performance*.test.js'\\'' -o -path '\\''*/dist/test/*perf*.test.js'\\'' -o -path '\\''*/dist/test/performance/*.test.js'\\'' \\) -not -path '\\''*/node_modules/*'\\''); tests+=(test/dist/fixture-profile-report.js); GMLOOP_FIXTURE_PROFILE=1 node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=reports/performance.xml --test-concurrency=1 --test-timeout=120000 \"${tests[@]}\"'",
     "test:fixtures:profile:deep-cpu": "pnpm run build:ts:incremental && GMLOOP_FIXTURE_PROFILE=1 GMLOOP_FIXTURE_DEEP_CPU=1 node --test test/dist/fixture-profile-report.js",
     "format:gml": "pnpm --filter @gmloop/cli run build:types && node ./src/cli/dist/index.js format",
     "format": "pnpm exec -- prettier --cache --ignore-path ./.prettierignore --write \"{src/**/*.ts,*.{ts,js,cjs,mjs}}\"",
@@ -107,10 +107,15 @@
     "build:ts": "pnpm --filter @gmloop/core run generate:resource-directory && pnpm run clean:ts && tsc -b",
     "build:ts:incremental": "pnpm --filter @gmloop/core run generate:resource-directory && tsc -b",
     "example:format": "cd src/format && pnpm run example",
-    "postinstall": "git submodule update --init --recursive && git update-index --skip-worktree vendor/* && chmod -R a-w vendor && chmod -R a+X vendor && chmod -R u+w vendor/3DSpider || echo \"Skipping vendor submodules\" && patch-package",
+    "postinstall": "pnpm run submodules && patch-package && pnpm run build:cli && cd src/cli && pnpm link --global || true",
+    "build:cli": "pnpm --filter @gmloop/cli run build:types",
     "prepare": "husky",
-    "submodules": "git submodule foreach --recursive 'git reset --hard && git clean -fd' && git submodule sync --recursive && git submodule update --init --recursive --remote",
+    "submodules": "chmod -R u+w vendor && git submodule foreach --recursive 'git reset --hard && git clean -fd' && git submodule sync --recursive && git submodule update --init --recursive --remote && chmod -R a-w vendor && chmod -R a+X vendor && chmod -R u+w vendor/3DSpider && git ls-files vendor | xargs git update-index --skip-worktree",
     "cli": "pnpm --filter @gmloop/cli run build:types && node ./src/cli/dist/index.js",
+    "demo:refactor": "chmod -R u+w vendor/3DSpider && bash -lc 'cd vendor/3DSpider && git reset --hard && git clean -fd' && git submodule update --init --recursive --remote vendor/3DSpider && pnpm run cli -- refactor --path ./vendor/3DSpider --write && mkdir -p reports && bash -lc 'cd vendor/3DSpider && git diff > ../../reports/3DSpider.diff'",
+    "demo:lint": "chmod -R u+w vendor/3DSpider && bash -lc 'cd vendor/3DSpider && git reset --hard && git clean -fd' && git submodule update --init --recursive --remote vendor/3DSpider && pnpm run cli -- lint --path ./vendor/3DSpider --write && mkdir -p reports && bash -lc 'cd vendor/3DSpider && git diff > ../../reports/3DSpider.diff'",
+    "demo:format": "chmod -R u+w vendor/3DSpider && bash -lc 'cd vendor/3DSpider && git reset --hard && git clean -fd' && git submodule update --init --recursive --remote vendor/3DSpider && pnpm run cli -- format --path ./vendor/3DSpider --write --on-parse-error skip && mkdir -p reports && bash -lc 'cd vendor/3DSpider && git diff > ../../reports/3DSpider.diff'",
+    "demo:fix": "chmod -R u+w vendor/3DSpider && bash -lc 'cd vendor/3DSpider && git reset --hard && git clean -fd' && git submodule update --init --recursive --remote vendor/3DSpider && pnpm run cli -- fix --path ./vendor/3DSpider --write && mkdir -p reports && bash -lc 'cd vendor/3DSpider && git diff > ../../reports/3DSpider.diff'",
     "demo:watch": "pnpm --filter @gmloop/runtime-wrapper run build:types && pnpm --filter @gmloop/cli run build:types && node ./src/cli/dist/index.js prepare-hot-reload && node ./src/cli/dist/index.js watch vendor/3DSpider --verbose --no-runtime-server",
     "actionlint:install": "mkdir -p node_modules/.bin && curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash -s -- latest ./node_modules/.bin",
     "lint:actions": "actionlint -color",
@@ -122,7 +127,7 @@
     "tree:ts": "tree -F -I \"(?<!tsconfig|tsconfig\\.base)\\.(?!ts$)[^/]+$|node_modules|vendor|dist\" ./src"
   },
   "jscpd": {
-    "threshold": 0.3,
+    "threshold": 0.1,
     "reporters": [
       "json",
       "console"
@@ -159,6 +164,7 @@
     "@gmloop/cli": "workspace:*",
     "@gmloop/core": "workspace:*",
     "@gmloop/lint": "workspace:*",
+    "@gmloop/mcp": "workspace:*",
     "@gmloop/parser": "workspace:*",
     "@gmloop/format": "workspace:*",
     "@gmloop/fixture-runner": "workspace:*",

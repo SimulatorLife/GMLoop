@@ -18,13 +18,22 @@ import {
 
 export interface StatusSnapshot {
     uptime: number;
+    /** Number of patches in the bounded metrics window (capped at maxPatchHistory). */
     patchCount: number;
+    /** Cumulative count of all patches broadcast since startup (not bounded). */
+    totalPatchCount?: number;
+    /** Number of patch summaries currently retained in the history ring. */
+    patchHistorySize?: number;
+    /** Maximum number of patches retained in the history ring. */
+    maxPatchHistory?: number;
     errorCount: number;
     recentPatches: Array<{
         id: string;
         timestamp: number;
         durationMs: number;
         filePath: string;
+        /** End-to-end hot-reload latency from file-change detection to patch broadcast, when available. */
+        hotReloadLatencyMs?: number;
     }>;
     recentErrors: Array<{
         timestamp: number;
@@ -32,6 +41,12 @@ export interface StatusSnapshot {
         error: string;
     }>;
     websocketClients: number;
+    /** Whether the initial file scan has completed. */
+    scanComplete?: boolean;
+    /** Average end-to-end hot-reload latency (ms) across all patches in the current metrics window. */
+    avgHotReloadLatencyMs?: number;
+    /** 95th-percentile end-to-end hot-reload latency (ms) across all patches in the current metrics window. */
+    p95HotReloadLatencyMs?: number;
 }
 
 /**

@@ -12,7 +12,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { type Dirent, type FSWatcher, type Stats, watch, type WatchListener, type WatchOptions } from "node:fs";
+import {
+    type Dirent,
+    existsSync,
+    type FSWatcher,
+    type Stats,
+    watch,
+    type WatchListener,
+    type WatchOptions
+} from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -22,9 +30,9 @@ import { Parser } from "@gmloop/parser";
 import { Transpiler } from "@gmloop/transpiler";
 import { Command, Option } from "commander";
 
-import { createMinimumValueValidator, createPortValidator } from "../cli-core/command-parsing.js";
+import { createMinimumValueValidator, portValidator } from "../cli-core/command-parsing.js";
+import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { formatCliError } from "../cli-core/errors.js";
-import { normalizeExtensions } from "../cli-core/extension-normalizer.js";
 import { DEFAULT_GM_TEMP_ROOT, prepareHotReloadInjection } from "../modules/hot-reload/inject-runtime.js";
 import {
     type RuntimeStaticServerHandle,
@@ -60,6 +68,7 @@ import {
 } from "../modules/transpilation/runtime-identifiers.js";
 import { extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
+import { normalizeExtensions } from "../workflow/extension-normalizer.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
@@ -69,7 +78,7 @@ import {
     DEFAULT_WATCH_POLLING_INTERVAL_MS
 } from "./watch-constants.js";
 
-const { debounce, getErrorMessage, getLineBreakCount, isFsErrorCode } = Core;
+const { debounce, getErrorMessage, getLineBreakCount, isErrorWithCode } = Core;
 
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
 
@@ -283,6 +292,7 @@ interface ScriptNameRegistrationContext {
  * Runtime state required when removing cached data for deleted files.
  */
 interface FileRemovalCleanupContext {
+    scriptNames: Set<string>;
     dependencyTracker: DependencyTracker;
     fileSnapshots: Map<string, number>;
     fileContentHashes: Map<string, string>;
@@ -302,6 +312,8 @@ interface FileChangeOptions extends LoggingConfig {
     runtimeContext?: RuntimeContext;
     fileStats?: Stats | null;
     abortSignal?: AbortSignal;
+    /** Wall-clock timestamp (Date.now()) when the filesystem change event was first detected. */
+    fileChangeDetectedAt?: number;
 }
 
 /**
@@ -498,7 +510,43 @@ export function resolveUnknownScanConcurrency(configuredMaximum: number): number
  * @returns {number} Safe retranspile concurrency value (minimum 1).
  */
 export function resolveDependentRetranspileConcurrency(configuredMaximum: number): number {
-    return Math.max(1, Math.trunc(configuredMaximum));
+    return resolveUnknownScanConcurrency(configuredMaximum);
+}
+
+/**
+ * Computes average and 95th-percentile hot-reload latency from a metrics window.
+ *
+ * Only patches that have a recorded `hotReloadLatencyMs` value (i.e., those
+ * triggered by a live file-change event rather than the initial scan) contribute
+ * to the result. Returns `undefined` for both values when no latency data is available.
+ *
+ * @param metrics - The bounded metrics window from the runtime context.
+ * @returns Object with `avg` and `p95` in milliseconds, or `undefined` when unavailable.
+ */
+export function computeHotReloadLatencyStats(
+    metrics: ReadonlyArray<{ hotReloadLatencyMs?: number }>
+): { avg: number; p95: number } | undefined {
+    const latencies: Array<number> = [];
+
+    for (const metric of metrics) {
+        if (typeof metric.hotReloadLatencyMs === "number") {
+            latencies.push(metric.hotReloadLatencyMs);
+        }
+    }
+
+    if (latencies.length === 0) {
+        return undefined;
+    }
+
+    const sum = latencies.reduce((acc, val) => acc + val, 0);
+    const avg = sum / latencies.length;
+
+    // Sort a copy for p95 computation to avoid mutating the input array.
+    const sorted = latencies.slice().sort((a, b) => a - b);
+    const p95Index = Math.max(0, Math.ceil(sorted.length * 0.95) - 1);
+    const p95 = sorted.at(p95Index) ?? sorted.at(-1) ?? 0;
+
+    return { avg, p95 };
 }
 
 /**
@@ -508,6 +556,8 @@ export function resolveDependentRetranspileConcurrency(configuredMaximum: number
  */
 export function createWatchCommand(): Command {
     const command = new Command("watch");
+
+    applyStandardCommandOptions(command);
 
     command
         .description("Watch GML source files and coordinate hot-reload pipeline actions")
@@ -566,7 +616,7 @@ export function createWatchCommand(): Command {
         )
         .addOption(
             new Option("--websocket-port <port>", "WebSocket server port for streaming patches")
-                .argParser(createPortValidator())
+                .argParser(portValidator)
                 .default(17_890)
         )
         .addOption(
@@ -575,7 +625,7 @@ export function createWatchCommand(): Command {
         .option("--no-websocket-server", "Disable starting the WebSocket server for patch streaming.")
         .addOption(
             new Option("--status-port <port>", "HTTP status server port for querying watch command status")
-                .argParser(createPortValidator())
+                .argParser(portValidator)
                 .default(17_891)
         )
         .addOption(
@@ -714,7 +764,14 @@ async function performInitialScan(
         }
     }
 
-    await scanDirectory(dirPath);
+    // When the startup file cache is populated, every tracked file was already
+    // discovered and read during collectScriptNames. Process them directly from the
+    // cache keys, eliminating a second round of readdir calls across the project tree.
+    // Files that failed to read or parse in collectScriptNames are not in the cache;
+    // they will be processed on their first watch event instead.
+    await (fileDataCache !== undefined && fileDataCache.size > 0
+        ? Core.runInParallel(Array.from(fileDataCache.keys()), processFile)
+        : scanDirectory(dirPath));
 
     const stats = runtimeContext.dependencyTracker.getStatistics();
     if (!quiet) {
@@ -950,8 +1007,10 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                         console.log(`Patch streaming client connected: ${clientId}`);
                     }
                 },
-                prepareInitialMessages: () =>
-                    orderPatchesForReplay(Array.from(runtimeContext.lastSuccessfulPatches.values())),
+                prepareInitialMessages: () => {
+                    removeDeletedCachedPatchSources(runtimeContext, verbose, quiet);
+                    return orderPatchesForReplay(Array.from(runtimeContext.lastSuccessfulPatches.values()));
+                },
                 onClientDisconnect: (clientId) => {
                     if (verbose) {
                         console.log(`Patch streaming client disconnected: ${clientId}`);
@@ -992,27 +1051,33 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
             statusServerController = await startStatusServer({
                 host: statusHost,
                 port: statusPort,
-                getSnapshot: () => ({
-                    uptime: Date.now() - runtimeContext.startTime,
-                    patchCount: runtimeContext.metrics.length,
-                    totalPatchCount: runtimeContext.totalPatchCount,
-                    patchHistorySize: runtimeContext.patches.length,
-                    maxPatchHistory: runtimeContext.maxPatchHistory,
-                    errorCount: runtimeContext.errors.length,
-                    recentPatches: runtimeContext.metrics.slice(-10).map((m) => ({
-                        id: m.patchId,
-                        timestamp: m.timestamp,
-                        durationMs: m.durationMs,
-                        filePath: path.relative(normalizedPath, m.filePath)
-                    })),
-                    recentErrors: runtimeContext.errors.slice(-10).map((e) => ({
-                        timestamp: e.timestamp,
-                        filePath: path.relative(normalizedPath, e.filePath),
-                        error: e.error
-                    })),
-                    websocketClients: runtimeContext.websocketServer?.getClientCount() ?? 0,
-                    scanComplete: runtimeContext.scanComplete
-                })
+                getSnapshot: () => {
+                    const latencyStats = computeHotReloadLatencyStats(runtimeContext.metrics);
+                    return {
+                        uptime: Date.now() - runtimeContext.startTime,
+                        patchCount: runtimeContext.metrics.length,
+                        totalPatchCount: runtimeContext.totalPatchCount,
+                        patchHistorySize: runtimeContext.patches.length,
+                        maxPatchHistory: runtimeContext.maxPatchHistory,
+                        errorCount: runtimeContext.errors.length,
+                        recentPatches: runtimeContext.metrics.slice(-10).map((m) => ({
+                            id: m.patchId,
+                            timestamp: m.timestamp,
+                            durationMs: m.durationMs,
+                            filePath: path.relative(normalizedPath, m.filePath),
+                            hotReloadLatencyMs: m.hotReloadLatencyMs
+                        })),
+                        recentErrors: runtimeContext.errors.slice(-10).map((e) => ({
+                            timestamp: e.timestamp,
+                            filePath: path.relative(normalizedPath, e.filePath),
+                            error: e.error
+                        })),
+                        websocketClients: runtimeContext.websocketServer?.getClientCount() ?? 0,
+                        scanComplete: runtimeContext.scanComplete,
+                        avgHotReloadLatencyMs: latencyStats?.avg,
+                        p95HotReloadLatencyMs: latencyStats?.p95
+                    };
+                }
             });
 
             runtimeContext.statusServer = statusServerController;
@@ -1259,7 +1324,8 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                             verbose,
                             quiet,
                             runtimeContext,
-                            abortSignal
+                            abortSignal,
+                            fileChangeDetectedAt: Date.now()
                         }).catch((error) => {
                             const message = getErrorMessage(error, {
                                 fallback: "Unknown file processing error"
@@ -1285,7 +1351,8 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                             verbose,
                             quiet,
                             runtimeContext,
-                            abortSignal
+                            abortSignal,
+                            fileChangeDetectedAt: Date.now()
                         });
                     }
                 }
@@ -1340,7 +1407,14 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 async function handleFileChange(
     filePath: string,
     eventType: string,
-    { verbose = false, quiet = false, runtimeContext, fileStats, abortSignal }: FileChangeOptions = {}
+    {
+        verbose = false,
+        quiet = false,
+        runtimeContext,
+        fileStats,
+        abortSignal,
+        fileChangeDetectedAt
+    }: FileChangeOptions = {}
 ): Promise<void> {
     if (verbose && runtimeContext?.root && !runtimeContext.noticeLogged) {
         console.log(`Runtime target: ${runtimeContext.root}`);
@@ -1355,23 +1429,27 @@ async function handleFileChange(
     let resolvedFileStats: Stats | null = fileStats ?? null;
 
     if (eventType === "rename") {
-        try {
-            resolvedFileStats = await stat(filePath);
+        if (resolvedFileStats) {
             shouldTranspile = true;
             if (verbose && !quiet) {
                 console.log(`  ↳ File exists (created or renamed)`);
             }
-        } catch {
-            if (verbose && !quiet) {
-                console.log(`  ↳ File removed (deleted or renamed away)`);
+        } else {
+            try {
+                resolvedFileStats = await stat(filePath);
+                shouldTranspile = true;
+                if (verbose && !quiet) {
+                    console.log(`  ↳ File exists (created or renamed)`);
+                }
+            } catch {
+                if (verbose && !quiet) {
+                    console.log(`  ↳ File removed (deleted or renamed away)`);
+                }
+                if (runtimeContext) {
+                    cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+                }
+                return;
             }
-            if (runtimeContext?.scriptNames) {
-                unregisterScriptName(filePath, runtimeContext.scriptNames);
-            }
-            if (runtimeContext) {
-                cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
-            }
-            return;
         }
     }
 
@@ -1450,13 +1528,13 @@ async function handleFileChange(
             // Transpile the changed file
             const result = transpileFile(runtimeContext, filePath, content, lines, {
                 verbose,
-                quiet
+                quiet,
+                fileChangeDetectedAt
             });
 
             await processTranspileResult(runtimeContext, filePath, result, verbose, quiet);
         } catch (error) {
-            if (runtimeContext && isFsErrorCode(error, "ENOENT")) {
-                unregisterScriptName(filePath, runtimeContext.scriptNames);
+            if (runtimeContext && isErrorWithCode(error, "ENOENT")) {
                 cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
                 if (verbose && !quiet) {
                     console.log("  ↳ File missing during read (deleted before processing)");
@@ -1840,6 +1918,7 @@ function cleanupRemovedFile(
     verbose: boolean,
     quiet: boolean
 ): void {
+    unregisterScriptName(filePath, runtimeContext.scriptNames);
     runtimeContext.dependencyTracker.removeFile(filePath);
     runtimeContext.fileSnapshots.delete(filePath);
     runtimeContext.fileContentHashes.delete(filePath);
@@ -1856,6 +1935,27 @@ function cleanupRemovedFile(
         const patchMessage =
             removedPatchCount > 0 ? `cleared ${removedPatchCount} cached patch(es)` : "no cached patch found";
         console.log(`  ↳ Removed dependency tracking (${patchMessage})`);
+    }
+}
+
+function removeDeletedCachedPatchSources(
+    runtimeContext: FileRemovalCleanupContext,
+    verbose: boolean,
+    quiet: boolean
+): void {
+    const deletedSourcePaths = new Set<string>();
+
+    for (const cachedPatch of runtimeContext.lastSuccessfulPatches.values()) {
+        const metadata = Core.isObjectLike(cachedPatch.metadata) ? cachedPatch.metadata : null;
+        const sourcePath = Core.isNonEmptyString(metadata?.sourcePath) ? metadata.sourcePath : null;
+
+        if (sourcePath !== null && !existsSync(sourcePath)) {
+            deletedSourcePaths.add(sourcePath);
+        }
+    }
+
+    for (const sourcePath of deletedSourcePaths) {
+        cleanupRemovedFile(runtimeContext, sourcePath, verbose, quiet);
     }
 }
 

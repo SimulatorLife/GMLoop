@@ -7,6 +7,7 @@ import { convertToESTree } from "./ast/estree-converter.js";
 import GameMakerASTBuilder from "./ast/gml-ast-builder.js";
 import createGameMakerParseErrorListener, { createGameMakerLexerErrorListener } from "./ast/gml-syntax-error.js";
 import { createHiddenNodeProcessor } from "./ast/hidden-node-processor.js";
+import { assertNestedTernaryConsequentsAreParenthesized } from "./ast/ternary-expression-grouping-validation.js";
 import { installRecognitionExceptionLikeGuard } from "./runtime/index.js";
 import { defaultParserOptions, type ParserOptions } from "./types/index.js";
 
@@ -51,6 +52,37 @@ function getPredictionMode(modeName: "SLL" | "LL"): unknown {
     }
 
     return mode;
+}
+
+function throwNormalizedParserError(error: unknown): never {
+    if (!error) {
+        throw new Error("Unknown syntax error while parsing GML source.");
+    }
+
+    if (Core.isErrorLike(error)) {
+        throw error;
+    }
+
+    throw new Error(Core.getErrorMessageOrFallback(error));
+}
+
+function parseProgramWithLlPredictionMode(sourceText: string): unknown {
+    try {
+        const llChars = new antlr4.InputStream(sourceText);
+        const llLexer = new GameMakerLanguageLexer(llChars);
+        llLexer.removeErrorListeners();
+        llLexer.addErrorListener(createGameMakerLexerErrorListener());
+        llLexer.strictMode = false;
+
+        const llTokens = new antlr4.CommonTokenStream(llLexer);
+        const llParser = new GameMakerLanguageParser(llTokens);
+        llParser.removeErrorListeners();
+        llParser.addErrorListener(createGameMakerParseErrorListener());
+        llParser._interp.predictionMode = getPredictionMode("LL");
+        return llParser.program();
+    } catch (error) {
+        throwNormalizedParserError(error);
+    }
 }
 
 const MAX_SOURCE_LENGTH_FOR_SLL_PARSING = 8000;
@@ -241,55 +273,13 @@ export class GMLParser {
                 tree = parser.program();
             } catch (error) {
                 try {
-                    const llChars = new antlr4.InputStream(this.text);
-                    const llLexer = new GameMakerLanguageLexer(llChars);
-                    llLexer.removeErrorListeners();
-                    llLexer.addErrorListener(createGameMakerLexerErrorListener());
-                    llLexer.strictMode = false;
-
-                    const llTokens = new antlr4.CommonTokenStream(llLexer);
-                    const llParser = new GameMakerLanguageParser(llTokens);
-                    llParser.removeErrorListeners();
-                    llParser.addErrorListener(createGameMakerParseErrorListener());
-                    llParser._interp.predictionMode = getPredictionMode("LL");
-                    tree = llParser.program();
+                    tree = parseProgramWithLlPredictionMode(this.text);
                 } catch {
-                    if (!error) {
-                        throw new Error("Unknown syntax error while parsing GML source.");
-                    }
-
-                    if (Core.isErrorLike(error)) {
-                        throw error;
-                    }
-
-                    throw new Error(String(error));
+                    throwNormalizedParserError(error);
                 }
             }
         } else {
-            try {
-                const llChars = new antlr4.InputStream(this.text);
-                const llLexer = new GameMakerLanguageLexer(llChars);
-                llLexer.removeErrorListeners();
-                llLexer.addErrorListener(createGameMakerLexerErrorListener());
-                llLexer.strictMode = false;
-
-                const llTokens = new antlr4.CommonTokenStream(llLexer);
-                const llParser = new GameMakerLanguageParser(llTokens);
-                llParser.removeErrorListeners();
-                llParser.addErrorListener(createGameMakerParseErrorListener());
-                llParser._interp.predictionMode = getPredictionMode("LL");
-                tree = llParser.program();
-            } catch (error) {
-                if (!error) {
-                    throw new Error("Unknown syntax error while parsing GML source.");
-                }
-
-                if (Core.isErrorLike(error)) {
-                    throw error;
-                }
-
-                throw new Error(String(error));
-            }
+            tree = parseProgramWithLlPredictionMode(this.text);
         }
 
         if (this.options.getComments) {
@@ -313,6 +303,7 @@ export class GMLParser {
         const builder = new GameMakerASTBuilder(this.options, this.whitespaces);
         let astTree;
         astTree = builder.build(tree);
+        assertNestedTernaryConsequentsAreParenthesized(this.text, astTree);
 
         if (this.options.getComments) {
             astTree.comments = this.comments;

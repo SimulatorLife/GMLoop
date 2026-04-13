@@ -49,7 +49,12 @@ import { describe, it } from "node:test";
 
 import { runWatchCommand } from "../src/commands/watch.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
-import { createMockWatchFactory } from "./test-helpers/watch-fixtures.js";
+import {
+    createMockWatchFactory,
+    createRetryTimerCounterState,
+    isolateSigtermListeners,
+    withTrackedRetrySetTimeout
+} from "./test-helpers/watch-fixtures.js";
 
 /**
  * Retry delay constant from `delayFileReadRetry` (matches
@@ -80,15 +85,13 @@ void describe("Watch unknown-scan abort signal (resource-leak regression)", () =
         };
         const watchFactory = createMockWatchFactory(listenerCapture);
 
-        let retryTimersCreatedAfterCleanup = 0;
-        let cleanupPhaseActive = false;
+        const retryTimerCounterState = createRetryTimerCounterState();
 
-        const originalSetTimeout = globalThis.setTimeout;
+        const baseSetTimeout = globalThis.setTimeout;
 
         // Isolate SIGTERM listeners so that emitting SIGTERM only fires the watch
         // command's own handler and does not trigger the test runner's shutdown logic.
-        const savedSigTermListeners = process.rawListeners("SIGTERM").slice();
-        process.removeAllListeners("SIGTERM");
+        const isolatedSigtermListeners = isolateSigtermListeners();
 
         try {
             await withTemporaryProperty(
@@ -99,77 +102,63 @@ void describe("Watch unknown-scan abort signal (resource-leak regression)", () =
                     // intentional no-op
                 }) as typeof process.exit,
                 () =>
-                    withTemporaryProperty(
-                        globalThis,
-                        "setTimeout",
-                        // Intercept setTimeout to detect retry timers spawned post-cleanup.
-                        ((handler: (...args: Array<unknown>) => void, timeout?: number, ...args: Array<unknown>) => {
-                            const id = originalSetTimeout(handler, timeout, ...args);
-                            if (cleanupPhaseActive && timeout === TRANSIENT_RETRY_DELAY_MS) {
-                                retryTimersCreatedAfterCleanup += 1;
-                            }
-                            return id;
-                        }) as typeof setTimeout,
-                        async () => {
-                            const watchCmdPromise = runWatchCommand(root, {
-                                extensions: [".gml"],
-                                quiet: true,
-                                verbose: false,
-                                runtimeServer: false,
-                                websocketServer: false,
-                                statusServer: false,
-                                watchFactory,
-                                // debounceDelay=0 so the unknown event calls
-                                // scheduleUnknownFileChanges directly (no debounce to
-                                // cancel). This is the path that previously leaked.
-                                debounceDelay: 0
-                            });
+                    withTrackedRetrySetTimeout(retryTimerCounterState, TRANSIENT_RETRY_DELAY_MS, async () => {
+                        const watchCmdPromise = runWatchCommand(root, {
+                            extensions: [".gml"],
+                            quiet: true,
+                            verbose: false,
+                            runtimeServer: false,
+                            websocketServer: false,
+                            statusServer: false,
+                            watchFactory,
+                            // debounceDelay=0 so the unknown event calls
+                            // scheduleUnknownFileChanges directly (no debounce to
+                            // cancel). This is the path that previously leaked.
+                            debounceDelay: 0
+                        });
 
-                            // Wait for the watcher to initialise and for the initial scan
-                            // of the empty directory to complete. The directory is empty
-                            // so the scan finishes nearly instantly; 100 ms is a
-                            // conservative buffer that keeps the test fast on CI.
-                            await new Promise<void>((resolve) => {
-                                originalSetTimeout(resolve, 100);
-                            });
+                        // Wait for the watcher to initialise and for the initial scan
+                        // of the empty directory to complete. The directory is empty
+                        // so the scan finishes nearly instantly; 100 ms is a
+                        // conservative buffer that keeps the test fast on CI.
+                        await new Promise<void>((resolve) => {
+                            baseSetTimeout(resolve, 100);
+                        });
 
-                            // Create a transiently-empty .gml file AFTER the initial scan
-                            // so that runtimeContext.fileSnapshots has no entry for it.
-                            // This ensures the mtime-deduplication guard in handleFileChange
-                            // does not short-circuit the read path. The file is empty so
-                            // readSourceFileWithTransientEmptyRetry will attempt a retry.
-                            const gmlPath = path.join(root, "transient.gml");
-                            await writeFile(gmlPath, "", "utf8");
+                        // Create a transiently-empty .gml file AFTER the initial scan
+                        // so that runtimeContext.fileSnapshots has no entry for it.
+                        // This ensures the mtime-deduplication guard in handleFileChange
+                        // does not short-circuit the read path. The file is empty so
+                        // readSourceFileWithTransientEmptyRetry will attempt a retry.
+                        const gmlPath = path.join(root, "transient.gml");
+                        await writeFile(gmlPath, "", "utf8");
 
-                            // Fire a synthetic unknown-filename event (filename === null /
-                            // undefined). In debounceDelay=0 mode the watcher callback calls
-                            // `void triggerUnknown()` synchronously, which starts the async
-                            // scheduleUnknownFileChanges chain. The async body (readdir, stat,
-                            // readFile) is queued and has NOT run yet when we proceed.
-                            listenerCapture.listener?.("change", undefined as unknown as string);
+                        // Fire a synthetic unknown-filename event (filename === null /
+                        // undefined). In debounceDelay=0 mode the watcher callback calls
+                        // `void triggerUnknown()` synchronously, which starts the async
+                        // scheduleUnknownFileChanges chain. The async body (readdir, stat,
+                        // readFile) is queued and has NOT run yet when we proceed.
+                        listenerCapture.listener?.("change", undefined as unknown as string);
 
-                            // Activate timer tracking and immediately trigger cleanup.
-                            // Because the async scan body hasn't run yet, the abort from
-                            // internalAbortController fires before delayFileReadRetry is called.
-                            cleanupPhaseActive = true;
-                            process.emit("SIGTERM");
+                        // Activate timer tracking and immediately trigger cleanup.
+                        // Because the async scan body hasn't run yet, the abort from
+                        // internalAbortController fires before delayFileReadRetry is called.
+                        retryTimerCounterState.cleanupPhaseActive = true;
+                        process.emit("SIGTERM");
 
-                            // Await the watch command completing its cleanup.
-                            await watchCmdPromise;
+                        // Await the watch command completing its cleanup.
+                        await watchCmdPromise;
 
-                            // Allow the async scan (and any leaked work) to settle before
-                            // reading the counter.
-                            await new Promise<void>((resolve) => {
-                                originalSetTimeout(resolve, 200);
-                            });
-                        }
-                    )
+                        // Allow the async scan (and any leaked work) to settle before
+                        // reading the counter.
+                        await new Promise<void>((resolve) => {
+                            baseSetTimeout(resolve, 200);
+                        });
+                    })
             );
         } finally {
             // Restore the test runner's SIGTERM listeners unconditionally.
-            for (const listener of savedSigTermListeners) {
-                process.on("SIGTERM", listener as NodeJS.SignalsListener);
-            }
+            isolatedSigtermListeners.restore();
             await rm(root, { recursive: true, force: true });
         }
 
@@ -181,7 +170,7 @@ void describe("Watch unknown-scan abort signal (resource-leak regression)", () =
         // is read, delayFileReadRetry(25, undefined) is called, and a timer is created
         // post-cleanup — count > 0.
         assert.equal(
-            retryTimersCreatedAfterCleanup,
+            retryTimerCounterState.retryTimersCreatedAfterCleanup,
             0,
             "the internal AbortController must be aborted before the unknown-scan runs so " +
                 "delayFileReadRetry receives an already-aborted signal and skips the retry timer; " +

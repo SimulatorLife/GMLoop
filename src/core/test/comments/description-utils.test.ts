@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Core, type MutableDocCommentLines } from "../../src/index.js";
+import { Core, type MutableDocCommentLines } from "../../index.js";
 
 void test("collectDescriptionContinuationText normalizes multiline description payloads with consumed-line metadata", () => {
     const docLines = [

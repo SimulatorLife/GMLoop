@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { tryFoldConstantExpression, tryFoldConstantUnaryExpression } from "../src/emitter/constant-folding.js";
+import {
+    tryFoldConstantExpression,
+    tryFoldConstantTernaryExpression,
+    tryFoldConstantUnaryExpression
+} from "../src/emitter/constant-folding.js";
 
 // Unit tests for the constant folding function itself
 // These tests create AST nodes directly to test the folding logic
@@ -160,6 +164,55 @@ void test("constant folding: string inequality", () => {
     };
     const result = tryFoldConstantExpression(ast);
     assert.strictEqual(result, true, "Should fold string inequality checks");
+});
+
+void test("constant folding: parser-quoted string concatenation", () => {
+    // The GML parser stores string literal values WITH surrounding double quotes.
+    // This test verifies that constant folding correctly strips parser quotes
+    // before concatenating, producing "hello world" instead of '"hello"" world"'.
+    const ast = {
+        type: "BinaryExpression" as const,
+        left: { type: "Literal" as const, value: '"hello"' },
+        right: { type: "Literal" as const, value: '" world"' },
+        operator: "+"
+    };
+    const result = tryFoldConstantExpression(ast);
+    assert.strictEqual(result, "hello world", "Should strip parser quotes before concatenating strings");
+});
+
+void test("constant folding: parser-quoted string equality", () => {
+    const ast = {
+        type: "BinaryExpression" as const,
+        left: { type: "Literal" as const, value: '"player"' },
+        right: { type: "Literal" as const, value: '"player"' },
+        operator: "=="
+    };
+    const result = tryFoldConstantExpression(ast);
+    assert.strictEqual(result, true, "Should strip parser quotes before comparing strings");
+});
+
+void test("constant folding: parser-quoted string inequality", () => {
+    const ast = {
+        type: "BinaryExpression" as const,
+        left: { type: "Literal" as const, value: '"hello"' },
+        right: { type: "Literal" as const, value: '"world"' },
+        operator: "!="
+    };
+    const result = tryFoldConstantExpression(ast);
+    assert.strictEqual(result, true, "Should strip parser quotes for string inequality");
+});
+
+void test("constant folding: mixed parser-quoted and unquoted string concatenation", () => {
+    // When one operand has parser quotes and the other doesn't (e.g., from a
+    // hand-crafted AST), both should be handled gracefully.
+    const ast = {
+        type: "BinaryExpression" as const,
+        left: { type: "Literal" as const, value: '"hello"' },
+        right: { type: "Literal" as const, value: " suffix" },
+        operator: "+"
+    };
+    const result = tryFoldConstantExpression(ast);
+    assert.strictEqual(result, "hello suffix", "Should strip quotes from parser-quoted side and keep unquoted side");
 });
 
 void test("constant folding: boolean AND", () => {
@@ -592,4 +645,37 @@ void test("unary constant folding: returns null for type mismatch (number with l
     };
     const result = tryFoldConstantUnaryExpression(ast);
     assert.strictEqual(result, null, "Should not fold when operator doesn't match operand type");
+});
+
+void test("ternary constant folding: selects consequent for true literal condition", () => {
+    const ast = {
+        type: "TernaryExpression" as const,
+        test: { type: "Literal" as const, value: true },
+        consequent: { type: "Literal" as const, value: 1 },
+        alternate: { type: "Literal" as const, value: 2 }
+    };
+    const result = tryFoldConstantTernaryExpression(ast);
+    assert.deepStrictEqual(result, ast.consequent);
+});
+
+void test("ternary constant folding: selects alternate for false string literal condition", () => {
+    const ast = {
+        type: "TernaryExpression" as const,
+        test: { type: "Literal" as const, value: "false" },
+        consequent: { type: "Literal" as const, value: 1 },
+        alternate: { type: "Literal" as const, value: 2 }
+    };
+    const result = tryFoldConstantTernaryExpression(ast);
+    assert.deepStrictEqual(result, ast.alternate);
+});
+
+void test("ternary constant folding: does not fold non-boolean literal conditions", () => {
+    const ast = {
+        type: "TernaryExpression" as const,
+        test: { type: "Literal" as const, value: 1 },
+        consequent: { type: "Literal" as const, value: 1 },
+        alternate: { type: "Literal" as const, value: 2 }
+    };
+    const result = tryFoldConstantTernaryExpression(ast);
+    assert.strictEqual(result, null);
 });

@@ -33,7 +33,7 @@ import type {
     RuntimeWrapperState,
     TrySafeApplyResult
 } from "./types.js";
-import { evaluateUndoStackTrimPolicy } from "./undo-stack-policy.js";
+import { trimArrayToMaxSize } from "./undo-stack-policy.js";
 
 const UNKNOWN_ERROR_MESSAGE = "Unknown error";
 const DEFAULT_MAX_UNDO_STACK_SIZE = 50;
@@ -145,25 +145,80 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
     }
 
     function trimUndoStack(): void {
-        const decision = evaluateUndoStackTrimPolicy({
-            maxSize: state.options.maxUndoStackSize,
-            currentSize: state.undoStack.length
-        });
-
-        if (decision.shouldTrim) {
-            state.undoStack.splice(0, decision.trimCount);
-        }
+        trimArrayToMaxSize(state.undoStack, state.options.maxUndoStackSize);
     }
 
     function trimErrorHistory(): void {
-        const decision = evaluateUndoStackTrimPolicy({
-            maxSize: state.options.maxErrorHistorySize,
-            currentSize: state.errorHistory.length
-        });
+        trimArrayToMaxSize(state.errorHistory, state.options.maxErrorHistorySize);
+    }
 
-        if (decision.shouldTrim) {
-            state.errorHistory.splice(0, decision.trimCount);
-        }
+    /**
+     * A point-in-time snapshot of the mutable batch-relevant state that is used
+     * to atomically roll back all side-effects of a failed batch application.
+     */
+    interface BatchCheckpoint {
+        /** Full registry state captured before the batch started. */
+        readonly registry: RuntimeWrapperState["registry"];
+        /** `undoStack.length` at checkpoint time — used to truncate the stack on rollback. */
+        readonly undoStackSize: number;
+        /** `patchHistory.length` at checkpoint time — used to truncate history on rollback. */
+        readonly historySize: number;
+    }
+
+    /**
+     * Snapshots the mutable collections that must be restored if a batch fails.
+     * Callers pair this with {@link rollbackToBatchCheckpoint} to implement atomic semantics.
+     */
+    function captureBatchCheckpoint(): BatchCheckpoint {
+        return {
+            registry: { ...state.registry },
+            undoStackSize: state.undoStack.length,
+            historySize: state.patchHistory.length
+        };
+    }
+
+    /**
+     * Restores the registry, undo stack, and patch history to the state captured
+     * by {@link captureBatchCheckpoint}, effectively discarding every change made
+     * during the failed batch.
+     */
+    function rollbackToBatchCheckpoint(checkpoint: BatchCheckpoint): void {
+        state.registry = checkpoint.registry;
+        state.undoStack.length = checkpoint.undoStackSize;
+        state.patchHistory.length = checkpoint.historySize;
+    }
+
+    /**
+     * Appends a top-level "batch applied" entry to the patch history.
+     * Individual per-patch entries are already written by {@link recordAppliedPatch};
+     * this single summary entry lets callers query the batch as a unit.
+     */
+    function recordBatchAppliedHistoryEntry(
+        appliedCount: number,
+        wallClockStartTime: number,
+        durationMs: number
+    ): void {
+        state.patchHistory.push({
+            patch: { kind: "script", id: `batch:${appliedCount}_patches` },
+            version: state.registry.version,
+            timestamp: wallClockStartTime,
+            action: "apply",
+            durationMs
+        });
+    }
+
+    /**
+     * Appends a "batch rolled back" entry to the patch history, recording which
+     * patch index failed and why.
+     */
+    function recordBatchRollbackHistoryEntry(appliedCount: number, totalCount: number, errorMessage: string): void {
+        state.patchHistory.push({
+            patch: { kind: "script", id: `batch:${appliedCount}_of_${totalCount}` },
+            version: state.registry.version,
+            timestamp: Date.now(),
+            action: "rollback",
+            error: errorMessage
+        });
     }
 
     /**
@@ -310,13 +365,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
         }
         const validatedPatches = validationResult;
 
-        const batchSnapshot = {
-            version: state.registry.version,
-            registry: { ...state.registry },
-            undoStackSize: state.undoStack.length,
-            historySize: state.patchHistory.length
-        };
-
+        const batchCheckpoint = captureBatchCheckpoint();
         const startTime = getHighResolutionTime();
         const wallClockStartTime = Date.now();
         let appliedCount = 0;
@@ -335,16 +384,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
             }
 
             const totalDuration = getHighResolutionTime() - startTime;
-            state.patchHistory.push({
-                patch: {
-                    kind: "script",
-                    id: `batch:${appliedCount}_patches`
-                },
-                version: state.registry.version,
-                timestamp: wallClockStartTime,
-                action: "apply",
-                durationMs: totalDuration
-            });
+            recordBatchAppliedHistoryEntry(appliedCount, wallClockStartTime, totalDuration);
 
             return {
                 success: true,
@@ -358,22 +398,10 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
                 recordError(failedPatch, "application", error);
             }
 
-            state.registry = batchSnapshot.registry;
-            state.undoStack.length = batchSnapshot.undoStackSize;
-            state.patchHistory.length = batchSnapshot.historySize;
+            rollbackToBatchCheckpoint(batchCheckpoint);
 
             const message = getRuntimeErrorMessage(error);
-
-            state.patchHistory.push({
-                patch: {
-                    kind: "script",
-                    id: `batch:${appliedCount}_of_${validatedPatches.length}`
-                },
-                version: state.registry.version,
-                timestamp: Date.now(),
-                action: "rollback",
-                error: message
-            });
+            recordBatchRollbackHistoryEntry(appliedCount, validatedPatches.length, message);
 
             return {
                 success: false,

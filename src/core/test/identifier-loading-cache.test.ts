@@ -117,6 +117,30 @@ void test("cache persists across metadata loader changes", () => {
     cleanup();
 });
 
+void test("throwing loader is caught and returns null metadata gracefully", () => {
+    setReservedIdentifierMetadataLoader(() => {
+        throw new Error("simulated I/O failure");
+    });
+
+    // The inlined try/catch in loadIdentifierMetadata should swallow the error
+    const names = loadReservedIdentifierNames();
+    assert.strictEqual(names.size, 0, "Throwing loader should produce an empty reserved set");
+});
+
+void test("loader returning non-object is treated as null metadata", () => {
+    setReservedIdentifierMetadataLoader(() => "not-an-object");
+
+    const names = loadReservedIdentifierNames();
+    assert.strictEqual(names.size, 0, "Non-object return should produce an empty reserved set");
+});
+
+void test("loader returning null is treated as null metadata", () => {
+    setReservedIdentifierMetadataLoader(() => null);
+
+    const names = loadReservedIdentifierNames();
+    assert.strictEqual(names.size, 0, "Null return should produce an empty reserved set");
+});
+
 void test("identifier metadata loader allocations are stable across repeated reserved-name cache misses", () => {
     let loaderInvocations = 0;
 

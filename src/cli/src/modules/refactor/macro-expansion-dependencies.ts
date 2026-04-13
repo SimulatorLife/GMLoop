@@ -5,6 +5,8 @@ import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 import { Semantic } from "@gmloop/semantic";
 
+import { readSemanticLocationIndex } from "./semantic-index-helpers.js";
+
 type MacroIdentifierEntry = {
     declarations?: Array<Record<string, unknown>>;
 };
@@ -230,26 +232,13 @@ function collectMacroReferenceNames(tokens: ReadonlyArray<unknown>): Set<string>
     }
 }
 
-function readLocationIndex(location: unknown): number | null {
-    if (typeof location === "number") {
-        return location;
-    }
-
-    if (!Core.isObjectLike(location)) {
-        return null;
-    }
-
-    const typedLocation = location as { index?: unknown };
-    return typeof typedLocation.index === "number" ? typedLocation.index : null;
-}
-
 function readMacroBodyStartIndex(statement: {
     keywordRange?: unknown;
     name?: unknown;
     start?: unknown;
 }): number | null {
     const macroNameNode = Core.isIdentifierNode(statement.name) ? (statement.name as { end?: unknown }) : null;
-    const macroNameEnd = readLocationIndex(macroNameNode?.end);
+    const macroNameEnd = readSemanticLocationIndex(macroNameNode?.end);
     if (typeof macroNameEnd === "number") {
         return macroNameEnd + 1;
     }
@@ -261,7 +250,7 @@ function readMacroBodyStartIndex(statement: {
         return keywordRange.end;
     }
 
-    return readLocationIndex(statement.start);
+    return readSemanticLocationIndex(statement.start);
 }
 
 function collectMacroDeclarationReferenceRecordsFromFile(
@@ -308,7 +297,7 @@ function collectMacroDeclarationReferenceRecordsFromFile(
         }
 
         const bodyStart = readMacroBodyStartIndex(macroStatement);
-        const statementEnd = readLocationIndex(macroStatement.end);
+        const statementEnd = readSemanticLocationIndex(macroStatement.end);
         const bodyEnd = typeof statementEnd === "number" ? statementEnd + 1 : sourceText.length;
         if (typeof bodyStart !== "number" || bodyEnd <= bodyStart) {
             records.push({

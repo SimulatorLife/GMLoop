@@ -1,0 +1,32 @@
+{
+  "name": "@gmloop/mcp",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "gmloop-mcp": "./dist/src/main.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build:types": "tsc -b tsconfig.json",
+    "clean:types": "rm -rf dist",
+    "test": "pnpm run build:types && node --test dist/test/*.test.js"
+  },
+  "dependencies": {
+    "@gmloop/cli": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "packageManager": "pnpm@10.28.0"
+}

@@ -89,6 +89,28 @@ void test("GmlToJsEmitter folds string equality literals", () => {
     assert.ok(result.includes("isMatch = true"), "Should emit folded boolean constant for string equality");
 });
 
+void test("GmlToJsEmitter folds parser-produced string concatenation literals", () => {
+    const source = 'var msg = "hello" + " world"';
+    const parser = new Parser.GMLParser(source, {});
+    const ast = parser.parse();
+    const result = Transpiler.emitJavaScript(ast);
+    assert.strictEqual(result.trim(), 'var msg = "hello world";', "Should fold string concat at compile time");
+});
+
+void test("GmlToJsEmitter folds parser-produced multi-segment string concatenation", () => {
+    // Chained concat "a" + "b" + "c" is parsed as left-associative: ("a" + "b") + "c".
+    // The inner pair folds to "ab", but the outer node cannot fold further because
+    // its left child is a BinaryExpression (not a Literal). The result preserves
+    // the folded inner concat as a string literal while the outer concat remains
+    // a runtime operation.
+    const source = 'var path = "sprites" + "/" + "player"';
+    const parser = new Parser.GMLParser(source, {});
+    const ast = parser.parse();
+    const result = Transpiler.emitJavaScript(ast);
+    assert.ok(result.includes('"sprites/"'), "Should fold the inner concatenation to a single string");
+    assert.ok(result.includes('"player"'), "Should preserve the outer operand");
+});
+
 void test("GmlToJsEmitter emits escaped literals for folded strings with control characters", () => {
     const ast = {
         type: "Program",
@@ -607,6 +629,19 @@ void test("Transpiler.emitJavaScript preserves subsequent statements after globa
     const result = Transpiler.emitJavaScript(ast);
 
     assert.ok(result.includes("foo = 5"), "Should keep assignments following the globalvar declaration");
+});
+
+void test("Transpiler.emitJavaScript qualifies globalvar forward references as globals", () => {
+    // GML allows using a globalvar-declared name before the declaration appears
+    // in source. The emitter must pre-collect all globalvar names so that forward
+    // references are emitted as `global.<name>` rather than bare identifiers.
+    const source = "foo = 1;\nglobalvar foo;";
+    const parser = new Parser.GMLParser(source, {});
+    const ast = parser.parse();
+    const result = Transpiler.emitJavaScript(ast);
+
+    assert.ok(result.includes("global.foo"), "Forward-referenced globalvar name should be prefixed with global.");
+    assert.ok(!result.startsWith("foo ="), "First statement should NOT emit foo as a bare identifier");
 });
 
 void test("Transpiler.emitJavaScript handles nested control flow", () => {
@@ -2002,4 +2037,13 @@ void test("Transpiler.emitJavaScript does not fold unary with variable operand",
     const ast = parser.parse();
     const result = Transpiler.emitJavaScript(ast);
     assert.strictEqual(result, "var x = -(y);");
+});
+
+void test("GmlToJsEmitter folds ternary expressions with constant boolean conditions", () => {
+    const source = "result = true ? expensive() : cheap()";
+    const parser = new Parser.GMLParser(source, {});
+    const ast = parser.parse();
+    const result = Transpiler.emitJavaScript(ast);
+
+    assert.match(result, /^result = expensive\(\);$/, "Should emit only the selected ternary branch");
 });

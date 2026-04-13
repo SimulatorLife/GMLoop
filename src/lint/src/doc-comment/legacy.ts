@@ -49,6 +49,12 @@ function copyDocCommentFlags(source: DocCommentLines | string[], target: Mutable
     }
 }
 
+function cloneDocCommentLinesWithFlags(lines: DocCommentLines | string[]): MutableDocCommentLines {
+    const clonedLines = toMutableArray(lines, { clone: true }) as MutableDocCommentLines;
+    copyDocCommentFlags(lines, clonedLines);
+    return clonedLines;
+}
+
 export function dedupeReturnDocLines(
     lines: DocCommentLines | string[],
     {
@@ -175,15 +181,11 @@ export function convertLegacyReturnsDescriptionLinesToMetadata(
     docLines: DocCommentLines | string[],
     opts: { normalizeDocCommentTypeAnnotations?: (line: string) => string } = {}
 ) {
-    const normalizedLines: string[] = toMutableArray(docLines, { clone: true });
+    const normalizedLines = cloneDocCommentLinesWithFlags(docLines);
 
     if (normalizedLines.length === 0) {
         return normalizedLines as DocCommentLines;
     }
-
-    const preserveLeadingBlank = isDocCommentLines(docLines) && docLines._suppressLeadingBlank === true;
-    const preserveDescriptionBreaks = isDocCommentLines(docLines) && docLines._preserveDescriptionBreaks === true;
-    const preserveBlockCommentDocs = isDocCommentLines(docLines) && docLines._blockCommentDocs === true;
 
     const convertedReturns: string[] = [];
     const retainedLines: string[] = [];
@@ -264,25 +266,11 @@ export function convertLegacyReturnsDescriptionLinesToMetadata(
     }
 
     if (convertedReturns.length === 0) {
-        const result = normalizedLines as MutableDocCommentLines;
-        if (preserveLeadingBlank) {
-            result._suppressLeadingBlank = true;
-        }
-        if (preserveDescriptionBreaks) {
-            result._preserveDescriptionBreaks = true;
-        }
-        if (preserveBlockCommentDocs) {
-            result._blockCommentDocs = true;
-        }
-        return result as DocCommentLines;
+        return normalizedLines as DocCommentLines;
     }
 
-    const resultLines = (
-        convertedReturns.length > 0
-            ? retainedLines.filter(
-                  (line) => !isLegacyFunctionTagWithoutParams(typeof line === STRING_TYPE ? line : null)
-              )
-            : [...retainedLines]
+    const resultLines = retainedLines.filter(
+        (line) => !isLegacyFunctionTagWithoutParams(typeof line === STRING_TYPE ? line : null)
     ) as MutableDocCommentLines;
 
     let appendIndex = resultLines.length;
@@ -295,18 +283,7 @@ export function convertLegacyReturnsDescriptionLinesToMetadata(
     }
 
     resultLines.splice(appendIndex, 0, ...convertedReturns);
-
-    if (preserveLeadingBlank) {
-        resultLines._suppressLeadingBlank = true;
-    }
-
-    if (preserveDescriptionBreaks) {
-        resultLines._preserveDescriptionBreaks = true;
-    }
-
-    if (preserveBlockCommentDocs) {
-        resultLines._blockCommentDocs = true;
-    }
+    copyDocCommentFlags(docLines, resultLines);
 
     return resultLines as DocCommentLines;
 }

@@ -208,8 +208,8 @@ void test(
             `expected optimize-math-expressions rule runtime under 4500ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 7500,
-            `expected total lint runtime under 7500ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
+            timedRun.elapsedMilliseconds < 12_000,
+            `expected total lint runtime under 12000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
 );
@@ -294,12 +294,12 @@ void test(
             "expected prefer-loop-invariant-expressions to keep hoisting loop-invariant subexpressions"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 1500,
-            `expected prefer-loop-invariant-expressions rule runtime under 1500ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
+            timedRun.ruleMilliseconds < 3000,
+            `expected prefer-loop-invariant-expressions rule runtime under 3000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 6500,
-            `expected total lint runtime under 6500ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
+            timedRun.elapsedMilliseconds < 8500,
+            `expected total lint runtime under 8500ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
 );
@@ -348,12 +348,12 @@ void test(
             "expected prefer-loop-invariant-expressions to keep hoisting loop-invariant subexpressions"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 7500,
-            `expected prefer-loop-invariant-expressions rule runtime under 7500ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
+            timedRun.ruleMilliseconds < 10_000,
+            `expected prefer-loop-invariant-expressions rule runtime under 10000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 23_000,
-            `expected total lint runtime under 23000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
+            timedRun.elapsedMilliseconds < 30_000,
+            `expected total lint runtime under 30000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
 );

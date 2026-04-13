@@ -1,3 +1,4 @@
+import { Core } from "@gmloop/core";
 import type * as Refactor from "@gmloop/refactor";
 import { Transpiler } from "@gmloop/transpiler";
 
@@ -26,7 +27,9 @@ export class GmlTranspilerBridge implements Refactor.TranspilerBridge {
                 success: true
             };
         } catch (error) {
-            throw new Error(`Transpilation failed: ${error instanceof Error ? error.message : String(error)}`);
+            // Use a capability probe rather than `instanceof Error` so that
+            // cross-realm errors (e.g. from sandboxed transpiler instances) are handled.
+            throw new Error(`Transpilation failed: ${Core.isErrorLike(error) ? error.message : String(error)}`);
         }
     }
 }

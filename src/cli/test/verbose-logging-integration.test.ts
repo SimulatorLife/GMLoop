@@ -72,7 +72,7 @@ void describe("CLI Verbose Logging", () => {
             const targetFile = path.join(tempDirectory, "script.gml");
             await fs.writeFile(targetFile, "var a = 1;\n", "utf8");
 
-            const { stdout, stderr } = await execFileAsync("node", [wrapperPath, tempDirectory]);
+            const { stdout, stderr } = await execFileAsync("node", [wrapperPath, "--path", tempDirectory]);
 
             assert.doesNotMatch(stdout, /DEBUG:/i);
             assert.doesNotMatch(stderr, /DEBUG:/i);
@@ -89,7 +89,13 @@ void describe("CLI Verbose Logging", () => {
             await fs.writeFile(unformattedFile, "var a=1;\n", "utf8");
             await fs.writeFile(formattedFile, "var b = 2;\n", "utf8");
 
-            const { stdout, exitCode } = await execFileAsync("node", [wrapperPath, "--verbose", tempDirectory]);
+            const { stdout, exitCode } = await execFileAsync("node", [
+                wrapperPath,
+                "--verbose",
+                "--path",
+                tempDirectory,
+                "--write"
+            ]);
 
             assert.equal(exitCode, 0);
             assert.match(stdout, /Formatted .*script-unformatted\.gml \([0-9]+\.[0-9]{2}ms\)/);
@@ -110,7 +116,7 @@ void describe("CLI Verbose Logging", () => {
                 wrapperPath,
                 "lint",
                 "--verbose",
-                "--project",
+                "--path",
                 projectPath,
                 tempDirectory
             ]);
@@ -131,18 +137,43 @@ void describe("CLI Verbose Logging", () => {
             const { stdout } = await execFileAsync("node", [
                 wrapperPath,
                 "refactor",
-                "--project-root",
+                "--path",
                 tempDirectory,
                 "--old-name",
                 "script1",
                 "--new-name",
                 "script2",
-                "--dry-run",
                 "--verbose"
             ]);
 
             assert.match(stdout, /DEBUG: Discovered 2 yyFiles/);
             assert.match(stdout, /DEBUG: analyseResourceFiles parsed 2/);
+        } finally {
+            await fs.rm(tempDirectory, { recursive: true, force: true });
+        }
+    });
+
+    void it("shows refactor --list settings output without applying changes", async () => {
+        const tempDirectory = await createTemporaryDirectory();
+        try {
+            await createDummyRefactorProject(tempDirectory);
+
+            const { stdout, exitCode } = await execFileAsync("node", [
+                wrapperPath,
+                "refactor",
+                "--path",
+                tempDirectory,
+                "--old-name",
+                "script1",
+                "--new-name",
+                "script2",
+                "--list"
+            ]);
+
+            assert.equal(exitCode, 0);
+            assert.match(stdout, /Mode: rename/);
+            assert.match(stdout, /Execution mode: dry-run \(default\)/);
+            assert.match(stdout, /Verbose mode: disabled/);
         } finally {
             await fs.rm(tempDirectory, { recursive: true, force: true });
         }
@@ -156,13 +187,12 @@ void describe("CLI Verbose Logging", () => {
             const { stdout } = await execFileAsync("node", [
                 wrapperPath,
                 "refactor",
-                "--project-root",
+                "--path",
                 tempDirectory,
                 "--old-name",
                 "script1",
                 "--new-name",
-                "script2",
-                "--dry-run"
+                "script2"
             ]);
 
             assert.doesNotMatch(stdout, /DEBUG:/);

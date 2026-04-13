@@ -306,20 +306,8 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
     }
 
     const patchIds = new Set<string>();
-    let hasInBatchDependencies = false;
-
-    for (const patch of patches) {
-        const patchId = extractPatchId(patch);
-        if (patchId !== null) {
-            patchIds.add(patchId);
-        }
-    }
-
-    const incomingEdges = new Map<string, number>();
-    const dependentsByDependency = new Map<string, Array<string>>();
     const patchById = new Map<string, unknown>();
     const orderedIds: Array<string> = [];
-    const queuedIds = new Set<string>();
 
     for (const patch of patches) {
         const patchId = extractPatchId(patch);
@@ -327,8 +315,69 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
             continue;
         }
 
+        patchIds.add(patchId);
         patchById.set(patchId, patch);
         orderedIds.push(patchId);
+    }
+
+    if (orderedIds.length < 2) {
+        return patches;
+    }
+
+    const patchIndexById = new Map<string, number>();
+    for (const [index, patchId] of orderedIds.entries()) {
+        patchIndexById.set(patchId, index);
+    }
+
+    let requiresReorder = false;
+    for (const patchId of orderedIds) {
+        const patch = patchById.get(patchId);
+        if (patch === undefined) {
+            continue;
+        }
+
+        const dependencyIds = extractPatchDependencies(patch);
+        if (dependencyIds.length === 0) {
+            continue;
+        }
+
+        const currentIndex = patchIndexById.get(patchId);
+        if (currentIndex === undefined) {
+            continue;
+        }
+
+        const uniqueDependencies = new Set<string>();
+        for (const dependencyId of dependencyIds) {
+            if (uniqueDependencies.has(dependencyId)) {
+                continue;
+            }
+            uniqueDependencies.add(dependencyId);
+
+            const dependencyIndex = patchIndexById.get(dependencyId);
+            if (dependencyIndex === undefined || dependencyId === patchId) {
+                continue;
+            }
+
+            if (dependencyIndex > currentIndex) {
+                requiresReorder = true;
+                break;
+            }
+        }
+
+        if (requiresReorder) {
+            break;
+        }
+    }
+
+    if (!requiresReorder) {
+        return patches;
+    }
+
+    const incomingEdges = new Map<string, number>();
+    const dependentsByDependency = new Map<string, Array<string>>();
+    const queuedIds = new Set<string>();
+
+    for (const patchId of orderedIds) {
         incomingEdges.set(patchId, 0);
     }
 
@@ -354,7 +403,6 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
                 continue;
             }
 
-            hasInBatchDependencies = true;
             incomingEdges.set(patchId, (incomingEdges.get(patchId) ?? 0) + 1);
 
             const dependents = dependentsByDependency.get(dependencyId);
@@ -364,10 +412,6 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
                 dependentsByDependency.set(dependencyId, [patchId]);
             }
         }
-    }
-
-    if (!hasInBatchDependencies) {
-        return patches;
     }
 
     const readyQueue: Array<string> = [];

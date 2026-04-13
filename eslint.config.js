@@ -209,7 +209,8 @@ const tsConfig = defineConfig({
             { type: "fixture-runner", pattern: "src/fixture-runner/**" },
             { type: "refactor", pattern: "src/refactor/**" },
             { type: "runtime-wrapper", pattern: "src/runtime-wrapper/**" },
-            { type: "cli", pattern: "src/cli/**" }
+            { type: "cli", pattern: "src/cli/**" },
+            { type: "mcp", pattern: "src/mcp/**" }
         ]
     },
 
@@ -486,7 +487,8 @@ const tsConfig = defineConfig({
                             "lint",
                             "fixture-runner",
                             "refactor",
-                            "runtime-wrapper"
+                            "runtime-wrapper",
+                            "mcp"
                         ],
                         allow: ["index.ts", "index.js"]
                     }
@@ -561,6 +563,10 @@ const tsConfig = defineConfig({
                             "refactor",
                             "cli"
                         ]
+                    },
+                    {
+                        from: "mcp",
+                        allow: ["core", "cli", "mcp"]
                     },
 
                     // Tests can import anything

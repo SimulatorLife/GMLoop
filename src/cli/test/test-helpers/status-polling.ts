@@ -5,6 +5,15 @@ export type StatusPayload = {
     totalPatchCount?: number;
     errorCount?: number;
     scanComplete?: boolean;
+    avgHotReloadLatencyMs?: number;
+    p95HotReloadLatencyMs?: number;
+    recentPatches?: Array<{
+        id: string;
+        timestamp: number;
+        durationMs: number;
+        filePath: string;
+        hotReloadLatencyMs?: number;
+    }>;
 };
 
 const DEFAULT_STATUS_TIMEOUT_MS = 5000;

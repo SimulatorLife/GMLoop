@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -21,7 +21,7 @@ void test("normalizeLintFilePath resolves real filesystem paths", () => {
 
         const normalized = normalizeLintFilePath(path.join(tempDirectory, ".", "nested", "example.gml"));
 
-        assert.equal(normalized, path.resolve(filePath));
+        assert.equal(normalized, realpathSync.native(path.resolve(filePath)));
     } finally {
         rmSync(tempDirectory, { recursive: true, force: true });
     }

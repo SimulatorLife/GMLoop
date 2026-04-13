@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@gmloop/cli": ["../cli/index.ts"],
+      "@gmloop/core": ["../core/index.ts"],
+      "@gmloop/fixture-runner": ["../fixture-runner/index.ts"],
+      "@gmloop/format": ["../format/index.ts"],
+      "@gmloop/lint": ["../lint/index.ts"],
+      "@gmloop/mcp": ["./index.ts"],
+      "@gmloop/parser": ["../parser/index.ts"],
+      "@gmloop/refactor": ["../refactor/index.ts"],
+      "@gmloop/runtime-wrapper": ["../runtime-wrapper/index.ts"],
+      "@gmloop/semantic": ["../semantic/index.ts"],
+      "@gmloop/transpiler": ["../transpiler/index.ts"]
+    }
+  },
+  "references": [{ "path": "../core" }, { "path": "../cli" }],
+  "include": ["*.ts", "src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["dist"]
+}

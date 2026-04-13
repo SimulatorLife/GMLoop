@@ -13,6 +13,7 @@ type AssetReferenceCandidate = {
 const DEFAULT_REFERENCE_KEYS = Object.freeze(
     new Set<string>([
         "id",
+        "Id",
         "roomId",
         "objectId",
         "spriteId",

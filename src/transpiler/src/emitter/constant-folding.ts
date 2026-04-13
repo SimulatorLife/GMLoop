@@ -1,4 +1,4 @@
-import type { BinaryExpressionNode, UnaryExpressionNode } from "./ast.js";
+import type { BinaryExpressionNode, GmlNode, TernaryExpressionNode, UnaryExpressionNode } from "./ast.js";
 
 const ZERO_COMPARISON_EPSILON = Number.EPSILON * 4;
 
@@ -37,6 +37,32 @@ function toBooleanLiteral(value: string | number | boolean): boolean | null {
 
 function isNullishValue(value: unknown): value is null | undefined {
     return value === null || value === undefined;
+}
+
+/**
+ * Check whether a parser-produced string literal value includes surrounding
+ * double quotes.
+ *
+ * The GML parser stores string literal values WITH their surrounding quotes
+ * (e.g., the GML literal `"hello"` is stored as the 7-character JS string
+ * `"hello"` whose first and last characters are `"`). Hand-crafted AST nodes
+ * or non-string literal values do NOT include quotes.
+ */
+function isParserQuotedString(value: string): boolean {
+    return value.length >= 2 && value[0] === '"' && value.at(-1) === '"';
+}
+
+/**
+ * Strip surrounding double quotes from a parser-produced string literal value.
+ *
+ * If the value is not a parser-quoted string, it is returned unchanged so that
+ * hand-crafted AST nodes (e.g., from tests) continue to work.
+ */
+function stripParserQuotes(value: string): string {
+    if (isParserQuotedString(value)) {
+        return value.slice(1, -1);
+    }
+    return value;
 }
 
 function evaluatePrimitiveEqualityOperator(
@@ -163,13 +189,19 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
         }
     }
 
-    // String operations
+    // String operations.
+    // The GML parser stores string literal values with their surrounding
+    // double quotes (e.g., the GML literal "hello" has `value === '"hello"'`).
+    // We must strip those parser quotes before folding so that the emitter's
+    // `JSON.stringify` re-wraps the result correctly.
     if (typeof left === "string" && typeof right === "string") {
         if (op === "+") {
-            return left + right;
+            return stripParserQuotes(left) + stripParserQuotes(right);
         }
 
-        const equalityResult = evaluatePrimitiveEqualityOperator(op, left, right);
+        const strippedLeft = stripParserQuotes(left);
+        const strippedRight = stripParserQuotes(right);
+        const equalityResult = evaluatePrimitiveEqualityOperator(op, strippedLeft, strippedRight);
         if (equalityResult !== null) {
             return equalityResult;
         }
@@ -269,4 +301,27 @@ export function tryFoldConstantUnaryExpression(ast: UnaryExpressionNode): number
 
     // Couldn't fold this expression
     return null;
+}
+
+/**
+ * Attempt to fold a ternary expression when the condition is a boolean literal.
+ *
+ * This is intentionally conservative: only explicit boolean literals
+ * (`true`, `false`, and parser-normalized `"true"`/`"false"` strings) are
+ * folded to avoid changing GML truthiness semantics for numeric/string literals.
+ *
+ * @param ast - Ternary expression node to potentially fold
+ * @returns The selected branch node when folding is safe, otherwise null
+ */
+export function tryFoldConstantTernaryExpression(ast: TernaryExpressionNode): GmlNode | null {
+    if (ast.test.type !== "Literal") {
+        return null;
+    }
+
+    const foldedCondition = toBooleanLiteral(ast.test.value);
+    if (foldedCondition === null) {
+        return null;
+    }
+
+    return foldedCondition ? ast.consequent : ast.alternate;
 }

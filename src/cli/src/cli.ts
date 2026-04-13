@@ -4,6 +4,7 @@
  * Commands provided include:
  * - A wrapper around the GML-Prettier plugin to provide a convenient
  *   way to format GameMaker Language files.
+ * - Direct GML -> JavaScript transpilation utilities for file/directory targets.
  * - Watch mode for monitoring GML source files and coordinating the
  *   hot-reload pipeline (transpiler, semantic analysis, patch streaming).
  * - Regression testing utilities.
@@ -19,6 +20,7 @@ import process from "node:process";
 import { Core } from "@gmloop/core";
 import { Command } from "commander";
 
+import { type CliCatalogEntry, createCliCommandCatalog } from "./cli-core/command-catalog.js";
 import { createCliCommandManager } from "./cli-core/command-manager.js";
 import { applyStandardCommandOptions } from "./cli-core/command-standard-options.js";
 import { handleCliError } from "./cli-core/errors.js";
@@ -29,9 +31,13 @@ import { __formatTest__, createFormatCommand, runFormatCommand } from "./command
 import { createFeatherMetadataCommand, runGenerateFeatherMetadata } from "./commands/generate-feather-metadata.js";
 import { createGenerateIdentifiersCommand, runGenerateGmlIdentifiers } from "./commands/generate-gml-identifiers.js";
 import { createGenerateQualityReportCommand, runGenerateQualityReport } from "./commands/generate-quality-report.js";
+import { createGraphCommand } from "./commands/graph.js";
 import { createLintCommand, runLintCommand } from "./commands/lint.js";
+import { createLookupGmlIdentifierCommand, runLookupGmlIdentifierCommand } from "./commands/lookup-gml-identifier.js";
+import { createParseCommand, runParseCommand } from "./commands/parse.js";
 import { createPrepareHotReloadCommand, runPrepareHotReloadCommand } from "./commands/prepare-hot-reload.js";
 import { createRefactorCommand, runRefactorCommand } from "./commands/refactor.js";
+import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
 import { createWatchCommand, runWatchCommand } from "./commands/watch.js";
 import { createWatchStatusCommand, runWatchStatusCommand } from "./commands/watch-status.js";
 import { CLI_COMMAND_NAMES } from "./shared/command-names.js";
@@ -48,6 +54,19 @@ const HELP_ACTION = "help";
 
 function resolveDefaultAction() {
     return process.env.PRETTIER_PLUGIN_GML_DEFAULT_ACTION === FORMAT_ACTION ? FORMAT_ACTION : HELP_ACTION;
+}
+
+function isNodeTestRunnerProcess(execArguments: ReadonlyArray<string> = process.execArgv): boolean {
+    return execArguments.some(
+        (argument) => argument === "--test" || argument.startsWith("--test=") || argument.startsWith("--test-")
+    );
+}
+
+function shouldAutoRunCliProcess(
+    env: NodeJS.ProcessEnv = process.env,
+    execArguments: ReadonlyArray<string> = process.execArgv
+): boolean {
+    return !isCliRunSkipped(env) && !isNodeTestRunnerProcess(execArguments);
 }
 
 function normalizeCommandLineArguments(argv) {
@@ -89,10 +108,6 @@ function resolveHelpAliasArguments(args) {
 }
 
 function normalizeFormatCommandHelpShortcut(args) {
-    if (!containsHelpFlag(args)) {
-        return args;
-    }
-
     const firstArgument = args[0];
     if (typeof firstArgument !== "string") {
         return args;
@@ -111,7 +126,11 @@ function normalizeFormatCommandHelpShortcut(args) {
         return args;
     }
 
-    return [FORMAT_ACTION, "--help"];
+    if (containsHelpFlag(args)) {
+        return [FORMAT_ACTION, "--help"];
+    }
+
+    return [FORMAT_ACTION, "--path", firstArgument, ...args.slice(1)];
 }
 
 function containsHelpFlag(args) {
@@ -185,6 +204,8 @@ export interface RunCliTestCommandOptions {
     env?: NodeJS.ProcessEnv;
     cwd?: string | URL;
 }
+
+export type RunCliCommandCaptureOptions = RunCliTestCommandOptions;
 
 type ConsoleMethodSnapshot = {
     debug: typeof console.debug;
@@ -285,7 +306,7 @@ function startProcessOutputCapture(): ProcessOutputCapture {
     };
 }
 
-export async function runCliTestCommand({ argv = [], env = {}, cwd }: RunCliTestCommandOptions = {}) {
+export async function runCliCommandCapture({ argv = [], env = {}, cwd }: RunCliCommandCaptureOptions = {}) {
     const envOverrides = {
         ...env,
         [SKIP_CLI_RUN_ENV_VAR]: "1"
@@ -340,9 +361,20 @@ export async function runCliTestCommand({ argv = [], env = {}, cwd }: RunCliTest
     };
 }
 
+export async function runCliTestCommand(options: RunCliTestCommandOptions = {}) {
+    return await runCliCommandCapture(options);
+}
+
+export function getCliCommandCatalog(): ReadonlyArray<CliCatalogEntry> {
+    return Object.freeze(createCliCommandCatalog(program));
+}
+
 export const __test__ = Object.freeze({
     ...__formatTest__,
-    normalizeCommandLineArguments
+    getCliCommandCatalog,
+    isNodeTestRunnerProcess,
+    normalizeCommandLineArguments,
+    shouldAutoRunCliProcess
 });
 
 const formatCommand = createFormatCommand({ name: FORMAT_ACTION });
@@ -358,12 +390,41 @@ cliCommandRegistry.registerDefaultCommand({
 });
 
 cliCommandRegistry.registerCommand({
+    command: createGraphCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Graph command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
     command: createLintCommand(),
     run: ({ command }) => runLintCommand(command),
     onError: (error) =>
         handleCliError(error, {
             prefix: "Lint command failed.",
             exitCode: 2
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createLookupGmlIdentifierCommand(),
+    run: ({ command }) => runLookupGmlIdentifierCommand(command),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "GML identifier lookup command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createParseCommand(),
+    run: ({ command }) => runParseCommand(command),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Parse command failed.",
+            exitCode: 1
         })
 });
 
@@ -438,6 +499,16 @@ cliCommandRegistry.registerCommand({
 });
 
 cliCommandRegistry.registerCommand({
+    command: createTranspileCommand(),
+    run: ({ command }) => runTranspileCommand(command),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Transpile command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
     command: createWatchCommand(),
     run: ({ command }) => runWatchCommand(command.args[0], command.opts()),
     onError: (error) =>
@@ -457,7 +528,7 @@ cliCommandRegistry.registerCommand({
         })
 });
 
-if (!isCliRunSkipped()) {
+if (shouldAutoRunCliProcess()) {
     const normalizedArguments = normalizeCommandLineArguments(process.argv.slice(2));
 
     try {

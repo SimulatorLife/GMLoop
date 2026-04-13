@@ -1,5 +1,6 @@
 import type { Rule } from "eslint";
 
+import { collectRegionSourceLines, readRegionDirectiveType, type RegionSourceLine } from "../region-directives.js";
 import {
     applySourceTextEdits,
     createMeta,
@@ -8,64 +9,13 @@ import {
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
-type LineRecord = Readonly<{
-    start: number;
-    end: number;
-    content: string;
-}>;
-
 type RegionBlockRecord = Readonly<{
     startLineIndex: number;
     endLineIndex: number;
 }>;
 
-function collectSourceLines(sourceText: string): ReadonlyArray<LineRecord> {
-    const lines: Array<LineRecord> = [];
-    const linePattern = /[^\r\n]*(?:\r\n|\n|$)/gu;
-    let match = linePattern.exec(sourceText);
-
-    while (match !== null) {
-        const lineWithEnding = match[0] ?? "";
-        if (lineWithEnding.length === 0) {
-            break;
-        }
-
-        const hasCarriageReturnLineFeedEnding = lineWithEnding.endsWith("\r\n");
-        const hasLineFeedEnding = !hasCarriageReturnLineFeedEnding && lineWithEnding.endsWith("\n");
-        const lineEndingLength = hasCarriageReturnLineFeedEnding ? 2 : hasLineFeedEnding ? 1 : 0;
-
-        const lineStart = match.index;
-        const lineEnd = lineStart + lineWithEnding.length;
-        const contentEnd = lineEnd - lineEndingLength;
-        lines.push(
-            Object.freeze({
-                start: lineStart,
-                end: lineEnd,
-                content: sourceText.slice(lineStart, contentEnd)
-            })
-        );
-
-        match = linePattern.exec(sourceText);
-    }
-
-    return Object.freeze(lines);
-}
-
-function readRegionDirectiveType(lineContent: string): "start" | "end" | null {
-    const trimmed = lineContent.trimStart();
-    if (/^#region(?:\s|$)/u.test(trimmed)) {
-        return "start";
-    }
-
-    if (/^#endregion(?:\s|$)/u.test(trimmed)) {
-        return "end";
-    }
-
-    return null;
-}
-
 function isRegionBodyWhitespaceOnly(
-    lines: ReadonlyArray<LineRecord>,
+    lines: ReadonlyArray<RegionSourceLine>,
     startLineIndex: number,
     endLineIndex: number
 ): boolean {
@@ -83,7 +33,7 @@ function isRegionBodyWhitespaceOnly(
     return true;
 }
 
-function collectEmptyRegionBlocks(lines: ReadonlyArray<LineRecord>): ReadonlyArray<RegionBlockRecord> {
+function collectEmptyRegionBlocks(lines: ReadonlyArray<RegionSourceLine>): ReadonlyArray<RegionBlockRecord> {
     const emptyRegionBlocks: Array<RegionBlockRecord> = [];
     const regionStartLineStack: number[] = [];
 
@@ -119,7 +69,7 @@ function collectEmptyRegionBlocks(lines: ReadonlyArray<LineRecord>): ReadonlyArr
 }
 
 function createEmptyRegionDeletionEdits(
-    lines: ReadonlyArray<LineRecord>,
+    lines: ReadonlyArray<RegionSourceLine>,
     emptyRegionBlocks: ReadonlyArray<RegionBlockRecord>
 ): ReadonlyArray<SourceTextEdit> {
     const edits: Array<SourceTextEdit> = [];
@@ -156,7 +106,7 @@ export function createNoEmptyRegionsRule(definition: GmlRuleDefinition): Rule.Ru
             return Object.freeze({
                 Program() {
                     reportProgramTextRewrite(context, definition, (sourceText) => {
-                        const lines = collectSourceLines(sourceText);
+                        const lines = collectRegionSourceLines(sourceText);
                         if (lines.length === 0) {
                             return sourceText;
                         }

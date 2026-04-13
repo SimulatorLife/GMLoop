@@ -52,6 +52,15 @@ function shouldParenthesizeUnaryArgument(argument: any): boolean {
     }
 }
 
+function shouldParenthesizeTernaryConsequent(consequentNode: unknown): boolean {
+    const unwrappedConsequent = Core.unwrapParenthesizedExpression(consequentNode);
+    if (!Core.isNode(unwrappedConsequent)) {
+        return false;
+    }
+
+    return Core.isConditionalExpressionNode(unwrappedConsequent) || Core.isTernaryExpressionNode(unwrappedConsequent);
+}
+
 /**
  * Reads the original source text associated with an AST node range.
  */
@@ -136,8 +145,11 @@ export function printExpression(node: any, sourceText: string): string {
         }
         case "ConditionalExpression": {
             const test = printExpression(node.test, sourceText);
-            const consequent = printExpression(node.consequent, sourceText);
+            const consequentPrinted = printExpression(node.consequent, sourceText);
             const alternate = printExpression(node.alternate, sourceText);
+            const consequent = shouldParenthesizeTernaryConsequent(node.consequent)
+                ? `(${consequentPrinted})`
+                : consequentPrinted;
             return `${test} ? ${consequent} : ${alternate}`;
         }
         case "AssignmentExpression": {

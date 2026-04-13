@@ -6,7 +6,6 @@ import type {
     ClosurePatch,
     EventPatch,
     Patch,
-    PatchHistoryEntry,
     PatchSnapshot,
     RuntimeFunction,
     RuntimeRegistry,
@@ -452,19 +451,13 @@ export interface DependencyValidationResult {
     missingDependencies: Array<string>;
 }
 
-type DependencyLookup = ReadonlySet<string>;
-
-function createDependencyLookup(registry: RuntimeRegistry): DependencyLookup {
-    return new Set([
-        ...Object.keys(registry.scripts),
-        ...Object.keys(registry.events),
-        ...Object.keys(registry.closures)
-    ]);
+function hasRegistryDependency(registry: RuntimeRegistry, dependencyId: string): boolean {
+    return dependencyId in registry.scripts || dependencyId in registry.events || dependencyId in registry.closures;
 }
 
 function collectMissingDependencies(
     dependencies: ReadonlyArray<unknown>,
-    dependencyLookup: DependencyLookup
+    hasDependency: (dependencyId: string) => boolean
 ): Array<string> {
     const missingDependencies: Array<string> = [];
     const checkedDependencies = new Set<string>();
@@ -479,7 +472,7 @@ function collectMissingDependencies(
         }
         checkedDependencies.add(dependencyCandidate);
 
-        if (!dependencyLookup.has(dependencyCandidate)) {
+        if (!hasDependency(dependencyCandidate)) {
             missingDependencies.push(dependencyCandidate);
         }
     }
@@ -490,12 +483,13 @@ function collectMissingDependencies(
 export function validatePatchDependencies(patch: Patch, registry: RuntimeRegistry): DependencyValidationResult {
     const dependencies = patch.metadata?.dependencies;
 
-    if (!dependencies || !Array.isArray(dependencies) || dependencies.length === 0) {
+    if (!Core.isNonEmptyArray(dependencies)) {
         return { satisfied: true, missingDependencies: [] };
     }
 
-    const dependencyLookup = createDependencyLookup(registry);
-    const missingDependencies = collectMissingDependencies(dependencies, dependencyLookup);
+    const missingDependencies = collectMissingDependencies(dependencies, (dependencyId) =>
+        hasRegistryDependency(registry, dependencyId)
+    );
 
     return {
         satisfied: missingDependencies.length === 0,
@@ -521,12 +515,16 @@ export function validateBatchPatchDependencies(
     patches: ReadonlyArray<Patch>,
     registry: RuntimeRegistry
 ): BatchDependencyValidationResult {
-    const dependencyLookup = new Set(createDependencyLookup(registry));
+    const newlySatisfiedDependencies = new Set<string>();
 
     for (const [index, patch] of patches.entries()) {
         const dependencies = patch.metadata?.dependencies;
-        if (dependencies && Array.isArray(dependencies) && dependencies.length > 0) {
-            const missingDependencies = collectMissingDependencies(dependencies, dependencyLookup);
+        if (Core.isNonEmptyArray(dependencies)) {
+            const missingDependencies = collectMissingDependencies(
+                dependencies,
+                (dependencyId) =>
+                    newlySatisfiedDependencies.has(dependencyId) || hasRegistryDependency(registry, dependencyId)
+            );
             if (missingDependencies.length > 0) {
                 return {
                     satisfied: false,
@@ -536,7 +534,7 @@ export function validateBatchPatchDependencies(
             }
         }
 
-        dependencyLookup.add(patch.id);
+        newlySatisfiedDependencies.add(patch.id);
     }
 
     return { satisfied: true };
@@ -820,30 +818,23 @@ type PatchKindHandler = {
     apply: (registry: RuntimeRegistry, patch: Patch) => RuntimeRegistry;
 };
 
+// Pre-built handler lookup keyed by patch kind. The supported set of kinds is
+// fixed at compile time, so we build the handlers once at module load and reuse
+// them on every call. This avoids allocating a new object + closures on every
+// `captureSnapshot`, `applyPatchToRegistry`, and `restoreSnapshot` invocation —
+// calls that occur on the hot path during each 60 fps hot-reload cycle.
+const PATCH_KIND_HANDLERS: ReadonlyMap<string, PatchKindHandler> = new Map<string, PatchKindHandler>([
+    ["script", { key: "scripts", apply: (registry, patch) => applyScriptPatch(registry, patch as ScriptPatch) }],
+    ["event", { key: "events", apply: (registry, patch) => applyEventPatch(registry, patch as EventPatch) }],
+    ["closure", { key: "closures", apply: (registry, patch) => applyClosurePatch(registry, patch as ClosurePatch) }]
+]);
+
 function resolvePatchKindHandler(kind: Patch["kind"]): PatchKindHandler {
-    switch (kind) {
-        case "script": {
-            return {
-                key: "scripts",
-                apply: (registry, patch) => applyScriptPatch(registry, patch as ScriptPatch)
-            };
-        }
-        case "event": {
-            return {
-                key: "events",
-                apply: (registry, patch) => applyEventPatch(registry, patch as EventPatch)
-            };
-        }
-        case "closure": {
-            return {
-                key: "closures",
-                apply: (registry, patch) => applyClosurePatch(registry, patch as ClosurePatch)
-            };
-        }
-        default: {
-            throw new TypeError("Unsupported patch kind");
-        }
+    const handler = PATCH_KIND_HANDLERS.get(kind);
+    if (!handler) {
+        throw new TypeError("Unsupported patch kind");
     }
+    return handler;
 }
 
 function restoreEntry(registry: RuntimeRegistry, snapshot: PatchSnapshot, key: RegistryCollectionKey): RuntimeRegistry {
@@ -934,16 +925,4 @@ function calculatePercentile(sorted: Array<number>, percentile: number): number 
 
     const weight = index - lower;
     return sorted[lower] * (1 - weight) + sorted[upper] * weight;
-}
-
-export function collectPatchDurations(history: Array<PatchHistoryEntry>): Array<number> {
-    const durations: Array<number> = [];
-
-    for (const entry of history) {
-        if (entry.action === "apply" && entry.durationMs !== undefined) {
-            durations.push(entry.durationMs);
-        }
-    }
-
-    return durations;
 }

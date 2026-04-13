@@ -2,6 +2,8 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
+import { isRefactorResourcePath } from "../modules/refactor/gml-resource-path.js";
+
 type SemanticProjectIndex = {
     files?: Record<string, unknown>;
 };
@@ -17,7 +19,7 @@ function listIndexedGmlFilePaths(projectIndex: unknown): Array<string> {
     }
 
     return Object.keys(files)
-        .filter((filePath) => path.extname(filePath).toLowerCase() === ".gml")
+        .filter((filePath) => isRefactorResourcePath(filePath))
         .toSorted();
 }
 

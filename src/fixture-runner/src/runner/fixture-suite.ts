@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { chmod, cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, test } from "node:test";
@@ -171,6 +171,11 @@ async function executeFixtureCase(
             if (fixtureCase.projectDirectoryPath) {
                 workingProjectDirectoryPath = await mkdtemp(path.join(os.tmpdir(), "gmloop-fixture-runner-"));
                 await cp(fixtureCase.projectDirectoryPath, workingProjectDirectoryPath, { recursive: true });
+                // The source fixture files may be read-only (e.g. protected golden files).
+                // Make all copied files writable so the refactor engine can write changes.
+                const tempDir = workingProjectDirectoryPath;
+                const copiedFiles = await Core.listRelativeFilePathsRecursively(tempDir);
+                await Promise.all(copiedFiles.map((relPath) => chmod(path.join(tempDir, relPath), 0o644)));
             }
         });
 

@@ -41,7 +41,7 @@ jobs:
             const isProtectedGoldenFixture = (filename) =>
               typeof filename === 'string' &&
               protectedGoldenFixturePatterns.some((pattern) => pattern.test(filename));
-            
+
             const changedFixtures = files.filter((f) => {
               if (f.status === 'added') {
                 return false;
@@ -62,7 +62,7 @@ jobs:
 
   tests:
     needs: gate
-    if: ${{ needs.gate.outputs.should_run_tests == 'true' }}   # <- job-level gate (will show Skipped)
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' }} # <- job-level gate (will show Skipped)
     name: Run tests (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -76,13 +76,15 @@ jobs:
         id: ref
         run: |
           if [ "${{ matrix.target }}" = "base" ]; then
-            # Use the live base branch ref so the base leg stays aligned with the
-            # synthetic merge ref, which GitHub rebuilds against the current base tip.
-            echo "ref=${{ github.event.pull_request.base.ref }}" >> "$GITHUB_OUTPUT"
+            # Freeze base to the exact PR-event snapshot so comparisons stay stable
+            # even if the base branch advances while this workflow is running.
+            echo "ref=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
           elif [ "${{ matrix.target }}" = "head" ]; then
-            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            # Explicit PR head commit (not the synthetic merge commit).
+            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=refs/pull/${{ github.event.pull_request.number }}/merge" >> "$GITHUB_OUTPUT"
+            # Synthetic merge commit captured for this PR event.
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
       # If the synthetic merge ref doesn't exist, continue so the leg can still upload nothing and be summarized.
@@ -111,7 +113,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: ${{ steps.node-version.outputs.version }}
-          cache: 'pnpm'
+          cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install deps (${{ matrix.target }})
@@ -134,9 +136,32 @@ jobs:
 
       - name: Build typescript (${{ matrix.target }})
         run: |
-          if ! pnpm run build:ts; then
+          mkdir -p reports
+          build_status=0
+          if pnpm run build:ts; then
+            build_status=0
+          else
+            build_status=$?
             echo "::warning::TypeScript workspace build failed for target '${{ matrix.target }}'; continuing workflow."
           fi
+
+          failures=0
+          if [ "$build_status" -ne 0 ]; then
+            failures=1
+          fi
+
+          {
+            echo '<?xml version="1.0" encoding="utf-8"?>'
+            echo '<testsuites>'
+            echo "  <testsuite name=\"build\" tests=\"1\" failures=\"$failures\" errors=\"0\" skipped=\"0\">"
+            echo '    <testcase name="pnpm run build:ts" classname="quality.build">'
+            if [ "$build_status" -ne 0 ]; then
+              echo "      <failure message=\"TypeScript workspace build failed\">pnpm run build:ts exited with status $build_status for ${{ matrix.target }}.</failure>"
+            fi
+            echo '    </testcase>'
+            echo '  </testsuite>'
+            echo '</testsuites>'
+          } > reports/build.xml
 
       # Runs tests once, generating both JUnit XML and LCOV coverage
       - name: Run tests & coverage (${{ matrix.target }})
@@ -214,7 +239,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: ${{ steps.node-version-summary.outputs.version }}
-          cache: 'pnpm'
+          cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install deps
@@ -239,7 +264,7 @@ jobs:
           if ! pnpm run build:ts; then
             echo "::warning::TypeScript workspace build failed during summary job; continuing workflow."
           fi
-      
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -252,7 +277,7 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          
+
           # Create reports directory if it doesn't exist
           mkdir -p reports
 
@@ -262,9 +287,9 @@ jobs:
             --head report-head \
             --merge report-merge \
             --report-file reports/summary-report.md
-          
+
           code=$?
-          
+
           if [ $code -eq 0 ]; then
             echo "all_green=true" >> "$GITHUB_OUTPUT"
             echo "status=clean" >> "$GITHUB_OUTPUT"
@@ -290,7 +315,7 @@ jobs:
 
             const MARKER = '<!-- automerge-pr-test-summary -->';
             const reportFile = 'reports/summary-report.md';
-            
+
             let body = '';
             if (fs.existsSync(reportFile)) {
               body = fs.readFileSync(reportFile, 'utf8');
@@ -309,7 +334,7 @@ jobs:
             } else {
               await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
             }
-            
+
             // Set output for auto-merge gate
             const allGreen = process.env.REGRESSION_ALL_GREEN === 'true';
             core.setOutput('all_green', allGreen ? 'true' : 'false');
@@ -320,7 +345,13 @@ jobs:
         with:
           github-token: ${{ env.GH_USER_TOKEN }}
           script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const crypto = require('node:crypto');
+
             const marker = '<!-- automerge-pr-regression-agent -->';
+            const FOLLOW_UP_AGENT_POOL = 'followUps';
+            const DEFAULT_FOLLOW_UP_AGENT = 'codex';
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request?.number;
             if (!number) {
@@ -328,16 +359,105 @@ jobs:
               return;
             }
 
+            const normalize = (value) => {
+              const trimmed = (value || '').trim();
+              if (!trimmed) return '';
+              return trimmed
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                || '';
+            };
+
+            const chooseWeighted = (items) => {
+              const total = items.reduce((sum, item) => sum + item.weight, 0);
+              if (!Number.isFinite(total) || total <= 0) return null;
+
+              const random = parseInt(crypto.randomBytes(6).toString('hex'), 16) / 0xFFFFFFFFFFFF;
+              let threshold = random * total;
+              for (const item of items) {
+                threshold -= item.weight;
+                if (threshold <= 0) {
+                  return { ...item, random, total };
+                }
+              }
+              return { ...items[items.length - 1], random, total };
+            };
+
+            const parseAgentCandidates = (pool) => {
+              if (!pool || !Array.isArray(pool.agents)) {
+                return [];
+              }
+
+              return pool.agents
+                .map((agent) => ({
+                  name: typeof agent?.name === 'string' ? agent.name : '',
+                  weight: Number(agent?.weight),
+                }))
+                .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
+                .map((agent) => ({
+                  name: agent.name,
+                  weight: agent.weight,
+                  slug: normalize(agent.name),
+                }))
+                .filter((agent) => agent.slug);
+            };
+
+            const loadWeightsConfig = () => {
+              const weightsPath = path.resolve(process.cwd(), '.github/workflows/weights.json');
+              const raw = fs.readFileSync(weightsPath, 'utf8');
+              return JSON.parse(raw);
+            };
+
+            const selectAgent = (poolName, requestedAgent) => {
+              if (requestedAgent) {
+                return {
+                  agent: requestedAgent,
+                  reason: 'manual override',
+                };
+              }
+
+              let poolDefault = DEFAULT_FOLLOW_UP_AGENT;
+              let candidates = [];
+              try {
+                const parsed = loadWeightsConfig();
+                const pool = parsed?.agentPools?.[poolName] ?? null;
+                const configuredDefault = normalize(pool?.default);
+                if (configuredDefault) {
+                  poolDefault = configuredDefault;
+                }
+                candidates = parseAgentCandidates(pool);
+              } catch (error) {
+                core.warning(`Falling back to default follow-up agent due to configuration error: ${error.message}`);
+              }
+
+              if (!candidates.length) {
+                return {
+                  agent: poolDefault,
+                  reason: `${poolName} pool default fallback`,
+                };
+              }
+
+              const chosen = chooseWeighted(candidates);
+              if (!chosen) {
+                return {
+                  agent: poolDefault,
+                  reason: `${poolName} weighted selection fallback`,
+                };
+              }
+
+              const { slug, name, weight, random, total } = chosen;
+              core.info(`Random draw ${random.toFixed(6)} selected agent "${name}" from ${poolName} pool (slug=${slug}, weight=${weight}) from total weight ${total.toFixed(6)}.`);
+              return {
+                agent: slug,
+                reason: `${poolName} weighted selection`,
+              };
+            };
+
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const branchLower = (pr.head?.ref || '').toLowerCase();
-            // Extract the agent prefix (the part before the first '/') and require it to be present
-            const rawPrefix = (branchLower.split('/')[0] || '').replace(/^@/, '').trim();
-            if (!rawPrefix) {
-              core.info('No agent prefix found on branch name; skipping agent regression request.');
-              return;
-            }
-            const agentPrefix = rawPrefix;
-            const agentMention = `@${agentPrefix}`;
+            const selection = selectAgent(FOLLOW_UP_AGENT_POOL, '');
+            const agentMention = `@${selection.agent}`;
+            core.info(`Using follow-up agent "${selection.agent}" (${selection.reason}).`);
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner,
               repo,
@@ -346,16 +466,39 @@ jobs:
             });
 
             const existing = comments.find(comment => comment.body && comment.body.includes(marker));
+            const reportFile = 'reports/summary-report.md';
+            let regressionSummaryLine = '';
+            try {
+              const reportBody = fs.readFileSync(reportFile, 'utf8');
+              const matchingLine = reportBody
+                .split(/\r?\n/u)
+                .find((line) => line.trim().startsWith('❌ Test regressions detected.'));
+              regressionSummaryLine = matchingLine ? matchingLine.trim() : '';
+            } catch (error) {
+              if (error?.code !== 'ENOENT') {
+                core.warning(`Unable to read regression summary from ${reportFile}: ${error.message}`);
+              }
+            }
 
             const lines = [
               marker,
               '',
-              `${agentMention} The auto-merge workflow detected test regressions on this PR while comparing \`${pr.head.ref}\` against \`${pr.base.ref}\`. Please review the failing suites, identify the root cause, and provide the fixes so this change can be merged.`,
+              `${agentMention} The auto-merge workflow detected test regressions on this PR ` +
+                `while comparing the base results with the merged results ` +
+                `(or with PR head results when merged results are unavailable). ` +
+                "Please review the failing suites, identify the root cause, and provide the fixes so this change can be merged. Do not remove tests or relax performance requirements without a clear, well-reasoned justification, as doing so can harm the overall health of the project.",
+            ];
+
+            if (regressionSummaryLine) {
+              lines.push('', `Regression summary from the Quality Report: ${regressionSummaryLine}`);
+            }
+
+            lines.push(
               '',
               'Suggested next steps:',
               '1. Reproduce the failures locally (for example, `pnpm run test:report` and `pnpm run test:coverage`) to confirm the regression.',
               '2. Deliver the smallest possible fix—or a precise explanation of the required follow-up—that resolves the regression blocking auto-merge.'
-            ];
+            );
 
             const normalizedAgent = agentMention.replace(/^@/, '').trim().toLowerCase();
             if (normalizedAgent !== 'copilot') {

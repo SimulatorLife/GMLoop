@@ -118,28 +118,23 @@ function resolveCandidatePath(candidate) {
 /**
  * Collect candidate inputs from call-site overrides, environment variables,
  * and workspace defaults. Returning a dedicated list keeps
- * {@link resolveCandidatePaths} focused on sequencing rather than array
+ * {@link resolveFormatEntryPoint} focused on resolution instead of array
  * assembly details.
  */
-function collectCandidateInputs(parameters: { env: NodeJS.ProcessEnv; candidates: readonly unknown[] }) {
-    return [...parameters.candidates, ...getEnvironmentCandidates(parameters.env), ...DEFAULT_CANDIDATE_FORMAT_PATHS];
+function collectCandidateInputs(candidates: readonly unknown[], env: NodeJS.ProcessEnv) {
+    return [...candidates, ...getEnvironmentCandidates(env), ...DEFAULT_CANDIDATE_FORMAT_PATHS];
 }
 
 /**
  * Normalize the mixed candidate inputs into a deduplicated list of resolved
  * file-system paths. Centralizing the map/filter bookkeeping keeps the
- * orchestrator logic in {@link resolveCandidatePaths} at a consistent
+ * orchestrator logic in {@link resolveFormatEntryPoint} at a consistent
  * abstraction level.
  */
 function normalizeCandidatePaths(candidateInputs) {
     const resolvedCandidates = compactArray(candidateInputs.map((candidate) => resolveCandidatePath(candidate)));
 
     return uniqueArray(resolvedCandidates);
-}
-
-function resolveCandidatePaths(parameters: { env: NodeJS.ProcessEnv; candidates: readonly unknown[] }) {
-    const candidateInputs = collectCandidateInputs(parameters);
-    return normalizeCandidatePaths(candidateInputs);
 }
 
 function candidateExistsAsFile(candidate) {
@@ -169,7 +164,8 @@ function createMissingEntryPointError(resolvedCandidates) {
 
 export function resolveFormatEntryPoint(options = {}) {
     const normalizedOptions = normalizeOptionsBag(options);
-    const resolvedCandidates = resolveCandidatePaths(normalizedOptions);
+    const candidateInputs = collectCandidateInputs(normalizedOptions.candidates, normalizedOptions.env);
+    const resolvedCandidates = normalizeCandidatePaths(candidateInputs);
     const existingPath = findFirstExistingPath(resolvedCandidates);
 
     if (existingPath) {

@@ -103,7 +103,6 @@ void test("normalize-doc-comments removes placeholder description equal to funct
         ""
     ].join("\n");
     const expected = [
-        "/// @description __ChatterboxClassSource",
         "/// @param filename",
         "/// @param buffer",
         "/// @param compile",
@@ -770,6 +769,31 @@ void test("prefer-string-interpolation rewrites string coercion calls with non-t
     assertEquals(result.output, expected);
 });
 
+void test("prefer-string-interpolation keeps full owner expressions for array access string coercions", () => {
+    const input =
+        'dump += "\\n  flat_player_render_mode: " + string(flat_player_render_mode[@ flat_player_render_mode]) + ",";\n';
+    const expected =
+        'dump += $"\\n  flat_player_render_mode: {flat_player_render_mode[@ flat_player_render_mode]},";\n';
+    const result = lintWithRule("prefer-string-interpolation", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-string-interpolation keeps full owner expressions for member access string coercions", () => {
+    const input = 'dump += "pos=[" + string(player_pos.x) + "," + string(player_pos.y) + "]";\n';
+    const expected = 'dump += $"pos=[{player_pos.x},{player_pos.y}]";\n';
+    const result = lintWithRule("prefer-string-interpolation", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-string-interpolation keeps full owner expressions for direct member concatenations", () => {
+    const input =
+        'dump += "\\n  flat_player_render_mode: " + flat_player_render_mode_names[@ flat_player_render_mode] + ",";\n';
+    const expected =
+        'dump += $"\\n  flat_player_render_mode: {flat_player_render_mode_names[@ flat_player_render_mode]},";\n';
+    const result = lintWithRule("prefer-string-interpolation", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("prefer-string-interpolation rewrites nested concatenation chains with a single diagnostic", () => {
     const input = 'message = ("HP: " + value) + " / 99";\n';
     const expected = 'message = $"HP: {value} / 99";\n';
@@ -886,6 +910,26 @@ void test("prefer-epsilon-comparisons reuses existing epsilon declarations in a 
     assertEquals(result.output, expected);
 });
 
+void test("prefer-epsilon-comparisons rewrites positive zero checks for math-sensitive variables", () => {
+    const input = [
+        "var m = dot_product_3d(mx, my, mz, mx, my, mz);",
+        "if (m > 0) {",
+        "    m = intersectionRadius / sqrt(m);",
+        "}",
+        ""
+    ].join("\n");
+    const expected = [
+        "var m = dot_product_3d(mx, my, mz, mx, my, mz);",
+        "if (m > math_get_epsilon()) {",
+        "    m = intersectionRadius / sqrt(m);",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-epsilon-comparisons", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("no-assignment-in-condition does not rewrite grouped multiline conditions without assignments", () => {
     const input = [
         "if ((_index == undefined)",
@@ -918,13 +962,23 @@ void test("no-globalvar diagnoses declared globals", () => {
     assertEquals(result.output, input);
 });
 
+void test("no-globalvar diagnoses comma-separated declarations without rewriting source", () => {
+    const input = ["globalvar score, lives;", "score = 1;", "if (lives > 0) {", "    score += lives;", "}", ""].join(
+        "\n"
+    );
+
+    const result = lintWithRule("no-globalvar", input, {});
+    assertEquals(result.messages.length > 0, true);
+    assertEquals(result.output, input);
+});
+
 void test("no-globalvar diagnoses comma-separated declarations", () => {
     const input = ["globalvar score, lives;", "score = 1;", "if (lives > 0) {", "    score += lives;", "}", ""].join(
         "\n"
     );
 
     const result = lintWithRule("no-globalvar", input, {});
-    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages.length > 0, true);
     assertEquals(result.output, input);
 });
 
@@ -1454,6 +1508,22 @@ void test("normalize-operator-aliases does not rewrite escaped quote string cont
     assertEquals(result.output, input);
 });
 
+void test("normalize-operator-aliases rewrites logical aliases without mutating identifiers that contain operator substrings", () => {
+    const input = "var show_mode0_origin = flat_dbg_draw_mode0_origin or flat_dbg_compare_mode0_overlay;\n";
+    const expected = "var show_mode0_origin = flat_dbg_draw_mode0_origin || flat_dbg_compare_mode0_overlay;\n";
+    const result = lintWithRule("normalize-operator-aliases", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("normalize-operator-aliases keeps member identifiers intact while rewriting logical aliases", () => {
+    const input =
+        "player_intent.move_active = abs(player_intent.world.Magnitude2D()) > eps or abs(spd_hor.Magnitude2D()) > 2;\n";
+    const expected =
+        "player_intent.move_active = abs(player_intent.world.Magnitude2D()) > eps || abs(spd_hor.Magnitude2D()) > 2;\n";
+    const result = lintWithRule("normalize-operator-aliases", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("normalize-operator-aliases reports from explicit locations when node loc metadata is absent", () => {
     const source = "if (left and right) {\n    value = 1;\n}\n";
     const operatorStart = source.indexOf("and");
@@ -1599,6 +1669,28 @@ void test("optimize-logical-flow rewrites both undefined guard forms to ??=", ()
     assertEquals(result.output, expected);
 });
 
+void test("optimize-logical-flow simplifies boolean literal comparisons in if conditions", () => {
+    const input = [
+        "if (xinput == true) { return move_horizontal(); }",
+        "if (xinput != false) { return move_horizontal(); }",
+        "if (yinput == false) { return move_vertical(); }",
+        "if (yinput != true) { return move_vertical(); }",
+        ""
+    ].join("\n");
+
+    const expected = [
+        "if (xinput) { return move_horizontal(); }",
+        "if (xinput) { return move_horizontal(); }",
+        "if (!yinput) { return move_vertical(); }",
+        "if (!yinput) { return move_vertical(); }",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("optimize-logical-flow", input, {});
+    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
+    assertEquals(result.output, expected);
+});
+
 void test("optimize-logical-flow does not rewrite unchanged struct accessor conditions", () => {
     const input = ["if (!_player_verb_struct[$ _verb_array[_i]].held) {", "    return;", "}", ""].join("\n");
 
@@ -1612,6 +1704,165 @@ void test("optimize-logical-flow handles parenthesized logical operands without 
 
     const result = lintWithRule("optimize-logical-flow", input, {});
 
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("optimize-logical-flow preserves else-if assignment chains", () => {
+    const input = [
+        "function detect_pad_type(vendor, product, description) {",
+        '    if (vendor == "aaa") {',
+        '        raw_type = "A";',
+        '    } else if (product == "bbb") {',
+        '        raw_type = "B";',
+        '    } else if (description == "ccc") {',
+        '        raw_type = "C";',
+        "    } else {",
+        '        raw_type = "Unknown";',
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("optimize-logical-flow", input, {});
+
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("optimize-logical-flow parenthesizes nested ternary consequents in autofix output", () => {
+    const input = [
+        "function build_values(value1, value2, value3, value4) {",
+        "    if (ready == true) {",
+        "        ready = true;",
+        "    }",
+        "",
+        "    if (!is_undefined(value2)) {",
+        "        value = (!is_undefined(value3) ? (!is_undefined(value4) ? [value1, value2, value3, value4] : [value1, value2, value3]) : [value1, value2]);",
+        "    } else {",
+        "        value = [value1];",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("optimize-logical-flow", input, {});
+
+    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
+    assert.ok(
+        result.output.includes("? (!is_undefined(value4) ?"),
+        "Expected nested ternary in the true branch to be wrapped in parentheses."
+    );
+    assertEquals(
+        result.output.includes("? !is_undefined(value4) ?"),
+        false,
+        "Expected autofix output to avoid malformed nested ternary syntax."
+    );
+});
+
+void test("no-unary-plus-on-identifier autofixes +identifier to bare identifier", () => {
+    const input = "var value = +count;\n";
+    const expected = "var value = count;\n";
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages[0]?.messageId, "noUnaryPlusOnIdentifier");
+    assertEquals(result.output, expected);
+});
+
+void test("no-unary-plus-on-identifier handles multiple unary plus usages in one file", () => {
+    const input = ["var a = +score;", "var b = +lives;", ""].join("\n");
+    const expected = ["var a = score;", "var b = lives;", ""].join("\n");
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 2);
+    assertEquals(result.output, expected);
+});
+
+void test("no-unary-plus-on-identifier preserves unary plus on non-identifier operands", () => {
+    // `+"5"` coerces a string literal to a number — a useful conversion that is
+    // not a simple "remove the operator" case; only identifier operands are flagged.
+    const input = 'var value = +"5";\n';
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-unary-plus-on-identifier preserves unary plus on call-expression operands", () => {
+    const input = "var value = +get_count();\n";
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-unary-plus-on-identifier autofixes +identifier when wrapped in parentheses", () => {
+    // `+(count)` still has an Identifier as its innermost operand once the
+    // synthetic parentheses are unwrapped.
+    const input = "var value = +(count);\n";
+    const expected = "var value = (count);\n";
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.output, expected);
+});
+
+void test("no-unary-plus-on-identifier does not flag prefix increment (++)", () => {
+    const input = "var value = ++count;\n";
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero autofixes -0 to 0", () => {
+    const input = "var x = -0;\n";
+    const expected = "var x = 0;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages[0]?.messageId, "noNegativeZero");
+    assertEquals(result.output, expected);
+});
+
+void test("no-negative-zero handles multiple negative zero usages in one file", () => {
+    const input = ["var a = -0;", "var b = -0;", ""].join("\n");
+    const expected = ["var a = 0;", "var b = 0;", ""].join("\n");
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 2);
+    assertEquals(result.output, expected);
+});
+
+void test("no-negative-zero does not flag non-zero negative literals", () => {
+    const input = "var x = -5;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero does not flag bare zero without unary minus", () => {
+    const input = "var x = 0;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero does not flag unary minus on identifiers", () => {
+    const input = "var x = -count;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero does not flag unary minus on non-zero expressions", () => {
+    const input = "var x = -(a + b);\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });

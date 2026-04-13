@@ -1,15 +1,21 @@
 /**
- * Local variable collector for GML event transpilation.
+ * Pre-emission name collectors for GML transpilation.
  *
- * In GML, `var` declarations are function-scoped (similar to JavaScript's `var`).
- * When transpiling object events, we need to distinguish between:
- *   - Local variables: declared with `var` in the event body
- *   - Instance fields: all other identifiers that resolve to `self.<name>`
+ * Before the emitter walks the AST, it must know which names are already
+ * bound so that identifiers referencing those names are emitted correctly
+ * regardless of declaration order.
  *
- * This module provides `collectLocalVariables`, which walks an AST and returns
- * the set of all `var`-declared variable names. Nested function scopes are not
- * descended into because their `var` declarations belong to those inner functions,
- * not to the enclosing event body.
+ * Two collectors are provided:
+ *
+ * - `collectLocalVariables` – walks a GML event AST and returns the set of
+ *   all names declared with `var`. Used by `EventContextOracle` to distinguish
+ *   locals from instance fields.
+ *
+ * - `collectGlobalVarNames` – walks any GML program AST and returns the set
+ *   of all names declared with `globalvar`. Used by `GmlToJsEmitter` to
+ *   pre-seed its global-var tracking set so that forward references to
+ *   `globalvar`-declared names are emitted as `global.<name>` even when the
+ *   declaration appears after the first use.
  */
 
 import type { ProgramNode } from "./ast.js";
@@ -63,8 +69,8 @@ function collectVarDeclarationsFromTree(root: unknown, localNames: Set<string>):
 
         collectVarDeclaratorNames(currentNode, localNames);
 
-        for (const key of Object.keys(currentNode)) {
-            traversalStack.push(currentNode[key]);
+        for (const value of Object.values(currentNode)) {
+            traversalStack.push(value);
         }
     }
 }
@@ -97,4 +103,78 @@ export function collectLocalVariables(ast: ProgramNode): ReadonlySet<string> {
     const localNames = new Set<string>();
     collectVarDeclarationsFromTree(ast, localNames);
     return localNames;
+}
+
+/**
+ * Collect the names of all `globalvar`-declared variables from a GML program AST.
+ *
+ * In GML, `globalvar` binds a name to the global struct regardless of where the
+ * declaration appears in the source. This means an identifier may be referenced
+ * before its `globalvar` declaration in the source text—a legal forward reference.
+ *
+ * `GmlToJsEmitter` uses this set to pre-seed its internal global-var tracker
+ * before emission begins, so that forward-referenced global names are always
+ * emitted as `global.<name>` rather than as bare identifiers.
+ *
+ * The walk crosses `FunctionDeclaration` and `ConstructorDeclaration` boundaries
+ * because `globalvar` is always global-scoped regardless of the lexical nesting.
+ *
+ * @param ast - The root `Program` node to walk
+ * @returns An immutable set of all `globalvar`-declared names in the program
+ *
+ * @example
+ * ```gml
+ * // Forward reference — foo referenced before its globalvar declaration:
+ * foo = 1;
+ * globalvar foo;
+ * ```
+ * ```typescript
+ * const globals = collectGlobalVarNames(ast);
+ * // globals = Set { "foo" }
+ * // GmlToJsEmitter pre-seeds this.globalVars with { "foo" } before emission,
+ * // so `foo = 1` is correctly emitted as `global.foo = 1`.
+ * ```
+ */
+export function collectGlobalVarNames(ast: ProgramNode): ReadonlySet<string> {
+    const globalNames = new Set<string>();
+    collectGlobalVarNamesFromTree(ast, globalNames);
+    return globalNames;
+}
+
+function collectGlobalVarNamesFromDeclaration(declaration: unknown, globalNames: Set<string>): void {
+    if (!isAstRecord(declaration) || !isAstRecord(declaration.id)) {
+        return;
+    }
+    const { name } = declaration.id;
+    if (typeof name === "string" && name.length > 0) {
+        globalNames.add(name);
+    }
+}
+
+function collectGlobalVarNamesFromNode(node: AstRecord, globalNames: Set<string>, stack: unknown[]): void {
+    if (node.type === "GlobalVarStatement" && Array.isArray(node.declarations)) {
+        for (const declaration of node.declarations) {
+            collectGlobalVarNamesFromDeclaration(declaration, globalNames);
+        }
+    }
+    // Push child values onto the traversal stack.
+    for (const value of Object.values(node)) {
+        stack.push(value);
+    }
+}
+
+function collectGlobalVarNamesFromTree(root: unknown, globalNames: Set<string>): void {
+    const traversalStack: unknown[] = [root];
+
+    while (traversalStack.length > 0) {
+        const currentNode = traversalStack.pop();
+
+        if (Array.isArray(currentNode)) {
+            for (let index = currentNode.length - 1; index >= 0; index -= 1) {
+                traversalStack.push(currentNode[index]);
+            }
+        } else if (isAstRecord(currentNode)) {
+            collectGlobalVarNamesFromNode(currentNode, globalNames, traversalStack);
+        }
+    }
 }

@@ -5,7 +5,9 @@ import { createNoAssignmentInConditionRule } from "./rules/no-assignment-in-cond
 import { createNoEmptyRegionsRule } from "./rules/no-empty-regions-rule.js";
 import { createNoGlobalvarRule } from "./rules/no-globalvar-rule.js";
 import { createNoLegacyApiRule } from "./rules/no-legacy-api-rule.js";
+import { createNoNegativeZeroRule } from "./rules/no-negative-zero-rule.js";
 import { createNoScientificNotationRule } from "./rules/no-scientific-notation-rule.js";
+import { createNoUnaryPlusOnIdentifierRule } from "./rules/no-unary-plus-on-identifier-rule.js";
 import { createNoUnnecessaryStringInterpolationRule } from "./rules/no-unnecessary-string-interpolation-rule.js";
 import { createNormalizeBannerCommentsRule } from "./rules/normalize-banner-comments-rule.js";
 import { createNormalizeDataStructureAccessorsRule } from "./rules/normalize-data-structure-accessors-rule.js";
@@ -28,6 +30,7 @@ import { createPreferStructLiteralAssignmentsRule } from "./rules/prefer-struct-
 import { createRemoveDefaultCommentsRule } from "./rules/remove-default-comments-rule.js";
 import { createRequireArgumentSeparatorsRule } from "./rules/require-argument-separators-rule.js";
 import { createRequireControlFlowBracesRule } from "./rules/require-control-flow-braces-rule.js";
+import { createRequireRegionPairsRule } from "./rules/require-region-pairs-rule.js";
 import { createRequireTrailingOptionalDefaultsRule } from "./rules/require-trailing-optional-defaults-rule.js";
 import { createSimplifyRealCallsRule } from "./rules/simplify-real-calls-rule.js";
 
@@ -90,6 +93,9 @@ export function createGmlRule(definition: GmlRuleDefinition): Rule.RuleModule {
         case "require-control-flow-braces": {
             return createRequireControlFlowBracesRule(definition);
         }
+        case "require-region-pairs": {
+            return createRequireRegionPairsRule(definition);
+        }
         case "no-assignment-in-condition": {
             return createNoAssignmentInConditionRule(definition);
         }
@@ -119,6 +125,12 @@ export function createGmlRule(definition: GmlRuleDefinition): Rule.RuleModule {
         }
         case "simplify-real-calls": {
             return createSimplifyRealCallsRule(definition);
+        }
+        case "no-unary-plus-on-identifier": {
+            return createNoUnaryPlusOnIdentifierRule(definition);
+        }
+        case "no-negative-zero": {
+            return createNoNegativeZeroRule(definition);
         }
         default: {
             throw new Error(`Missing gml rule implementation for shortName '${definition.shortName}'.`);

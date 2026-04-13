@@ -10,7 +10,7 @@ import {
 } from "./test-helpers/refactor-top-level-naming-performance.js";
 
 const FUNCTION_COUNT = 2400;
-const PERFORMANCE_THRESHOLD_MS = 900;
+const PERFORMANCE_THRESHOLD_MS = 700;
 
 type RenameValidationCacheStats = {
     evictions: number;
@@ -45,15 +45,14 @@ void test("refactor codemod runtime stays within the indexed semantic bridge thr
             targetPaths: [fixture.projectRoot],
             gmlFilePaths: [...fixture.sourceTexts.keys()],
             config: {
-                namingConventionPolicy: {
-                    rules: {
-                        function: {
-                            caseStyle: "camel"
+                codemods: {
+                    namingConvention: {
+                        rules: {
+                            function: {
+                                caseStyle: "camel"
+                            }
                         }
                     }
-                },
-                codemods: {
-                    namingConvention: {}
                 }
             },
             readFile: async (filePath) => fixture.sourceTexts.get(filePath) ?? "",

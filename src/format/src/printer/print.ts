@@ -216,10 +216,11 @@ function printNodeDocComments(node, path, options) {
     // node, removing the need for any formatter-side source-text scan.
     // (target-state.md §2.2, §3.2, §3.5)
 
+    appendMixedDocPreambleLeadingComments(docCommentDocs, node, originalText, nodeStartIndex);
     sortDocCommentsBySourceOrder(docCommentDocs);
 
     const docCommentEntriesForMetadata = [...docCommentDocs];
-    const printableDocComments = buildPrintableDocCommentLines(docCommentDocs);
+    const printableDocComments = buildPrintableDocCommentLines(docCommentDocs, originalText);
     const printableDocCommentBlock = joinDocCommentsPreservingSourceSpacing(
         printableDocComments,
         docCommentEntriesForMetadata,
@@ -276,6 +277,63 @@ function printNodeDocComments(node, path, options) {
     markDocCommentsAsPrinted(node, path);
 
     return concat(parts);
+}
+
+function appendMixedDocPreambleLeadingComments(
+    docCommentDocs: MutableDocCommentLines,
+    node,
+    originalText: string | null,
+    nodeStartIndex
+): void {
+    if (
+        docCommentDocs.length === 0 ||
+        originalText === null ||
+        typeof nodeStartIndex !== NUMBER_TYPE ||
+        !Array.isArray(node.comments) ||
+        node.comments.length === 0
+    ) {
+        return;
+    }
+
+    const docCommentStartIndexes = docCommentDocs
+        .map((entry) => resolveDocCommentStartIndex(entry))
+        .filter((startIndex): startIndex is number => typeof startIndex === NUMBER_TYPE);
+    if (docCommentStartIndexes.length === 0) {
+        return;
+    }
+
+    const preambleStartIndex = Math.min(...docCommentStartIndexes);
+    const preambleText = originalText.slice(preambleStartIndex, nodeStartIndex);
+    const hasTripleSlashDocComment = /(^|\r?\n)[ \t]*\/\/\//u.test(preambleText);
+    const hasMixedCommentSyntax = /(^|\r?\n)[ \t]*\/\/(?!\/)|\/\*/u.test(preambleText);
+    if (!hasTripleSlashDocComment || !hasMixedCommentSyntax) {
+        return;
+    }
+
+    const mergedComments = new Set<unknown>();
+    for (const comment of node.comments) {
+        const commentStartIndex = resolveDocCommentStartIndex(comment);
+        const commentEndIndex = resolveDocCommentEndIndex(comment);
+        if (
+            typeof commentStartIndex !== NUMBER_TYPE ||
+            typeof commentEndIndex !== NUMBER_TYPE ||
+            commentStartIndex < preambleStartIndex ||
+            commentEndIndex >= nodeStartIndex ||
+            docCommentDocs.includes(comment)
+        ) {
+            continue;
+        }
+
+        docCommentDocs.push(comment);
+        mergedComments.add(comment);
+        if (Core.isObjectLike(comment)) {
+            comment.printed = true;
+        }
+    }
+
+    if (mergedComments.size > 0) {
+        node.comments = node.comments.filter((comment) => !mergedComments.has(comment));
+    }
 }
 
 function joinDocCommentsPreservingSourceSpacing(
@@ -614,18 +672,6 @@ function printBinaryExpressionNode(node, path, options, print) {
 
 function printUnaryLikeExpressionNode(node, _path, _options, print) {
     if (node.prefix) {
-        if (node.operator === "+" && shouldOmitUnaryPlus(node.argument)) {
-            return print("argument");
-        }
-
-        // Normalize `-0` to `0`: when a unary minus is applied to a literal zero
-        // (including normalized forms like `0.` → `0`), the result is numerically
-        // identical to positive zero in GML. Keeping `-0` would generate incorrect
-        // output after decimal normalization strips the fractional part.
-        if (node.operator === "-" && node.argument?.type === "Literal" && Number(node.argument.value) === 0) {
-            return concat(["0"]);
-        }
-
         return concat([node.operator, print("argument")]);
     }
 
@@ -2277,6 +2323,7 @@ function handleIntermediateTrailingSpacing({
         isLoopStatement &&
         (nextNodeIsVariableDeclaration || nextNodeIsLoop);
     const shouldForceVariableBlockLoopPadding =
+        isTopLevel &&
         hasAutomaticPaddingCapacityWithSuppressionGuard &&
         shouldForceVariableBlockBeforeLoopPadding(
             statements,
@@ -3043,31 +3090,6 @@ function shouldBreakVariableInitializerOnAssignmentLine(node): boolean {
     return initializer?.type === "BinaryExpression" && binaryExpressionContainsString(initializer);
 }
 
-function shouldOmitUnaryPlus(argument) {
-    const candidate = unwrapUnaryPlusCandidate(argument);
-
-    if (!candidate || typeof candidate !== OBJECT_TYPE) {
-        return false;
-    }
-
-    return candidate.type === "Identifier";
-}
-
-function unwrapUnaryPlusCandidate(node) {
-    let current = node;
-
-    while (
-        current &&
-        typeof current === OBJECT_TYPE &&
-        current.type === "ParenthesizedExpression" &&
-        current.expression
-    ) {
-        current = current.expression;
-    }
-
-    return current;
-}
-
 function unwrapParenthesizedExpression(childPath, print) {
     const childNode = childPath.getValue();
     if (childNode?.type === "ParenthesizedExpression") {
@@ -3378,11 +3400,15 @@ function shouldFlattenSyntheticBinary(parent, expression, _path) {
         return false;
     }
 
+    const parentKey = safeGetPathName(_path);
+
     if (parent.operator === expression.operator) {
+        if ((parent.operator === "-" || parent.operator === "/") && parentKey === "right") {
+            return false;
+        }
         return true;
     }
 
-    const parentKey = safeGetPathName(_path);
     const parentIsAdditive = parent.operator === "+" || parent.operator === "-";
     const expressionIsAdditive = expression.operator === "+" || expression.operator === "-";
     if (!parentIsAdditive || !expressionIsAdditive) {
@@ -3404,6 +3430,12 @@ function shouldFlattenMultiplicationChain(parent, expression, _path) {
     const expressionInfo = getBinaryOperatorInfo(expression.operator);
 
     if (!parentInfo || !expressionInfo) {
+        return false;
+    }
+
+    const parentOperandKey = safeGetPathName(_path);
+
+    if (parent.operator === "/" && parentOperandKey === "right") {
         return false;
     }
 

@@ -11,7 +11,8 @@ import {
     mergeSyntheticDocComments,
     prepareDocCommentEnvironment,
     promoteLeadingDocCommentTextToDescription,
-    reorderDescriptionLinesToTop
+    reorderDescriptionLinesToTop,
+    resolveParameterName
 } from "../../../doc-comment/index.js";
 
 /**
@@ -34,5 +35,6 @@ export const gmlTransformDocCommentServices = Object.freeze({
     mergeSyntheticDocComments,
     prepareDocCommentEnvironment,
     promoteLeadingDocCommentTextToDescription,
-    reorderDescriptionLinesToTop
+    reorderDescriptionLinesToTop,
+    resolveParameterName
 });

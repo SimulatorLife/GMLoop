@@ -5,7 +5,13 @@ const { isNonEmptyTrimmedString } = Core;
 const MULTIPLE_BLANK_LINE_PATTERN = /\n{3,}/g;
 const WHITESPACE_ONLY_BLANK_LINE_PATTERN = /\n[ \t]+\n/g;
 const LINE_COMMENT_TO_BLOCK_COMMENT_BLANK_PATTERN = /(\/\/(?!\/)[^\n]*\n)[ \t]*\n(?=[ \t]*\/\*)/g;
-const BLOCK_OPENING_BLANK_PATTERN = /\{\n[ \t]*\n(?![ \t]*(?:\/\/\/|\/\*))/g;
+// Matches a blank line immediately after `{`, but not when the next
+// non-blank content is a comment (`///`, `//`, or `/*`).  Comments that
+// immediately follow a block opener are left with their blank line intact
+// so the formatter never makes spacing decisions that require knowing
+// whether the surrounding block is a function, a loop, or any other
+// GML-specific construct.  (target-state.md §3.2 – formatter boundary)
+const BLOCK_OPENING_BLANK_PATTERN = /\{\n[ \t]*\n(?![ \t]*(?:\/\/\/|\/\/|\/\*))/g;
 const DECORATIVE_COMMENT_BLANK_PATTERN = /\{\n[ \t]+\n(?=\s*\/\/)/g;
 
 const INLINE_TRAILING_COMMENT_SPACING_PATTERN = /(?<=[^\s/,])[ \t]{2,}(?=\/\/(?!\/))/g;
@@ -28,24 +34,11 @@ const collapseLineCommentToBlockCommentBlankLines = createPatternReplacementStep
     "$1\n"
 );
 
-function collapseBlockOpeningBlankLines(formatted: string): string {
-    return formatted.replaceAll(BLOCK_OPENING_BLANK_PATTERN, (matched, offset, source) => {
-        const remaining = source.slice(offset + matched.length);
-        const hasPlainLineComment = /^\s*\/\/(?!\/)/.test(remaining);
-
-        if (hasPlainLineComment) {
-            const previousNewlineIndex = source.lastIndexOf("\n", offset - 1);
-            const lineStart = previousNewlineIndex === -1 ? 0 : previousNewlineIndex + 1;
-            const openingLine = source.slice(lineStart, offset).trim();
-
-            if (openingLine.includes("function")) {
-                return "{\n\n";
-            }
-        }
-
-        return "{\n";
-    });
-}
+// Collapse the blank line that directly follows `{` when the next
+// non-empty content is code (not a comment).  Comments are excluded by
+// BLOCK_OPENING_BLANK_PATTERN so this replacement is unconditional and
+// requires no knowledge of surrounding GML syntax.  (target-state.md §3.2)
+const collapseBlockOpeningBlankLines = createPatternReplacementStep(BLOCK_OPENING_BLANK_PATTERN, "{\n");
 
 const trimDecorativeCommentBlankLines = createPatternReplacementStep(DECORATIVE_COMMENT_BLANK_PATTERN, "{\n\n");
 const normalizeInlineTrailingCommentSpacing = createPatternReplacementStep(

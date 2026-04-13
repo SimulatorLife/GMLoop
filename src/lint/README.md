@@ -2,7 +2,7 @@
 
 `@gmloop/lint` is the ESLint language plugin and rule bundle for GameMaker Language (`.gml`) in this monorepo.
 
-It owns lint diagnostics and semantic/content rewrites (via lint rules and `--fix`), while formatter-only layout behavior stays in `@gmloop/format`.
+It owns lint diagnostics and semantic/content rewrites (via lint rules and `--write`), while formatter-only layout behavior stays in `@gmloop/format`.
 
 - Owns:
     - ESLint language wiring for GML (`language: "gml/gml"`)
@@ -113,6 +113,7 @@ Built-in `gml/*` rule short names:
 - `normalize-doc-comments`
 - `normalize-directives`
 - `require-control-flow-braces`
+- `require-region-pairs`
 - `no-assignment-in-condition`
 - `prefer-is-undefined-check`
 - `prefer-epsilon-comparisons`
@@ -142,6 +143,8 @@ comment-bearing statement spans.
 would be dropped and the initializer does not reference the declared identifier.
 
 `require-control-flow-braces` reports and autofixes unbraced control-flow statements by inserting structural `{ ... }` blocks. It does not depend on the formatter for that rewrite; the formatter remains responsible only for subsequent layout/canonical rendering.
+
+`require-region-pairs` reports malformed `#region` / `#endregion` pairs. The autofix removes standalone `#endregion` directives and appends missing `#endregion` directives at the bottom of the file.
 
 `prefer-struct-literal-assignments` only rewrites contiguous property assignments when they immediately follow an empty struct creation (`var foo = {};` or `foo = {};`). Property writes against existing structs are left unchanged.
 

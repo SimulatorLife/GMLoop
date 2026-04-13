@@ -12,7 +12,8 @@ import {
     detectResolvedFailures,
     ensureResultsAvailability,
     readTestResults,
-    reportRegressionSummary
+    reportRegressionSummary,
+    runGenerateQualityReport
 } from "../src/commands/generate-quality-report.js";
 
 const xmlHeader = '<?xml version="1.0" encoding="utf-8"?>\n';
@@ -29,6 +30,12 @@ function writeXml(dir, name, contents) {
 function writeJson(dir, name, value) {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, name), JSON.stringify(value, null, 2));
+}
+
+function createMockCommand(options) {
+    return {
+        opts: () => options
+    };
 }
 
 let workspace;
@@ -79,7 +86,7 @@ void test("detects regressions when a previously passing test now fails", () => 
     assert.strictEqual(regressions[0].to, "failed");
 });
 
-void test("treats failing tests without a base counterpart as regressions", () => {
+void test("does not treat failing tests without a base counterpart as regressions", () => {
     const baseDir = path.join(workspace, "base/reports");
     const headDir = path.join(workspace, "reports");
 
@@ -110,8 +117,7 @@ void test("treats failing tests without a base counterpart as regressions", () =
     const head = readTestResults(["reports"], { workspace });
     const regressions = detectRegressions(base, head);
 
-    assert.strictEqual(regressions.length, 1);
-    assert.strictEqual(regressions[0].detail?.displayName.includes("new scenario fails"), true);
+    assert.strictEqual(regressions.length, 0);
 });
 
 void test("matches existing failures by trimmed file/name identity when keys differ", () => {
@@ -373,8 +379,7 @@ void test("detectResolvedFailures returns failures that now pass or are missing"
     assert.strictEqual(resolvedFailures[0].key, "sample :: test :: existing failure");
     assert.strictEqual(resolvedFailures[0].to, "passed");
 
-    assert.strictEqual(regressions.length, 1);
-    assert.strictEqual(regressions[0].key, "sample :: test :: new failure");
+    assert.strictEqual(regressions.length, 0);
 });
 
 void test("detectRegressions accepts heterogeneous result containers", () => {
@@ -568,9 +573,9 @@ void test("does not count a node runner file-level IPC crash as a regression whe
     assert.strictEqual(regressions.length, 0);
 });
 
-void test("still counts a file-level crash as a regression when no inner tests passed", () => {
-    // If the test file produced no passing inner tests at all, the file-level crash
-    // is likely a genuine failure (e.g., an import error) rather than a runner fluke.
+void test("does not count a file-level crash as a regression when no inner tests passed", () => {
+    // Newly introduced failing tests are allowed, so even this file-level crash record
+    // should not count as a regression when no matching base test exists.
     const baseDir = path.join(workspace, "base/reports");
     const mergeDir = path.join(workspace, "merge/reports");
 
@@ -605,9 +610,201 @@ void test("still counts a file-level crash as a regression when no inner tests p
     const merged = readTestResults(["merge/reports"], { workspace });
     const regressions = detectRegressions(base, merged);
 
-    // No passing inner tests from broken.test.js → treat as genuine regression.
-    assert.strictEqual(regressions.length, 1);
-    assert.ok(regressions[0].key.includes("broken.test.js"));
+    assert.strictEqual(regressions.length, 0);
+});
+
+void test("readTestResults prefers canonical tests.xml results over auxiliary XML reports for duplicate test keys", () => {
+    const resultsDir = path.join(workspace, "reports");
+
+    writeXml(
+        resultsDir,
+        "tests",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="shared test" classname="suite" file="/repo/src/refactor/dist/test/naming-convention-performance.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        resultsDir,
+        "performance",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="shared test" classname="suite" file="/repo/src/refactor/dist/test/naming-convention-performance.test.js">
+          <failure message="performance threshold exceeded" />
+        </testcase>
+      </testsuite>
+    </testsuites>`
+    );
+
+    const head = readTestResults(["reports"], { workspace });
+    const record = head.results.get("root :: suite :: shared test");
+
+    assert.ok(record);
+    assert.strictEqual(record.status, "passed");
+    assert.strictEqual(head.stats.total, 1);
+    assert.strictEqual(head.stats.passed, 1);
+    assert.strictEqual(head.stats.failed, 0);
+    assert.strictEqual(head.stats.skipped, 0);
+});
+
+void test("readTestResults counts deduplicated records when canonical report replaces auxiliary failure", () => {
+    const resultsDir = path.join(workspace, "reports");
+
+    writeXml(
+        resultsDir,
+        "performance",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="shared test" classname="suite" file="/repo/src/refactor/dist/test/naming-convention-performance.test.js">
+          <failure message="performance threshold exceeded" />
+        </testcase>
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        resultsDir,
+        "tests",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="shared test" classname="suite" file="/repo/src/refactor/dist/test/naming-convention-performance.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    const head = readTestResults(["reports"], { workspace });
+
+    assert.strictEqual(head.results.size, 1);
+    assert.strictEqual(head.stats.total, 1);
+    assert.strictEqual(head.stats.passed, 1);
+    assert.strictEqual(head.stats.failed, 0);
+    assert.strictEqual(head.stats.skipped, 0);
+});
+
+void test("readTestResults removes auxiliary wrapper-drift duplicates when canonical tests.xml has the logical test", () => {
+    const resultsDir = path.join(workspace, "reports");
+
+    writeXml(
+        resultsDir,
+        "tests",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="stable test" classname="suite" file="/repo/src/cli/dist/test/stable.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        resultsDir,
+        "performance",
+        `<testsuites>
+      <undefined name="wrapper drift">
+        <testsuite name="root">
+          <testcase name="stable test" classname="suite" file="/repo/src/cli/dist/test/stable.test.js">
+            <failure message="transient worker failure" />
+          </testcase>
+        </testsuite>
+      </undefined>
+    </testsuites>`
+    );
+
+    const head = readTestResults(["reports"], { workspace });
+
+    assert.strictEqual(head.results.size, 1);
+    assert.strictEqual(head.stats.total, 1);
+    assert.strictEqual(head.stats.passed, 1);
+    assert.strictEqual(head.stats.failed, 0);
+    assert.strictEqual([...head.results.keys()][0], "root :: suite :: stable test");
+});
+
+void test("does not report regressions when only auxiliary performance.xml differs for the same test key", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "reports");
+
+    writeXml(
+        baseDir,
+        "tests",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="shared test" classname="suite" file="/repo/src/refactor/dist/test/naming-convention-performance.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        headDir,
+        "tests",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="shared test" classname="suite" file="/repo/src/refactor/dist/test/naming-convention-performance.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        headDir,
+        "performance",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="shared test" classname="suite" file="/repo/src/refactor/dist/test/naming-convention-performance.test.js">
+          <failure message="performance threshold exceeded" />
+        </testcase>
+      </testsuite>
+    </testsuites>`
+    );
+
+    const base = readTestResults(["base/reports"], { workspace });
+    const head = readTestResults(["reports"], { workspace });
+    const regressions = detectRegressions(base, head);
+
+    assert.strictEqual(regressions.length, 0);
+});
+
+void test("does not report regressions from auxiliary renamed failures when canonical tests.xml is passing", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "reports");
+
+    writeXml(
+        baseDir,
+        "tests",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="stable test" classname="suite" file="/repo/src/cli/dist/test/stable.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        headDir,
+        "tests",
+        `<testsuites>
+      <testsuite name="root">
+        <testcase name="stable test" classname="suite" file="/repo/src/cli/dist/test/stable.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        headDir,
+        "performance",
+        `<testsuites>
+      <undefined name="wrapper drift">
+        <testsuite name="root">
+          <testcase name="stable test" classname="suite" file="/repo/src/cli/dist/test/stable.test.js">
+            <failure message="transient worker failure" />
+          </testcase>
+        </testsuite>
+      </undefined>
+    </testsuites>`
+    );
+
+    const base = readTestResults(["base/reports"], { workspace });
+    const head = readTestResults(["reports"], { workspace });
+    const regressions = detectRegressions(base, head);
+
+    assert.strictEqual(regressions.length, 0);
 });
 
 void test("readTestResults preserves project health stats when present", () => {
@@ -634,6 +831,251 @@ void test("readTestResults preserves project health stats when present", () => {
     const result = readTestResults(["reports"], { workspace });
 
     assert.deepStrictEqual(result.health, health);
+});
+
+void test("quality report does not count head-only performance report cases as newly added PR tests", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    const stableSuite = `<testsuites>
+      <testsuite name="sample">
+        <testcase name="stable test" classname="suite" file="/repo/src/cli/dist/test/stable.test.js" />
+      </testsuite>
+    </testsuites>`;
+
+    writeXml(baseDir, "tests", stableSuite);
+    writeXml(headDir, "tests", stableSuite);
+    writeXml(
+        headDir,
+        "performance",
+        `<testsuites>
+      <testsuite name="performance">
+        <testcase name="head-only perf gate" classname="suite" file="/repo/src/cli/dist/test/perf-gate.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+    writeXml(mergeDir, "tests", stableSuite);
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: mergeDir,
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 0);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /\| PR \(Head\) \| 2 \| 2 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
+});
+
+void test("quality report explains merged snapshot gate semantics when merge artifacts are present", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="sample">
+        <testcase name="stable test" classname="suite" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        headDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="sample">
+        <testcase name="stable test" classname="suite" />
+        <testcase name="new passing test" classname="suite" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        mergeDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="sample">
+        <testcase name="stable test" classname="suite" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: mergeDir,
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 0);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /#### Regression Comparison Flow/u);
+    assert.match(markdown, /Regression gate target: \*\*Merged\*\*\./u);
+    assert.match(markdown, /✅ No test regressions detected \(Base → Merged\)\./u);
+});
+
+void test("quality report falls back to PR head gate semantics when merge artifacts are missing", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="sample">
+        <testcase name="stable test" classname="suite" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        headDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="sample">
+        <testcase name="stable test" classname="suite">
+          <failure message="regression" />
+        </testcase>
+      </testsuite>
+    </testsuites>`
+    );
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: path.join(workspace, "missing-merge/reports"),
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 10);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /Regression gate target: \*\*PR \(Head\)\*\*\./u);
+    assert.match(markdown, /❌ Test regressions detected \(Base → PR \(Head\)\)\./u);
+});
+
+void test("quality report can compare when base only has a synthetic build failure", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "build",
+        `<testsuites>
+      <testsuite name="build">
+        <testcase name="pnpm run build:ts" classname="quality.build">
+          <failure message="TypeScript workspace build failed" />
+        </testcase>
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        headDir,
+        "build",
+        `<testsuites>
+      <testsuite name="build">
+        <testcase name="pnpm run build:ts" classname="quality.build" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        mergeDir,
+        "build",
+        `<testsuites>
+      <testsuite name="build">
+        <testcase name="pnpm run build:ts" classname="quality.build" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: mergeDir,
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 0);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /\| Base \| 1 \| 0 \| 1 \| 0 \| 0 \| 0 \| 0 \|/u);
+    assert.match(markdown, /✅ No test regressions detected \(Base → Merged\)\./u);
+});
+
+void test("quality report detects a target synthetic build failure as a regression", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "build",
+        `<testsuites>
+      <testsuite name="build">
+        <testcase name="pnpm run build:ts" classname="quality.build" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        headDir,
+        "build",
+        `<testsuites>
+      <testsuite name="build">
+        <testcase name="pnpm run build:ts" classname="quality.build" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        mergeDir,
+        "build",
+        `<testsuites>
+      <testsuite name="build">
+        <testcase name="pnpm run build:ts" classname="quality.build">
+          <failure message="TypeScript workspace build failed" />
+        </testcase>
+      </testsuite>
+    </testsuites>`
+    );
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: mergeDir,
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 10);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /❌ Test regressions detected \(Base → Merged\)\./u);
+    assert.match(markdown, /build :: pnpm run build:ts/u);
 });
 
 void test("command accepts options without positional arguments", async () => {

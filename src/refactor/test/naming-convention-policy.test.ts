@@ -181,6 +181,11 @@ void test("formatNamingCaseStyle preserves compact digit-uppercase tokens in upp
     );
 });
 
+void test("formatNamingCaseStyle fast-path preserves simple lower snake cores", () => {
+    assert.equal(Refactor.formatNamingCaseStyle("already_snake_case", "lower_snake"), "already_snake_case");
+    assert.equal(Refactor.formatNamingCaseStyle("already_snake_case", "camel"), "alreadySnakeCase");
+});
+
 void test("evaluateNamingConvention preserves allowed leading underscores when enforcing case style", () => {
     const policy = Refactor.normalizeNamingConventionPolicy({
         rules: {
@@ -198,6 +203,80 @@ void test("evaluateNamingConvention preserves allowed leading underscores when e
     const needsCaseFix = Refactor.evaluateNamingConvention("_TargetShader", "shaderResourceName", policy, resolved);
     assert.equal(needsCaseFix.compliant, false);
     assert.equal(needsCaseFix.suggestedName, "_target_shader");
+});
+
+void test("evaluateNamingConvention replaces underscore resource prefixes for shader resources", () => {
+    const policy = Refactor.normalizeNamingConventionPolicy({
+        rules: {
+            resource: {
+                caseStyle: "lower_snake"
+            },
+            shaderResourceName: {
+                prefix: "shd_"
+            }
+        }
+    });
+    const resolved = Refactor.resolveNamingConventionRules(policy);
+
+    const evaluation = Refactor.evaluateNamingConvention("sh_cm_debug", "shaderResourceName", policy, resolved);
+    assert.equal(evaluation.compliant, false);
+    assert.equal(evaluation.suggestedName, "shd_cm_debug");
+});
+
+void test("evaluateNamingConvention replaces legacy single-letter resource prefixes when target prefix extends them", () => {
+    // Legacy resource prefixes such as "o" and "s" should be replaced (not duplicated)
+    // when the configured target prefix extends them (for example "obj_" or "spr_").
+    const policy = Refactor.normalizeNamingConventionPolicy({
+        rules: {
+            resource: {
+                caseStyle: "lower_snake"
+            },
+            objectResourceName: {
+                prefix: "obj_"
+            },
+            spriteResourceName: {
+                prefix: "spr_"
+            }
+        }
+    });
+    const resolved = Refactor.resolveNamingConventionRules(policy);
+
+    const camera = Refactor.evaluateNamingConvention("oCamera", "objectResourceName", policy, resolved);
+    assert.equal(camera.compliant, false);
+    assert.equal(camera.suggestedName, "obj_camera");
+
+    const compound = Refactor.evaluateNamingConvention("oColmesh2DemoCylinder", "objectResourceName", policy, resolved);
+    assert.equal(compound.compliant, false);
+    assert.equal(compound.suggestedName, "obj_colmesh2demo_cylinder");
+
+    const sprite = Refactor.evaluateNamingConvention("sSpiderHead", "spriteResourceName", policy, resolved);
+    assert.equal(sprite.compliant, false);
+    assert.equal(sprite.suggestedName, "spr_spider_head");
+
+    // Underscore-separated prefix "o_" IS stripped (that's a real prefix, not a word).
+    const underscorePrefixed = Refactor.evaluateNamingConvention("o_camera", "objectResourceName", policy, resolved);
+    assert.equal(underscorePrefixed.compliant, false);
+    assert.equal(underscorePrefixed.suggestedName, "obj_camera");
+});
+
+void test("evaluateNamingConvention fast-path handles simple case-style-only rules", () => {
+    const policy = Refactor.normalizeNamingConventionPolicy({
+        rules: {
+            localVariable: {
+                caseStyle: "camel"
+            }
+        }
+    });
+    const resolved = Refactor.resolveNamingConventionRules(policy);
+
+    const compliant = Refactor.evaluateNamingConvention("alreadyCamel", "localVariable", policy, resolved);
+    assert.equal(compliant.compliant, true);
+    assert.equal(compliant.suggestedName, "alreadyCamel");
+
+    const needsRewrite = Refactor.evaluateNamingConvention("bad_name", "localVariable", policy, resolved);
+    assert.equal(needsRewrite.compliant, false);
+    assert.equal(needsRewrite.suggestedName, "badName");
+    assert.match(needsRewrite.message ?? "", /camel case/);
 });
 
 void test("normalizeNamingConventionPolicy rejects unsupported naming categories", () => {

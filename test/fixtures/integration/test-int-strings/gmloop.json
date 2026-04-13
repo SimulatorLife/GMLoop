@@ -1,0 +1,11 @@
+{
+  "fixture": {
+    "kind": "integration",
+    "assertion": "transform",
+    "comparison": "exact"
+  },
+  "lintRules": {
+    "gml/no-unnecessary-string-interpolation": "error",
+    "gml/prefer-string-interpolation": "error"
+  }
+}

@@ -1,9 +1,0 @@
-{
-  "lintRules": {
-    "gml/no-globalvar": "error"
-  },
-  "fixture": {
-    "kind": "lint",
-    "assertion": "transform"
-  }
-}

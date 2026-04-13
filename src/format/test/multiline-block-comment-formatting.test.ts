@@ -48,7 +48,7 @@ var x = 1;
         assert.strictEqual(formatted, input);
     });
 
-    void it("filters out empty lines from multi-line block comments", async () => {
+    void it("preserves empty lines in multi-line block comments", async () => {
         const input = `/*
 
 This is a comment with empty lines
@@ -60,9 +60,12 @@ And another line
 var x = 1;`;
 
         const expected = `/*
- * This is a comment with empty lines
- * And another line
- */
+
+This is a comment with empty lines
+
+And another line
+
+*/
 
 var x = 1;
 `;

@@ -421,6 +421,29 @@ void describe("SemanticQueryCache", () => {
     });
 
     void describe("configuration", () => {
+        void it("evicts the least-recently-used entry when cache reaches maxSize", async () => {
+            let callCount = 0;
+            const semantic: PartialSemanticAnalyzer = {
+                getSymbolOccurrences: async () => {
+                    callCount++;
+                    return [];
+                }
+            };
+
+            const cache = new SemanticQueryCache(semantic, { maxSize: 2 });
+            await cache.getSymbolOccurrences("a");
+            await cache.getSymbolOccurrences("b");
+
+            // Touch "a" so "b" becomes the least recently used entry.
+            await cache.getSymbolOccurrences("a");
+            await cache.getSymbolOccurrences("c");
+
+            await cache.getSymbolOccurrences("a");
+            await cache.getSymbolOccurrences("b");
+
+            assert.equal(callCount, 4, "Entry 'b' should be evicted while recently-used entries stay cached");
+        });
+
         void it("respects maxSize limit", async () => {
             const semantic: PartialSemanticAnalyzer = {
                 getSymbolOccurrences: async () => []

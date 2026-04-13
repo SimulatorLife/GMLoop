@@ -6,5 +6,5 @@ export type GmlRuleDefinition = Readonly<{
     shortName: string;
     fullId: `gml/${string}`;
     messageId: string;
-    schema: ReadonlyArray<unknown>;
+    schema?: ReadonlyArray<unknown>;
 }>;

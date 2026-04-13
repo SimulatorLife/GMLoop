@@ -53,10 +53,15 @@ import type {
 } from "./ast.js";
 import { emitBuiltinFunction, isBuiltinFunction } from "./builtins.js";
 import { wrapConditional, wrapConditionalBody, wrapRawBody } from "./code-wrapping.js";
-import { tryFoldConstantExpression, tryFoldConstantUnaryExpression } from "./constant-folding.js";
+import {
+    tryFoldConstantExpression,
+    tryFoldConstantTernaryExpression,
+    tryFoldConstantUnaryExpression
+} from "./constant-folding.js";
 import { lowerEnumDeclaration } from "./enum-lowering.js";
 import { escapeTemplateText, stringifyStructKey } from "./js-string-utils.js";
 import { normalizeGmlNumericLiteral } from "./literal-normalization.js";
+import { collectGlobalVarNames } from "./local-variable-collector.js";
 import { mapBinaryOperator, mapUnaryOperator } from "./operator-mapping.js";
 import { ensureStatementTerminated } from "./statement-termination-policy.js";
 import { StringBuilder } from "./string-builder.js";
@@ -75,6 +80,16 @@ export class GmlToJsEmitter {
     private readonly callTargetAnalyzer: CallTargetAnalyzer;
     private readonly options: EmitOptions;
     private readonly globalVars: Set<string>;
+    /**
+     * Script symbol IDs referenced by call expressions encountered during emission.
+     *
+     * Populated incrementally as the AST is walked: every `CallExpression` whose
+     * target kind is `"script"` adds its resolved symbol (or name) here. The set
+     * is readable after `emit()` returns via `getDependencies()`, allowing the
+     * caller to attach a dependency list to the emitted patch without requiring
+     * a separate analysis pass.
+     */
+    private readonly scriptRefs: Set<string>;
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
     constructor(semantic: IdentifierAnalyzer & CallTargetAnalyzer, options: Partial<EmitOptions> = {}) {
@@ -82,11 +97,37 @@ export class GmlToJsEmitter {
         this.callTargetAnalyzer = semantic;
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this.globalVars = new Set();
+        this.scriptRefs = new Set();
+    }
+
+    /**
+     * Return the set of script symbol IDs that were referenced during emission.
+     *
+     * Each element is the SCIP-style symbol string used to route the call through
+     * the hot-reload wrapper (e.g. `"gml/script/scr_player_move"`). When a symbol
+     * ID is not available the raw script name is used instead.
+     *
+     * The returned set is only meaningful after `emit()` has been called. It is
+     * populated incrementally as script calls are encountered in the AST, so it
+     * will be empty for programs that contain no script calls.
+     *
+     * @returns An immutable view of the script references encountered during emission
+     */
+    getDependencies(): ReadonlySet<string> {
+        return this.scriptRefs;
     }
 
     emit(ast: StatementLike): string {
         if (!ast) {
             return "";
+        }
+        // Pre-collect all globalvar-declared names before walking the AST so that
+        // identifiers referenced before their `globalvar` declaration (a legal GML
+        // forward reference) are emitted as `global.<name>` rather than bare names.
+        if (ast.type === "Program") {
+            for (const name of collectGlobalVarNames(ast)) {
+                this.globalVars.add(name);
+            }
         }
         return this.visit(ast);
     }
@@ -406,6 +447,9 @@ export class GmlToJsEmitter {
         if (kind === "script") {
             const scriptSymbol = this.callTargetAnalyzer.callTargetSymbol(ast);
             const scriptId = scriptSymbol ?? this.resolveIdentifierName(ast.object) ?? this.visit(ast.object);
+            // Record this script reference for dependency tracking. The set is
+            // populated during the single emission pass and exposed via getDependencies().
+            this.scriptRefs.add(scriptId);
             return `${this.options.callScriptIdent}(${JSON.stringify(scriptId)}, self, other, [${argsList}])`;
         }
 
@@ -640,6 +684,11 @@ export class GmlToJsEmitter {
     }
 
     private visitTernaryExpression(ast: TernaryExpressionNode): string {
+        const foldedBranch = tryFoldConstantTernaryExpression(ast);
+        if (foldedBranch !== null) {
+            return this.visit(foldedBranch);
+        }
+
         const test = wrapConditional(ast.test, this.visitNode, true);
         const consequent = this.visit(ast.consequent);
         const alternate = this.visit(ast.alternate);

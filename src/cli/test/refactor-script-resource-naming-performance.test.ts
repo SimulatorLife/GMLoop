@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { performance } from "node:perf_hooks";
 import test from "node:test";
 
-import { Refactor } from "@gmloop/refactor";
+import { Refactor, type RefactorProjectConfig } from "@gmloop/refactor";
 
 import { GmlSemanticBridge } from "../src/modules/refactor/semantic-bridge.js";
+import { measureMedianDurationMs } from "./test-helpers/refactor-top-level-naming-performance.js";
 
 const RESOURCE_COUNT = 2000;
 const PERFORMANCE_THRESHOLD_MS = 1200;
@@ -14,6 +14,20 @@ type ScriptResourceFixture = {
     projectRoot: string;
     sourceTexts: Map<string, string>;
 };
+
+function createFunctionNamingConventionConfig(): RefactorProjectConfig {
+    return {
+        codemods: {
+            namingConvention: {
+                rules: {
+                    function: {
+                        caseStyle: "camel"
+                    }
+                }
+            }
+        }
+    };
+}
 
 function createScriptResourceFixture(): ScriptResourceFixture {
     const projectRoot = "/project";
@@ -105,35 +119,6 @@ function createScriptResourceFixture(): ScriptResourceFixture {
     };
 }
 
-async function measureMedianDurationMs<T>(
-    sampleCount: number,
-    execute: () => Promise<T>
-): Promise<{
-    durationMs: number;
-    result: T;
-}> {
-    const durations: Array<number> = [];
-    let latestResult: T | undefined;
-
-    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-        const startTime = performance.now();
-        latestResult = await execute();
-        durations.push(performance.now() - startTime);
-    }
-
-    durations.sort((left, right) => left - right);
-    const medianIndex = Math.floor(durations.length / 2);
-
-    if (latestResult === undefined) {
-        throw new Error("measureMedianDurationMs requires at least one sample");
-    }
-
-    return {
-        durationMs: durations[medianIndex] ?? 0,
-        result: latestResult
-    };
-}
-
 void test("refactor naming codemod keeps script-backed function scans within the indexed threshold", async () => {
     const fixture = createScriptResourceFixture();
 
@@ -156,18 +141,7 @@ void test("refactor naming codemod keeps script-backed function scans within the
             projectRoot: fixture.projectRoot,
             targetPaths: [fixture.projectRoot],
             gmlFilePaths: [...fixture.sourceTexts.keys()],
-            config: {
-                namingConventionPolicy: {
-                    rules: {
-                        function: {
-                            caseStyle: "camel"
-                        }
-                    }
-                },
-                codemods: {
-                    namingConvention: {}
-                }
-            },
+            config: createFunctionNamingConventionConfig(),
             readFile: async (filePath) => fixture.sourceTexts.get(filePath) ?? "",
             dryRun: true,
             onlyCodemods: ["namingConvention"]

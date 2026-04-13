@@ -36,13 +36,13 @@ void test("indexed root-target gml discovery stays within the runtime threshold"
     const projectIndex = createSyntheticProjectIndex();
 
     const warmup = resolveIndexedRootTargetGmlFiles(projectRoot, targetPaths, projectIndex);
-    assert.equal(warmup?.length, INDEXED_GML_FILE_COUNT);
+    assert.equal(warmup?.length, 10_000);
 
     const startTime = performance.now();
     const result = resolveIndexedRootTargetGmlFiles(projectRoot, targetPaths, projectIndex);
     const durationMs = performance.now() - startTime;
 
-    assert.equal(result?.length, INDEXED_GML_FILE_COUNT);
+    assert.equal(result?.length, 10_000);
     assert.equal(result?.[0], "scripts/script_0.gml");
     assert.ok(
         durationMs <= PERFORMANCE_THRESHOLD_MS,

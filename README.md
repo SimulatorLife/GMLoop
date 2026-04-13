@@ -38,7 +38,7 @@ function demo() {
 }
 ```
 
-Lint (`lint --fix`) does single-file-scoped semantic/content rewrites (rule-owned).
+Lint (`lint --write`) does single-file-scoped semantic/content rewrites (rule-owned).
 
 ## Quick start
 
@@ -80,7 +80,17 @@ unnecessary ambiguity.
 pnpm run cli -- lint /absolute/path/to/MyGame
 
 # diagnostics + autofix
-pnpm run cli -- lint /absolute/path/to/MyGame --fix
+pnpm run cli -- lint /absolute/path/to/MyGame --write
+```
+
+### Parse from a local clone
+
+```bash
+# write AST JSON to stdout
+pnpm run cli -- parse --path /absolute/path/to/MyGame/scripts/demo.gml
+
+# write sibling *.ast.json files
+pnpm run cli -- parse --write --path /absolute/path/to/MyGame
 ```
 
 ### Refactor from a local clone
@@ -88,11 +98,21 @@ pnpm run cli -- lint /absolute/path/to/MyGame --fix
 The refactor workspace implements a GML-native Collection API (similar to `jscodeshift`) for atomic cross-file transactions and metadata edits.
 
 ```bash
-# dry-run rename preview
-pnpm run cli -- refactor --old-name player_hp --new-name playerHealth --dry-run
+# preview rename (dry-run is the default; no files are written without --write)
+pnpm run cli -- refactor --old-name player_hp --new-name playerHealth
 
 # apply rename
-pnpm run cli -- refactor --old-name player_hp --new-name playerHealth
+pnpm run cli -- refactor --old-name player_hp --new-name playerHealth --write
+```
+
+### Transpile from a local clone
+
+```bash
+# dry-run transpile (prints JavaScript to stdout)
+pnpm run cli -- transpile --path /absolute/path/to/MyGame/scripts/scr_demo/scr_demo.gml
+
+# write .js outputs for all discovered .gml files under the target path
+pnpm run cli -- transpile --write --path /absolute/path/to/MyGame
 ```
 
 ## Architecture overview
@@ -126,11 +146,18 @@ pnpm run test:cli
 # formatter
 pnpm run format:gml -- /path/to/project
 
+# parser AST inspection
+pnpm run cli -- parse --path /path/to/project/scripts/demo.gml
+pnpm run cli -- parse --write --path /path/to/project
+
 # lint
-pnpm run cli -- lint /path/to/project --fix
+pnpm run cli -- lint /path/to/project --write
 
 # refactor
 pnpm run cli -- refactor --old-name old_name --new-name newName
+
+# transpile
+pnpm run cli -- transpile --write --path /path/to/project
 
 # hot-reload watch pipeline
 pnpm run cli -- watch /path/to/project --verbose
@@ -206,6 +233,22 @@ export default [
     ...Lint.configs.performance
 ];
 ```
+
+`gmloop.json` also supports lint preset selection for fixture/integration and
+project-config-driven lint flows via `lintRuleset`:
+
+```json
+{
+  "lintRuleset": "recommended",
+  "lintRules": {
+    "gml/no-globalvar": "error"
+  }
+}
+```
+
+Supported `lintRuleset` values are `"recommended"`, `"feather"`, and
+`"performance"`. `lintRules` remains optional and overrides rules from the
+selected ruleset when both are present.
 
 See [`docs/formatter-linter-split-plan.md`](docs/formatter-linter-split-plan.md) for pinned lint/format ownership contracts.
 

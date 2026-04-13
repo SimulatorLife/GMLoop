@@ -1382,6 +1382,71 @@ void test("applyPatchBatch clears undo stack on rollback", () => {
     assert.ok(!wrapper.hasScript("script:batch_fail1"));
 });
 
+void test("applyPatchBatch rollback preserves pre-batch undo stack depth", () => {
+    // The batch checkpoint must capture and restore the exact undo-stack size so
+    // that a failed batch does not corrupt the undo stack accumulated before it.
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+
+    // Establish two pre-batch entries on the undo stack.
+    wrapper.applyPatch({ kind: "script", id: "script:pre1", js_body: "return 0;" });
+    wrapper.applyPatch({ kind: "script", id: "script:pre2", js_body: "return 0;" });
+    const preUndoSize = wrapper.getUndoStackSize();
+
+    // A batch that partially succeeds then fails midway.
+    wrapper.applyPatchBatch([
+        { kind: "script", id: "script:batch_ok", js_body: "return 1;" },
+        { kind: "script", id: "script:batch_bad", js_body: "return {{ bad" }
+    ]);
+
+    // Rollback must restore the undo stack to its pre-batch depth — no partial
+    // entries from the failed batch should be left behind.
+    assert.strictEqual(wrapper.getUndoStackSize(), preUndoSize);
+});
+
+void test("applyPatchBatch rollback restores pre-batch patch history length", () => {
+    // The checkpoint must also restore the patch-history array so that failed
+    // batches do not leave orphaned per-patch entries in the history.
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+
+    wrapper.applyPatch({ kind: "script", id: "script:pre", js_body: "return 0;" });
+    const preHistoryLength = wrapper.getPatchHistory().length;
+
+    wrapper.applyPatchBatch([
+        { kind: "script", id: "script:batch_ok", js_body: "return 1;" },
+        { kind: "script", id: "script:batch_bad", js_body: "return {{ bad" }
+    ]);
+
+    // History grows by exactly one entry: the rollback summary. Per-patch entries
+    // written during the failed batch must have been stripped by the checkpoint.
+    assert.strictEqual(wrapper.getPatchHistory().length, preHistoryLength + 1);
+    const rollbackEntry = wrapper.getPatchHistory().at(-1);
+    assert.ok(rollbackEntry?.patch.id.startsWith("batch:"));
+    assert.strictEqual(rollbackEntry?.action, "rollback");
+});
+
+void test("applyPatchBatch records rollback history entry with correct patch counts", () => {
+    // recordBatchRollbackHistoryEntry must embed both the completed count and the
+    // total count so callers can tell where the batch failed.
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+
+    const result = wrapper.applyPatchBatch([
+        { kind: "script", id: "script:ok1", js_body: "return 1;" },
+        { kind: "script", id: "script:ok2", js_body: "return 2;" },
+        { kind: "script", id: "script:bad", js_body: "return {{ bad" }
+    ]);
+
+    assert.strictEqual(result.success, false);
+    assert.strictEqual(result.appliedCount, 2);
+    assert.strictEqual(result.failedIndex, 2);
+
+    const history = wrapper.getPatchHistory();
+    const rollbackEntry = history.at(-1);
+    // id format: "batch:<appliedCount>_of_<totalCount>"
+    assert.strictEqual(rollbackEntry?.patch.id, "batch:2_of_3");
+    assert.strictEqual(rollbackEntry?.action, "rollback");
+    assert.ok(typeof rollbackEntry?.error === "string" && rollbackEntry.error.length > 0);
+});
+
 void test("onChange listener receives patch-applied events", () => {
     const events: Array<unknown> = [];
     const wrapper = RuntimeWrapper.createRuntimeWrapper({

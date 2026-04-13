@@ -51,6 +51,22 @@ void test("runSequentially propagates errors", async () => {
     );
 });
 
+function* generateSequentialNumbers(): Generator<number> {
+    yield 10;
+    yield 20;
+    yield 30;
+}
+
+void test("runSequentially works with generator iterables without materializing to array", async () => {
+    // Verifies that runSequentially consumes the iterable lazily (for...of) rather than
+    // calling Array.from() first, so generators and other lazy iterables work correctly.
+    const results: Array<number> = [];
+    await runSequentially(generateSequentialNumbers(), async (num) => {
+        results.push(num);
+    });
+    assert.deepEqual(results, [10, 20, 30]);
+});
+
 // === runInParallel tests ===
 
 void test("runInParallel executes callbacks in parallel", async () => {

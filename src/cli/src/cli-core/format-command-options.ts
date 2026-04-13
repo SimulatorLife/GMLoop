@@ -18,8 +18,9 @@ interface PrettierConfigurationOptions {
 interface ResolvedPrettierConfiguration {
     prettierLogLevel?: string;
     onParseError?: string;
-    checkMode: boolean;
+    dryRunMode: boolean;
     verbose: boolean;
+    list: boolean;
 }
 
 interface TargetPathResolution {
@@ -36,6 +37,7 @@ export interface CollectFormatCommandOptionsParameters {
 export interface FormatCommandOptionsResult extends FormatCommandSampleLimits, ResolvedPrettierConfiguration {
     targetPathInput: unknown;
     targetPathProvided: boolean;
+    configPath: string | null;
     rawTargetPathInput?: string;
     usage: string;
 }
@@ -62,14 +64,14 @@ function resolvePrettierConfiguration(
     return {
         prettierLogLevel: verbose ? "debug" : ((source.logLevel as string) ?? defaultPrettierLogLevel),
         onParseError: (source.onParseError as string) ?? defaultParseErrorAction,
-        checkMode: Boolean(source.check),
-        verbose
+        dryRunMode: source.write !== true,
+        verbose,
+        list: Boolean(source.list)
     };
 }
 
-function resolveTargetPathInput(options: CommandOptionsRecord, args: Array<unknown>): TargetPathResolution {
-    const positionalTarget = args[0] ?? null;
-    const rawTarget = options.path ?? positionalTarget ?? null;
+function resolveTargetPathInput(options: CommandOptionsRecord): TargetPathResolution {
+    const rawTarget = options.path ?? null;
 
     if (rawTarget === null) {
         return {
@@ -99,12 +101,12 @@ export function collectFormatCommandOptions(
     { defaultParseErrorAction, defaultPrettierLogLevel }: CollectFormatCommandOptionsParameters = {}
 ): FormatCommandOptionsResult {
     const options = (command?.opts?.() ?? {}) as CommandOptionsRecord;
-    const args = Core.toMutableArray(command?.args, { clone: true });
-    const { targetPathInput, targetPathProvided, rawTargetPathInput } = resolveTargetPathInput(options, args);
+    console.log("Format options:", options);
+    const { targetPathInput, targetPathProvided, rawTargetPathInput } = resolveTargetPathInput(options);
 
     const { skippedDirectorySampleLimit, ignoredFileSampleLimit, unsupportedExtensionSampleLimit } =
         resolveFormatCommandSampleLimits(options);
-    const { prettierLogLevel, onParseError, checkMode, verbose } = resolvePrettierConfiguration(options, {
+    const { prettierLogLevel, onParseError, dryRunMode, verbose, list } = resolvePrettierConfiguration(options, {
         defaultParseErrorAction,
         defaultPrettierLogLevel
     });
@@ -114,10 +116,12 @@ export function collectFormatCommandOptions(
     return {
         targetPathInput,
         targetPathProvided,
+        configPath: getNonEmptyTrimmedString(options.config as string | undefined) ?? null,
         prettierLogLevel,
         onParseError,
-        checkMode,
+        dryRunMode,
         verbose,
+        list,
         rawTargetPathInput,
         skippedDirectorySampleLimit,
         ignoredFileSampleLimit,

@@ -170,7 +170,7 @@ function resolveNextSuitePath(node, suitePath, { hasTestcase, hasTestsuite }) {
 /**
  * Record a single testcase result in the aggregate list.
  */
-function recordSuiteTestCase(cases, node, suitePath) {
+function recordSuiteTestCase(cases, node, suitePath, reportFilePath = "") {
     const key = buildTestKey(node, suitePath);
     const displayName = describeTestCase(node, suitePath) || key;
     const time = Number.parseFloat(node.time) || 0;
@@ -181,7 +181,8 @@ function recordSuiteTestCase(cases, node, suitePath) {
         key,
         status: computeStatus(node),
         displayName,
-        time
+        time,
+        reportFilePath
     });
     return cases;
 }
@@ -209,7 +210,7 @@ function processTraversalQueue<T>(queue: T[], visitor: (item: T, queue: T[]) => 
     }
 }
 
-function collectTestCases(root) {
+function collectTestCases(root, { reportFilePath = "" }: { reportFilePath?: string } = {}) {
     const cases = [];
     const queue = createTestTraversalQueue(root);
 
@@ -235,7 +236,7 @@ function collectTestCases(root) {
         });
 
         if (looksLikeTestCase(node)) {
-            recordSuiteTestCase(cases, node, suitePath);
+            recordSuiteTestCase(cases, node, suitePath, reportFilePath);
         }
 
         if (hasTestcase) {
@@ -376,13 +377,49 @@ function collectCaseDifferences(baseResults, targetResults) {
 }
 
 function collectMissingCases(sourceResults, comparisonResults) {
+    const comparableReportNames = collectComparableReportNames(sourceResults, comparisonResults);
     const missing = [];
     for (const [key, record] of sourceResults.results.entries()) {
-        if (!comparisonResults.results.has(key)) {
+        if (!comparisonResults.results.has(key) && isComparableReportRecord(record, comparableReportNames)) {
             missing.push(record);
         }
     }
     return missing;
+}
+
+function collectComparableReportNames(sourceResults, comparisonResults) {
+    const sourceReportNames = collectReportNames(sourceResults);
+    const comparisonReportNames = collectReportNames(comparisonResults);
+    const commonReportNames = new Set();
+
+    for (const reportName of sourceReportNames) {
+        if (comparisonReportNames.has(reportName)) {
+            commonReportNames.add(reportName);
+        }
+    }
+
+    return commonReportNames;
+}
+
+function collectReportNames(resultSet) {
+    const reportNames = new Set();
+    for (const record of resultSet.results.values()) {
+        const reportName = normalizeReportFileName(record);
+        if (reportName) {
+            reportNames.add(reportName);
+        }
+    }
+    return reportNames;
+}
+
+function normalizeReportFileName(record) {
+    const reportFilePath = typeof record?.reportFilePath === "string" ? record.reportFilePath : "";
+    return path.basename(reportFilePath).trim().toLowerCase();
+}
+
+function isComparableReportRecord(record, comparableReportNames) {
+    const reportName = normalizeReportFileName(record);
+    return !reportName || comparableReportNames.has(reportName);
 }
 
 function countRenamedCases(newCases, removedCases) {
@@ -628,7 +665,7 @@ function collectTestCasesFromXmlFile(filePath, displayPath) {
         return { cases: [], notes: [] };
     }
 
-    const parseResult = parseXmlTestCases(xml, displayPath);
+    const parseResult = parseXmlTestCases(xml, displayPath, filePath);
     if (parseResult.status === ParseResultStatus.ERROR) {
         return { cases: [], notes: [parseResult.note] };
     }
@@ -655,7 +692,7 @@ function readXmlFile(filePath, displayPath) {
     }
 }
 
-function parseXmlTestCases(xml, displayPath) {
+function parseXmlTestCases(xml, displayPath, reportFilePath = "") {
     try {
         const data = parser.parse(xml);
         if (isCheckstyleDocument(data)) {
@@ -670,7 +707,10 @@ function parseXmlTestCases(xml, displayPath) {
                 note: `Parsed ${displayPath} but it does not contain any test suites or cases.`
             };
         }
-        return { status: ParseResultStatus.OK, cases: collectTestCases(data) };
+        return {
+            status: ParseResultStatus.OK,
+            cases: collectTestCases(data, { reportFilePath })
+        };
     } catch (error) {
         const message = getErrorMessageOrFallback(error);
         return {
@@ -746,21 +786,104 @@ function enqueueObjectChildValues(queue, object) {
 }
 
 function recordTestCases(aggregates, testCases) {
-    const { results, stats } = aggregates;
+    const { results } = aggregates;
 
     for (const testCase of testCases) {
-        results.set(testCase.key, testCase);
-        stats.total += 1;
-        stats.time += testCase.time || 0;
+        const existingRecord = results.get(testCase.key);
+        const preferredRecord = choosePreferredTestRecord(existingRecord, testCase);
+        results.set(testCase.key, preferredRecord);
+    }
+}
 
-        if (testCase.status === TestCaseStatus.FAILED) {
+function removeNonCanonicalRecordsDuplicatedByCanonicalIdentity(results: Map<string, AggregatedTestRecord>): void {
+    const canonicalIdentities = collectCanonicalTestRecordIdentities(results);
+    if (canonicalIdentities.size === 0) {
+        return;
+    }
+
+    for (const [key, record] of results.entries()) {
+        const identityKey = buildTestRecordIdentityKey(record);
+        if (!identityKey || isCanonicalTestRecord(record) || !canonicalIdentities.has(identityKey)) {
+            continue;
+        }
+
+        results.delete(key);
+    }
+}
+
+function collectCanonicalTestRecordIdentities(results: Map<string, AggregatedTestRecord>): Set<string> {
+    const identities = new Set<string>();
+
+    for (const record of results.values()) {
+        if (!isCanonicalTestRecord(record)) {
+            continue;
+        }
+
+        const identityKey = buildTestRecordIdentityKey(record);
+        if (identityKey) {
+            identities.add(identityKey);
+        }
+    }
+
+    return identities;
+}
+
+function computeAggregateStatsFromResults(results: Map<string, AggregatedTestRecord>) {
+    const stats = { total: 0, passed: 0, failed: 0, skipped: 0, time: 0 };
+    for (const record of results.values()) {
+        stats.total += 1;
+        stats.time += Number(record.time) || 0;
+        if (record.status === TestCaseStatus.FAILED) {
             stats.failed += 1;
-        } else if (testCase.status === TestCaseStatus.SKIPPED) {
+        } else if (record.status === TestCaseStatus.SKIPPED) {
             stats.skipped += 1;
         } else {
             stats.passed += 1;
         }
     }
+    return stats;
+}
+
+type AggregatedTestRecord = TestRecordEntry & {
+    key?: string;
+    displayName?: string;
+    time?: number;
+    reportFilePath: string;
+};
+
+function isCanonicalTestsXmlReportPath(reportFilePath: string): boolean {
+    const reportPath = toTrimmedString(reportFilePath);
+    if (!reportPath) {
+        return false;
+    }
+    return path.basename(reportPath).toLowerCase() === "tests.xml";
+}
+
+function buildTestRecordIdentityKey(record: TestRecordEntry): string {
+    const { fileLowerCase, name } = getNormalizedTestRecordIdentity(record);
+    return fileLowerCase && name ? `${fileLowerCase}${FILE_NAME_SEPARATOR}${name}` : "";
+}
+
+function choosePreferredTestRecord(
+    existingRecord: AggregatedTestRecord | undefined,
+    incomingRecord: AggregatedTestRecord
+): AggregatedTestRecord {
+    if (!existingRecord) {
+        return incomingRecord;
+    }
+
+    const existingIsCanonical = isCanonicalTestsXmlReportPath(existingRecord.reportFilePath);
+    const incomingIsCanonical = isCanonicalTestsXmlReportPath(incomingRecord.reportFilePath);
+
+    if (existingIsCanonical && !incomingIsCanonical) {
+        return existingRecord;
+    }
+
+    if (incomingIsCanonical && !existingIsCanonical) {
+        return incomingRecord;
+    }
+
+    return incomingRecord;
 }
 
 function createResultAggregates() {
@@ -855,11 +978,14 @@ function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions 
         }
 
         recordTestCases(aggregates, scan.cases);
+        removeNonCanonicalRecordsDuplicatedByCanonicalIdentity(aggregates.results);
 
         const duplicates = resolveDuplicatesWithFallback(scan, directory);
+        const stats = computeAggregateStatsFromResults(aggregates.results);
 
         return {
             ...aggregates,
+            stats,
             usedDir: directory.resolved,
             displayDir: directory.display,
             notes,
@@ -895,7 +1021,7 @@ function resolveResultsMap(resultSet) {
 
 /** Shared record shape for test-case entries in the results maps. */
 type TestRecordNode = { file?: string; name?: string };
-type TestRecordEntry = { status?: string; node?: TestRecordNode };
+type TestRecordEntry = { status?: string; node?: TestRecordNode; reportFilePath?: string };
 
 /** Separator used when combining file path and test name into a lookup key. */
 const FILE_NAME_SEPARATOR = "::";
@@ -919,24 +1045,67 @@ function getNormalizedTestRecordIdentity(record: TestRecordEntry): {
 }
 
 /**
- * Build a secondary lookup of base failures keyed by `(file, testName)`.
+ * Build a secondary lookup of base test statuses keyed by `(file, testName)`.
  *
- * This is used to detect when a failing target test corresponds to an already-failing
- * base test that was "renamed" due to a change in the JUnit XML suite hierarchy (e.g.,
- * a malformed `<undefined>` wrapper produced by node's JUnit reporter when a test file
- * triggers an IPC-deserialization error). Without this check, such a renamed failure
- * would incorrectly appear as a brand-new regression.
+ * This is used to match target failures against base results when the JUnit suite
+ * hierarchy changes and test keys are renamed (for example due to malformed wrappers).
+ * Matching by `(file, testName)` lets us distinguish genuinely new failing tests
+ * (which should be ignored) from renamed pre-existing tests (which should keep their
+ * original base status).
  */
-function buildBaseFailuresByFileAndName(baseResults: Map<string, unknown>): Set<string> {
-    const index = new Set<string>();
+function buildBaseStatusesByFileAndName(baseResults: Map<string, unknown>): Map<string, string> {
+    const index = new Map<string, string>();
     for (const record of baseResults.values()) {
         const r = record as TestRecordEntry;
-        if (r.status !== TestCaseStatus.FAILED) {
+        if (
+            r.status !== TestCaseStatus.FAILED &&
+            r.status !== TestCaseStatus.PASSED &&
+            r.status !== TestCaseStatus.SKIPPED
+        ) {
             continue;
         }
         const { fileLowerCase, name } = getNormalizedTestRecordIdentity(r);
         if (fileLowerCase && name) {
-            index.add(`${fileLowerCase}${FILE_NAME_SEPARATOR}${name}`);
+            index.set(`${fileLowerCase}${FILE_NAME_SEPARATOR}${name}`, r.status);
+        }
+    }
+    return index;
+}
+
+/**
+ * Return true when a record originated from canonical `tests.xml`.
+ */
+function isCanonicalTestRecord(record: TestRecordEntry): boolean {
+    return typeof record.reportFilePath === "string" && isCanonicalTestsXmlReportPath(record.reportFilePath);
+}
+
+/**
+ * Build a lookup of target statuses from canonical `tests.xml` keyed by
+ * `(file, testName)`.
+ *
+ * When auxiliary XML reports carry malformed suite wrappers, the same logical
+ * test may appear under a different key and look like a new failure. Canonical
+ * `tests.xml` output is authoritative when present, so regression detection
+ * should ignore auxiliary duplicates that map back to an existing canonical
+ * identity.
+ */
+function buildCanonicalTargetStatusesByFileAndName(targetResults: Map<string, unknown>): Map<string, string> {
+    const index = new Map<string, string>();
+    for (const record of targetResults.values()) {
+        const r = record as TestRecordEntry;
+        if (!isCanonicalTestRecord(r)) {
+            continue;
+        }
+        if (
+            r.status !== TestCaseStatus.FAILED &&
+            r.status !== TestCaseStatus.PASSED &&
+            r.status !== TestCaseStatus.SKIPPED
+        ) {
+            continue;
+        }
+        const { fileLowerCase, name } = getNormalizedTestRecordIdentity(r);
+        if (fileLowerCase && name) {
+            index.set(`${fileLowerCase}${FILE_NAME_SEPARATOR}${name}`, r.status);
         }
     }
     return index;
@@ -998,21 +1167,30 @@ function createRegressionRecord({
     baseResults,
     key,
     targetRecord,
-    baseFailuresByFileAndName,
+    baseStatusesByFileAndName,
+    canonicalTargetStatusesByFileAndName,
     targetFilesWithPassingTests
 }: {
     baseResults: Map<string, unknown>;
     key: string;
     targetRecord: TestRecordEntry | null | undefined;
-    baseFailuresByFileAndName: Set<string>;
+    baseStatusesByFileAndName: Map<string, string>;
+    canonicalTargetStatusesByFileAndName: Map<string, string>;
     targetFilesWithPassingTests: Set<string>;
 }): { key: string; from: string; to: string; detail: unknown } | null {
     if (!targetRecord || targetRecord.status !== TestCaseStatus.FAILED) {
         return null;
     }
 
+    const { fileLowerCase, name } = getNormalizedTestRecordIdentity(targetRecord);
+    const identityKey = fileLowerCase && name ? `${fileLowerCase}${FILE_NAME_SEPARATOR}${name}` : "";
+    const canonicalTargetStatus = identityKey ? canonicalTargetStatusesByFileAndName.get(identityKey) : undefined;
+    if (!isCanonicalTestRecord(targetRecord) && canonicalTargetStatus) {
+        return null;
+    }
+
     const baseRecord = baseResults.get(key) as { status?: string } | undefined;
-    const baseStatus = baseRecord?.status;
+    let baseStatus = baseRecord?.status;
     if (baseStatus === TestCaseStatus.FAILED) {
         return null;
     }
@@ -1023,8 +1201,15 @@ function createRegressionRecord({
     // (e.g., `<undefined>` wrapper tags), causing the suite-path prefix of existing
     // tests to change. Those renamed failures must not be reported as new regressions.
     if (baseStatus === undefined) {
-        const { fileLowerCase, name } = getNormalizedTestRecordIdentity(targetRecord);
-        if (fileLowerCase && name && baseFailuresByFileAndName.has(`${fileLowerCase}${FILE_NAME_SEPARATOR}${name}`)) {
+        // Newly introduced tests are intentionally excluded from regression checks.
+        // Only renamed tests that map back to an existing base status are eligible.
+        const renamedBaseStatus = identityKey ? baseStatusesByFileAndName.get(identityKey) : undefined;
+        if (!renamedBaseStatus) {
+            return null;
+        }
+
+        baseStatus = renamedBaseStatus;
+        if (baseStatus === TestCaseStatus.FAILED) {
             return null;
         }
         // Detect node test runner file-level crash records: synthetic testcases where
@@ -1049,7 +1234,8 @@ function createRegressionRecord({
  */
 function collectRegressions({ baseResults, targetResults }) {
     const regressions = [];
-    const baseFailuresByFileAndName = buildBaseFailuresByFileAndName(baseResults);
+    const baseStatusesByFileAndName = buildBaseStatusesByFileAndName(baseResults);
+    const canonicalTargetStatusesByFileAndName = buildCanonicalTargetStatusesByFileAndName(targetResults);
     const targetFilesWithPassingTests = buildTargetFilesWithPassingTests(targetResults);
 
     for (const [key, targetRecord] of targetResults.entries()) {
@@ -1057,7 +1243,8 @@ function collectRegressions({ baseResults, targetResults }) {
             baseResults,
             key,
             targetRecord,
-            baseFailuresByFileAndName,
+            baseStatusesByFileAndName,
+            canonicalTargetStatusesByFileAndName,
             targetFilesWithPassingTests
         });
 
@@ -1206,6 +1393,8 @@ export function runGenerateQualityReport({ command }: any = {}) {
         process.exitCode = exitCode;
         throw new CliUsageError("Test regressions detected.");
     }
+
+    return 0;
 }
 
 type ReportTableState = {
@@ -1295,6 +1484,38 @@ function formatQualityReportTable({ testRows, qualityRows }: ReportTableState): 
     return [...testRows, "", ...qualityRows].join("\n");
 }
 
+function formatRegressionComparisonFlow({
+    base,
+    head,
+    merged
+}: {
+    base: { usedDir?: string | null };
+    head: { usedDir?: string | null };
+    merged: { usedDir?: string | null };
+}): string {
+    const lines = [
+        "#### Regression Comparison Flow",
+        "",
+        "- Base: baseline snapshot used as the source of truth for historical pass/fail state.",
+        "- PR (Head): pull request head commit snapshot."
+    ];
+
+    if (merged.usedDir) {
+        lines.push(
+            "- Merged: synthetic merge snapshot for this PR event (`base.sha + head.sha`).",
+            "- Regression gate target: **Merged**."
+        );
+    } else {
+        lines.push("- Merged: unavailable for this run.", "- Regression gate target: **PR (Head)**.");
+    }
+
+    if (!base.usedDir && !head.usedDir && !merged.usedDir) {
+        lines.push("- Regression gate target: unavailable (missing required artifacts).");
+    }
+
+    return lines.join("\n");
+}
+
 function runCli(options: any = {}) {
     const workspaceRoot = process.env.GITHUB_WORKSPACE || process.cwd();
     const reportFile = options.reportFile || path.join("reports", "summary-report.md");
@@ -1342,23 +1563,30 @@ function runCli(options: any = {}) {
     });
 
     const table = formatQualityReportTable(reportTables);
+    const comparisonFlow = formatRegressionComparisonFlow({
+        base,
+        head,
+        merged
+    });
     console.log(table);
+    console.log(`\n${comparisonFlow}`);
 
     let exitCode = 0;
     let statusLine;
 
     if (base.usedDir && target.usedDir) {
         const regressions = detectRegressions(base, target);
+        const gateLabel = usingMerged ? "Base → Merged" : "Base → PR (Head)";
         if (regressions.length > 0) {
             exitCode = 10;
             const cause = describeRegressionCause(regressions, diffStats[usingMerged ? "merge" : "head"]);
             const summary = summarizeRegressedTests(regressions);
-            statusLine = `❌ Test regressions detected. ${summary}. Cause: ${cause}`;
+            statusLine = `❌ Test regressions detected (${gateLabel}). ${summary}. Cause: ${cause}`;
         } else {
-            statusLine = "✅ No test regressions detected.";
+            statusLine = `✅ No test regressions detected (${gateLabel}).`;
         }
     } else {
-        statusLine = "⚠️ Unable to compare base and target results.";
+        statusLine = "⚠️ Unable to compare base and target results (missing artifacts for gate target).";
     }
 
     console.log(`\n${statusLine}`);
@@ -1369,6 +1597,8 @@ function runCli(options: any = {}) {
             "### Quality Report Summary",
             "",
             table,
+            "",
+            comparisonFlow,
             "",
             statusLine
         ].join("\n");

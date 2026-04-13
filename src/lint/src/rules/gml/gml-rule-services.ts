@@ -1,6 +1,7 @@
 import {
     convertLegacyReturnsDescriptionLinesToMetadata,
-    promoteLeadingDocCommentTextToDescription
+    promoteLeadingDocCommentTextToDescription,
+    resolveParameterName
 } from "../../doc-comment/index.js";
 import { createLimitedRecoveryProjection } from "../../language/index.js";
 import { forEachScientificNotationToken } from "../../malformed/index.js";
@@ -19,7 +20,8 @@ import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-i
  */
 export const gmlRuleDocCommentServices = Object.freeze({
     convertLegacyReturnsDescriptionLinesToMetadata,
-    promoteLeadingDocCommentTextToDescription
+    promoteLeadingDocCommentTextToDescription,
+    resolveParameterName
 });
 
 /**

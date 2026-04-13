@@ -1,12 +1,17 @@
 import { Core } from "@gmloop/core";
 
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
-import { assertRefactorConfigPlainObject } from "./refactor-config-assertions.js";
+import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
+import {
+    assertRefactorConfigPlainObject,
+    assertRefactorConfigPlainObjectWithAllowedKeys
+} from "./refactor-config-assertions.js";
 import type {
     CodemodEngine,
     ConfiguredCodemodRunRequest,
     ConfiguredCodemodRunResult,
     ConfiguredCodemodSummary,
+    NamingConventionPolicy,
     RefactorCodemodConfigEntry,
     RefactorCodemodConfigMap,
     RefactorCodemodId,
@@ -18,6 +23,7 @@ import type {
 type RegisteredCodemodDefinition<T extends RefactorCodemodId> = {
     id: T;
     description: string;
+    requiresSemanticProjectIndex: boolean;
     normalizeConfig: (value: unknown, context: string) => RefactorCodemodConfigEntry<T>;
     execute: (
         engine: CodemodEngine,
@@ -39,6 +45,39 @@ function isNullableString(value: unknown): value is string | null {
     return typeof value === "string" || value === null;
 }
 
+const GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS = new Set(["excludeNames"]);
+
+function normalizeGlobalvarToGlobalConfig(
+    value: unknown,
+    context: string
+): RefactorCodemodConfigEntry<"globalvarToGlobal"> {
+    if (value === false) {
+        return false;
+    }
+
+    const object = assertRefactorConfigPlainObjectWithAllowedKeys(value, GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS, context);
+
+    if (object.excludeNames === undefined) {
+        return {};
+    }
+
+    if (!Array.isArray(object.excludeNames)) {
+        throw new TypeError(`${context}.excludeNames must be an array of strings`);
+    }
+
+    const excludeNames: Array<string> = [];
+    for (const [index, entry] of object.excludeNames.entries()) {
+        if (typeof entry !== "string") {
+            throw new TypeError(`${context}.excludeNames[${String(index)}] must be a string, received ${typeof entry}`);
+        }
+        excludeNames.push(entry);
+    }
+
+    return { excludeNames };
+}
+
+const LOOP_LENGTH_HOISTING_ALLOWED_KEYS = new Set(["functionSuffixes"]);
+
 function normalizeLoopLengthHoistingConfig(
     value: unknown,
     context: string
@@ -47,14 +86,7 @@ function normalizeLoopLengthHoistingConfig(
         return false;
     }
 
-    const object = assertRefactorConfigPlainObject(value, context);
-    const allowedKeys = new Set(["functionSuffixes"]);
-
-    for (const key of Object.keys(object)) {
-        if (!allowedKeys.has(key)) {
-            throw new TypeError(`${context} contains unknown property ${JSON.stringify(key)}`);
-        }
-    }
+    const object = assertRefactorConfigPlainObjectWithAllowedKeys(value, LOOP_LENGTH_HOISTING_ALLOWED_KEYS, context);
 
     if (object.functionSuffixes === undefined) {
         return {};
@@ -89,21 +121,58 @@ function normalizeNamingConventionConfig(
     if (value === false) {
         return false;
     }
-
-    const object = assertRefactorConfigPlainObject(value, context);
-    const keys = Object.keys(object);
-
-    if (keys.length > 0) {
-        throw new TypeError(`${context} does not currently accept configuration properties`);
-    }
-
-    return {};
+    return normalizeNamingConventionPolicy(value as NamingConventionPolicy | undefined, context);
 }
 
 const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.freeze({
+    globalvarToGlobal: Object.freeze({
+        id: "globalvarToGlobal",
+        description:
+            "Remove legacy `globalvar` declarations and replace all bare identifier references with `global.<name>`.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: normalizeGlobalvarToGlobalConfig,
+        async execute(
+            engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest,
+            effectiveConfig: RefactorCodemodConfigMap["globalvarToGlobal"]
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            if (request.gmlFilePaths.length === 0) {
+                return {
+                    appliedFiles: new Map(),
+                    summary: {
+                        id: "globalvarToGlobal",
+                        changed: false,
+                        changedFiles: [],
+                        warnings: ["No .gml files were selected for globalvar-to-global migration."],
+                        errors: []
+                    }
+                };
+            }
+
+            const result = await engine.executeGlobalvarToGlobalCodemod({
+                filePaths: request.gmlFilePaths,
+                readFile: request.readFile,
+                writeFile: request.writeFile,
+                options: effectiveConfig,
+                dryRun: request.dryRun
+            });
+
+            return {
+                appliedFiles: result.applied,
+                summary: {
+                    id: "globalvarToGlobal",
+                    changed: result.changedFiles.length > 0,
+                    changedFiles: result.changedFiles.map((entry) => entry.path),
+                    warnings: [],
+                    errors: []
+                }
+            };
+        }
+    }),
     loopLengthHoisting: Object.freeze({
         id: "loopLengthHoisting",
         description: "Hoist repeated loop-length helper calls out of for-loop test expressions.",
+        requiresSemanticProjectIndex: false,
         normalizeConfig: normalizeLoopLengthHoistingConfig,
         async execute(
             engine: CodemodEngine,
@@ -145,7 +214,8 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
     }),
     namingConvention: Object.freeze({
         id: "namingConvention",
-        description: "Plan and apply naming-policy-driven renames using namingConventionPolicy.",
+        description: "Plan and apply naming-policy-driven renames.",
+        requiresSemanticProjectIndex: true,
         normalizeConfig: normalizeNamingConventionConfig,
         async execute(
             engine: CodemodEngine,
@@ -155,7 +225,6 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             const result = await executeNamingConventionCodemod(engine, {
                 projectRoot: request.projectRoot,
                 config: {
-                    ...request.config,
                     codemods: {
                         ...request.config.codemods,
                         namingConvention: effectiveConfig
@@ -215,6 +284,16 @@ export function normalizeRegisteredCodemodConfig<T extends RefactorCodemodId>(
     context: string
 ): RefactorCodemodConfigEntry<T> {
     return getRegisteredCodemodDefinition(codemodId).normalizeConfig(value, context);
+}
+
+/**
+ * Return the codemod ids that require an up-to-date semantic project index
+ * before they execute.
+ */
+export function listSemanticProjectIndexDependentCodemodIds(): Array<RefactorCodemodId> {
+    return Object.values(REGISTERED_CODEMOD_DEFINITIONS)
+        .filter((definition) => definition.requiresSemanticProjectIndex)
+        .map((definition) => definition.id);
 }
 
 /**

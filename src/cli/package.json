@@ -8,6 +8,9 @@
     ".": "./dist/index.js",
     "./package.json": "./package.json"
   },
+  "bin": {
+    "gmloop": "./dist/index.js"
+  },
   "files": [
     "dist"
   ],
@@ -35,7 +38,7 @@
     "ws": "^8.18.0"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.5.0"
   },
   "packageManager": "pnpm@10.28.0",
   "devDependencies": {

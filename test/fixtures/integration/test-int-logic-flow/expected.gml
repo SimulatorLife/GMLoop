@@ -1,5 +1,3 @@
-#region Logic helpers
-
 /// @description Absorption law: (foo or (foo and bar)) == foo.
 /// @param {bool} foo
 /// @param {bool} bar

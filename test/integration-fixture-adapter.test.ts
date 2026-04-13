@@ -61,10 +61,46 @@ void test("integration fixture adapter runs the real refactor -> lint -> format 
         assert.deepEqual(stageNames, ["load", "refactor", "lint", "format", "compare", "total"]);
         assert.equal(typeof report.entries[0]?.memorySummary.totalHeapUsedDeltaBytes, "number");
         assert.equal(typeof report.entries[0]?.memorySummary.peakStageHeapUsedDeltaBytes, "number");
-        assert.deepEqual(
-            report.stageAggregates.map((aggregate) => aggregate.stageName).sort(),
-            ["compare", "format", "lint", "load", "refactor", "total"]
-        );
+        assert.deepEqual(report.stageAggregates.map((aggregate) => aggregate.stageName).sort(), [
+            "compare",
+            "format",
+            "lint",
+            "load",
+            "refactor",
+            "total"
+        ]);
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
+void test("integration fixture adapter supports lintRuleset presets from gmloop.json", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "integration-fixture-adapter-ruleset-"));
+
+    try {
+        await createIntegrationFixtureCase({
+            rootPath,
+            caseId: "lint-ruleset-preset",
+            config: {
+                lintRuleset: "recommended",
+                fixture: {
+                    kind: "integration",
+                    assertion: "transform",
+                    comparison: "exact"
+                }
+            },
+            inputText: "var a = 1e3\n",
+            expectedText: "var a = 1000;\n"
+        });
+
+        const result = await FixtureRunner.runFixtureSuite({
+            fixtureRoot: rootPath,
+            adapter: createIntegrationFixtureAdapter(),
+            profileCollector: FixtureRunner.createProfileCollector()
+        });
+
+        assert.equal(result.executionResults.length, 1);
+        assert.deepEqual(result.failures, []);
     } finally {
         await rm(rootPath, { recursive: true, force: true });
     }

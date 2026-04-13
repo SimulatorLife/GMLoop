@@ -37,10 +37,10 @@ export function createPathSelectionMatcher(
 ): (targetPath: string) => boolean {
     const absoluteAllowedPaths = allowedPaths.map((selectionPath) => resolveProjectPath(projectRoot, selectionPath));
     const absoluteDeniedPaths = deniedPaths.map((selectionPath) => resolveProjectPath(projectRoot, selectionPath));
-    const cache = new Map<string, boolean>();
+    const resultCache = new Map<string, boolean>();
 
     return (targetPath: string): boolean => {
-        const cached = cache.get(targetPath);
+        const cached = resultCache.get(targetPath);
         if (cached !== undefined) {
             return cached;
         }
@@ -52,7 +52,7 @@ export function createPathSelectionMatcher(
                 isPathInsideSelection(absoluteTargetPath, absoluteSelectionPath)
             );
         if (!isAllowed) {
-            cache.set(targetPath, false);
+            resultCache.set(targetPath, false);
             return false;
         }
 
@@ -60,7 +60,7 @@ export function createPathSelectionMatcher(
             isPathInsideSelection(absoluteTargetPath, absoluteSelectionPath)
         );
         const result = !isDenied;
-        cache.set(targetPath, result);
+        resultCache.set(targetPath, result);
         return result;
     };
 }

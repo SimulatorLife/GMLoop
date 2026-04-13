@@ -7,12 +7,14 @@ import { Semantic } from "@gmloop/semantic";
 
 import { listConstructorRuntimeTypeReferenceRecords } from "./constructor-runtime-type-references.js";
 import { GmlIdentifierOccurrenceIndex } from "./gml-identifier-occurrence-index.js";
+import { isRefactorOwnerMetadataPath, isRefactorResourcePath } from "./gml-resource-path.js";
 import { collectImplicitInstanceVariableTargets } from "./implicit-instance-variable-targets.js";
 import {
     listMacroDeclarationReferenceRecords,
     listMacroExpansionDependencies
 } from "./macro-expansion-dependencies.js";
 import { ParsedLocalNamingCategoryResolver } from "./parsed-local-naming-categories.js";
+import { readExclusiveSemanticLocationIndex, readSemanticLocationIndex } from "./semantic-index-helpers.js";
 
 type ResourceAssetReferenceRecord = {
     propertyPath: string;
@@ -97,6 +99,15 @@ type SymbolOccurrence = {
     path: string;
     scopeId?: string;
     start: number;
+};
+
+/** Minimal shape of a reference record within a semantic identifier entry's `references` array. */
+type SemanticEntryReferenceRecord = {
+    end?: { index?: number };
+    filePath?: unknown;
+    location?: { end?: { index?: number }; start?: { index?: number } };
+    scopeId?: unknown;
+    start?: { index?: number };
 };
 
 type FileSymbol = {
@@ -212,6 +223,7 @@ const SCRIPT_CALLABLE_NAMING_CATEGORIES: ReadonlyArray<BridgeNamingConventionCat
 const RESOURCE_NAMING_CATEGORIES: ReadonlyArray<BridgeNamingConventionCategory> = [
     "animationCurveResourceName",
     "audioResourceName",
+    "constructorFunction",
     "extensionResourceName",
     "fontResourceName",
     "noteResourceName",
@@ -223,6 +235,7 @@ const RESOURCE_NAMING_CATEGORIES: ReadonlyArray<BridgeNamingConventionCategory> 
     "sequenceResourceName",
     "shaderResourceName",
     "spriteResourceName",
+    "structDeclaration",
     "tilesetResourceName",
     "timelineResourceName"
 ];
@@ -275,7 +288,7 @@ function createNamingTargetPathPredicate(
     );
     const selectedOwnerDirectories = new Set(
         [...normalizedIncludedPaths]
-            .filter((candidatePath) => candidatePath.endsWith(".gml"))
+            .filter((candidatePath) => isRefactorResourcePath(candidatePath))
             .map((candidatePath) => path.posix.dirname(candidatePath))
     );
 
@@ -290,7 +303,7 @@ function createNamingTargetPathPredicate(
         }
 
         return (
-            normalizedCandidatePath.endsWith(".yy") &&
+            isRefactorOwnerMetadataPath(normalizedCandidatePath) &&
             selectedOwnerDirectories.has(path.posix.dirname(normalizedCandidatePath))
         );
     };
@@ -304,6 +317,29 @@ function toExclusiveEndIndex(endIndex: number): number {
 
 function resolveOccurrenceEndIndex(endIndex: unknown): number | null {
     return typeof endIndex === "number" ? toExclusiveEndIndex(endIndex) : null;
+}
+
+/**
+ * Extract position data from a semantic entry reference record and push a validated
+ * reference occurrence onto the accumulator. Silently skips records with missing or
+ * invalid location data.
+ */
+function pushEntryReferenceOccurrence(ref: SemanticEntryReferenceRecord, occurrences: Array<SymbolOccurrence>): void {
+    const start = ref.start?.index ?? ref.location?.start?.index ?? 0;
+    const end = resolveOccurrenceEndIndex(ref.end?.index ?? ref.location?.end?.index);
+    const filePath = typeof ref.filePath === "string" ? ref.filePath : "";
+
+    if (!Core.isNonEmptyString(filePath) || end === null || end <= start) {
+        return;
+    }
+
+    occurrences.push({
+        path: filePath,
+        start,
+        end,
+        scopeId: typeof ref.scopeId === "string" ? ref.scopeId : undefined,
+        kind: "reference"
+    });
 }
 
 function createWorkspaceEdit(): WorkspaceEdit {
@@ -385,8 +421,17 @@ function isResourceMetadataRecord(value: unknown): value is ResourceMetadataReco
     return record.assetReferences.every((reference) => isResourceAssetReferenceRecord(reference));
 }
 
+const normalizedMetadataReferenceTargetPathCache = new Map<string, string>();
+
 function normalizeMetadataReferenceTargetPath(targetPath: string): string {
-    return targetPath.replaceAll("\\", "/").toLowerCase();
+    const cachedNormalizedPath = normalizedMetadataReferenceTargetPathCache.get(targetPath);
+    if (cachedNormalizedPath !== undefined) {
+        return cachedNormalizedPath;
+    }
+
+    const normalizedPath = targetPath.replaceAll("\\", "/").toLowerCase();
+    normalizedMetadataReferenceTargetPathCache.set(targetPath, normalizedPath);
+    return normalizedPath;
 }
 
 function metadataReferenceTargetsMatch(leftPath: string, rightPath: string): boolean {
@@ -408,6 +453,50 @@ function appendProjectMetadataStringMutation(
         propertyPath,
         value
     });
+}
+
+function updateRoomInstanceCreationOrderSelfPaths({
+    parsed,
+    oldResourcePath,
+    newResourcePath,
+    stringMutations
+}: {
+    parsed: Record<string, unknown>;
+    oldResourcePath: string;
+    newResourcePath: string;
+    stringMutations: Array<{ propertyPath: string; value: string }>;
+}): boolean {
+    const instanceCreationOrder = parsed.instanceCreationOrder;
+    if (!Array.isArray(instanceCreationOrder)) {
+        return false;
+    }
+
+    let changed = false;
+    for (const [index, orderEntry] of instanceCreationOrder.entries()) {
+        if (!Core.isObjectLike(orderEntry)) {
+            continue;
+        }
+
+        const orderEntryRecord = orderEntry as Record<string, unknown>;
+        const currentPath = Core.getNonEmptyString(orderEntryRecord.path);
+        if (!currentPath) {
+            continue;
+        }
+
+        if (!metadataReferenceTargetsMatch(currentPath, oldResourcePath)) {
+            continue;
+        }
+
+        if (currentPath === newResourcePath) {
+            continue;
+        }
+
+        orderEntryRecord.path = newResourcePath;
+        appendProjectMetadataStringMutation(stringMutations, `instanceCreationOrder.${index}.path`, newResourcePath);
+        changed = true;
+    }
+
+    return changed;
 }
 
 function requiresMetadataResourcePathOrderNormalization(rawContent: string): boolean {
@@ -457,6 +546,10 @@ export class GmlSemanticBridge {
     > | null = null;
     private scriptResourceIndexes: ScriptResourceIndexes | null = null;
     private readonly localReferenceOccurrencesByFilePath = new Map<string, LocalReferenceIndex>();
+    private readonly latestBatchMetadataDocumentsByEdit = new WeakMap<
+        WorkspaceEdit,
+        { documents: Map<string, Record<string, unknown>>; metadataObjectCount: number }
+    >();
 
     constructor(projectIndex: unknown, projectRoot: string = process.cwd()) {
         this.projectIndex = Core.isObjectLike(projectIndex) ? (projectIndex as Record<string, unknown>) : {};
@@ -599,6 +692,26 @@ export class GmlSemanticBridge {
     }
 
     /**
+     * Check whether a directory path exists in the effective workspace view.
+     * This considers both on-disk paths and staged rename overlays so batch
+     * rename planning can treat already-staged destinations as existing.
+     */
+    private doesWorkspaceDirectoryPathExist(candidatePath: string): boolean {
+        const absoluteCandidatePath = path.resolve(this.projectRoot, candidatePath);
+        if (fs.existsSync(absoluteCandidatePath) && fs.lstatSync(absoluteCandidatePath).isDirectory()) {
+            return true;
+        }
+
+        const sourcePath = this.resolveWorkspaceSourcePath(candidatePath);
+        if (sourcePath === candidatePath) {
+            return false;
+        }
+
+        const absoluteSourcePath = path.resolve(this.projectRoot, sourcePath);
+        return fs.existsSync(absoluteSourcePath) && fs.lstatSync(absoluteSourcePath).isDirectory();
+    }
+
+    /**
      * Get the resources map from the project index.
      */
     private get resources(): Record<string, SemanticResourceRecord> {
@@ -659,7 +772,7 @@ export class GmlSemanticBridge {
             entriesByRelatedName.set(name, new Set([entry]));
         };
 
-        const appendLookupEntry = (name: string, scopeId: string | undefined): void => {
+        const appendLookupEntry = (name: string, scopeId?: string): void => {
             if (!Core.isNonEmptyString(name)) {
                 return;
             }
@@ -773,7 +886,7 @@ export class GmlSemanticBridge {
             const resourceScipId = this.generateResourceScipId(resource);
             resourcesByExactName.set(resource.name, resource);
             resourcesByLowerName.set(resource.name.toLowerCase(), resource);
-            appendLookupEntry(resource.name, undefined);
+            appendLookupEntry(resource.name);
             registerResolveSymbolId(resource.name, resourceScipId);
 
             if (!Core.isNonEmptyString(resource.path)) {
@@ -1127,6 +1240,11 @@ export class GmlSemanticBridge {
         const resourceDir = path.posix.dirname(currentResourcePath);
         const resourceDirName = path.posix.basename(resourceDir);
         const parentDir = path.posix.dirname(resourceDir);
+        const shouldRenameResourceDirectory = resourceDirName === oldName;
+        const renamedResourceDirectoryPath = path.posix.join(parentDir, newName);
+        const destinationDirectoryExists =
+            shouldRenameResourceDirectory && this.doesWorkspaceDirectoryPathExist(renamedResourceDirectoryPath);
+        const fileRenameDestinationDir = destinationDirectoryExists ? renamedResourceDirectoryPath : resourceDir;
 
         // 1. Rename files inside the directory that match the old name.
         // We do this BEFORE renaming the directory because GameMaker assets keep
@@ -1146,7 +1264,7 @@ export class GmlSemanticBridge {
 
         for (const ext of extensionsToRename) {
             const oldFilePath = ext === ".yy" ? currentResourcePath : path.posix.join(resourceDir, `${oldName}${ext}`);
-            const newFilePath = path.posix.join(resourceDir, `${newName}${ext}`);
+            const newFilePath = path.posix.join(fileRenameDestinationDir, `${newName}${ext}`);
 
             // Later batch plans may target a path introduced by an earlier staged
             // folder rename. Accept either the current staged destination or the
@@ -1157,9 +1275,8 @@ export class GmlSemanticBridge {
         }
 
         // 2. Rename the directory itself if it matches the resource name.
-        if (resourceDirName === oldName) {
-            const newResourceDir = path.posix.join(parentDir, newName);
-            edit.addFileRename(resourceDir, newResourceDir);
+        if (shouldRenameResourceDirectory && !destinationDirectoryExists) {
+            edit.addFileRename(resourceDir, renamedResourceDirectoryPath);
         }
 
         this.addResourceMetadataEdits(edit, resource, oldName, newName, currentResourcePath);
@@ -1244,12 +1361,22 @@ export class GmlSemanticBridge {
     }
 
     private collectLatestBatchMetadataDocuments(edit: WorkspaceEdit): Map<string, Record<string, unknown>> {
+        const metadataObjectCount = edit.metadataObjects?.length ?? 0;
+        const cachedEntry = this.latestBatchMetadataDocumentsByEdit.get(edit);
+        if (cachedEntry && cachedEntry.metadataObjectCount === metadataObjectCount) {
+            return cachedEntry.documents;
+        }
+
         const latestBatchMetadataDocuments = new Map<string, Record<string, unknown>>();
 
         for (const metadataObject of edit.metadataObjects ?? []) {
             latestBatchMetadataDocuments.set(metadataObject.path, metadataObject.document);
         }
 
+        this.latestBatchMetadataDocumentsByEdit.set(edit, {
+            documents: latestBatchMetadataDocuments,
+            metadataObjectCount
+        });
         return latestBatchMetadataDocuments;
     }
 
@@ -1334,6 +1461,10 @@ export class GmlSemanticBridge {
             }
 
             const { parsed, rawContent } = loadedMetadataDocument;
+            const oldResourcePathLiteral = JSON.stringify(currentResourcePath);
+            const newResourcePathLiteral = JSON.stringify(newResourcePath);
+            const hasRawPathLiteralMatch =
+                oldResourcePathLiteral !== newResourcePathLiteral && rawContent.includes(oldResourcePathLiteral);
 
             let changed = false;
             const stringMutations: Array<{ propertyPath: string; value: string }> = [];
@@ -1358,6 +1489,16 @@ export class GmlSemanticBridge {
                         appendProjectMetadataStringMutation(stringMutations, "resourcePath", newResourcePath);
                         changed = true;
                     }
+                }
+
+                const roomInstanceCreationOrderUpdated = updateRoomInstanceCreationOrderSelfPaths({
+                    parsed,
+                    oldResourcePath: currentResourcePath,
+                    newResourcePath,
+                    stringMutations
+                });
+                if (roomInstanceCreationOrderUpdated) {
+                    changed = true;
                 }
             }
 
@@ -1419,11 +1560,16 @@ export class GmlSemanticBridge {
                 }
 
                 const existingValue = Semantic.getProjectMetadataValueAtPath(parsed, reference.propertyPath);
+                const existingReferenceName = Core.isObjectLike(existingValue)
+                    ? Core.getNonEmptyString((existingValue as Record<string, unknown>).name)
+                    : null;
+                const replacementReferenceName =
+                    existingReferenceName && existingReferenceName === oldName ? newName : null;
                 const updated = Semantic.updateProjectMetadataReferenceByPath({
                     document: parsed,
                     propertyPath: reference.propertyPath,
                     newResourcePath,
-                    newName
+                    newName: replacementReferenceName
                 });
                 if (updated) {
                     if (Core.isObjectLike(existingValue)) {
@@ -1432,7 +1578,13 @@ export class GmlSemanticBridge {
                             `${reference.propertyPath}.path`,
                             newResourcePath
                         );
-                        appendProjectMetadataStringMutation(stringMutations, `${reference.propertyPath}.name`, newName);
+                        if (replacementReferenceName) {
+                            appendProjectMetadataStringMutation(
+                                stringMutations,
+                                `${reference.propertyPath}.name`,
+                                replacementReferenceName
+                            );
+                        }
                     } else if (typeof existingValue === "string") {
                         appendProjectMetadataStringMutation(stringMutations, reference.propertyPath, newResourcePath);
                     }
@@ -1440,15 +1592,26 @@ export class GmlSemanticBridge {
                     changed = true;
                 }
             }
+            if (hasRawPathLiteralMatch) {
+                changed = true;
+            }
+
             if (!changed) {
                 continue;
             }
 
             const shouldNormalizeResourcePathOrdering = requiresMetadataResourcePathOrderNormalization(rawContent);
-            const canonicalContent = shouldNormalizeResourcePathOrdering
+            let canonicalContent = shouldNormalizeResourcePathOrdering
                 ? Semantic.stringifyProjectMetadataDocument(parsed, resourceEntry.path)
                 : (Semantic.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
                   Semantic.stringifyProjectMetadataDocument(parsed, resourceEntry.path));
+            if (
+                hasRawPathLiteralMatch &&
+                !shouldNormalizeResourcePathOrdering &&
+                canonicalContent.includes(oldResourcePathLiteral)
+            ) {
+                canonicalContent = canonicalContent.replaceAll(oldResourcePathLiteral, newResourcePathLiteral);
+            }
 
             if (canonicalContent === rawContent) {
                 continue;
@@ -1611,15 +1774,20 @@ export class GmlSemanticBridge {
             return this.diskIdentifierOccurrenceIndexesByFilePath.get(filePath) ?? null;
         }
 
-        const sourceText = this.readProjectSourceText(filePath);
-        if (sourceText === null) {
+        try {
+            const absolutePath = path.resolve(this.projectRoot, filePath);
+            if (!fs.existsSync(absolutePath)) {
+                this.diskIdentifierOccurrenceIndexesByFilePath.set(filePath, null);
+                return null;
+            }
+            const content = fs.readFileSync(absolutePath, "utf8");
+            const index = GmlIdentifierOccurrenceIndex.fromSourceText(content);
+            this.diskIdentifierOccurrenceIndexesByFilePath.set(filePath, index);
+            return index;
+        } catch {
             this.diskIdentifierOccurrenceIndexesByFilePath.set(filePath, null);
             return null;
         }
-
-        const occurrenceIndex = GmlIdentifierOccurrenceIndex.fromSourceText(sourceText);
-        this.diskIdentifierOccurrenceIndexesByFilePath.set(filePath, occurrenceIndex);
-        return occurrenceIndex;
     }
 
     /**
@@ -1667,21 +1835,7 @@ export class GmlSemanticBridge {
                         continue;
                     }
 
-                    const start = ref.start?.index ?? ref.location?.start?.index ?? 0;
-                    const end = resolveOccurrenceEndIndex(ref.end?.index ?? ref.location?.end?.index);
-                    const filePath = typeof ref.filePath === "string" ? ref.filePath : "";
-
-                    if (!Core.isNonEmptyString(filePath) || end === null || end <= start) {
-                        continue;
-                    }
-
-                    occurrences.push({
-                        path: filePath,
-                        start,
-                        end,
-                        scopeId: ref.scopeId,
-                        kind: "reference"
-                    });
+                    pushEntryReferenceOccurrence(ref, occurrences);
                 }
             }
 
@@ -1697,21 +1851,7 @@ export class GmlSemanticBridge {
         if (Array.isArray(entry.references)) {
             for (const ref of entry.references) {
                 if (ref.targetName === symbolName) {
-                    const start = ref.start?.index ?? ref.location?.start?.index ?? 0;
-                    const end = resolveOccurrenceEndIndex(ref.end?.index ?? ref.location?.end?.index);
-                    const filePath = typeof ref.filePath === "string" ? ref.filePath : "";
-
-                    if (!Core.isNonEmptyString(filePath) || end === null || end <= start) {
-                        continue;
-                    }
-
-                    occurrences.push({
-                        path: filePath,
-                        start,
-                        end,
-                        scopeId: ref.scopeId,
-                        kind: "reference"
-                    });
+                    pushEntryReferenceOccurrence(ref, occurrences);
                 }
             }
         }
@@ -1811,21 +1951,7 @@ export class GmlSemanticBridge {
         // Add references
         if (Array.isArray(entry.references)) {
             for (const ref of entry.references) {
-                const start = ref.start?.index ?? ref.location?.start?.index ?? 0;
-                const end = resolveOccurrenceEndIndex(ref.end?.index ?? ref.location?.end?.index);
-                const filePath = typeof ref.filePath === "string" ? ref.filePath : "";
-
-                if (!Core.isNonEmptyString(filePath) || end === null || end <= start) {
-                    continue;
-                }
-
-                occurrences.push({
-                    path: filePath,
-                    start,
-                    end,
-                    scopeId: ref.scopeId,
-                    kind: "reference"
-                });
+                pushEntryReferenceOccurrence(ref, occurrences);
             }
         }
     }
@@ -1865,7 +1991,7 @@ export class GmlSemanticBridge {
 
         const seen = new Set<string>();
         return occurrences.filter((occ) => {
-            if (!Core.isNonEmptyString(occ.path) || occ.end <= occ.start) {
+            if (!Core.isNonEmptyString(occ.path) || occ.end < occ.start) {
                 return false;
             }
 
@@ -2115,17 +2241,53 @@ export class GmlSemanticBridge {
         shouldIncludePath: NamingTargetPathPredicate,
         pushTarget: NamingTargetSink
     ): void {
-        this.collectExactIdentifierNamingTargets(
-            this.identifiers.globalVariables ?? {},
-            "globalVariable",
-            shouldIncludePath,
-            pushTarget
-        );
+        const knownShadowableNames = new Set<string>();
+
+        for (const entry of Object.values(this.identifiers.enums ?? {})) {
+            if (typeof entry?.name === "string") {
+                knownShadowableNames.add(entry.name);
+            }
+        }
+        for (const entry of Object.values(this.identifiers.macros ?? {})) {
+            if (typeof entry?.name === "string") {
+                knownShadowableNames.add(entry.name);
+            }
+        }
+        for (const resource of Object.values(this.resources ?? {})) {
+            if (typeof resource?.name === "string") {
+                knownShadowableNames.add(resource.name);
+            }
+        }
+
+        for (const entry of Object.values(this.identifiers.globalVariables ?? {})) {
+            const declarationFilePath = this.getDeclarationFilePath(entry);
+            const entryName = typeof entry?.name === "string" ? entry.name : entry?.key;
+            if (
+                !shouldIncludePath(declarationFilePath) ||
+                typeof entryName !== "string" ||
+                knownShadowableNames.has(entryName)
+            ) {
+                continue;
+            }
+
+            pushTarget({
+                category: "globalVariable",
+                name: entryName,
+                occurrences: [],
+                path: declarationFilePath,
+                scopeId: entry.scopeId ?? null,
+                symbolId: this.generateScipId(entry, entryName)
+            });
+        }
 
         for (const entry of Object.values(this.identifiers.instanceVariables ?? {})) {
             const declarationFilePath = this.getDeclarationFilePath(entry);
             const entryName = typeof entry?.name === "string" ? entry.name : entry?.key;
-            if (!shouldIncludePath(declarationFilePath) || typeof entryName !== "string") {
+            if (
+                !shouldIncludePath(declarationFilePath) ||
+                typeof entryName !== "string" ||
+                knownShadowableNames.has(entryName)
+            ) {
                 continue;
             }
 
@@ -2683,8 +2845,8 @@ export class GmlSemanticBridge {
                 continue;
             }
 
-            const startIndex = this.readLocationIndex(reference.start);
-            const endIndex = this.readExclusiveLocationIndex(reference.end);
+            const startIndex = readSemanticLocationIndex(reference.start);
+            const endIndex = readExclusiveSemanticLocationIndex(reference.end);
             if (startIndex === null || endIndex === null) {
                 continue;
             }
@@ -2693,7 +2855,7 @@ export class GmlSemanticBridge {
                 continue;
             }
 
-            const declarationStartIndex = this.readLocationIndex(referenceDeclaration.start);
+            const declarationStartIndex = readSemanticLocationIndex(referenceDeclaration.start);
             const declarationScopeId =
                 typeof referenceDeclaration.scopeId === "string" ? referenceDeclaration.scopeId : null;
             const referenceKey = this.createLocalReferenceKey(
@@ -2714,16 +2876,6 @@ export class GmlSemanticBridge {
 
         this.localReferenceOccurrencesByFilePath.set(filePath, indexedOccurrences);
         return indexedOccurrences;
-    }
-
-    private readLocationIndex(location: unknown): number | null {
-        const record = Core.isObjectLike(location) ? (location as Record<string, unknown>) : null;
-        return typeof record?.index === "number" ? record.index : null;
-    }
-
-    private readExclusiveLocationIndex(location: unknown): number | null {
-        const index = this.readLocationIndex(location);
-        return index === null ? null : toExclusiveEndIndex(index);
     }
 
     private isMemberAccessReference(sourceText: string | null, startIndex: number): boolean {
@@ -2749,16 +2901,8 @@ export class GmlSemanticBridge {
         const occurrences: Array<SymbolOccurrence> = [];
 
         for (const declaration of entry.declarations ?? []) {
-            const declarationStartRecord = Core.isObjectLike(declaration.start)
-                ? (declaration.start as Record<string, unknown>)
-                : null;
-            const declarationEndRecord = Core.isObjectLike(declaration.end)
-                ? (declaration.end as Record<string, unknown>)
-                : null;
-            const declarationStart =
-                typeof declarationStartRecord?.index === "number" ? declarationStartRecord.index : 0;
-            const declarationEnd =
-                typeof declarationEndRecord?.index === "number" ? toExclusiveEndIndex(declarationEndRecord.index) : 0;
+            const declarationStart = readSemanticLocationIndex(declaration.start) ?? 0;
+            const declarationEnd = readExclusiveSemanticLocationIndex(declaration.end) ?? 0;
 
             occurrences.push({
                 path: typeof declaration.filePath === "string" ? declaration.filePath : "",
@@ -2770,27 +2914,13 @@ export class GmlSemanticBridge {
         }
 
         for (const reference of entry.references ?? []) {
-            const referenceStartRecord = Core.isObjectLike(reference.start)
-                ? (reference.start as Record<string, unknown>)
-                : null;
-            const referenceEndRecord = Core.isObjectLike(reference.end)
-                ? (reference.end as Record<string, unknown>)
-                : null;
             const referenceLocationRecord = Core.isObjectLike(reference.location)
                 ? (reference.location as Record<string, unknown>)
                 : null;
-            const locationStartRecord = Core.isObjectLike(referenceLocationRecord?.start)
-                ? (referenceLocationRecord.start as Record<string, unknown>)
-                : null;
-            const locationEndRecord = Core.isObjectLike(referenceLocationRecord?.end)
-                ? (referenceLocationRecord.end as Record<string, unknown>)
-                : null;
-            const referenceStart = typeof referenceStartRecord?.index === "number" ? referenceStartRecord.index : 0;
-            const referenceEnd =
-                typeof referenceEndRecord?.index === "number" ? toExclusiveEndIndex(referenceEndRecord.index) : 0;
-            const locationStart = typeof locationStartRecord?.index === "number" ? locationStartRecord.index : 0;
-            const locationEnd =
-                typeof locationEndRecord?.index === "number" ? toExclusiveEndIndex(locationEndRecord.index) : 0;
+            const referenceStart = readSemanticLocationIndex(reference.start) ?? 0;
+            const referenceEnd = readExclusiveSemanticLocationIndex(reference.end) ?? 0;
+            const locationStart = readSemanticLocationIndex(referenceLocationRecord?.start) ?? 0;
+            const locationEnd = readExclusiveSemanticLocationIndex(referenceLocationRecord?.end) ?? 0;
 
             occurrences.push({
                 path: typeof reference.filePath === "string" ? reference.filePath : "",
@@ -2824,14 +2954,8 @@ export class GmlSemanticBridge {
                 continue;
             }
 
-            const startRecord = Core.isObjectLike(unresolvedReference.reference.start)
-                ? (unresolvedReference.reference.start as Record<string, unknown>)
-                : null;
-            const endRecord = Core.isObjectLike(unresolvedReference.reference.end)
-                ? (unresolvedReference.reference.end as Record<string, unknown>)
-                : null;
-            const start = typeof startRecord?.index === "number" ? startRecord.index : null;
-            const end = typeof endRecord?.index === "number" ? toExclusiveEndIndex(endRecord.index) : null;
+            const start = readSemanticLocationIndex(unresolvedReference.reference.start);
+            const end = readExclusiveSemanticLocationIndex(unresolvedReference.reference.end);
 
             if (start === null || end === null || end <= start) {
                 continue;
@@ -2862,14 +2986,8 @@ export class GmlSemanticBridge {
 
         for (const unresolvedReference of this.getIndexes().unresolvedReferencesByExactName.get(symbolName) ?? []) {
             const classifications = Core.asArray(unresolvedReference.reference.classifications);
-            const startRecord = Core.isObjectLike(unresolvedReference.reference.start)
-                ? (unresolvedReference.reference.start as Record<string, unknown>)
-                : null;
-            const endRecord = Core.isObjectLike(unresolvedReference.reference.end)
-                ? (unresolvedReference.reference.end as Record<string, unknown>)
-                : null;
-            const start = typeof startRecord?.index === "number" ? startRecord.index : null;
-            const end = typeof endRecord?.index === "number" ? toExclusiveEndIndex(endRecord.index) : null;
+            const start = readSemanticLocationIndex(unresolvedReference.reference.start);
+            const end = readExclusiveSemanticLocationIndex(unresolvedReference.reference.end);
 
             if (start === null || end === null || end <= start) {
                 continue;
@@ -3000,10 +3118,7 @@ export class GmlSemanticBridge {
         declaration: Record<string, unknown>,
         sourceText: string | null
     ): Extract<BridgeNamingConventionCategory, "localVariable" | "loopIndexVariable" | "staticVariable"> {
-        const declarationStart = Core.isObjectLike(declaration.start)
-            ? (declaration.start as Record<string, unknown>)
-            : null;
-        const startIndex = typeof declarationStart?.index === "number" ? declarationStart.index : null;
+        const startIndex = readSemanticLocationIndex(declaration.start);
         if (typeof declaration.name !== "string" || startIndex === null) {
             return "localVariable";
         }
@@ -3019,10 +3134,7 @@ export class GmlSemanticBridge {
         declaration: Record<string, unknown>,
         sourceText: string | null
     ): boolean {
-        const declarationStart = Core.isObjectLike(declaration.start)
-            ? (declaration.start as Record<string, unknown>)
-            : null;
-        const startIndex = typeof declarationStart?.index === "number" ? declarationStart.index : null;
+        const startIndex = readSemanticLocationIndex(declaration.start);
         if (typeof declaration.name !== "string" || startIndex === null) {
             return false;
         }
@@ -3053,10 +3165,7 @@ export class GmlSemanticBridge {
         )) {
             const sourceText = this.readProjectSourceText(filePath);
             for (const declaration of fileRecord.declarations ?? []) {
-                const declarationStart = Core.isObjectLike(declaration.start)
-                    ? (declaration.start as Record<string, unknown>)
-                    : null;
-                const startIndex = typeof declarationStart?.index === "number" ? declarationStart.index : null;
+                const startIndex = readSemanticLocationIndex(declaration.start);
                 if (typeof declaration.name !== "string" || startIndex === null) {
                     continue;
                 }

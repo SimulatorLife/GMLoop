@@ -107,16 +107,8 @@ export function getProjectIndexParserOverride(options) {
         return null;
     }
 
-    const facade = options.gmlParserFacade;
-    if (typeof facade?.parse === "function") {
-        return {
-            facade,
-            parse: facade.parse.bind(facade)
-        };
-    }
-
     const parse = options.parseGml;
-    return typeof parse === "function" ? { facade: null, parse } : null;
+    return typeof parse === "function" ? { parse } : null;
 }
 
 export function resolveProjectIndexParser(options) {

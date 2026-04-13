@@ -15,7 +15,7 @@ import {
 const {
     assertNonEmptyString,
     getErrorMessageOrFallback,
-    isFsErrorCode,
+    isErrorWithCode,
     parseJsonWithContext,
     resolveContainedRelativePath,
     toPosixPath
@@ -44,7 +44,7 @@ async function ensureDirectoryExists(root, { required, label }) {
         }
         return true;
     } catch (error) {
-        if (!required && isFsErrorCode(error, "ENOENT")) {
+        if (!required && isErrorWithCode(error, "ENOENT")) {
             return false;
         }
 

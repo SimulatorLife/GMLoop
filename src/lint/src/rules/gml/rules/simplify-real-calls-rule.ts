@@ -20,7 +20,7 @@
  * var x = real("0.5");
  * var y = REAL("123");
  *
- * // After --fix
+ * // After --write
  * var x = 0.5;
  * var y = 123;
  * ```

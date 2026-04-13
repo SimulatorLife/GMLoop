@@ -195,7 +195,7 @@ export function validateTargetPathInput({
         throw new CliUsageError(
             [
                 "Target path cannot be empty. Pass a directory or file to format (relative or absolute) or omit --path to format the current working directory.",
-                "If the path conflicts with a command name, invoke the format subcommand explicitly (prettier-plugin-gml format <path>)."
+                "If the path conflicts with a command name, invoke the format subcommand explicitly (prettier-plugin-gml format --path <path>)."
             ].join(" "),
             { usage }
         );

@@ -57,7 +57,12 @@ export const Refactor = Object.freeze({
 });
 
 export * as Backends from "./backends/index.js";
-export { executeRegisteredCodemods, listConfiguredCodemods, listRegisteredCodemods } from "./codemod-registry.js";
+export {
+    executeRegisteredCodemods,
+    listConfiguredCodemods,
+    listRegisteredCodemods,
+    listSemanticProjectIndexDependentCodemodIds
+} from "./codemod-registry.js";
 export * as Codemods from "./codemods/index.js";
 export type {
     LoopLengthHoistFunctionSuffixes,
@@ -114,7 +119,13 @@ export type {
     BatchRenamePlanSummary,
     BatchRenameValidation,
     CascadeEntry,
+    CodemodCacheController,
+    CodemodEngine,
     CodemodExecutionTelemetry,
+    CodemodRenameOperations,
+    CodemodSemanticProvider,
+    CodemodTransformExecutor,
+    CodemodWorkspaceEditor,
     ConfiguredCodemodRunRequest,
     ConfiguredCodemodRunResult,
     ConfiguredCodemodSummary,
@@ -124,12 +135,15 @@ export type {
     DependentSymbol,
     EditValidator,
     ExecuteBatchRenameRequest,
+    ExecuteGlobalvarToGlobalCodemodRequest,
+    ExecuteGlobalvarToGlobalCodemodResult,
     ExecuteLoopLengthHoistingCodemodRequest,
     ExecuteLoopLengthHoistingCodemodResult,
     ExecuteRenameRequest,
     ExecuteRenameResult,
     FileSymbol,
     FileSymbolProvider,
+    GlobalvarToGlobalFileSummary,
     HotReloadCascadeMetadata,
     HotReloadCascadeResult,
     HotReloadSafetySummary,
@@ -188,9 +202,13 @@ export type {
 export { isSymbolKind, parseSymbolKind, requireSymbolKind, SymbolKind } from "./types.js";
 export { ConflictType, isConflictType, parseConflictType, requireConflictType } from "./types.js";
 export { isOccurrenceKind, OccurrenceKind, parseOccurrenceKind, requireOccurrenceKind } from "./types.js";
+export type { CrossRenameConfusion, DuplicateSymbolIdEntry, DuplicateTargetNameEntry } from "./validation.js";
 export {
     batchValidateScopeConflicts,
     detectCircularRenames,
+    detectCrossRenameNameConfusion,
+    detectDuplicateSourceSymbolIds,
+    detectDuplicateTargetNames,
     detectRenameConflicts,
     validateCrossFileConsistency,
     validateRenameStructure

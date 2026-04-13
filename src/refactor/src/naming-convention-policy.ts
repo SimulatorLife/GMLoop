@@ -1,6 +1,9 @@
 import { Core } from "@gmloop/core";
 
-import { assertRefactorConfigPlainObject } from "./refactor-config-assertions.js";
+import {
+    assertRefactorConfigPlainObject,
+    assertRefactorConfigPlainObjectWithAllowedKeys
+} from "./refactor-config-assertions.js";
 import type {
     NamingCaseStyle,
     NamingCategory,
@@ -63,6 +66,18 @@ type RuntimeResolvedNamingRule = ResolvedNamingRule & {
 const NAMING_CATEGORY_SET = new Set(Object.keys(NAMING_CATEGORY_PARENTS));
 const NAMING_CASE_STYLE_SET: ReadonlySet<string> = new Set(NAMING_CASE_STYLES);
 
+const NAMING_RULE_CONFIG_ALLOWED_KEYS = new Set([
+    "caseStyle",
+    "prefix",
+    "suffix",
+    "minChars",
+    "maxChars",
+    "bannedPrefixes",
+    "bannedSuffixes"
+]);
+
+const NAMING_CONVENTION_POLICY_ALLOWED_KEYS = new Set(["rules", "exclusivePrefixes", "exclusiveSuffixes"]);
+
 function isNamingCategory(value: unknown): value is NamingCategory {
     return typeof value === "string" && NAMING_CATEGORY_SET.has(value);
 }
@@ -86,22 +101,7 @@ function normalizeStringArray(value: unknown, context: string): Array<string> {
 }
 
 function normalizeNamingRuleConfig(config: unknown, context: string): NamingRuleConfig {
-    const object = assertRefactorConfigPlainObject(config, context);
-    const allowedKeys = new Set([
-        "caseStyle",
-        "prefix",
-        "suffix",
-        "minChars",
-        "maxChars",
-        "bannedPrefixes",
-        "bannedSuffixes"
-    ]);
-
-    for (const key of Object.keys(object)) {
-        if (!allowedKeys.has(key)) {
-            throw new TypeError(`${context} contains unknown property ${JSON.stringify(key)}`);
-        }
-    }
+    const object = assertRefactorConfigPlainObjectWithAllowedKeys(config, NAMING_RULE_CONFIG_ALLOWED_KEYS, context);
 
     const normalized: NamingRuleConfig = {};
 
@@ -190,14 +190,11 @@ export function normalizeNamingConventionPolicy(
         };
     }
 
-    const object = assertRefactorConfigPlainObject(policy, context);
-    const allowedKeys = new Set(["rules", "exclusivePrefixes", "exclusiveSuffixes"]);
-
-    for (const key of Object.keys(object)) {
-        if (!allowedKeys.has(key)) {
-            throw new TypeError(`${context} contains unknown property ${JSON.stringify(key)}`);
-        }
-    }
+    const object = assertRefactorConfigPlainObjectWithAllowedKeys(
+        policy,
+        NAMING_CONVENTION_POLICY_ALLOWED_KEYS,
+        context
+    );
 
     const rulesObject = assertRefactorConfigPlainObject(object.rules ?? {}, `${context}.rules`);
     const rules: NamingConventionPolicy["rules"] = {};
@@ -291,12 +288,14 @@ export function resolveNamingConventionRules(policy: NamingConventionPolicy): Re
                 runtimeRule.maxChars = entry.rule.maxChars;
             }
             if (entry.rule.bannedPrefixes !== undefined) {
-                // Sort descending by length so stripOneAffixDirection can iterate
-                // without creating a sorted copy on every identifier evaluation.
-                runtimeRule.bannedPrefixes = [...entry.rule.bannedPrefixes].sort((a, b) => b.length - a.length);
+                // Keep the merged list unsorted here; it is sorted once after the
+                // full inheritance chain is resolved.
+                runtimeRule.bannedPrefixes = [...entry.rule.bannedPrefixes];
             }
             if (entry.rule.bannedSuffixes !== undefined) {
-                runtimeRule.bannedSuffixes = [...entry.rule.bannedSuffixes].sort((a, b) => b.length - a.length);
+                // Keep the merged list unsorted here; it is sorted once after the
+                // full inheritance chain is resolved.
+                runtimeRule.bannedSuffixes = [...entry.rule.bannedSuffixes];
             }
         }
 
@@ -311,25 +310,129 @@ export function resolveNamingConventionRules(policy: NamingConventionPolicy): Re
     return resolved;
 }
 
-function splitIdentifierWords(value: string): Array<string> {
-    const normalized = value
-        .replaceAll(/([a-z])([A-Z])/g, "$1 $2")
-        .replaceAll(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-        .replaceAll(/[_\-\s]+/g, " ")
-        .trim();
+function isWordDelimiter(character: string): boolean {
+    return character === "_" || character === "-" || /\s/u.test(character);
+}
 
-    if (normalized.length === 0) {
+function isUppercaseAscii(character: string): boolean {
+    return character >= "A" && character <= "Z";
+}
+
+function isLowercaseAscii(character: string): boolean {
+    return character >= "a" && character <= "z";
+}
+
+function splitIdentifierWords(value: string): Array<string> {
+    if (value.length === 0) {
         return [];
     }
 
-    return normalized
-        .split(" ")
-        .map((word) => word.toLowerCase())
-        .filter((word) => word.length > 0);
+    let containsUppercase = false;
+    let containsOtherDelimiters = false;
+    let containsUnderscore = false;
+    for (const character of value) {
+        if (character === "_") {
+            containsUnderscore = true;
+            continue;
+        }
+
+        if (character === "-" || /\s/u.test(character)) {
+            containsOtherDelimiters = true;
+            break;
+        }
+
+        if (isUppercaseAscii(character)) {
+            containsUppercase = true;
+            if (containsUnderscore) {
+                break;
+            }
+        }
+    }
+
+    if (!containsUppercase && !containsOtherDelimiters) {
+        if (!containsUnderscore) {
+            return [value.toLowerCase()];
+        }
+
+        const splitWords = value.split("_");
+        const words: Array<string> = [];
+        for (const splitWord of splitWords) {
+            if (splitWord.length > 0) {
+                words.push(splitWord.toLowerCase());
+            }
+        }
+        return words;
+    }
+
+    const words: Array<string> = [];
+    let currentWord = "";
+
+    for (let index = 0; index < value.length; index += 1) {
+        const character = value[index];
+        if (character === undefined) {
+            continue;
+        }
+
+        if (isWordDelimiter(character)) {
+            if (currentWord.length > 0) {
+                words.push(currentWord);
+                currentWord = "";
+            }
+            continue;
+        }
+
+        const previousCharacter = index > 0 ? value[index - 1] : undefined;
+        const nextCharacter = index + 1 < value.length ? value[index + 1] : undefined;
+
+        const startsCamelCaseBoundary =
+            previousCharacter !== undefined && isLowercaseAscii(previousCharacter) && isUppercaseAscii(character);
+        const startsAcronymBoundary =
+            previousCharacter !== undefined &&
+            nextCharacter !== undefined &&
+            isUppercaseAscii(previousCharacter) &&
+            isUppercaseAscii(character) &&
+            isLowercaseAscii(nextCharacter);
+
+        if ((startsCamelCaseBoundary || startsAcronymBoundary) && currentWord.length > 0) {
+            words.push(currentWord);
+            currentWord = character.toLowerCase();
+            continue;
+        }
+
+        currentWord += character.toLowerCase();
+    }
+
+    if (currentWord.length > 0) {
+        words.push(currentWord);
+    }
+
+    return words;
 }
 
 function capitalize(word: string): string {
     return word.length === 0 ? word : `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`;
+}
+
+function toCamelCase(words: ReadonlyArray<string>): string {
+    if (words.length === 0) {
+        return "";
+    }
+
+    // Use an index loop instead of words.slice(1) to avoid an intermediate array allocation.
+    let formatted = words[0] ?? "";
+    for (let i = 1; i < words.length; i++) {
+        formatted += capitalize(words[i]);
+    }
+
+    return formatted;
+}
+
+function toPascalCase(words: ReadonlyArray<string>): string {
+    let formatted = "";
+    for (const word of words) {
+        formatted += capitalize(word);
+    }
+    return formatted;
 }
 
 type IdentifierUnderscoreAffixes = {
@@ -338,16 +441,69 @@ type IdentifierUnderscoreAffixes = {
     trailing: string;
 };
 
+function isSimpleLowerSnakeCore(value: string): boolean {
+    // Use a charCode loop instead of a regex to avoid the regex-engine overhead on every
+    // identifier in the hot path.  Valid characters are a-z (97-122), 0-9 (48-57), and _ (95).
+    const len = value.length;
+    if (len === 0) {
+        return false;
+    }
+    for (let i = 0; i < len; i++) {
+        const code = value.charCodeAt(i);
+        if ((code < 97 || code > 122) && (code < 48 || code > 57) && code !== 95) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function toCamelCaseFromLowerSnakeCore(value: string): string {
+    // Use an indexed charCode loop instead of for...of to avoid iterator allocation and
+    // charCode comparisons to avoid per-character String.prototype calls.
+    let formatted = "";
+    let uppercaseNext = false;
+
+    for (let i = 0, len = value.length; i < len; i++) {
+        const code = value.charCodeAt(i);
+        if (code === 95 /* "_" */) {
+            uppercaseNext = true;
+            continue;
+        }
+
+        // Uppercase the character when following an underscore and it's a-z (97–122).
+        formatted +=
+            uppercaseNext && code >= 97 && code <= 122 ? String.fromCharCode(code - 32) : String.fromCharCode(code);
+        uppercaseNext = false;
+    }
+
+    return formatted;
+}
+
 function splitIdentifierUnderscoreAffixes(value: string): IdentifierUnderscoreAffixes {
-    const leading = value.match(/^_+/)?.[0] ?? "";
-    const trailing = value.match(/_+$/)?.[0] ?? "";
-    const coreStart = leading.length;
-    const coreEnd = Math.max(coreStart, value.length - trailing.length);
+    // Use direct charCode comparisons instead of regex to avoid regex-engine overhead.
+    // charCode 95 is "_".  Avoid slice() calls for the common case where leading/trailing
+    // affix strings are empty (no underscore boundary characters present).
+    const UNDERSCORE = 95;
+    const len = value.length;
+    let leadingEnd = 0;
+    while (leadingEnd < len && value.charCodeAt(leadingEnd) === UNDERSCORE) {
+        leadingEnd++;
+    }
+
+    if (leadingEnd === len) {
+        // Entire value is underscores (or value is empty).
+        return { leading: value, core: "", trailing: "" };
+    }
+
+    let trailingStart = len;
+    while (trailingStart > leadingEnd && value.charCodeAt(trailingStart - 1) === UNDERSCORE) {
+        trailingStart--;
+    }
 
     return {
-        leading,
-        core: value.slice(coreStart, coreEnd),
-        trailing: value.slice(coreEnd)
+        leading: leadingEnd > 0 ? value.slice(0, leadingEnd) : "",
+        core: value.slice(leadingEnd, trailingStart),
+        trailing: trailingStart < len ? value.slice(trailingStart) : ""
     };
 }
 
@@ -356,10 +512,21 @@ function splitIdentifierUnderscoreAffixes(value: string): IdentifierUnderscoreAf
  */
 export function formatNamingCaseStyle(value: string, caseStyle: NamingCaseStyle): string {
     const underscoreAffixes = splitIdentifierUnderscoreAffixes(value);
-    const words = splitIdentifierWords(underscoreAffixes.core);
     if (underscoreAffixes.core.length === 0) {
         return `${underscoreAffixes.leading}${underscoreAffixes.trailing}`;
     }
+
+    if (isSimpleLowerSnakeCore(underscoreAffixes.core)) {
+        if (caseStyle === "camel") {
+            return `${underscoreAffixes.leading}${toCamelCaseFromLowerSnakeCore(underscoreAffixes.core)}${underscoreAffixes.trailing}`;
+        }
+
+        if (caseStyle === "lower_snake") {
+            return `${underscoreAffixes.leading}${underscoreAffixes.core}${underscoreAffixes.trailing}`;
+        }
+    }
+
+    const words = splitIdentifierWords(underscoreAffixes.core);
 
     if (words.length === 0) {
         return `${underscoreAffixes.leading}${underscoreAffixes.core}${underscoreAffixes.trailing}`;
@@ -367,13 +534,13 @@ export function formatNamingCaseStyle(value: string, caseStyle: NamingCaseStyle)
 
     const formattedCore =
         caseStyle === "lower"
-            ? words.join("").toLowerCase()
+            ? words.join("")
             : caseStyle === "upper"
               ? words.join("").toUpperCase()
               : caseStyle === "camel"
-                ? words[0] + words.slice(1).map(capitalize).join("")
+                ? toCamelCase(words)
                 : caseStyle === "pascal"
-                  ? words.map(capitalize).join("")
+                  ? toPascalCase(words)
                   : caseStyle === "lower_snake"
                     ? words.join("_")
                     : words.join("_").toUpperCase();
@@ -473,6 +640,31 @@ function stripOneAffixDirection(
         }
     }
 
+    if (isPrefix && ruleAffix.length >= 2 && ruleAffix.endsWith("_")) {
+        const coreTargetPrefix = ruleAffix.slice(0, -1);
+        const match = coreName.match(/^([a-z]+)(_|[A-Z])(.*)$/);
+
+        if (match) {
+            const prefixWord = match[1];
+            const separator = match[2];
+            const remainder = match[3];
+            const separatorIsUpperCase = /[A-Z]/u.test(separator);
+
+            if (
+                prefixWord === coreTargetPrefix ||
+                // When a target resource prefix extends a legacy short prefix word
+                // (for example "oSpider" -> "obj_spider" or "sSpiderHead" -> "spr_spider_head"),
+                // replace that old prefix instead of duplicating it in the result. This
+                // single-letter branch is intentionally constrained to legacy prefixes
+                // that match the first character of the configured target prefix.
+                (prefixWord === coreTargetPrefix[0] && (separator === "_" || separatorIsUpperCase)) ||
+                (prefixWord.length > 1 && coreTargetPrefix.startsWith(prefixWord))
+            ) {
+                return separator === "_" ? remainder : separator + remainder;
+            }
+        }
+    }
+
     return coreName;
 }
 
@@ -500,6 +692,20 @@ function stripKnownAffixes(
     );
 }
 
+function isSimpleCaseOnlyRule(rule: RuntimeResolvedNamingRule, policy: NamingConventionPolicy): boolean {
+    return (
+        rule.enforceCaseStyle &&
+        rule.prefix.length === 0 &&
+        rule.suffix.length === 0 &&
+        rule.minChars === null &&
+        rule.maxChars === null &&
+        rule.bannedPrefixes.length === 0 &&
+        rule.bannedSuffixes.length === 0 &&
+        policy.exclusivePrefixes === undefined &&
+        policy.exclusiveSuffixes === undefined
+    );
+}
+
 /**
  * Evaluate a single identifier against the resolved naming policy.
  */
@@ -507,8 +713,12 @@ export function evaluateNamingConvention(
     currentName: string,
     category: NamingCategory,
     policy: NamingConventionPolicy,
-    resolvedRules: ResolvedNamingConventionRules
+    resolvedRules: ResolvedNamingConventionRules,
+    options: {
+        includeMessage?: boolean;
+    } = {}
 ): { compliant: boolean; suggestedName: string | null; message: string | null } {
+    const includeMessage = options.includeMessage !== false;
     const rule = resolvedRules[category] as RuntimeResolvedNamingRule | undefined;
     if (!rule) {
         return {
@@ -517,6 +727,26 @@ export function evaluateNamingConvention(
             message: null
         };
     }
+
+    if (isSimpleCaseOnlyRule(rule, policy)) {
+        const suggestedName = formatNamingCaseStyle(currentName, rule.caseStyle);
+        if (suggestedName === currentName) {
+            return {
+                compliant: true,
+                suggestedName: currentName,
+                message: null
+            };
+        }
+
+        return {
+            compliant: false,
+            suggestedName,
+            message: includeMessage
+                ? `Identifier ${JSON.stringify(currentName)} does not match ${rule.caseStyle} case.`
+                : null
+        };
+    }
+
     let issueMessage: string | null = null;
     // When the case-style branch detects a violation it already computes the
     // expected name, so we capture it here to avoid a second identical call to
@@ -575,6 +805,6 @@ export function evaluateNamingConvention(
     return {
         compliant: suggestedName === currentName,
         suggestedName,
-        message: issueMessage
+        message: includeMessage ? issueMessage : null
     };
 }

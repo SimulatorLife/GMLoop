@@ -3,7 +3,7 @@
     "manualRoot": "vendor/GameMaker-Manual",
     "packageName": null,
     "packageVersion": null,
-    "manualCommitHash": "2a4d5c908280c520b8b100b08e457683dcbe9a3a",
+    "manualCommitHash": "a2e874bf1f5c553de1dfaafdc79bb048d9cb5162",
     "manualPaths": {
       "diagnostics": "Manual/contents/The_Asset_Editors/Code_Editor_Properties/Feather_Messages.htm",
       "directives": "Manual/contents/The_Asset_Editors/Code_Editor_Properties/Feather_Directives.htm",
@@ -579,6 +579,14 @@
       "badExample": "var s = sprSprite;\n\n    enum size\n\n    {\n\n        small,\n\n        medium,\n\n        large\n\n    }\n\n\n\n    function Show()\n\n    {\n\n        show_debug_message(\"Here it is!\");\n\n    }",
       "goodExample": "var _s = spr_sprite;\n\n    enum SIZE\n\n    {\n\n        SMALL,\n\n        MEDIUM,\n\n        LARGE\n\n    }\n\n\n\n    function show()\n\n    {\n\n        show_debug_message(\"Here it is!\");\n\n    }",
       "correction": "The code in the example above contains a few names that aren't named according to Feather's default naming rules. To make them consistent with these rules, the code should be changed to the following:"
+    },
+    {
+      "id": "GM2018",
+      "title": "Potentially dangerous variable declaration.",
+      "description": "This warning message indicates that a declaration of a local variable inside a loop may cause unexpected results. Contrary to many other programming languages, GML does not scope local variables to the block level (indicated by the opening and closing curly braces { }) and also doesn't initialise them to a default value when they are only declared. This can lead to confusion as you might assume that the variable is re-declared and reset to a default value at each new iteration of the loop, though this is not what happens. At the end of the current loop iteration a local variable declared inside of it does not go out of scope, keeps existing and in subsequent iterations the variable will still hold the value it was last assigned.",
+      "badExample": "for (var i = 0; i < array_length(array); ++i)\n\n    {\n\n        var _elem; // GM2018\n\n        if (i == 0)\n\n            _elem = array[i];\n\n        else if (i < 5)\n\n            _elem = array[i] * 2;\n\n\n\n        add_loot_value(_elem);\n\n    }",
+      "goodExample": "var _elem;\n\n    for (var i = 0; i < array_length(array); ++i)\n\n    {\n\n        if (i == 0)\n\n            _elem = array[i];\n\n        else if (i < 5)\n\n            _elem = array[i] * 2;\n\n        else\n\n            _elem = 0;  // Loop indices >= 5\n\n\n\n        add_loot_value(_elem);\n\n    }",
+      "correction": "In the above code example, a local variable _elem is declared inside a for loop without being assigned an initial value. In the if / else statement that follows, a value is assigned to _elem if the index of the loop is any value from 0 to 4 (inclusive). In the iteration where i == 5, _elem will not be explicitly assigned a value and still hold the last assigned value.\n\nThe issue can be fixed by moving the variable declaration outside of the loop's body so it can no longer appear as if the variable is reset at the start of each loop iteration. Additionally, the logic to assign a value to the variable needs to be extended to make sure a new value is always assigned at every new iteration of the loop, no matter the loop index."
     },
     {
       "id": "GM2019",

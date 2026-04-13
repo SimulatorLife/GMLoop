@@ -1,4 +1,5 @@
 export * from "./bounded-sample-collector.js";
+export * from "./command-catalog.js";
 export * from "./command-manager.js";
 export * from "./command-parsing.js";
 export * from "./command-standard-options.js";
@@ -9,8 +10,8 @@ export * from "./commander-error-utils.js";
 export * from "./commander-types.js";
 export * from "./env-overrides.js";
 export * from "./errors.js";
-export * from "./extension-normalizer.js";
 export * from "./format-command-options.js";
 export * from "./main-module-runner.js";
 export * from "./node-version.js";
+export * from "./shared-command-options.js";
 export * from "./version.js";

@@ -6,7 +6,7 @@
  * as the number of files increases.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -67,7 +67,6 @@ function helper_${i}() {
         const matcher = createExtensionMatcher([".gml"]);
         const files: Array<string> = [];
 
-        const { readdir } = await import("node:fs/promises");
         const entries = await readdir(testDir, { withFileTypes: true });
 
         for (const entry of entries) {

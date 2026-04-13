@@ -5,6 +5,7 @@ Command-line interface for the GMLoop toolchain. Provides utilities for formatti
 ## Formatter/Linter/Refactor contract
 
 - Run `refactor` to execute global transactions (Codemods), atomic cross-file edits (e.g. rename transactions), and metadata updates via a native Collection API through `@gmloop/refactor`.
+- Run `parse` to inspect `.gml` parser AST output through `@gmloop/parser`.
 - Run `lint` for and syntax repairs/rewrites (applies local single-file ESLint diagnostics/fixes through `@gmloop/lint`).
 - Run `format` for layout-only formatting (formatter-only AST normalization + printing through `@gmloop/format`).
 - Run `fix` to execute all three in one pass: project codemods, lint autofixes, and formatting.
@@ -24,7 +25,10 @@ pnpm run cli -- path/to/project --help
 ```
 
 **Options:**
-- `--check` - Check if files are formatted without writing changes
+
+- `--path <path>` - Target file or directory path (defaults to current working directory)
+- `--config <path>` - Path to `gmloop.json` used for formatter-owned options
+- `--write` - Apply formatting changes (without this flag, format runs in dry-run mode)
 - `--log-level <level>` - Set Prettier log level (debug, info, warn, error, silent)
 - `--verbose` - Emit per-file timing and total run duration diagnostics
 - `--on-parse-error <action>` - How to handle parse errors (skip, revert, abort)
@@ -32,8 +36,26 @@ pnpm run cli -- path/to/project --help
 - `--unsupported-extension-sample-limit <n>` - Limit unsupported extension samples
 
 **Environment Variables:**
+
 - `PRETTIER_PLUGIN_GML_LOG_LEVEL` - Default log level
 - `PRETTIER_PLUGIN_GML_ON_PARSE_ERROR` - Default parse error strategy
+
+### `parse` - Parse GML Files to AST JSON
+
+Runs `@gmloop/parser` over a `.gml` file or directory target. Dry-run mode writes AST JSON to stdout. With `--write`, the command writes sibling `*.ast.json` files next to each parsed `.gml` file.
+
+```bash
+pnpm run cli -- parse --path path/to/script.gml
+pnpm run cli -- parse --path path/to/project > ast.json
+pnpm run cli -- parse --write --path path/to/project
+```
+
+**Options:**
+
+- `--path <path>` - Target `.gml` file or directory path (defaults to current working directory)
+- `--write` - Write AST JSON files (without this flag, parse prints AST JSON to stdout)
+- `--list` - Print effective command settings and exit
+- `--verbose` - Emit per-file parse diagnostics to stderr
 
 ### `lint` - Lint and Auto-Fix GML Files
 
@@ -41,22 +63,23 @@ Runs `@gmloop/lint` over one or more paths, with optional ESLint autofix support
 
 ```bash
 pnpm run cli -- lint path/to/project
-pnpm run cli -- lint --fix path/to/project
+pnpm run cli -- lint --write path/to/project
 ```
 
 **Options:**
-- `--fix` - Apply automatic fixes
+
+- `--write` - Apply automatic fixes
 - `--warn-ignored` - Include ignored-file warnings from ESLint (disabled by default to reduce noisy output)
 - `--formatter <name>` - Formatter output (`stylish|json|checkstyle`)
 - `--max-warnings <count>` - Fail when warning count exceeds limit
-- `--config <path>` - Use an explicit flat config
+- `--config <path>` - Path to a custom/override `gmloop.json`
 - `--no-default-config` - Disable bundled fallback config
-- `--project <path>` - Force project root directory or `.yyp` path
+- `--path <path>` - Force project root directory or `.yyp` path
 - `--project-strict` - Fail when linted files are outside forced project root
 - `--quiet` - Suppress fallback/config discovery warnings
 - `--verbose` - Emit per-file lint/format timing and total run duration diagnostics
 
-`lint` processes targets file-by-file in sequence. With `--fix`, each processed file path is emitted immediately to `stderr` as progress output while fixes are written incrementally.
+`lint` processes targets file-by-file in sequence. With `--write`, each processed file path is emitted immediately to `stderr` as progress output while fixes are written incrementally.
 
 Post-lint config inspections (overlay wiring and processor policy enforcement) also run sequentially per file to bound peak memory usage on very large project scans.
 
@@ -67,7 +90,7 @@ plugin and language (`plugins: { gml: Lint.plugin }` and
 `GML_OVERLAY_WITHOUT_LANGUAGE_WIRING` warning that points back to the affected
 files.
 
-`lint` does not build project-wide semantic indexes or coordinate cross-file fixes. `--project` only scopes out-of-root warnings and `--project-strict` enforcement for the current invocation. Project-wide identifier indexing, rename safety, codemods, and hoist-name generation belong in `@gmloop/refactor`.
+`lint` does not build project-wide semantic indexes or coordinate cross-file fixes. `--path` only scopes out-of-root warnings and `--project-strict` enforcement for the current invocation. Project-wide identifier indexing, rename safety, codemods, and hoist-name generation belong in `@gmloop/refactor`.
 
 If a target does not contain any `.gml` files, `lint` now prints an explicit
 guidance message explaining that only `.gml` sources are processed and includes
@@ -78,18 +101,19 @@ an example invocation.
 Runs the project-wide write workflow in one command:
 
 1. `refactor codemod --write`
-2. `lint --fix`
+2. `lint --write`
 3. `format`
 
 ```bash
-pnpm run cli -- fix path/to/project
+pnpm run cli -- fix --path path/to/project
 pnpm run cli -- fix --only namingConvention
 ```
 
 **Options:**
-- `[projectPath]` - Project directory or `.yyp` path (default: current project)
-- `--project-root <path>` - Explicit GameMaker project root directory or `.yyp` path
-- `--config <path>` - Explicit `gmloop.json` path for the refactor stage
+
+- `--path <path>` - Explicit GameMaker project root directory or `.yyp` path
+- `--config <path>` - Path to a custom/override `gmloop.json`
+- `--write` - Apply writes for the full workflow (without this flag, workflow runs dry-run)
 - `--only <ids>` - Comma-separated list of configured refactor codemod ids to run
 - `--verbose` - Enable verbose diagnostics for all three stages
 
@@ -119,6 +143,7 @@ pnpm run cli -- watch /path/to/project --auto-inject
 ```
 
 **Options:**
+
 - `[targetPath]` - Directory to watch (default: current directory)
 - `--extensions <ext...>` - File extensions to watch (default: `.gml`)
 - `--polling` - Use polling instead of native file watching
@@ -159,7 +184,7 @@ Waiting for file changes... (Press Ctrl+C to stop)
   ↳ Transpiled to JavaScript (234 chars in 2.45ms)
   ↳ Generated patch: gml/script/example
   ↳ Streamed to 1 client(s)
-  
+
 ^C
 --- Transpilation Statistics ---
 Total patches generated: 15
@@ -193,6 +218,7 @@ pnpm run cli -- watch /path/to/project --auto-inject --websocket-port 18000
 ```
 
 When `--auto-inject` is enabled, the watch command will:
+
 1. Locate the most recent GameMaker HTML5 output (or use the path specified with `--html5-output`)
 2. Copy the runtime wrapper assets into the output directory
 3. Inject the WebSocket client bootstrap snippet into `index.html`
@@ -247,12 +273,13 @@ pnpm run cli -- watch --quiet
 # Example output in quiet mode:
 # Runtime static server ready at http://127.0.0.1:51234
 # WebSocket patch server ready at ws://127.0.0.1:17890
-# 
+#
 # (transpilation happens silently, only errors are shown)
 # Error: Transpilation failed: Unexpected token at line 5
 ```
 
 Quiet mode is particularly useful for:
+
 - CI/CD pipelines where verbose output clutters logs
 - Background processes where you only care about errors
 - Automated testing environments
@@ -352,14 +379,15 @@ curl http://127.0.0.1:17891/ready
 
 **Endpoint Comparison:**
 
-| Endpoint | Purpose | Response Size | Use Case |
-|----------|---------|---------------|----------|
-| `/status` | Full metrics | Large | Monitoring dashboards, debugging |
-| `/health` | Health checks | Medium | Monitoring systems (Prometheus, Datadog) |
-| `/ping` | Connectivity | Minimal | Load balancers, simple health checks |
-| `/ready` | Readiness | Small | Kubernetes readiness probes, orchestration |
+| Endpoint  | Purpose       | Response Size | Use Case                                   |
+| --------- | ------------- | ------------- | ------------------------------------------ |
+| `/status` | Full metrics  | Large         | Monitoring dashboards, debugging           |
+| `/health` | Health checks | Medium        | Monitoring systems (Prometheus, Datadog)   |
+| `/ping`   | Connectivity  | Minimal       | Load balancers, simple health checks       |
+| `/ready`  | Readiness     | Small         | Kubernetes readiness probes, orchestration |
 
 **Status Endpoint Fields:**
+
 - `uptime`: Milliseconds since the watch command started
 - `patchCount`: Total number of patches generated successfully
 - `errorCount`: Total number of transpilation errors encountered
@@ -368,6 +396,7 @@ curl http://127.0.0.1:17891/ready
 - `websocketClients`: Number of currently connected WebSocket clients
 
 **Use Cases:**
+
 - **Health Monitoring**: Integration with monitoring tools (Prometheus, Datadog, etc.) via `/health`
 - **Load Balancing**: Use `/ping` for lightweight health checks in load balancer configurations
 - **Container Orchestration**: Kubernetes readiness/liveness probes using `/ready` and `/health`
@@ -376,6 +405,7 @@ curl http://127.0.0.1:17891/ready
 - **Dashboard Integration**: Build custom monitoring dashboards for development teams
 
 **Configuration:**
+
 ```bash
 # Use custom port
 pnpm run cli -- watch --status-port 8080
@@ -399,6 +429,7 @@ The watch command now integrates with the transpiler module (`src/transpiler`) t
 The watch command now includes a **dependency tracker** that maintains file-to-symbol mappings as a foundation for future semantic integration. When files change, the tracker records which symbols they define, preparing the system for dependency-aware hot-reload.
 
 **Current Status:**
+
 - ✅ Lightweight dependency tracker integrated into watch command
 - ✅ Symbol definitions tracked per file
 - ✅ Foundation for dependency graph construction
@@ -452,6 +483,7 @@ pnpm run cli -- prepare-hot-reload --html5-output /path/to/html5/output
 ```
 
 **Options:**
+
 - `--html5-output <path>` - Path to the HTML5 output directory
 - `--gm-temp-root <path>` - Root directory for GameMaker HTML5 temp outputs
 - `--websocket-url <url>` - WebSocket URL for hot-reload patches
@@ -471,6 +503,7 @@ When GameMaker is running the HTML5 server, the command auto-detects the active
 ✅ **HTTP status server for runtime monitoring** ✨ NEW
 
 🚧 Future Enhancements:
+
 - Semantic analysis integration for scope-aware transpilation
 - Dependency tracking to rebuild dependent scripts
 - Event transpilation (not just scripts)
@@ -501,6 +534,7 @@ pnpm run cli -- watch-status --status-host 127.0.0.1 --status-port 18000
 ```
 
 **Options:**
+
 - `--status-host <host>` - Status server host (default: 127.0.0.1, env: WATCH_STATUS_HOST)
 - `--status-port <port>` - Status server port (default: 17891, env: WATCH_STATUS_PORT)
 - `--format <format>` - Output format: `pretty` (default) or `json`
@@ -531,6 +565,7 @@ Recent errors:
 ```
 
 **Use Cases:**
+
 - **Development Monitoring**: Quickly check if the watch command is still processing files correctly
 - **Debugging**: Inspect recent transpilation errors and their timing
 - **Performance Analysis**: Review transpilation duration for optimization
@@ -538,6 +573,7 @@ Recent errors:
 - **Container Health Checks**: Query `/health` or `/ready` endpoints for orchestration systems
 
 This command is particularly useful when:
+
 - The watch command is running in a background terminal or tmux session
 - You want to verify hot-reload is working without checking logs
 - You need to debug why a script isn't updating in the game
@@ -555,7 +591,7 @@ pnpm run cli -- refactor --symbol-id gml/script/scr_old_name --new-name scr_new_
 pnpm run cli -- refactor --old-name player_hp --new-name playerHealth
 
 # Dry run to preview changes
-pnpm run cli -- refactor --old-name player_hp --new-name playerHealth --dry-run
+pnpm run cli -- refactor --old-name player_hp --new-name playerHealth
 
 # Validate hot reload compatibility
 pnpm run cli -- refactor --old-name player_hp --new-name playerHealth --check-hot-reload
@@ -567,7 +603,7 @@ pnpm run cli -- refactor --old-name player_hp --new-name playerHealth --verbose
 pnpm run cli -- refactor codemod --list
 
 # Dry-run configured codemods inferred from the project config
-pnpm run cli -- refactor --project-root path/to/project
+pnpm run cli -- refactor --path path/to/project
 
 # Dry-run configured codemods
 pnpm run cli -- refactor codemod
@@ -580,15 +616,17 @@ pnpm run cli -- refactor codemod --only namingConvention --write
 ```
 
 **Options:**
+
 - `--symbol-id <id>` - SCIP-style symbol identifier to rename (e.g., gml/script/scr_player)
 - `--old-name <name>` - Current name of the symbol to rename
 - `--new-name <name>` - New name for the symbol (required)
-- `--project-root <path>` - Root directory of the GameMaker project (default: current directory)
-- `--dry-run` - Show what would be changed without modifying files
+- `--path <path>` - Root directory of the GameMaker project (default: current directory)
+- `--write` - Apply the rename/codemod changes (default behavior without `--write` is dry-run preview)
 - `--verbose` - Enable verbose output with detailed diagnostics
 - `--check-hot-reload` - Validate that the refactored code is compatible with hot reload
 
 **Codemod options (`refactor codemod`):**
+
 - `--config <path>` - Explicit path to `gmloop.json`
 - `--write` - Apply configured codemods (default is dry-run)
 - `--only <ids>` - Comma-separated list of configured codemod ids to run
@@ -605,15 +643,14 @@ When no rename target is provided, `refactor` will automatically run configured 
         "gml/no-globalvar": "error"
     },
     "refactor": {
-        "namingConventionPolicy": {
-            "rules": {
-                "localVariable": {
-                    "caseStyle": "camel"
-                }
-            }
-        },
         "codemods": {
-            "namingConvention": {},
+            "namingConvention": {
+                "rules": {
+                    "localVariable": {
+                        "caseStyle": "camel"
+                    }
+                }
+            },
             "loopLengthHoisting": {
                 "functionSuffixes": {
                     "array_length": "len"
@@ -625,17 +662,20 @@ When no rename target is provided, `refactor` will automatically run configured 
 ```
 
 **Ownership note:** `refactor` is a separate domain from lint.
-- Use `lint --fix` for lint-owned diagnostics/content rewrites.
+
+- Use `lint --write` for lint-owned diagnostics/content rewrites.
 - Use `refactor` for explicit symbol rename/refactor transactions with cross-file edit planning.
 - Refactor operations are not lint rule fixes and are not executed through formatter runtime adapters.
 
 **Use Cases:**
+
 - **Safe Renaming**: Rename variables, scripts, or other symbols project-wide without breaking scope
-- **Refactoring Preparation**: Preview changes before applying them with `--dry-run`
+- **Refactoring Preparation**: Preview changes by default, then apply with `--write` when ready
 - **Hot Reload Validation**: Ensure refactored code remains compatible with live updates using `--check-hot-reload`
 - **Development Workflow Integration**: Coordinate with watch mode for real-time refactoring feedback
 
 **Current scope:**
+
 - Safe rename planning/execution
 - Configured codemod execution via `gmloop.json`
 - Dry-run preview support
@@ -649,6 +689,22 @@ Generates GML identifier metadata from the GameMaker manual repository.
 ```bash
 pnpm run cli -- generate-gml-identifiers
 ```
+
+### `lookup-gml-identifier` - Query Built-In Metadata
+
+Looks up a built-in GML keyword/function/identifier from `gml-identifiers.json`
+(the manual-derived snapshot). This command does not maintain a separate glossary;
+it reads the identifier snapshot directly.
+
+```bash
+pnpm run cli -- lookup-gml-identifier draw_text
+pnpm run cli -- lookup-gml-identifier draw_text --json
+```
+
+Behavior:
+
+- Exit code `0`: identifier exists in the snapshot.
+- Exit code `2`: identifier is not recognized as a built-in.
 
 ### `generate-feather-metadata` - Generate Feather Metadata
 
@@ -711,13 +767,16 @@ The CLI package serves as the orchestration layer for the hot-reload development
 The CLI package is organized into focused, single-responsibility modules:
 
 **Commands** (`src/commands/`)
+
 - `watch.ts` - File system monitoring and hot-reload orchestration
 - `refactor.ts` - Safe, project-wide code transformations
 - `format.ts` - GML code formatting
 - `generate-gml-identifiers.ts` - Identifier metadata generation
+- `lookup-gml-identifier.ts` - Built-in identifier lookup from manual-derived metadata
 - `generate-feather-metadata.ts` - Feather metadata generation
 
 **Modules** (`src/modules/`)
+
 - `transpilation/` - Transpilation coordination and metrics tracking
 - `websocket/` - WebSocket server for patch streaming
 - `status/` - HTTP status server for runtime monitoring
@@ -756,15 +815,15 @@ echo "var y = 20;" >> /tmp/gml-test/test.gml
 To see the transpiled JavaScript output for a GML file:
 
 ```javascript
-import { createTranspiler } from './src/transpiler/src/index.js';
-import { readFile } from 'node:fs/promises';
+import { createTranspiler } from "./src/transpiler/src/index.js";
+import { readFile } from "node:fs/promises";
 
 const transpiler = createTranspiler();
-const content = await readFile('path/to/script.gml', 'utf8');
+const content = await readFile("path/to/script.gml", "utf8");
 
 const patch = await transpiler.transpileScript({
     sourceText: content,
-    symbolId: 'gml/script/my_script'
+    symbolId: "gml/script/my_script"
 });
 
 console.log(patch.js_body);
@@ -775,6 +834,7 @@ console.log(patch.js_body);
 The transpilation coordinator module (`src/modules/transpilation/coordinator.ts`) manages the complete transpilation lifecycle within the watch command:
 
 **Key Responsibilities:**
+
 - **Transpilation Lifecycle**: Coordinates the end-to-end process from GML source to validated JavaScript patches
 - **Metrics Tracking**: Records transpilation duration, file sizes, line counts, and performance statistics
 - **Error Management**: Handles transpilation failures gracefully with detailed error tracking
@@ -785,22 +845,25 @@ The transpilation coordinator module (`src/modules/transpilation/coordinator.ts`
 **API:**
 
 ```typescript
-import { transpileFile, displayTranspilationStatistics } from "/cli/modules/transpilation";
+import {
+    transpileFile,
+    displayTranspilationStatistics
+} from "/cli/modules/transpilation";
 
 // Transpile a single file with lifecycle management
 const result = transpileFile(
-    context,      // TranspilationContext with transpiler and metrics storage
-    filePath,     // Path to the GML file
-    content,      // GML source code
-    lines,        // Number of lines in the source
-    { verbose, quiet }  // Output options
+    context, // TranspilationContext with transpiler and metrics storage
+    filePath, // Path to the GML file
+    content, // GML source code
+    lines, // Number of lines in the source
+    { verbose, quiet } // Output options
 );
 
 // Display statistics when watch stops
 displayTranspilationStatistics(
-    context,      // Context with metrics and errors
-    verbose,      // Enable detailed statistics
-    quiet         // Suppress all output
+    context, // Context with metrics and errors
+    verbose, // Enable detailed statistics
+    quiet // Suppress all output
 );
 ```
 
@@ -809,18 +872,23 @@ The coordinator is designed to be a focused, single-responsibility module that h
 ## Integration with Other Modules
 
 ### Parser (`src/parser`)
+
 Provides ANTLR-based GML parsing used by the transpiler.
 
 ### Transpiler (`src/transpiler`)
+
 ✅ **Integrated** - Converts GML AST to JavaScript for hot-reload patches.
 
 ### Semantic (`src/semantic`)
+
 ✅ **Integrated** - Supplies analysis data consumed by refactor planning and hot-reload dependency tracking.
 
 ### Runtime Wrapper (`src/runtime-wrapper`)
+
 ✅ **Ready** - Has WebSocket client and patch application, ready to receive patches.
 
 ### Refactor (`src/refactor`)
+
 ✅ **Integrated** - Powers explicit cross-file rename/refactor transactions (`cli refactor`).
 
 ## References
@@ -835,21 +903,21 @@ Provides ANTLR-based GML parsing used by the transpiler.
 ### Recent Updates
 
 - **2026-01-06**: Integrated dependency tracker for watch command
-  - Added DependencyTracker module for file-to-symbol mapping
-  - Tracks symbol definitions to enable future dependency-aware invalidation
-  - Foundation for semantic analysis integration
-  - Provides statistics on tracked symbols in verbose mode
-  - Designed for efficient dependency graph queries
+    - Added DependencyTracker module for file-to-symbol mapping
+    - Tracks symbol definitions to enable future dependency-aware invalidation
+    - Foundation for semantic analysis integration
+    - Provides statistics on tracked symbols in verbose mode
+    - Designed for efficient dependency graph queries
 - **2025-11-06**: Completed hot-reload integration loop
-  - Added WebSocket server to watch command for real-time patch streaming
-  - Integrated patch broadcasting to all connected runtime wrapper clients
-  - Added connection management and client tracking
-  - Created end-to-end integration test for patch delivery
-  - Updated documentation with WebSocket configuration options
-  - Watch command now provides complete hot-reload pipeline from file change to patch delivery
+    - Added WebSocket server to watch command for real-time patch streaming
+    - Integrated patch broadcasting to all connected runtime wrapper clients
+    - Added connection management and client tracking
+    - Created end-to-end integration test for patch delivery
+    - Updated documentation with WebSocket configuration options
+    - Watch command now provides complete hot-reload pipeline from file change to patch delivery
 - **2025-11-05**: Integrated transpiler into watch command for hot-reload pipeline
-  - Watch command now transpiles GML files to JavaScript on change
-  - Generates patch objects with script IDs
-  - Added verbose logging for transpilation details
-  - Added test coverage for transpilation integration
-  - Stores patches in runtime context for future streaming
+    - Watch command now transpiles GML files to JavaScript on change
+    - Generates patch objects with script IDs
+    - Added verbose logging for transpilation details
+    - Added test coverage for transpilation integration
+    - Stores patches in runtime context for future streaming

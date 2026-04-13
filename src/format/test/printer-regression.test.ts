@@ -40,10 +40,14 @@ void test("prints all call arguments in order", async () => {
     );
 });
 
-void test("omits redundant unary plus before identifiers", async () => {
+void test("preserves unary plus before identifiers (semantic rewrite belongs in lint)", async () => {
+    // Removing `+x` silently changes program semantics when `x` is not numeric
+    // (e.g. string coercion via `+` differs from the raw identifier access).
+    // This is an explicit content rewrite that belongs in the lint workspace
+    // as `gml/no-unary-plus-on-identifier`. (target-state.md §2.1, §3.2)
     const formatted = await Format.format("var value = +count;\n");
 
-    assert.strictEqual(formatted, "var value = count;\n");
+    assert.strictEqual(formatted, "var value = +count;\n");
 });
 
 void test("retains plus-plus before identifiers", async () => {

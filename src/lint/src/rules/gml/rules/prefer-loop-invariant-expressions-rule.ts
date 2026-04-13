@@ -12,6 +12,7 @@ import {
     getNodeStartIndex,
     isAstNodeRecord,
     isAstNodeWithType,
+    isIdentifierNode,
     rangeContainsCommentToken,
     walkAstNodes,
     walkAstNodesWithParent
@@ -82,87 +83,14 @@ const NON_DETERMINISTIC_IDENTIFIER_NAMES = new Set<string>([
 ]);
 
 const SAFE_INDEX_ACCESSORS = new Set<string>(["[", "[@"]);
-const IGNORED_AST_METADATA_KEYS = new Set(["start", "end", "range", "loc", "parent", "comments", "tokens"]);
 const GENERATED_HOIST_IDENTIFIER_PATTERN = /^cached_(?:value|condition|text)(?:_\d+)?$/u;
 
 function normalizeIdentifierName(identifierName: string): string {
     return Core.toNormalizedLowerCaseString(identifierName);
 }
 
-function areAstValuesEquivalentIgnoringParentheses(left: unknown, right: unknown): boolean {
-    if (left === right) {
-        return true;
-    }
-
-    if (left === null || right === null) {
-        return false;
-    }
-
-    if (Array.isArray(left) || Array.isArray(right)) {
-        if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
-            return false;
-        }
-
-        for (const [index, element] of left.entries()) {
-            if (!areExpressionNodesEquivalentIgnoringParentheses(element, right[index])) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    if (typeof left !== typeof right) {
-        return false;
-    }
-
-    if (typeof left !== "object" || typeof right !== "object") {
-        return false;
-    }
-
-    const leftRecord = left as Record<string, unknown>;
-    const rightRecord = right as Record<string, unknown>;
-
-    for (const [leftKey, leftValue] of Object.entries(leftRecord)) {
-        if (IGNORED_AST_METADATA_KEYS.has(leftKey)) {
-            continue;
-        }
-
-        if (!(leftKey in rightRecord)) {
-            return false;
-        }
-
-        if (!areExpressionNodesEquivalentIgnoringParentheses(leftValue, rightRecord[leftKey])) {
-            return false;
-        }
-    }
-
-    for (const rightKey of Object.keys(rightRecord)) {
-        if (IGNORED_AST_METADATA_KEYS.has(rightKey)) {
-            continue;
-        }
-
-        if (!(rightKey in leftRecord)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-function areExpressionNodesEquivalentIgnoringParentheses(left: unknown, right: unknown): boolean {
-    return areAstValuesEquivalentIgnoringParentheses(
-        unwrapParenthesizedExpression(left),
-        unwrapParenthesizedExpression(right)
-    );
-}
-
 function isLoopNode(node: unknown): node is LoopNode {
     return Core.isLoopLikeNode(node);
-}
-
-function isIdentifierNode(node: unknown): node is AstNodeRecord & Readonly<{ type: "Identifier"; name: string }> {
-    return isAstNodeRecord(node) && node.type === "Identifier" && typeof node.name === "string";
 }
 
 function isGeneratedHoistIdentifierName(identifierName: string): boolean {
@@ -802,7 +730,7 @@ function collectEquivalentLoopReplacementTargets(
     const replacementTargets: LoopReplacementTarget[] = [];
 
     for (const candidate of replacementCandidates) {
-        if (!areExpressionNodesEquivalentIgnoringParentheses(candidate.expressionNode, targetExpressionNode)) {
+        if (!Core.areExpressionNodesEquivalentIgnoringParentheses(candidate.expressionNode, targetExpressionNode)) {
             continue;
         }
 

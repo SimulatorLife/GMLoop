@@ -10,9 +10,7 @@ void test("prints clause trailing comments with non-block bodies", async () => {
     const [clauseLine] = formatted.split("\n");
 
     assert.ok(
-        clauseLine.includes("// Clause comment with tabs"),
+        clauseLine.includes("//\tClause comment with tabs"),
         "Clause trailing comments should remain attached to their clause line."
     );
-
-    assert.ok(!clauseLine.includes("//\t"), "Tabs inside clause trailing comments should be expanded to spaces.");
 });

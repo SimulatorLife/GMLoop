@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { runCliTestCommand } from "../src/cli.js";
 import { createWatchStatusCommand, runWatchStatusCommand } from "../src/commands/watch-status.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 
@@ -93,5 +94,26 @@ void describe("watch-status command", () => {
 
         assert.ok(hostOption, "Should have --status-host option (not --host) to match watch --status-host");
         assert.strictEqual(hostOption?.envVar, "WATCH_STATUS_HOST");
+    });
+});
+
+void describe("watch-status command help consistency", () => {
+    void it("shows 'Show this help message.' for --help flag, matching all other commands", async () => {
+        const { stdout } = await runCliTestCommand({ argv: ["watch-status", "--help"] });
+
+        assert.match(stdout, /--help.*Show this help message\./);
+    });
+
+    void it("shows help hint on unknown option, matching the pattern of lint and format", async () => {
+        const { stdout, stderr } = await runCliTestCommand({ argv: ["watch-status", "--unknown-flag-xyz"] });
+
+        const combined = stdout + stderr;
+        assert.match(combined, /add --help for usage information/);
+    });
+
+    void it("exits non-zero when an unknown option is passed", async () => {
+        const { exitCode } = await runCliTestCommand({ argv: ["watch-status", "--unknown-flag-xyz"] });
+
+        assert.notEqual(exitCode, 0);
     });
 });

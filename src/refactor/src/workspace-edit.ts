@@ -69,14 +69,16 @@ type WorkspaceEditMutableState = {
     groupedEditsCache: GroupedTextEdits | null;
     groupedEditsRevision: number;
     revision: number;
+    duplicateCheckSetDisabled: boolean;
 };
 
 const workspaceEditExactKeyState = new WeakMap<WorkspaceEdit, Set<string>>();
 const workspaceEditMutableState = new WeakMap<WorkspaceEdit, WorkspaceEditMutableState>();
 const TEXT_EDIT_IDENTITY_DELIMITER = "\u0000";
+const DUPLICATE_EDIT_CHECK_MAX_SET_SIZE = 1024;
 
 function createTextEditIdentityKey(path: string, start: number, end: number, newText: string): string {
-    return [path, String(start), String(end), newText].join(TEXT_EDIT_IDENTITY_DELIMITER);
+    return `${path}${TEXT_EDIT_IDENTITY_DELIMITER}${start}${TEXT_EDIT_IDENTITY_DELIMITER}${end}${TEXT_EDIT_IDENTITY_DELIMITER}${newText}`;
 }
 
 function getExactEditKeys(workspace: WorkspaceEdit): Set<string> {
@@ -101,7 +103,8 @@ function getMutableState(workspace: WorkspaceEdit): WorkspaceEditMutableState {
     const created: WorkspaceEditMutableState = {
         groupedEditsCache: null,
         groupedEditsRevision: -1,
-        revision: 0
+        revision: 0,
+        duplicateCheckSetDisabled: false
     };
     workspaceEditMutableState.set(workspace, created);
     return created;
@@ -112,6 +115,48 @@ function markWorkspaceEditChanged(workspace: WorkspaceEdit): void {
     mutableState.revision += 1;
     mutableState.groupedEditsCache = null;
     mutableState.groupedEditsRevision = -1;
+}
+
+function compareEditText(left: string, right: string): number {
+    if (left === right) {
+        return 0;
+    }
+
+    const sharedLength = Math.min(left.length, right.length);
+    for (let index = 0; index < sharedLength; index += 1) {
+        const leftCode = left.charCodeAt(index);
+        const rightCode = right.charCodeAt(index);
+        if (leftCode !== rightCode) {
+            return leftCode - rightCode;
+        }
+    }
+
+    return left.length - right.length;
+}
+
+function deduplicateSortedTextEdits(
+    sortedEdits: Array<Pick<TextEdit, "start" | "end" | "newText">>
+): Array<Pick<TextEdit, "start" | "end" | "newText">> {
+    if (sortedEdits.length <= 1) {
+        return sortedEdits;
+    }
+
+    let writeIndex = 1;
+    let previous = sortedEdits[0];
+
+    for (let readIndex = 1; readIndex < sortedEdits.length; readIndex += 1) {
+        const current = sortedEdits[readIndex];
+        if (previous.start === current.start && previous.end === current.end && previous.newText === current.newText) {
+            continue;
+        }
+
+        sortedEdits[writeIndex] = current;
+        writeIndex += 1;
+        previous = current;
+    }
+
+    sortedEdits.length = writeIndex;
+    return sortedEdits;
 }
 
 export class WorkspaceEdit {
@@ -129,15 +174,25 @@ export class WorkspaceEdit {
     }
 
     addEdit(path: string, start: number, end: number, newText: string): void {
-        const editKey = createTextEditIdentityKey(path, start, end, newText);
-        const exactEditKeys = getExactEditKeys(this);
-        if (exactEditKeys.has(editKey)) {
-            return;
+        const mutableState = getMutableState(this);
+        if (!mutableState.duplicateCheckSetDisabled) {
+            const exactEditKeys = getExactEditKeys(this);
+            const editKey = createTextEditIdentityKey(path, start, end, newText);
+            if (exactEditKeys.has(editKey)) {
+                return;
+            }
+
+            exactEditKeys.add(editKey);
+            if (exactEditKeys.size > DUPLICATE_EDIT_CHECK_MAX_SET_SIZE) {
+                workspaceEditExactKeyState.delete(this);
+                mutableState.duplicateCheckSetDisabled = true;
+            }
         }
 
         this.edits.push({ path, start, end, newText });
-        exactEditKeys.add(editKey);
-        markWorkspaceEditChanged(this);
+        mutableState.revision += 1;
+        mutableState.groupedEditsCache = null;
+        mutableState.groupedEditsRevision = -1;
     }
 
     addFileRename(oldPath: string, newPath: string): void {
@@ -176,10 +231,8 @@ export class WorkspaceEdit {
         }
 
         for (const [path, fileEdits] of grouped.entries()) {
-            grouped.set(
-                path,
-                fileEdits.toSorted((a, b) => b.start - a.start)
-            );
+            fileEdits.sort((a, b) => b.start - a.start || b.end - a.end || compareEditText(a.newText, b.newText));
+            grouped.set(path, deduplicateSortedTextEdits(fileEdits));
         }
 
         mutableState.groupedEditsCache = grouped;
@@ -293,6 +346,39 @@ export function getWorkspaceArrays(workspace: { metadataEdits?: unknown; fileRen
         metadataEdits: Array.isArray(workspace.metadataEdits) ? (workspace.metadataEdits as Array<MetadataEdit>) : [],
         fileRenames: Array.isArray(workspace.fileRenames) ? (workspace.fileRenames as Array<FileRename>) : []
     };
+}
+
+/**
+ * Merge all edits, file renames, and metadata edits from `source` into `target`.
+ *
+ * When `source` is `null` or `undefined` the function is a no-op, making it safe
+ * to call unconditionally with nullable providers (e.g. the return value of
+ * `semantic.getAdditionalSymbolEdits`).
+ *
+ * Text edits are merged via {@link WorkspaceEdit.addEdit} so the exact-duplicate
+ * guard on `target` is honoured. File renames and metadata edits are appended
+ * directly; callers that need deduplication (e.g. batch rename accumulation)
+ * should use {@link accumulateRenameWorkspace} instead.
+ *
+ * @param target - Destination workspace that receives the merged content.
+ * @param source - Source workspace whose edits are copied into `target`.
+ */
+export function mergeWorkspaceEditInto(target: WorkspaceEdit, source: WorkspaceEdit | null | undefined): void {
+    if (!source) {
+        return;
+    }
+
+    for (const edit of source.edits) {
+        target.addEdit(edit.path, edit.start, edit.end, edit.newText);
+    }
+
+    for (const metadataEdit of source.metadataEdits) {
+        target.addMetadataEdit(metadataEdit.path, metadataEdit.content);
+    }
+
+    for (const fileRename of source.fileRenames) {
+        target.addFileRename(fileRename.oldPath, fileRename.newPath);
+    }
 }
 
 /**
