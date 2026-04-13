@@ -249,9 +249,6 @@ importers:
       '@gmloop/parser':
         specifier: workspace:*
         version: link:../parser
-      '@gmloop/semantic':
-        specifier: workspace:*
-        version: link:../semantic
     devDependencies:
       '@gmloop/fixture-runner':
         specifier: workspace:*

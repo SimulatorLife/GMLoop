@@ -13,8 +13,7 @@
   ],
   "dependencies": {
     "@gmloop/core": "workspace:*",
-    "@gmloop/parser": "workspace:*",
-    "@gmloop/semantic": "workspace:*"
+    "@gmloop/parser": "workspace:*"
   },
   "devDependencies": {
     "@gmloop/fixture-runner": "workspace:*"

@@ -21,8 +21,7 @@
   "references": [
     { "path": "../core" },
     { "path": "../fixture-runner" },
-    { "path": "../parser" },
-    { "path": "../format" }
+    { "path": "../parser" }
   ],
   "include": ["index.ts", "src/**/*.ts", "test/**/*.ts"],
   "exclude": ["dist"]
