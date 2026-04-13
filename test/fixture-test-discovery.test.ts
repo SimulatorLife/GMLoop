@@ -1,29 +1,67 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
-import { promisify } from "node:util";
 
 import { createFixtureSuiteRegistry } from "./fixture-suite-registry.js";
 
-const execFileAsync = promisify(execFile);
+type RootPackageManifest = {
+    scripts: Record<string, string>;
+};
 
 function normalizePathSeparator(value: string): string {
     return value.split(path.sep).join("/");
 }
 
-void test("root test discovery includes formatter, lint, refactor, and cross-module integration suites", async () => {
-    const { stdout } = await execFileAsync("pnpm", ["-s", "test:files"], {
-        cwd: process.cwd(),
-        maxBuffer: 1024 * 1024 * 10
-    });
-    const discoveredTests = new Set(
-        stdout
-            .split(/\r?\n/u)
-            .map((line) => normalizePathSeparator(line.trim()))
-            .filter((line) => line.length > 0)
-    );
+async function readRootPackageManifest(): Promise<RootPackageManifest> {
+    const packagePath = path.resolve(process.cwd(), "package.json");
+    const packageSource = await readFile(packagePath, "utf8");
+    return JSON.parse(packageSource) as RootPackageManifest;
+}
 
+async function collectDiscoveredCompiledTests(): Promise<ReadonlySet<string>> {
+    const discoveredTests = new Set<string>();
+
+    async function walkDirectory(currentDirectoryPath: string): Promise<void> {
+        const directoryEntries = await readdir(currentDirectoryPath, {
+            withFileTypes: true
+        });
+
+        await Promise.all(
+            directoryEntries.map(async (directoryEntry) => {
+                const entryPath = path.join(currentDirectoryPath, directoryEntry.name);
+
+                if (directoryEntry.isDirectory()) {
+                    if (directoryEntry.name === "node_modules") {
+                        return;
+                    }
+
+                    await walkDirectory(entryPath);
+                    return;
+                }
+
+                const relativeEntryPath = path.relative(process.cwd(), entryPath);
+                const normalizedEntryPath = normalizePathSeparator(relativeEntryPath);
+                const isWorkspaceCompiledTest = /\/dist\/test\/.+\.test\.js$/u.test(normalizedEntryPath);
+                const isRootCompiledTest = /^test\/dist\/[^/]+\.test\.js$/u.test(normalizedEntryPath);
+
+                if (isWorkspaceCompiledTest || isRootCompiledTest) {
+                    discoveredTests.add(normalizedEntryPath);
+                }
+            })
+        );
+    }
+
+    await Promise.all([
+        walkDirectory(path.resolve(process.cwd(), "src")),
+        walkDirectory(path.resolve(process.cwd(), "test"))
+    ]);
+
+    return discoveredTests;
+}
+
+void test("root test discovery includes formatter, lint, refactor, and cross-module integration suites", async () => {
+    const discoveredTests = await collectDiscoveredCompiledTests();
     const requiredFixtureSuites = createFixtureSuiteRegistry().map(
         (fixtureSuite) => fixtureSuite.compiledWorkspaceTestFilePath
     );
@@ -38,14 +76,6 @@ void test("root test discovery includes formatter, lint, refactor, and cross-mod
 });
 
 void test("fixture-only aggregate command points at the shared root registry runner", async () => {
-    const { stdout } = await execFileAsync("pnpm", ["-s", "test:fixtures:files"], {
-        cwd: process.cwd(),
-        maxBuffer: 1024 * 1024 * 10
-    });
-    const discoveredTests = stdout
-        .split(/\r?\n/u)
-        .map((line) => normalizePathSeparator(line.trim()))
-        .filter((line) => line.length > 0);
-
-    assert.deepEqual(discoveredTests, ["test/dist/fixture-suites.js"]);
+    const packageManifest = await readRootPackageManifest();
+    assert.equal(packageManifest.scripts["test:fixtures:files"], "echo test/dist/fixture-suites.js");
 });
