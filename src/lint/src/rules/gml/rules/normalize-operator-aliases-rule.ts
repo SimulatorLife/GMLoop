@@ -4,6 +4,7 @@ import type { Rule } from "eslint";
 import {
     applySourceTextEdits,
     createMeta,
+    findPreviousNonWhitespaceCharacter,
     getNodeEndIndex,
     getNodeStartIndex,
     reportProgramTextRewrite,
@@ -14,7 +15,6 @@ import type { GmlRuleDefinition } from "../rule-definition.js";
 const LOGICAL_NOT_ALIAS = "not";
 const LOGICAL_NOT_OPERATOR = "!";
 const WHITESPACE_PATTERN = /\s/u;
-const INLINE_WHITESPACE_PATTERN = /[ \t]/u;
 const WORD_OPERATOR_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 function resolveReportLocation(context: Rule.RuleContext, index: number): { line: number; column: number } {
@@ -57,26 +57,6 @@ function isIdentifierStartCharacter(character: string | undefined): boolean {
     return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
 }
 
-function getPreviousNonWhitespaceCharacterOnLine(sourceText: string, startIndex: number): string | null {
-    let cursor = startIndex - 1;
-
-    while (cursor >= 0) {
-        const character = sourceText[cursor];
-        if (character === "\n" || character === "\r") {
-            return null;
-        }
-
-        if (INLINE_WHITESPACE_PATTERN.test(character)) {
-            cursor -= 1;
-            continue;
-        }
-
-        return character;
-    }
-
-    return null;
-}
-
 function hasLogicalNotAliasAt(sourceText: string, startIndex: number): boolean {
     const aliasEnd = startIndex + LOGICAL_NOT_ALIAS.length;
     if (aliasEnd > sourceText.length) {
@@ -96,7 +76,7 @@ function hasLogicalNotAliasAt(sourceText: string, startIndex: number): boolean {
         return false;
     }
 
-    const previousCharacterOnLine = getPreviousNonWhitespaceCharacterOnLine(sourceText, startIndex);
+    const previousCharacterOnLine = findPreviousNonWhitespaceCharacter(sourceText, startIndex, true);
     if (previousCharacterOnLine === '"' || previousCharacterOnLine === "'" || previousCharacterOnLine === "`") {
         return false;
     }
