@@ -1,5 +1,5 @@
 import type { MutableGameMakerAstNode } from "@gmloop/core";
-import type { Parser, ParserOptions, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
+import type { Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
 
 export type GmlAst = MutableGameMakerAstNode;
 
@@ -45,5 +45,3 @@ export type GmlFormat = Omit<PrettierPlugin<GmlAst>, "defaultOptions"> & {
      */
     normalizeFormattedOutput: (formatted: string) => string;
 };
-
-export type GmlParserOptions = ParserOptions<GmlAst>;
