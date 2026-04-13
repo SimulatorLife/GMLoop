@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -15,15 +15,13 @@ const TABLE_RESET_STATEMENTS = Object.freeze([
     "DELETE FROM graphs"
 ]);
 
-/**
- * Open the graph-index database and ensure the v1 schema exists.
- */
-export function openGraphIndexDatabase(databasePath: string): DatabaseSync {
-    mkdirSync(path.dirname(databasePath), { recursive: true });
-    const database = new DatabaseSync(databasePath);
-    database.exec("PRAGMA journal_mode = WAL;");
-    database.exec("PRAGMA foreign_keys = OFF;");
+function createGraphIndexSchema(database: DatabaseSync): void {
     database.exec(`
+        CREATE TABLE IF NOT EXISTS schema_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS graphs (
             id TEXT PRIMARY KEY,
             scope TEXT NOT NULL,
@@ -63,7 +61,8 @@ export function openGraphIndexDatabase(databasePath: string): DatabaseSync {
             from_id TEXT NOT NULL,
             to_id TEXT NOT NULL,
             type TEXT NOT NULL,
-            ordinal INTEGER NOT NULL DEFAULT 0
+            ordinal INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (from_id, to_id, type, ordinal)
         );
 
         CREATE TABLE IF NOT EXISTS aliases (
@@ -104,8 +103,50 @@ export function openGraphIndexDatabase(databasePath: string): DatabaseSync {
         CREATE INDEX IF NOT EXISTS idx_edges_to_type ON edges(to_id, type);
         CREATE INDEX IF NOT EXISTS idx_aliases_alias ON aliases(alias);
     `);
+    database
+        .prepare("INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', ?)")
+        .run(String(GRAPH_INDEX_SCHEMA_VERSION));
+}
+
+/**
+ * Open the graph-index database and ensure the v1 schema exists.
+ */
+export function openGraphIndexDatabase(databasePath: string): DatabaseSync {
+    mkdirSync(path.dirname(databasePath), { recursive: true });
+    const database = new DatabaseSync(databasePath);
+    database.exec("PRAGMA journal_mode = WAL;");
+    database.exec("PRAGMA foreign_keys = ON;");
+    createGraphIndexSchema(database);
 
     return database;
+}
+
+/**
+ * Open an existing graph-index database without creating a missing database.
+ */
+export function openExistingGraphIndexDatabase(databasePath: string): DatabaseSync {
+    if (!existsSync(databasePath)) {
+        throw new Error(`Graph database not found at ${databasePath}. Run 'gmloop graph index' first.`);
+    }
+
+    const database = new DatabaseSync(databasePath);
+    database.exec("PRAGMA foreign_keys = ON;");
+    return database;
+}
+
+/**
+ * Read the schema version stored in a graph-index database.
+ */
+export function readGraphIndexSchemaVersion(database: DatabaseSync): number | null {
+    try {
+        const row = database.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get() as
+            | { value: string }
+            | undefined;
+        const parsedVersion = Number.parseInt(row?.value ?? "", 10);
+        return Number.isFinite(parsedVersion) ? parsedVersion : null;
+    } catch {
+        return null;
+    }
 }
 
 /**

@@ -1,9 +1,23 @@
 {
-  "agents": [
-  {"weight":1.0,"name":"copilot"},
-  {"weight":1.0,"name":"codex"},
-  {"weight":0.0,"name":"gemini"}
-  ],
+  "version": 1,
+  "agentPools": {
+    "actions": {
+      "default": "copilot",
+      "agents": [
+        {"weight":1.0,"name":"copilot"},
+        {"weight":1.0,"name":"codex"},
+        {"weight":0.0,"name":"gemini"}
+      ]
+    },
+    "followUps": {
+      "default": "codex",
+      "agents": [
+        {"weight":1.0,"name":"codex"},
+        {"weight":0.5,"name":"copilot"},
+        {"weight":0.0,"name":"gemini"}
+      ]
+    }
+  },
   "workflows": [
     {"weight":1,"name":"agent-02-resolve-merge-conflicts"},
     {"weight":0.7,"name":"agent-03-dry"},

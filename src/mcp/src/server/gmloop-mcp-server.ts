@@ -59,6 +59,10 @@ type CliJsonInvocationResult<TPayload> = Readonly<{
     stdout: string;
 }>;
 
+type CliGraphEnvelope<TPayload> = Readonly<{
+    payload: TPayload;
+}>;
+
 function createToolInputSchema(entry: CliCatalogEntry): z.ZodObject<Record<string, z.ZodTypeAny>> {
     const shape: Record<string, z.ZodTypeAny> = {
         cwd: z.string().optional()
@@ -179,10 +183,6 @@ async function runCliJsonCommand<TPayload>(
     };
 }
 
-async function ensureMcpGraphIndexReady(cwd = process.cwd()): Promise<void> {
-    await runCliJsonCommand(["graph", "index", "--json"], cwd);
-}
-
 function createJsonResourceResult(uri: URL, payload: unknown) {
     return {
         contents: [
@@ -265,7 +265,6 @@ function registerGraphResources(server: McpServer): void {
             description: "Overview of the current graph-index state."
         },
         async (uri) => {
-            await ensureMcpGraphIndexReady();
             const report = await runCliJsonCommand<unknown>(["graph", "doctor", "--json"]);
             return createJsonResourceResult(uri, report.payload);
         }
@@ -278,13 +277,14 @@ function registerGraphResources(server: McpServer): void {
             description: "Overview of the active project graph."
         },
         async (uri) => {
-            await ensureMcpGraphIndexReady();
-            const report = await runCliJsonCommand<{
-                graphs?: Array<{ graphId?: string }>;
-            }>(["graph", "doctor", "--json"]);
+            const report = await runCliJsonCommand<
+                CliGraphEnvelope<{
+                    graphs?: Array<{ graphId?: string }>;
+                }>
+            >(["graph", "doctor", "--json"]);
             return createJsonResourceResult(
                 uri,
-                report.payload.graphs?.find((entry) => entry.graphId === "project") ?? null
+                report.payload.payload.graphs?.find((entry) => entry.graphId === "project") ?? null
             );
         }
     );
@@ -296,13 +296,14 @@ function registerGraphResources(server: McpServer): void {
             description: "Overview of the optional toolset graph."
         },
         async (uri) => {
-            await ensureMcpGraphIndexReady();
-            const report = await runCliJsonCommand<{
-                graphs?: Array<{ graphId?: string }>;
-            }>(["graph", "doctor", "--json"]);
+            const report = await runCliJsonCommand<
+                CliGraphEnvelope<{
+                    graphs?: Array<{ graphId?: string }>;
+                }>
+            >(["graph", "doctor", "--json"]);
             return createJsonResourceResult(
                 uri,
-                report.payload.graphs?.find((entry) => entry.graphId === "toolset") ?? null
+                report.payload.payload.graphs?.find((entry) => entry.graphId === "toolset") ?? null
             );
         }
     );
@@ -314,7 +315,6 @@ function registerGraphResources(server: McpServer): void {
             description: "Graph node lookup by graph-qualified node id."
         },
         async (uri, variables) => {
-            await ensureMcpGraphIndexReady();
             const node = await runCliJsonCommand<unknown>([
                 "graph",
                 "symbol",
@@ -332,7 +332,6 @@ function registerGraphResources(server: McpServer): void {
             description: "Structured graph context bundle for a graph node."
         },
         async (uri, variables) => {
-            await ensureMcpGraphIndexReady();
             const depth = Number.parseInt(uri.searchParams.get("depth") ?? "2", 10);
             const bundle = await runCliJsonCommand<unknown>([
                 "graph",
@@ -353,7 +352,6 @@ function registerGraphResources(server: McpServer): void {
             description: "Graph neighbors around a graph-qualified node id."
         },
         async (uri, variables) => {
-            await ensureMcpGraphIndexReady();
             const depth = Number.parseInt(uri.searchParams.get("depth") ?? "2", 10);
             const neighbors = await runCliJsonCommand<unknown>([
                 "graph",

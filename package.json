@@ -46,7 +46,7 @@
   ],
   "author": "Two Scoop Studio",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.5.0"
   },
   "scripts": {
     "clean": "find . -name node_modules -type d -prune -exec rm -rf '{}' + && rm -rf .eslintcache tsconfig.eslint.tsbuildinfo reports tmp node_debug.log eslint-suppressions.json test/dist && pnpm -r run clean:types && pnpm run clean:src-js && pnpm store prune",

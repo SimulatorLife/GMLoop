@@ -6,11 +6,13 @@ import { Semantic } from "@gmloop/semantic";
 import { Command, Option } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
+import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type GraphCommandSharedOptions = {
     config?: string;
+    databasePath?: string;
     depth?: number;
     json?: boolean;
     limit?: number;
@@ -23,6 +25,15 @@ type GraphCommandSharedOptions = {
 type GraphResolutionContext = Readonly<{
     projectConfig: Record<string, unknown>;
     projectRoot: string;
+}>;
+
+type GraphJsonEnvelope<TPayload> = Readonly<{
+    command: string;
+    databasePath: string;
+    ok: true;
+    payload: TPayload;
+    projectRoot: string;
+    toolsetRoot: string | null;
 }>;
 
 async function loadOptionalProjectConfig(
@@ -53,18 +64,13 @@ async function resolveGraphContext(options: GraphCommandSharedOptions): Promise<
     });
 }
 
-function printGraphOutput(payload: unknown, asJson: boolean): void {
+function printGraphOutput(payload: unknown, asJson: boolean, humanText: string): void {
     if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
         return;
     }
 
-    if (typeof payload === "string") {
-        console.log(payload);
-        return;
-    }
-
-    console.log(JSON.stringify(payload, null, 2));
+    console.log(humanText);
 }
 
 async function ensureGraphIndex(
@@ -72,7 +78,7 @@ async function ensureGraphIndex(
     context: GraphResolutionContext
 ): Promise<Awaited<ReturnType<typeof Semantic.buildGraphIndex>>> {
     return await Semantic.buildGraphIndex({
-        databasePath: undefined,
+        databasePath: options.databasePath,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
         rebuild: options.rebuild === true,
@@ -80,32 +86,82 @@ async function ensureGraphIndex(
     });
 }
 
+async function ensureGraphIndexForQuery(
+    options: GraphCommandSharedOptions,
+    context: GraphResolutionContext
+): Promise<void> {
+    if (options.rebuild === true) {
+        await ensureGraphIndex(options, context);
+        return;
+    }
+
+    const config = Semantic.resolveGraphIndexConfig({
+        databasePath: options.databasePath,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+
+    try {
+        await access(config.databasePath, constants.R_OK);
+    } catch {
+        throw new Error(`Graph database not found at ${config.databasePath}. Run 'gmloop graph index' first.`);
+    }
+}
+
+function createGraphEnvelope<TPayload>(
+    command: string,
+    context: GraphResolutionContext,
+    options: GraphCommandSharedOptions,
+    payload: TPayload
+): GraphJsonEnvelope<TPayload> {
+    const config = Semantic.resolveGraphIndexConfig({
+        databasePath: options.databasePath,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+
+    return Object.freeze({
+        command,
+        databasePath: config.databasePath,
+        ok: true,
+        payload,
+        projectRoot: config.projectRoot,
+        toolsetRoot: config.toolsetRoot
+    });
+}
+
 async function runGraphIndexAction(options: GraphCommandSharedOptions): Promise<void> {
     const context = await resolveGraphContext(options);
     const result = await ensureGraphIndex(options, context);
+    const payload = {
+        databasePath: result.databasePath,
+        graphIds: result.graphIds
+    };
     printGraphOutput(
-        {
-            command: "graph index",
-            databasePath: result.databasePath,
-            graphIds: result.graphIds,
-            projectRoot: result.config.projectRoot,
-            toolsetRoot: result.config.toolsetRoot
-        },
-        options.json === true
+        createGraphEnvelope("graph index", context, options, payload),
+        options.json === true,
+        `Indexed ${result.graphIds.join(", ")} graph(s) at ${result.databasePath}.`
     );
 }
 
 async function runGraphSearchAction(queryText: string, options: GraphCommandSharedOptions): Promise<void> {
     const context = await resolveGraphContext(options);
-    await ensureGraphIndex(options, context);
+    await ensureGraphIndexForQuery(options, context);
     const result = Semantic.searchGraphIndex({
+        databasePath: options.databasePath,
         limit: options.limit,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
         query: queryText,
         toolsetRoot: options.toolsetRoot
     });
-    printGraphOutput(result, options.json === true);
+    printGraphOutput(
+        createGraphEnvelope("graph search", context, options, result),
+        options.json === true,
+        `Found ${String(result.results.length)} graph result(s) for "${result.query}".`
+    );
 }
 
 function resolveGraphNodeId(
@@ -118,6 +174,7 @@ function resolveGraphNodeId(
     }
 
     const result = Semantic.searchGraphIndex({
+        databasePath: options.databasePath,
         limit: 1,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
@@ -130,7 +187,7 @@ function resolveGraphNodeId(
 
 async function runGraphSymbolAction(queryOrNodeId: string, options: GraphCommandSharedOptions): Promise<void> {
     const context = await resolveGraphContext(options);
-    await ensureGraphIndex(options, context);
+    await ensureGraphIndexForQuery(options, context);
     const nodeId = resolveGraphNodeId(queryOrNodeId, options, context);
 
     if (!nodeId) {
@@ -138,6 +195,7 @@ async function runGraphSymbolAction(queryOrNodeId: string, options: GraphCommand
     }
 
     const node = Semantic.getGraphNode({
+        databasePath: options.databasePath,
         nodeId,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
@@ -148,13 +206,18 @@ async function runGraphSymbolAction(queryOrNodeId: string, options: GraphCommand
         throw new Error(`Graph node '${nodeId}' was not found.`);
     }
 
-    printGraphOutput(node, options.json === true);
+    printGraphOutput(
+        createGraphEnvelope("graph symbol", context, options, node),
+        options.json === true,
+        `${node.id} (${node.kind}) ${node.summary}`
+    );
 }
 
 async function runGraphContextAction(nodeId: string, options: GraphCommandSharedOptions): Promise<void> {
     const context = await resolveGraphContext(options);
-    await ensureGraphIndex(options, context);
+    await ensureGraphIndexForQuery(options, context);
     const bundle = Semantic.getGraphContext({
+        databasePath: options.databasePath,
         depth: options.depth,
         nodeId,
         projectConfig: context.projectConfig,
@@ -166,43 +229,64 @@ async function runGraphContextAction(nodeId: string, options: GraphCommandShared
         throw new Error(`Graph node '${nodeId}' was not found.`);
     }
 
-    printGraphOutput(bundle, options.json === true);
+    printGraphOutput(
+        createGraphEnvelope("graph context", context, options, bundle),
+        options.json === true,
+        `Context for ${bundle.target.id}: ${bundle.summary}`
+    );
 }
 
 async function runGraphNeighborsAction(nodeId: string, options: GraphCommandSharedOptions): Promise<void> {
     const context = await resolveGraphContext(options);
-    await ensureGraphIndex(options, context);
+    await ensureGraphIndexForQuery(options, context);
     const neighbors = Semantic.getGraphNeighbors({
+        databasePath: options.databasePath,
         depth: options.depth,
         nodeId,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
         toolsetRoot: options.toolsetRoot
     });
-    printGraphOutput(neighbors, options.json === true);
+    printGraphOutput(
+        createGraphEnvelope("graph neighbors", context, options, neighbors),
+        options.json === true,
+        `Found ${String(neighbors.length)} neighbor(s) for ${nodeId}.`
+    );
 }
 
 async function runGraphUsagesAction(nodeId: string, options: GraphCommandSharedOptions): Promise<void> {
     const context = await resolveGraphContext(options);
-    await ensureGraphIndex(options, context);
+    await ensureGraphIndexForQuery(options, context);
     const usages = Semantic.getGraphUsages({
+        databasePath: options.databasePath,
         depth: options.depth,
         nodeId,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
         toolsetRoot: options.toolsetRoot
     });
-    printGraphOutput(usages, options.json === true);
+    printGraphOutput(
+        createGraphEnvelope("graph usages", context, options, usages),
+        options.json === true,
+        `Found ${String(usages.length)} usage(s) for ${nodeId}.`
+    );
 }
 
 async function runGraphDoctorAction(options: GraphCommandSharedOptions): Promise<void> {
     const context = await resolveGraphContext(options);
     const report = Semantic.doctorGraphIndex({
+        databasePath: options.databasePath,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
         toolsetRoot: options.toolsetRoot
     });
-    printGraphOutput(report, options.json === true);
+    printGraphOutput(
+        createGraphEnvelope("graph doctor", context, options, report),
+        options.json === true,
+        report.issues.length === 0
+            ? `Graph index is healthy at ${report.databasePath}.`
+            : `Graph doctor reported ${String(report.issues.length)} issue(s).`
+    );
 }
 
 function addGraphSharedOptions(
@@ -213,6 +297,7 @@ function addGraphSharedOptions(
         .addOption(createPathOption())
         .addOption(createConfigOption())
         .addOption(createVerboseOption())
+        .addOption(new Option("--database-path <path>", "SQLite graph-index database path"))
         .addOption(new Option("--toolset-root <path>", "Optional second GameMaker/toolset root to index").default(""))
         .addOption(new Option("--json", "Print machine-readable JSON output").default(false));
 
@@ -239,6 +324,17 @@ function addGraphSharedOptions(
     return command;
 }
 
+async function runGraphCommandAction(action: () => Promise<void>): Promise<void> {
+    try {
+        await action();
+    } catch (error) {
+        handleCliError(error, {
+            exitCode: 1,
+            prefix: "Graph command failed."
+        });
+    }
+}
+
 /**
  * Create the `graph` command suite.
  */
@@ -252,7 +348,9 @@ export function createGraphCommand(): Command {
         { includeRebuild: true }
     );
     indexCommand.action(async function graphIndexCommandAction() {
-        await runGraphIndexAction(this.opts<GraphCommandSharedOptions>());
+        await runGraphCommandAction(async () => {
+            await runGraphIndexAction(this.opts<GraphCommandSharedOptions>());
+        });
     });
 
     const searchCommand = addGraphSharedOptions(
@@ -262,7 +360,9 @@ export function createGraphCommand(): Command {
         { includeLimit: true, includeRebuild: true }
     );
     searchCommand.action(async function graphSearchCommandAction(query: Array<string>) {
-        await runGraphSearchAction(query.join(" "), this.opts<GraphCommandSharedOptions>());
+        await runGraphCommandAction(async () => {
+            await runGraphSearchAction(query.join(" "), this.opts<GraphCommandSharedOptions>());
+        });
     });
 
     const symbolCommand = addGraphSharedOptions(
@@ -272,7 +372,9 @@ export function createGraphCommand(): Command {
         { includeRebuild: true }
     );
     symbolCommand.action(async function graphSymbolCommandAction(nameOrId: string) {
-        await runGraphSymbolAction(nameOrId, this.opts<GraphCommandSharedOptions>());
+        await runGraphCommandAction(async () => {
+            await runGraphSymbolAction(nameOrId, this.opts<GraphCommandSharedOptions>());
+        });
     });
 
     const contextCommand = addGraphSharedOptions(
@@ -282,7 +384,9 @@ export function createGraphCommand(): Command {
         { includeDepth: true, includeRebuild: true }
     );
     contextCommand.action(async function graphContextCommandAction(nodeId: string) {
-        await runGraphContextAction(nodeId, this.opts<GraphCommandSharedOptions>());
+        await runGraphCommandAction(async () => {
+            await runGraphContextAction(nodeId, this.opts<GraphCommandSharedOptions>());
+        });
     });
 
     const neighborsCommand = addGraphSharedOptions(
@@ -292,7 +396,9 @@ export function createGraphCommand(): Command {
         { includeDepth: true, includeRebuild: true }
     );
     neighborsCommand.action(async function graphNeighborsCommandAction(nodeId: string) {
-        await runGraphNeighborsAction(nodeId, this.opts<GraphCommandSharedOptions>());
+        await runGraphCommandAction(async () => {
+            await runGraphNeighborsAction(nodeId, this.opts<GraphCommandSharedOptions>());
+        });
     });
 
     const usagesCommand = addGraphSharedOptions(
@@ -302,7 +408,9 @@ export function createGraphCommand(): Command {
         { includeDepth: true, includeRebuild: true }
     );
     usagesCommand.action(async function graphUsagesCommandAction(nodeId: string) {
-        await runGraphUsagesAction(nodeId, this.opts<GraphCommandSharedOptions>());
+        await runGraphCommandAction(async () => {
+            await runGraphUsagesAction(nodeId, this.opts<GraphCommandSharedOptions>());
+        });
     });
 
     const doctorCommand = addGraphSharedOptions(
@@ -310,7 +418,9 @@ export function createGraphCommand(): Command {
         {}
     );
     doctorCommand.action(async function graphDoctorCommandAction() {
-        await runGraphDoctorAction(this.opts<GraphCommandSharedOptions>());
+        await runGraphCommandAction(async () => {
+            await runGraphDoctorAction(this.opts<GraphCommandSharedOptions>());
+        });
     });
 
     graphCommand.addCommand(indexCommand);

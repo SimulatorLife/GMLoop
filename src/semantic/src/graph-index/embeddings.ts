@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 import type { GraphEmbeddingsConfig } from "./types.js";
 
@@ -60,6 +62,26 @@ class LocalTokenHashEmbeddingProvider implements GraphEmbeddingProvider {
 
         return normalizeVectorMagnitude(vector);
     }
+}
+
+/**
+ * Cache the deterministic local embedding model descriptor used by the graph index.
+ */
+export function ensureGraphEmbeddingModelAssets(config: GraphEmbeddingsConfig): void {
+    mkdirSync(config.modelCacheDir, { recursive: true });
+    writeFileSync(
+        path.join(config.modelCacheDir, `${config.provider}.json`),
+        `${JSON.stringify(
+            {
+                dimensions: Math.max(8, Math.trunc(config.dimensions)),
+                provider: config.provider,
+                type: "local-token-hash"
+            },
+            null,
+            2
+        )}\n`,
+        "utf8"
+    );
 }
 
 /**

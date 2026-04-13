@@ -2,20 +2,32 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import type { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "node:sqlite";
 
 import { Core } from "@gmloop/core";
 
 import { buildProjectIndex } from "../project-index/index.js";
 import { resolveGraphIndexConfig } from "./config.js";
-import { openGraphIndexDatabase, resetGraphIndexDatabase } from "./database.js";
+import {
+    GRAPH_INDEX_SCHEMA_VERSION,
+    openExistingGraphIndexDatabase,
+    openGraphIndexDatabase,
+    readGraphIndexSchemaVersion,
+    resetGraphIndexDatabase
+} from "./database.js";
 import {
     cosineSimilarity,
     createGraphEmbeddingProvider,
     deserializeEmbeddingVector,
+    ensureGraphEmbeddingModelAssets,
     serializeEmbeddingVector
 } from "./embeddings.js";
-import { createGraphAliases, createGraphNodeSnippet, createGraphNodeSummary } from "./summary.js";
+import {
+    createGraphAliases,
+    createGraphNodeSnippet,
+    createGraphNodeSummary,
+    extractDocCommentFirstSentence
+} from "./summary.js";
 import type {
     GraphContextBundle,
     GraphDoctorGraphStatus,
@@ -23,6 +35,7 @@ import type {
     GraphDoctorReport,
     GraphEdgeRecord,
     GraphEdgeType,
+    GraphEmbeddingsConfig,
     GraphIndexBuildOptions,
     GraphIndexBuildResult,
     GraphIndexHandle,
@@ -31,13 +44,15 @@ import type {
     GraphNodeKind,
     GraphNodeRecord,
     GraphSearchResponse,
-    GraphSearchResult
+    GraphSearchResult,
+    GraphUsageRecord
 } from "./types.js";
 
 type ProjectIndexIdentifierEntry = {
     declarations?: Array<Record<string, unknown>>;
     displayName?: string;
     filePath?: string;
+    id?: string;
     identifierId?: string;
     name?: string;
     references?: Array<Record<string, unknown>>;
@@ -46,25 +61,49 @@ type ProjectIndexIdentifierEntry = {
 };
 
 type ProjectIndexSnapshot = {
-    files?: Record<string, { scriptCalls?: Array<{ isResolved?: boolean; target?: { name?: string } }> }>;
+    files?: Record<
+        string,
+        {
+            scopeId?: string | null;
+            scriptCalls?: Array<{
+                isResolved?: boolean;
+                location?: { start?: Record<string, unknown>; end?: Record<string, unknown> };
+                target?: { name?: string; resourcePath?: string | null; scopeId?: string | null };
+            }>;
+        }
+    >;
     identifiers?: Record<string, Record<string, ProjectIndexIdentifierEntry>>;
     relationships?: {
         assetReferences?: Array<{ fromResourcePath?: string; targetPath?: string }>;
     };
     resources?: Record<string, { gmlFiles?: Array<string>; name?: string; path?: string; resourceType?: string }>;
+    scopes?: Record<
+        string,
+        {
+            displayName?: string | null;
+            filePaths?: Array<string>;
+            id?: string;
+            kind?: string;
+            name?: string | null;
+            resourcePath?: string | null;
+        }
+    >;
 };
 
 type ProjectionContext = {
     database: DatabaseSync;
     edgeRecords: Array<GraphEdgeRecord>;
     graphId: GraphIndexScope;
+    nodeIdsByName: Map<string, Set<string>>;
+    nodeIdsByScipSymbol: Map<string, string>;
+    nodeIdsByScopeId: Map<string, string>;
     nodeRecords: Array<GraphNodeRecord>;
-    nodeIdsByName: Map<string, string>;
     projectIndex: ProjectIndexSnapshot;
     rootPath: string;
 };
 
 type GraphLookupRow = {
+    displayName: string;
     filePath: string | null;
     graphId: GraphIndexScope;
     id: string;
@@ -151,6 +190,49 @@ function createGraphNodeId(graphId: GraphIndexScope, category: "file" | "resourc
     }
 
     return `${graphId}::${category}::${value}`;
+}
+
+function addNameIndexEntry(context: ProjectionContext, name: string, nodeId: string): void {
+    const normalizedName = name.toLowerCase();
+    const entries = Core.getOrCreateMapEntry(context.nodeIdsByName, normalizedName, () => new Set<string>());
+    entries.add(nodeId);
+}
+
+function lookupUniqueNodeByNameAndKind(context: ProjectionContext, name: string, kind: GraphNodeKind): string | null {
+    const candidateIds = context.nodeIdsByName.get(name.toLowerCase());
+    if (!candidateIds) {
+        return null;
+    }
+
+    const matchingIds = [...candidateIds].filter((nodeId) =>
+        context.nodeRecords.some((node) => node.id === nodeId && node.kind === kind)
+    );
+
+    return matchingIds.length === 1 ? matchingIds[0] : null;
+}
+
+function hasNodeNameAndKind(context: ProjectionContext, name: string, kind: GraphNodeKind): boolean {
+    const candidateIds = context.nodeIdsByName.get(name.toLowerCase());
+    if (!candidateIds) {
+        return false;
+    }
+
+    return [...candidateIds].some((nodeId) =>
+        context.nodeRecords.some((node) => node.id === nodeId && node.kind === kind)
+    );
+}
+
+function registerNodeIndexes(context: ProjectionContext, node: GraphNodeRecord): void {
+    addNameIndexEntry(context, node.name, node.id);
+    addNameIndexEntry(context, node.displayName, node.id);
+
+    if (node.scipSymbol) {
+        context.nodeIdsByScipSymbol.set(node.scipSymbol, node.id);
+    }
+
+    if (node.scopeId) {
+        context.nodeIdsByScopeId.set(node.scopeId, node.id);
+    }
 }
 
 function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKind {
@@ -255,7 +337,7 @@ function insertNodeRecord(database: DatabaseSync, node: GraphNodeRecord): void {
             node.graphId,
             node.kind,
             node.name,
-            node.name,
+            node.displayName,
             node.scipSymbol,
             node.filePath,
             node.resourcePath,
@@ -269,7 +351,7 @@ function insertNodeRecord(database: DatabaseSync, node: GraphNodeRecord): void {
 
     database
         .prepare("INSERT OR REPLACE INTO node_fts(id, name, display_name, summary, content) VALUES (?, ?, ?, ?, ?)")
-        .run(node.id, node.name, node.name, node.summary, `${node.summary}\n${node.snippet}`);
+        .run(node.id, node.name, node.displayName, node.summary, `${node.summary}\n${node.snippet}`);
 
     for (const alias of createGraphAliases(node.name, node.filePath, node.resourcePath)) {
         database
@@ -280,11 +362,12 @@ function insertNodeRecord(database: DatabaseSync, node: GraphNodeRecord): void {
 
 function insertEdgeRecord(database: DatabaseSync, edge: GraphEdgeRecord): void {
     database
-        .prepare("INSERT INTO edges(from_id, to_id, type, ordinal) VALUES (?, ?, ?, 0)")
+        .prepare("INSERT OR IGNORE INTO edges(from_id, to_id, type, ordinal) VALUES (?, ?, ?, 0)")
         .run(edge.fromId, edge.toId, edge.type);
 }
 
 function createNodeRecord(parameters: {
+    displayName?: string | null;
     filePath?: string | null;
     graphId: GraphIndexScope;
     id: string;
@@ -299,6 +382,7 @@ function createNodeRecord(parameters: {
     summary: string;
 }): GraphNodeRecord {
     return Object.freeze({
+        displayName: parameters.displayName ?? parameters.name,
         filePath: parameters.filePath ?? null,
         graphId: parameters.graphId,
         id: parameters.id,
@@ -324,6 +408,7 @@ function projectResources(context: ProjectionContext): void {
         const kind = normalizeResourceKind(getString(resourceRecord.resourceType));
         const nodeId = createGraphNodeId(context.graphId, "resource", resourcePath);
         const node = createNodeRecord({
+            displayName: name,
             graphId: context.graphId,
             id: nodeId,
             kind,
@@ -337,7 +422,7 @@ function projectResources(context: ProjectionContext): void {
         });
 
         context.nodeRecords.push(node);
-        context.nodeIdsByName.set(name, node.id);
+        registerNodeIndexes(context, node);
 
         const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
         for (const gmlFile of gmlFiles) {
@@ -357,6 +442,7 @@ function projectFiles(context: ProjectionContext): void {
         insertFileRecord(context.database, context.graphId, context.rootPath, relativePath);
         const nodeId = createGraphNodeId(context.graphId, "file", relativePath);
         const node = createNodeRecord({
+            displayName: relativePath,
             filePath: relativePath,
             graphId: context.graphId,
             id: nodeId,
@@ -367,10 +453,10 @@ function projectFiles(context: ProjectionContext): void {
                 kind: "file",
                 name: path.posix.basename(relativePath)
             }),
-            snippet: createGraphNodeSnippet(readSourceText(context.rootPath, relativePath), 0, 160)
+            snippet: ""
         });
         context.nodeRecords.push(node);
-        context.nodeIdsByName.set(relativePath, node.id);
+        registerNodeIndexes(context, node);
     }
 }
 
@@ -392,7 +478,11 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 getString(entry.filePath) ??
                 getString((Array.isArray(entry.references) ? entry.references[0] : null)?.filePath);
             const scipSymbol = resolveScipSymbol(kind, name, entry);
+            const sourceText = readSourceText(context.rootPath, filePath);
+            const displayName = getString(entry.displayName) ?? name;
+            const scopeId = getString(entry.scopeId) ?? getString(entry.id);
             const node = createNodeRecord({
+                displayName,
                 filePath,
                 graphId: context.graphId,
                 id: createGraphNodeId(context.graphId, "symbol", scipSymbol),
@@ -401,14 +491,11 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 lineStart: readLocationLine(asRecord(declaration?.start)),
                 name,
                 resourcePath: getString(entry.resourcePath),
-                scopeId: getString(entry.scopeId),
+                scopeId,
                 scipSymbol,
-                snippet: createGraphNodeSnippet(
-                    readSourceText(context.rootPath, filePath),
-                    declarationStart,
-                    declarationEnd
-                ),
+                snippet: createGraphNodeSnippet(sourceText, declarationStart, declarationEnd),
                 summary: createGraphNodeSummary({
+                    docCommentSummary: extractDocCommentFirstSentence(sourceText, declarationStart),
                     filePath,
                     kind,
                     name,
@@ -417,7 +504,7 @@ function projectIdentifierCollections(context: ProjectionContext): void {
             });
 
             context.nodeRecords.push(node);
-            context.nodeIdsByName.set(name, node.id);
+            registerNodeIndexes(context, node);
 
             if (node.resourcePath) {
                 context.edgeRecords.push({
@@ -444,6 +531,10 @@ function projectRelationshipEdges(context: ProjectionContext): void {
         const fileRecord = asRecord(rawFileRecord);
         const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
         const callerFileNodeId = createGraphNodeId(context.graphId, "file", relativePath);
+        const callerScopeId = getString(fileRecord.scopeId);
+        const callerNodeId = callerScopeId
+            ? (context.nodeIdsByScopeId.get(callerScopeId) ?? callerFileNodeId)
+            : callerFileNodeId;
 
         for (const rawCall of scriptCalls) {
             const callRecord = asRecord(rawCall);
@@ -452,9 +543,12 @@ function projectRelationshipEdges(context: ProjectionContext): void {
                 continue;
             }
 
-            const targetNodeId = context.nodeIdsByName.get(targetName);
+            const targetScopeId = getString(asRecord(callRecord.target).scopeId);
+            const targetNodeId = targetScopeId
+                ? (context.nodeIdsByScopeId.get(targetScopeId) ?? null)
+                : lookupUniqueNodeByNameAndKind(context, targetName, "script");
             if (targetNodeId) {
-                context.edgeRecords.push({ fromId: callerFileNodeId, toId: targetNodeId, type: "calls" });
+                context.edgeRecords.push({ fromId: callerNodeId, toId: targetNodeId, type: "calls" });
             }
         }
     }
@@ -495,6 +589,10 @@ function addCrossGraphEdges(
         const fileRecord = asRecord(rawFileRecord);
         const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
         const projectCallerFileNodeId = createGraphNodeId("project", "file", relativePath);
+        const callerScopeId = getString(fileRecord.scopeId);
+        const projectCallerNodeId = callerScopeId
+            ? (projectContext.nodeIdsByScopeId.get(callerScopeId) ?? projectCallerFileNodeId)
+            : projectCallerFileNodeId;
 
         for (const rawCall of scriptCalls) {
             const targetName = getString(asRecord(asRecord(rawCall).target).name);
@@ -502,17 +600,17 @@ function addCrossGraphEdges(
                 continue;
             }
 
-            if (projectContext.nodeIdsByName.has(targetName)) {
+            if (hasNodeNameAndKind(projectContext, targetName, "script")) {
                 continue;
             }
 
-            const toolsetTargetNodeId = toolsetContext.nodeIdsByName.get(targetName);
+            const toolsetTargetNodeId = lookupUniqueNodeByNameAndKind(toolsetContext, targetName, "script");
             if (!toolsetTargetNodeId) {
                 continue;
             }
 
             crossEdges.push({
-                fromId: projectCallerFileNodeId,
+                fromId: projectCallerNodeId,
                 toId: toolsetTargetNodeId,
                 type: "uses_toolset"
             });
@@ -529,31 +627,27 @@ function addCrossGraphEdges(
 function persistProjection(
     database: DatabaseSync,
     context: ProjectionContext,
-    providerId: string,
-    buildDurationMs: number,
-    embeddingDimensions: number
+    embeddingsConfig: GraphEmbeddingsConfig,
+    buildDurationMs: number
 ): void {
-    const embeddingProvider = createGraphEmbeddingProvider({
-        dimensions: embeddingDimensions,
-        enabled: true,
-        modelCacheDir: "",
-        provider: providerId
-    });
+    const embeddingProvider = embeddingsConfig.enabled ? createGraphEmbeddingProvider(embeddingsConfig) : null;
 
     for (const node of context.nodeRecords) {
         insertNodeRecord(database, node);
-        const vector = embeddingProvider.embedText(`${node.kind} ${node.name} ${node.summary} ${node.snippet}`);
-        database
-            .prepare(
-                "INSERT OR REPLACE INTO embeddings(node_id, model_id, dimensions, vector_blob, content_hash) VALUES (?, ?, ?, ?, ?)"
-            )
-            .run(
-                node.id,
-                providerId,
-                vector.length,
-                serializeEmbeddingVector(vector),
-                hashContent(node.summary + node.snippet)
-            );
+        if (embeddingProvider) {
+            const vector = embeddingProvider.embedText(`${node.kind} ${node.name} ${node.summary} ${node.snippet}`);
+            database
+                .prepare(
+                    "INSERT OR REPLACE INTO embeddings(node_id, model_id, dimensions, vector_blob, content_hash) VALUES (?, ?, ?, ?, ?)"
+                )
+                .run(
+                    node.id,
+                    embeddingsConfig.provider,
+                    vector.length,
+                    serializeEmbeddingVector(vector),
+                    hashContent(node.summary + node.snippet)
+                );
+        }
     }
 
     for (const edge of context.edgeRecords) {
@@ -572,7 +666,7 @@ function persistProjection(
             Object.keys(asRecord(context.projectIndex.files)).length,
             context.nodeRecords.length,
             context.edgeRecords.length,
-            providerId,
+            embeddingsConfig.enabled ? embeddingsConfig.provider : "disabled",
             Math.round(buildDurationMs)
         );
 }
@@ -588,6 +682,8 @@ function createProjectionContext(
         edgeRecords: [],
         graphId,
         nodeIdsByName: new Map(),
+        nodeIdsByScipSymbol: new Map(),
+        nodeIdsByScopeId: new Map(),
         nodeRecords: [],
         projectIndex,
         rootPath
@@ -598,7 +694,8 @@ function queryNodeById(database: DatabaseSync, nodeId: string): GraphNodeRecord 
     const row = database
         .prepare(
             `
-                SELECT id, graph_id AS graphId, kind, name, relative_path AS filePath, resource_path AS resourcePath,
+                SELECT id, graph_id AS graphId, kind, name, display_name AS displayName,
+                       relative_path AS filePath, resource_path AS resourcePath,
                        scope_id AS scopeId, scip_symbol AS scipSymbol, line_start AS lineStart, line_end AS lineEnd,
                        summary, snippet
                 FROM nodes
@@ -612,6 +709,7 @@ function queryNodeById(database: DatabaseSync, nodeId: string): GraphNodeRecord 
     }
 
     return createNodeRecord({
+        displayName: row.displayName,
         filePath: row.filePath,
         graphId: row.graphId,
         id: row.id,
@@ -675,13 +773,44 @@ function listNodeNeighbors(database: DatabaseSync, nodeId: string, depth = 1): A
     return collected;
 }
 
-function rankSemanticMatches(database: DatabaseSync, query: string, candidateScores: Map<string, number>): void {
-    const queryVector = createGraphEmbeddingProvider({
-        dimensions: 64,
-        enabled: true,
-        modelCacheDir: "",
-        provider: "local-mini-lm"
-    }).embedText(query);
+function listUsageRecords(database: DatabaseSync, nodeId: string, depth = 1): Array<GraphUsageRecord> {
+    const incomingNeighbors = listNodeNeighbors(database, nodeId, depth).filter(
+        (entry) =>
+            entry.direction === "incoming" &&
+            (entry.edgeType === "calls" ||
+                entry.edgeType === "uses_toolset" ||
+                entry.edgeType === "references" ||
+                entry.edgeType === "depends_on")
+    );
+    const target = queryNodeById(database, nodeId);
+    if (!target) {
+        return [];
+    }
+
+    return incomingNeighbors.map((entry) =>
+        Object.freeze({
+            edgeType: entry.edgeType,
+            from: entry.node,
+            location: Object.freeze({
+                lineEnd: entry.node.lineEnd,
+                lineStart: entry.node.lineStart
+            }),
+            to: target
+        })
+    );
+}
+
+function rankSemanticMatches(
+    database: DatabaseSync,
+    query: string,
+    candidateScores: Map<string, number>,
+    embeddingsConfig: GraphEmbeddingsConfig
+): void {
+    if (!embeddingsConfig.enabled) {
+        return;
+    }
+
+    const queryVector = createGraphEmbeddingProvider(embeddingsConfig).embedText(query);
     const embeddingRows = database
         .prepare("SELECT node_id AS nodeId, vector_blob AS vectorBlob FROM embeddings")
         .all() as Array<{ nodeId: string; vectorBlob: Buffer }>;
@@ -712,6 +841,54 @@ function applyGraphProximityBoost(database: DatabaseSync, candidateScores: Map<s
     }
 }
 
+function createSafeFtsQuery(rawQuery: string): string {
+    return rawQuery
+        .replaceAll(/[^a-zA-Z0-9_]+/g, " ")
+        .trim()
+        .split(/\s+/u)
+        .filter((token) => token.length > 0)
+        .map((token) => `"${token.replaceAll('"', '""')}"`)
+        .join(" OR ");
+}
+
+function refreshIndexStateEdgeCounts(database: DatabaseSync): void {
+    const graphRows = database.prepare("SELECT id FROM graphs").all() as Array<{ id: string }>;
+    for (const row of graphRows) {
+        const edgeCount = database
+            .prepare(
+                `
+                    SELECT COUNT(*) AS edgeCount
+                    FROM edges
+                    WHERE from_id IN (SELECT id FROM nodes WHERE graph_id = ?)
+                       OR to_id IN (SELECT id FROM nodes WHERE graph_id = ?)
+                `
+            )
+            .get(row.id, row.id) as { edgeCount: number };
+        database.prepare("UPDATE index_state SET edge_count = ? WHERE graph_id = ?").run(edgeCount.edgeCount, row.id);
+    }
+}
+
+function resetDatabaseWhenSchemaIsIncompatible(databasePath: string): void {
+    if (!existsSync(databasePath)) {
+        return;
+    }
+
+    const database = new DatabaseSync(databasePath);
+    try {
+        const schemaVersion = readGraphIndexSchemaVersion(database);
+        if (schemaVersion !== GRAPH_INDEX_SCHEMA_VERSION) {
+            database.close();
+            rmSync(databasePath, { force: true });
+        }
+    } finally {
+        try {
+            database.close();
+        } catch {
+            // The database may have already been closed before removing an incompatible file.
+        }
+    }
+}
+
 /**
  * Build or rebuild the SQLite-backed graph index.
  */
@@ -720,9 +897,13 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
     if (options.rebuild && existsSync(config.databasePath)) {
         rmSync(config.databasePath, { force: true });
     }
+    resetDatabaseWhenSchemaIsIncompatible(config.databasePath);
 
     const database = openGraphIndexDatabase(config.databasePath);
     resetGraphIndexDatabase(database);
+    if (config.embeddings.enabled) {
+        ensureGraphEmbeddingModelAssets(config.embeddings);
+    }
     const buildStart = performance.now();
 
     const projectIndex = (await buildProjectIndex(config.projectRoot)) as ProjectIndexSnapshot;
@@ -745,25 +926,14 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
     }
 
     const buildDurationMs = performance.now() - buildStart;
-    persistProjection(
-        database,
-        projectContext,
-        config.embeddings.provider,
-        buildDurationMs,
-        config.embeddings.dimensions
-    );
+    persistProjection(database, projectContext, config.embeddings, buildDurationMs);
 
     if (toolsetContext) {
-        persistProjection(
-            database,
-            toolsetContext,
-            config.embeddings.provider,
-            buildDurationMs,
-            config.embeddings.dimensions
-        );
+        persistProjection(database, toolsetContext, config.embeddings, buildDurationMs);
     }
 
     addCrossGraphEdges(database, projectContext, toolsetContext);
+    refreshIndexStateEdgeCounts(database);
     database.close();
 
     const graphIds: Array<GraphIndexScope> = config.toolsetRoot ? ["project", "toolset"] : ["project"];
@@ -779,13 +949,31 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
  */
 export function openGraphIndex(options: GraphIndexBuildOptions): GraphIndexHandle {
     const config = resolveGraphIndexConfig(options);
-    const database = openGraphIndexDatabase(config.databasePath);
+    const database = openExistingGraphIndexDatabase(config.databasePath);
 
     return Object.freeze({
         close(): void {
             database.close();
         },
-        config
+        config,
+        doctor(): GraphDoctorReport {
+            return doctorGraphIndex(options);
+        },
+        getContext(nodeId: string, depth = 1): GraphContextBundle | null {
+            return getGraphContext({ ...options, depth, nodeId });
+        },
+        getNeighbors(nodeId: string, depth = 1): ReadonlyArray<GraphNeighborRecord> {
+            return getGraphNeighbors({ ...options, depth, nodeId });
+        },
+        getNode(nodeId: string): GraphNodeRecord | null {
+            return getGraphNode({ ...options, nodeId });
+        },
+        getUsages(nodeId: string, depth = 1): ReadonlyArray<GraphUsageRecord> {
+            return getGraphUsages({ ...options, depth, nodeId });
+        },
+        search(query: string, limit = 10): GraphSearchResponse {
+            return searchGraphIndex({ ...options, limit, query });
+        }
     });
 }
 
@@ -798,7 +986,7 @@ export function getGraphNode(
     }
 ): GraphNodeRecord | null {
     const config = resolveGraphIndexConfig(options);
-    const database = openGraphIndexDatabase(config.databasePath);
+    const database = openExistingGraphIndexDatabase(config.databasePath);
 
     try {
         return queryNodeById(database, options.nodeId);
@@ -818,7 +1006,7 @@ export function searchGraphIndex(
     }
 ): GraphSearchResponse {
     const config = resolveGraphIndexConfig(options);
-    const database = openGraphIndexDatabase(config.databasePath);
+    const database = openExistingGraphIndexDatabase(config.databasePath);
     const candidateScores = new Map<string, number>();
     const normalizedQuery = options.query.trim();
     const lowerQuery = normalizedQuery.toLowerCase();
@@ -846,7 +1034,7 @@ export function searchGraphIndex(
             candidateScores.set(row.nodeId, (candidateScores.get(row.nodeId) ?? 0) + 3);
         }
 
-        const ftsQuery = normalizedQuery.replaceAll(/[^a-zA-Z0-9_]+/g, " ").trim();
+        const ftsQuery = createSafeFtsQuery(normalizedQuery);
         if (ftsQuery.length > 0) {
             const lexicalRows = database
                 .prepare(
@@ -858,7 +1046,7 @@ export function searchGraphIndex(
             }
         }
 
-        rankSemanticMatches(database, normalizedQuery, candidateScores);
+        rankSemanticMatches(database, normalizedQuery, candidateScores, config.embeddings);
         applyGraphProximityBoost(database, candidateScores);
 
         const results = [...candidateScores.entries()]
@@ -871,6 +1059,7 @@ export function searchGraphIndex(
                 }
 
                 return {
+                    displayName: node.displayName,
                     graphId: node.graphId,
                     id: node.id,
                     kind: node.kind,
@@ -902,7 +1091,7 @@ export function getGraphContext(
     }
 ): GraphContextBundle | null {
     const config = resolveGraphIndexConfig(options);
-    const database = openGraphIndexDatabase(config.databasePath);
+    const database = openExistingGraphIndexDatabase(config.databasePath);
 
     try {
         const target = queryNodeById(database, options.nodeId);
@@ -950,7 +1139,7 @@ export function getGraphNeighbors(
     }
 ): ReadonlyArray<GraphNeighborRecord> {
     const config = resolveGraphIndexConfig(options);
-    const database = openGraphIndexDatabase(config.databasePath);
+    const database = openExistingGraphIndexDatabase(config.databasePath);
 
     try {
         return listNodeNeighbors(database, options.nodeId, Math.max(1, options.depth ?? 1));
@@ -967,9 +1156,15 @@ export function getGraphUsages(
         depth?: number;
         nodeId: string;
     }
-): ReadonlyArray<GraphNeighborRecord> {
-    const neighbors = getGraphNeighbors(options);
-    return neighbors.filter((entry) => entry.direction === "incoming");
+): ReadonlyArray<GraphUsageRecord> {
+    const config = resolveGraphIndexConfig(options);
+    const database = openExistingGraphIndexDatabase(config.databasePath);
+
+    try {
+        return listUsageRecords(database, options.nodeId, Math.max(1, options.depth ?? 1));
+    } finally {
+        database.close();
+    }
 }
 
 /**
@@ -993,8 +1188,17 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
         });
     }
 
-    const database = openGraphIndexDatabase(config.databasePath);
+    const database = openExistingGraphIndexDatabase(config.databasePath);
     try {
+        const schemaVersion = readGraphIndexSchemaVersion(database);
+        if (schemaVersion !== GRAPH_INDEX_SCHEMA_VERSION) {
+            issues.push({
+                code: "GRAPH_SCHEMA_INCOMPATIBLE",
+                message: `Graph database schema ${String(schemaVersion)} is incompatible with expected schema ${String(GRAPH_INDEX_SCHEMA_VERSION)}. Run 'gmloop graph index --rebuild'.`,
+                severity: "error"
+            });
+        }
+
         const graphRows = database
             .prepare("SELECT id AS graphId, root_path AS rootPath FROM graphs ORDER BY id")
             .all() as Array<{
@@ -1002,10 +1206,31 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
             rootPath: string;
         }>;
         const graphs: Array<GraphDoctorGraphStatus> = graphRows.map((row) => {
+            let staleFileCount = 0;
             if (!existsSync(row.rootPath)) {
                 issues.push({
                     code: "GRAPH_ROOT_MISSING",
                     message: `Indexed graph root no longer exists: ${row.rootPath}`,
+                    severity: "warning"
+                });
+            }
+
+            const fileRows = database
+                .prepare(
+                    "SELECT relative_path AS relativePath, content_hash AS contentHash FROM files WHERE graph_id = ?"
+                )
+                .all(row.graphId) as Array<{ contentHash: string | null; relativePath: string }>;
+            for (const fileRow of fileRows) {
+                const sourceText = readSourceText(row.rootPath, fileRow.relativePath);
+                if (sourceText === null || hashContent(sourceText) !== fileRow.contentHash) {
+                    staleFileCount += 1;
+                }
+            }
+
+            if (staleFileCount > 0) {
+                issues.push({
+                    code: "GRAPH_DB_STALE",
+                    message: `${String(staleFileCount)} indexed file(s) changed or disappeared under ${row.rootPath}. Run 'gmloop graph index --rebuild'.`,
                     severity: "warning"
                 });
             }
@@ -1016,19 +1241,41 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
             const nodeCounts = database
                 .prepare("SELECT COUNT(*) AS nodeCount FROM nodes WHERE graph_id = ?")
                 .get(row.graphId) as { nodeCount: number };
+            const edgeCounts = database
+                .prepare(
+                    `
+                        SELECT COUNT(*) AS edgeCount
+                        FROM edges
+                        WHERE from_id IN (SELECT id FROM nodes WHERE graph_id = ?)
+                           OR to_id IN (SELECT id FROM nodes WHERE graph_id = ?)
+                    `
+                )
+                .get(row.graphId, row.graphId) as { edgeCount: number };
+            const embeddingCounts = database
+                .prepare(
+                    `
+                        SELECT COUNT(*) AS embeddingCount
+                        FROM embeddings
+                        WHERE node_id IN (SELECT id FROM nodes WHERE graph_id = ?)
+                    `
+                )
+                .get(row.graphId) as { embeddingCount: number };
 
             return Object.freeze({
+                edgeCount: edgeCounts.edgeCount,
+                embeddingCount: embeddingCounts.embeddingCount,
                 fileCount: counts.fileCount,
                 graphId: row.graphId,
                 nodeCount: nodeCounts.nodeCount,
-                rootPath: row.rootPath
+                rootPath: row.rootPath,
+                staleFileCount
             });
         });
 
         const embeddingRows = database.prepare("SELECT DISTINCT model_id AS modelId FROM embeddings").all() as Array<{
             modelId: string;
         }>;
-        if (embeddingRows.length === 0) {
+        if (config.embeddings.enabled && embeddingRows.length === 0) {
             issues.push({
                 code: "GRAPH_EMBEDDINGS_MISSING",
                 message: "No embeddings were found in the graph index.",

@@ -50,6 +50,7 @@ export type GraphEdgeType =
     | "uses_toolset";
 
 export type GraphNodeRecord = Readonly<{
+    displayName: string;
     filePath: string | null;
     graphId: GraphIndexScope;
     id: string;
@@ -70,6 +71,16 @@ export type GraphEdgeRecord = Readonly<{
     type: GraphEdgeType;
 }>;
 
+export type GraphUsageRecord = Readonly<{
+    edgeType: GraphEdgeType;
+    from: GraphNodeRecord;
+    location: Readonly<{
+        lineEnd: number | null;
+        lineStart: number | null;
+    }>;
+    to: GraphNodeRecord;
+}>;
+
 export type GraphNeighborRecord = Readonly<{
     direction: "incoming" | "outgoing";
     edgeType: GraphEdgeType;
@@ -77,6 +88,7 @@ export type GraphNeighborRecord = Readonly<{
 }>;
 
 export type GraphSearchResult = Readonly<{
+    displayName: string;
     graphId: GraphIndexScope;
     id: string;
     kind: GraphNodeKind;
@@ -110,10 +122,13 @@ export type GraphDoctorIssue = Readonly<{
 }>;
 
 export type GraphDoctorGraphStatus = Readonly<{
+    edgeCount: number;
+    embeddingCount: number;
     fileCount: number;
     graphId: GraphIndexScope;
     nodeCount: number;
     rootPath: string;
+    staleFileCount: number;
 }>;
 
 export type GraphDoctorReport = Readonly<{
@@ -125,6 +140,12 @@ export type GraphDoctorReport = Readonly<{
 export type GraphIndexHandle = Readonly<{
     close: () => void;
     config: GraphIndexConfig;
+    doctor: () => GraphDoctorReport;
+    getContext: (nodeId: string, depth?: number) => GraphContextBundle | null;
+    getNeighbors: (nodeId: string, depth?: number) => ReadonlyArray<GraphNeighborRecord>;
+    getNode: (nodeId: string) => GraphNodeRecord | null;
+    getUsages: (nodeId: string, depth?: number) => ReadonlyArray<GraphUsageRecord>;
+    search: (query: string, limit?: number) => GraphSearchResponse;
 }>;
 
 export type GraphIndexBuildResult = Readonly<{

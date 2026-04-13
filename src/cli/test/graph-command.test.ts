@@ -93,7 +93,8 @@ void test("graph index and graph search return stable JSON envelopes", async () 
         });
         assert.equal(indexResult.exitCode, 0);
         const indexPayload = JSON.parse(indexResult.stdout);
-        assert.deepEqual(indexPayload.graphIds, ["project", "toolset"]);
+        assert.equal(indexPayload.command, "graph index");
+        assert.deepEqual(indexPayload.payload.graphIds, ["project", "toolset"]);
 
         const searchResult = await cliModule.runCliTestCommand({
             argv: [
@@ -109,8 +110,43 @@ void test("graph index and graph search return stable JSON envelopes", async () 
         });
         assert.equal(searchResult.exitCode, 0);
         const searchPayload = JSON.parse(searchResult.stdout);
-        assert.equal(searchPayload.query, "shared_toolset_fn");
-        assert.equal(searchPayload.results[0].id, "toolset::gml/script/shared_toolset_fn");
+        assert.equal(searchPayload.command, "graph search");
+        assert.equal(searchPayload.payload.query, "shared_toolset_fn");
+        assert.equal(searchPayload.payload.results[0].id, "toolset::gml/script/shared_toolset_fn");
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("graph search does not build missing databases unless rebuild is requested", async () => {
+    const cliModule = await loadCliModule();
+    const fixture = await createDualRootFixture();
+
+    try {
+        const searchResult = await cliModule.runCliTestCommand({
+            argv: ["graph", "search", "shared_toolset_fn", "--path", fixture.projectRoot, "--json"]
+        });
+
+        assert.equal(searchResult.exitCode, 1);
+        assert.match(searchResult.stderr, /Graph database not found/);
+
+        const rebuildResult = await cliModule.runCliTestCommand({
+            argv: [
+                "graph",
+                "search",
+                "shared_toolset_fn",
+                "--path",
+                fixture.projectRoot,
+                "--toolset-root",
+                fixture.toolsetRoot,
+                "--rebuild",
+                "--json"
+            ]
+        });
+
+        assert.equal(rebuildResult.exitCode, 0);
+        const payload = JSON.parse(rebuildResult.stdout);
+        assert.equal(payload.payload.results[0].id, "toolset::gml/script/shared_toolset_fn");
     } finally {
         await fixture.cleanup();
     }

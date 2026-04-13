@@ -9,14 +9,26 @@ export {
     searchGraphIndex
 } from "./builder.js";
 export { resolveGraphIndexConfig } from "./config.js";
-export { GRAPH_INDEX_SCHEMA_VERSION, openGraphIndexDatabase, resetGraphIndexDatabase } from "./database.js";
+export {
+    GRAPH_INDEX_SCHEMA_VERSION,
+    openExistingGraphIndexDatabase,
+    openGraphIndexDatabase,
+    readGraphIndexSchemaVersion,
+    resetGraphIndexDatabase
+} from "./database.js";
 export {
     cosineSimilarity,
     createGraphEmbeddingProvider,
     deserializeEmbeddingVector,
+    ensureGraphEmbeddingModelAssets,
     serializeEmbeddingVector
 } from "./embeddings.js";
-export { createGraphAliases, createGraphNodeSnippet, createGraphNodeSummary } from "./summary.js";
+export {
+    createGraphAliases,
+    createGraphNodeSnippet,
+    createGraphNodeSummary,
+    extractDocCommentFirstSentence
+} from "./summary.js";
 export type {
     GraphContextBundle,
     GraphDoctorGraphStatus,
@@ -34,5 +46,6 @@ export type {
     GraphNodeKind,
     GraphNodeRecord,
     GraphSearchResponse,
-    GraphSearchResult
+    GraphSearchResult,
+    GraphUsageRecord
 } from "./types.js";

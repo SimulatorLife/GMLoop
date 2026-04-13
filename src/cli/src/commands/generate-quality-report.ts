@@ -377,13 +377,49 @@ function collectCaseDifferences(baseResults, targetResults) {
 }
 
 function collectMissingCases(sourceResults, comparisonResults) {
+    const comparableReportNames = collectComparableReportNames(sourceResults, comparisonResults);
     const missing = [];
     for (const [key, record] of sourceResults.results.entries()) {
-        if (!comparisonResults.results.has(key)) {
+        if (!comparisonResults.results.has(key) && isComparableReportRecord(record, comparableReportNames)) {
             missing.push(record);
         }
     }
     return missing;
+}
+
+function collectComparableReportNames(sourceResults, comparisonResults) {
+    const sourceReportNames = collectReportNames(sourceResults);
+    const comparisonReportNames = collectReportNames(comparisonResults);
+    const commonReportNames = new Set();
+
+    for (const reportName of sourceReportNames) {
+        if (comparisonReportNames.has(reportName)) {
+            commonReportNames.add(reportName);
+        }
+    }
+
+    return commonReportNames;
+}
+
+function collectReportNames(resultSet) {
+    const reportNames = new Set();
+    for (const record of resultSet.results.values()) {
+        const reportName = normalizeReportFileName(record);
+        if (reportName) {
+            reportNames.add(reportName);
+        }
+    }
+    return reportNames;
+}
+
+function normalizeReportFileName(record) {
+    const reportFilePath = typeof record?.reportFilePath === "string" ? record.reportFilePath : "";
+    return path.basename(reportFilePath).trim().toLowerCase();
+}
+
+function isComparableReportRecord(record, comparableReportNames) {
+    const reportName = normalizeReportFileName(record);
+    return !reportName || comparableReportNames.has(reportName);
 }
 
 function countRenamedCases(newCases, removedCases) {
@@ -759,6 +795,39 @@ function recordTestCases(aggregates, testCases) {
     }
 }
 
+function removeNonCanonicalRecordsDuplicatedByCanonicalIdentity(results: Map<string, AggregatedTestRecord>): void {
+    const canonicalIdentities = collectCanonicalTestRecordIdentities(results);
+    if (canonicalIdentities.size === 0) {
+        return;
+    }
+
+    for (const [key, record] of results.entries()) {
+        const identityKey = buildTestRecordIdentityKey(record);
+        if (!identityKey || isCanonicalTestRecord(record) || !canonicalIdentities.has(identityKey)) {
+            continue;
+        }
+
+        results.delete(key);
+    }
+}
+
+function collectCanonicalTestRecordIdentities(results: Map<string, AggregatedTestRecord>): Set<string> {
+    const identities = new Set<string>();
+
+    for (const record of results.values()) {
+        if (!isCanonicalTestRecord(record)) {
+            continue;
+        }
+
+        const identityKey = buildTestRecordIdentityKey(record);
+        if (identityKey) {
+            identities.add(identityKey);
+        }
+    }
+
+    return identities;
+}
+
 function computeAggregateStatsFromResults(results: Map<string, AggregatedTestRecord>) {
     const stats = { total: 0, passed: 0, failed: 0, skipped: 0, time: 0 };
     for (const record of results.values()) {
@@ -788,6 +857,11 @@ function isCanonicalTestsXmlReportPath(reportFilePath: string): boolean {
         return false;
     }
     return path.basename(reportPath).toLowerCase() === "tests.xml";
+}
+
+function buildTestRecordIdentityKey(record: TestRecordEntry): string {
+    const { fileLowerCase, name } = getNormalizedTestRecordIdentity(record);
+    return fileLowerCase && name ? `${fileLowerCase}${FILE_NAME_SEPARATOR}${name}` : "";
 }
 
 function choosePreferredTestRecord(
@@ -904,6 +978,7 @@ function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions 
         }
 
         recordTestCases(aggregates, scan.cases);
+        removeNonCanonicalRecordsDuplicatedByCanonicalIdentity(aggregates.results);
 
         const duplicates = resolveDuplicatesWithFallback(scan, directory);
         const stats = computeAggregateStatsFromResults(aggregates.results);
