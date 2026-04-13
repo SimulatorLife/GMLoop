@@ -1414,19 +1414,29 @@ async function handleUnknownFileChanges(
         runtimeContext.unknownScanConcurrency
     );
 
-    await Core.runSequentially(changedEntries, async (entry) => {
-        if (entry === null) {
-            return;
-        }
+    // Filter null entries (unchanged/removed files) before processing so the
+    // parallel callback receives only actionable work items.
+    const pendingChanges = changedEntries.filter(
+        (entry): entry is { filePath: string; stats: Stats; eventType: string } => entry !== null
+    );
 
-        await handleFileChange(entry.filePath, entry.eventType, {
-            verbose,
-            quiet,
-            runtimeContext,
-            fileStats: entry.stats,
-            abortSignal
-        });
-    });
+    // Process changed files with bounded concurrency. The stat scan above already
+    // limits I/O during discovery; processing concurrently overlaps file reads with
+    // CPU-bound transpilation of other files, reducing total wall-clock time versus
+    // sequential processing while staying within the configured concurrency ceiling.
+    await Core.runInParallelWithLimit(
+        pendingChanges,
+        async (entry) => {
+            await handleFileChange(entry.filePath, entry.eventType, {
+                verbose,
+                quiet,
+                runtimeContext,
+                fileStats: entry.stats,
+                abortSignal
+            });
+        },
+        runtimeContext.unknownScanConcurrency
+    );
 }
 
 function processQueuedUnknownFileChanges(
