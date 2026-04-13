@@ -27,12 +27,10 @@
     "usageStatisticsEnabled": false
   },
   "context": {
-    "fileName": {
-      "include": [
-        "AGENTS.md",
-        "docs/README.md"
-      ]
-    }
+    "fileName": [
+      "AGENTS.md",
+      "docs/README.md"
+    ]
   },
   "ui": {
     "accessibility": {
