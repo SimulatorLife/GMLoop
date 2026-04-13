@@ -6,20 +6,19 @@ import { describe, it } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { runCliTestCommand } from "../src/cli.js";
-import {
-    countSourceLines,
-    createExtensionMatcher,
-    createWatchCommand,
-    hashSourceContent,
-    resolveDependentRetranspileConcurrency,
-    resolveUnknownScanConcurrency,
-    runWatchCommand
-} from "../src/commands/watch.js";
+import { createWatchCommand, runWatchCommand } from "../src/commands/watch.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
     DEFAULT_WATCH_POLLING_INTERVAL_MS
 } from "../src/commands/watch-constants.js";
+import {
+    countSourceLines,
+    createExtensionMatcher,
+    hashSourceContent,
+    resolveDependentRetranspileConcurrency,
+    resolveUnknownScanConcurrency
+} from "../src/commands/watch-source-analysis.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 
 function createWatchCommandIntegrationOptions(abortSignal: AbortSignal): Parameters<typeof runWatchCommand>[1] {
