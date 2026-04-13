@@ -30,7 +30,6 @@ import {
     resolveExistingGmloopConfigPath,
     resolveExplicitWorkflowTargetPath
 } from "../workflow/project-root.js";
-import { resolveIndexedRootTargetGmlFiles } from "./refactor-target-gml-files.js";
 
 const { buildProjectIndex } = Semantic;
 const {
@@ -104,6 +103,10 @@ type RefactorCommandIntent =
 
 type ProjectIndexParseContext = {
     filePath?: string;
+};
+
+type SemanticProjectIndex = {
+    files?: Record<string, unknown>;
 };
 
 function isRecoverableProjectIndexParseError(error: unknown): boolean {
@@ -182,6 +185,45 @@ function hasExplicitRenameIntent(options: RefactorCommandOptions): boolean {
 
 function hasExplicitCodemodIntentHint(options: RefactorCommandOptions): boolean {
     return Boolean(options.path || options.config || options.write || options.only || options.list);
+}
+
+function listIndexedGmlFilePaths(projectIndex: unknown): Array<string> {
+    if (!Core.isObjectLike(projectIndex)) {
+        return [];
+    }
+
+    const files = (projectIndex as SemanticProjectIndex).files;
+    if (!Core.isObjectLike(files)) {
+        return [];
+    }
+
+    return Object.keys(files)
+        .filter((filePath) => isRefactorResourcePath(filePath))
+        .toSorted();
+}
+
+function allTargetsResolveToProjectRoot(projectRoot: string, targetPaths: ReadonlyArray<string>): boolean {
+    const normalizedProjectRoot = path.resolve(projectRoot);
+    return targetPaths.every((targetPath) => path.resolve(targetPath) === normalizedProjectRoot);
+}
+
+/**
+ * Reuse semantic index file paths when codemods target the full project root.
+ *
+ * This avoids a second recursive disk walk immediately after `buildProjectIndex`
+ * already discovered the same files.
+ */
+export function resolveIndexedRootTargetGmlFiles(
+    projectRoot: string,
+    targetPaths: ReadonlyArray<string>,
+    projectIndex: unknown
+): Array<string> | null {
+    if (targetPaths.length === 0 || !allTargetsResolveToProjectRoot(projectRoot, targetPaths)) {
+        return null;
+    }
+
+    const indexedGmlFilePaths = listIndexedGmlFilePaths(projectIndex);
+    return indexedGmlFilePaths.length > 0 ? indexedGmlFilePaths : null;
 }
 
 async function validateRenameOptions(options: RefactorCommandOptions): Promise<ValidatedRenameOptions> {
