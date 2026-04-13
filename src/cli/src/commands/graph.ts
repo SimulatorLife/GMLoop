@@ -115,7 +115,7 @@ async function ensureGraphIndexForQuery(
 
 function openHtmlInDefaultBrowser(filePath: string): void {
     const platform = process.platform;
-    let cmd = "";
+    let cmd: string;
     if (platform === "darwin") {
         cmd = "open";
     } else if (platform === "win32") {
@@ -321,7 +321,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
     const dbPath = config.databasePath;
     const db = Semantic.openExistingGraphIndexDatabase(dbPath);
-    let payloadStr = "";
+    let payloadStr: string;
     try {
         const payload = Semantic.exportGraphVisualizationData(db, config.projectRoot);
         payloadStr = JSON.stringify(payload);

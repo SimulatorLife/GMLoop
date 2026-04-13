@@ -6,8 +6,8 @@ import test, { describe } from "node:test";
 import { openGraphIndexDatabase } from "../src/graph-index/database.js";
 import { exportGraphVisualizationData } from "../src/graph-index/export-visualization-data.js";
 
-describe("exportGraphVisualizationData", () => {
-    test("exports empty visualization data correctly", async () => {
+void describe("exportGraphVisualizationData", () => {
+    void test("exports empty visualization data correctly", async () => {
         const dbPath = path.join(os.tmpdir(), `test-empty-export-${String(Date.now())}.db`);
         const db = openGraphIndexDatabase(dbPath);
 
@@ -22,7 +22,7 @@ describe("exportGraphVisualizationData", () => {
         assert.ok(data.generatedAt);
     });
 
-    test("exports nodes, edges and graphs properly mapped", async () => {
+    void test("exports nodes, edges and graphs properly mapped", async () => {
         const dbPath = path.join(os.tmpdir(), `test-export-${String(Date.now())}.db`);
         const db = openGraphIndexDatabase(dbPath);
 
