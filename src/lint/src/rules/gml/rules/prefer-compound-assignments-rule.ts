@@ -14,10 +14,16 @@ import {
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
-type SupportedArithmeticOperator = "+" | "-" | "*" | "/";
+type SupportedArithmeticOperator = "+" | "-" | "*" | "/" | "%";
+type SupportedBitwiseOperator = "|" | "&" | "^";
+type SupportedShiftOperator = "<<" | ">>";
 type SupportedNullishOperator = "??";
-type SupportedBinaryOperator = SupportedArithmeticOperator | SupportedNullishOperator;
-type CompoundAssignmentOperator = "+=" | "-=" | "*=" | "/=" | "??=";
+type SupportedBinaryOperator =
+    | SupportedArithmeticOperator
+    | SupportedBitwiseOperator
+    | SupportedShiftOperator
+    | SupportedNullishOperator;
+type CompoundAssignmentOperator = "+=" | "-=" | "*=" | "/=" | "%=" | "|=" | "&=" | "^=" | "<<=" | ">>=" | "??=";
 
 type BinaryExpressionNode = AstNodeRecord &
     Readonly<{
@@ -50,11 +56,29 @@ const COMPOUND_OPERATOR_BY_BINARY_OPERATOR = Object.freeze({
     "-": "-=",
     "*": "*=",
     "/": "/=",
+    "%": "%=",
+    "|": "|=",
+    "&": "&=",
+    "^": "^=",
+    "<<": "<<=",
+    ">>": ">>=",
     "??": "??="
 } as const satisfies Readonly<Record<SupportedBinaryOperator, CompoundAssignmentOperator>>);
 
 function isSupportedBinaryOperator(operator: unknown): operator is SupportedBinaryOperator {
-    return operator === "+" || operator === "-" || operator === "*" || operator === "/" || operator === "??";
+    return (
+        operator === "+" ||
+        operator === "-" ||
+        operator === "*" ||
+        operator === "/" ||
+        operator === "%" ||
+        operator === "|" ||
+        operator === "&" ||
+        operator === "^" ||
+        operator === "<<" ||
+        operator === ">>" ||
+        operator === "??"
+    );
 }
 
 function isBinaryExpressionNode(node: unknown): node is BinaryExpressionNode {
@@ -108,8 +132,13 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
     }
 
     // Right-first pattern for commutative operators: x = y + x → x += y, x = y * x → x *= y.
-    // Only `+` and `*` are commutative; `-`, `/`, and `??` are not.
-    const isCommutativeOperator = rightExpressionNode.operator === "+" || rightExpressionNode.operator === "*";
+    // Commutative: `+`, `*`, `|`, `&`, `^`. Non-commutative: `-`, `/`, `%`, `<<`, `>>`, `??`.
+    const isCommutativeOperator =
+        rightExpressionNode.operator === "+" ||
+        rightExpressionNode.operator === "*" ||
+        rightExpressionNode.operator === "|" ||
+        rightExpressionNode.operator === "&" ||
+        rightExpressionNode.operator === "^";
     if (!isCommutativeOperator) {
         return null;
     }
@@ -139,7 +168,9 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
  * Creates the `gml/prefer-compound-assignments` rule.
  *
  * Reports and auto-fixes safe self-assignment patterns:
- * `x = x + y`, `x = x - y`, `x = x * y`, `x = x / y`, and `x = x ?? y`.
+ * `x = x + y`, `x = x - y`, `x = x * y`, `x = x / y`, `x = x % y`,
+ * `x = x | y`, `x = x & y`, `x = x ^ y`, `x = x << y`, `x = x >> y`,
+ * and `x = x ?? y`.
  */
 export function createPreferCompoundAssignmentsRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
