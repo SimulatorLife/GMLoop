@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 
-import { resolveIndexedRootTargetGmlFiles } from "../src/commands/refactor-target-gml-files.js";
+import { resolveIndexedRootTargetGmlFiles } from "../src/commands/refactor.js";
 
 const INDEXED_GML_FILE_COUNT = 5000;
 const INDEXED_NON_GML_FILE_COUNT = 5000;

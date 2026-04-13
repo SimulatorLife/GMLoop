@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveIndexedRootTargetGmlFiles } from "../src/commands/refactor-target-gml-files.js";
+import { resolveIndexedRootTargetGmlFiles } from "../src/commands/refactor.js";
 
 void test("indexed root-target gml discovery only runs when all targets resolve to the project root", () => {
     const projectRoot = "/project";
