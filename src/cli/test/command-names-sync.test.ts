@@ -15,10 +15,10 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
     const expectedCommands = [
         "format",
         "fix",
+        "graph",
         "lint",
         "lookup-gml-identifier",
         "parse",
-        "performance",
         "generate-gml-identifiers",
         "generate-quality-report",
         "collect-stats",

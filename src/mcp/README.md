@@ -12,6 +12,7 @@ The current scaffold intentionally contains only the package framework, public n
 - Implement a stdio-only MCP server that dynamically registers one MCP tool per real CLI command.
 - Make the CLI's registered Commander commands the single source of truth for MCP tools, tool descriptions, options, and positional arguments.
 - Do not add MCP-only command behavior, raw argv escape hatches, legacy aliases, or duplicate command definitions. New MCP tools/options must appear only by adding CLI commands/options.
+- Include graph-index resources backed by `@gmloop/semantic`, including graph overview, node, context, and neighbors resources.
 
 ### Key Changes
 
@@ -44,6 +45,7 @@ The current scaffold intentionally contains only the package framework, public n
 ### MCP Tool Behavior
 
 - Generate tool names deterministically as `gmloop_<command-name-with-dashes-converted-to-underscores>`, for example `gmloop_format`, `gmloop_lint`, and `gmloop_refactor`.
+- Graph leaf commands follow the same pattern, such as `gmloop_graph_index`, `gmloop_graph_search`, `gmloop_graph_context`, and `gmloop_graph_usages`.
 - Generate each tool's input schema from Commander metadata:
     - Include `cwd` as an MCP-only execution context field.
     - Include positional arguments by declared Commander argument name and order.
@@ -60,6 +62,17 @@ The current scaffold intentionally contains only the package framework, public n
     - Text content containing a concise command result summary.
     - `isError: true` when the CLI exits nonzero.
 - Serialize CLI invocations inside the MCP server if the chosen runner mutates process-level state such as `cwd`, env, or output streams.
+
+### MCP Resources
+
+- Register read-only graph resources backed by the semantic graph-index query APIs.
+- v1 resource URIs include:
+  - `gm://graph/overview`
+  - `gm://graph/project/overview`
+  - `gm://graph/toolset/overview`
+  - `gm://node/<id>`
+  - `gm://context/<id>?depth=2`
+  - `gm://neighbors/<id>?depth=2`
 
 ### Tests
 

@@ -20,6 +20,7 @@ import process from "node:process";
 import { Core } from "@gmloop/core";
 import { Command } from "commander";
 
+import { type CliCatalogEntry, createCliCommandCatalog } from "./cli-core/command-catalog.js";
 import { createCliCommandManager } from "./cli-core/command-manager.js";
 import { applyStandardCommandOptions } from "./cli-core/command-standard-options.js";
 import { handleCliError } from "./cli-core/errors.js";
@@ -30,6 +31,7 @@ import { __formatTest__, createFormatCommand, runFormatCommand } from "./command
 import { createFeatherMetadataCommand, runGenerateFeatherMetadata } from "./commands/generate-feather-metadata.js";
 import { createGenerateIdentifiersCommand, runGenerateGmlIdentifiers } from "./commands/generate-gml-identifiers.js";
 import { createGenerateQualityReportCommand, runGenerateQualityReport } from "./commands/generate-quality-report.js";
+import { createGraphCommand } from "./commands/graph.js";
 import { createLintCommand, runLintCommand } from "./commands/lint.js";
 import { createLookupGmlIdentifierCommand, runLookupGmlIdentifierCommand } from "./commands/lookup-gml-identifier.js";
 import { createParseCommand, runParseCommand } from "./commands/parse.js";
@@ -203,6 +205,8 @@ export interface RunCliTestCommandOptions {
     cwd?: string | URL;
 }
 
+export type RunCliCommandCaptureOptions = RunCliTestCommandOptions;
+
 type ConsoleMethodSnapshot = {
     debug: typeof console.debug;
     error: typeof console.error;
@@ -302,7 +306,7 @@ function startProcessOutputCapture(): ProcessOutputCapture {
     };
 }
 
-export async function runCliTestCommand({ argv = [], env = {}, cwd }: RunCliTestCommandOptions = {}) {
+export async function runCliCommandCapture({ argv = [], env = {}, cwd }: RunCliCommandCaptureOptions = {}) {
     const envOverrides = {
         ...env,
         [SKIP_CLI_RUN_ENV_VAR]: "1"
@@ -357,8 +361,17 @@ export async function runCliTestCommand({ argv = [], env = {}, cwd }: RunCliTest
     };
 }
 
+export async function runCliTestCommand(options: RunCliTestCommandOptions = {}) {
+    return await runCliCommandCapture(options);
+}
+
+export function getCliCommandCatalog(): ReadonlyArray<CliCatalogEntry> {
+    return Object.freeze(createCliCommandCatalog(program));
+}
+
 export const __test__ = Object.freeze({
     ...__formatTest__,
+    getCliCommandCatalog,
     isNodeTestRunnerProcess,
     normalizeCommandLineArguments,
     shouldAutoRunCliProcess
@@ -372,6 +385,15 @@ cliCommandRegistry.registerDefaultCommand({
     onError: (error) =>
         handleCliError(error, {
             prefix: "Failed to format project.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createGraphCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Graph command failed.",
             exitCode: 1
         })
 });

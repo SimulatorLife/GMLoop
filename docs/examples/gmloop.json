@@ -84,5 +84,14 @@
         }
       }
     }
+  },
+  "graph": {
+    "toolsetRoot": "../shared-gml-toolset",
+    "databasePath": ".gmloop/graph-index.sqlite",
+    "embeddings": {
+      "enabled": true,
+      "provider": "local-mini-lm",
+      "modelCacheDir": ".gmloop/models"
+    }
   }
 }
