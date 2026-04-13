@@ -253,23 +253,7 @@ function findEnumBlocks(text: string): Array<EnumBlockMatch> {
             continue;
         }
 
-        let depth = 0;
-        let blockEnd = -1;
-        for (let index = openBraceIndex; index < text.length; index += 1) {
-            const character = text[index];
-            if (character === "{") {
-                depth += 1;
-                continue;
-            }
-
-            if (character === "}") {
-                depth -= 1;
-                if (depth === 0) {
-                    blockEnd = index + 1;
-                    break;
-                }
-            }
-        }
+        const blockEnd = findMatchingBraceEndIndex(text, openBraceIndex);
 
         if (blockEnd > blockStart) {
             blocks.push({
@@ -298,23 +282,7 @@ function findEnumDeclarations(text: string): Array<EnumDeclarationMatch> {
             continue;
         }
 
-        let depth = 0;
-        let declarationEnd = -1;
-        for (let index = openBraceIndex; index < text.length; index += 1) {
-            const character = text[index];
-            if (character === "{") {
-                depth += 1;
-                continue;
-            }
-
-            if (character === "}") {
-                depth -= 1;
-                if (depth === 0) {
-                    declarationEnd = index + 1;
-                    break;
-                }
-            }
-        }
+        const declarationEnd = findMatchingBraceEndIndex(text, openBraceIndex);
 
         if (declarationEnd > declarationStart) {
             declarations.push({
