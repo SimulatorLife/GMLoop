@@ -19,12 +19,10 @@ then return here for deeper context.
 ## Usage & rollout
 
 - [Quick start](../README.md#quick-start) &mdash; Installation flows for pnpm
-  consumers and nightly testers, including side-by-side snippets for the
-  published package versus the Git workspace install, plus wrapper scripts you
-  can copy into your GameMaker project.
+  contributors and project maintainers, including local-clone workflows plus
+  wrapper scripts you can copy into your GameMaker project.
 - [Configuration reference](../README.md#configuration-reference) &mdash; Baseline
-  Prettier options for `.gml` files, plus the identifier-case defaults surfaced
-  by the formatter workspace.
+  Prettier options for `.gml` files and lint preset wiring examples.
 - [CLI wrapper reference](../README.md#cli-wrapper-environment-knobs) &mdash; Quick
   lookup for environment variables and wrapper behaviour when scripting formatter
   runs in CI or editor tooling.
@@ -38,8 +36,7 @@ then return here for deeper context.
   rebuilding the generated parser artifacts with the vendored toolchain plus
   pointers to the extension hooks that keep custom behaviour outside the
   generated directory.
-- [Lint performance notes](lint-performance.md) — Profiling workflow and
-  regression coverage for expensive lint auto-fix rules.
+- [Contributor onboarding checklist](contributor-onboarding.md#3-validate-the-workspace) — Profiling and validation commands used before opening a pull request.
 
 ## Extension hooks & overrides
 
@@ -59,7 +56,7 @@ implementation details:
 - **Statement newline padding extension** — Register additional AST node
   types that should inherit blank-line padding around statements while keeping
   the opinionated defaults intact for other consumers.
-- **Core option overrides** (`src/format/src/options/core-option-overrides.js`)
+- **Core option overrides** (`src/format/src/options/core-option-overrides.ts`)
   — Swap or remove the hard-coded Prettier clamps (such as
   `trailingComma: "none"`) when a host needs different defaults, all while
   keeping the formatter opinionated by default.
