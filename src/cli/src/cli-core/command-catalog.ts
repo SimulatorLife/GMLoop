@@ -78,12 +78,12 @@ function collectLeafCommands(command: Command, ancestry: ReadonlyArray<string>):
     if (childCommands.length === 0) {
         return [
             Object.freeze({
-                arguments: Object.freeze(command.registeredArguments.map(normalizeArgument)),
+                arguments: Object.freeze(command.registeredArguments.map((argument) => normalizeArgument(argument))),
                 commandName,
                 commandPath: Object.freeze(commandPath),
                 description: command.description() ?? "",
                 displayName: commandPath.join(" "),
-                options: Object.freeze(command.options.map(normalizeOption)),
+                options: Object.freeze(command.options.map((option) => normalizeOption(option))),
                 usage: buildUsage(command, commandPath)
             })
         ];
