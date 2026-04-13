@@ -1,4 +1,12 @@
 export { resolveBuiltinConstants } from "./builtin-constants.js";
+export {
+    computeErrorAnalytics,
+    computeErrorsForPatch,
+    computePatchDiagnostics,
+    computePatchStats,
+    computeRegistryHealthCheck,
+    computeRegistrySnapshot
+} from "./diagnostics.js";
 export type {
     GeneralLogger,
     Logger,
