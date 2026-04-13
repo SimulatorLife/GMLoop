@@ -32,6 +32,13 @@ const RESERVED_LOCAL_RENAME_CATEGORIES = new Set([
 ]);
 
 const RESERVED_LOCAL_IDENTIFIER_TYPES = new Set(["property", "symbol", "variable"]);
+const DEFINITELY_LOCAL_NAMING_CATEGORIES = new Set<NamingCategory>([
+    "localVariable",
+    "argument",
+    "catchArgument",
+    "loopIndexVariable",
+    "staticVariable"
+]);
 
 let cachedReservedLocalIdentifierNames: ReadonlySet<string> | null = null;
 
@@ -108,6 +115,62 @@ function createEmptyScopeDataCollectionResult(): ScopeDataCollectionResult {
     return {
         localScopeNames: new Map<string, Map<string, number>>(),
         duplicateScopedDeclarations: new Map<string, Set<string>>()
+    };
+}
+
+function requestedCategoriesMayContainLocalTargets(requestedCategories: ReadonlyArray<NamingCategory>): boolean {
+    for (const category of requestedCategories) {
+        if (DEFINITELY_LOCAL_NAMING_CATEGORIES.has(category)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function collectSelectedTargets(parameters: {
+    queriedTargets: ReadonlyArray<NamingConventionTarget>;
+    queryPaths: ReadonlyArray<string>;
+    isSelectedTargetPath: (targetPath: string) => boolean;
+    trackLocalTargets: boolean;
+}): {
+    selectedTargets: ReadonlyArray<NamingConventionTarget>;
+    hasLocalNamingTargets: boolean;
+} {
+    const { queriedTargets, queryPaths, isSelectedTargetPath, trackLocalTargets } = parameters;
+    if (queryPaths.length > 0) {
+        if (!trackLocalTargets) {
+            return {
+                selectedTargets: queriedTargets,
+                hasLocalNamingTargets: false
+            };
+        }
+
+        return {
+            selectedTargets: queriedTargets,
+            hasLocalNamingTargets: queriedTargets.some((target) => target.symbolId === null)
+        };
+    }
+
+    const selectedTargets: Array<NamingConventionTarget> = [];
+    let hasLocalNamingTargets = false;
+
+    for (const target of queriedTargets) {
+        if (!isSelectedTargetPath(target.path)) {
+            continue;
+        }
+
+        selectedTargets.push(target);
+        if (!trackLocalTargets || hasLocalNamingTargets || target.symbolId !== null) {
+            continue;
+        }
+
+        hasLocalNamingTargets = true;
+    }
+
+    return {
+        selectedTargets,
+        hasLocalNamingTargets
     };
 }
 
@@ -718,12 +781,12 @@ export async function planNamingConventionCodemod(
     });
     warnings.push(...queriedTargetsResult.warnings);
     const queriedTargets = queriedTargetsResult.targets;
-    // When query paths are provided, semantic target discovery is already scoped
-    // to those files/directories. Re-checking every target through the path
-    // matcher repeats path-resolution work on the hot path for large projects.
-    const selectedTargets =
-        queryPaths.length === 0 ? queriedTargets.filter((target) => isSelectedTargetPath(target.path)) : queriedTargets;
-    const hasLocalNamingTargets = selectedTargets.some((target) => target.symbolId === null);
+    const { selectedTargets, hasLocalNamingTargets } = collectSelectedTargets({
+        queriedTargets,
+        queryPaths,
+        isSelectedTargetPath,
+        trackLocalTargets: requestedCategoriesMayContainLocalTargets(requestedCategories)
+    });
     const macroDependencyNamesByFile =
         hasLocalNamingTargets && typeof semantic.listMacroExpansionDependencies === "function"
             ? collectMacroDependencyNamesByFile(await semantic.listMacroExpansionDependencies(selectedFilePaths))
