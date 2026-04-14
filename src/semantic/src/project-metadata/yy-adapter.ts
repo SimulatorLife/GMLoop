@@ -103,35 +103,25 @@ export class ProjectMetadataSchemaValidationError extends Error {
 /**
  * Type guard for {@link ProjectMetadataParseError}.
  *
- * The name string is the primary contract: any object whose `.name` equals the
+ * The name string is the sole contract: any object whose `.name` equals the
  * well-known constant passes this guard regardless of its prototype chain. This
  * makes the check resilient to cross-realm errors (e.g. errors thrown across
- * worker/sandbox boundaries) without relying on `instanceof` as the sole
- * discriminant. The `instanceof` fallback retains compatibility with direct
- * class instances when the name property has not been explicitly set.
+ * worker/sandbox boundaries) without relying on `instanceof`.
  */
 export function isProjectMetadataParseError(value: unknown): value is ProjectMetadataParseError {
-    return (
-        Core.getNonEmptyString((value as { name?: string })?.name) === PROJECT_METADATA_PARSE_ERROR ||
-        value instanceof ProjectMetadataParseError
-    );
+    return Core.getNonEmptyString((value as { name?: string })?.name) === PROJECT_METADATA_PARSE_ERROR;
 }
 
 /**
  * Type guard for {@link ProjectMetadataSchemaValidationError}.
  *
- * The name string is the primary contract: any object whose `.name` equals the
+ * The name string is the sole contract: any object whose `.name` equals the
  * well-known constant passes this guard regardless of its prototype chain. This
  * makes the check resilient to cross-realm errors (e.g. errors thrown across
- * worker/sandbox boundaries) without relying on `instanceof` as the sole
- * discriminant. The `instanceof` fallback retains compatibility with direct
- * class instances when the name property has not been explicitly set.
+ * worker/sandbox boundaries) without relying on `instanceof`.
  */
 export function isProjectMetadataSchemaValidationError(value: unknown): value is ProjectMetadataSchemaValidationError {
-    return (
-        Core.getNonEmptyString((value as { name?: string })?.name) === PROJECT_METADATA_SCHEMA_VALIDATION_ERROR ||
-        value instanceof ProjectMetadataSchemaValidationError
-    );
+    return Core.getNonEmptyString((value as { name?: string })?.name) === PROJECT_METADATA_SCHEMA_VALIDATION_ERROR;
 }
 
 function assertProjectMetadataDocumentIsPlainObject(parsed: unknown, sourcePath: string) {

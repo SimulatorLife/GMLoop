@@ -190,13 +190,30 @@ export const { registry: cliCommandRegistry, runner: cliCommandRunner } = create
 
 export { normalizeCommandLineArguments };
 
+/** Well-known name used as the contract discriminant for {@link CliTestExit}. */
+const CLI_TEST_EXIT_NAME = "CliTestExit";
+
 class CliTestExit extends Error {
     public readonly exitCode: number;
 
     constructor(exitCode: number) {
         super(`Cli test exit (${exitCode})`);
+        this.name = CLI_TEST_EXIT_NAME;
         this.exitCode = exitCode;
     }
+}
+
+/**
+ * Determine whether a caught value is a {@link CliTestExit} sentinel using the
+ * well-known name string as the contract discriminant rather than `instanceof`.
+ */
+function isCliTestExit(value: unknown): value is CliTestExit {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as { name?: unknown; exitCode?: unknown };
+    return candidate.name === CLI_TEST_EXIT_NAME && typeof candidate.exitCode === "number";
 }
 
 export interface RunCliTestCommandOptions {
@@ -336,7 +353,7 @@ export async function runCliCommandCapture({ argv = [], env = {}, cwd }: RunCliC
         await cliCommandRunner.run(normalizedArgs);
         exitCode = typeof process.exitCode === "number" && !Number.isNaN(process.exitCode) ? process.exitCode : 0;
     } catch (error) {
-        if (error instanceof CliTestExit) {
+        if (isCliTestExit(error)) {
             exitCode = error.exitCode;
         } else {
             throw error;

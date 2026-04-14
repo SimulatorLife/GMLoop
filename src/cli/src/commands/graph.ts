@@ -331,7 +331,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     payloadStr = JSON.stringify(payload);
                 } catch (error: unknown) {
                     res.writeHead(500, { "Content-Type": "text/plain" });
-                    res.end(`Error exporting data: ${error instanceof Error ? error.message : "Unknown error"}`);
+                    res.end(`Error exporting data: ${Core.getErrorMessageOrFallback(error)}`);
                     return;
                 } finally {
                     db.close();
@@ -349,7 +349,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     })
                     .catch((error: unknown) => {
                         res.writeHead(500, { "Content-Type": "application/json" });
-                        res.end(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
+                        res.end(JSON.stringify({ error: Core.getErrorMessageOrFallback(error) }));
                     });
             } else {
                 res.writeHead(404);

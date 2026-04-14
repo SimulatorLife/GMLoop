@@ -447,3 +447,30 @@ void test("stringifyProjectMetadataDocument preserves fixed-point metadata after
     assert.doesNotMatch(output, /"Length":\{\}/u);
     assert.doesNotMatch(output, /"volume":\{\}/u);
 });
+
+void test("isProjectMetadataParseError accepts cross-realm error-like objects with matching name", () => {
+    const crossRealmError = { name: "ProjectMetadataParseError", message: "simulated cross-realm parse failure" };
+    assert.ok(isProjectMetadataParseError(crossRealmError));
+});
+
+void test("isProjectMetadataSchemaValidationError accepts cross-realm error-like objects with matching name", () => {
+    const crossRealmError = {
+        name: "ProjectMetadataSchemaValidationError",
+        message: "simulated cross-realm schema validation failure"
+    };
+    assert.ok(isProjectMetadataSchemaValidationError(crossRealmError));
+});
+
+void test("isProjectMetadataParseError rejects unrelated error objects", () => {
+    const unrelatedError = new Error("unrelated error");
+    assert.equal(isProjectMetadataParseError(unrelatedError), false);
+    assert.equal(isProjectMetadataParseError(null), false);
+    assert.equal(isProjectMetadataParseError({ name: "" }), false);
+});
+
+void test("isProjectMetadataSchemaValidationError rejects unrelated error objects", () => {
+    const unrelatedError = new Error("unrelated error");
+    assert.equal(isProjectMetadataSchemaValidationError(unrelatedError), false);
+    assert.equal(isProjectMetadataSchemaValidationError(null), false);
+    assert.equal(isProjectMetadataSchemaValidationError({ name: "" }), false);
+});
