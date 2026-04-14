@@ -1,0 +1,61 @@
+name: qwen-local-code-tasks
+
+on:
+  workflow_dispatch:
+
+jobs:
+  qwen_local:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama
+        run: |
+          ollama serve > ollama.log 2>&1 &
+          sleep 5
+
+      - name: Pull small coder model
+        run: |
+          ollama pull qwen2.5-coder:0.5b
+          curl http://127.0.0.1:11434/v1/models
+
+      - name: Run Qwen against local model
+        run: |
+          pnpm dlx @qwen-code/qwen-code \
+            --yolo \
+            --openai-api-key "ollama" \
+            --openai-base-url "http://127.0.0.1:11434/v1" \
+            --model "qwen2.5-coder:0.5b" \
+            --prompt "Fix obvious lint issues and add missing function docs in changed TypeScript files only (src/**/*.ts). Do NOT modify .gml files, src/parser/generated/ files, or use eslint-disable/ts-ignore comments. Do not change runtime behavior." \
+            --debug
+
+      - name: Run local formatting and linting (to clean up LLM output)
+        run: |
+          pnpm run format || true
+          pnpm run lint:fix || true
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          cat ollama.log || true
+          ls -R /home/runner/.qwen || true
+          latest_log="$(ls -t /home/runner/.qwen/debug/*.txt 2>/dev/null | head -n 1)"
+          test -n "$latest_log" && cat "$latest_log" || true

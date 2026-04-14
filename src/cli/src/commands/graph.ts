@@ -1,5 +1,6 @@
 import child_process from "node:child_process";
 import { access, constants, writeFile } from "node:fs/promises";
+import * as http from "node:http";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -24,6 +25,7 @@ type GraphCommandSharedOptions = {
     verbose?: boolean;
     open?: boolean;
     output?: string;
+    serve?: boolean;
 };
 
 type GraphResolutionContext = Readonly<{
@@ -319,6 +321,63 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         toolsetRoot: options.toolsetRoot
     });
 
+    if (options.serve === true) {
+        const server = http.createServer((req, res) => {
+            if (req.method === "GET" && (req.url === "/" || req.url === "")) {
+                const db = Semantic.openExistingGraphIndexDatabase(config.databasePath);
+                let payloadStr: string;
+                try {
+                    const payload = Semantic.exportGraphVisualizationData(db, config.projectRoot);
+                    payloadStr = JSON.stringify(payload);
+                } catch (error: unknown) {
+                    res.writeHead(500, { "Content-Type": "text/plain" });
+                    res.end(`Error exporting data: ${error instanceof Error ? error.message : "Unknown error"}`);
+                    return;
+                } finally {
+                    db.close();
+                }
+
+                const htmlContent = renderGraphVisualizationHtml(payloadStr, config.projectRoot, true);
+                res.writeHead(200, { "Content-Type": "text/html" });
+                res.end(htmlContent);
+            } else if (req.method === "POST" && req.url === "/api/reindex") {
+                ensureGraphIndex({ ...options, rebuild: true }, context)
+                    .then(() => {
+                        res.writeHead(200, { "Content-Type": "application/json" });
+                        res.end(JSON.stringify({ ok: true }));
+                        return null;
+                    })
+                    .catch((error: unknown) => {
+                        res.writeHead(500, { "Content-Type": "application/json" });
+                        res.end(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
+                    });
+            } else {
+                res.writeHead(404);
+                res.end("Not found");
+            }
+        });
+
+        await new Promise<void>((resolve, reject) => {
+            server.listen(0, "127.0.0.1", () => {
+                const address = server.address();
+                if (address && typeof address === "object") {
+                    const url = `http://127.0.0.1:${String(address.port)}`;
+                    printGraphOutput(
+                        createGraphEnvelope("graph visualize", context, options, { url }),
+                        options.json === true,
+                        `Serving graph visualization at ${url}`
+                    );
+                    if (options.open) {
+                        openHtmlInDefaultBrowser(url);
+                    }
+                }
+            });
+            server.on("error", reject);
+        });
+
+        return;
+    }
+
     const dbPath = config.databasePath;
     const db = Semantic.openExistingGraphIndexDatabase(dbPath);
     let payloadStr: string;
@@ -486,9 +545,10 @@ export function createGraphCommand(): Command {
         { includeRebuild: true }
     );
     visualizeCommand
-        .addOption(new Option("--output <path>", "Output HTML file path").default(undefined))
+        .addOption(new Option("--output <path>", "Output HTML file path").default())
         .addOption(new Option("--open", "Open the generated file in your default browser").default(true))
         .addOption(new Option("--no-open", "Do not open the generated file").default(false))
+        .addOption(new Option("--serve", "Serve dynamically rather than writing an output file").default(false))
         .action(async function graphVisualizeCommandAction() {
             await runGraphCommandAction(async () => {
                 await runGraphVisualizeAction(this.opts<GraphCommandSharedOptions>());

@@ -153,7 +153,7 @@ function renderNodeFillCssRules(): string {
     return NODE_VISUAL_STYLES.map((style) => renderNodeFillCssRule(style)).join("\n    ");
 }
 
-export function renderGraphVisualizationHtml(dataJson: string, title: string): string {
+export function renderGraphVisualizationHtml(dataJson: string, title: string, isServerMode: boolean = false): string {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -213,6 +213,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     <button id="toggle-view">JSON</button>
     <button id="toggle-labels">Labels: Auto</button>
     <button id="reset-default">Reset</button>
+    ${isServerMode ? `<button id="regenerate" style="background: #007acc; border-color: #007acc; font-weight: bold; color: white;">Regenerate</button>` : ""}
   </header>
   <main>
     <svg id="graph">
@@ -232,6 +233,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
   </main>
   <script>
     const DATA = ${dataJson};
+    const IS_SERVER_MODE = ${isServerMode ? "true" : "false"};
     
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -416,7 +418,13 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         
         if (category === 'node' || category === 'node-group') {
              const color = nodeVisualStyleByKind.get(typeVal)?.color ?? nodeVisualStyleByKind.get("default").color;
-             wrap.append("span").html(\`<span style="color:\${color}">■</span> \${labelText}\`);
+             let shapeHtml = \`<span style="color:\${color}">&#9679;</span>\`; // circle
+             if (typeVal.endsWith("_variable")) {
+                 shapeHtml = \`<span style="color:\${color}">&#9830;</span>\`; // diamond
+             } else if (resourceKinds.has(typeVal) || typeVal === "resource-group") {
+                 shapeHtml = \`<span style="color:\${color}">&#9632;</span>\`; // square
+             }
+             wrap.append("span").html(\`\${shapeHtml} \${labelText}\`);
         } else {
              const visualStyle = edgeLineVisualStyleByType.get(typeVal);
              const strokeStyle = visualStyle
@@ -589,10 +597,19 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
                 .on("drag", dragged)
                 .on("end", dragended));
                 
-        // Add circles
-        nodeEnter.append("circle")
+        // Add shapes
+        nodeEnter.append("path")
             .attr("class", d => \`node node-\${d.kind} \${d.graphId === 'toolset' ? 'toolset' : ''}\`)
-            .attr("r", getRadius)
+            .attr("d", d => {
+                const area = Math.pow(getRadius(d), 2) * Math.PI;
+                let symbolType = d3.symbolCircle;
+                if (d.kind.endsWith("_variable")) {
+                    symbolType = d3.symbolDiamond;
+                } else if (resourceKinds.has(d.kind)) {
+                    symbolType = d3.symbolSquare;
+                }
+                return d3.symbol().type(symbolType).size(area)();
+            })
             .classed("node", true)
             .classed("toolset", d => d.graphId === 'toolset')
             .on("mouseover", showTooltip)
@@ -609,7 +626,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
             
         nodeGroup = nodeEnter.merge(nodeGroup);
         
-        node = nodeGroup.select("circle");
+        node = nodeGroup.select("path.node");
         nodeLabels = nodeGroup.select("text");
         
         // Re-assign classes based on kind
@@ -836,6 +853,25 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
 
     // Initial render
     updateGraph();
+
+    if (IS_SERVER_MODE) {
+        d3.select("#regenerate").on("click", async () => {
+            const btn = d3.select("#regenerate");
+            btn.text("Regenerating...").attr("disabled", "true");
+            try {
+                const res = await fetch("/api/reindex", { method: "POST" });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    console.error("Reindex failed", await res.text());
+                    btn.text("Failed").attr("disabled", null);
+                }
+            } catch (err) {
+                console.error(err);
+                btn.text("Error").attr("disabled", null);
+            }
+        });
+    }
   </script>
 </body>
 </html>`;
