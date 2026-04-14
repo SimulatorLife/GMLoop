@@ -4,7 +4,6 @@
 model = "gpt-5.4"
 model_verbosity = "low"
 approval_policy = "never"
-model_reasoning_effort = "medium"
 model_supports_reasoning_summaries = true # Force reasoning
 personality = "pragmatic"
 sandbox_mode = "workspace-write"

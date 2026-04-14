@@ -260,3 +260,120 @@ void test("doctorGraphIndex reports a missing database before the graph is built
         await fixture.cleanup();
     }
 });
+
+void test("buildGraphIndex projects structs, variables, functions, and concrete resource types", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-node-kinds-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/graph_nodes/graph_nodes.yy",
+            JSON.stringify({ name: "graph_nodes", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/graph_nodes/graph_nodes.gml",
+            [
+                "function Player() constructor {",
+                "    var struct_health = 100;",
+                "    function heal(amount) {",
+                "        var healed = amount;",
+                "        struct_health += healed;",
+                "    }",
+                "}",
+                "function helper() {",
+                "    var local_value = 1;",
+                "    return local_value;",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_player/obj_player.yy",
+            JSON.stringify({
+                name: "obj_player",
+                resourceType: "GMObject",
+                eventList: [
+                    {
+                        eventType: 0,
+                        eventNum: 0,
+                        name: "Create_0",
+                        eventId: {
+                            path: "objects/obj_player/obj_player_Create_0.gml"
+                        }
+                    }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_player/obj_player_Create_0.gml",
+            ["speed_bonus = 1;", "speed_bonus += 1;", ""].join("\n")
+        );
+
+        const resourceFixtures = [
+            ["sounds/snd_hit/snd_hit.yy", "snd_hit", "GMSound"],
+            ["paths/pth_patrol/pth_patrol.yy", "pth_patrol", "GMPath"],
+            ["sequences/seq_intro/seq_intro.yy", "seq_intro", "GMSequence"],
+            ["notes/note_design/note_design.yy", "note_design", "GMNotes"],
+            ["particles/ps_sparks/ps_sparks.yy", "ps_sparks", "GMParticleSystem"],
+            ["datafiles/config/config.yy", "config", "GMIncludedFile"]
+        ] as const;
+
+        for (const [resourcePath, name, resourceType] of resourceFixtures) {
+            await fixture.writeProjectFile(resourcePath, JSON.stringify({ name, resourceType }));
+        }
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const nodeRows = database.prepare("SELECT kind, name FROM nodes").all() as Array<{
+                kind: string;
+                name: string;
+            }>;
+            const nodeKinds = new Set(nodeRows.map((row) => row.kind));
+            const nodeNamesByKind = new Map<string, Set<string>>();
+            for (const row of nodeRows) {
+                const names = nodeNamesByKind.get(row.kind) ?? new Set<string>();
+                names.add(row.name);
+                nodeNamesByKind.set(row.kind, names);
+            }
+
+            for (const expectedKind of [
+                "data_file",
+                "function",
+                "instance_variable",
+                "local_variable",
+                "note",
+                "particle_system",
+                "path",
+                "script",
+                "sequence",
+                "sound",
+                "struct",
+                "struct_variable"
+            ]) {
+                assert.ok(nodeKinds.has(expectedKind), `expected graph node kind ${expectedKind}`);
+            }
+
+            assert.ok(nodeNamesByKind.get("struct")?.has("Player"));
+            assert.ok(nodeNamesByKind.get("function")?.has("helper"));
+            assert.ok(nodeNamesByKind.get("local_variable")?.has("local_value"));
+            assert.ok(nodeNamesByKind.get("struct_variable")?.has("struct_health"));
+            assert.ok(nodeNamesByKind.get("instance_variable")?.has("speed_bonus"));
+            assert.equal(nodeKinds.has("resource"), false);
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});

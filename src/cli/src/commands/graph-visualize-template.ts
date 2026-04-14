@@ -1,3 +1,111 @@
+type EdgeLineVisualStyle = Readonly<{
+    color: string;
+    dashArray: string;
+    legendBorderStyle: "dashed" | "dotted" | "solid";
+    legendBorderWidth: string;
+    strokeLineCap: "butt" | "round";
+    strokeWidth: string;
+    type: string;
+}>;
+
+const EDGE_LINE_VISUAL_STYLES: ReadonlyArray<EdgeLineVisualStyle> = Object.freeze([
+    {
+        color: "#1f77b4",
+        dashArray: "none",
+        legendBorderStyle: "solid",
+        legendBorderWidth: "2px",
+        strokeLineCap: "butt",
+        strokeWidth: "1.5px",
+        type: "calls"
+    },
+    {
+        color: "#999",
+        dashArray: "4,4",
+        legendBorderStyle: "dashed",
+        legendBorderWidth: "1px",
+        strokeLineCap: "butt",
+        strokeWidth: "1px",
+        type: "references"
+    },
+    {
+        color: "#2ca02c",
+        dashArray: "1,4",
+        legendBorderStyle: "dotted",
+        legendBorderWidth: "2px",
+        strokeLineCap: "round",
+        strokeWidth: "1.5px",
+        type: "contains"
+    },
+    {
+        color: "#f2c94c",
+        dashArray: "none",
+        legendBorderStyle: "solid",
+        legendBorderWidth: "2px",
+        strokeLineCap: "butt",
+        strokeWidth: "2px",
+        type: "defines"
+    },
+    {
+        color: "#d62728",
+        dashArray: "none",
+        legendBorderStyle: "solid",
+        legendBorderWidth: "2px",
+        strokeLineCap: "butt",
+        strokeWidth: "2px",
+        type: "inherits"
+    },
+    {
+        color: "#ff7f0e",
+        dashArray: "4,4",
+        legendBorderStyle: "dashed",
+        legendBorderWidth: "1px",
+        strokeLineCap: "butt",
+        strokeWidth: "1px",
+        type: "uses_toolset"
+    },
+    {
+        color: "#7f7f7f",
+        dashArray: "none",
+        legendBorderStyle: "solid",
+        legendBorderWidth: "2px",
+        strokeLineCap: "butt",
+        strokeWidth: "1.5px",
+        type: "depends_on"
+    },
+    {
+        color: "#9467bd",
+        dashArray: "2,2",
+        legendBorderStyle: "dashed",
+        legendBorderWidth: "1px",
+        strokeLineCap: "butt",
+        strokeWidth: "1px",
+        type: "placed_in_room"
+    }
+]);
+
+function renderEdgeLineCssRule(style: EdgeLineVisualStyle): string {
+    const declarations = [`stroke: ${style.color};`, `stroke-width: ${style.strokeWidth};`];
+
+    if (style.dashArray !== "none") {
+        declarations.push(`stroke-dasharray: ${style.dashArray};`);
+    }
+
+    if (style.strokeLineCap !== "butt") {
+        declarations.push(`stroke-linecap: ${style.strokeLineCap};`);
+    }
+
+    return `.link-${style.type} { ${declarations.join(" ")} }`;
+}
+
+function renderEdgeLineCssRules(): string {
+    return EDGE_LINE_VISUAL_STYLES.map((style) => renderEdgeLineCssRule(style)).join("\n    ");
+}
+
+function getEdgeLineColor(type: string): string {
+    const visualStyle = EDGE_LINE_VISUAL_STYLES.find((style) => style.type === type);
+    return visualStyle?.color ?? "#7f7f7f";
+}
+
 export function renderGraphVisualizationHtml(dataJson: string, title: string): string {
     return `<!DOCTYPE html>
 <html lang="en">
@@ -25,30 +133,38 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     .link.dimmed { stroke-opacity: 0.05 !important; }
     
     /* Edge colors */
-    .link-calls { stroke: #1f77b4; stroke-width: 1.5px; }
-    .link-references { stroke: #999; stroke-width: 1px; stroke-dasharray: 4,4; }
-    .link-contains { stroke: #2ca02c; stroke-width: 1px; stroke-dasharray: 2,2; }
-    .link-defines { stroke: #17a2b8; stroke-width: 1px; stroke-dasharray: 6,2; }
-    .link-inherits { stroke: #d62728; stroke-width: 2px; }
-    .link-uses_toolset { stroke: #ff7f0e; stroke-width: 1px; stroke-dasharray: 4,4; }
-    .link-depends_on { stroke: #7f7f7f; stroke-width: 1.5px; }
-    .link-placed_in_room { stroke: #9467bd; stroke-width: 1px; stroke-dasharray: 2,2; }
+    ${renderEdgeLineCssRules()}
     
     /* Node colors */
     .node-project { fill: #ffffff; }
+    .node-anim_curve { fill: #b65f2a; }
+    .node-data_file { fill: #a1a1a1; }
+    .node-extension { fill: #6f8f45; }
+    .node-font { fill: #d3a43b; }
+    .node-function { fill: #4f8edc; }
     .node-script { fill: #1f77b4; }
+    .node-script_resource { fill: #5c9bd8; }
     .node-object { fill: #2ca02c; }
     .node-enum { fill: #9467bd; }
     .node-enum_member { fill: #7b61b3; }
     .node-macro { fill: #ff7f0e; }
+    .node-note { fill: #c7b26b; }
     .node-struct { fill: #e377c2; }
+    .node-struct_variable { fill: #c05a94; }
     .node-constructor { fill: #c63fa0; }
     .node-global_variable { fill: #17becf; }
     .node-instance_variable { fill: #00a2af; }
-    .node-resource { fill: #8c564b; }
-    .node-sprite { fill: #8c564b; }
+    .node-local_variable { fill: #5bb7c4; }
+    .node-particle_system { fill: #ef8a62; }
+    .node-path { fill: #88a764; }
+    .node-resource { fill: #7f7f7f; }
+    .node-sprite { fill: #d95f02; }
     .node-shader { fill: #6b3f26; }
+    .node-sequence { fill: #8da0cb; }
+    .node-sound { fill: #4db6ac; }
     .node-room { fill: #a9744f; }
+    .node-tileset { fill: #66a61e; }
+    .node-timeline { fill: #e6ab02; }
     .node-object_event { fill: #bcbd22; }
     .node-default { fill: #7f7f7f; }
     
@@ -83,9 +199,9 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     <svg id="graph">
       <defs>
         <!-- Arrow markers -->
-        <marker id="arrow-calls" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="#1f77b4"></path></marker>
-        <marker id="arrow-inherits" viewBox="0 -5 10 10" refX="20" refY="0" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,-5L10,0L0,5" fill="#d62728"></path></marker>
-        <marker id="arrow-depends_on" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="#7f7f7f"></path></marker>
+        <marker id="arrow-calls" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="${getEdgeLineColor("calls")}"></path></marker>
+        <marker id="arrow-inherits" viewBox="0 -5 10 10" refX="20" refY="0" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,-5L10,0L0,5" fill="${getEdgeLineColor("inherits")}"></path></marker>
+        <marker id="arrow-depends_on" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="${getEdgeLineColor("depends_on")}"></path></marker>
       </defs>
       <g id="container"></g>
     </svg>
@@ -107,6 +223,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     const tooltip = d3.select("#tooltip");
     let labelMode = "auto";
     let activeView = "visual";
+    const edgeLineVisualStyles = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};
+    const edgeLineVisualStyleByType = new Map(edgeLineVisualStyles.map((style) => [style.type, style]));
     
     // Setup Zoom
     const zoom = d3.zoom()
@@ -180,6 +298,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
        edgeTypes.forEach((edgeTypeValue) => {
             d3.select(\`#filter-edge-\${edgeTypeValue}\`).property("checked", true);
        });
+       syncGroupCheckboxState(resourceCheckbox, resourceTypesPresent);
+       syncGroupCheckboxState(enumCheckbox, enumTypesPresent);
        
        updateGraph();
     });
@@ -193,11 +313,36 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     const edgeTypes = Array.from(new Set(DATA.edges.map(e => e.type)));
     let activeFilters = new Set(edgeTypes);
     
-    const allNodes = DATA.nodes.filter((nodeValue) => nodeValue.kind !== "file" && nodeValue.kind !== "resource");
+    const allNodes = DATA.nodes.filter((nodeValue) => nodeValue.kind !== "file");
     const allNodeKinds = Array.from(new Set(allNodes.map((nodeValue) => nodeValue.kind)));
-    const resourceKinds = new Set(["script", "object", "room", "sprite", "shader"]);
-    const variableKinds = new Set(["global_variable", "instance_variable"]);
-    const defaultDisabledNodeKinds = new Set(["instance_variable", "global_variable", "script", "function", "data_file"]);
+
+    const resourceKinds = new Set([
+        "anim_curve",
+        "data_file",
+        "extension",
+        "font",
+        "note",
+        "object",
+        "particle_system",
+        "path",
+        "room",
+        "script_resource",
+        "sequence",
+        "shader",
+        "sound",
+        "sprite",
+        "tileset",
+        "timeline"
+    ]);
+    const variableKinds = new Set(["global_variable", "instance_variable", "local_variable", "struct_variable"]);
+    const defaultDisabledNodeKinds = new Set([
+        "data_file",
+        "function",
+        "global_variable",
+        "instance_variable",
+        "local_variable",
+        "struct_variable"
+    ]);
     const defaultEnabledNodeKinds = allNodeKinds.filter((kindValue) => !defaultDisabledNodeKinds.has(kindValue));
     const resourceTypesPresent = allNodeKinds.filter((kindValue) => resourceKinds.has(kindValue));
     const enumTypesPresent = allNodeKinds.filter((kindValue) => kindValue === "enum" || kindValue === "enum_member");
@@ -206,12 +351,42 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     );
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
 
+    function isNodeGroupCheckedByDefault(typeVal) {
+        if (typeVal === "resource-group") {
+            return resourceTypesPresent.length > 0 && resourceTypesPresent.every((kindValue) => defaultEnabledNodeKinds.includes(kindValue));
+        }
+        if (typeVal === "enum-group") {
+            return enumTypesPresent.length > 0 && enumTypesPresent.every((kindValue) => defaultEnabledNodeKinds.includes(kindValue));
+        }
+        return defaultEnabledNodeKinds.includes(typeVal);
+    }
+
+    function createInitialFilterCheckedState(category, typeVal) {
+        if (category === "edge") {
+            return true;
+        }
+        if (category === "node-group") {
+            return isNodeGroupCheckedByDefault(typeVal);
+        }
+        return defaultEnabledNodeKinds.includes(typeVal);
+    }
+
+    function syncGroupCheckboxState(checkbox, childKinds) {
+        if (!checkbox || childKinds.length === 0) {
+            return;
+        }
+
+        const enabledChildCount = childKinds.filter((kindValue) => activeNodeFilters.has(kindValue)).length;
+        checkbox.property("checked", enabledChildCount === childKinds.length);
+        checkbox.property("indeterminate", enabledChildCount > 0 && enabledChildCount < childKinds.length);
+    }
+
     function createFilterCheckbox(container, id, labelText, category, typeVal, changeHandler, customClass="") {
         const wrap = container.append("label").attr("class", \`filter-item \${customClass}\`);
         const checkbox = wrap.append("input")
             .attr("type", "checkbox")
             .attr("id", id)
-            .attr("checked", defaultEnabledNodeKinds.includes(typeVal))
+            .attr("checked", createInitialFilterCheckedState(category, typeVal))
             .on("change", function() {
                 changeHandler(this.checked, typeVal);
                 updateGraph();
@@ -220,26 +395,35 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         if (category === 'node' || category === 'node-group') {
              let color = "#7f7f7f"; // default
              if (typeVal === 'script') color = "#1f77b4";
+             else if (typeVal === 'script_resource') color = "#5c9bd8";
              else if (typeVal === 'object') color = "#2ca02c";
              else if (typeVal === 'enum') color = "#9467bd";
              else if (typeVal === 'macro') color = "#ff7f0e";
              else if (typeVal === 'struct') color = "#e377c2";
+             else if (typeVal === 'struct_variable') color = "#c05a94";
              else if (typeVal === 'constructor') color = "#c63fa0";
              else if (typeVal === 'enum_member') color = "#7b61b3";
-             else if (variableKinds.has(typeVal)) color = typeVal === "global_variable" ? "#17becf" : "#00a2af";
+             else if (typeVal === 'function') color = "#4f8edc";
+             else if (variableKinds.has(typeVal)) color = typeVal === "global_variable" ? "#17becf" : typeVal === "local_variable" ? "#5bb7c4" : "#00a2af";
              else if (typeVal === 'object_event') color = "#bcbd22";
+             else if (typeVal === 'sprite') color = "#d95f02";
+             else if (typeVal === 'sound') color = "#4db6ac";
+             else if (typeVal === 'path') color = "#88a764";
+             else if (typeVal === 'sequence') color = "#8da0cb";
+             else if (typeVal === 'note') color = "#c7b26b";
+             else if (typeVal === 'particle_system') color = "#ef8a62";
+             else if (typeVal === 'font') color = "#d3a43b";
+             else if (typeVal === 'tileset') color = "#66a61e";
+             else if (typeVal === 'timeline') color = "#e6ab02";
+             else if (typeVal === 'anim_curve') color = "#b65f2a";
+             else if (typeVal === 'extension') color = "#6f8f45";
              else if (resourceKinds.has(typeVal)) color = "#8c564b";
              wrap.append("span").html(\`<span style="color:\${color}">■</span> \${labelText}\`);
         } else {
-             let strokeStyle = "border-bottom: 2px solid #555;";
-             if (typeVal === 'calls') strokeStyle = "border-bottom: 2px solid #1f77b4;";
-             else if (typeVal === 'references') strokeStyle = "border-bottom: 1px dashed #999;";
-             else if (typeVal === 'contains') strokeStyle = "border-bottom: 1px dashed #2ca02c;";
-             else if (typeVal === 'defines') strokeStyle = "border-bottom: 1px dashed #17a2b8;";
-             else if (typeVal === 'inherits') strokeStyle = "border-bottom: 2px solid #d62728;";
-             else if (typeVal === 'uses_toolset') strokeStyle = "border-bottom: 1px dashed #ff7f0e;";
-             else if (typeVal === 'depends_on') strokeStyle = "border-bottom: 2px solid #7f7f7f;";
-             else if (typeVal === 'placed_in_room') strokeStyle = "border-bottom: 1px dashed #9467bd;";
+             const visualStyle = edgeLineVisualStyleByType.get(typeVal);
+             const strokeStyle = visualStyle
+                ? \`border-bottom: \${visualStyle.legendBorderWidth} \${visualStyle.legendBorderStyle} \${visualStyle.color};\`
+                : "border-bottom: 2px solid #555;";
              wrap.append("span").html(\`<span style="display:inline-block; width:12px; margin-right:4px; \${strokeStyle}"></span>\${labelText}\`);
         }
         return checkbox;
@@ -272,6 +456,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
                 resourceCheckbox.property("indeterminate", !allResChecked && resourceTypesPresent.some(k => activeNodeFilters.has(k)));
             }, "sub-filter");
         });
+        syncGroupCheckboxState(resourceCheckbox, resourceTypesPresent);
     }
 
     let enumCheckbox;
@@ -291,6 +476,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
                 enumCheckbox.property("indeterminate", !allEnumChecked && enumTypesPresent.some(k => activeNodeFilters.has(k)));
             }, "sub-filter");
         });
+        syncGroupCheckboxState(enumCheckbox, enumTypesPresent);
     }
     
     otherTypesPresent.forEach(t => {
@@ -448,19 +634,34 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
             if (
                 [
                     "project",
+                    "anim_curve",
+                    "data_file",
                     "script",
+                    "script_resource",
                     "object",
                     "enum",
                     "enum_member",
+                    "extension",
+                    "font",
+                    "function",
                     "macro",
+                    "note",
                     "sprite",
                     "shader",
                     "room",
+                    "sequence",
+                    "sound",
                     "struct",
+                    "struct_variable",
                     "constructor",
                     "instance_variable",
+                    "local_variable",
                     "global_variable",
-                    "object_event"
+                    "object_event",
+                    "particle_system",
+                    "path",
+                    "tileset",
+                    "timeline"
                 ].includes(d.kind)
             ) {
                 k = d.kind;
