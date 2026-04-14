@@ -244,6 +244,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     let activeView = "visual";
     const edgeLineVisualStyles = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};
     const edgeLineVisualStyleByType = new Map(edgeLineVisualStyles.map((style) => [style.type, style]));
+    const nodeVisualStyles = ${JSON.stringify(NODE_VISUAL_STYLES)};
+    const nodeVisualStyleByKind = new Map(nodeVisualStyles.map((style) => [style.kind, style]));
     
     // Setup Zoom
     const zoom = d3.zoom()
@@ -354,7 +356,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         "tileset",
         "timeline"
     ]);
-    const variableKinds = new Set(["global_variable", "instance_variable", "local_variable", "struct_variable"]);
     const defaultDisabledNodeKinds = new Set([
         "data_file",
         "enum_member",
@@ -414,31 +415,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
             });
         
         if (category === 'node' || category === 'node-group') {
-             let color = "#7f7f7f"; // default
-             if (typeVal === 'script') color = "#1f77b4";
-             else if (typeVal === 'script_resource') color = "#5c9bd8";
-             else if (typeVal === 'object') color = "#2ca02c";
-             else if (typeVal === 'enum') color = "#9467bd";
-             else if (typeVal === 'macro') color = "#ff7f0e";
-             else if (typeVal === 'struct') color = "#e377c2";
-             else if (typeVal === 'struct_variable') color = "#c05a94";
-             else if (typeVal === 'constructor') color = "#c63fa0";
-             else if (typeVal === 'enum_member') color = "#7b61b3";
-             else if (typeVal === 'function') color = "#4f8edc";
-             else if (variableKinds.has(typeVal)) color = typeVal === "global_variable" ? "#17becf" : typeVal === "local_variable" ? "#5bb7c4" : "#00a2af";
-             else if (typeVal === 'object_event') color = "#bcbd22";
-             else if (typeVal === 'sprite') color = "#d95f02";
-             else if (typeVal === 'sound') color = "#4db6ac";
-             else if (typeVal === 'path') color = "#88a764";
-             else if (typeVal === 'sequence') color = "#8da0cb";
-             else if (typeVal === 'note') color = "#c7b26b";
-             else if (typeVal === 'particle_system') color = "#ef8a62";
-             else if (typeVal === 'font') color = "#d3a43b";
-             else if (typeVal === 'tileset') color = "#66a61e";
-             else if (typeVal === 'timeline') color = "#e6ab02";
-             else if (typeVal === 'anim_curve') color = "#b65f2a";
-             else if (typeVal === 'extension') color = "#6f8f45";
-             else if (resourceKinds.has(typeVal)) color = "#8c564b";
+             const color = nodeVisualStyleByKind.get(typeVal)?.color ?? nodeVisualStyleByKind.get("default").color;
              wrap.append("span").html(\`<span style="color:\${color}">■</span> \${labelText}\`);
         } else {
              const visualStyle = edgeLineVisualStyleByType.get(typeVal);
@@ -638,40 +615,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         // Re-assign classes based on kind
         node.attr("class", d => {
             let k = "default";
-            if (
-                [
-                    "project",
-                    "anim_curve",
-                    "data_file",
-                    "script",
-                    "script_resource",
-                    "object",
-                    "enum",
-                    "enum_member",
-                    "extension",
-                    "font",
-                    "function",
-                    "macro",
-                    "note",
-                    "sprite",
-                    "shader",
-                    "room",
-                    "sequence",
-                    "sound",
-                    "struct",
-                    "struct_variable",
-                    "constructor",
-                    "instance_variable",
-                    "local_variable",
-                    "global_variable",
-                    "object_event",
-                    "particle_system",
-                    "path",
-                    "resource",
-                    "tileset",
-                    "timeline"
-                ].includes(d.kind)
-            ) {
+            if (nodeVisualStyleByKind.has(d.kind)) {
                 k = d.kind;
             }
             return \`node node-\${k} \${d.graphId === 'toolset' ? 'toolset' : ''}\`;
@@ -722,15 +666,51 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         let sub = d.summary || "";
         if (sub.length > 200) sub = sub.substring(0, 197) + "...";
         
-        tooltip.html(\`
-            <h3>\${d.displayName}</h3>
-            <div><strong>Kind:</strong> \${d.kind} | <strong>Graph:</strong> \${d.graphId}</div>
-            <div><strong>Connections:</strong> \${inC} in, \${outC} out</div>
-            <p>\${sub}</p>
-        \`)
-        .style("left", (event.pageX + 15) + "px")
-        .style("top", (event.pageY + 15) + "px")
-        .classed("visible", true);
+        tooltip.html("")
+            .style("left", "0px")
+            .style("top", "0px")
+            .style("visibility", "hidden")
+            .classed("visible", true);
+
+        tooltip.append("h3").text(d.displayName);
+
+        const details = tooltip.append("div");
+        details.append("strong").text("Kind:");
+        details.append("span").text(" " + d.kind + " | ");
+        details.append("strong").text("Graph:");
+        details.append("span").text(" " + d.graphId);
+
+        const connections = tooltip.append("div");
+        connections.append("strong").text("Connections:");
+        connections.append("span").text(" " + inC + " in, " + outC + " out");
+
+        tooltip.append("p").text(sub);
+        positionTooltip(event);
+        tooltip.style("visibility", "visible");
+    }
+
+    function positionTooltip(event) {
+        const tooltipElement = tooltip.node();
+        if (!tooltipElement) {
+            return;
+        }
+
+        const margin = 12;
+        const offset = 15;
+        const tooltipBounds = tooltipElement.getBoundingClientRect();
+        let left = event.pageX + offset;
+        let top = event.pageY + offset;
+        const maxLeft = window.scrollX + window.innerWidth - tooltipBounds.width - margin;
+        const maxTop = window.scrollY + window.innerHeight - tooltipBounds.height - margin;
+
+        if (left > maxLeft) {
+            left = Math.max(window.scrollX + margin, event.pageX - tooltipBounds.width - offset);
+        }
+        if (top > maxTop) {
+            top = Math.max(window.scrollY + margin, event.pageY - tooltipBounds.height - offset);
+        }
+
+        tooltip.style("left", left + "px").style("top", top + "px");
     }
 
     function showTooltip(event, d) {
@@ -743,7 +723,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     
     function hideTooltip() {
         pinnedTooltipNodeId = null;
-        tooltip.classed("visible", false);
+        tooltip.classed("visible", false).style("visibility", "hidden");
     }
 
     function hideTooltipWithDelay() {
