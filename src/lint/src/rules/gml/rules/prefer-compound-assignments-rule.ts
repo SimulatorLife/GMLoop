@@ -3,6 +3,7 @@ import type { Rule } from "eslint";
 
 import {
     type AstNodeRecord,
+    containsCommentToken,
     createMeta,
     type IdentifierNode,
     isAssignmentExpressionNodeWithOperator,
@@ -91,10 +92,6 @@ function isBinaryExpressionNode(node: unknown): node is BinaryExpressionNode {
 
 function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
     return isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=");
-}
-
-function containsCommentToken(expressionText: string): boolean {
-    return expressionText.includes("//") || expressionText.includes("/*") || expressionText.includes("*/");
 }
 
 function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCandidate | null {

@@ -4,6 +4,7 @@ import type { Rule } from "eslint";
 import {
     type AstNodeRecord,
     type AstNodeWithType,
+    containsCommentToken,
     createMeta,
     findFirstAstNodeBy,
     getLineStartOffset,
@@ -74,10 +75,6 @@ function isBodyContainerNode(node: unknown): node is BodyContainerNode {
         Array.isArray(node.body) &&
         (node.type === "Program" || node.type === "BlockStatement")
     );
-}
-
-function containsCommentToken(sourceText: string): boolean {
-    return sourceText.includes("//") || sourceText.includes("/*") || sourceText.includes("*/");
 }
 
 function containsCommentOutsideInitializer(

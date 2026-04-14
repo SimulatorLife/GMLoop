@@ -299,6 +299,19 @@ export function isStandaloneStatementParentKey(parentKey: string | null): boolea
 }
 
 /**
+ * Detects comment token markers in a text fragment.
+ *
+ * Used by lint rule fixers to guard against rewrites that would inadvertently
+ * remove authored comments embedded within the replaced text.
+ *
+ * @param text Text fragment to inspect.
+ * @returns Whether the text contains any line or block comment markers.
+ */
+export function containsCommentToken(text: string): boolean {
+    return text.includes("//") || text.includes("/*") || text.includes("*/");
+}
+
+/**
  * Detects comment tokens inside a source span so fixers can skip rewrites that
  * would risk deleting authored comments embedded in the replaced text.
  *
@@ -308,8 +321,7 @@ export function isStandaloneStatementParentKey(parentKey: string | null): boolea
  * @returns Whether the span contains line or block comment markers.
  */
 export function sourceRangeContainsCommentToken(sourceText: string, start: number, end: number): boolean {
-    const rangeText = sourceText.slice(start, end);
-    return /\/\/|\/\*|\*\//u.test(rangeText);
+    return containsCommentToken(sourceText.slice(start, end));
 }
 
 export type CommentTokenRangeIndex = Readonly<{
