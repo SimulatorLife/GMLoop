@@ -58,8 +58,4 @@ jobs:
           cat ollama.log || true
           ls -R /home/runner/.qwen || true
           latest_log="$(ls -t /home/runner/.qwen/debug/*.txt 2>/dev/null | head -n 1)"
-<<<<<<< HEAD
           test -n "$latest_log" && cat "$latest_log" || true
-=======
-          test -n "$latest_log" && cat "$latest_log" || true
->>>>>>> d3ceef156 (Updated TODO and added qwen action)

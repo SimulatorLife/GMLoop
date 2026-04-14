@@ -545,7 +545,7 @@ export function createGraphCommand(): Command {
         { includeRebuild: true }
     );
     visualizeCommand
-        .addOption(new Option("--output <path>", "Output HTML file path").default())
+        .addOption(new Option("--output <path>", "Output HTML file path"))
         .addOption(new Option("--open", "Open the generated file in your default browser").default(true))
         .addOption(new Option("--no-open", "Do not open the generated file").default(false))
         .addOption(new Option("--serve", "Serve dynamically rather than writing an output file").default(false))
