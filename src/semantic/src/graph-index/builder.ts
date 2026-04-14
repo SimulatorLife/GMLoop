@@ -249,11 +249,22 @@ function lookupUniqueNodeByNameAndKind(context: ProjectionContext, name: string,
         return null;
     }
 
-    const matchingIds = [...candidateIds].filter((nodeId) =>
-        context.nodeRecords.some((node) => node.id === nodeId && node.kind === kind)
-    );
+    const matchingNodes = [...candidateIds]
+        .map((nodeId) => context.nodeRecords.find((node) => node.id === nodeId && node.kind === kind))
+        .filter((node): node is GraphNodeRecord => node !== undefined);
 
-    return matchingIds.length === 1 ? matchingIds[0] : null;
+    if (matchingNodes.length === 1) {
+        return matchingNodes[0].id;
+    }
+
+    if (matchingNodes.length > 1) {
+        const symbolNodes = matchingNodes.filter((node) => node.scipSymbol !== null);
+        if (symbolNodes.length === 1) {
+            return symbolNodes[0].id;
+        }
+    }
+
+    return null;
 }
 
 function hasNodeNameAndKind(context: ProjectionContext, name: string, kind: GraphNodeKind): boolean {
@@ -283,7 +294,7 @@ function registerNodeIndexes(context: ProjectionContext, node: GraphNodeRecord):
 function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKind | null {
     switch (collectionName) {
         case "scripts": {
-            return null;
+            return "script";
         }
         case "functions": {
             return "function";
