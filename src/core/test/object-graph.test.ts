@@ -88,3 +88,25 @@ void test("walkAst respects early termination signal", () => {
     assert.equal(visited.length, 2);
     assert.deepEqual(visited, ["Program", "FunctionDeclaration"]);
 });
+
+void test("walkObjectGraph traverses array entries from a snapshot when enterArray mutates the source array", () => {
+    const firstNode = { type: "First" };
+    const secondNode = { type: "Second" };
+    const root = [firstNode, secondNode];
+    const visitedTypes: string[] = [];
+
+    walkObjectGraph(root, {
+        enterArray(arrayValue) {
+            if (arrayValue === root) {
+                arrayValue.splice(0, 1);
+            }
+        },
+        enterObject(node) {
+            if (typeof node.type === "string") {
+                visitedTypes.push(node.type);
+            }
+        }
+    });
+
+    assert.deepEqual(visitedTypes, ["First", "Second"]);
+});
