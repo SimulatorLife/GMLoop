@@ -1096,3 +1096,4 @@ Kind: data_file | Graph: project
 Connections: 0 in, 765 out
 data file 'InterplanetaryFootball'. Defined in InterplanetaryFootball.yyp."
 - **FEAT**: We should have a button/way to regenerate the project's graph index directly in the UI-visualization, so that if the user has made changes to their project and wants to see those reflected in the graph, they can easily do so without having to manually trigger a re-indexing through the CLI
+- **BUG**: The graph index and/or visualization has a `Script resource` node, a `Script` node, and a `Function` node. Instead, we should have the `Script` node which should be a child of the `Resource` node/category. A `Script` node should represent a script file/resource (e.g. `player.gml`). A `script` can contain one or many `Function` nodes (`Function` nodes can also be defined elswhere like in objects)
