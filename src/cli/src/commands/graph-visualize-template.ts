@@ -408,7 +408,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         const checkbox = wrap.append("input")
             .attr("type", "checkbox")
             .attr("id", id)
-            .attr("checked", createInitialFilterCheckedState(category, typeVal))
+            .property("checked", createInitialFilterCheckedState(category, typeVal))
             .on("change", function() {
                 changeHandler(this.checked, typeVal);
                 updateGraph();

@@ -13,6 +13,11 @@ type EmbeddedEdgeLineVisualStyle = Readonly<{
     type: string;
 }>;
 
+type EmbeddedNodeVisualStyle = Readonly<{
+    color: string;
+    kind: string;
+}>;
+
 function renderEmptyGraphVisualizationHtml(title: string): string {
     return renderGraphVisualizationHtml(
         JSON.stringify({
@@ -54,6 +59,18 @@ function extractEmbeddedEdgeLineVisualStyles(html: string): ReadonlyArray<Embedd
     return JSON.parse(html.slice(valueStart, valueEnd)) as Array<EmbeddedEdgeLineVisualStyle>;
 }
 
+function extractEmbeddedNodeVisualStyles(html: string): ReadonlyArray<EmbeddedNodeVisualStyle> {
+    const declarationPrefix = "const nodeVisualStyles = ";
+    const declarationStart = html.indexOf(declarationPrefix);
+    assert.notEqual(declarationStart, -1, "node visual styles should be embedded in the template");
+
+    const valueStart = declarationStart + declarationPrefix.length;
+    const valueEnd = html.indexOf(";\n    const nodeVisualStyleByKind", valueStart);
+    assert.notEqual(valueEnd, -1, "node visual styles declaration should end before its lookup map");
+
+    return JSON.parse(html.slice(valueStart, valueEnd)) as Array<EmbeddedNodeVisualStyle>;
+}
+
 function findEmbeddedEdgeLineVisualStyle(
     styles: ReadonlyArray<EmbeddedEdgeLineVisualStyle>,
     type: string
@@ -61,6 +78,17 @@ function findEmbeddedEdgeLineVisualStyle(
     const style = styles.find((entry) => entry.type === type);
     if (!style) {
         assert.fail(`Expected ${type} edge visual style to be embedded`);
+    }
+    return style;
+}
+
+function findEmbeddedNodeVisualStyle(
+    styles: ReadonlyArray<EmbeddedNodeVisualStyle>,
+    kind: string
+): EmbeddedNodeVisualStyle {
+    const style = styles.find((entry) => entry.kind === kind);
+    if (!style) {
+        assert.fail(`Expected ${kind} node visual style to be embedded`);
     }
     return style;
 }
@@ -81,6 +109,20 @@ void test("graph visualization template keeps tooltip interactive for text selec
     assert.match(html, /pointer-events: auto/);
     assert.match(html, /tooltip\.on\("mouseenter"/);
     assert.match(html, /hideTooltipWithDelay/);
+});
+
+void test("graph visualization template wraps and positions tooltip text inside the tooltip box", () => {
+    const html = renderEmptyGraphVisualizationHtml("Tooltip Wrap Test");
+    const tooltipCssRuleBody = extractCssRuleBody(html, "#tooltip");
+
+    assert.match(tooltipCssRuleBody, /width: max-content;/);
+    assert.match(tooltipCssRuleBody, /max-width: min\(520px, calc\(100vw - 24px\)\);/);
+    assert.match(tooltipCssRuleBody, /box-sizing: border-box;/);
+    assert.match(tooltipCssRuleBody, /overflow-wrap: anywhere;/);
+    assert.match(tooltipCssRuleBody, /white-space: normal;/);
+    assert.match(html, /function positionTooltip\(event\)/);
+    assert.match(html, /getBoundingClientRect\(\)/);
+    assert.match(html, /tooltip\.append\("h3"\)\.text\(d\.displayName\)/);
 });
 
 void test("graph visualization template pins selected node tooltip until selection changes", () => {
@@ -111,6 +153,23 @@ void test("graph visualization template gives contains and defines distinct edge
     assert.notEqual(containsStyle.color, definesStyle.color);
     assert.notEqual(containsStyle.dashArray, definesStyle.dashArray);
     assert.notEqual(containsStyle.legendBorderStyle, definesStyle.legendBorderStyle);
+});
+
+void test("graph visualization template gives resource, room, shader, and sprite distinct node colors", () => {
+    const html = renderEmptyGraphVisualizationHtml("Node Color Test");
+    const embeddedStyles = extractEmbeddedNodeVisualStyles(html);
+    const resourceStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "resource");
+    const roomStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "room");
+    const shaderStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "shader");
+    const spriteStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "sprite");
+    const targetColors = new Set([resourceStyle.color, roomStyle.color, shaderStyle.color, spriteStyle.color]);
+
+    assert.equal(targetColors.size, 4);
+    assert.match(extractCssRuleBody(html, ".node-resource"), new RegExp(`fill: ${resourceStyle.color};`));
+    assert.match(extractCssRuleBody(html, ".node-room"), new RegExp(`fill: ${roomStyle.color};`));
+    assert.match(extractCssRuleBody(html, ".node-shader"), new RegExp(`fill: ${shaderStyle.color};`));
+    assert.match(extractCssRuleBody(html, ".node-sprite"), new RegExp(`fill: ${spriteStyle.color};`));
+    assert.match(html, /nodeVisualStyleByKind\.get\(typeVal\)\?\.color/);
 });
 
 void test("graph visualization template relies on semantic project nodes instead of a synthetic center node", () => {
@@ -295,4 +354,6 @@ void test("graph visualization template exposes missing node kinds with requeste
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"enum_member"[\s\S]*\]\)/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"function"[\s\S]*\]\)/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"data_file"[\s\S]*\]\)/);
+    assert.match(html, /\.property\("checked", createInitialFilterCheckedState\(category, typeVal\)\)/);
+    assert.doesNotMatch(html, /\.attr\("checked", createInitialFilterCheckedState\(category, typeVal\)\)/);
 });
