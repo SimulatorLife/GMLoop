@@ -46,16 +46,12 @@ export function walkObjectGraph(root: unknown, options: WalkObjectGraphOptions =
         seen.add(value);
 
         if (Array.isArray(value)) {
-            const arraySnapshot = value.slice();
-            if (typeof enterArray === "function") {
-                const shouldTraverse = enterArray(value, parent, key);
-                if (shouldTraverse === false) {
-                    continue;
-                }
-            }
-
-            for (let index = arraySnapshot.length - 1; index >= 0; index -= 1) {
-                const item = arraySnapshot[index];
+            // Capture child references onto the traversal stack *before* calling
+            // the enterArray callback so that mutations inside the callback
+            // (splice, push, etc.) cannot cause elements to be skipped.
+            const childStart = stackValues.length;
+            for (let index = value.length - 1; index >= 0; index -= 1) {
+                const item = value[index];
                 if (!item || typeof item !== "object") {
                     continue;
                 }
@@ -63,6 +59,16 @@ export function walkObjectGraph(root: unknown, options: WalkObjectGraphOptions =
                 stackValues.push(item as object | Array<unknown>);
                 stackParents.push(value);
                 stackKeys.push(index);
+            }
+
+            if (typeof enterArray === "function") {
+                const shouldTraverse = enterArray(value, parent, key);
+                if (shouldTraverse === false) {
+                    stackValues.length = childStart;
+                    stackParents.length = childStart;
+                    stackKeys.length = childStart;
+                    continue;
+                }
             }
 
             continue;
