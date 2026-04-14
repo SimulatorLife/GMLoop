@@ -4,8 +4,6 @@ import type { Rule } from "eslint";
 import {
     type AstNodeRecord,
     createMeta,
-    getNodeEndIndex,
-    getNodeStartIndex,
     type IdentifierNode,
     isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
@@ -186,14 +184,14 @@ export function createPreferCompoundAssignmentsRule(definition: GmlRuleDefinitio
                             return;
                         }
 
-                        const assignmentStart = getNodeStartIndex(candidate.assignmentExpression);
-                        const assignmentEnd = getNodeEndIndex(candidate.assignmentExpression);
-                        const leftStart = getNodeStartIndex(candidate.leftIdentifier);
-                        const leftEnd = getNodeEndIndex(candidate.leftIdentifier);
-                        const rightExpressionStart = getNodeStartIndex(candidate.rightBinaryExpression);
-                        const rightExpressionEnd = getNodeEndIndex(candidate.rightBinaryExpression);
-                        const rightOperandStart = getNodeStartIndex(candidate.rightOperand);
-                        const rightOperandEnd = getNodeEndIndex(candidate.rightOperand);
+                        const assignmentStart = Core.getNodeStartIndex(candidate.assignmentExpression);
+                        const assignmentEnd = Core.getNodeEndIndex(candidate.assignmentExpression);
+                        const leftStart = Core.getNodeStartIndex(candidate.leftIdentifier);
+                        const leftEnd = Core.getNodeEndIndex(candidate.leftIdentifier);
+                        const rightExpressionStart = Core.getNodeStartIndex(candidate.rightBinaryExpression);
+                        const rightExpressionEnd = Core.getNodeEndIndex(candidate.rightBinaryExpression);
+                        const rightOperandStart = Core.getNodeStartIndex(candidate.rightOperand);
+                        const rightOperandEnd = Core.getNodeEndIndex(candidate.rightOperand);
 
                         if (
                             typeof assignmentStart !== "number" ||

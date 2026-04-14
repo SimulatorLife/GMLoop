@@ -9,7 +9,6 @@ import { createCallExpressionNode, mutateToCallExpression } from "./math-ast-bui
 import {
     collectProductOperands,
     computeNumericTolerance,
-    isBinaryOperator,
     isLiteralNumber,
     isPiIdentifier
 } from "./math-numeric-utils.js";
@@ -56,7 +55,7 @@ const RADIAN_TO_DEGREE_CONVERSIONS = new Map([
  */
 export function attemptConvertDegreesToRadians(node: unknown, context: unknown): boolean {
     if (
-        (!isBinaryOperator(node, "*") && !isBinaryOperator(node, "/")) ||
+        (!Core.isBinaryOperator(node, "*") && !Core.isBinaryOperator(node, "/")) ||
         hasCommentsInDegreesToRadiansPattern(node, context, true)
     ) {
         return false;
@@ -136,7 +135,7 @@ export function matchDegreesToRadians(node: unknown): unknown {
         return null;
     }
 
-    if (isBinaryOperator(expression, "/")) {
+    if (Core.isBinaryOperator(expression, "/")) {
         const left = Core.unwrapParenthesizedExpression((expression as any).left);
         const right = Core.unwrapParenthesizedExpression((expression as any).right);
 
@@ -144,7 +143,7 @@ export function matchDegreesToRadians(node: unknown): unknown {
             return null;
         }
 
-        if (isBinaryOperator(left, "*")) {
+        if (Core.isBinaryOperator(left, "*")) {
             const factorA = Core.unwrapParenthesizedExpression((left as any).left);
             const factorB = Core.unwrapParenthesizedExpression((left as any).right);
 
@@ -158,7 +157,7 @@ export function matchDegreesToRadians(node: unknown): unknown {
         }
     }
 
-    if (isBinaryOperator(expression, "*")) {
+    if (Core.isBinaryOperator(expression, "*")) {
         const left = Core.unwrapParenthesizedExpression((expression as any).left);
         const right = Core.unwrapParenthesizedExpression((expression as any).right);
 
@@ -170,7 +169,7 @@ export function matchDegreesToRadians(node: unknown): unknown {
             return left;
         }
 
-        if (isBinaryOperator(left, "/")) {
+        if (Core.isBinaryOperator(left, "/")) {
             const numerator = Core.unwrapParenthesizedExpression((left as any).left);
             const denominator = Core.unwrapParenthesizedExpression((left as any).right);
 
@@ -179,7 +178,7 @@ export function matchDegreesToRadians(node: unknown): unknown {
             }
         }
 
-        if (isBinaryOperator(right, "/")) {
+        if (Core.isBinaryOperator(right, "/")) {
             const numerator = Core.unwrapParenthesizedExpression((right as any).left);
             const denominator = Core.unwrapParenthesizedExpression((right as any).right);
 

@@ -1,6 +1,7 @@
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { createMeta, getNodeEndIndex, getNodeStartIndex, isAstNodeRecord } from "../rule-base-helpers.js";
+import { createMeta, isAstNodeRecord } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 /**
@@ -55,10 +56,10 @@ export function createNoUnaryPlusOnIdentifierRule(definition: GmlRuleDefinition)
                         return;
                     }
 
-                    const start = getNodeStartIndex(node);
-                    const end = getNodeEndIndex(node);
-                    const argumentStart = getNodeStartIndex(node.argument);
-                    const argumentEnd = getNodeEndIndex(node.argument);
+                    const start = Core.getNodeStartIndex(node);
+                    const end = Core.getNodeEndIndex(node);
+                    const argumentStart = Core.getNodeStartIndex(node.argument);
+                    const argumentEnd = Core.getNodeEndIndex(node.argument);
 
                     if (
                         typeof start !== "number" ||

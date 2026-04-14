@@ -3,8 +3,6 @@ import type { Rule } from "eslint";
 
 import {
     createMeta,
-    getNodeEndIndex,
-    getNodeStartIndex,
     isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
     isMemberIndexExpressionNode,
@@ -77,8 +75,8 @@ function isSafeArrayReceiver(node: unknown): boolean {
 }
 
 function sliceNodeText(sourceText: string, node: unknown): string | null {
-    const start = getNodeStartIndex(node);
-    const end = getNodeEndIndex(node);
+    const start = Core.getNodeStartIndex(node);
+    const end = Core.getNodeEndIndex(node);
     if (typeof start !== "number" || typeof end !== "number") {
         return null;
     }
@@ -160,8 +158,8 @@ export function createPreferArrayPushRule(definition: GmlRuleDefinition): Rule.R
                             return;
                         }
 
-                        const assignmentStart = getNodeStartIndex(candidate.assignmentExpression);
-                        const assignmentEnd = getNodeEndIndex(candidate.assignmentExpression);
+                        const assignmentStart = Core.getNodeStartIndex(candidate.assignmentExpression);
+                        const assignmentEnd = Core.getNodeEndIndex(candidate.assignmentExpression);
                         if (typeof assignmentStart !== "number" || typeof assignmentEnd !== "number") {
                             return;
                         }

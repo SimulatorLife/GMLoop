@@ -4,7 +4,6 @@ import type { Rule } from "eslint";
 import {
     type AstNodeWithType,
     createMeta,
-    getNodeStartIndex,
     isAstNodeWithType,
     readObjectOption,
     resolveLocFromIndex,
@@ -113,7 +112,7 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
 
                                 const forContext = forStatementContextByNode.get(loopNode);
                                 if (forContext && !forContext.canInsertHoistBeforeLoop) {
-                                    const forStart = getNodeStartIndex(loopNode);
+                                    const forStart = Core.getNodeStartIndex(loopNode);
                                     if (
                                         typeof forStart === "number" &&
                                         (firstUnsafeOffset === null || forStart < firstUnsafeOffset)

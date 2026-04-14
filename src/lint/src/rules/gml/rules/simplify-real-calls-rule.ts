@@ -29,7 +29,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { createMeta, getNodeEndIndex, getNodeStartIndex, isAstNodeRecord, walkAstNodes } from "../rule-base-helpers.js";
+import { createMeta, isAstNodeRecord, walkAstNodes } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 /**
@@ -125,8 +125,8 @@ export function createSimplifyRealCallsRule(definition: GmlRuleDefinition): Rule
                             return;
                         }
 
-                        const start = getNodeStartIndex(node);
-                        const end = getNodeEndIndex(node);
+                        const start = Core.getNodeStartIndex(node);
+                        const end = Core.getNodeEndIndex(node);
                         if (typeof start !== "number" || typeof end !== "number") {
                             return;
                         }

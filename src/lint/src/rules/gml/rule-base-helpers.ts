@@ -1,18 +1,9 @@
-import { Core, type GameMakerAstNode } from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "./rule-definition.js";
 
 const { clamp, isObjectLike } = Core;
-
-const getNodeStartIndex: (node: unknown) => number | null = Core.getNodeStartIndex;
-const getNodeEndIndex: (node: unknown) => number | null = Core.getNodeEndIndex;
-const getCallExpressionIdentifierName: (callExpression: GameMakerAstNode | null | undefined) => string | null =
-    Core.getCallExpressionIdentifierName;
-const getCallExpressionArguments: (callExpression: GameMakerAstNode | null | undefined) => readonly GameMakerAstNode[] =
-    Core.getCallExpressionArguments;
-
-export { getCallExpressionArguments, getCallExpressionIdentifierName, getNodeEndIndex, getNodeStartIndex };
 
 export function getLineStartOffset(sourceText: string, offset: number): number {
     return sourceText.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;

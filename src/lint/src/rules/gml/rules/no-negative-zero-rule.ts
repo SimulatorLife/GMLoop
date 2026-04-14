@@ -1,6 +1,7 @@
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { createMeta, getNodeEndIndex, getNodeStartIndex, isAstNodeRecord } from "../rule-base-helpers.js";
+import { createMeta, isAstNodeRecord } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 /**
@@ -42,8 +43,8 @@ export function createNoNegativeZeroRule(definition: GmlRuleDefinition): Rule.Ru
                         return;
                     }
 
-                    const start = getNodeStartIndex(node);
-                    const end = getNodeEndIndex(node);
+                    const start = Core.getNodeStartIndex(node);
+                    const end = Core.getNodeEndIndex(node);
 
                     if (typeof start !== "number" || typeof end !== "number") {
                         return;
