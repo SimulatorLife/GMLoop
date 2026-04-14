@@ -1,3 +1,158 @@
+type EdgeLineVisualStyle = Readonly<{
+    color: string;
+    dashArray: string;
+    legendBorderStyle: "dashed" | "dotted" | "solid";
+    legendBorderWidth: string;
+    strokeLineCap: "butt" | "round";
+    strokeWidth: string;
+    type: string;
+}>;
+
+type NodeVisualStyle = Readonly<{
+    color: string;
+    kind: string;
+}>;
+
+const EDGE_LINE_VISUAL_STYLES: ReadonlyArray<EdgeLineVisualStyle> = Object.freeze([
+    {
+        color: "#1f77b4",
+        dashArray: "none",
+        legendBorderStyle: "solid",
+        legendBorderWidth: "2px",
+        strokeLineCap: "butt",
+        strokeWidth: "1.5px",
+        type: "calls"
+    },
+    {
+        color: "#999",
+        dashArray: "4,4",
+        legendBorderStyle: "dashed",
+        legendBorderWidth: "1px",
+        strokeLineCap: "butt",
+        strokeWidth: "1px",
+        type: "references"
+    },
+    {
+        color: "#2ca02c",
+        dashArray: "1,4",
+        legendBorderStyle: "dotted",
+        legendBorderWidth: "2px",
+        strokeLineCap: "round",
+        strokeWidth: "1.5px",
+        type: "contains"
+    },
+    {
+        color: "#f2c94c",
+        dashArray: "none",
+        legendBorderStyle: "solid",
+        legendBorderWidth: "2px",
+        strokeLineCap: "butt",
+        strokeWidth: "2px",
+        type: "defines"
+    },
+    {
+        color: "#d62728",
+        dashArray: "none",
+        legendBorderStyle: "solid",
+        legendBorderWidth: "2px",
+        strokeLineCap: "butt",
+        strokeWidth: "2px",
+        type: "inherits"
+    },
+    {
+        color: "#ff7f0e",
+        dashArray: "4,4",
+        legendBorderStyle: "dashed",
+        legendBorderWidth: "1px",
+        strokeLineCap: "butt",
+        strokeWidth: "1px",
+        type: "uses_toolset"
+    },
+    {
+        color: "#7f7f7f",
+        dashArray: "none",
+        legendBorderStyle: "solid",
+        legendBorderWidth: "2px",
+        strokeLineCap: "butt",
+        strokeWidth: "1.5px",
+        type: "depends_on"
+    },
+    {
+        color: "#9467bd",
+        dashArray: "2,2",
+        legendBorderStyle: "dashed",
+        legendBorderWidth: "1px",
+        strokeLineCap: "butt",
+        strokeWidth: "1px",
+        type: "placed_in_room"
+    }
+]);
+
+const NODE_VISUAL_STYLES: ReadonlyArray<NodeVisualStyle> = Object.freeze([
+    { color: "#f8f9fa", kind: "project" },
+    { color: "#e76f51", kind: "anim_curve" },
+    { color: "#9aa0a6", kind: "data_file" },
+    { color: "#7f5539", kind: "extension" },
+    { color: "#f4a261", kind: "font" },
+    { color: "#4dabf7", kind: "function" },
+    { color: "#1f78b4", kind: "script" },
+    { color: "#74c0fc", kind: "script_resource" },
+    { color: "#2a9d8f", kind: "object" },
+    { color: "#9b5de5", kind: "enum" },
+    { color: "#c77dff", kind: "enum_member" },
+    { color: "#f77f00", kind: "macro" },
+    { color: "#ffbe0b", kind: "note" },
+    { color: "#f15bb5", kind: "struct" },
+    { color: "#ff70a6", kind: "struct_variable" },
+    { color: "#d81159", kind: "constructor" },
+    { color: "#00b4d8", kind: "global_variable" },
+    { color: "#00f5d4", kind: "instance_variable" },
+    { color: "#90e0ef", kind: "local_variable" },
+    { color: "#ef476f", kind: "particle_system" },
+    { color: "#06d6a0", kind: "path" },
+    { color: "#adb5bd", kind: "resource" },
+    { color: "#ff7f11", kind: "sprite" },
+    { color: "#ffd166", kind: "shader" },
+    { color: "#8ecae6", kind: "sequence" },
+    { color: "#3a86ff", kind: "sound" },
+    { color: "#e63946", kind: "room" },
+    { color: "#8ac926", kind: "tileset" },
+    { color: "#cdb4db", kind: "timeline" },
+    { color: "#bcbd22", kind: "object_event" },
+    { color: "#7f7f7f", kind: "default" }
+]);
+
+function renderEdgeLineCssRule(style: EdgeLineVisualStyle): string {
+    const declarations = [`stroke: ${style.color};`, `stroke-width: ${style.strokeWidth};`];
+
+    if (style.dashArray !== "none") {
+        declarations.push(`stroke-dasharray: ${style.dashArray};`);
+    }
+
+    if (style.strokeLineCap !== "butt") {
+        declarations.push(`stroke-linecap: ${style.strokeLineCap};`);
+    }
+
+    return `.link-${style.type} { ${declarations.join(" ")} }`;
+}
+
+function renderEdgeLineCssRules(): string {
+    return EDGE_LINE_VISUAL_STYLES.map((style) => renderEdgeLineCssRule(style)).join("\n    ");
+}
+
+function getEdgeLineColor(type: string): string {
+    const visualStyle = EDGE_LINE_VISUAL_STYLES.find((style) => style.type === type);
+    return visualStyle?.color ?? "#7f7f7f";
+}
+
+function renderNodeFillCssRule(style: NodeVisualStyle): string {
+    return `.node-${style.kind} { fill: ${style.color}; }`;
+}
+
+function renderNodeFillCssRules(): string {
+    return NODE_VISUAL_STYLES.map((style) => renderNodeFillCssRule(style)).join("\n    ");
+}
+
 export function renderGraphVisualizationHtml(dataJson: string, title: string): string {
     return `<!DOCTYPE html>
 <html lang="en">
@@ -25,38 +180,18 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     .link.dimmed { stroke-opacity: 0.05 !important; }
     
     /* Edge colors */
-    .link-calls { stroke: #1f77b4; stroke-width: 1.5px; }
-    .link-references { stroke: #999; stroke-width: 1px; stroke-dasharray: 4,4; }
-    .link-contains { stroke: #2ca02c; stroke-width: 1px; stroke-dasharray: 2,2; }
-    .link-defines { stroke: #17a2b8; stroke-width: 1px; stroke-dasharray: 6,2; }
-    .link-inherits { stroke: #d62728; stroke-width: 2px; }
-    .link-uses_toolset { stroke: #ff7f0e; stroke-width: 1px; stroke-dasharray: 4,4; }
-    .link-depends_on { stroke: #7f7f7f; stroke-width: 1.5px; }
-    .link-placed_in_room { stroke: #9467bd; stroke-width: 1px; stroke-dasharray: 2,2; }
+    ${renderEdgeLineCssRules()}
     
     /* Node colors */
-    .node-project { fill: #ffffff; }
-    .node-script { fill: #1f77b4; }
-    .node-object { fill: #2ca02c; }
-    .node-enum { fill: #9467bd; }
-    .node-enum_member { fill: #7b61b3; }
-    .node-macro { fill: #ff7f0e; }
-    .node-struct { fill: #e377c2; }
-    .node-constructor { fill: #c63fa0; }
-    .node-global_variable { fill: #17becf; }
-    .node-instance_variable { fill: #00a2af; }
-    .node-resource { fill: #8c564b; }
-    .node-sprite { fill: #8c564b; }
-    .node-shader { fill: #6b3f26; }
-    .node-room { fill: #a9744f; }
-    .node-object_event { fill: #bcbd22; }
-    .node-default { fill: #7f7f7f; }
+    ${renderNodeFillCssRules()}
     
     text { font-size: 10px; pointer-events: none; fill: #e0e0e0; text-shadow: 0 1px 2px #1e1e1e, 0 -1px 2px #1e1e1e, 1px 0 2px #1e1e1e, -1px 0 2px #1e1e1e; }
     
-    #tooltip { position: absolute; background: #252526; padding: 10px; border: 1px solid #444; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); pointer-events: auto; font-size: 12px; z-index: 20; max-width: 300px; display: none; color: #eee; user-select: text; }
+    #tooltip { position: absolute; background: #252526; padding: 10px; border: 1px solid #444; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); pointer-events: auto; font-size: 12px; line-height: 1.35; z-index: 20; width: max-content; max-width: min(520px, calc(100vw - 24px)); box-sizing: border-box; overflow-wrap: anywhere; word-break: normal; white-space: normal; display: none; color: #eee; user-select: text; }
     #tooltip.visible { display: block; }
-    #tooltip h3 { margin: 0 0 5px 0; font-size: 14px; word-break: break-all; color: #fff; }
+    #tooltip h3 { margin: 0 0 5px 0; font-size: 14px; overflow-wrap: anywhere; word-break: normal; color: #fff; }
+    #tooltip div, #tooltip p { overflow-wrap: anywhere; }
+    #tooltip p { margin: 8px 0 0 0; }
     #json-view { position: absolute; inset: 58px 0 0 0; overflow: auto; margin: 0; padding: 10px 20px 20px; font-size: 12px; background: #181818; color: #eaeaea; display: none; }
     .hidden { display: none !important; }
     
@@ -83,9 +218,9 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     <svg id="graph">
       <defs>
         <!-- Arrow markers -->
-        <marker id="arrow-calls" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="#1f77b4"></path></marker>
-        <marker id="arrow-inherits" viewBox="0 -5 10 10" refX="20" refY="0" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,-5L10,0L0,5" fill="#d62728"></path></marker>
-        <marker id="arrow-depends_on" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="#7f7f7f"></path></marker>
+        <marker id="arrow-calls" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="${getEdgeLineColor("calls")}"></path></marker>
+        <marker id="arrow-inherits" viewBox="0 -5 10 10" refX="20" refY="0" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,-5L10,0L0,5" fill="${getEdgeLineColor("inherits")}"></path></marker>
+        <marker id="arrow-depends_on" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="${getEdgeLineColor("depends_on")}"></path></marker>
       </defs>
       <g id="container"></g>
     </svg>
@@ -107,6 +242,10 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     const tooltip = d3.select("#tooltip");
     let labelMode = "auto";
     let activeView = "visual";
+    const edgeLineVisualStyles = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};
+    const edgeLineVisualStyleByType = new Map(edgeLineVisualStyles.map((style) => [style.type, style]));
+    const nodeVisualStyles = ${JSON.stringify(NODE_VISUAL_STYLES)};
+    const nodeVisualStyleByKind = new Map(nodeVisualStyles.map((style) => [style.kind, style]));
     
     // Setup Zoom
     const zoom = d3.zoom()
@@ -180,6 +319,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
        edgeTypes.forEach((edgeTypeValue) => {
             d3.select(\`#filter-edge-\${edgeTypeValue}\`).property("checked", true);
        });
+       syncGroupCheckboxState(resourceCheckbox, resourceTypesPresent);
+       syncGroupCheckboxState(enumCheckbox, enumTypesPresent);
        
        updateGraph();
     });
@@ -193,11 +334,37 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     const edgeTypes = Array.from(new Set(DATA.edges.map(e => e.type)));
     let activeFilters = new Set(edgeTypes);
     
-    const allNodes = DATA.nodes.filter((nodeValue) => nodeValue.kind !== "file" && nodeValue.kind !== "resource");
+    const allNodes = DATA.nodes.filter((nodeValue) => nodeValue.kind !== "file");
     const allNodeKinds = Array.from(new Set(allNodes.map((nodeValue) => nodeValue.kind)));
-    const resourceKinds = new Set(["script", "object", "room", "sprite", "shader"]);
-    const variableKinds = new Set(["global_variable", "instance_variable"]);
-    const defaultDisabledNodeKinds = new Set(["instance_variable", "global_variable", "script", "function", "data_file"]);
+
+    const resourceKinds = new Set([
+        "anim_curve",
+        "data_file",
+        "extension",
+        "font",
+        "note",
+        "object",
+        "particle_system",
+        "path",
+        "resource",
+        "room",
+        "script_resource",
+        "sequence",
+        "shader",
+        "sound",
+        "sprite",
+        "tileset",
+        "timeline"
+    ]);
+    const defaultDisabledNodeKinds = new Set([
+        "data_file",
+        "enum_member",
+        "function",
+        "global_variable",
+        "instance_variable",
+        "local_variable",
+        "struct_variable"
+    ]);
     const defaultEnabledNodeKinds = allNodeKinds.filter((kindValue) => !defaultDisabledNodeKinds.has(kindValue));
     const resourceTypesPresent = allNodeKinds.filter((kindValue) => resourceKinds.has(kindValue));
     const enumTypesPresent = allNodeKinds.filter((kindValue) => kindValue === "enum" || kindValue === "enum_member");
@@ -206,40 +373,55 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     );
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
 
+    function isNodeGroupCheckedByDefault(typeVal) {
+        if (typeVal === "resource-group") {
+            return resourceTypesPresent.length > 0 && resourceTypesPresent.every((kindValue) => defaultEnabledNodeKinds.includes(kindValue));
+        }
+        if (typeVal === "enum-group") {
+            return enumTypesPresent.length > 0 && enumTypesPresent.every((kindValue) => defaultEnabledNodeKinds.includes(kindValue));
+        }
+        return defaultEnabledNodeKinds.includes(typeVal);
+    }
+
+    function createInitialFilterCheckedState(category, typeVal) {
+        if (category === "edge") {
+            return true;
+        }
+        if (category === "node-group") {
+            return isNodeGroupCheckedByDefault(typeVal);
+        }
+        return defaultEnabledNodeKinds.includes(typeVal);
+    }
+
+    function syncGroupCheckboxState(checkbox, childKinds) {
+        if (!checkbox || childKinds.length === 0) {
+            return;
+        }
+
+        const enabledChildCount = childKinds.filter((kindValue) => activeNodeFilters.has(kindValue)).length;
+        checkbox.property("checked", enabledChildCount === childKinds.length);
+        checkbox.property("indeterminate", enabledChildCount > 0 && enabledChildCount < childKinds.length);
+    }
+
     function createFilterCheckbox(container, id, labelText, category, typeVal, changeHandler, customClass="") {
         const wrap = container.append("label").attr("class", \`filter-item \${customClass}\`);
         const checkbox = wrap.append("input")
             .attr("type", "checkbox")
             .attr("id", id)
-            .attr("checked", defaultEnabledNodeKinds.includes(typeVal))
+            .property("checked", createInitialFilterCheckedState(category, typeVal))
             .on("change", function() {
                 changeHandler(this.checked, typeVal);
                 updateGraph();
             });
         
         if (category === 'node' || category === 'node-group') {
-             let color = "#7f7f7f"; // default
-             if (typeVal === 'script') color = "#1f77b4";
-             else if (typeVal === 'object') color = "#2ca02c";
-             else if (typeVal === 'enum') color = "#9467bd";
-             else if (typeVal === 'macro') color = "#ff7f0e";
-             else if (typeVal === 'struct') color = "#e377c2";
-             else if (typeVal === 'constructor') color = "#c63fa0";
-             else if (typeVal === 'enum_member') color = "#7b61b3";
-             else if (variableKinds.has(typeVal)) color = typeVal === "global_variable" ? "#17becf" : "#00a2af";
-             else if (typeVal === 'object_event') color = "#bcbd22";
-             else if (resourceKinds.has(typeVal)) color = "#8c564b";
+             const color = nodeVisualStyleByKind.get(typeVal)?.color ?? nodeVisualStyleByKind.get("default").color;
              wrap.append("span").html(\`<span style="color:\${color}">■</span> \${labelText}\`);
         } else {
-             let strokeStyle = "border-bottom: 2px solid #555;";
-             if (typeVal === 'calls') strokeStyle = "border-bottom: 2px solid #1f77b4;";
-             else if (typeVal === 'references') strokeStyle = "border-bottom: 1px dashed #999;";
-             else if (typeVal === 'contains') strokeStyle = "border-bottom: 1px dashed #2ca02c;";
-             else if (typeVal === 'defines') strokeStyle = "border-bottom: 1px dashed #17a2b8;";
-             else if (typeVal === 'inherits') strokeStyle = "border-bottom: 2px solid #d62728;";
-             else if (typeVal === 'uses_toolset') strokeStyle = "border-bottom: 1px dashed #ff7f0e;";
-             else if (typeVal === 'depends_on') strokeStyle = "border-bottom: 2px solid #7f7f7f;";
-             else if (typeVal === 'placed_in_room') strokeStyle = "border-bottom: 1px dashed #9467bd;";
+             const visualStyle = edgeLineVisualStyleByType.get(typeVal);
+             const strokeStyle = visualStyle
+                ? \`border-bottom: \${visualStyle.legendBorderWidth} \${visualStyle.legendBorderStyle} \${visualStyle.color};\`
+                : "border-bottom: 2px solid #555;";
              wrap.append("span").html(\`<span style="display:inline-block; width:12px; margin-right:4px; \${strokeStyle}"></span>\${labelText}\`);
         }
         return checkbox;
@@ -272,6 +454,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
                 resourceCheckbox.property("indeterminate", !allResChecked && resourceTypesPresent.some(k => activeNodeFilters.has(k)));
             }, "sub-filter");
         });
+        syncGroupCheckboxState(resourceCheckbox, resourceTypesPresent);
     }
 
     let enumCheckbox;
@@ -291,6 +474,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
                 enumCheckbox.property("indeterminate", !allEnumChecked && enumTypesPresent.some(k => activeNodeFilters.has(k)));
             }, "sub-filter");
         });
+        syncGroupCheckboxState(enumCheckbox, enumTypesPresent);
     }
     
     otherTypesPresent.forEach(t => {
@@ -321,15 +505,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     // Map data for D3
     let nodesRaw = allNodes.map(d => Object.assign({}, d));
     let linksRaw = DATA.edges.map(d => Object.assign({}, d));
-    const centerNode = {
-        id: "project::center",
-        kind: "project",
-        name: "game",
-        displayName: "game",
-        graphId: "project",
-        summary: "Project root node",
-        snippet: ""
-    };
     
     // Compute node degrees
     const incomingCount = new Map();
@@ -358,6 +533,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     
     let searchHighlightNodeIds = new Set();
     let focusNodeId = null;
+    let pinnedTooltipNodeId = null;
     
     function updateGraph() {
         const validNodeIds = new Set(nodesRaw.filter(n => activeNodeFilters.has(n.kind)).map(n => n.id));
@@ -382,13 +558,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         });
         
         const filteredNodes = nodesRaw.filter(n => activeNodeIds.has(n.id) && activeNodeFilters.has(n.kind));
-        if (filteredNodes.length > 0) {
-            filteredNodes.push(centerNode);
-        }
-        const syntheticLinks = filteredNodes
-            .filter((nodeValue) => nodeValue.id !== centerNode.id)
-            .map((nodeValue) => ({ source: centerNode.id, target: nodeValue.id, type: "contains" }));
-        const graphLinks = filteredLinks.concat(syntheticLinks);
+        const graphLinks = filteredLinks;
         
         // Update links
         link = link.data(graphLinks, d => {
@@ -445,24 +615,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         // Re-assign classes based on kind
         node.attr("class", d => {
             let k = "default";
-            if (
-                [
-                    "project",
-                    "script",
-                    "object",
-                    "enum",
-                    "enum_member",
-                    "macro",
-                    "sprite",
-                    "shader",
-                    "room",
-                    "struct",
-                    "constructor",
-                    "instance_variable",
-                    "global_variable",
-                    "object_event"
-                ].includes(d.kind)
-            ) {
+            if (nodeVisualStyleByKind.has(d.kind)) {
                 k = d.kind;
             }
             return \`node node-\${k} \${d.graphId === 'toolset' ? 'toolset' : ''}\`;
@@ -506,31 +659,76 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         // keep pinned if fx/fy exist
     }
     
-    function showTooltip(event, d) {
+    function renderTooltip(event, d) {
         const inC = incomingCount.get(d.id) || 0;
         const outC = outgoingCount.get(d.id) || 0;
         
         let sub = d.summary || "";
         if (sub.length > 200) sub = sub.substring(0, 197) + "...";
         
-        tooltip.html(\`
-            <h3>\${d.displayName}</h3>
-            <div><strong>Kind:</strong> \${d.kind} | <strong>Graph:</strong> \${d.graphId}</div>
-            <div><strong>Connections:</strong> \${inC} in, \${outC} out</div>
-            <p>\${sub}</p>
-        \`)
-        .style("left", (event.pageX + 15) + "px")
-        .style("top", (event.pageY + 15) + "px")
-        .classed("visible", true);
+        tooltip.html("")
+            .style("left", "0px")
+            .style("top", "0px")
+            .style("visibility", "hidden")
+            .classed("visible", true);
+
+        tooltip.append("h3").text(d.displayName);
+
+        const details = tooltip.append("div");
+        details.append("strong").text("Kind:");
+        details.append("span").text(" " + d.kind + " | ");
+        details.append("strong").text("Graph:");
+        details.append("span").text(" " + d.graphId);
+
+        const connections = tooltip.append("div");
+        connections.append("strong").text("Connections:");
+        connections.append("span").text(" " + inC + " in, " + outC + " out");
+
+        tooltip.append("p").text(sub);
+        positionTooltip(event);
+        tooltip.style("visibility", "visible");
+    }
+
+    function positionTooltip(event) {
+        const tooltipElement = tooltip.node();
+        if (!tooltipElement) {
+            return;
+        }
+
+        const margin = 12;
+        const offset = 15;
+        const tooltipBounds = tooltipElement.getBoundingClientRect();
+        let left = event.pageX + offset;
+        let top = event.pageY + offset;
+        const maxLeft = window.scrollX + window.innerWidth - tooltipBounds.width - margin;
+        const maxTop = window.scrollY + window.innerHeight - tooltipBounds.height - margin;
+
+        if (left > maxLeft) {
+            left = Math.max(window.scrollX + margin, event.pageX - tooltipBounds.width - offset);
+        }
+        if (top > maxTop) {
+            top = Math.max(window.scrollY + margin, event.pageY - tooltipBounds.height - offset);
+        }
+
+        tooltip.style("left", left + "px").style("top", top + "px");
+    }
+
+    function showTooltip(event, d) {
+        if (pinnedTooltipNodeId !== null && pinnedTooltipNodeId !== d.id) {
+            return;
+        }
+
+        renderTooltip(event, d);
     }
     
     function hideTooltip() {
-        tooltip.classed("visible", false);
+        pinnedTooltipNodeId = null;
+        tooltip.classed("visible", false).style("visibility", "hidden");
     }
 
     function hideTooltipWithDelay() {
         setTimeout(() => {
-            if (!tooltip.node().matches(":hover")) {
+            if (pinnedTooltipNodeId === null && !tooltip.node().matches(":hover")) {
                 hideTooltip();
             }
         }, 120);
@@ -538,7 +736,9 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     
     function handleNodeClick(event, d) {
         event.stopPropagation();
-        focusNodeId = focusNodeId === d.id ? null : d.id;
+        focusNodeId = d.id;
+        pinnedTooltipNodeId = d.id;
+        renderTooltip(event, d);
         applyHighlights();
     }
     
@@ -560,6 +760,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     
     function clearFocus() {
         focusNodeId = null;
+        hideTooltip();
         searchHighlightNodeIds.clear();
         document.getElementById('search').value = '';
         applyHighlights();
@@ -570,6 +771,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         const term = this.value.toLowerCase().trim();
         searchHighlightNodeIds.clear();
         focusNodeId = null; // clear focus on search
+        hideTooltip();
         
         if (term.length > 0) {
             nodesRaw.forEach(n => {
@@ -626,7 +828,11 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     }
 
     tooltip.on("mouseenter", () => tooltip.classed("visible", true));
-    tooltip.on("mouseleave", hideTooltip);
+    tooltip.on("mouseleave", () => {
+        if (pinnedTooltipNodeId === null) {
+            hideTooltip();
+        }
+    });
 
     // Initial render
     updateGraph();

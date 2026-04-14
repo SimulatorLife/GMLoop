@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { Core } from "@gmloop/core";
 
+import { isProjectManifestPath } from "../project-index/constants.js";
 import { buildProjectIndex } from "../project-index/index.js";
 import { resolveGraphIndexConfig } from "./config.js";
 import {
@@ -49,11 +50,13 @@ import type {
 } from "./types.js";
 
 type ProjectIndexIdentifierEntry = {
+    declarationKinds?: Array<string>;
     declarations?: Array<Record<string, unknown>>;
     displayName?: string;
     filePath?: string;
     id?: string;
     identifierId?: string;
+    key?: string;
     name?: string;
     references?: Array<Record<string, unknown>>;
     resourcePath?: string;
@@ -118,6 +121,27 @@ type GraphLookupRow = {
     summary: string;
 };
 
+const GRAPH_RESOURCE_NODE_KINDS = new Set<GraphNodeKind>([
+    "anim_curve",
+    "data_file",
+    "extension",
+    "font",
+    "note",
+    "object",
+    "particle_system",
+    "path",
+    "project",
+    "resource",
+    "room",
+    "script_resource",
+    "sequence",
+    "shader",
+    "sound",
+    "sprite",
+    "tileset",
+    "timeline"
+]);
+
 function hashContent(value: string): string {
     return createHash("sha256").update(value).digest("hex");
 }
@@ -163,21 +187,43 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "enum_member": {
             return `gml/enum-member/${name}`;
         }
+        case "function": {
+            return `gml/function/${identifierId ?? entry.key ?? entry.scopeId ?? name}`;
+        }
         case "global_variable": {
             return `gml/var/global::${name}`;
         }
         case "instance_variable": {
-            return `gml/var/${name}`;
+            return `gml/var/instance::${entry.scopeId ?? entry.key ?? name}`;
         }
+        case "local_variable": {
+            return `gml/var/local::${entry.scopeId ?? entry.key ?? name}`;
+        }
+        case "struct_variable": {
+            return `gml/var/struct::${entry.scopeId ?? entry.key ?? name}`;
+        }
+        case "anim_curve":
         case "constructor":
+        case "data_file":
+        case "extension":
         case "file":
+        case "font":
+        case "note":
         case "object":
         case "object_event":
+        case "particle_system":
+        case "path":
+        case "project":
         case "resource":
         case "room":
         case "script":
+        case "script_resource":
+        case "sequence":
         case "shader":
+        case "sound":
         case "sprite":
+        case "tileset":
+        case "timeline":
         case "struct": {
             return `gml/script/${name}`;
         }
@@ -237,6 +283,12 @@ function registerNodeIndexes(context: ProjectionContext, node: GraphNodeRecord):
 
 function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKind {
     switch (collectionName) {
+        case "functions": {
+            return "function";
+        }
+        case "structs": {
+            return "struct";
+        }
         case "macros": {
             return "macro";
         }
@@ -252,6 +304,12 @@ function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKin
         case "instanceVariables": {
             return "instance_variable";
         }
+        case "localVariables": {
+            return "local_variable";
+        }
+        case "structVariables": {
+            return "struct_variable";
+        }
         default: {
             return "script";
         }
@@ -260,17 +318,56 @@ function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKin
 
 function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
     switch (resourceType) {
+        case "GMAnimCurve": {
+            return "anim_curve";
+        }
+        case "GMExtension": {
+            return "extension";
+        }
+        case "GMFont": {
+            return "font";
+        }
+        case "GMIncludedFile": {
+            return "data_file";
+        }
+        case "GMProject": {
+            return "project";
+        }
+        case "GMNotes": {
+            return "note";
+        }
         case "GMObject": {
             return "object";
         }
+        case "GMParticleSystem": {
+            return "particle_system";
+        }
+        case "GMPath": {
+            return "path";
+        }
         case "GMRoom": {
             return "room";
+        }
+        case "GMScript": {
+            return "script_resource";
+        }
+        case "GMSequence": {
+            return "sequence";
         }
         case "GMSprite": {
             return "sprite";
         }
         case "GMShader": {
             return "shader";
+        }
+        case "GMSound": {
+            return "sound";
+        }
+        case "GMTileSet": {
+            return "tileset";
+        }
+        case "GMTimeline": {
+            return "timeline";
         }
         default: {
             return "resource";
@@ -480,7 +577,8 @@ function projectIdentifierCollections(context: ProjectionContext): void {
             const scipSymbol = resolveScipSymbol(kind, name, entry);
             const sourceText = readSourceText(context.rootPath, filePath);
             const displayName = getString(entry.displayName) ?? name;
-            const scopeId = getString(entry.scopeId) ?? getString(entry.id);
+            const scopeId =
+                kind === "function" || kind === "struct" ? null : (getString(entry.scopeId) ?? getString(entry.id));
             const node = createNodeRecord({
                 displayName,
                 filePath,
@@ -568,7 +666,7 @@ function projectRelationshipEdges(context: ProjectionContext): void {
         context.edgeRecords.push({
             fromId: createGraphNodeId(context.graphId, "resource", fromResourcePath),
             toId: createGraphNodeId(context.graphId, "resource", targetPath),
-            type: "references"
+            type: isProjectManifestPath(fromResourcePath) ? "contains" : "references"
         });
     }
 }
@@ -1112,10 +1210,7 @@ export function getGraphContext(
                     .filter((entry) => entry.edgeType === "references" || entry.edgeType === "depends_on")
                     .map((entry) => entry.node),
                 relatedResources: neighbors
-                    .filter(
-                        (entry) =>
-                            entry.node.kind === "resource" || entry.node.kind === "object" || entry.node.kind === "room"
-                    )
+                    .filter((entry) => GRAPH_RESOURCE_NODE_KINDS.has(entry.node.kind))
                     .map((entry) => entry.node),
                 toolsetDependencies: neighbors
                     .filter((entry) => entry.edgeType === "uses_toolset" || entry.node.graphId === "toolset")
