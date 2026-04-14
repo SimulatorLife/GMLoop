@@ -308,6 +308,7 @@ function new_exported_func() {
         });
 
         let patchCountAfterChange: number;
+        let liveLatencyPatchCount: number;
 
         try {
             await waitForScanComplete(statusUrl, 10_000, 50);
@@ -332,6 +333,9 @@ function future_func() {
 
             const finalStatus = await fetchStatusPayload(statusUrl);
             patchCountAfterChange = (finalStatus.patchCount ?? 0) - initialPatchCount;
+            liveLatencyPatchCount = (finalStatus.recentPatches ?? []).filter(
+                (patch) => typeof patch.hotReloadLatencyMs === "number"
+            ).length;
         } finally {
             abortController.abort();
 
@@ -346,6 +350,10 @@ function future_func() {
             patchCountAfterChange,
             2,
             "Adding a newly referenced export should retranspile both the changed file and its waiting consumer"
+        );
+        assert.ok(
+            liveLatencyPatchCount >= 2,
+            "Changed file and dependent retranspile should both record end-to-end hot-reload latency"
         );
     });
 });

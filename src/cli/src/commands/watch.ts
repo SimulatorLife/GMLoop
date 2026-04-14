@@ -1348,7 +1348,7 @@ async function handleFileChange(
                 fileChangeDetectedAt
             });
 
-            await processTranspileResult(runtimeContext, filePath, result, verbose, quiet);
+            await processTranspileResult(runtimeContext, filePath, result, fileChangeDetectedAt, verbose, quiet);
         } catch (error) {
             if (runtimeContext && isErrorWithCode(error, "ENOENT")) {
                 cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
@@ -1494,6 +1494,7 @@ async function retranspileDependentFiles(
     runtimeContext: RuntimeContext,
     filePath: string,
     dependentFiles: ReadonlyArray<string>,
+    fileChangeDetectedAt: number | undefined,
     verbose: boolean,
     quiet: boolean
 ): Promise<void> {
@@ -1504,7 +1505,14 @@ async function retranspileDependentFiles(
         dependentFiles,
         async (dependentFile) => {
             try {
-                await retranspileDependentFile(runtimeContext, filePath, dependentFile, verbose, quiet);
+                await retranspileDependentFile(
+                    runtimeContext,
+                    filePath,
+                    dependentFile,
+                    fileChangeDetectedAt,
+                    verbose,
+                    quiet
+                );
             } catch (error) {
                 const message = getErrorMessage(error, {
                     fallback: "Unknown file read error"
@@ -1539,6 +1547,7 @@ async function processTranspileResult(
     runtimeContext: RuntimeContext,
     filePath: string,
     result: TranspilationResult,
+    fileChangeDetectedAt: number | undefined,
     verbose: boolean,
     quiet: boolean
 ): Promise<void> {
@@ -1569,7 +1578,7 @@ async function processTranspileResult(
         console.log(`  ↳ Retranspiling ${dependentFiles.length} dependent file(s)...`);
     }
 
-    await retranspileDependentFiles(runtimeContext, filePath, dependentFiles, verbose, quiet);
+    await retranspileDependentFiles(runtimeContext, filePath, dependentFiles, fileChangeDetectedAt, verbose, quiet);
 }
 
 interface DependencyUpdateSummary {
@@ -1659,6 +1668,7 @@ async function retranspileDependentFile(
     runtimeContext: RuntimeContext & ScriptNameRegistrationContext,
     filePath: string,
     dependentFile: string,
+    fileChangeDetectedAt: number | undefined,
     verbose: boolean,
     quiet: boolean
 ): Promise<void> {
@@ -1673,7 +1683,8 @@ async function retranspileDependentFile(
 
     const dependentResult = transpileFile(runtimeContext, dependentFile, dependentContent, dependentLines, {
         verbose: false,
-        quiet
+        quiet,
+        fileChangeDetectedAt
     });
 
     registerDependencyTrackerUpdates(runtimeContext, dependentFile, dependentResult);
