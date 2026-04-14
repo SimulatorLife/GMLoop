@@ -46,6 +46,7 @@ export function walkObjectGraph(root: unknown, options: WalkObjectGraphOptions =
         seen.add(value);
 
         if (Array.isArray(value)) {
+            const arraySnapshot = value.slice();
             if (typeof enterArray === "function") {
                 const shouldTraverse = enterArray(value, parent, key);
                 if (shouldTraverse === false) {
@@ -53,8 +54,8 @@ export function walkObjectGraph(root: unknown, options: WalkObjectGraphOptions =
                 }
             }
 
-            for (let index = value.length - 1; index >= 0; index -= 1) {
-                const item = value[index];
+            for (let index = arraySnapshot.length - 1; index >= 0; index -= 1) {
+                const item = arraySnapshot[index];
                 if (!item || typeof item !== "object") {
                     continue;
                 }
