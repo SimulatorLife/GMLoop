@@ -45,7 +45,6 @@ export type GraphNodeKind =
     | "resource"
     | "room"
     | "script"
-    | "script_resource"
     | "sequence"
     | "shader"
     | "sound"

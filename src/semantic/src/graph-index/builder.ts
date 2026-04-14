@@ -133,7 +133,7 @@ const GRAPH_RESOURCE_NODE_KINDS = new Set<GraphNodeKind>([
     "project",
     "resource",
     "room",
-    "script_resource",
+    "script",
     "sequence",
     "shader",
     "sound",
@@ -217,7 +217,6 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "resource":
         case "room":
         case "script":
-        case "script_resource":
         case "sequence":
         case "shader":
         case "sound":
@@ -281,8 +280,11 @@ function registerNodeIndexes(context: ProjectionContext, node: GraphNodeRecord):
     }
 }
 
-function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKind {
+function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKind | null {
     switch (collectionName) {
+        case "scripts": {
+            return null;
+        }
         case "functions": {
             return "function";
         }
@@ -349,7 +351,7 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
             return "room";
         }
         case "GMScript": {
-            return "script_resource";
+            return "script";
         }
         case "GMSequence": {
             return "sequence";
@@ -562,6 +564,10 @@ function projectIdentifierCollections(context: ProjectionContext): void {
 
     for (const [collectionName, collectionValue] of Object.entries(identifiers)) {
         const kind = normalizeIdentifierCollectionKind(collectionName);
+        if (!kind) {
+            continue;
+        }
+
         const collection = asRecord(collectionValue);
 
         for (const [collectionKey, rawEntry] of Object.entries(collection)) {
