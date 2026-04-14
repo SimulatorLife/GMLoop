@@ -24,6 +24,7 @@ import {
     formatElapsedNanosecondsAsMilliseconds,
     readMonotonicNanoseconds
 } from "../shared/timing/elapsed-time.js";
+import { formatPathForDisplay } from "../workflow/display-path.js";
 import {
     discoverProjectRoot,
     resolveExistingGmloopConfigPath,
@@ -793,19 +794,9 @@ function setProcessExitCode(code: number): void {
 }
 
 function toLintProgressDisplayPath(parameters: { cwd: string; filePath: string }): string {
-    const absoluteFilePath = path.resolve(parameters.filePath);
-    const absoluteCwd = path.resolve(parameters.cwd);
-    const relativePath = path.relative(absoluteCwd, absoluteFilePath);
-
-    if (absoluteFilePath === absoluteCwd) {
-        return ".";
-    }
-
-    if (relativePath.length > 0 && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
-        return relativePath;
-    }
-
-    return absoluteFilePath;
+    return formatPathForDisplay(parameters.filePath, {
+        cwd: parameters.cwd
+    });
 }
 
 function emitLintFixProgressForResults(parameters: {

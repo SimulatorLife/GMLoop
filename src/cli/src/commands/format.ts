@@ -62,6 +62,7 @@ import {
     formatElapsedNanosecondsAsMilliseconds,
     readMonotonicNanoseconds
 } from "../shared/timing/elapsed-time.js";
+import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
 import {
     isHelpRequest,
@@ -164,22 +165,6 @@ function createSampleLimitState({ getDefaultLimit, resolveLimit }) {
             return currentValue;
         }
     };
-}
-
-function formatPathForDisplay(targetPath) {
-    const resolvedTarget = path.resolve(targetPath);
-    const resolvedCwd = process.cwd();
-    const relativePath = path.relative(resolvedCwd, resolvedTarget);
-
-    if (resolvedTarget === resolvedCwd) {
-        return ".";
-    }
-
-    if (relativePath.length > 0 && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
-        return relativePath;
-    }
-
-    return resolvedTarget;
 }
 
 function describeIgnoreSource(ignorePaths) {
