@@ -41,6 +41,7 @@ export type GraphNodeKind =
     | "object_event"
     | "particle_system"
     | "path"
+    | "project"
     | "resource"
     | "room"
     | "script"

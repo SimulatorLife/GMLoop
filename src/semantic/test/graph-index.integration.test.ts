@@ -377,3 +377,133 @@ void test("buildGraphIndex projects structs, variables, functions, and concrete 
         await fixture.cleanup();
     }
 });
+
+void test("buildGraphIndex projects the project manifest as the connected project root", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-project-root-");
+
+    try {
+        await fixture.writeProjectFile(
+            "InterplanetaryFootball.yyp",
+            JSON.stringify({
+                name: "InterplanetaryFootball",
+                resourceType: "GMProject",
+                resources: [
+                    {
+                        id: {
+                            name: "kickoff",
+                            path: "scripts/kickoff/kickoff.yy"
+                        }
+                    },
+                    {
+                        id: {
+                            name: "config",
+                            path: "datafiles/config/config.yy"
+                        }
+                    },
+                    {
+                        id: {
+                            name: "mystery_resource",
+                            path: "extensions/mystery_resource/mystery_resource.yy"
+                        }
+                    }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "scripts/kickoff/kickoff.yy",
+            JSON.stringify({ name: "kickoff", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/kickoff/kickoff.gml",
+            ["function kickoff() {", "    return 1;", "}", ""].join("\n")
+        );
+        await fixture.writeProjectFile(
+            "datafiles/config/config.yy",
+            JSON.stringify({ name: "config", resourceType: "GMIncludedFile" })
+        );
+        await fixture.writeProjectFile(
+            "extensions/mystery_resource/mystery_resource.yy",
+            JSON.stringify({ name: "mystery_resource", resourceType: "GMMysteryResource" })
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const projectNode = database
+                .prepare(
+                    `
+                        SELECT id, kind, name, resource_path AS resourcePath, summary
+                        FROM nodes
+                        WHERE resource_path = ?
+                    `
+                )
+                .get("InterplanetaryFootball.yyp") as
+                | { id: string; kind: string; name: string; resourcePath: string; summary: string }
+                | undefined;
+            assert.ok(projectNode);
+            assert.equal(projectNode.id, "project::resource::InterplanetaryFootball.yyp");
+            assert.equal(projectNode.kind, "project");
+            assert.equal(projectNode.name, "InterplanetaryFootball");
+            assert.equal(projectNode.resourcePath, "InterplanetaryFootball.yyp");
+            assert.equal(
+                projectNode.summary,
+                "project 'InterplanetaryFootball'. Defined in InterplanetaryFootball.yyp."
+            );
+
+            const dataFileRows = database
+                .prepare("SELECT name FROM nodes WHERE kind = 'data_file' ORDER BY name")
+                .all() as Array<{ name: string }>;
+            assert.deepEqual(
+                dataFileRows.map((row) => row.name),
+                ["config"]
+            );
+
+            const genericResourceNode = database
+                .prepare("SELECT kind FROM nodes WHERE resource_path = ?")
+                .get("extensions/mystery_resource/mystery_resource.yy") as { kind: string } | undefined;
+            assert.equal(genericResourceNode?.kind, "resource");
+
+            const rootEdges = database
+                .prepare(
+                    `
+                        SELECT to_id AS toId, type
+                        FROM edges
+                        WHERE from_id = ?
+                        ORDER BY to_id
+                    `
+                )
+                .all("project::resource::InterplanetaryFootball.yyp") as Array<{ toId: string; type: string }>;
+            assert.deepEqual(
+                rootEdges.map((row) => ({ toId: row.toId, type: row.type })),
+                [
+                    {
+                        toId: "project::resource::datafiles/config/config.yy",
+                        type: "contains"
+                    },
+                    {
+                        toId: "project::resource::extensions/mystery_resource/mystery_resource.yy",
+                        type: "contains"
+                    },
+                    {
+                        toId: "project::resource::scripts/kickoff/kickoff.yy",
+                        type: "contains"
+                    }
+                ]
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});

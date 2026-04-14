@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { Core } from "@gmloop/core";
 
+import { isProjectManifestPath } from "../project-index/constants.js";
 import { buildProjectIndex } from "../project-index/index.js";
 import { resolveGraphIndexConfig } from "./config.js";
 import {
@@ -129,6 +130,7 @@ const GRAPH_RESOURCE_NODE_KINDS = new Set<GraphNodeKind>([
     "object",
     "particle_system",
     "path",
+    "project",
     "resource",
     "room",
     "script_resource",
@@ -211,6 +213,7 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "object_event":
         case "particle_system":
         case "path":
+        case "project":
         case "resource":
         case "room":
         case "script":
@@ -327,6 +330,9 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
         case "GMIncludedFile": {
             return "data_file";
         }
+        case "GMProject": {
+            return "project";
+        }
         case "GMNotes": {
             return "note";
         }
@@ -364,7 +370,7 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
             return "timeline";
         }
         default: {
-            return "data_file";
+            return "resource";
         }
     }
 }
@@ -660,7 +666,7 @@ function projectRelationshipEdges(context: ProjectionContext): void {
         context.edgeRecords.push({
             fromId: createGraphNodeId(context.graphId, "resource", fromResourcePath),
             toId: createGraphNodeId(context.graphId, "resource", targetPath),
-            type: "references"
+            type: isProjectManifestPath(fromResourcePath) ? "contains" : "references"
         });
     }
 }

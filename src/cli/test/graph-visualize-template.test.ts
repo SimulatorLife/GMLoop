@@ -83,6 +83,17 @@ void test("graph visualization template keeps tooltip interactive for text selec
     assert.match(html, /hideTooltipWithDelay/);
 });
 
+void test("graph visualization template pins selected node tooltip until selection changes", () => {
+    const html = renderEmptyGraphVisualizationHtml("Pinned Tooltip Test");
+
+    assert.match(html, /let pinnedTooltipNodeId = null/);
+    assert.match(html, /pinnedTooltipNodeId = d\.id/);
+    assert.match(html, /focusNodeId = d\.id/);
+    assert.match(html, /pinnedTooltipNodeId !== null && pinnedTooltipNodeId !== d\.id/);
+    assert.match(html, /pinnedTooltipNodeId === null && !tooltip\.node\(\)\.matches\(":hover"\)/);
+    assert.doesNotMatch(html, /focusNodeId = focusNodeId === d\.id \? null : d\.id/);
+});
+
 void test("graph visualization template gives contains and defines distinct edge and legend styles", () => {
     const html = renderEmptyGraphVisualizationHtml("Legend Style Test");
     const containsCssRuleBody = extractCssRuleBody(html, ".link-contains");
@@ -100,6 +111,39 @@ void test("graph visualization template gives contains and defines distinct edge
     assert.notEqual(containsStyle.color, definesStyle.color);
     assert.notEqual(containsStyle.dashArray, definesStyle.dashArray);
     assert.notEqual(containsStyle.legendBorderStyle, definesStyle.legendBorderStyle);
+});
+
+void test("graph visualization template relies on semantic project nodes instead of a synthetic center node", () => {
+    const html = renderGraphVisualizationHtml(
+        JSON.stringify({
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            edges: [
+                {
+                    source: "project::resource::InterplanetaryFootball.yyp",
+                    target: "project::resource::scripts/kickoff/kickoff.yy",
+                    type: "contains"
+                }
+            ],
+            nodes: [
+                {
+                    displayName: "InterplanetaryFootball",
+                    graphId: "project",
+                    id: "project::resource::InterplanetaryFootball.yyp",
+                    kind: "project",
+                    name: "InterplanetaryFootball",
+                    snippet: "",
+                    summary: "project 'InterplanetaryFootball'. Defined in InterplanetaryFootball.yyp."
+                }
+            ],
+            projectRoot: "/tmp/project"
+        }),
+        "Project Root Test"
+    );
+
+    assert.doesNotMatch(html, /project::center/);
+    assert.doesNotMatch(html, /Project root node/);
+    assert.match(html, /InterplanetaryFootball/);
 });
 
 void test("graph visualization template exposes missing node kinds with requested default filters", () => {
@@ -142,6 +186,15 @@ void test("graph visualization template exposes missing node kinds with requeste
                     id: "local-variable",
                     kind: "local_variable",
                     name: "local_value",
+                    snippet: "",
+                    summary: ""
+                },
+                {
+                    displayName: "State.Idle",
+                    graphId: "project",
+                    id: "enum-member",
+                    kind: "enum_member",
+                    name: "Idle",
                     snippet: "",
                     summary: ""
                 },
@@ -207,6 +260,15 @@ void test("graph visualization template exposes missing node kinds with requeste
                     name: "config",
                     snippet: "",
                     summary: ""
+                },
+                {
+                    displayName: "mystery_resource",
+                    graphId: "project",
+                    id: "resource",
+                    kind: "resource",
+                    name: "mystery_resource",
+                    snippet: "",
+                    summary: ""
                 }
             ],
             projectRoot: "/tmp/project"
@@ -223,11 +285,14 @@ void test("graph visualization template exposes missing node kinds with requeste
     assert.match(html, /"struct_variable"/);
     assert.match(html, /"instance_variable"/);
     assert.match(html, /"local_variable"/);
+    assert.match(html, /"enum_member"/);
     assert.match(html, /"function"/);
     assert.match(html, /"data_file"/);
+    assert.match(html, /"resource"/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"struct_variable"[\s\S]*\]\)/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"instance_variable"[\s\S]*\]\)/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"local_variable"[\s\S]*\]\)/);
+    assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"enum_member"[\s\S]*\]\)/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"function"[\s\S]*\]\)/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"data_file"[\s\S]*\]\)/);
 });

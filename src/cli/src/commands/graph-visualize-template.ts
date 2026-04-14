@@ -8,6 +8,11 @@ type EdgeLineVisualStyle = Readonly<{
     type: string;
 }>;
 
+type NodeVisualStyle = Readonly<{
+    color: string;
+    kind: string;
+}>;
+
 const EDGE_LINE_VISUAL_STYLES: ReadonlyArray<EdgeLineVisualStyle> = Object.freeze([
     {
         color: "#1f77b4",
@@ -83,6 +88,40 @@ const EDGE_LINE_VISUAL_STYLES: ReadonlyArray<EdgeLineVisualStyle> = Object.freez
     }
 ]);
 
+const NODE_VISUAL_STYLES: ReadonlyArray<NodeVisualStyle> = Object.freeze([
+    { color: "#f8f9fa", kind: "project" },
+    { color: "#e76f51", kind: "anim_curve" },
+    { color: "#9aa0a6", kind: "data_file" },
+    { color: "#7f5539", kind: "extension" },
+    { color: "#f4a261", kind: "font" },
+    { color: "#4dabf7", kind: "function" },
+    { color: "#1f78b4", kind: "script" },
+    { color: "#74c0fc", kind: "script_resource" },
+    { color: "#2a9d8f", kind: "object" },
+    { color: "#9b5de5", kind: "enum" },
+    { color: "#c77dff", kind: "enum_member" },
+    { color: "#f77f00", kind: "macro" },
+    { color: "#ffbe0b", kind: "note" },
+    { color: "#f15bb5", kind: "struct" },
+    { color: "#ff70a6", kind: "struct_variable" },
+    { color: "#d81159", kind: "constructor" },
+    { color: "#00b4d8", kind: "global_variable" },
+    { color: "#00f5d4", kind: "instance_variable" },
+    { color: "#90e0ef", kind: "local_variable" },
+    { color: "#ef476f", kind: "particle_system" },
+    { color: "#06d6a0", kind: "path" },
+    { color: "#adb5bd", kind: "resource" },
+    { color: "#ff7f11", kind: "sprite" },
+    { color: "#ffd166", kind: "shader" },
+    { color: "#8ecae6", kind: "sequence" },
+    { color: "#3a86ff", kind: "sound" },
+    { color: "#e63946", kind: "room" },
+    { color: "#8ac926", kind: "tileset" },
+    { color: "#cdb4db", kind: "timeline" },
+    { color: "#bcbd22", kind: "object_event" },
+    { color: "#7f7f7f", kind: "default" }
+]);
+
 function renderEdgeLineCssRule(style: EdgeLineVisualStyle): string {
     const declarations = [`stroke: ${style.color};`, `stroke-width: ${style.strokeWidth};`];
 
@@ -104,6 +143,14 @@ function renderEdgeLineCssRules(): string {
 function getEdgeLineColor(type: string): string {
     const visualStyle = EDGE_LINE_VISUAL_STYLES.find((style) => style.type === type);
     return visualStyle?.color ?? "#7f7f7f";
+}
+
+function renderNodeFillCssRule(style: NodeVisualStyle): string {
+    return `.node-${style.kind} { fill: ${style.color}; }`;
+}
+
+function renderNodeFillCssRules(): string {
+    return NODE_VISUAL_STYLES.map((style) => renderNodeFillCssRule(style)).join("\n    ");
 }
 
 export function renderGraphVisualizationHtml(dataJson: string, title: string): string {
@@ -136,43 +183,15 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     ${renderEdgeLineCssRules()}
     
     /* Node colors */
-    .node-project { fill: #ffffff; }
-    .node-anim_curve { fill: #b65f2a; }
-    .node-data_file { fill: #a1a1a1; }
-    .node-extension { fill: #6f8f45; }
-    .node-font { fill: #d3a43b; }
-    .node-function { fill: #4f8edc; }
-    .node-script { fill: #1f77b4; }
-    .node-script_resource { fill: #5c9bd8; }
-    .node-object { fill: #2ca02c; }
-    .node-enum { fill: #9467bd; }
-    .node-enum_member { fill: #7b61b3; }
-    .node-macro { fill: #ff7f0e; }
-    .node-note { fill: #c7b26b; }
-    .node-struct { fill: #e377c2; }
-    .node-struct_variable { fill: #c05a94; }
-    .node-constructor { fill: #c63fa0; }
-    .node-global_variable { fill: #17becf; }
-    .node-instance_variable { fill: #00a2af; }
-    .node-local_variable { fill: #5bb7c4; }
-    .node-particle_system { fill: #ef8a62; }
-    .node-path { fill: #88a764; }
-    .node-resource { fill: #7f7f7f; }
-    .node-sprite { fill: #d95f02; }
-    .node-shader { fill: #6b3f26; }
-    .node-sequence { fill: #8da0cb; }
-    .node-sound { fill: #4db6ac; }
-    .node-room { fill: #a9744f; }
-    .node-tileset { fill: #66a61e; }
-    .node-timeline { fill: #e6ab02; }
-    .node-object_event { fill: #bcbd22; }
-    .node-default { fill: #7f7f7f; }
+    ${renderNodeFillCssRules()}
     
     text { font-size: 10px; pointer-events: none; fill: #e0e0e0; text-shadow: 0 1px 2px #1e1e1e, 0 -1px 2px #1e1e1e, 1px 0 2px #1e1e1e, -1px 0 2px #1e1e1e; }
     
-    #tooltip { position: absolute; background: #252526; padding: 10px; border: 1px solid #444; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); pointer-events: auto; font-size: 12px; z-index: 20; max-width: 300px; display: none; color: #eee; user-select: text; }
+    #tooltip { position: absolute; background: #252526; padding: 10px; border: 1px solid #444; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); pointer-events: auto; font-size: 12px; line-height: 1.35; z-index: 20; width: max-content; max-width: min(520px, calc(100vw - 24px)); box-sizing: border-box; overflow-wrap: anywhere; word-break: normal; white-space: normal; display: none; color: #eee; user-select: text; }
     #tooltip.visible { display: block; }
-    #tooltip h3 { margin: 0 0 5px 0; font-size: 14px; word-break: break-all; color: #fff; }
+    #tooltip h3 { margin: 0 0 5px 0; font-size: 14px; overflow-wrap: anywhere; word-break: normal; color: #fff; }
+    #tooltip div, #tooltip p { overflow-wrap: anywhere; }
+    #tooltip p { margin: 8px 0 0 0; }
     #json-view { position: absolute; inset: 58px 0 0 0; overflow: auto; margin: 0; padding: 10px 20px 20px; font-size: 12px; background: #181818; color: #eaeaea; display: none; }
     .hidden { display: none !important; }
     
@@ -325,6 +344,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         "object",
         "particle_system",
         "path",
+        "resource",
         "room",
         "script_resource",
         "sequence",
@@ -337,6 +357,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     const variableKinds = new Set(["global_variable", "instance_variable", "local_variable", "struct_variable"]);
     const defaultDisabledNodeKinds = new Set([
         "data_file",
+        "enum_member",
         "function",
         "global_variable",
         "instance_variable",
@@ -507,15 +528,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     // Map data for D3
     let nodesRaw = allNodes.map(d => Object.assign({}, d));
     let linksRaw = DATA.edges.map(d => Object.assign({}, d));
-    const centerNode = {
-        id: "project::center",
-        kind: "project",
-        name: "game",
-        displayName: "game",
-        graphId: "project",
-        summary: "Project root node",
-        snippet: ""
-    };
     
     // Compute node degrees
     const incomingCount = new Map();
@@ -544,6 +556,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     
     let searchHighlightNodeIds = new Set();
     let focusNodeId = null;
+    let pinnedTooltipNodeId = null;
     
     function updateGraph() {
         const validNodeIds = new Set(nodesRaw.filter(n => activeNodeFilters.has(n.kind)).map(n => n.id));
@@ -568,13 +581,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         });
         
         const filteredNodes = nodesRaw.filter(n => activeNodeIds.has(n.id) && activeNodeFilters.has(n.kind));
-        if (filteredNodes.length > 0) {
-            filteredNodes.push(centerNode);
-        }
-        const syntheticLinks = filteredNodes
-            .filter((nodeValue) => nodeValue.id !== centerNode.id)
-            .map((nodeValue) => ({ source: centerNode.id, target: nodeValue.id, type: "contains" }));
-        const graphLinks = filteredLinks.concat(syntheticLinks);
+        const graphLinks = filteredLinks;
         
         // Update links
         link = link.data(graphLinks, d => {
@@ -660,6 +667,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
                     "object_event",
                     "particle_system",
                     "path",
+                    "resource",
                     "tileset",
                     "timeline"
                 ].includes(d.kind)
@@ -707,7 +715,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         // keep pinned if fx/fy exist
     }
     
-    function showTooltip(event, d) {
+    function renderTooltip(event, d) {
         const inC = incomingCount.get(d.id) || 0;
         const outC = outgoingCount.get(d.id) || 0;
         
@@ -724,14 +732,23 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         .style("top", (event.pageY + 15) + "px")
         .classed("visible", true);
     }
+
+    function showTooltip(event, d) {
+        if (pinnedTooltipNodeId !== null && pinnedTooltipNodeId !== d.id) {
+            return;
+        }
+
+        renderTooltip(event, d);
+    }
     
     function hideTooltip() {
+        pinnedTooltipNodeId = null;
         tooltip.classed("visible", false);
     }
 
     function hideTooltipWithDelay() {
         setTimeout(() => {
-            if (!tooltip.node().matches(":hover")) {
+            if (pinnedTooltipNodeId === null && !tooltip.node().matches(":hover")) {
                 hideTooltip();
             }
         }, 120);
@@ -739,7 +756,9 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     
     function handleNodeClick(event, d) {
         event.stopPropagation();
-        focusNodeId = focusNodeId === d.id ? null : d.id;
+        focusNodeId = d.id;
+        pinnedTooltipNodeId = d.id;
+        renderTooltip(event, d);
         applyHighlights();
     }
     
@@ -761,6 +780,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     
     function clearFocus() {
         focusNodeId = null;
+        hideTooltip();
         searchHighlightNodeIds.clear();
         document.getElementById('search').value = '';
         applyHighlights();
@@ -771,6 +791,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
         const term = this.value.toLowerCase().trim();
         searchHighlightNodeIds.clear();
         focusNodeId = null; // clear focus on search
+        hideTooltip();
         
         if (term.length > 0) {
             nodesRaw.forEach(n => {
@@ -827,7 +848,11 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string): s
     }
 
     tooltip.on("mouseenter", () => tooltip.classed("visible", true));
-    tooltip.on("mouseleave", hideTooltip);
+    tooltip.on("mouseleave", () => {
+        if (pinnedTooltipNodeId === null) {
+            hideTooltip();
+        }
+    });
 
     // Initial render
     updateGraph();
