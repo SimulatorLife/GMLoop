@@ -208,7 +208,7 @@ class CliTestExit extends Error {
  * well-known name string as the contract discriminant rather than `instanceof`.
  */
 function isCliTestExit(value: unknown): value is CliTestExit {
-    if (!value || typeof value !== "object") {
+    if (value === null || value === undefined || typeof value !== "object") {
         return false;
     }
 
