@@ -8,8 +8,6 @@ import {
     createCommentTokenRangeIndex,
     createMeta,
     getLineIndentationAtOffset,
-    getNodeEndIndex,
-    getNodeStartIndex,
     isAstNodeRecord,
     isAstNodeWithType,
     isIdentifierNode,
@@ -623,8 +621,8 @@ function collectLoopCandidateAnalysis(parameters: {
             continue;
         }
 
-        const expressionStart = getNodeStartIndex(node);
-        const expressionEnd = getNodeEndIndex(node);
+        const expressionStart = Core.getNodeStartIndex(node);
+        const expressionEnd = Core.getNodeEndIndex(node);
         if (
             typeof expressionStart !== "number" ||
             typeof expressionEnd !== "number" ||
@@ -804,7 +802,7 @@ export function createPreferLoopInvariantExpressionsRule(definition: GmlRuleDefi
                         localIdentifierNames.add(hoistIdentifierName);
                         normalizedLocalIdentifierNames.add(normalizeIdentifierName(hoistIdentifierName));
 
-                        const loopStart = getNodeStartIndex(loopContext.loopNode);
+                        const loopStart = Core.getNodeStartIndex(loopContext.loopNode);
                         if (typeof loopStart !== "number") {
                             continue;
                         }

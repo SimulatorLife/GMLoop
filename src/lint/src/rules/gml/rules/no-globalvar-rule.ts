@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { createMeta, getNodeStartIndex, isAstNodeRecord, resolveLocFromIndex } from "../rule-base-helpers.js";
+import { createMeta, isAstNodeRecord, resolveLocFromIndex } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 function collectGlobalVarStatementStartOffsets(programNode: unknown): ReadonlyArray<number> {
@@ -20,7 +20,7 @@ function collectGlobalVarStatementStartOffsets(programNode: unknown): ReadonlyAr
         }
 
         if (node.type === "GlobalVarStatement") {
-            const start = getNodeStartIndex(node);
+            const start = Core.getNodeStartIndex(node);
             if (typeof start === "number") {
                 statementStartOffsets.push(start);
             }

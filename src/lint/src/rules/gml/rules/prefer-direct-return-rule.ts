@@ -7,8 +7,6 @@ import {
     createMeta,
     findFirstAstNodeBy,
     getLineStartOffset,
-    getNodeEndIndex,
-    getNodeStartIndex,
     isAstNodeRecord,
     isAstNodeWithType,
     isIdentifierNode,
@@ -161,11 +159,11 @@ function buildDirectReturnCandidate(
         return null;
     }
 
-    const declarationStart = getNodeStartIndex(variableDeclarationNode);
-    const nextStatementStart = getNodeStartIndex(nextStatement);
-    const returnEnd = getNodeEndIndex(nextStatement);
-    const initializerStart = getNodeStartIndex(declarator.init);
-    const initializerEnd = getNodeEndIndex(declarator.init);
+    const declarationStart = Core.getNodeStartIndex(variableDeclarationNode);
+    const nextStatementStart = Core.getNodeStartIndex(nextStatement);
+    const returnEnd = Core.getNodeEndIndex(nextStatement);
+    const initializerStart = Core.getNodeStartIndex(declarator.init);
+    const initializerEnd = Core.getNodeEndIndex(declarator.init);
     if (
         typeof declarationStart !== "number" ||
         typeof nextStatementStart !== "number" ||

@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { createMeta, getNodeEndIndex, getNodeStartIndex, isAstNodeRecord } from "../rule-base-helpers.js";
+import { createMeta, isAstNodeRecord } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { unwrapParenthesizedExpression } = Core;
@@ -30,10 +30,10 @@ export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition):
 
                     if (isUndefinedIdentifier(node.left) || isUndefinedIdentifier(node.right)) {
                         const otherSide = isUndefinedIdentifier(node.left) ? node.right : node.left;
-                        const start = getNodeStartIndex(node);
-                        const end = getNodeEndIndex(node);
-                        const otherStart = getNodeStartIndex(otherSide);
-                        const otherEnd = getNodeEndIndex(otherSide);
+                        const start = Core.getNodeStartIndex(node);
+                        const end = Core.getNodeEndIndex(node);
+                        const otherStart = Core.getNodeStartIndex(otherSide);
+                        const otherEnd = Core.getNodeEndIndex(otherSide);
 
                         if (
                             typeof start === "number" &&
@@ -74,10 +74,10 @@ export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition):
                     }
 
                     const comparedExpression = isUndefinedIdentifier(inner.left) ? inner.right : inner.left;
-                    const comparedStart = getNodeStartIndex(comparedExpression);
-                    const comparedEnd = getNodeEndIndex(comparedExpression);
-                    const start = getNodeStartIndex(node);
-                    const end = getNodeEndIndex(node);
+                    const comparedStart = Core.getNodeStartIndex(comparedExpression);
+                    const comparedEnd = Core.getNodeEndIndex(comparedExpression);
+                    const start = Core.getNodeStartIndex(node);
+                    const end = Core.getNodeEndIndex(node);
                     if (
                         typeof comparedStart !== "number" ||
                         typeof comparedEnd !== "number" ||

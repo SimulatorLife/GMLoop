@@ -1,6 +1,7 @@
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { createMeta, getNodeEndIndex, getNodeStartIndex, isAstNodeRecord, walkAstNodes } from "../rule-base-helpers.js";
+import { createMeta, isAstNodeRecord, walkAstNodes } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 function hasInterpolationAtoms(atoms: ReadonlyArray<unknown>): boolean {
@@ -38,8 +39,8 @@ export function createNoUnnecessaryStringInterpolationRule(definition: GmlRuleDe
                             return;
                         }
 
-                        const start = getNodeStartIndex(candidateNode);
-                        const end = getNodeEndIndex(candidateNode);
+                        const start = Core.getNodeStartIndex(candidateNode);
+                        const end = Core.getNodeEndIndex(candidateNode);
                         if (typeof start !== "number" || typeof end !== "number") {
                             return;
                         }

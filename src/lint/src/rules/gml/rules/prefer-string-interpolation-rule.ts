@@ -5,8 +5,6 @@ import { printExpression } from "../print-expression.js";
 import {
     type AstNodeRecord,
     createMeta,
-    getNodeEndIndex,
-    getNodeStartIndex,
     isAstNodeRecord,
     isAstNodeWithType,
     shouldReportUnsafe
@@ -312,8 +310,8 @@ export function createPreferStringInterpolationRule(definition: GmlRuleDefinitio
                     return;
                 }
 
-                const start = getNodeStartIndex(node);
-                const end = getNodeEndIndex(node);
+                const start = Core.getNodeStartIndex(node);
+                const end = Core.getNodeEndIndex(node);
                 if (start < 0 || end <= start || rangeOverlapsHandledConcatenation(start, end)) {
                     return;
                 }

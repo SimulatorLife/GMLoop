@@ -5,8 +5,6 @@ import {
     applySourceTextEdits,
     createMeta,
     findPreviousNonWhitespaceCharacter,
-    getNodeEndIndex,
-    getNodeStartIndex,
     reportProgramTextRewrite,
     type SourceTextEdit
 } from "../rule-base-helpers.js";
@@ -129,8 +127,8 @@ function locateBinaryOperatorSourceRange(parameters: {
 }): [number, number] | null {
     const leftNode = (parameters.node as { left?: Rule.Node }).left;
     const rightNode = (parameters.node as { right?: Rule.Node }).right;
-    const leftEndIndex = leftNode ? getNodeEndIndex(leftNode) : null;
-    const rightStartIndex = rightNode ? getNodeStartIndex(rightNode) : null;
+    const leftEndIndex = leftNode ? Core.getNodeEndIndex(leftNode) : null;
+    const rightStartIndex = rightNode ? Core.getNodeStartIndex(rightNode) : null;
     const searchStart =
         typeof leftEndIndex === "number"
             ? Core.clamp(leftEndIndex, parameters.expressionStart, parameters.expressionEnd)
@@ -200,8 +198,8 @@ export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition
                     const normalized = Core.OPERATOR_ALIAS_MAP.get(node.operator);
                     if (normalized) {
                         const operator = String(node.operator);
-                        const start = getNodeStartIndex(node);
-                        const end = getNodeEndIndex(node);
+                        const start = Core.getNodeStartIndex(node);
+                        const end = Core.getNodeEndIndex(node);
                         if (
                             typeof start === "number" &&
                             typeof end === "number" &&

@@ -1,12 +1,10 @@
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import {
     applySourceTextEdits,
     type AssignmentExpressionNode,
     createMeta,
-    getCallExpressionIdentifierName,
-    getNodeEndIndex,
-    getNodeStartIndex,
     isAssignmentExpressionNode,
     isIdentifierNode,
     isMemberIndexExpressionNode,
@@ -50,7 +48,7 @@ function getNormalizedIdentifierName(node: unknown): string | null {
 }
 
 function resolveExplicitConstructorAccessor(node: unknown): ProvenAccessorToken | null {
-    const callIdentifierName = getCallExpressionIdentifierName(node as never);
+    const callIdentifierName = Core.getCallExpressionIdentifierName(node as never);
     if (!callIdentifierName) {
         return null;
     }
@@ -75,7 +73,7 @@ function resolveAssignmentSource(node: AssignmentExpressionNode | VariableDeclar
 }
 
 function getNodeOrderStart(node: AccessorEventNode): number | null {
-    const startIndex = getNodeStartIndex(node as never);
+    const startIndex = Core.getNodeStartIndex(node as never);
     return typeof startIndex === "number" && Number.isFinite(startIndex) ? startIndex : null;
 }
 
@@ -124,8 +122,8 @@ function findMemberIndexAccessorRange(
     sourceText: string,
     memberIndexExpression: MemberIndexExpressionNode
 ): { start: number; end: number } | null {
-    const objectEnd = getNodeEndIndex(memberIndexExpression.object);
-    const nodeEnd = getNodeEndIndex(memberIndexExpression);
+    const objectEnd = Core.getNodeEndIndex(memberIndexExpression.object);
+    const nodeEnd = Core.getNodeEndIndex(memberIndexExpression);
     if (
         typeof objectEnd !== "number" ||
         !Number.isFinite(objectEnd) ||
