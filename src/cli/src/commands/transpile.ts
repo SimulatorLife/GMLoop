@@ -16,6 +16,7 @@ import {
     createWriteOption
 } from "../cli-core/shared-command-options.js";
 import { type TranspilationContext, transpileFile } from "../modules/transpilation/index.js";
+import { formatPathForDisplay } from "../workflow/display-path.js";
 
 const TRANSPILE_COMMAND_CLI_EXAMPLE = "pnpm dlx prettier-plugin-gml transpile --path path/to/script.gml";
 const TRANSPILE_COMMAND_FIX_EXAMPLE = "pnpm dlx prettier-plugin-gml transpile --write --path path/to/project";
@@ -130,12 +131,7 @@ function pluralize(value: number, singular: string, plural: string): string {
 }
 
 function displayPath(value: string): string {
-    const relativePath = path.relative(process.cwd(), value);
-    if (relativePath.length > 0 && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
-        return relativePath;
-    }
-
-    return value;
+    return formatPathForDisplay(value);
 }
 
 function resolveJavaScriptOutputPath(gmlFilePath: string): string {

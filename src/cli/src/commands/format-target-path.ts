@@ -7,6 +7,7 @@ import { Core } from "@gmloop/core";
 
 import { CliUsageError } from "../cli-core/errors.js";
 import { CLI_COMMAND_NAMES } from "../shared/command-names.js";
+import { formatPathForDisplay } from "../workflow/display-path.js";
 
 const MAX_COMMAND_LENGTH_DIFFERENCE = 2;
 const MAX_COMMAND_CHARACTER_DIFFERENCES = 2;
@@ -308,20 +309,4 @@ export async function resolveTargetStats(
 
         throw new CliUsageError(messageParts.join(" "), { usage });
     }
-}
-
-function formatPathForDisplay(targetPath: string): string {
-    const resolvedTarget = path.resolve(targetPath);
-    const resolvedCwd = process.cwd();
-    const relativePath = path.relative(resolvedCwd, resolvedTarget);
-
-    if (resolvedTarget === resolvedCwd) {
-        return ".";
-    }
-
-    if (relativePath.length > 0 && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
-        return relativePath;
-    }
-
-    return resolvedTarget;
 }

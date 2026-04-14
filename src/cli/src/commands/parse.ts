@@ -15,6 +15,7 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
+import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 
 const GML_FILE_EXTENSION = ".gml";
@@ -54,22 +55,6 @@ type DryRunPayload =
     | {
           files: Array<DryRunDirectoryEntry>;
       };
-
-function formatPathForDisplay(targetPath: string): string {
-    const resolvedTarget = path.resolve(targetPath);
-    const resolvedCwd = process.cwd();
-    const relativePath = path.relative(resolvedCwd, resolvedTarget);
-
-    if (resolvedTarget === resolvedCwd) {
-        return ".";
-    }
-
-    if (relativePath.length > 0 && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
-        return relativePath;
-    }
-
-    return resolvedTarget;
-}
 
 function resolveCommandOptions(command: CommanderCommandLike): ParseCommandOptions {
     return command.opts() as ParseCommandOptions;
