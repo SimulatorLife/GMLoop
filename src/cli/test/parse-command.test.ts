@@ -134,6 +134,43 @@ void test("parse --write writes AST JSON artifacts for directory targets", async
     });
 });
 
+void test("parse error includes the file path that failed", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        const badFilePath = path.join(temporaryDirectory, "broken.gml");
+        await writeFile(
+            badFilePath,
+            `function broken() {
+    var x = {
+    // missing closing brace
+`,
+            "utf8"
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["parse", "--path", badFilePath]
+        });
+
+        assert.notEqual(result.exitCode, 0, "Expected non-zero exit code for a syntax error");
+        assert.match(result.stderr, /broken\.gml/, "Error output should include the file name that failed to parse");
+        assert.match(result.stderr, /Failed to parse/, "Error output should indicate a parse failure");
+        assert.doesNotMatch(result.stderr, /\bat\b.*\.js:\d+/, "Error output should not include internal stack traces");
+    });
+});
+
+void test("parse error for directory target identifies the failing file among siblings", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        await writeFile(path.join(temporaryDirectory, "good.gml"), "var x = 1;\n", "utf8");
+        await writeFile(path.join(temporaryDirectory, "broken.gml"), "var = ;\n", "utf8");
+
+        const result = await runCliTestCommand({
+            argv: ["parse", "--path", temporaryDirectory]
+        });
+
+        assert.notEqual(result.exitCode, 0);
+        assert.match(result.stderr, /broken\.gml/, "Error should identify the specific file that failed");
+    });
+});
+
 void test("parse accepts a .yyp target path and parses project .gml files", async () => {
     await withTemporaryDirectory(async (temporaryDirectory) => {
         await writeFile(path.join(temporaryDirectory, "MyGame.yyp"), JSON.stringify({ name: "MyGame" }), "utf8");
