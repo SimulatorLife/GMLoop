@@ -232,9 +232,11 @@ function printComment(commentPath, options) {
                     comment.inlinePadding = 0;
                 }
 
-                const rawText = Core.getLineCommentRawText(comment, {
-                    originalText: options?.originalText
-                });
+                const rawText = ensureLineCommentBodySpacing(
+                    Core.getLineCommentRawText(comment, {
+                        originalText: options?.originalText
+                    })
+                );
                 const sourceIndentationWidth = resolveCommentSourceIndentationWidth(comment, options?.originalText);
                 const previousSignificantCharacter = resolvePreviousSignificantSourceCharacterBeforeComment(
                     comment,
@@ -359,6 +361,28 @@ function resolveCommentSourceSpan(comment, originalText) {
 function hasLeadingBlankLineInWhitespace(comment): boolean {
     const leadingWhitespace = typeof comment?.leadingWS === "string" ? comment.leadingWS : "";
     return /\n[\t ]*\n/u.test(leadingWhitespace);
+}
+
+/**
+ * Ensures a space exists after the `//` prefix when the immediately
+ * following character is an uppercase letter, indicating a natural-language
+ * text comment rather than commented-out code. Banner and decorative
+ * comments (e.g. `//---`, `//===`) are left untouched because their
+ * first content character is a symbol, not a letter. Doc comments
+ * (`///`) are excluded by the negative lookahead. Commented-out code
+ * (e.g. `//global.foo()`, `//if (x)`) typically starts with a lowercase
+ * letter and is preserved as-is. Comments with trailing decorative
+ * slash sequences (e.g. `//CAMERA SETTINGS/////`) are also preserved
+ * as-is since they are intentional banner formatting.
+ */
+const LINE_COMMENT_BODY_SPACING_PATTERN = /^(\/\/)(?!\/)([A-Z])/;
+const TRAILING_DECORATIVE_SLASHES_PATTERN = /\/{3,}\s*$/;
+
+function ensureLineCommentBodySpacing(rawText: string): string {
+    if (TRAILING_DECORATIVE_SLASHES_PATTERN.test(rawText)) {
+        return rawText;
+    }
+    return rawText.replace(LINE_COMMENT_BODY_SPACING_PATTERN, "$1 $2");
 }
 
 function resolveCommentSourceIndentationWidth(comment, originalText): number | null {
