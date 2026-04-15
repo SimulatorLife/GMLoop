@@ -2809,22 +2809,10 @@ function shouldOmitSyntheticParens(path, _options) {
             const parentInfo = getBinaryOperatorInfo(parent.operator);
             const childInfo = getBinaryOperatorInfo(expression.operator);
 
-            // If child precedence is strictly higher, parens are mathematically redundant.
-            // For multiplicative children inside additive parents (e.g. `0.4 + (1.2 * sqr(dp))`),
-            // preserve asymmetric non-synthetic parens for clarity. When both operands
-            // of the parent are parenthesized (e.g. `(a*b) + (c*d)`) the grouping is
-            // symmetric and parens are stripped as redundant.
+            // If child precedence is strictly higher, parens are redundant
+            // e.g. (a * b) + c -> * > +
             if (childInfo && parentInfo && childInfo.prec > parentInfo.prec) {
-                if (childInfo.type === "arithmetic" && parentInfo.type === "arithmetic") {
-                    const otherOperand = parent.left === node ? parent.right : parent.left;
-                    const siblingIsExplicitlyParenthesized =
-                        otherOperand?.type === "ParenthesizedExpression" && otherOperand.synthetic !== true;
-
-                    if (!siblingIsExplicitlyParenthesized) {
-                        return false;
-                    }
-                }
-
+                // Aggressively strip non-synthetic parentheses for arithmetic operations.
                 if (childInfo.type === "arithmetic") {
                     return !hasImmediateExplicitArithmeticGrouping(expression);
                 }
