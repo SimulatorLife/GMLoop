@@ -70,10 +70,6 @@ type ProjectIndexDescriptor = {
     formatterVersion?: string | null;
     pluginVersion?: string | null;
     buildOptions?: ProjectIndexBuildOptions | null;
-    // `maxSizeBytes` is the runtime name used in a few places while
-    // `cacheMaxSizeBytes` is the config object property - keep both so
-    // consumers can read the same property regardless of the name used.
-    maxSizeBytes?: number | null;
 };
 
 export function createProjectIndexDescriptor({
@@ -95,7 +91,7 @@ export function createProjectIndexDescriptor({
     Core.withDefinedValue(
         cacheMaxSizeBytes,
         (value) => {
-            descriptor.maxSizeBytes = value;
+            descriptor.cacheMaxSizeBytes = value;
         },
         () => {}
     );

@@ -558,10 +558,10 @@ void test("createProjectIndexCoordinator forwards configured cacheMaxSizeBytes",
     });
 });
 
-void test("createProjectIndexCoordinator allows descriptor maxSizeBytes overrides", async () => {
+void test("createProjectIndexCoordinator allows descriptor cacheMaxSizeBytes overrides", async () => {
     await assertCoordinatorMaxSizeScenario({
         coordinatorOverrides: { cacheMaxSizeBytes: 42 },
-        ensureArgs: { projectRoot: "/project", maxSizeBytes: 99 },
+        ensureArgs: { projectRoot: "/project", cacheMaxSizeBytes: 99 },
         expectedMaxSize: 99
     });
 });
@@ -572,7 +572,7 @@ async function assertCoordinatorMaxSizeScenario({
     expectedMaxSize
 }: {
     coordinatorOverrides?: Record<string, unknown>;
-    ensureArgs: { projectRoot: string; maxSizeBytes?: number };
+    ensureArgs: { projectRoot: string; cacheMaxSizeBytes?: number };
     expectedMaxSize: number;
 }) {
     const savedDescriptors: Array<{ maxSizeBytes: number }> = [];
