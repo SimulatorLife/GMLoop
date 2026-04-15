@@ -298,6 +298,46 @@ export function isPathWithinBoundary(filePath: string, rootPath: string): boolea
 }
 
 /**
+ * Evaluate whether a candidate path is selected by allow/deny boundary lists.
+ *
+ * Selection rules:
+ * - Deny boundaries always win.
+ * - Empty allow list means all candidates are allowed.
+ * - Otherwise a candidate must be within at least one allow boundary.
+ * - Directory candidates may opt into inverse boundary checks so parent
+ *   directories that contain an allow boundary are also considered selected.
+ *
+ * @param {string} candidatePath Path being evaluated.
+ * @param {ReadonlyArray<string>} allowBoundaries Canonical allow boundaries.
+ * @param {ReadonlyArray<string>} denyBoundaries Canonical deny boundaries.
+ * @param {{ allowBoundaryWithinCandidate?: boolean }} [options]
+ * @param {boolean} [options.allowBoundaryWithinCandidate=false] Whether to
+ * permit matches when an allow boundary is contained by the candidate path.
+ * @returns {boolean} `true` when the candidate survives deny checks and matches
+ * the allow-list policy.
+ */
+export function isPathSelectedByBoundaries(
+    candidatePath: string,
+    allowBoundaries: ReadonlyArray<string>,
+    denyBoundaries: ReadonlyArray<string>,
+    { allowBoundaryWithinCandidate = false }: { allowBoundaryWithinCandidate?: boolean } = {}
+): boolean {
+    if (denyBoundaries.some((denyBoundary) => isPathWithinBoundary(candidatePath, denyBoundary))) {
+        return false;
+    }
+
+    if (allowBoundaries.length === 0) {
+        return true;
+    }
+
+    return allowBoundaries.some(
+        (allowBoundary) =>
+            isPathWithinBoundary(candidatePath, allowBoundary) ||
+            (allowBoundaryWithinCandidate && isPathWithinBoundary(allowBoundary, candidatePath))
+    );
+}
+
+/**
  * Determine whether a file path should be excluded based on directory segment
  * deny-lists with canonical allowed-directory overrides.
  *

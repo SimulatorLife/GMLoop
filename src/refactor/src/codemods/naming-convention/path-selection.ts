@@ -2,10 +2,6 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-function isPathInsideSelection(absoluteTargetPath: string, absoluteSelectionPath: string): boolean {
-    return absoluteTargetPath === absoluteSelectionPath || Core.isPathInside(absoluteTargetPath, absoluteSelectionPath);
-}
-
 /**
  * Resolve a user-provided project path to an absolute path.
  * Relative paths are interpreted as being rooted at `projectRoot`.
@@ -46,20 +42,7 @@ export function createPathSelectionMatcher(
         }
 
         const absoluteTargetPath = resolveProjectPath(projectRoot, targetPath);
-        const isAllowed =
-            absoluteAllowedPaths.length === 0 ||
-            absoluteAllowedPaths.some((absoluteSelectionPath) =>
-                isPathInsideSelection(absoluteTargetPath, absoluteSelectionPath)
-            );
-        if (!isAllowed) {
-            resultCache.set(targetPath, false);
-            return false;
-        }
-
-        const isDenied = absoluteDeniedPaths.some((absoluteSelectionPath) =>
-            isPathInsideSelection(absoluteTargetPath, absoluteSelectionPath)
-        );
-        const result = !isDenied;
+        const result = Core.isPathSelectedByBoundaries(absoluteTargetPath, absoluteAllowedPaths, absoluteDeniedPaths);
         resultCache.set(targetPath, result);
         return result;
     };

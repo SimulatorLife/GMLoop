@@ -4,9 +4,11 @@ import { Core } from "@gmloop/core";
 
 import { REPO_ROOT } from "../shared/workspace-paths.js";
 
-const { getNonEmptyTrimmedString, isNonEmptyString, isPathWithinBoundary, toArray, uniqueArray, compactArray } = Core;
+const { compactArray, getNonEmptyTrimmedString, isNonEmptyString, isPathSelectedByBoundaries, toArray, uniqueArray } =
+    Core;
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u;
 const WINDOWS_UNC_PATH_PATTERN = /^\\\\[^\\]+\\[^\\]+/u;
+const WORKFLOW_PATH_DELIMITER_PATTERN = /[\n\r,;]+/u;
 
 /**
  * Resolve workflow paths while preserving Windows absolute/UNC semantics even
@@ -57,11 +59,20 @@ export const DEFAULT_FIXTURE_DIRECTORIES = Object.freeze([
  * @returns {Array<string>}
  */
 export function normalizeWorkflowPathList(paths: Iterable<unknown> | null | undefined): Array<string> {
-    const trimmed = compactArray(toArray(paths).map(getNonEmptyTrimmedString)).filter(
-        (value): value is string => typeof value === "string"
-    );
-    const resolved = trimmed.map((candidate) => resolveWorkflowPathCandidate(candidate));
+    const entries = toArray(paths).flatMap((entry) => splitWorkflowPathEntry(entry));
+    const resolved = entries.map((candidate) => resolveWorkflowPathCandidate(candidate));
     return [...(uniqueArray(resolved, { freeze: false }) as Array<string>)];
+}
+
+function splitWorkflowPathEntry(entry: unknown): Array<string> {
+    const normalizedEntry = getNonEmptyTrimmedString(entry);
+    if (typeof normalizedEntry !== "string") {
+        return [];
+    }
+
+    return compactArray(
+        normalizedEntry.split(WORKFLOW_PATH_DELIMITER_PATTERN).map((segment) => getNonEmptyTrimmedString(segment))
+    ).filter((segment): segment is string => typeof segment === "string");
 }
 
 /**
@@ -122,18 +133,9 @@ export function createWorkflowPathFilter(
 
         const normalized = resolveWorkflowPathCandidate(candidate);
 
-        if (denyList.some((deny) => isPathWithinBoundary(normalized, deny))) {
-            return false;
-        }
-
-        if (allowList.length === 0) {
-            return true;
-        }
-
-        return allowList.some(
-            (allow) =>
-                isPathWithinBoundary(normalized, allow) || (treatAsDirectory && isPathWithinBoundary(allow, normalized))
-        );
+        return isPathSelectedByBoundaries(normalized, allowList, denyList, {
+            allowBoundaryWithinCandidate: treatAsDirectory
+        });
     };
 
     const allowsPath = (candidate) => allows(candidate);

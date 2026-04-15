@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import {
     isDirectoryExcludedBySegments,
     isPathInside,
+    isPathSelectedByBoundaries,
     isPathWithinBoundary,
     normalizeBoundaryPath,
     resolveContainedRelativePath,
@@ -197,6 +198,39 @@ void describe("isDirectoryExcludedBySegments", () => {
                 excludedDirectories,
                 allowedDirectories
             ),
+            true
+        );
+    });
+});
+
+void describe("isPathSelectedByBoundaries", () => {
+    void it("allows all paths when no allow boundaries are provided", () => {
+        assert.equal(isPathSelectedByBoundaries("/workspace/project/src/file.gml", [], []), true);
+    });
+
+    void it("rejects paths outside explicit allow boundaries", () => {
+        assert.equal(
+            isPathSelectedByBoundaries("/workspace/project/objects/o_player.gml", ["/workspace/project/scripts"], []),
+            false
+        );
+    });
+
+    void it("prioritizes deny boundaries over allow boundaries", () => {
+        assert.equal(
+            isPathSelectedByBoundaries(
+                "/workspace/project/scripts/player/step.gml",
+                ["/workspace/project/scripts"],
+                ["/workspace/project/scripts/player"]
+            ),
+            false
+        );
+    });
+
+    void it("supports directory checks by allowing allow-boundary descendants", () => {
+        assert.equal(
+            isPathSelectedByBoundaries("/workspace/project", ["/workspace/project/scripts"], [], {
+                allowBoundaryWithinCandidate: true
+            }),
             true
         );
     });
