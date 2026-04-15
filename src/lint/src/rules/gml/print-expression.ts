@@ -93,7 +93,21 @@ export function printExpression(node: any, sourceText: string): string {
             return node.name;
         }
         case "ParenthesizedExpression": {
-            return node.expression ? printExpression(node.expression, sourceText) : "";
+            if (!node.expression) {
+                return "";
+            }
+
+            const innerText = printExpression(node.expression, sourceText);
+
+            // Preserve clarifying parentheses around binary and logical expressions so
+            // that lint autofix output retains the grouping intent present in the AST.
+            // Trivial wrappings like `(a)` are still stripped since the inner expression
+            // is a simple identifier or literal, not a binary/logical expression.
+            if (node.expression.type === "BinaryExpression" || node.expression.type === "LogicalExpression") {
+                return `(${innerText})`;
+            }
+
+            return innerText;
         }
         case "BinaryExpression": {
             const leftPrinted = printExpression(node.left, sourceText);
