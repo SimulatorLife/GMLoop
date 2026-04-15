@@ -82,6 +82,7 @@ function collectVarDeclarationsFromTree(root: unknown, localNames: Set<string>):
         }
 
         collectVarDeclaratorNames(currentNode, localNames);
+        return true;
     });
 }
 
