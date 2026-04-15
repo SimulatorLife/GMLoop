@@ -84,7 +84,6 @@ import {
     hashSourceContent,
     type InitialFileData,
     readSourceFileWithTransientEmptyRetry,
-    resolveDependentRetranspileConcurrency,
     resolveUnknownScanConcurrency,
     takeInitialFileData
 } from "./watch-source-analysis.js";
@@ -247,6 +246,7 @@ interface WatchLifecycle {
     unknownScanPromise: Promise<void> | null;
     unknownScanQueued: boolean;
     unknownScanConcurrency: number;
+    dependentRetranspileConcurrency: number;
 }
 
 /**
@@ -773,6 +773,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         unknownScanPromise: null,
         unknownScanQueued: false,
         unknownScanConcurrency: resolveUnknownScanConcurrency(maxConcurrentDirs),
+        dependentRetranspileConcurrency: resolveUnknownScanConcurrency(maxConcurrentDirs),
         fileSnapshots: new Map(),
         fileContentHashes: new Map(),
         fileContentLengths: new Map(),
@@ -1520,7 +1521,7 @@ async function retranspileDependentFiles(
                 console.error(`  ↳ Error retranspiling dependent file ${dependentFile}: ${message}`);
             }
         },
-        resolveDependentRetranspileConcurrency(runtimeContext.maxConcurrentDirs)
+        runtimeContext.dependentRetranspileConcurrency
     );
 }
 

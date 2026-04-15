@@ -118,21 +118,6 @@ export function resolveUnknownScanConcurrency(configuredMaximum: number): number
     return Math.max(1, Math.trunc(configuredMaximum));
 }
 
-/**
- * Resolves concurrency for dependent script retranspilation.
- *
- * Dependent retranspilation happens on the hot-reload critical path and should
- * remain bounded so large dependency fans do not create unbounded I/O bursts
- * or event-loop pressure. Reuse the watch command's concurrency cap to keep
- * throughput high while controlling latency variance.
- *
- * @param {number} configuredMaximum - User-configured concurrency ceiling.
- * @returns {number} Safe retranspile concurrency value (minimum 1).
- */
-export function resolveDependentRetranspileConcurrency(configuredMaximum: number): number {
-    return resolveUnknownScanConcurrency(configuredMaximum);
-}
-
 // ---------------------------------------------------------------------------
 // File read retry
 // ---------------------------------------------------------------------------
