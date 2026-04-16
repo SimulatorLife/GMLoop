@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { resolveFixtureDirectoryFromModuleUrl } from "../src/discovery/resolve-fixture-directory-from-module-url.js";
+import { resolveFixtureDirectoryFromModuleUrl } from "../src/runner/resolve-fixture-directory-from-module-url.js";
 
 void test("resolveFixtureDirectoryFromModuleUrl uses the source layout outside dist", () => {
     const resolved = resolveFixtureDirectoryFromModuleUrl({
