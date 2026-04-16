@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { runCliTestCommand } from "../src/cli.js";
-import { createWatchStatusCommand, runWatchStatusCommand } from "../src/commands/watch-status.js";
+import { createWatchStatusCommand, runWatchStatusCommand } from "../src/commands/watch/status.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 
 void describe("watch-status command", () => {

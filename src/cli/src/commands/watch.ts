@@ -74,7 +74,7 @@ import {
     DEFAULT_WATCH_MAX_CONCURRENT_DIRS,
     DEFAULT_WATCH_MAX_PATCH_HISTORY,
     DEFAULT_WATCH_POLLING_INTERVAL_MS
-} from "./watch-constants.js";
+} from "./watch/constants.js";
 import {
     clearInitialFileDataCache,
     computeHotReloadLatencyStats,
@@ -86,7 +86,7 @@ import {
     readSourceFileWithTransientEmptyRetry,
     resolveUnknownScanConcurrency,
     takeInitialFileData
-} from "./watch-source-analysis.js";
+} from "./watch/source-analysis.js";
 
 const { debounce, getErrorMessage, isErrorWithCode } = Core;
 
