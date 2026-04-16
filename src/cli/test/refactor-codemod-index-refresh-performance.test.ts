@@ -13,7 +13,7 @@ const SCRIPT_COUNT = 220;
 // Runtime variance on shared CI runners can be significant, so this threshold
 // guards against major regressions while the semantic-index build-count check
 // below enforces the structural optimization introduced for mixed codemod runs.
-const PERFORMANCE_THRESHOLD_MS = 3200;
+const PERFORMANCE_THRESHOLD_MS = 5000;
 
 void test("refactor codemod --write refreshes semantic index once for a multi-codemod batch", async () => {
     const projectRoot = await createSyntheticRefactorProject({

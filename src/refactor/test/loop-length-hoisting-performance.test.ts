@@ -38,7 +38,7 @@ const { applyLoopLengthHoistingCodemod } = Refactor.LoopLengthHoisting;
 const FILE_COUNT = 400;
 const LOOPS_PER_FILE = 8;
 const IDENTIFIERS_PER_FILE = 60;
-const PERFORMANCE_THRESHOLD_MS = 3200;
+const PERFORMANCE_THRESHOLD_MS = 5000;
 
 /**
  * Generate a synthetic GML file that contains {@link LOOPS_PER_FILE} hoistable

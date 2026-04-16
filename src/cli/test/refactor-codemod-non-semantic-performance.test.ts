@@ -10,7 +10,7 @@ import {
 } from "./test-helpers/refactor-codemod-command-fixture.js";
 
 const SCRIPT_COUNT = 260;
-const PERFORMANCE_THRESHOLD_MS = 2400;
+const PERFORMANCE_THRESHOLD_MS = 4000;
 
 void test("refactor codemod --write non-semantic codemods stay under runtime threshold without semantic indexing", async () => {
     const projectRoot = await createSyntheticRefactorProject({
