@@ -9,8 +9,8 @@
 import { Core } from "@gmloop/core";
 import { Command, Option } from "commander";
 
-import { portValidator } from "../cli-core/command-parsing.js";
-import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
+import { portValidator } from "../../cli-core/command-parsing.js";
+import { applyStandardCommandOptions } from "../../cli-core/command-standard-options.js";
 
 const { getErrorMessage } = Core;
 
