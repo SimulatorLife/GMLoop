@@ -46,6 +46,24 @@ void describe("workflow path filter helpers", () => {
         assert.equal(filter.allowsPath(String.raw`${restricted}\manual.json`), false);
     });
 
+    void it("splits single-string workflow inputs into allow and deny path lists", () => {
+        const root = path.resolve("/tmp", "workflow-path-filter", "split-input");
+        const allowedScripts = path.join(root, "scripts");
+        const allowedObjects = path.join(root, "objects");
+        const deniedScripts = path.join(allowedScripts, "restricted");
+        const deniedObjects = path.join(allowedObjects, "legacy");
+
+        const filter = createWorkflowPathFilter({
+            allowPaths: `${allowedScripts}, ${allowedObjects}`,
+            denyPaths: `${deniedScripts}\n${deniedObjects}`
+        });
+
+        assert.deepStrictEqual(filter.allowList, [allowedScripts, allowedObjects]);
+        assert.deepStrictEqual(filter.denyList, [deniedScripts, deniedObjects]);
+        assert.equal(filter.allowsPath(path.join(allowedScripts, "enemy.gml")), true);
+        assert.equal(filter.allowsPath(path.join(deniedObjects, "o_legacy.gml")), false);
+    });
+
     void it("uses only canonical allowPaths/denyPaths inputs", () => {
         const root = path.resolve("/tmp", "workflow-path-filter", "canonical");
         const allowed = path.join(root, "allowed");
