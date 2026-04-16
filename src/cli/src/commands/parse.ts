@@ -8,7 +8,7 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import type { CommanderCommandLike } from "../cli-core/commander-types.js";
-import { CliUsageError } from "../cli-core/errors.js";
+import { CliUsageError, markAsCliUsageError } from "../cli-core/errors.js";
 import {
     createListOption,
     createPathOption,
@@ -134,11 +134,31 @@ async function collectParseTargetFilePaths(targetPath: string, usage: string): P
 
 async function parseFileToAst(filePath: string): Promise<ParsedFileAst> {
     const source = await readFile(filePath, "utf8");
+    const displayName = formatPathForDisplay(filePath);
+
+    let ast: ParsedGmlAst;
+    try {
+        ast = ParserWorkspace.Parser.GMLParser.parse(source) as ParsedGmlAst;
+    } catch (error) {
+        const message = Core.getErrorMessageOrFallback(error);
+        throw createParseFileError(displayName, message);
+    }
+
     return {
         sourcePath: filePath,
-        displayPath: formatPathForDisplay(filePath),
-        ast: ParserWorkspace.Parser.GMLParser.parse(source) as ParsedGmlAst
+        displayPath: displayName,
+        ast
     };
+}
+
+/**
+ * Create a user-facing error for a parse failure that includes the file path,
+ * so the caller can locate the problematic file immediately.
+ */
+function createParseFileError(displayPath: string, detail: string): Error {
+    const error = new Error(`Failed to parse ${displayPath}: ${detail}`);
+    markAsCliUsageError(error);
+    return error;
 }
 
 function serializeAstJson(payload: DryRunPayload): string {

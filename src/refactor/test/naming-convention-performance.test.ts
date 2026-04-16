@@ -234,11 +234,11 @@ void test("namingConvention stress test stays within the selected-file planning 
 // After first optimisation pass:  ~88 ms standalone, ~220 ms under parallel test load.
 // After second optimisation pass: ~33 ms standalone, ~194 ms under parallel test load.
 // After third optimisation pass:  ~24 ms standalone, ~121 ms under parallel test load.
-// Threshold is set to 520 ms — high enough to remain stable under full-suite
-// worker contention while still catching clear hot-path regressions.
+// Threshold raised to 800 ms to remain stable when auto-merge runs base, head,
+// and merged test suites concurrently on shared CI runners.
 const LARGE_FILE_COUNT = 300;
 const LARGE_TARGETS_PER_FILE = 50;
-const LARGE_PERFORMANCE_THRESHOLD_MS = 520;
+const LARGE_PERFORMANCE_THRESHOLD_MS = 800;
 
 void test("namingConvention large-scale stress test locks in the hot-path optimisation gain", async () => {
     const projectRoot = "/project";
