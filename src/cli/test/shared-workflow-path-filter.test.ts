@@ -46,6 +46,15 @@ void describe("workflow path filter helpers", () => {
         assert.equal(filter.allowsPath(String.raw`${restricted}\manual.json`), false);
     });
 
+    void it("accepts UNC allow paths written with forward slashes", () => {
+        const workspace = "//server/share/workflow-path-filter/allowed";
+        const outputPath = "//SERVER/SHARE/workflow-path-filter/allowed/manual.json";
+        const filter = createWorkflowPathFilter({ allowPaths: [workspace] });
+
+        assert.deepStrictEqual(filter.allowList, [String.raw`\\server\share\workflow-path-filter\allowed`]);
+        assert.ok(filter.allowsPath(outputPath));
+    });
+
     void it("uses only canonical allowPaths/denyPaths inputs", () => {
         const root = path.resolve("/tmp", "workflow-path-filter", "canonical");
         const allowed = path.join(root, "allowed");
