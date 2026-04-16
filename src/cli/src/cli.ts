@@ -39,7 +39,7 @@ import { createPrepareHotReloadCommand, runPrepareHotReloadCommand } from "./com
 import { createRefactorCommand, runRefactorCommand } from "./commands/refactor.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
 import { createWatchCommand, runWatchCommand } from "./commands/watch.js";
-import { createWatchStatusCommand, runWatchStatusCommand } from "./commands/watch-status.js";
+import { createWatchStatusCommand, runWatchStatusCommand } from "./commands/watch/status.js";
 import { CLI_COMMAND_NAMES } from "./shared/command-names.js";
 import { isCliRunSkipped, SKIP_CLI_RUN_ENV_VAR } from "./shared/skip-cli-run.js";
 

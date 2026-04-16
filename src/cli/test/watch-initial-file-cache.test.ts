@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { clearInitialFileDataCache, takeInitialFileData } from "../src/commands/watch-source-analysis.js";
+import { clearInitialFileDataCache, takeInitialFileData } from "../src/commands/watch/source-analysis.js";
 
 void describe("watch command initial file cache", () => {
     void it("removes consumed startup cache entries to release memory during the initial scan", () => {

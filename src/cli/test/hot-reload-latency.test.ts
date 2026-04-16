@@ -15,7 +15,7 @@ import { writeFile } from "node:fs/promises";
 import { after, before, describe, it } from "node:test";
 
 import { runWatchCommand } from "../src/commands/watch.js";
-import { computeHotReloadLatencyStats } from "../src/commands/watch-source-analysis.js";
+import { computeHotReloadLatencyStats } from "../src/commands/watch/source-analysis.js";
 import { findAvailablePort } from "./test-helpers/free-port.js";
 import {
     fetchStatusPayload,
