@@ -6,7 +6,7 @@ import { REPO_ROOT } from "../shared/workspace-paths.js";
 
 const { getNonEmptyTrimmedString, isNonEmptyString, isPathWithinBoundary, toArray, uniqueArray, compactArray } = Core;
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u;
-const WINDOWS_UNC_PATH_PATTERN = /^\\\\[^\\]+\\[^\\]+/u;
+const WINDOWS_UNC_PATH_PATTERN = /^[/\\]{2}[^/\\]+[/\\][^/\\]+/u;
 
 /**
  * Resolve workflow paths while preserving Windows absolute/UNC semantics even
