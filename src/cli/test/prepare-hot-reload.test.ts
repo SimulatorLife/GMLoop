@@ -12,7 +12,7 @@ import {
     prepareHotReloadInjection
 } from "../src/modules/hot-reload/inject-runtime.js";
 
-const { HOT_RELOAD_MARKER_START, extractGmWebServerRoot } = __test__;
+const { HOT_RELOAD_MARKER_START, extractGmWebServerRoot, parseRuntimeWrapperAssetManifest } = __test__;
 const HOT_RELOAD_ASSET_MANIFEST = path.join(".gml-hot-reload", "runtime-wrapper-assets.manifest.json");
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -152,6 +152,20 @@ void describe("GMWebServ root parsing", () => {
 
     void it("returns null when no GMWebServ root is present", () => {
         assert.equal(extractGmWebServerRoot("/bin/other"), null);
+    });
+});
+
+void describe("runtime wrapper asset manifest parsing", () => {
+    void it("returns cloned entry objects so parsed manifests cannot mutate the original JSON payload", () => {
+        const manifestPayload = {
+            version: 1,
+            entries: [{ relativePath: "index.js", size: 12, mtimeMs: 1234 }]
+        };
+
+        const parsed = parseRuntimeWrapperAssetManifest(JSON.stringify(manifestPayload));
+        assert.ok(parsed);
+        assert.notEqual(parsed.entries[0], manifestPayload.entries[0]);
+        assert.deepEqual(parsed.entries, manifestPayload.entries);
     });
 });
 
