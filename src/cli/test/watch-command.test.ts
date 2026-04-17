@@ -144,6 +144,12 @@ void describe("watch command", () => {
         assert.equal(resolveUnknownScanConcurrency(-5), 1);
         assert.equal(resolveUnknownScanConcurrency(8.7), 8);
     });
+
+    void it("resolveUnknownScanConcurrency preserves non-finite number behavior", () => {
+        assert.equal(resolveUnknownScanConcurrency(Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
+        assert.equal(resolveUnknownScanConcurrency(Number.NEGATIVE_INFINITY), 1);
+        assert.ok(Number.isNaN(resolveUnknownScanConcurrency(Number.NaN)));
+    });
 });
 
 void describe("watch command integration", () => {
