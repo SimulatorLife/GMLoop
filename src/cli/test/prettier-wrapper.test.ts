@@ -1083,7 +1083,7 @@ void describe("Prettier wrapper CLI", () => {
                 );
                 assert.match(
                     error.stderr,
-                    /Run "prettier-plugin-gml --help" to review available commands and usage examples\./i,
+                    /Run "pnpm run cli -- --help" to review available commands and usage examples in this checkout \(or "gmloop --help" if installed globally\)\./i,
                     "Expected stderr to suggest reviewing the CLI command list"
                 );
                 assert.ok(
@@ -1105,7 +1105,7 @@ void describe("Prettier wrapper CLI", () => {
             assert.strictEqual(error.code, 1, "Expected a non-zero exit code for an invalid target");
             assert.match(
                 error.stderr,
-                /Did you mean 'format'\? Try "prettier-plugin-gml format --help"\./,
+                /Did you mean 'format'\? Run "pnpm run cli -- format --help" from this repository checkout \(or "format --help" when the CLI is installed globally\)\./,
                 "Expected stderr to include an actionable command typo suggestion"
             );
         }
