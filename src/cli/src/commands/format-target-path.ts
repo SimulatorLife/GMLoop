@@ -12,6 +12,11 @@ import { formatPathForDisplay } from "../workflow/display-path.js";
 const MAX_COMMAND_LENGTH_DIFFERENCE = 2;
 const MAX_COMMAND_CHARACTER_DIFFERENCES = 2;
 const COMMAND_PATTERN = /^[a-z][a-z0-9_-]*$/i;
+const REPOSITORY_HELP_COMMAND = "pnpm run cli -- --help";
+
+function describeHelpCommandSuggestion(commandName: string): string {
+    return `Run "pnpm run cli -- ${commandName} --help" from this repository checkout (or "${commandName} --help" when the CLI is installed globally).`;
+}
 
 /**
  * Determine whether the provided target looks like a command name rather than a file path.
@@ -196,7 +201,7 @@ export function validateTargetPathInput({
         throw new CliUsageError(
             [
                 "Target path cannot be empty. Pass a directory or file to format (relative or absolute) or omit --path to format the current working directory.",
-                "If the path conflicts with a command name, invoke the format subcommand explicitly (prettier-plugin-gml format --path <path>)."
+                "If the path conflicts with a command name, invoke the format subcommand explicitly (pnpm run cli -- format --path <path>)."
             ].join(" "),
             { usage }
         );
@@ -268,7 +273,7 @@ export async function resolveTargetStats(
                         ? [
                               `Did you mean to run the '${inputToCheck}' command?`,
                               "If so, do not provide it as an argument to 'format'. Instead, run it directly:",
-                              `"prettier-plugin-gml ${inputToCheck} --help" for usage information.`,
+                              describeHelpCommandSuggestion(inputToCheck),
                               "If you intended to format a file or directory, verify the path exists relative",
                               `to the current working directory (${process.cwd()}) or provide an absolute path.`
                           ]
@@ -277,9 +282,9 @@ export async function resolveTargetStats(
                               ...(suggestedCommand === null
                                   ? []
                                   : [
-                                        `Did you mean '${suggestedCommand}'? Try "prettier-plugin-gml ${suggestedCommand} --help".`
+                                        `Did you mean '${suggestedCommand}'? ${describeHelpCommandSuggestion(suggestedCommand)}`
                                     ]),
-                              'Run "prettier-plugin-gml --help" to see available commands.',
+                              `Run "${REPOSITORY_HELP_COMMAND}" to see available commands in this checkout (or "gmloop --help" if installed globally).`,
                               "If you intended to format a file or directory, verify the path exists relative",
                               `to the current working directory (${process.cwd()}) or provide an absolute path.`
                           ];
@@ -289,7 +294,7 @@ export async function resolveTargetStats(
                 const guidanceParts = [
                     "Verify the path exists relative to the current working directory",
                     `(${process.cwd()}) or provide an absolute path.`,
-                    'Run "prettier-plugin-gml --help" to review available commands and usage examples.'
+                    `Run "${REPOSITORY_HELP_COMMAND}" to review available commands and usage examples in this checkout (or "gmloop --help" if installed globally).`
                 ];
 
                 return guidanceParts.join(" ");
