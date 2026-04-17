@@ -17,7 +17,7 @@ jobs:
     check_tests:
         runs-on: ubuntu-latest
         outputs:
-            tests_failed: ${{ steps.run_tests.outputs.failed }}
+            tests_failed: ${{ steps.evaluate.outputs.failed }}
         steps:
             - uses: actions/checkout@v5
 
@@ -49,35 +49,56 @@ jobs:
                       ${{ runner.os }}-node-
 
             - name: Install dependencies
+              id: install_dependencies
               run: |
                   set -o pipefail
+                  echo "ok=false" >> "$GITHUB_OUTPUT"
                   install_log="$(mktemp)"
                   if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
+                    echo "ok=true" >> "$GITHUB_OUTPUT"
                     exit 0
                   fi
 
                   if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
                     echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-                    pnpm install --no-frozen-lockfile
+                    pnpm install --no-frozen-lockfile && echo "ok=true" >> "$GITHUB_OUTPUT"
                     exit 0
                   fi
 
-                  echo "::error::Dependency install failed for a reason other than outdated lockfile."
-                  exit 1
+                  echo "::warning::Dependency install failed for a reason other than outdated lockfile."
+                  exit 0
 
             - name: Run test suite
               id: run_tests
               run: |
+                  if [ "${{ steps.install_dependencies.outputs.ok }}" != "true" ]; then
+                    echo "Dependency installation did not succeed; treating as failed recovery candidate."
+                    echo "failed=true" >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
+
                   set +e
                   pnpm test
                   status=$?
                   if [ "$status" -ne 0 ]; then
                     echo "Test suite exited with $status"
                     echo "failed=true" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "Test suite passed"
-                    echo "failed=false" >> "$GITHUB_OUTPUT"
+                    exit 0
                   fi
+
+                  echo "Test suite passed"
+                  echo "failed=false" >> "$GITHUB_OUTPUT"
+                  exit 0
+
+            - name: Evaluate recovery trigger
+              id: evaluate
+              run: |
+                  if [ "${{ steps.run_tests.outputs.failed }}" = "true" ]; then
+                    echo "failed=true" >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
+
+                  echo "failed=false" >> "$GITHUB_OUTPUT"
                   exit 0
 
     run:
