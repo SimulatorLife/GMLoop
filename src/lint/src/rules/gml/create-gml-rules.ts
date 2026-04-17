@@ -34,106 +34,49 @@ import { createRequireRegionPairsRule } from "./rules/require-region-pairs-rule.
 import { createRequireTrailingOptionalDefaultsRule } from "./rules/require-trailing-optional-defaults-rule.js";
 import { createSimplifyRealCallsRule } from "./rules/simplify-real-calls-rule.js";
 
+type GmlRuleFactory = (definition: GmlRuleDefinition) => Rule.RuleModule;
+
+const gmlRuleFactoriesByShortName = Object.freeze(
+    new Map<string, GmlRuleFactory>([
+        ["prefer-hoistable-loop-accessors", createPreferHoistableLoopAccessorsRule],
+        ["prefer-loop-invariant-expressions", createPreferLoopInvariantExpressionsRule],
+        ["prefer-repeat-loops", createPreferRepeatLoopsRule],
+        ["prefer-struct-literal-assignments", createPreferStructLiteralAssignmentsRule],
+        ["prefer-array-push", createPreferArrayPushRule],
+        ["prefer-compound-assignments", createPreferCompoundAssignmentsRule],
+        ["prefer-increment-decrement-operators", createPreferIncrementDecrementOperatorsRule],
+        ["prefer-direct-return", createPreferDirectReturnRule],
+        ["optimize-logical-flow", createOptimizeLogicalFlowRule],
+        ["no-globalvar", createNoGlobalvarRule],
+        ["no-empty-regions", createNoEmptyRegionsRule],
+        ["no-legacy-api", createNoLegacyApiRule],
+        ["no-scientific-notation", createNoScientificNotationRule],
+        ["no-unnecessary-string-interpolation", createNoUnnecessaryStringInterpolationRule],
+        ["remove-default-comments", createRemoveDefaultCommentsRule],
+        ["normalize-doc-comments", createNormalizeDocCommentsRule],
+        ["normalize-banner-comments", createNormalizeBannerCommentsRule],
+        ["normalize-directives", createNormalizeDirectivesRule],
+        ["require-control-flow-braces", createRequireControlFlowBracesRule],
+        ["require-region-pairs", createRequireRegionPairsRule],
+        ["no-assignment-in-condition", createNoAssignmentInConditionRule],
+        ["prefer-is-undefined-check", createPreferIsUndefinedCheckRule],
+        ["prefer-epsilon-comparisons", createPreferEpsilonComparisonsRule],
+        ["normalize-operator-aliases", createNormalizeOperatorAliasesRule],
+        ["prefer-string-interpolation", createPreferStringInterpolationRule],
+        ["optimize-math-expressions", createOptimizeMathExpressionsRule],
+        ["require-argument-separators", createRequireArgumentSeparatorsRule],
+        ["normalize-data-structure-accessors", createNormalizeDataStructureAccessorsRule],
+        ["require-trailing-optional-defaults", createRequireTrailingOptionalDefaultsRule],
+        ["simplify-real-calls", createSimplifyRealCallsRule],
+        ["no-unary-plus-on-identifier", createNoUnaryPlusOnIdentifierRule],
+        ["no-negative-zero", createNoNegativeZeroRule]
+    ])
+);
+
 export function createGmlRule(definition: GmlRuleDefinition): Rule.RuleModule {
-    switch (definition.shortName) {
-        case "prefer-hoistable-loop-accessors": {
-            return createPreferHoistableLoopAccessorsRule(definition);
-        }
-        case "prefer-loop-invariant-expressions": {
-            return createPreferLoopInvariantExpressionsRule(definition);
-        }
-        case "prefer-repeat-loops": {
-            return createPreferRepeatLoopsRule(definition);
-        }
-        case "prefer-struct-literal-assignments": {
-            return createPreferStructLiteralAssignmentsRule(definition);
-        }
-        case "prefer-array-push": {
-            return createPreferArrayPushRule(definition);
-        }
-        case "prefer-compound-assignments": {
-            return createPreferCompoundAssignmentsRule(definition);
-        }
-        case "prefer-increment-decrement-operators": {
-            return createPreferIncrementDecrementOperatorsRule(definition);
-        }
-        case "prefer-direct-return": {
-            return createPreferDirectReturnRule(definition);
-        }
-        case "optimize-logical-flow": {
-            return createOptimizeLogicalFlowRule(definition);
-        }
-        case "no-globalvar": {
-            return createNoGlobalvarRule(definition);
-        }
-        case "no-empty-regions": {
-            return createNoEmptyRegionsRule(definition);
-        }
-        case "no-legacy-api": {
-            return createNoLegacyApiRule(definition);
-        }
-        case "no-scientific-notation": {
-            return createNoScientificNotationRule(definition);
-        }
-        case "no-unnecessary-string-interpolation": {
-            return createNoUnnecessaryStringInterpolationRule(definition);
-        }
-        case "remove-default-comments": {
-            return createRemoveDefaultCommentsRule(definition);
-        }
-        case "normalize-doc-comments": {
-            return createNormalizeDocCommentsRule(definition);
-        }
-        case "normalize-banner-comments": {
-            return createNormalizeBannerCommentsRule(definition);
-        }
-        case "normalize-directives": {
-            return createNormalizeDirectivesRule(definition);
-        }
-        case "require-control-flow-braces": {
-            return createRequireControlFlowBracesRule(definition);
-        }
-        case "require-region-pairs": {
-            return createRequireRegionPairsRule(definition);
-        }
-        case "no-assignment-in-condition": {
-            return createNoAssignmentInConditionRule(definition);
-        }
-        case "prefer-is-undefined-check": {
-            return createPreferIsUndefinedCheckRule(definition);
-        }
-        case "prefer-epsilon-comparisons": {
-            return createPreferEpsilonComparisonsRule(definition);
-        }
-        case "normalize-operator-aliases": {
-            return createNormalizeOperatorAliasesRule(definition);
-        }
-        case "prefer-string-interpolation": {
-            return createPreferStringInterpolationRule(definition);
-        }
-        case "optimize-math-expressions": {
-            return createOptimizeMathExpressionsRule(definition);
-        }
-        case "require-argument-separators": {
-            return createRequireArgumentSeparatorsRule(definition);
-        }
-        case "normalize-data-structure-accessors": {
-            return createNormalizeDataStructureAccessorsRule(definition);
-        }
-        case "require-trailing-optional-defaults": {
-            return createRequireTrailingOptionalDefaultsRule(definition);
-        }
-        case "simplify-real-calls": {
-            return createSimplifyRealCallsRule(definition);
-        }
-        case "no-unary-plus-on-identifier": {
-            return createNoUnaryPlusOnIdentifierRule(definition);
-        }
-        case "no-negative-zero": {
-            return createNoNegativeZeroRule(definition);
-        }
-        default: {
-            throw new Error(`Missing gml rule implementation for shortName '${definition.shortName}'.`);
-        }
+    const createRule = gmlRuleFactoriesByShortName.get(definition.shortName);
+    if (!createRule) {
+        throw new Error(`Missing gml rule implementation for shortName '${definition.shortName}'.`);
     }
+    return createRule(definition);
 }
