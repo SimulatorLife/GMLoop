@@ -1410,8 +1410,8 @@ function createQualityReportTables(): ReportTableState {
         testRows: [
             "#### Test Results",
             "",
-            "| Target | Total | Passed | Failed | Skipped | New | Removed | Renamed | Duration | Coverage |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+            "| Target | Total | Passed | Failed | Failed (Pre-existing) | Failed (New) | Skipped | New | Removed | Renamed | Duration | Coverage |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
         ],
         qualityRows: [
             "#### Code Quality",
@@ -1432,11 +1432,13 @@ function addReportRowForResultSet(
         label,
         results,
         diffStats,
+        failureBreakdown,
         healthStats = null
     }: {
         label: string;
         results: { usedDir?: string | null; lint?: unknown; duplicates?: unknown; health?: unknown };
         diffStats: any;
+        failureBreakdown: unknown;
         healthStats?: unknown;
     }
 ): void {
@@ -1444,7 +1446,7 @@ function addReportRowForResultSet(
         return;
     }
 
-    tables.testRows.push(generateTestRow(label, results, diffStats));
+    tables.testRows.push(generateTestRow(label, results, diffStats, failureBreakdown));
     tables.qualityRows.push(generateQualityRow(label, results, healthStats));
 }
 
@@ -1538,6 +1540,11 @@ function runCli(options: any = {}) {
         head: computeTestDiff(base, head),
         merge: computeTestDiff(base, merged)
     };
+    const failureBreakdowns = {
+        base: calculateFailureBreakdown(base, base),
+        head: calculateFailureBreakdown(base, head),
+        merge: calculateFailureBreakdown(base, merged)
+    };
 
     const healthStats = scanProjectHealth(workspaceRoot);
 
@@ -1546,20 +1553,23 @@ function runCli(options: any = {}) {
     addReportRowForResultSet(reportTables, {
         label: "Base",
         results: base,
-        diffStats: diffStats.base
+        diffStats: diffStats.base,
+        failureBreakdown: failureBreakdowns.base
     });
 
     addReportRowForResultSet(reportTables, {
         label: resolveHeadReportLabel({ base, merged }),
         results: head,
         diffStats: diffStats.head,
+        failureBreakdown: failureBreakdowns.head,
         healthStats
     });
 
     addReportRowForResultSet(reportTables, {
         label: "Merged",
         results: merged,
-        diffStats: diffStats.merge
+        diffStats: diffStats.merge,
+        failureBreakdown: failureBreakdowns.merge
     });
 
     const table = formatQualityReportTable(reportTables);
@@ -1662,7 +1672,72 @@ function formatDiffValue(value) {
     return value == null ? "—" : `${Math.max(0, value)}`;
 }
 
-function generateTestRow(label, results, diffStats) {
+function calculateFailureBreakdown(baseResults, targetResults) {
+    if (!baseResults?.usedDir || !targetResults?.usedDir) {
+        return null;
+    }
+
+    const baseResultMap = resolveResultsMap(baseResults);
+    const targetResultMap = resolveResultsMap(targetResults);
+
+    const baseFailedKeys = new Set();
+    const baseFailedIdentities = new Set();
+    for (const [key, baseRecord] of baseResultMap.entries()) {
+        const record = baseRecord as TestRecordEntry;
+        if (record.status !== TestCaseStatus.FAILED) {
+            continue;
+        }
+
+        baseFailedKeys.add(key);
+        const identity = buildTestRecordIdentityKey(record);
+        if (identity) {
+            baseFailedIdentities.add(identity);
+        }
+    }
+
+    let preExistingFailures = 0;
+    let newFailures = 0;
+
+    for (const [key, targetRecord] of targetResultMap.entries()) {
+        const record = targetRecord as TestRecordEntry;
+        if (record.status !== TestCaseStatus.FAILED) {
+            continue;
+        }
+
+        if (baseFailedKeys.has(key)) {
+            preExistingFailures += 1;
+            continue;
+        }
+
+        const identity = buildTestRecordIdentityKey(record);
+        if (identity && baseFailedIdentities.has(identity)) {
+            preExistingFailures += 1;
+        } else {
+            newFailures += 1;
+        }
+    }
+
+    return {
+        preExistingFailures,
+        newFailures
+    };
+}
+
+function formatFailureBreakdown(failureBreakdown) {
+    if (!failureBreakdown) {
+        return {
+            preExistingFailures: "—",
+            newFailures: "—"
+        };
+    }
+
+    return {
+        preExistingFailures: formatDiffValue(failureBreakdown.preExistingFailures),
+        newFailures: formatDiffValue(failureBreakdown.newFailures)
+    };
+}
+
+function generateTestRow(label, results, diffStats, failureBreakdown) {
     const totals = results.stats || {};
     const hasAny = totals.total > 0;
     const coverageCell = fmtCoverage(results.coverage);
@@ -1673,11 +1748,12 @@ function generateTestRow(label, results, diffStats) {
               renamedTests: formatDiffValue(diffStats.renamedTests)
           }
         : { newTests: "—", removedTests: "—", renamedTests: "—" };
+    const failureCells = formatFailureBreakdown(failureBreakdown);
 
     if (!hasAny) {
-        return `| ${label} | — | — | — | — | ${diff.newTests} | ${diff.removedTests} | ${diff.renamedTests} | — | ${coverageCell} |`;
+        return `| ${label} | — | — | — | ${failureCells.preExistingFailures} | ${failureCells.newFailures} | — | ${diff.newTests} | ${diff.removedTests} | ${diff.renamedTests} | — | ${coverageCell} |`;
     }
-    return `| ${label} | ${totals.total} | ${totals.passed} | ${totals.failed} | ${totals.skipped} | ${diff.newTests} | ${diff.removedTests} | ${diff.renamedTests} | ${fmtTime(totals.time)} | ${coverageCell} |`;
+    return `| ${label} | ${totals.total} | ${totals.passed} | ${totals.failed} | ${failureCells.preExistingFailures} | ${failureCells.newFailures} | ${totals.skipped} | ${diff.newTests} | ${diff.removedTests} | ${diff.renamedTests} | ${fmtTime(totals.time)} | ${coverageCell} |`;
 }
 
 function generateQualityRow(label, results, healthStats = null) {
