@@ -81,7 +81,24 @@ void test("qwen local workflow only starts Ollama when the API is not already ru
     const source = await readQwenLocalWorkflow();
 
     assert.match(source, /curl -fsS http:\/\/127\.0\.0\.1:11434\/api\/version/u);
-    assert.match(source, /if ! curl -fsS http:\/\/127\.0\.0\.1:11434\/api\/version/u);
     assert.match(source, /ollama serve > ollama\.log 2>&1 &/u);
+    assert.match(source, /for attempt in \{1\.\.15\}; do/u);
     assert.match(source, /for attempt in \{1\.\.30\}; do/u);
+    assert.ok(
+        source.indexOf("for attempt in {1..15}; do") < source.indexOf("ollama serve > ollama.log 2>&1 &"),
+        "workflow should wait for the installer-started service before starting a fallback server."
+    );
+});
+
+void test("qwen local workflow selects OpenAI-compatible auth for Ollama", async () => {
+    const source = await readQwenLocalWorkflow();
+    const qwenRunStepIndex = source.indexOf("Run Qwen against local model");
+    const authTypeIndex = source.indexOf("--auth-type openai");
+    const apiKeyIndex = source.indexOf('--openai-api-key "ollama"');
+    const baseUrlIndex = source.indexOf('--openai-base-url "http://127.0.0.1:11434/v1"');
+
+    assert.notEqual(qwenRunStepIndex, -1, "workflow should still run Qwen against the local model.");
+    assert.ok(authTypeIndex > qwenRunStepIndex, "Qwen should configure auth in the local-model run step.");
+    assert.ok(authTypeIndex < apiKeyIndex, "Qwen auth type should be selected before OpenAI credentials.");
+    assert.ok(apiKeyIndex < baseUrlIndex, "OpenAI-compatible credentials should be paired with the local Ollama endpoint.");
 });

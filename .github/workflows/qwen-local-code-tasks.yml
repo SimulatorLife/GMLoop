@@ -52,9 +52,14 @@ jobs:
 
       - name: Start Ollama
         run: |
-          if ! curl -fsS http://127.0.0.1:11434/api/version > /dev/null 2>&1; then
-            ollama serve > ollama.log 2>&1 &
-          fi
+          for attempt in {1..15}; do
+            if curl -fsS http://127.0.0.1:11434/api/version > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          ollama serve > ollama.log 2>&1 &
 
           for attempt in {1..30}; do
             if curl -fsS http://127.0.0.1:11434/api/version > /dev/null 2>&1; then
@@ -75,6 +80,7 @@ jobs:
         run: |
           pnpm dlx @qwen-code/qwen-code \
             --yolo \
+            --auth-type openai \
             --openai-api-key "ollama" \
             --openai-base-url "http://127.0.0.1:11434/v1" \
             --model "qwen2.5-coder:0.5b" \
