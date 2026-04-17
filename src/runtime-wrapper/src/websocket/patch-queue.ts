@@ -280,7 +280,7 @@ function extractPatchId(patch: unknown): string | null {
     return typeof patchId === "string" ? patchId : null;
 }
 
-function extractPatchDependencies(patch: unknown): Array<string> {
+function readPatchDependencies(patch: unknown): ReadonlyArray<string> {
     if (patch === null || typeof patch !== "object" || !("metadata" in patch)) {
         return [];
     }
@@ -295,9 +295,23 @@ function extractPatchDependencies(patch: unknown): Array<string> {
         return [];
     }
 
-    return dependencies.filter(
-        (dependency): dependency is string => typeof dependency === "string" && dependency.length > 0
-    );
+    return dependencies;
+}
+
+function collectUniqueDependencies(
+    dependencies: ReadonlyArray<string>,
+    consumeDependencyId: (dependencyId: string) => void
+): void {
+    const seenDependencies = new Set<string>();
+
+    for (const dependency of dependencies) {
+        if (typeof dependency !== "string" || dependency.length === 0 || seenDependencies.has(dependency)) {
+            continue;
+        }
+
+        seenDependencies.add(dependency);
+        consumeDependencyId(dependency);
+    }
 }
 
 function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unknown> {
@@ -329,40 +343,26 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
         patchIndexById.set(patchId, index);
     }
 
+    const dependencyIdsByPatchId = new Map<string, ReadonlyArray<string>>();
     let requiresReorder = false;
-    for (const patchId of orderedIds) {
+    for (const [index, patchId] of orderedIds.entries()) {
         const patch = patchById.get(patchId);
         if (patch === undefined) {
             continue;
         }
 
-        const dependencyIds = extractPatchDependencies(patch);
+        const dependencyIds = readPatchDependencies(patch);
+        dependencyIdsByPatchId.set(patchId, dependencyIds);
         if (dependencyIds.length === 0) {
             continue;
         }
 
-        const currentIndex = patchIndexById.get(patchId);
-        if (currentIndex === undefined) {
-            continue;
-        }
-
-        const uniqueDependencies = new Set<string>();
-        for (const dependencyId of dependencyIds) {
-            if (uniqueDependencies.has(dependencyId)) {
-                continue;
-            }
-            uniqueDependencies.add(dependencyId);
-
+        collectUniqueDependencies(dependencyIds, (dependencyId) => {
             const dependencyIndex = patchIndexById.get(dependencyId);
-            if (dependencyIndex === undefined || dependencyId === patchId) {
-                continue;
-            }
-
-            if (dependencyIndex > currentIndex) {
+            if (dependencyIndex !== undefined && dependencyId !== patchId && dependencyIndex > index) {
                 requiresReorder = true;
-                break;
             }
-        }
+        });
 
         if (requiresReorder) {
             break;
@@ -387,20 +387,14 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
             continue;
         }
 
-        const dependencyIds = extractPatchDependencies(patch);
+        const dependencyIds = dependencyIdsByPatchId.get(patchId) ?? readPatchDependencies(patch);
         if (dependencyIds.length === 0) {
             continue;
         }
 
-        const uniqueDependencies = new Set<string>();
-        for (const dependencyId of dependencyIds) {
-            if (uniqueDependencies.has(dependencyId)) {
-                continue;
-            }
-            uniqueDependencies.add(dependencyId);
-
+        collectUniqueDependencies(dependencyIds, (dependencyId) => {
             if (!patchIds.has(dependencyId) || dependencyId === patchId) {
-                continue;
+                return;
             }
 
             incomingEdges.set(patchId, (incomingEdges.get(patchId) ?? 0) + 1);
@@ -411,7 +405,7 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
             } else {
                 dependentsByDependency.set(dependencyId, [patchId]);
             }
-        }
+        });
     }
 
     const readyQueue: Array<string> = [];

@@ -303,6 +303,54 @@ void test("patch queue reorders dependency-linked patches before batch apply", a
     }
 });
 
+void test("patch queue preserves input order when dependency graph contains a cycle", async () => {
+    const appliedPatchIds: Array<string> = [];
+
+    const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
+        wrapperMutator: (wrapper) => {
+            const originalApplyPatchBatch = wrapper.applyPatchBatch;
+            return {
+                ...wrapper,
+                applyPatchBatch: (patches) => {
+                    appliedPatchIds.push(
+                        ...patches.map((patch) => {
+                            if (typeof patch === "object" && patch !== null && "id" in patch) {
+                                const patchId = (patch as { id: unknown }).id;
+                                if (typeof patchId === "string") {
+                                    return patchId;
+                                }
+                            }
+                            return "<invalid>";
+                        })
+                    );
+                    return originalApplyPatchBatch(patches);
+                }
+            };
+        }
+    });
+
+    try {
+        sendScriptPatchWithDependencies(ws, "gml/script/cycle_a", ["gml/script/cycle_b"]);
+        sendScriptPatchWithDependencies(ws, "gml/script/cycle_b", ["gml/script/cycle_a"]);
+
+        const flushedCount = client.flushPatchQueue();
+        assert.strictEqual(flushedCount, 2);
+
+        await waitForQueueMetrics(
+            client,
+            "queue to flush cyclic dependency patch batch",
+            (snapshot) => snapshot.totalFlushed >= 2,
+            150
+        );
+
+        assert.deepStrictEqual(appliedPatchIds, ["gml/script/cycle_a", "gml/script/cycle_b"]);
+        assert.strictEqual(client.getConnectionMetrics().patchesFailed, 2);
+    } finally {
+        client.disconnect();
+        restoreRuntimeGlobals();
+    }
+});
+
 void test("patch queue keeps already ordered dependency batches intact", async () => {
     const { wrapper, client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
         patchQueue: {
