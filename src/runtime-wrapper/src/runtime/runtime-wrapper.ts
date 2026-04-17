@@ -11,6 +11,7 @@ import {
     getRegistryEntry,
     hasRegistryEntry
 } from "./diagnostics.js";
+import { resolveRuntimeErrorMessage } from "./error-normalization.js";
 import {
     applyPatchInternal,
     captureSnapshot,
@@ -36,25 +37,8 @@ import type {
 } from "./types.js";
 import { trimArrayToMaxSize } from "./undo-stack-policy.js";
 
-const UNKNOWN_ERROR_MESSAGE = "Unknown error";
 const DEFAULT_MAX_UNDO_STACK_SIZE = 50;
 const DEFAULT_MAX_ERROR_HISTORY_SIZE = 100;
-
-function getRuntimeFallbackErrorMessage(error: unknown): string {
-    if (error === null || error === undefined) {
-        return UNKNOWN_ERROR_MESSAGE;
-    }
-
-    if (typeof error === "number" || typeof error === "boolean") {
-        return String(error);
-    }
-
-    return "Non-Error object thrown";
-}
-
-function getRuntimeErrorMessage(error: unknown): string {
-    return Core.getErrorMessageOrFallback(error, { fallback: UNKNOWN_ERROR_MESSAGE });
-}
 
 export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): RuntimeWrapper {
     const baseRegistry = createRegistry(options.registry);
@@ -75,7 +59,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
     const onChange = options.onChange;
 
     function recordError(patch: Patch, category: PatchErrorCategory, error: unknown): void {
-        const errorMessage = Core.getErrorMessage(error, { fallback: getRuntimeFallbackErrorMessage });
+        const errorMessage = resolveRuntimeErrorMessage(error);
         const stackTrace =
             Core.isErrorLike(error) && typeof (error as { stack?: unknown }).stack === "string"
                 ? (error as { stack: string }).stack
@@ -237,7 +221,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
             return result;
         } catch (error) {
             recordError(patch, "application", error);
-            const message = getRuntimeErrorMessage(error);
+            const message = resolveRuntimeErrorMessage(error);
             throw new Error(`Failed to apply patch ${patch.id}: ${message}`);
         }
     }
@@ -349,7 +333,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
 
             rollbackToBatchCheckpoint(batchCheckpoint);
 
-            const message = getRuntimeErrorMessage(error);
+            const message = resolveRuntimeErrorMessage(error);
             recordBatchRollbackHistoryEntry(appliedCount, validatedPatches.length, message);
 
             return {
@@ -422,7 +406,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
                 }
             } catch (error) {
                 recordError(patch, "validation", error);
-                const message = getRuntimeErrorMessage(error);
+                const message = resolveRuntimeErrorMessage(error);
                 return {
                     success: false,
                     error: message,
@@ -460,7 +444,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
                 state.undoStack.pop();
             }
 
-            const message = getRuntimeErrorMessage(error);
+            const message = resolveRuntimeErrorMessage(error);
 
             state.patchHistory.push({
                 patch: { kind: patch.kind, id: patch.id, metadata: patch.metadata },
