@@ -1,5 +1,6 @@
 import { Core } from "@gmloop/core";
 
+import { resolveRuntimeErrorMessage } from "../runtime/error-normalization.js";
 import type { Logger } from "../runtime/logger.js";
 import { validatePatch } from "../runtime/patch-utils.js";
 import type { Patch, PatchApplicator, RuntimePatchError, TrySafeApplyResult } from "../runtime/types.js";
@@ -814,10 +815,6 @@ function createRuntimePatchError(message: string, patch?: Patch): RuntimePatchEr
     const runtimeError = new Error(message) as RuntimePatchError;
     runtimeError.patch = patch;
     return runtimeError;
-}
-
-function resolveRuntimeErrorMessage(error: unknown): string {
-    return Core.getErrorMessageOrFallback(error, { fallback: "Unknown error" });
 }
 
 function resolveMissingPatchFields(candidate: Record<string, unknown>): Array<"kind" | "id"> {
