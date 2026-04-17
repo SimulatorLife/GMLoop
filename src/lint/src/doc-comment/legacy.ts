@@ -28,25 +28,8 @@ const KNOWN_TYPE_IDENTIFIERS = Object.freeze([
 
 const KNOWN_TYPES = new Set(KNOWN_TYPE_IDENTIFIERS.map((identifier) => identifier.toLowerCase()));
 
-/**
- * Checks if the provided value is a DocCommentLines object.
- */
-function isDocCommentLines(lines: DocCommentLines | string[]): lines is DocCommentLines {
-    return (
-        Array.isArray(lines) &&
-        ("_preserveDescriptionBreaks" in lines || "_suppressLeadingBlank" in lines || "_blockCommentDocs" in lines)
-    );
-}
-
-/**
- * Copies doc comment metadata flags from a source to a target.
- * This is a wrapper around copyDocCommentArrayFlags that checks if the source
- * is a DocCommentLines object before copying.
- */
 function copyDocCommentFlags(source: DocCommentLines | string[], target: MutableDocCommentLines): void {
-    if (isDocCommentLines(source)) {
-        copyDocCommentArrayFlags(source as any, target);
-    }
+    copyDocCommentArrayFlags(source as string[], target);
 }
 
 function cloneDocCommentLinesWithFlags(lines: DocCommentLines | string[]): MutableDocCommentLines {
