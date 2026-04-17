@@ -16,7 +16,6 @@ import { Core } from "@gmloop/core";
 import { Command, InvalidArgumentError, Option } from "commander";
 import type { Options as PrettierOptions } from "prettier";
 
-import { tryAddSample } from "../cli-core/bounded-sample-collector.js";
 import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { CliUsageError, formatCliError } from "../cli-core/errors.js";
@@ -34,6 +33,7 @@ import {
     resetRegisteredIgnorePaths
 } from "../format-runtime/ignore-path-registry.js";
 import { importFormatModule, resolveFormatEntryPoint as resolveCliFormatEntryPoint } from "../format-runtime/index.js";
+import { tryAddSample } from "../modules/formatting/bounded-sample-collector.js";
 import {
     hasNegatedIgnoreRules,
     markNegatedIgnoreRulesDetected,

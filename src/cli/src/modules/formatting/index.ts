@@ -1,3 +1,4 @@
+export * from "./bounded-sample-collector.js";
 export {
     clearFormattingCache,
     createFormattingCacheKey,
