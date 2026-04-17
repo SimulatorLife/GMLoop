@@ -18,7 +18,7 @@ import { Core } from "@gmloop/core";
 
 import { normalizeExtensions } from "../../workflow/extension-normalizer.js";
 
-const { getLineBreakCount } = Core;
+const { clamp, getLineBreakCount } = Core;
 
 // ---------------------------------------------------------------------------
 // Extension matching
@@ -115,7 +115,7 @@ export function hashSourceContent(source: string): string {
  * @returns {number} Safe unknown scan concurrency value (minimum 1).
  */
 export function resolveUnknownScanConcurrency(configuredMaximum: number): number {
-    return Math.max(1, Math.trunc(configuredMaximum));
+    return clamp(Math.trunc(configuredMaximum), 1, Number.POSITIVE_INFINITY);
 }
 
 // ---------------------------------------------------------------------------
