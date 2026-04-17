@@ -90,3 +90,18 @@ void test("workflows use task-specific agent pools", async () => {
     assert.match(automergeWorkflow, /selectAgent\(FOLLOW_UP_AGENT_POOL, ''\)/u);
     assert.doesNotMatch(automergeWorkflow, /No agent prefix found on branch name/u);
 });
+
+void test("failing test recovery probes the full validation surface before opening a PR", async () => {
+    const workflow = await readFile(
+        path.resolve(process.cwd(), ".github/workflows/agent-41-test-failure.yml"),
+        "utf8"
+    );
+
+    assert.match(workflow, /validation_failed: \$\{\{ steps\.run_validation\.outputs\.failed \}\}/u);
+    assert.match(workflow, /needs\.check_validation\.outputs\.validation_failed == 'true'/u);
+    assert.match(workflow, /pnpm run build:ts/u);
+    assert.match(workflow, /pnpm run lint:quiet/u);
+    assert.match(workflow, /pnpm run test:ci/u);
+    assert.match(workflow, /pnpm run test:performance/u);
+    assert.doesNotMatch(workflow, /tests_failed/u);
+});
