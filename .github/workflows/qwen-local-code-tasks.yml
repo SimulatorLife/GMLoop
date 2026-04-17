@@ -6,25 +6,43 @@ on:
 jobs:
   qwen_local:
     runs-on: ubuntu-latest
+    env:
+      GIT_AUTHOR_NAME: "github-actions[bot]"
+      GIT_AUTHOR_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com"
+      GIT_COMMITTER_NAME: "github-actions[bot]"
+      GIT_COMMITTER_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com"
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure Git author for Qwen checkpoints
         run: |
-          git config --local user.name "github-actions[bot]"
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "$GIT_COMMITTER_NAME"
+          git config --global user.email "$GIT_COMMITTER_EMAIL"
+          git config --local user.name "$GIT_COMMITTER_NAME"
+          git config --local user.email "$GIT_COMMITTER_EMAIL"
+
+      - name: Read Node version from .nvmrc
+        id: node-version
+        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+      - name: Read pnpm version from package.json
+        id: pnpm-version
+        run: |
+          version=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).packageManager.split('@')[1]")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.32.1
+          version: ${{ steps.pnpm-version.outputs.version }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: ${{ steps.node-version.outputs.version }}
           cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install
@@ -34,8 +52,19 @@ jobs:
 
       - name: Start Ollama
         run: |
-          ollama serve > ollama.log 2>&1 &
-          sleep 5
+          if ! curl -fsS http://127.0.0.1:11434/api/version > /dev/null 2>&1; then
+            ollama serve > ollama.log 2>&1 &
+          fi
+
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:11434/api/version > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat ollama.log || true
+          exit 1
 
       - name: Pull small coder model
         run: |
