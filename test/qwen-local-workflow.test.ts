@@ -107,12 +107,12 @@ void test("qwen settings are tuned for CPU-only local Ollama runs", async () => 
     assert.doesNotMatch(workflowSource, /> "\$\{HOME\}\/\.qwen\/settings\.json"/u);
     assert.match(settingsSource, /"name": "qwen3:1\.7b"/u);
     assert.match(settingsSource, /"skipStartupContext": true/u);
-    assert.match(settingsSource, /"maxSessionTurns": 40/u);
     assert.match(settingsSource, /"generationConfig": \{/u);
     assert.match(settingsSource, /"timeout": 1200000/u);
     assert.match(settingsSource, /"maxRetries": 0/u);
     assert.match(settingsSource, /"samplingParams": \{/u);
     assert.match(settingsSource, /"max_tokens": 4096/u);
+    assert.match(settingsSource, /"maxSessionTurns": 60/u);
     assert.ok(
         settingsSource.indexOf('"generationConfig": {') < settingsSource.indexOf('"chatCompression": {'),
         "Qwen generation settings should live under the checked-in model settings."
@@ -162,14 +162,14 @@ void test("aider local workflow routes only @aider-local comments through the re
     assert.match(localSource, /agent: aider-local/u);
     assert.match(localSource, /agent_cli: aider/u);
     assert.match(localSource, /local_ollama_model: \$\{\{ vars\.AIDER_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}/u);
-    assert.match(localSource, /aider --yes-always --no-browser --message-file/u);
+    assert.match(localSource, /aider --yes-always --no-browser --model "\$\{LOCAL_OLLAMA_MODEL\}" --subtree-only --set-env OPENAI_API_TYPE=openai --message-file/u);
 });
 
 void test("aider local workflow uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
     const source = await readFile(path.resolve(process.cwd(), ".aider.conf.yml"), "utf8");
 
     assert.doesNotMatch(source, /provider:/u);
-    assert.match(source, /openai-api-type: openai/u);
+    assert.doesNotMatch(source, /openai-api-type:/u);
     assert.match(source, /model: qwen3:1\.7b/u);
     assert.match(source, /openai-api-key: ollama/u);
     assert.match(source, /openai-api-base: http:\/\/127\.0\.0\.1:11434\/v1/u);

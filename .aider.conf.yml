@@ -1,6 +1,5 @@
 # Local Aider configuration for this repository.
 # This file is intentionally repo-local and only used when Aider runs from this project.
-openai-api-type: openai
 model: qwen3:1.7b
 openai-api-key: ollama
 openai-api-base: http://127.0.0.1:11434/v1

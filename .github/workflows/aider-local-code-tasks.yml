@@ -52,7 +52,9 @@ jobs:
           exit 1
         fi
 
+        export OPENAI_API_TYPE="openai"
+
         AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
         printf '%s\n\nUser task from PR comment:\n%s\n' "You are aider-local, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint. Use Aider to inspect the repository and make the requested code changes. Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files." "${ADDITIONAL_CONTEXT}" > "${AIDER_TASK_MESSAGE_FILE}"
 
-        aider --yes-always --no-browser --message-file "${AIDER_TASK_MESSAGE_FILE}"
+        aider --yes-always --no-browser --model "${LOCAL_OLLAMA_MODEL}" --subtree-only --set-env OPENAI_API_TYPE=openai --message-file "${AIDER_TASK_MESSAGE_FILE}"
