@@ -1,6 +1,15 @@
 {
   "model": {
     "skipLoopDetection": true,
+    "skipStartupContext": true,
+    "maxSessionTurns": 40,
+    "generationConfig": {
+      "timeout": 1200000,
+      "maxRetries": 0,
+      "samplingParams": {
+        "max_tokens": 4096
+      }
+    },
     "chatCompression": {
       "contextPercentageThreshold": 0.8
     },

@@ -7,6 +7,10 @@ async function readWorkflowSource(fileName: string): Promise<string> {
     return readFile(path.resolve(process.cwd(), ".github/workflows", fileName), "utf8");
 }
 
+async function readQwenSettingsSource(): Promise<string> {
+    return readFile(path.resolve(process.cwd(), ".qwen/settings.json"), "utf8");
+}
+
 async function readAllWorkflowSources(): Promise<string> {
     const workflowDirectory = path.resolve(process.cwd(), ".github/workflows");
     const directoryEntries = await readdir(workflowDirectory);
@@ -61,6 +65,25 @@ void test("qwen local workflow uses a small tool-capable Ollama model by default
     assert.match(source, /curl -fsS "\$\{OPENAI_BASE_URL\}\/models"/u);
     assert.match(source, /--model="\$\{QWEN_LOCAL_MODEL\}"/u);
     assert.doesNotMatch(source, /qwen2\.5-coder:0\.5b/u);
+});
+
+void test("qwen settings are tuned for CPU-only local Ollama runs", async () => {
+    const workflowSource = await readWorkflowSource("qwen-local-code-tasks.yml");
+    const settingsSource = await readQwenSettingsSource();
+
+    assert.doesNotMatch(workflowSource, /QWEN_CODE_MAX_OUTPUT_TOKENS/u);
+    assert.doesNotMatch(workflowSource, /> "\$\{HOME\}\/\.qwen\/settings\.json"/u);
+    assert.match(settingsSource, /"skipStartupContext": true/u);
+    assert.match(settingsSource, /"maxSessionTurns": 40/u);
+    assert.match(settingsSource, /"generationConfig": \{/u);
+    assert.match(settingsSource, /"timeout": 1200000/u);
+    assert.match(settingsSource, /"maxRetries": 0/u);
+    assert.match(settingsSource, /"samplingParams": \{/u);
+    assert.match(settingsSource, /"max_tokens": 4096/u);
+    assert.ok(
+        settingsSource.indexOf('"generationConfig": {') < settingsSource.indexOf('"chatCompression": {'),
+        "Qwen generation settings should live under the checked-in model settings."
+    );
 });
 
 void test("qwen local workflow only starts Ollama when the API is unavailable", async () => {
