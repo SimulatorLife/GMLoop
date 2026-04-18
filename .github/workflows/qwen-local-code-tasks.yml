@@ -46,6 +46,8 @@ jobs:
         QWEN_CI_SYSTEM_PROMPT="$(cat <<'PROMPT'
         You are running in GitHub Actions as an autonomous coding agent.
         Use real Qwen Code tool calls for shell commands and file edits.
+        For shell commands, call the native run_shell_command tool by name.
+        For file changes, call the native edit or write_file tools by name.
         Do not print JSON objects that describe intended tool calls.
         Do not respond with a plan-only answer, standalone JSON, or instructions for another process.
         The token startNewTask is not a tool.
@@ -57,8 +59,9 @@ jobs:
 
         QWEN_LOCAL_TASK_PROMPT="$(cat <<'PROMPT'
         You are qwen-local, a small local model running through Qwen Code in CI.
-        Use shell and file-edit tools for every repository inspection and edit.
-        Start by making a shell tool call for the first validation or inspection command requested by the user.
+        Use Qwen Code tools for every repository inspection and edit.
+        Use run_shell_command for shell commands, read_file for file reads, and edit or write_file for file changes.
+        Start by calling run_shell_command for the first validation or inspection command requested by the user.
         Do not edit golden `.gml` fixtures, generated files, dist files, workflow files, or configuration files.
         Run `pnpm run lint:quiet` and `pnpm run build:ts` after edits unless a real blocker prevents it.
         Do not output a JSON plan, a fake function call, or `startNewTask`.
@@ -137,12 +140,53 @@ jobs:
           return 1
         }
 
+        verify_qwen_exposes_required_tools() {
+          local log_dir
+          local missing_tools
+          log_dir="${RUNNER_TEMP:-/tmp}/qwen-openai-tool-registry"
+          rm -rf "${log_dir}"
+          mkdir -p "${log_dir}"
+
+          printf 'Reply with ok only.\n' | qwen \
+            --yolo \
+            --channel CI \
+            --max-session-turns 1 \
+            --output-format text \
+            --openai-logging \
+            --openai-logging-dir "${log_dir}" \
+            --auth-type openai \
+            --openai-api-key "${OPENAI_API_KEY}" \
+            --openai-base-url="${OPENAI_BASE_URL}" \
+            --model="${QWEN_LOCAL_MODEL}" >/dev/null
+
+          if ! compgen -G "${log_dir}/openai-*.json" >/dev/null; then
+            echo "❌ Qwen Code did not write OpenAI request logs for the tool registry probe."
+            return 1
+          fi
+
+          missing_tools="$(
+            jq -r -s '
+              [.[].request.tools[]?.function.name] | unique as $available
+              | ["read_file", "write_file", "edit", "run_shell_command"] as $required
+              | ($required - $available)[]
+            ' "${log_dir}"/openai-*.json
+          )"
+
+          if [ -n "${missing_tools}" ]; then
+            echo "❌ Qwen Code did not expose required native tools to the model:"
+            printf '%s\n' "${missing_tools}"
+            return 1
+          fi
+
+          echo "Qwen Code exposes required native tools: read_file, write_file, edit, run_shell_command"
+        }
+
         verify_qwen_tool_calls() {
           local smoke_file
           local smoke_prompt
           smoke_file="${RUNNER_TEMP:-/tmp}/qwen-local-tool-smoke.txt"
           rm -f "${smoke_file}"
-          smoke_prompt="$(printf 'Use the shell tool to run exactly this command: printf qwen-local-tool-smoke > %q\nDo not finish until that file exists.\n' "${smoke_file}")"
+          smoke_prompt="$(printf 'Use the run_shell_command tool to run this exact shell command: printf qwen-local-tool-smoke > %q\nDo not answer in text. Do not print JSON. Call the tool.\n' "${smoke_file}")"
 
           printf '%s\n' "${smoke_prompt}" | qwen \
             --yolo \
@@ -163,6 +207,44 @@ jobs:
           return 1
         }
 
+        verify_qwen_file_edits() {
+          local smoke_file
+          local smoke_prompt
+          smoke_file="${RUNNER_TEMP:-/tmp}/qwen-local-file-smoke.ts"
+          rm -f "${smoke_file}"
+
+          smoke_prompt="$(cat <<PROMPT
+        Call the write_file tool exactly once with these arguments:
+        file_path: ${smoke_file}
+        content: export function qwenLocalSmoke(): string {\\n    return "after";\\n}\\n
+
+        Do not call open_file.
+        Do not answer in text.
+        Do not print JSON.
+        Call write_file.
+        PROMPT
+        )"
+
+          printf '%s\n' "${smoke_prompt}" | qwen \
+            --yolo \
+            --channel CI \
+            --max-session-turns 8 \
+            --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
+            --auth-type openai \
+            --openai-api-key "${OPENAI_API_KEY}" \
+            --openai-base-url="${OPENAI_BASE_URL}" \
+            --model="${QWEN_LOCAL_MODEL}"
+
+          if grep -q 'return "after";' "${smoke_file}" 2>/dev/null; then
+            rm -f "${smoke_file}"
+            return 0
+          fi
+
+          echo "❌ Qwen Code completed without proving it can edit files through '${QWEN_LOCAL_MODEL}'."
+          [ -f "${smoke_file}" ] && sed -n '1,80p' "${smoke_file}" || true
+          return 1
+        }
+
         if ! command -v ollama >/dev/null 2>&1; then
           curl -fsSL https://ollama.com/install.sh | sh
         fi
@@ -176,7 +258,9 @@ jobs:
         verify_ollama_model_is_available
         wait_for_ollama_openai_api
         warm_ollama_openai_chat
+        verify_qwen_exposes_required_tools
         verify_qwen_tool_calls
+        verify_qwen_file_edits
 
         printf '%s\n' "${QWEN_LOCAL_AGENT_PROMPT}" | qwen \
           --yolo \

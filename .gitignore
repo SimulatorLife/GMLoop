@@ -50,6 +50,9 @@ gha-creds-*.json
 # AI agents sometimes add scripts
 # We don't want to commit these by accident
 scripts/
+!/scripts/
+/scripts/*
+!/scripts/qwen-local-smoke.sh
 
 # Logs
 logs/
