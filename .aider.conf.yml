@@ -4,7 +4,7 @@
 model: openai/qwen3:1.7b
 openai-api-key: ollama
 openai-api-base: http://127.0.0.1:11434/v1
-auto-commits: true
+auto-commits: false
 dirty-commits: true
 stream: false
 pretty: false
@@ -13,4 +13,4 @@ no-browser: true
 disable-playwright: true
 subtree-only: true
 check-update: false
-verbose: true
+verbose: false

@@ -128,7 +128,6 @@ void test("aider invoke uses a repo-local .aider.conf.yml for local Ollama setti
     assert.match(source, /model: openai\/qwen3:1\.7b/u);
     assert.match(source, /openai-api-key: ollama/u);
     assert.match(source, /openai-api-base: http:\/\/127\.0\.0\.1:11434\/v1/u);
-    assert.match(source, /auto-commits: true/u);
     assert.match(source, /dirty-commits: true/u);
 });
 
@@ -184,6 +183,11 @@ void test("agent invoke workflow always attempts auto-commit and push after the 
 
     assert.match(source, /- name: Auto-commit and push agent changes if needed/u);
     assert.match(source, /if: always\(\)/u);
+    assert.match(source, /if ! git diff --quiet \|\| ! git diff --cached --quiet; then/u);
+    assert.match(source, /git add -A/u);
+    assert.match(source, /git commit -m "\$commit_message"/u);
+    assert.match(source, /elif \[ "\$\{has_worktree_changes\}" = true \]; then/u);
+    assert.match(source, /echo "\[agent\] New commit created; will push\."/u);
 });
 
 void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
