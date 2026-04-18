@@ -38,12 +38,6 @@ jobs:
           exit 1
         fi
 
-        if [ -n "${{ vars.QWEN_LOCAL_MODEL || '' }}" ]; then
-          export QWEN_LOCAL_MODEL="${{ vars.QWEN_LOCAL_MODEL }}"
-        fi
-        if [ -n "${{ vars.QWEN_MAX_SESSION_TURNS || '' }}" ]; then
-          export QWEN_MAX_SESSION_TURNS="${{ vars.QWEN_MAX_SESSION_TURNS }}"
-        fi
         export OPENAI_API_KEY="ollama"
         export OPENAI_BASE_URL="http://127.0.0.1:11434/v1"
         export NO_PROXY="${NO_PROXY:+${NO_PROXY},}127.0.0.1,localhost"
@@ -75,11 +69,6 @@ jobs:
         export QWEN_LOCAL_TASK_PROMPT
         QWEN_LOCAL_AGENT_PROMPT="$(printf '%s\n\nUser task from PR comment:\n%s\n' "${QWEN_LOCAL_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
         export QWEN_LOCAL_AGENT_PROMPT
-
-        QWEN_MODEL_ARGS=()
-        if [ -n "${QWEN_LOCAL_MODEL:-}" ]; then
-          QWEN_MODEL_ARGS=(--model "${QWEN_LOCAL_MODEL}")
-        fi
 
         curl_ollama() {
           curl --noproxy '*' -fsS "$@"
@@ -119,17 +108,17 @@ jobs:
 
         verify_ollama_model_is_available() {
           if curl_ollama http://127.0.0.1:11434/api/tags \
-            | jq -e --arg model "${QWEN_LOCAL_MODEL}" 'any(.models[]?; .name == $model)' >/dev/null; then
+            | jq -e --arg model "${LOCAL_OLLAMA_MODEL}" 'any(.models[]?; .name == $model)' >/dev/null; then
             return 0
           fi
 
-          echo "❌ Ollama did not report the pulled model '${QWEN_LOCAL_MODEL}' in /api/tags."
+          echo "❌ Ollama did not report the pulled model '${LOCAL_OLLAMA_MODEL}' in /api/tags."
           return 1
         }
 
         warm_ollama_openai_chat() {
           local request_body
-          request_body="$(jq -n --arg model "${QWEN_LOCAL_MODEL}" '{model: $model, messages: [{role: "user", content: "Reply with ok."}], max_tokens: 8, stream: false}')"
+          request_body="$(jq -n --arg model "${LOCAL_OLLAMA_MODEL}" '{model: $model, messages: [{role: "user", content: "Reply with ok."}], max_tokens: 8, stream: false}')"
 
           if curl_ollama --max-time 300 -X POST "${OPENAI_BASE_URL}/chat/completions" \
             -H "Authorization: Bearer ${OPENAI_API_KEY}" \
@@ -138,7 +127,7 @@ jobs:
             return 0
           fi
 
-          echo "❌ Ollama OpenAI-compatible chat completion failed for '${QWEN_LOCAL_MODEL}'."
+          echo "❌ Ollama OpenAI-compatible chat completion failed for '${LOCAL_OLLAMA_MODEL}'."
           cat ollama.log || true
           return 1
         }
@@ -159,8 +148,7 @@ jobs:
             --openai-logging-dir "${log_dir}" \
             --auth-type openai \
             --openai-api-key "${OPENAI_API_KEY}" \
-            --openai-base-url="${OPENAI_BASE_URL}" \
-            "${QWEN_MODEL_ARGS[@]}" >/dev/null
+            --openai-base-url="${OPENAI_BASE_URL}" >/dev/null
 
           if ! compgen -G "${log_dir}/openai-*.json" >/dev/null; then
             echo "❌ Qwen Code did not write OpenAI request logs for the tool registry probe."
@@ -198,15 +186,14 @@ jobs:
             --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
             --auth-type openai \
             --openai-api-key "${OPENAI_API_KEY}" \
-            --openai-base-url="${OPENAI_BASE_URL}" \
-            "${QWEN_MODEL_ARGS[@]}"
+            --openai-base-url="${OPENAI_BASE_URL}"
 
           if [ "$(cat "${smoke_file}" 2>/dev/null || true)" = "qwen-local-tool-smoke" ]; then
             rm -f "${smoke_file}"
             return 0
           fi
 
-          echo "❌ Qwen Code completed without proving it can call shell tools through '${QWEN_LOCAL_MODEL}'."
+          echo "❌ Qwen Code completed without proving it can call shell tools through '${LOCAL_OLLAMA_MODEL}'."
           return 1
         }
 
@@ -236,15 +223,14 @@ jobs:
             --auth-type openai \
             --include-partial-messages \
             --openai-api-key "${OPENAI_API_KEY}" \
-            --openai-base-url="${OPENAI_BASE_URL}" \
-            "${QWEN_MODEL_ARGS[@]}"
+            --openai-base-url="${OPENAI_BASE_URL}"
 
           if grep -q 'return "after";' "${smoke_file}" 2>/dev/null; then
             rm -f "${smoke_file}"
             return 0
           fi
 
-          echo "❌ Qwen Code completed without proving it can edit files through '${QWEN_LOCAL_MODEL}'."
+          echo "❌ Qwen Code completed without proving it can edit files through '${LOCAL_OLLAMA_MODEL}'."
           [ -f "${smoke_file}" ] && sed -n '1,80p' "${smoke_file}" || true
           return 1
         }
@@ -256,9 +242,7 @@ jobs:
         printf '%s\n' "${QWEN_LOCAL_AGENT_PROMPT}" | qwen \
           --yolo \
           --channel CI \
-          --max-session-turns "${QWEN_MAX_SESSION_TURNS}" \
           --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
           --auth-type openai \
           --openai-api-key "${OPENAI_API_KEY}" \
-          --openai-base-url="${OPENAI_BASE_URL}" \
-          "${QWEN_MODEL_ARGS[@]}"
+          --openai-base-url="${OPENAI_BASE_URL}"

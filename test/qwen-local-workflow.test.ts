@@ -61,7 +61,7 @@ function assertQwenLocalUsesPrPromptAndToolGate(source: string): void {
     assert.match(source, /Qwen Code completed without proving it can call shell tools/u);
     assert.match(source, /--yolo/u);
     assert.match(source, /--channel CI/u);
-    assert.match(source, /--max-session-turns "\$\{QWEN_MAX_SESSION_TURNS\}"/u);
+    assert.doesNotMatch(source, /--max-session-turns "\$\{QWEN_MAX_SESSION_TURNS\}"/u);
     assert.match(source, /--append-system-prompt "\$\{QWEN_CI_SYSTEM_PROMPT\}"/u);
     assert.doesNotMatch(source, /--prompt-interactive/u);
 }
@@ -86,8 +86,9 @@ void test("qwen local workflow uses a small tool-capable Ollama model by default
 
     assert.doesNotMatch(source, /export QWEN_LOCAL_MODEL="\$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}"/u);
     assert.match(source, /local_ollama_model: \$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}/u);
-    assert.match(source, /QWEN_MODEL_ARGS=\(\)/u);
+    assert.doesNotMatch(source, /QWEN_MODEL_ARGS=\(\)/u);
     assert.doesNotMatch(source, /--model="\$\{QWEN_LOCAL_MODEL\}"/u);
+    assert.doesNotMatch(source, /--max-session-turns "\$\{QWEN_MAX_SESSION_TURNS\}"/u);
     assert.doesNotMatch(source, /qwen2\.5-coder/u);
 });
 
@@ -112,7 +113,7 @@ void test("qwen settings are tuned for CPU-only local Ollama runs", async () => 
     assert.match(settingsSource, /"maxRetries": 0/u);
     assert.match(settingsSource, /"samplingParams": \{/u);
     assert.match(settingsSource, /"max_tokens": 4096/u);
-    assert.match(settingsSource, /"maxSessionTurns": 60/u);
+    assert.match(settingsSource, /"maxSessionTurns": 40/u);
     assert.ok(
         settingsSource.indexOf('"generationConfig": {') < settingsSource.indexOf('"chatCompression": {'),
         "Qwen generation settings should live under the checked-in model settings."
@@ -162,7 +163,10 @@ void test("aider local workflow routes only @aider-local comments through the re
     assert.match(localSource, /agent: aider-local/u);
     assert.match(localSource, /agent_cli: aider/u);
     assert.match(localSource, /local_ollama_model: \$\{\{ vars\.AIDER_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}/u);
-    assert.match(localSource, /aider[\s\S]*--yes-always[\s\S]*--no-browser[\s\S]*--model "\$\{LOCAL_OLLAMA_MODEL\}"[\s\S]*--subtree-only[\s\S]*--set-env OPENAI_API_TYPE=openai[\s\S]*--message-file/u);
+    assert.match(localSource, /aider[\s\S]*--yes-always[\s\S]*--no-browser[\s\S]*--subtree-only[\s\S]*--set-env OPENAI_API_TYPE=openai[\s\S]*--message-file/u);
+    assert.doesNotMatch(localSource, /--model "\$\{LOCAL_OLLAMA_MODEL\}"/u);
+    assert.doesNotMatch(localSource, /export OPENAI_API_KEY="ollama"/u);
+    assert.doesNotMatch(localSource, /export OPENAI_BASE_URL="http:\/\/127\.0\.0\.1:11434\/v1"/u);
 });
 
 void test("aider local workflow uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
