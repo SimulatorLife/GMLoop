@@ -185,6 +185,13 @@ void test("agent invoke workflow fails when a successful agent run produces no p
     assert.match(source, /echo "Agent command succeeded with no branch push → FAIL\."/u);
 });
 
+void test("agent invoke workflow always attempts auto-commit and push after the agent command", async () => {
+    const source = await readWorkflowSource("agent-invoke.yml");
+
+    assert.match(source, /- name: Auto-commit and push agent changes if needed/u);
+    assert.match(source, /if: always\(\)/u);
+});
+
 void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
