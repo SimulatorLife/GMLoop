@@ -1,0 +1,58 @@
+name: '▶️ Aider Local Invoke'
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: '${{ github.workflow }}-invoke-${{ github.event_name }}-${{ github.event.issue.number }}'
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: 'bash'
+
+jobs:
+  invoke:
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body || '', '@aider-local') }}
+    uses: ./.github/workflows/agent-invoke.yml
+    secrets:
+      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+    with:
+      pr_number: ${{ github.event.issue.number }}
+      additional_context: ${{ github.event.comment.body }}
+      agent: aider-local
+      agent_cli: aider
+      local_ollama_model: ${{ vars.AIDER_LOCAL_MODEL || 'phi-3.5-mini' }}
+      agent_command: |
+        set -euo pipefail
+
+        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
+          echo "❌ Missing prompt context from PR comment."
+          exit 1
+        fi
+
+        export OPENAI_API_KEY="ollama"
+        export OPENAI_BASE_URL="http://127.0.0.1:11434/v1"
+        export NO_PROXY="${NO_PROXY:+${NO_PROXY},}127.0.0.1,localhost"
+        export no_proxy="${no_proxy:+${no_proxy},}127.0.0.1,localhost"
+
+        if ! command -v aider >/dev/null 2>&1; then
+          python3 -m pip install --user aider-chat
+          export PATH="$HOME/.local/bin:$PATH"
+        fi
+
+        if ! command -v aider >/dev/null 2>&1; then
+          echo "❌ Could not install Aider CLI."
+          exit 1
+        fi
+
+        AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
+        printf '%s\n\nUser task from PR comment:\n%s\n' "You are aider-local, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint. Use Aider to inspect the repository and make the requested code changes. Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files." "${ADDITIONAL_CONTEXT}" > "${AIDER_TASK_MESSAGE_FILE}"
+
+        aider --yes-always --no-browser --message-file "${AIDER_TASK_MESSAGE_FILE}"

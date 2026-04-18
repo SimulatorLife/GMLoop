@@ -27,6 +27,12 @@ on:
       agent_package:
         type: string
         required: false
+      local_ollama_model:
+        type: string
+        required: false
+      local_ollama_base_url:
+        type: string
+        required: false
     secrets:
       api_key: # may contain one key OR multiple newline-separated keys
         required: false
@@ -221,6 +227,91 @@ jobs:
           cache-dependency-path: |
             pnpm-lock.yaml
             **/pnpm-lock.yaml
+
+      - name: Setup local Ollama endpoint
+        if: ${{ inputs.local_ollama_model != '' }}
+        shell: bash
+        env:
+          LOCAL_OLLAMA_MODEL: ${{ inputs.local_ollama_model }}
+          LOCAL_OLLAMA_BASE_URL: ${{ inputs.local_ollama_base_url || 'http://127.0.0.1:11434/v1' }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${NO_PROXY:-}" ]; then
+            NO_PROXY="${NO_PROXY},127.0.0.1,localhost"
+          else
+            NO_PROXY='127.0.0.1,localhost'
+          fi
+
+          if [ -n "${no_proxy:-}" ]; then
+            no_proxy="${no_proxy},127.0.0.1,localhost"
+          else
+            no_proxy='127.0.0.1,localhost'
+          fi
+
+          echo "OPENAI_API_KEY=ollama" >> "$GITHUB_ENV"
+          echo "OPENAI_BASE_URL=${LOCAL_OLLAMA_BASE_URL}" >> "$GITHUB_ENV"
+          echo "NO_PROXY=${NO_PROXY}" >> "$GITHUB_ENV"
+          echo "no_proxy=${no_proxy}" >> "$GITHUB_ENV"
+
+          curl_ollama() {
+            curl --noproxy '*' -fsS "$@"
+          }
+
+          if ! command -v ollama >/dev/null 2>&1; then
+            curl -fsSL https://ollama.com/install.sh | sh
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+
+          if ! curl_ollama http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+            ollama serve > ollama.log 2>&1 &
+          fi
+
+          for attempt in {1..60}; do
+            if curl_ollama http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+              break
+            fi
+
+            if [ "${attempt}" -eq 60 ]; then
+              echo "❌ Ollama did not start in time"
+              cat ollama.log || true
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          ollama pull "${LOCAL_OLLAMA_MODEL}"
+
+          if ! curl_ollama http://127.0.0.1:11434/api/tags \
+            | jq -e --arg model "${LOCAL_OLLAMA_MODEL}" 'any(.models[]?; .name == $model)' >/dev/null; then
+            echo "❌ Ollama did not report the pulled model '${LOCAL_OLLAMA_MODEL}' in /api/tags."
+            exit 1
+          fi
+
+          for attempt in {1..30}; do
+            if curl_ollama "${LOCAL_OLLAMA_BASE_URL}/models" >/dev/null 2>&1; then
+              break
+            fi
+
+            if [ "${attempt}" -eq 30 ]; then
+              echo "❌ Ollama OpenAI-compatible endpoint did not become ready."
+              cat ollama.log || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          if ! jq -n --arg model "${LOCAL_OLLAMA_MODEL}" '{model: $model, messages: [{role: "user", content: "Reply with ok."}], max_tokens: 8, stream: false}' \
+            | curl_ollama --max-time 300 -X POST "${LOCAL_OLLAMA_BASE_URL}/chat/completions" \
+              -H "Authorization: Bearer ollama" \
+              -H "Content-Type: application/json" \
+              -d @- >/dev/null; then
+            echo "❌ Ollama OpenAI-compatible chat completion failed for '${LOCAL_OLLAMA_MODEL}'."
+            cat ollama.log || true
+            exit 1
+          fi
 
       - name: Install dependencies and build (root/workspaces)
         run: |

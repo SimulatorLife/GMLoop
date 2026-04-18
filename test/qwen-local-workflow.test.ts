@@ -85,10 +85,7 @@ void test("qwen local workflow uses a small tool-capable Ollama model by default
     const source = await readWorkflowSource("qwen-local-code-tasks.yml");
 
     assert.match(source, /export QWEN_LOCAL_MODEL="\$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}"/u);
-    assert.match(source, /ollama pull "\$\{QWEN_LOCAL_MODEL\}"/u);
-    assert.match(source, /wait_for_ollama_openai_api/u);
-    assert.match(source, /curl_ollama "\$\{OPENAI_BASE_URL\}\/models"/u);
-    assert.match(source, /warm_ollama_openai_chat/u);
+    assert.match(source, /local_ollama_model: \$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}/u);
     assert.match(source, /--model="\$\{QWEN_LOCAL_MODEL\}"/u);
     assert.doesNotMatch(source, /qwen2\.5-coder/u);
 });
@@ -120,19 +117,13 @@ void test("qwen settings are tuned for CPU-only local Ollama runs", async () => 
     );
 });
 
-void test("qwen local workflow only starts Ollama when the API is unavailable", async () => {
+void test("qwen local workflow delegates local Ollama setup to the reusable agent runner", async () => {
     const source = await readWorkflowSource("qwen-local-code-tasks.yml");
-    const startServerIndex = source.indexOf("ollama serve > ollama.log 2>&1 &");
-    const waitForNativeApiCallIndex = source.indexOf("        wait_for_ollama_native_api\n");
 
-    assert.match(source, /if ! curl_ollama http:\/\/127\.0\.0\.1:11434\/api\/version >\/dev\/null 2>&1; then/u);
-    assert.match(source, /ollama serve > ollama\.log 2>&1 &/u);
-    assert.match(source, /wait_for_ollama_native_api\(\)/u);
-    assert.match(source, /for attempt in \{1\.\.60\}; do/u);
-    assert.ok(
-        startServerIndex < waitForNativeApiCallIndex,
-        "workflow should start the fallback server before waiting."
-    );
+    assert.match(source, /local_ollama_model: \$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}/u);
+    assert.doesNotMatch(source, /ollama serve > ollama\.log 2>&1 &/u);
+    assert.doesNotMatch(source, /wait_for_ollama_native_api\(\)/u);
+    assert.doesNotMatch(source, /curl_ollama\(\)/u);
 });
 
 void test("qwen local workflow selects OpenAI-compatible auth for Ollama", async () => {
@@ -143,6 +134,7 @@ void test("qwen local workflow selects OpenAI-compatible auth for Ollama", async
 
     assert.match(source, /export OPENAI_API_KEY="ollama"/u);
     assert.match(source, /export OPENAI_BASE_URL="http:\/\/127\.0\.0\.1:11434\/v1"/u);
+    assert.match(source, /local_ollama_model: \$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}/u);
     assert.notEqual(authTypeIndex, -1, "Qwen should use OpenAI-compatible auth against Ollama.");
     assert.ok(authTypeIndex < apiKeyIndex, "Qwen auth type should be selected before OpenAI credentials.");
     assert.ok(apiKeyIndex < baseUrlIndex, "OpenAI-compatible credentials should be paired with the Ollama endpoint.");
@@ -158,6 +150,27 @@ void test("qwen local invocation uses the PR prompt and verifies tool calls", as
     const localSource = await readWorkflowSource("qwen-local-code-tasks.yml");
 
     assertQwenLocalUsesPrPromptAndToolGate(localSource);
+});
+
+void test("aider local workflow routes only @aider-local comments through the reusable agent runner", async () => {
+    const localSource = await readWorkflowSource("aider-local-code-tasks.yml");
+
+    assert.match(localSource, /startsWith\(github\.event\.comment\.body \|\| '', '@aider-local'\)/u);
+    assert.match(localSource, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
+    assert.match(localSource, /agent: aider-local/u);
+    assert.match(localSource, /agent_cli: aider/u);
+    assert.match(localSource, /local_ollama_model: \$\{\{ vars\.AIDER_LOCAL_MODEL \|\| 'phi-3\.5-mini' \}\}/u);
+    assert.match(localSource, /aider --yes-always --no-browser --message-file/u);
+});
+
+void test("aider local workflow uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
+    const source = await readFile(path.resolve(process.cwd(), ".aider.conf.yml"), "utf8");
+
+    assert.match(source, /model: phi-3\.5-mini/u);
+    assert.match(source, /openai-api-key: ollama/u);
+    assert.match(source, /openai-api-base: http:\/\/127\.0\.0\.1:11434\/v1/u);
+    assert.match(source, /auto-commits: false/u);
+    assert.match(source, /dirty-commits: false/u);
 });
 
 void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {

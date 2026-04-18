@@ -29,6 +29,7 @@ jobs:
       agent: qwen-local
       agent_cli: qwen
       agent_package: ${{ vars.QWEN_CODE_PACKAGE || '@qwen-code/qwen-code@0.14.5' }}
+      local_ollama_model: ${{ vars.QWEN_LOCAL_MODEL || 'qwen3:1.7b' }}
       agent_command: |
         set -euo pipefail
 
@@ -71,74 +72,6 @@ jobs:
         QWEN_LOCAL_AGENT_PROMPT="$(printf '%s\n\nUser task from PR comment:\n%s\n' "${QWEN_LOCAL_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
         export QWEN_LOCAL_AGENT_PROMPT
 
-        curl_ollama() {
-          curl --noproxy '*' -fsS "$@"
-        }
-
-        wait_for_ollama_native_api() {
-          for attempt in {1..60}; do
-            if curl_ollama http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
-              return 0
-            fi
-
-            if [ "${attempt}" -eq 60 ]; then
-              echo "❌ Ollama did not start in time"
-              cat ollama.log || true
-              return 1
-            fi
-
-            sleep 1
-          done
-        }
-
-        wait_for_ollama_openai_api() {
-          for attempt in {1..30}; do
-            if curl_ollama "${OPENAI_BASE_URL}/models" >/dev/null 2>&1; then
-              return 0
-            fi
-
-            if [ "${attempt}" -eq 30 ]; then
-              echo "❌ Ollama native API is up, but the OpenAI-compatible /models endpoint is unavailable."
-              cat ollama.log || true
-              return 1
-            fi
-
-            sleep 2
-          done
-        }
-
-        verify_ollama_model_is_available() {
-          if curl_ollama http://127.0.0.1:11434/api/tags \
-            | jq -e --arg model "${QWEN_LOCAL_MODEL}" 'any(.models[]?; .name == $model)' >/dev/null; then
-            return 0
-          fi
-
-          echo "❌ Ollama did not report the pulled model '${QWEN_LOCAL_MODEL}' in /api/tags."
-          return 1
-        }
-
-        warm_ollama_openai_chat() {
-          local request_body
-          request_body="$(
-            jq -n --arg model "${QWEN_LOCAL_MODEL}" '{
-              model: $model,
-              messages: [{role: "user", content: "Reply with ok."}],
-              max_tokens: 8,
-              stream: false
-            }'
-          )"
-
-          if curl_ollama --max-time 300 -X POST "${OPENAI_BASE_URL}/chat/completions" \
-            -H "Authorization: Bearer ${OPENAI_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "${request_body}" >/dev/null; then
-            return 0
-          fi
-
-          echo "❌ Ollama OpenAI-compatible chat completion failed for '${QWEN_LOCAL_MODEL}'."
-          cat ollama.log || true
-          return 1
-        }
 
         verify_qwen_exposes_required_tools() {
           local log_dir
@@ -245,19 +178,6 @@ jobs:
           return 1
         }
 
-        if ! command -v ollama >/dev/null 2>&1; then
-          curl -fsSL https://ollama.com/install.sh | sh
-        fi
-
-        if ! curl_ollama http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
-          ollama serve > ollama.log 2>&1 &
-        fi
-
-        wait_for_ollama_native_api
-        ollama pull "${QWEN_LOCAL_MODEL}"
-        verify_ollama_model_is_available
-        wait_for_ollama_openai_api
-        warm_ollama_openai_chat
         verify_qwen_exposes_required_tools
         verify_qwen_tool_calls
         verify_qwen_file_edits
