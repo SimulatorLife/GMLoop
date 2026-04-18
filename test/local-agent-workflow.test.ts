@@ -101,7 +101,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.match(source, /aider[\s\S]*--yes-always[\s\S]*--no-browser[\s\S]*--subtree-only[\s\S]*--message-file/u);
     assert.doesNotMatch(source, /OPENAI_API_TYPE/u);
     assert.doesNotMatch(source, /@aider-local/u);
-    assert.doesNotMatch(source, /--model "\$\{LOCAL_MODEL\}"/u);
+    assert.doesNotMatch(source, /--model/u);
     assert.ok(!workflowFileNames.includes("aider-local-code-tasks.yml"));
 });
 
@@ -117,19 +117,25 @@ void test("aider invoke uses a repo-local .aider.conf.yml for local Ollama setti
     assert.match(source, /dirty-commits: true/u);
 });
 
-void test("agent invoke resolves local model settings from agent config files", async () => {
+void test("agent invoke validates local OpenAI-compatible endpoint without loading models", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
     assert.doesNotMatch(source, /^\s*model:\n\s*type: string\n\s*required: false/mu);
     assert.doesNotMatch(source, /inputs\.model/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assert.doesNotMatch(source, /inputs\.agent_cli/u);
-    assert.match(source, /resolve_qwen_model\(\)/u);
-    assert.match(source, /jq -er '\.model\.name/u);
-    assert.match(source, /resolve_aider_model\(\)/u);
-    assert.ok(source.includes(String.raw`sub(/^openai\//, "", value)`));
-    assert.match(source, /ollama pull "\$\{LOCAL_MODEL\}"/u);
+    assert.doesNotMatch(source, /\.qwen\/settings\.json/u);
+    assert.doesNotMatch(source, /\.aider\.conf\.yml/u);
+    assert.doesNotMatch(source, /LOCAL_MODEL/u);
+    assert.doesNotMatch(source, /ollama pull/u);
+    assert.doesNotMatch(source, /chat\/completions/u);
+    assert.match(source, /validate_local_endpoint:/u);
+    assert.match(source, /OLLAMA_NATIVE_URL='http:\/\/127\.0\.0\.1:11434'/u);
+    assert.match(source, /\$\{OLLAMA_NATIVE_URL\}\/api\/version/u);
+    assert.match(source, /\$\{OPENAI_BASE_URL%\/\}\/models/u);
+    assert.match(source, /jq -e '\.data \| type == "array"'/u);
     assert.ok(source.includes('echo "OPENAI_BASE_URL=${OPENAI_BASE_URL}" >> "$GITHUB_ENV"'));
+    assert.ok(source.includes('echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "$GITHUB_ENV"'));
 });
 
 void test("agent invoke exports OpenAI API type for every child agent", async () => {

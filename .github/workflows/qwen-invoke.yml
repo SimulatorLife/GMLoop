@@ -119,7 +119,7 @@ jobs:
             return 0
           fi
 
-          echo "❌ Qwen Code completed without proving it can call shell tools through '${LOCAL_MODEL}'."
+          echo "❌ Qwen Code completed without proving it can call shell tools through the configured local model."
           return 1
         }
 
@@ -154,7 +154,7 @@ jobs:
             return 0
           fi
 
-          echo "❌ Qwen Code completed without proving it can edit files through '${LOCAL_MODEL}'."
+          echo "❌ Qwen Code completed without proving it can edit files through the configured local model."
           [ -f "${smoke_file}" ] && sed -n '1,80p' "${smoke_file}" || true
           return 1
         }
