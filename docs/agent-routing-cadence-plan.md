@@ -2,193 +2,65 @@
 
 ## Summary
 
-Move `.github/workflows/weights.json` from “pick one workflow, then pick any action agent” to an explicit scheduled routing policy that selects **workflow + agent** together. Use per-workflow agent weights to restrict qwen-local to low-complexity task workflows, and add cadence lanes so qwen-local can run more often than the normal hourly action cadence.
+Move `.github/workflows/weights.json` from "pick one workflow, then pick any action agent" to an explicit scheduled routing policy that selects **workflow + agent** together. The routing model should stay flat and auditable: workflows declare their task type, weight, and complexity; agents declare the task types and complexity range they are allowed to run.
 
-## Evaluation
+This replaces the earlier per-workflow agent maps, tag allowlists, and capability matching options with a smaller final schema based on three task types:
 
-The current per-workflow agent map is a good first step because it is explicit, easy to validate, and makes qwen-local's allowlist obvious. It also keeps the scheduler's selection math simple: build workflow/agent pairs, discard non-positive entries, then weight by workflow and agent weights.
+- `code`: normal scheduled code, lint, style, documentation, clarity, and maintenance workflows.
+- `merging`: PR merge conflict repair workflows.
+- `regressions`: PR test regression repair workflows.
 
-The weakness is duplication. Every time a new low-complexity agent is introduced, the same agent list has to be repeated across many workflows. Every time a workflow changes from low to medium complexity, every lane and workflow-agent map that mentions it needs to be revisited. This is acceptable for the first qwen-local rollout, but it will not scale well once routing policy needs to reason about several agents, task categories, and complexity bands.
+All other scheduled work is assumed to be `code`. Do not introduce a general tag or capability system unless the routing policy grows beyond these three distinct task categories.
 
-Recommendation: treat the per-workflow agent map as **Option A** because it is lowest-risk and easiest to ship first. If the implementation can tolerate one extra grouping layer, **Option B** is the best practical next schema because it removes most duplication without introducing capability inference. Keep **Option C** as the more expressive task/capability design if the routing table starts reasoning about many agents, task categories, and complexity bands.
+## Design Goals
 
-## Key Changes
+- Keep `weights.json` concise enough to audit in one pass.
+- Allow qwen-local to run low-complexity `code` workflows on a faster cadence.
+- Keep merge conflict and test regression repair out of qwen-local unless explicitly enabled later.
+- Preserve one shared hourly default action cadence for codex/copilot instead of dispatching once per enabled agent.
+- Keep follow-up repair selection separate from scheduled task routing.
+- Avoid compatibility shims, transitional routing paths, or duplicate scheduler logic.
 
-- Upgrade `.github/workflows/weights.json` to `version: 2` with three top-level concepts:
-  - `workflows`: each task workflow keeps its base task weight and adds an `agents` map, e.g. `"agents": {"codex": 1, "copilot": 1, "qwen-local": 2}`.
-  - `agentPools.followUps`: keep the existing follow-up pool for automerge/regression comments.
-  - `scheduler.lanes`: define cadence-specific lanes, e.g. a default hourly lane and a qwen-local low-complexity lane.
-- Initial qwen-local allowlist is explicit via per-workflow `agents` entries only on:
-  - `agent-23-lint`
-  - `agent-04-style`
-  - `agent-10-documentation`
-  - `agent-18-clarity`
-  - `agent-36-docstrings`
-  - `agent-84-document-intent`
-- Default behavior:
-  - Workflows without an `agents.qwen-local` entry can never be selected for qwen-local by scheduled routing.
-  - qwen-local receives higher per-workflow weight within its allowed task set.
-  - codex/copilot continue using the broader default action lane.
+## Weight File Shape
 
-## Scheduler Behavior
+Use `version: 2` with four top-level concepts:
 
-- Change `_scheduler.yml` to run on a fixed 15-minute tick, using `weights.json` to decide which cadence lanes are due.
-- Scheduler dispatches at most one task per due lane:
-  - `default-actions`: every 60 minutes, selects from normal workflows and codex/copilot weights.
-  - `qwen-local-low-complexity`: every 30 minutes, selects only workflows where `agents.qwen-local > 0`.
-- Scheduler dispatches the selected workflow with the existing `agent` input set to the selected agent, so downstream workflows do not need to re-randomize the agent.
-- Candidate pair weight is `workflow.weight * workflow.agents[agent]`.
-- If a lane has no eligible positive-weight workflow/agent pair, log and skip that lane without failing the scheduler.
-
-## Option A: Per-Workflow Agent Weights
-
-This is the existing plan. Each workflow names the agents that may run it. Absence means denial, so qwen-local is allowed only where it is explicitly listed.
+- `agents`: scheduled action agents, their global weights, cadence groups, task type eligibility, and optional complexity bounds.
+- `agentPools.followUps`: non-scheduled follow-up pools for automerge/regression comments and PR repair flows.
+- `scheduler`: fixed tick interval and shared cadence group dispatch budget.
+- `workflows`: scheduled task workflow weights, task type, and complexity.
 
 Sample `.github/workflows/weights.json`:
 
 ```json
 {
   "version": 2,
-  "agentPools": {
-    "followUps": {
-      "default": "copilot",
-      "agents": [
-        {"name": "copilot", "weight": 1.0},
-        {"name": "codex", "weight": 0.0},
-        {"name": "qwen-local", "weight": 0.0}
-      ]
-    }
-  },
-  "scheduler": {
-    "tickMinutes": 15,
-    "lanes": [
-      {
-        "name": "default-actions",
-        "cadenceMinutes": 60,
-        "agents": ["codex", "copilot"],
-        "workflows": "all"
-      },
-      {
-        "name": "qwen-local-low-complexity",
-        "cadenceMinutes": 30,
-        "agents": ["qwen-local"],
-        "workflows": [
-          "agent-04-style",
-          "agent-10-documentation",
-          "agent-18-clarity",
-          "agent-23-lint",
-          "agent-36-docstrings",
-          "agent-84-document-intent"
-        ]
-      }
-    ]
-  },
-  "workflows": [
+  "agents": [
     {
-      "name": "agent-02-resolve-merge-conflicts",
+      "name": "copilot",
       "weight": 1.0,
-      "agents": {
-        "codex": 1.0,
-        "copilot": 1.0
-      }
+      "cadenceGroup": "default-actions",
+      "cadenceMinutes": 60,
+      "taskTypes": ["code", "merging", "regressions"],
+      "minComplexity": 1
     },
     {
-      "name": "agent-04-style",
-      "weight": 0.2,
-      "agents": {
-        "codex": 1.0,
-        "copilot": 1.0,
-        "qwen-local": 2.0
-      }
+      "name": "codex",
+      "weight": 0.0,
+      "cadenceGroup": "default-actions",
+      "cadenceMinutes": 60,
+      "taskTypes": ["code", "merging", "regressions"],
+      "minComplexity": 3
     },
     {
-      "name": "agent-10-documentation",
-      "weight": 0.02,
-      "agents": {
-        "codex": 1.0,
-        "copilot": 1.0,
-        "qwen-local": 2.0
-      }
-    },
-    {
-      "name": "agent-18-clarity",
-      "weight": 0.25,
-      "agents": {
-        "codex": 1.0,
-        "copilot": 1.0,
-        "qwen-local": 2.0
-      }
-    },
-    {
-      "name": "agent-23-lint",
-      "weight": 0.33,
-      "agents": {
-        "codex": 1.0,
-        "copilot": 1.0,
-        "qwen-local": 3.0
-      }
-    },
-    {
-      "name": "agent-36-docstrings",
-      "weight": 0.05,
-      "agents": {
-        "codex": 1.0,
-        "copilot": 1.0,
-        "qwen-local": 2.0
-      }
-    },
-    {
-      "name": "agent-84-document-intent",
-      "weight": 0.02,
-      "agents": {
-        "codex": 1.0,
-        "copilot": 1.0,
-        "qwen-local": 2.0
-      }
+      "name": "qwen-local",
+      "weight": 0.0,
+      "cadenceGroup": "local-low-complexity",
+      "cadenceMinutes": 30,
+      "taskTypes": ["code"],
+      "maxComplexity": 2
     }
-  ]
-}
-```
-
-Selection rule:
-
-1. Find due lanes.
-2. For each due lane, enumerate workflow/agent pairs allowed by both the lane and `workflows[*].agents`.
-3. Drop pairs with non-positive workflow or agent weight.
-4. Select by `workflow.weight * workflow.agents[agent]`.
-5. Dispatch the selected workflow with the selected concrete `agent` input.
-
-Option A is the best immediate migration path because it is compatible with the existing `workflows` array and makes the qwen-local deny-by-default policy visually obvious.
-
-## Option B: Agent Classes With Workflow Tags
-
-This option is a condensed middle ground. Workflows declare a small set of `tags`, agents declare which tags they can run, and cadence remains agent-specific. It avoids repeating `codex`, `copilot`, and `qwen-local` under every workflow, but it does not require the richer task capability and cognitive-complexity model.
-
-Sample `.github/workflows/weights.json`:
-
-```json
-{
-  "version": 2,
-  "agents": {
-    "codex": {
-      "weight": 1.0,
-      "cadence": {"group": "default-actions", "minutes": 60},
-      "includeTags": ["default"],
-      "excludeTags": []
-    },
-    "copilot": {
-      "weight": 1.0,
-      "cadence": {"group": "default-actions", "minutes": 60},
-      "includeTags": ["default"],
-      "excludeTags": []
-    },
-    "qwen-local": {
-      "weight": 1.5,
-      "cadence": {"group": "local-low-complexity", "minutes": 30},
-      "includeTags": ["low-complexity"],
-      "excludeTags": ["needs-human-judgment", "large-refactor", "merge-repair"]
-    }
-  },
+  ],
   "agentPools": {
     "followUps": {
       "default": "copilot",
@@ -204,137 +76,185 @@ Sample `.github/workflows/weights.json`:
     "maxDispatchesPerCadenceGroup": 1
   },
   "workflows": [
-    {"name": "agent-02-resolve-merge-conflicts", "weight": 1.0, "tags": ["default", "merge-repair"]},
-    {"name": "agent-04-style", "weight": 0.2, "tags": ["default", "low-complexity"]},
-    {"name": "agent-10-documentation", "weight": 0.02, "tags": ["default", "low-complexity"]},
-    {"name": "agent-18-clarity", "weight": 0.25, "tags": ["default", "low-complexity"]},
-    {"name": "agent-23-lint", "weight": 0.33, "tags": ["default", "low-complexity"]},
-    {"name": "agent-36-docstrings", "weight": 0.05, "tags": ["default", "low-complexity"]},
-    {"name": "agent-39-refactor-performance", "weight": 1.0, "tags": ["default", "large-refactor"]},
-    {"name": "agent-84-document-intent", "weight": 0.02, "tags": ["default", "low-complexity"]}
-  ]
-}
-```
-
-Eligibility rule:
-
-1. A workflow is eligible for an agent when its tags overlap with `agent.includeTags`.
-2. A workflow is rejected for an agent when any workflow tag appears in `agent.excludeTags`.
-3. An agent is due when its `agent.cadence.minutes` interval has elapsed on the scheduler tick.
-4. Agents with the same `agent.cadence.group` share a dispatch budget.
-5. Pair weight is `workflow.weight * agent.weight`.
-
-Option B is simpler than Option A once several workflows share the same qwen-local eligibility. It also keeps the config easy to audit: qwen-local's entire routing policy is in one agent record, and each workflow only needs a short tag list.
-
-The tradeoff is that tags are less precise than full task requirements. `low-complexity` is easy to understand, but it needs disciplined use. Validation should reject unknown tags, require every workflow to include at least one tag, and verify qwen-local has no route to workflows tagged `merge-repair`, `large-refactor`, or `needs-human-judgment`.
-
-## Option C: Task Requirements Matched To Agent Capabilities
-
-Instead of listing each agent under every workflow, define the task's requirements once and define each agent's capabilities once. The scheduler then matches eligible pairs by capability tags and cognitive-complexity limits.
-
-This avoids repeated agent maps and makes policy changes less scattered. For example, qwen-local can be granted all `lint` and `documentation` tasks up to complexity 2 without adding `qwen-local` to every lint/documentation workflow.
-
-Sample `.github/workflows/weights.json`:
-
-```json
-{
-  "version": 2,
-  "agentPools": {
-    "followUps": {
-      "default": "copilot",
-      "agents": [
-        {"name": "copilot", "weight": 1.0, "cadence": 60, "complexity": 4},
-        {"name": "codex", "weight": 0.0, "cadence": 60, "complexity": 4},
-        {"name": "qwen-local", "weight": 0.0, "cadence": 30, "complexity": 2}
-      ]
-    }
-  },
-  "scheduler": {
-    "tickMinutes": 15
-  },
-  "workflows": [
     {
       "name": "agent-02-resolve-merge-conflicts",
       "weight": 1.0,
+      "taskType": "merging",
       "complexity": 4
     },
     {
       "name": "agent-04-style",
       "weight": 0.2,
+      "taskType": "code",
       "complexity": 1
     },
     {
       "name": "agent-10-documentation",
       "weight": 0.02,
+      "taskType": "code",
       "complexity": 1
     },
     {
       "name": "agent-18-clarity",
       "weight": 0.25,
+      "taskType": "code",
       "complexity": 2
+    },
+    {
+      "name": "agent-23-lint",
+      "weight": 0.33,
+      "taskType": "code",
+      "complexity": 1
+    },
+    {
+      "name": "agent-36-docstrings",
+      "weight": 0.05,
+      "taskType": "code",
+      "complexity": 1
+    },
+    {
+      "name": "agent-84-document-intent",
+      "weight": 0.02,
+      "taskType": "code",
+      "complexity": 1
     }
   ]
 }
 ```
 
-Eligibility rule:
+## Field Semantics
 
-1. A workflow is eligible for an agent when every `workflow.task.capabilities` entry is present in `agent.capabilities`.
-2. `workflow.task.complexity` must be less than or equal to `agent.cognitiveComplexity.max`.
-3. An agent is due when its `agent.cadence.minutes` interval has elapsed on the scheduler tick.
-4. Agents with the same `agent.cadence.group` share a dispatch budget. With `maxDispatchesPerCadenceGroup: 1`, codex and copilot still produce one normal action dispatch per hour between them, while qwen-local can produce one low-complexity dispatch every 30 minutes.
-5. Pair weight is `workflow.weight * agent.weight`, with optional group-specific multipliers added later only if there is a concrete need.
+### Agents
 
-Option C is better once the policy grows beyond qwen-local because adding a new agent usually requires editing only `agents`, not every workflow. It also expresses intent more directly: tasks describe what they need, and agents describe what they can safely handle.
+- `name`: concrete value passed to workflow `agent` inputs.
+- `weight`: global scheduled routing weight for the agent. Non-positive weights disable the agent for scheduled routing while still allowing its policy to be validated.
+- `cadenceGroup`: shared dispatch budget key. Agents in the same group compete for the same due dispatch.
+- `cadenceMinutes`: interval for the cadence group. Must be a positive multiple of `scheduler.tickMinutes`.
+- `taskTypes`: task types this agent may run.
+- `minComplexity`: optional inclusive lower bound.
+- `maxComplexity`: optional inclusive upper bound.
 
-The tradeoff is that validation matters more. The scheduler should reject unknown capability names, require every workflow to declare task requirements, and fail clearly if a due cadence group has no eligible pairs because of an overly strict complexity bound.
+At least one of `minComplexity` or `maxComplexity` may be omitted. Omitted lower bound means no minimum. Omitted upper bound means no maximum.
+
+### Scheduler
+
+- `tickMinutes`: fixed `_scheduler.yml` wake-up interval.
+- `maxDispatchesPerCadenceGroup`: maximum scheduled task dispatches for each due cadence group on one scheduler tick.
+
+The default expected value is `1`, so codex and copilot can share one hourly default action dispatch while qwen-local can use an independent 30-minute low-complexity dispatch.
+
+### Workflows
+
+- `name`: scheduled workflow name without the `.yml` suffix.
+- `weight`: base task selection weight.
+- `taskType`: one of `code`, `merging`, or `regressions`.
+- `complexity`: integer task complexity score.
+
+Complexity should describe routing risk and expected judgment, not runtime duration. Low-complexity workflows should be routine and recoverable. Merge repair, regression repair, architectural changes, broad refactors, and high-judgment tasks should receive higher complexity even when the workflow file itself is mechanically simple.
+
+## Scheduler Behavior
+
+- `_scheduler.yml` runs on a fixed 15-minute tick.
+- The scheduler loads `weights.json`, validates the schema, and computes due cadence groups.
+- For each due cadence group, the scheduler enumerates eligible workflow/agent pairs.
+- A workflow/agent pair is eligible when:
+  - `agent.weight > 0`
+  - `workflow.weight > 0`
+  - `workflow.taskType` is included in `agent.taskTypes`
+  - `workflow.complexity >= agent.minComplexity` when `minComplexity` is present
+  - `workflow.complexity <= agent.maxComplexity` when `maxComplexity` is present
+  - `agent.cadenceGroup` is due on the current scheduler tick
+- Candidate pair weight is:
+
+```text
+workflow.weight * agent.weight
+```
+
+- The scheduler dispatches the selected workflow with the selected concrete `agent` input.
+- If a due cadence group has no eligible positive-weight workflow/agent pair, log and skip that group without failing the scheduler.
+
+## Routing Policy
+
+The intended initial policy is:
+
+- `copilot`: enabled for `code`, `merging`, and `regressions`.
+- `codex`: configured for `code`, `merging`, and `regressions`, but initially disabled with `weight: 0.0`.
+- `qwen-local`: configured only for low-complexity `code`, initially disabled with `weight: 0.0` until the rollout is ready.
+
+Do not route qwen-local into `merging` or `regressions` by complexity alone. Those task types are separate risk categories and must be explicitly listed in `qwen-local.taskTypes` before qwen-local can receive them.
+
+## Follow-Up Pools
+
+Keep follow-up selection separate from scheduled action routing.
+
+`agentPools.followUps` remains the policy source for follow-up repair flows such as automerge comments, regression comments, and PR-specific retry paths. Those flows may reuse the same agent names, but they are not selected by the scheduled cadence algorithm.
+
+Manual `workflow_dispatch.inputs.agent` overrides should remain available to humans. Scheduled routing restrictions apply to automated scheduler selection, not to explicit human overrides.
+
+## Validation
+
+Scheduler parsing should fail clearly when the configuration is internally inconsistent:
+
+- `version` must be `2`.
+- Agent names must be unique.
+- Workflow names must be unique.
+- Agent and workflow weights must be finite numbers.
+- Scheduled agent records must have `name`, `weight`, `cadenceGroup`, `cadenceMinutes`, and non-empty `taskTypes`.
+- Workflow records must have `name`, `weight`, `taskType`, and `complexity`.
+- `taskType` and `taskTypes` values must be one of `code`, `merging`, or `regressions`.
+- `complexity`, `minComplexity`, and `maxComplexity` must be integers.
+- `minComplexity` must be less than or equal to `maxComplexity` when both are present.
+- `cadenceMinutes` must be a positive multiple of `scheduler.tickMinutes`.
+- Agents sharing a `cadenceGroup` must use the same `cadenceMinutes`.
+- `scheduler.maxDispatchesPerCadenceGroup` must be a positive integer.
+- Non-positive agent and workflow weights should be ignored during selection, not treated as validation failures.
+
+Validation should also include an explicit guard that qwen-local has no eligible `merging` or `regressions` route unless that route is intentionally added later.
 
 ## Implementation Notes
 
 - Update `_agent-open-pr-and-ping.yml` so manual blank-agent dispatch can still choose from `weights.json`, but scheduled dispatch should already pass a concrete agent.
-- Preserve manual `workflow_dispatch.inputs.agent` overrides for humans; scheduled restrictions apply to automated routing.
-- Keep follow-up selection in `agent-02-resolve-merge-conflicts.yml` and `automerge-prs.yml` on `agentPools.followUps`; do not route qwen-local into follow-up repair unless explicitly added later.
-- Add validation in scheduler parsing:
-  - reject unknown workflow names in scheduler lanes if Option A is used,
-  - reject unknown tags if Option B is used,
-  - reject unknown capability names if Option C is used,
-  - ignore non-positive weights,
-  - normalize agent names consistently,
-  - require lane or agent cadence intervals to be multiples of the 15-minute scheduler tick.
+- Update `_scheduler.yml` to parse cadence groups from `agents`, not lane definitions.
+- Keep the selection algorithm in one scheduler implementation path. Do not preserve separate version 1 routing behavior once version 2 is adopted.
+- Preserve manual human overrides for workflow dispatch.
+- Do not add tags, capabilities, lane allowlists, or per-workflow agent maps unless the routing requirements become more specific than the three task types.
 
 ## Test Plan
 
-- Update `test/agent-weight-routing.test.ts` to assert:
-  - `weights.json` is version 2.
-  - qwen-local only appears in the approved low-complexity workflow agent maps.
-  - default lane excludes qwen-local unless explicitly configured.
-  - qwen-local lane includes only workflows with positive `agents.qwen-local`.
-  - follow-up pools remain separate from scheduled action routing.
-- If Option B is selected instead, update `test/agent-weight-routing.test.ts` to assert:
-  - every workflow has a non-empty `tags` list,
-  - every scheduled agent has `includeTags`, `excludeTags`, `cadence.group`, `cadence.minutes`, and positive weight,
-  - qwen-local includes only `low-complexity` workflows and excludes `merge-repair`, `large-refactor`, and `needs-human-judgment`,
-  - codex/copilot remain eligible for the broader `default` workflow set,
-  - cadence-group timing remains independent from task tagging.
-- If Option C is selected instead, update `test/agent-weight-routing.test.ts` to assert:
-  - each workflow has `task.capabilities` and `task.complexity`,
-  - each scheduled agent has `capabilities`, `cognitiveComplexity.max`, `cadence.group`, `cadence.minutes`, and positive weight,
-  - qwen-local is eligible only for low-complexity lint/documentation/style/clarity workflows,
-  - high-complexity workflows such as merge conflicts, architectural audits, and hot refactors are not eligible for qwen-local,
-  - cadence-group timing remains independent from task eligibility.
-- Add or extend workflow tests for `_scheduler.yml`:
-  - scheduler parses lanes or cadence groups from `weights.json`,
-  - dispatch payload includes the selected `agent`,
-  - candidate weights combine workflow and per-agent weights,
-  - due lanes or cadence groups can dispatch independently on the same scheduler tick.
-- Run:
-  - `pnpm run build:ts`
-  - targeted root workflow tests
-  - `pnpm run lint:quiet`
+Update `test/agent-weight-routing.test.ts` to assert:
+
+- `weights.json` is version 2.
+- Every scheduled workflow declares `taskType` and `complexity`.
+- Every scheduled agent declares `taskTypes`, `cadenceGroup`, and `cadenceMinutes`.
+- The only valid task types are `code`, `merging`, and `regressions`.
+- qwen-local is eligible only for low-complexity `code` workflows.
+- qwen-local has no eligible route to `merging` or `regressions`.
+- codex/copilot share the `default-actions` cadence group.
+- qwen-local uses a separate `local-low-complexity` cadence group.
+- Cadence intervals are multiples of `scheduler.tickMinutes`.
+- Non-positive weights disable candidates without invalidating the file.
+- Follow-up pools remain separate from scheduled action routing.
+
+Add or extend workflow tests for `_scheduler.yml` to assert:
+
+- The scheduler parses cadence groups from agent records.
+- Due cadence groups dispatch independently on the same scheduler tick.
+- Agents in the same cadence group share the configured dispatch budget.
+- The dispatch payload includes the selected concrete `agent`.
+- Candidate weights combine workflow and agent weights.
+- Complexity bounds filter eligible pairs before weighted selection.
+- Task type eligibility filters pairs before weighted selection.
+
+Run:
+
+- `pnpm run build:ts`
+- targeted root workflow tests
+- `pnpm run lint:quiet`
 
 ## Assumptions
 
-- “Actions” means scheduled task workflows like `agent-23-lint`, not GitHub marketplace actions.
-- qwen-local should initially run every 30 minutes for low-complexity tasks.
+- "Actions" means scheduled task workflows like `agent-23-lint`, not GitHub marketplace actions.
+- qwen-local should initially run every 30 minutes for low-complexity `code` tasks once enabled.
 - Normal codex/copilot scheduled action cadence should remain hourly.
-- Manual human overrides remain allowed; the allowlist is for automated scheduled routing.
+- Manual human overrides remain allowed.
+- The allowlist is for automated scheduled routing.
