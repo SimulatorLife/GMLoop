@@ -15,7 +15,7 @@ import {
     collectFilePathsForSymbolSummaries,
     collectUniqueSymbolNames,
     getTrackedSymbolSummaries,
-    normalizeTrackedPath,
+    normalizeTrackedPath as normalizeScopeTrackerPath,
     recomputePathLastModified,
     updatePathLastModifiedForScope
 } from "./scope-tracker-index-helpers.js";
@@ -225,6 +225,10 @@ export class ScopeTracker {
         }
     }
 
+    private normalizeTrackedPath(path: string): string {
+        return normalizeScopeTrackerPath(path);
+    }
+
     /**
      * Executes a callback within a new scope of the specified kind.
      */
@@ -260,7 +264,7 @@ export class ScopeTracker {
 
         const path = metadata?.path;
         if (typeof path === "string" && path.length > 0) {
-            const trackedPath = normalizeTrackedPath(path);
+            const trackedPath = this.normalizeTrackedPath(path);
             let scopeSet = this.pathToScopesIndex.get(trackedPath);
             if (!scopeSet) {
                 scopeSet = new Set<string>();
@@ -1417,7 +1421,7 @@ export class ScopeTracker {
                 continue;
             }
 
-            const trackedPath = normalizeTrackedPath(path);
+            const trackedPath = this.normalizeTrackedPath(path);
             const cachedInvalidationSet = normalizedPathResultsCache.get(trackedPath);
             if (cachedInvalidationSet) {
                 results.set(path, cachedInvalidationSet);
@@ -1578,7 +1582,7 @@ export class ScopeTracker {
             return [];
         }
 
-        const trackedPath = normalizeTrackedPath(path);
+        const trackedPath = this.normalizeTrackedPath(path);
         const scopeIds = this.pathToScopesIndex.get(trackedPath);
         if (!scopeIds || scopeIds.size === 0) {
             return [];
@@ -1630,7 +1634,9 @@ export class ScopeTracker {
             return new Set();
         }
 
-        return collectFilePathsForSymbolSummaries(scopeSummaryMap, "reference", this.scopesById);
+        return collectFilePathsForSymbolSummaries(scopeSummaryMap, "reference", this.scopesById, {
+            normalizePath: (path) => this.normalizeTrackedPath(path)
+        });
     }
 
     /**
@@ -1659,12 +1665,10 @@ export class ScopeTracker {
                 continue;
             }
 
-            const paths = collectFilePathsForSymbolSummaries(
-                scopeSummaryMap,
-                "reference",
-                this.scopesById,
-                normalizedPathCache
-            );
+            const paths = collectFilePathsForSymbolSummaries(scopeSummaryMap, "reference", this.scopesById, {
+                normalizedPathCache,
+                normalizePath: (path) => this.normalizeTrackedPath(path)
+            });
             if (paths.size > 0) {
                 results.set(name, paths);
             }
@@ -1699,7 +1703,9 @@ export class ScopeTracker {
             return new Set();
         }
 
-        return collectFilePathsForSymbolSummaries(scopeSummaryMap, "declaration", this.scopesById);
+        return collectFilePathsForSymbolSummaries(scopeSummaryMap, "declaration", this.scopesById, {
+            normalizePath: (path) => this.normalizeTrackedPath(path)
+        });
     }
 
     /**
@@ -1727,12 +1733,10 @@ export class ScopeTracker {
                 continue;
             }
 
-            const paths = collectFilePathsForSymbolSummaries(
-                scopeSummaryMap,
-                "declaration",
-                this.scopesById,
-                normalizedPathCache
-            );
+            const paths = collectFilePathsForSymbolSummaries(scopeSummaryMap, "declaration", this.scopesById, {
+                normalizedPathCache,
+                normalizePath: (path) => this.normalizeTrackedPath(path)
+            });
             if (paths.size > 0) {
                 results.set(name, paths);
             }
@@ -1770,7 +1774,7 @@ export class ScopeTracker {
         }
 
         let metadataChanged = false;
-        const previousTrackedPath = scope.metadata.path ? normalizeTrackedPath(scope.metadata.path) : null;
+        const previousTrackedPath = scope.metadata.path ? this.normalizeTrackedPath(scope.metadata.path) : null;
 
         if (Object.hasOwn(metadata, "name")) {
             if (scope.metadata.name !== metadata.name) {
@@ -1781,9 +1785,9 @@ export class ScopeTracker {
 
         if (Object.hasOwn(metadata, "path")) {
             const previousPath = scope.metadata.path;
-            const trackedPreviousPath = previousPath ? normalizeTrackedPath(previousPath) : undefined;
+            const trackedPreviousPath = previousPath ? this.normalizeTrackedPath(previousPath) : undefined;
             const nextPath = typeof metadata.path === "string" && metadata.path.length > 0 ? metadata.path : undefined;
-            const trackedNextPath = nextPath ? normalizeTrackedPath(nextPath) : undefined;
+            const trackedNextPath = nextPath ? this.normalizeTrackedPath(nextPath) : undefined;
 
             if (previousPath && previousPath !== nextPath) {
                 const scopeSet = this.pathToScopesIndex.get(trackedPreviousPath ?? previousPath);
@@ -1847,7 +1851,7 @@ export class ScopeTracker {
 
         if (metadataChanged) {
             scope.markModified();
-            const nextTrackedPath = scope.metadata.path ? normalizeTrackedPath(scope.metadata.path) : null;
+            const nextTrackedPath = scope.metadata.path ? this.normalizeTrackedPath(scope.metadata.path) : null;
 
             if (previousTrackedPath && previousTrackedPath !== nextTrackedPath) {
                 recomputePathLastModified(
@@ -2465,7 +2469,7 @@ export class ScopeTracker {
             return 0;
         }
 
-        const trackedPath = normalizeTrackedPath(path);
+        const trackedPath = this.normalizeTrackedPath(path);
         const rootScopeIds = this.pathToScopesIndex.get(trackedPath);
         if (!rootScopeIds || rootScopeIds.size === 0) {
             return 0;
@@ -2535,7 +2539,7 @@ export class ScopeTracker {
             // descendant scopes that carry their own path metadata).
             const scopePath = scope.metadata.path;
             if (scopePath) {
-                const trackedScopePath = normalizeTrackedPath(scopePath);
+                const trackedScopePath = this.normalizeTrackedPath(scopePath);
                 pathsToRecompute.add(trackedScopePath);
                 const scopeSet = this.pathToScopesIndex.get(trackedScopePath);
                 if (scopeSet) {
@@ -2604,7 +2608,7 @@ export class ScopeTracker {
                 continue;
             }
 
-            const trackedPath = normalizeTrackedPath(filePath);
+            const trackedPath = this.normalizeTrackedPath(filePath);
             if (seenTrackedPaths.has(trackedPath)) {
                 continue;
             }
@@ -2629,7 +2633,7 @@ export class ScopeTracker {
                     const depScope = this.scopesById.get(dep.dependentScopeId);
                     const depPath = depScope?.metadata.path;
                     if (depPath) {
-                        result.add(normalizeTrackedPath(depPath));
+                        result.add(this.normalizeTrackedPath(depPath));
                     }
                 }
             }
@@ -2648,7 +2652,7 @@ export class ScopeTracker {
         const inputPaths = new Map<string, string>();
         for (const p of paths) {
             if (p && typeof p === "string" && p.length > 0) {
-                const normalised = normalizeTrackedPath(p);
+                const normalised = this.normalizeTrackedPath(p);
                 if (!inputPaths.has(normalised)) {
                     inputPaths.set(normalised, p);
                 }
@@ -2688,7 +2692,7 @@ export class ScopeTracker {
             return;
         }
 
-        const normDeclaringPath = normalizeTrackedPath(declaringPath);
+        const normDeclaringPath = this.normalizeTrackedPath(declaringPath);
         if (normDeclaringPath === normalisedPath || !inputPaths.has(normDeclaringPath)) {
             // Dependency is outside the input set or points back to self — skip.
             return;

@@ -1,6 +1,13 @@
 import type { Scope } from "./scope.js";
 import type { ScopeSummary } from "./types.js";
 
+type PathNormalizer = (path: string) => string;
+
+interface FilePathCollectionOptions {
+    normalizedPathCache?: Map<string, string>;
+    normalizePath?: PathNormalizer;
+}
+
 /**
  * Collects non-empty symbol names while preserving first-seen order.
  */
@@ -53,9 +60,10 @@ export function collectFilePathsForSymbolSummaries(
     scopeSummaryMap: Map<string, ScopeSummary>,
     occurrenceKind: "declaration" | "reference",
     scopesById: Map<string, Scope>,
-    normalizedPathCache?: Map<string, string>
+    options: FilePathCollectionOptions = {}
 ): Set<string> {
     const paths = new Set<string>();
+    const { normalizedPathCache, normalizePath = normalizeTrackedPath } = options;
 
     for (const [scopeId, summary] of scopeSummaryMap) {
         if (occurrenceKind === "declaration" && !summary.hasDeclaration) {
@@ -75,7 +83,7 @@ export function collectFilePathsForSymbolSummaries(
                 continue;
             }
 
-            const normalizedPath = normalizeTrackedPath(path);
+            const normalizedPath = normalizePath(path);
             normalizedPathCache?.set(path, normalizedPath);
             paths.add(normalizedPath);
         }
