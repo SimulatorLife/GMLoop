@@ -37,9 +37,19 @@ jobs:
           exit 1
         fi
 
-        export QWEN_LOCAL_MODEL="${{ vars.QWEN_LOCAL_MODEL || 'qwen2.5-coder:0.5b' }}"
+        export QWEN_LOCAL_MODEL="${{ vars.QWEN_LOCAL_MODEL || 'qwen2.5-coder:1.5b' }}"
+        export QWEN_MAX_SESSION_TURNS="${{ vars.QWEN_MAX_SESSION_TURNS || '40' }}"
         export OPENAI_API_KEY="ollama"
         export OPENAI_BASE_URL="http://127.0.0.1:11434/v1"
+        QWEN_CI_SYSTEM_PROMPT="$(cat <<'PROMPT'
+        You are running in GitHub Actions as an autonomous coding agent.
+        Use the available repository, shell, and file-editing tools to inspect the codebase.
+        Make the requested changes, run validation commands, and leave the worktree changed when the task requires code changes.
+        Do not respond with a plan-only answer, standalone JSON, or instructions for another process.
+        Keep using tools until the task is complete or a real blocker prevents progress.
+        PROMPT
+        )"
+        export QWEN_CI_SYSTEM_PROMPT
 
         if ! command -v ollama >/dev/null 2>&1; then
           curl -fsSL https://ollama.com/install.sh | sh
@@ -66,4 +76,12 @@ jobs:
         ollama pull "${QWEN_LOCAL_MODEL}"
         curl -fsS "${OPENAI_BASE_URL}/models"
 
-        printf '%s\n' "${ADDITIONAL_CONTEXT}" | qwen --yolo --auth-type openai --openai-api-key "${OPENAI_API_KEY}" --openai-base-url="${OPENAI_BASE_URL}" --model="${QWEN_LOCAL_MODEL}"
+        printf '%s\n' "${ADDITIONAL_CONTEXT}" | qwen \
+          --yolo \
+          --channel CI \
+          --max-session-turns "${QWEN_MAX_SESSION_TURNS}" \
+          --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
+          --auth-type openai \
+          --openai-api-key "${OPENAI_API_KEY}" \
+          --openai-base-url="${OPENAI_BASE_URL}" \
+          --model="${QWEN_LOCAL_MODEL}"
