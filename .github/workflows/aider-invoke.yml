@@ -85,8 +85,17 @@ jobs:
         AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
         printf '%s\n\nUser task from PR comment:\n%s\n' "You are aider, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint. Use Aider to inspect the repository and make the requested code changes. Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files." "${ADDITIONAL_CONTEXT}" > "${AIDER_TASK_MESSAGE_FILE}"
 
+        set +e
         stdbuf -oL -eL aider \
           --yes-always \
           --no-browser \
           --subtree-only \
+          --no-auto-commits \
+          --no-dirty-commits \
           --message-file "${AIDER_TASK_MESSAGE_FILE}" 2>&1 | tee "$RUNNER_TEMP/aider.log"
+        aider_status="${PIPESTATUS[0]}"
+        set -e
+
+        if [ "${aider_status}" -ne 0 ]; then
+          exit "${aider_status}"
+        fi

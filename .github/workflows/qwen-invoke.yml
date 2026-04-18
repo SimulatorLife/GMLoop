@@ -183,4 +183,4 @@ jobs:
         printf '%s\n' "${QWEN_AGENT_PROMPT}" | stdbuf -oL -eL qwen \
           --yolo \
           --channel CI \
-          --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}"
+          --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"

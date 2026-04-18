@@ -400,8 +400,16 @@ jobs:
 
           git fetch origin "${WORKING_BRANCH}" || true
 
+          echo "[agent] Worktree after agent command:"
+          worktree_status="$(git status --porcelain=v1 --untracked-files=normal)"
+          if [ -n "${worktree_status}" ]; then
+            printf '%s\n' "${worktree_status}"
+          else
+            echo "[agent] Worktree clean."
+          fi
+
           has_worktree_changes=false
-          if ! git diff --quiet || ! git diff --cached --quiet; then
+          if [ -n "${worktree_status}" ]; then
             has_worktree_changes=true
           fi
 
@@ -424,22 +432,36 @@ jobs:
           if git show-ref --verify --quiet "refs/remotes/${remote_ref}"; then
             has_remote_ref=true
           fi
+          local_head="$(git rev-parse HEAD)"
+          remote_head=''
+          if [ "${has_remote_ref}" = true ]; then
+            remote_head="$(git rev-parse "${remote_ref}")"
+          fi
 
           should_push=false
           if [ "${has_remote_ref}" = false ]; then
             should_push=true
             echo "[agent] Remote ref ${remote_ref} not found; will push branch."
-          elif ! git merge-base --is-ancestor "${remote_ref}" HEAD; then
-            should_push=true
-            echo "[agent] Local branch diverged from ${remote_ref}; will push current HEAD."
-          elif [ "${has_worktree_changes}" = true ]; then
-            should_push=true
-            echo "[agent] New commit created; will push."
+          elif git merge-base --is-ancestor "${remote_ref}" HEAD; then
+            if [ "${remote_head}" != "${local_head}" ]; then
+              if ! git diff --quiet "${remote_ref}" HEAD; then
+                should_push=true
+                echo "[agent] Local branch has file changes ahead of ${remote_ref}; will push."
+              else
+                echo "[agent] Local branch has commits ahead of ${remote_ref}, but the net file diff is empty."
+              fi
+            fi
+          elif git merge-base --is-ancestor HEAD "${remote_ref}"; then
+            echo "❌ Remote ref ${remote_ref} moved ahead of local HEAD; refusing to push stale changes."
+            exit 1
+          else
+            echo "❌ Local branch diverged from ${remote_ref}; refusing to push without reconciling remote commits."
+            exit 1
           fi
 
           if [ "${should_push}" = false ]; then
-            echo "[agent] No local commits ahead of ${remote_ref}; nothing to push."
-            exit 0
+            echo "❌ Agent completed without producing pushable local changes."
+            exit 1
           fi
 
           echo "[agent] Pushing branch ${WORKING_BRANCH}..."
