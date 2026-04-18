@@ -45,4 +45,4 @@ jobs:
         export OPENROUTER_API_KEY="${API_KEY}"
         export OPENAI_MODEL="${{ vars.QWEN_OPENAI_MODEL || 'qwen/qwen3-coder' }}"
 
-        qwen --yolo --auth-type openai --openai-api-key "${OPENAI_API_KEY}" --openai-base-url="${OPENAI_BASE_URL}" --model="${OPENAI_MODEL}" -- "${ADDITIONAL_CONTEXT}"
+        printf '%s\n' "${ADDITIONAL_CONTEXT}" | qwen --yolo --auth-type openai --openai-api-key "${OPENAI_API_KEY}" --openai-base-url="${OPENAI_BASE_URL}" --model="${OPENAI_MODEL}"

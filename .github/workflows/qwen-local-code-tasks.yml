@@ -66,4 +66,4 @@ jobs:
         ollama pull "${QWEN_LOCAL_MODEL}"
         curl -fsS "${OPENAI_BASE_URL}/models"
 
-        qwen --yolo --auth-type openai --openai-api-key "${OPENAI_API_KEY}" --openai-base-url="${OPENAI_BASE_URL}" --model="${QWEN_LOCAL_MODEL}" -- "${ADDITIONAL_CONTEXT}"
+        printf '%s\n' "${ADDITIONAL_CONTEXT}" | qwen --yolo --auth-type openai --openai-api-key "${OPENAI_API_KEY}" --openai-base-url="${OPENAI_BASE_URL}" --model="${QWEN_LOCAL_MODEL}"
