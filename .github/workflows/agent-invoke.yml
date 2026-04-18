@@ -473,7 +473,6 @@ jobs:
         env:
           RUN_AGENT_OUTCOME: ${{ steps.run_agent.outcome || '' }}
           RUN_AGENT_CONCLUSION: ${{ steps.run_agent.conclusion || '' }}
-          AGENT_NAME: ${{ inputs.agent }}
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.pr_number }}
@@ -495,11 +494,6 @@ jobs:
             exit 0
           fi
 
-          if [[ "${AGENT_NAME}" =~ -local$ ]]; then
-            echo "Local agent succeeded without code changes → FAIL."
-            gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}" || true
-            exit 1
-          fi
-
-          echo "Agent command succeeded with no branch push → SUCCESS."
-          exit 0
+          echo "Agent command succeeded with no branch push → FAIL."
+          gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}" || true
+          exit 1

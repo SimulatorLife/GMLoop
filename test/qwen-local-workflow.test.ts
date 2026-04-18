@@ -177,20 +177,12 @@ void test("aider local workflow uses a repo-local .aider.conf.yml for local Olla
     assert.match(source, /dirty-commits: false/u);
 });
 
-void test("agent invoke workflow reports success when a successful non-local agent run produces no push", async () => {
+void test("agent invoke workflow fails when a successful agent run produces no push", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
     assert.match(source, /if \[ "\$\{\{ steps\.run_agent\.outcome \}\}" = "failure" \] \|\| \[ "\$\{\{ steps\.run_agent\.conclusion \}\}" = "failure" \]; then/u);
-    assert.match(source, /echo "Agent command succeeded with no branch push → SUCCESS\."/u);
-});
-
-void test("local agent invoke workflow fails when a local agent run produces no push", async () => {
-    const source = await readWorkflowSource("agent-invoke.yml");
-
-    assert.match(source, /AGENT_NAME: \$\{\{ inputs\.agent \}\}/u);
     assert.match(source, /if \[ -f "\$SENTINEL" \]; then/u);
-    assert.match(source, /if \[\[ "\$\{AGENT_NAME\}" =~ -local\$ \]\]; then/u);
-    assert.match(source, /echo "Local agent succeeded without code changes → FAIL\."/u);
+    assert.match(source, /echo "Agent command succeeded with no branch push → FAIL\."/u);
 });
 
 void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
