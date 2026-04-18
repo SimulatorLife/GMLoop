@@ -80,6 +80,7 @@ import {
 } from "./workspace-edit.js";
 
 const RENAME_VALIDATION_CACHE_MAX_SIZE = 4096;
+const APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT = 8;
 const validatedWorkspaceRevisions = new WeakMap<object, number>();
 
 function hasCurrentValidatedWorkspaceRevision(workspace: object): boolean {
@@ -885,31 +886,43 @@ export class RefactorEngine {
         const grouped = workspace.groupByFile();
         const results = new Map<string, string>();
 
-        // Process each file sequentially: load content, apply edits, optionally write.
-        // Uses Core.runSequentially (promise-chain based) instead of the previous
-        // recursive async pattern to keep sequential semantics while avoiding the
-        // overhead of creating a new closure + Promise frame per recursive call.
-        await Core.runSequentially(grouped, async ([filePath, edits]) => {
-            const originalContent = sourceTextByPath?.get(filePath) ?? (await readFile(filePath));
-            const newContent = applyGroupedTextEditsToContent(originalContent, edits);
+        const textEditResults = await Core.runInParallelWithLimit(
+            grouped,
+            async ([filePath, edits]) => {
+                const originalContent = sourceTextByPath?.get(filePath) ?? (await readFile(filePath));
+                const newContent = applyGroupedTextEditsToContent(originalContent, edits);
 
-            results.set(filePath, includeResultContent ? newContent : "");
+                // Write the modified content to disk unless we're in dry-run mode, which
+                // lets callers preview changes before committing them.
+                if (!dryRun && writeFile !== undefined) {
+                    await writeFile(filePath, newContent);
+                }
 
-            // Write the modified content to disk unless we're in dry-run mode, which
-            // lets callers preview changes before committing them.
-            if (!dryRun && writeFile !== undefined) {
-                await writeFile(filePath, newContent);
-            }
-        });
+                return [filePath, includeResultContent ? newContent : ""] as const;
+            },
+            APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT
+        );
+
+        for (const [filePath, newContent] of textEditResults) {
+            results.set(filePath, newContent);
+        }
 
         const { metadataEdits, fileRenames } = getWorkspaceArrays(workspace);
-        await Core.runSequentially(metadataEdits, async (metadataEdit) => {
-            results.set(metadataEdit.path, includeResultContent ? metadataEdit.content : "");
+        const metadataResults = await Core.runInParallelWithLimit(
+            metadataEdits,
+            async (metadataEdit) => {
+                if (!dryRun && writeFile !== undefined) {
+                    await writeFile(metadataEdit.path, metadataEdit.content);
+                }
 
-            if (!dryRun && writeFile !== undefined) {
-                await writeFile(metadataEdit.path, metadataEdit.content);
-            }
-        });
+                return [metadataEdit.path, includeResultContent ? metadataEdit.content : ""] as const;
+            },
+            APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT
+        );
+
+        for (const [filePath, content] of metadataResults) {
+            results.set(filePath, content);
+        }
 
         // Process file renames last to ensure we don't move files before we're done
         // with their text edits. This stabilizes path references during the build phase.
