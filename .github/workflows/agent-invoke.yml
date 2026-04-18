@@ -389,7 +389,7 @@ jobs:
           echo "----------------------"
 
           set -x
-          bash "$script"
+          bash "$script" 2>&1 | tee "$RUNNER_TEMP/agent-live.log"
 
       - name: Auto-commit and push agent changes if needed
         if: ${{ steps.run_agent.outcome == 'success' }}
@@ -473,6 +473,7 @@ jobs:
         env:
           RUN_AGENT_OUTCOME: ${{ steps.run_agent.outcome || '' }}
           RUN_AGENT_CONCLUSION: ${{ steps.run_agent.conclusion || '' }}
+          AGENT_NAME: ${{ inputs.agent }}
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.pr_number }}
@@ -492,6 +493,12 @@ jobs:
           if [ -f "$SENTINEL" ]; then
             echo "Push detected → SUCCESS."
             exit 0
+          fi
+
+          if [[ "${AGENT_NAME}" =~ -local$ ]]; then
+            echo "Local agent succeeded without code changes → FAIL."
+            gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}" || true
+            exit 1
           fi
 
           echo "Agent command succeeded with no branch push → SUCCESS."

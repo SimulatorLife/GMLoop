@@ -65,4 +65,4 @@ jobs:
           --openai-base-url="${OPENAI_BASE_URL}" \
           --model="${OPENAI_MODEL}" \
           --output-format stream-json \
-          --include-partial-messages
+          --include-partial-messages 2>&1 | tee "$RUNNER_TEMP/qwen-stream.log"

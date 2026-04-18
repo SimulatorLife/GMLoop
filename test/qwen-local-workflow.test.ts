@@ -162,7 +162,7 @@ void test("aider local workflow routes only @aider-local comments through the re
     assert.match(localSource, /agent: aider-local/u);
     assert.match(localSource, /agent_cli: aider/u);
     assert.match(localSource, /local_ollama_model: \$\{\{ vars\.AIDER_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}/u);
-    assert.match(localSource, /aider --yes-always --no-browser --model "\$\{LOCAL_OLLAMA_MODEL\}" --subtree-only --set-env OPENAI_API_TYPE=openai --message-file/u);
+    assert.match(localSource, /aider[\s\S]*--yes-always[\s\S]*--no-browser[\s\S]*--model "\$\{LOCAL_OLLAMA_MODEL\}"[\s\S]*--subtree-only[\s\S]*--set-env OPENAI_API_TYPE=openai[\s\S]*--message-file/u);
 });
 
 void test("aider local workflow uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
@@ -177,11 +177,20 @@ void test("aider local workflow uses a repo-local .aider.conf.yml for local Olla
     assert.match(source, /dirty-commits: false/u);
 });
 
-void test("agent invoke workflow reports success when a successful agent run produces no push", async () => {
+void test("agent invoke workflow reports success when a successful non-local agent run produces no push", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
     assert.match(source, /if \[ "\$\{\{ steps\.run_agent\.outcome \}\}" = "failure" \] \|\| \[ "\$\{\{ steps\.run_agent\.conclusion \}\}" = "failure" \]; then/u);
     assert.match(source, /echo "Agent command succeeded with no branch push → SUCCESS\."/u);
+});
+
+void test("local agent invoke workflow fails when a local agent run produces no push", async () => {
+    const source = await readWorkflowSource("agent-invoke.yml");
+
+    assert.match(source, /AGENT_NAME: \$\{\{ inputs\.agent \}\}/u);
+    assert.match(source, /if \[ -f "\$SENTINEL" \]; then/u);
+    assert.match(source, /if \[\[ "\$\{AGENT_NAME\}" =~ -local\$ \]\]; then/u);
+    assert.match(source, /echo "Local agent succeeded without code changes → FAIL\."/u);
 });
 
 void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
