@@ -168,7 +168,8 @@ void test("aider local workflow routes only @aider-local comments through the re
 void test("aider local workflow uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
     const source = await readFile(path.resolve(process.cwd(), ".aider.conf.yml"), "utf8");
 
-    assert.match(source, /provider: openai/u);
+    assert.doesNotMatch(source, /provider:/u);
+    assert.match(source, /openai-api-type: openai/u);
     assert.match(source, /model: qwen3:1\.7b/u);
     assert.match(source, /openai-api-key: ollama/u);
     assert.match(source, /openai-api-base: http:\/\/127\.0\.0\.1:11434\/v1/u);
