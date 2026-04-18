@@ -1,4 +1,4 @@
-name: '▶️ Aider Local Invoke'
+name: '▶️ Aider Invoke'
 
 on:
   issue_comment:
@@ -19,16 +19,14 @@ defaults:
 
 jobs:
   invoke:
-    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body || '', '@aider-local') }}
+    if: ${{ github.event.issue.pull_request && (github.event.comment.body == '@aider' || startsWith(github.event.comment.body || '', '@aider ')) }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
     with:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
-      agent: aider-local
-      agent_cli: aider
-      local_ollama_model: ${{ vars.AIDER_LOCAL_MODEL || 'qwen3:1.7b' }}
+      agent: aider
       agent_command: |
         set -euo pipefail
 
@@ -50,14 +48,11 @@ jobs:
           exit 1
         fi
 
-        export OPENAI_API_TYPE="openai"
-
         AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
-        printf '%s\n\nUser task from PR comment:\n%s\n' "You are aider-local, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint. Use Aider to inspect the repository and make the requested code changes. Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files." "${ADDITIONAL_CONTEXT}" > "${AIDER_TASK_MESSAGE_FILE}"
+        printf '%s\n\nUser task from PR comment:\n%s\n' "You are aider, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint. Use Aider to inspect the repository and make the requested code changes. Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files." "${ADDITIONAL_CONTEXT}" > "${AIDER_TASK_MESSAGE_FILE}"
 
         stdbuf -oL -eL aider \
           --yes-always \
           --no-browser \
           --subtree-only \
-          --set-env OPENAI_API_TYPE=openai \
           --message-file "${AIDER_TASK_MESSAGE_FILE}" 2>&1 | tee "$RUNNER_TEMP/aider.log"

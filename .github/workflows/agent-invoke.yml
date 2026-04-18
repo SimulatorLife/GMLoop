@@ -18,23 +18,18 @@ on:
       agent:
         type: string
         required: true
-      agent_cli:
-        type: string
-        required: false
       agent_command:
         type: string
         required: false
       agent_package:
         type: string
         required: false
-      local_ollama_model:
-        type: string
+      validate_local_model:
+        type: boolean
         required: false
-      local_ollama_base_url:
-        type: string
-        required: false
+        default: true
     secrets:
-      api_key: # may contain one key OR multiple newline-separated keys
+      api_key:
         required: false
       GH_USER_TOKEN:
         required: true
@@ -46,6 +41,8 @@ concurrency:
 jobs:
   invoke:
     runs-on: ubuntu-latest
+    env:
+      OPENAI_API_TYPE: openai
     permissions:
       contents: write
       issues: write
@@ -228,15 +225,66 @@ jobs:
             pnpm-lock.yaml
             **/pnpm-lock.yaml
 
-      - name: Setup local Ollama endpoint
-        if: ${{ inputs.local_ollama_model != '' }}
+      - name: Start and validate local OpenAI-compatible endpoint
+        if: ${{ inputs.validate_local_model }}
         shell: bash
         env:
-          LOCAL_OLLAMA_MODEL: ${{ inputs.local_ollama_model }}
-          LOCAL_OLLAMA_BASE_URL: ${{ inputs.local_ollama_base_url || 'http://127.0.0.1:11434/v1' }}
+          AGENT_NAME: ${{ inputs.agent }}
         run: |
           set -euo pipefail
 
+          resolve_qwen_model() {
+            jq -er '.model.name | select(type == "string" and length > 0)' .qwen/settings.json
+          }
+
+          resolve_qwen_base_url() {
+            jq -er '.modelProviders.openai[0].baseUrl | select(type == "string" and length > 0)' .qwen/settings.json
+          }
+
+          resolve_aider_model() {
+            awk -F':' '
+              $1 == "model" {
+                value = substr($0, index($0, ":") + 1)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+                sub(/^openai\//, "", value)
+                print value
+                exit
+              }
+            ' .aider.conf.yml
+          }
+
+          resolve_aider_base_url() {
+            awk -F':' '
+              $1 == "openai-api-base" {
+                value = substr($0, index($0, ":") + 1)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+                print value
+                exit
+              }
+            ' .aider.conf.yml
+          }
+
+          case "${AGENT_NAME}" in
+            qwen)
+              LOCAL_MODEL="$(resolve_qwen_model)"
+              OPENAI_BASE_URL="$(resolve_qwen_base_url)"
+              ;;
+            aider)
+              LOCAL_MODEL="$(resolve_aider_model)"
+              OPENAI_BASE_URL="$(resolve_aider_base_url)"
+              ;;
+            *)
+              echo "❌ No local model configuration resolver is defined for agent '${AGENT_NAME}'."
+              exit 1
+              ;;
+          esac
+
+          if [ -z "${LOCAL_MODEL}" ] || [ -z "${OPENAI_BASE_URL}" ]; then
+            echo "❌ Missing local model or OpenAI-compatible base URL for agent '${AGENT_NAME}'."
+            exit 1
+          fi
+
+          OPENAI_API_KEY='ollama'
           if [ -n "${NO_PROXY:-}" ]; then
             NO_PROXY="${NO_PROXY},127.0.0.1,localhost"
           else
@@ -249,12 +297,13 @@ jobs:
             no_proxy='127.0.0.1,localhost'
           fi
 
-          echo "OPENAI_API_KEY=ollama" >> "$GITHUB_ENV"
-          echo "OPENAI_BASE_URL=${LOCAL_OLLAMA_BASE_URL}" >> "$GITHUB_ENV"
+          echo "LOCAL_MODEL=${LOCAL_MODEL}" >> "$GITHUB_ENV"
+          echo "OPENAI_BASE_URL=${OPENAI_BASE_URL}" >> "$GITHUB_ENV"
+          echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "$GITHUB_ENV"
           echo "NO_PROXY=${NO_PROXY}" >> "$GITHUB_ENV"
           echo "no_proxy=${no_proxy}" >> "$GITHUB_ENV"
 
-          curl_ollama() {
+          curl_local() {
             curl --noproxy '*' -fsS "$@"
           }
 
@@ -263,39 +312,17 @@ jobs:
             export PATH="$HOME/.local/bin:$PATH"
           fi
 
-          if ! curl_ollama http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+          if ! curl_local "${OPENAI_BASE_URL%/}/models" >/dev/null 2>&1; then
             ollama serve > ollama.log 2>&1 &
           fi
 
           for attempt in {1..60}; do
-            if curl_ollama http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+            if curl_local "${OPENAI_BASE_URL%/}/models" >/dev/null 2>&1; then
               break
             fi
 
             if [ "${attempt}" -eq 60 ]; then
-              echo "❌ Ollama did not start in time"
-              cat ollama.log || true
-              exit 1
-            fi
-
-            sleep 1
-          done
-
-          ollama pull "${LOCAL_OLLAMA_MODEL}"
-
-          if ! curl_ollama http://127.0.0.1:11434/api/tags \
-            | jq -e --arg model "${LOCAL_OLLAMA_MODEL}" 'any(.models[]?; .name == $model)' >/dev/null; then
-            echo "❌ Ollama did not report the pulled model '${LOCAL_OLLAMA_MODEL}' in /api/tags."
-            exit 1
-          fi
-
-          for attempt in {1..30}; do
-            if curl_ollama "${LOCAL_OLLAMA_BASE_URL}/models" >/dev/null 2>&1; then
-              break
-            fi
-
-            if [ "${attempt}" -eq 30 ]; then
-              echo "❌ Ollama OpenAI-compatible endpoint did not become ready."
+              echo "❌ OpenAI-compatible endpoint did not become ready at ${OPENAI_BASE_URL}."
               cat ollama.log || true
               exit 1
             fi
@@ -303,12 +330,23 @@ jobs:
             sleep 2
           done
 
-          if ! jq -n --arg model "${LOCAL_OLLAMA_MODEL}" '{model: $model, messages: [{role: "user", content: "Reply with ok."}], max_tokens: 8, stream: false}' \
-            | curl_ollama --max-time 300 -X POST "${LOCAL_OLLAMA_BASE_URL}/chat/completions" \
-              -H "Authorization: Bearer ollama" \
+          if ! ollama pull "${LOCAL_MODEL}" >/dev/null 2>&1; then
+            echo "❌ Failed to pull model '${LOCAL_MODEL}'."
+            exit 1
+          fi
+
+          if ! curl_local "${OPENAI_BASE_URL%/}/models" \
+            | jq -e --arg model "${LOCAL_MODEL}" 'any(.models[]?; .name == $model)' >/dev/null; then
+            echo "❌ OpenAI-compatible endpoint did not report model '${LOCAL_MODEL}'."
+            exit 1
+          fi
+
+          if ! jq -n --arg model "${LOCAL_MODEL}" '{model: $model, messages: [{role: "user", content: "Reply with ok."}], max_tokens: 8, stream: false}' \
+            | curl_local --max-time 300 -X POST "${OPENAI_BASE_URL%/}/chat/completions" \
+              -H "Authorization: Bearer ${OPENAI_API_KEY}" \
               -H "Content-Type: application/json" \
               -d @- >/dev/null; then
-            echo "❌ Ollama OpenAI-compatible chat completion failed for '${LOCAL_OLLAMA_MODEL}'."
+            echo "❌ OpenAI-compatible chat completion failed for '${LOCAL_MODEL}'."
             cat ollama.log || true
             exit 1
           fi
@@ -342,7 +380,7 @@ jobs:
       - name: Install agent CLI (from child)
         if: ${{ inputs.agent_package != '' }}
         env:
-          AGENT_CLI: ${{ inputs.agent_cli || inputs.agent }}
+          AGENT_CLI: ${{ inputs.agent }}
           AGENT_PACKAGE: ${{ inputs.agent_package }}
         run: |
           echo "Checking for CLI: ${AGENT_CLI} (from pnpm package: ${AGENT_PACKAGE})"
@@ -367,9 +405,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           ADDITIONAL_CONTEXT: ${{ steps.validate_pr.outputs.additional_context || '' }}
-          API_KEY: ${{ secrets.api_key }}
-          LOCAL_OLLAMA_MODEL: ${{ inputs.local_ollama_model || '' }}
-          LOCAL_OLLAMA_BASE_URL: ${{ inputs.local_ollama_base_url || '' }}
+          API_KEY: ${{ secrets.api_key || '' }}
         run: |
           set -euo pipefail
           echo "Running agent command"

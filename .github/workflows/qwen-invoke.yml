@@ -19,51 +19,151 @@ defaults:
 
 jobs:
   invoke:
-    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body || '', '@qwen') && !startsWith(github.event.comment.body || '', '@qwen-local') }}
+    if: ${{ github.event.issue.pull_request && (github.event.comment.body == '@qwen' || startsWith(github.event.comment.body || '', '@qwen ')) }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
-      api_key: ${{ secrets.OPENROUTER_API_KEY }}
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
     with:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: qwen
-      agent_package: '@qwen-code/qwen-code@latest'
+      agent_package: ${{ vars.QWEN_CODE_PACKAGE || '@qwen-code/qwen-code@0.14.5' }}
       agent_command: |
         set -euo pipefail
-        # Resolve API key
-        if [ -z "${API_KEY:-}" ]; then
-          echo "❌ Missing API_KEY!"
+
+        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
+          echo "❌ Missing prompt context from PR comment."
           exit 1
         fi
 
-        export OPENAI_API_KEY="${API_KEY}"
-
-        # OpenRouter defaults. Override with repository variables
-        # QWEN_OPENAI_BASE_URL and QWEN_OPENAI_MODEL when routing elsewhere.
-        export OPENAI_BASE_URL="${{ vars.QWEN_OPENAI_BASE_URL || 'https://openrouter.ai/api/v1' }}"
-        export OPENROUTER_API_KEY="${API_KEY}"
-        export OPENAI_MODEL="${{ vars.QWEN_OPENAI_MODEL || 'qwen/qwen3-coder' }}"
-        export QWEN_MAX_SESSION_TURNS="${{ vars.QWEN_MAX_SESSION_TURNS || '40' }}"
         QWEN_CI_SYSTEM_PROMPT="$(cat <<'PROMPT'
         You are running in GitHub Actions as an autonomous coding agent.
-        Use the available repository, shell, and file-editing tools to inspect the codebase.
-        Make the requested changes, run validation commands, and leave the worktree changed when the task requires code changes.
+        Use real Qwen Code tool calls for shell commands and file edits.
+        For shell commands, call the native run_shell_command tool by name.
+        For file changes, call the native edit or write_file tools by name.
+        Do not print JSON objects that describe intended tool calls.
         Do not respond with a plan-only answer, standalone JSON, or instructions for another process.
+        The token startNewTask is not a tool.
         Keep using tools until the task is complete or a real blocker prevents progress.
+        Leave any code changes in the worktree; the workflow will commit and push them.
         PROMPT
         )"
         export QWEN_CI_SYSTEM_PROMPT
 
-        printf '%s\n' "${ADDITIONAL_CONTEXT}" | qwen \
+        QWEN_TASK_PROMPT="$(cat <<'PROMPT'
+        You are qwen, a local model running through Qwen Code in CI.
+        Use Qwen Code tools for every repository inspection and edit.
+        Use run_shell_command for shell commands, read_file for file reads, and edit or write_file for file changes.
+        Start by calling run_shell_command for the first validation or inspection command requested by the user.
+        Do not edit golden `.gml` fixtures, generated files, dist files, workflow files, or configuration files.
+        Run `pnpm run lint:quiet` and `pnpm run build:ts` after edits unless a real blocker prevents it.
+        Do not output a JSON plan, a fake function call, or `startNewTask`.
+        PROMPT
+        )"
+        export QWEN_TASK_PROMPT
+        QWEN_AGENT_PROMPT="$(printf '%s\n\nUser task from PR comment:\n%s\n' "${QWEN_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
+        export QWEN_AGENT_PROMPT
+
+        verify_qwen_exposes_required_tools() {
+          local log_dir
+          local missing_tools
+          log_dir="${RUNNER_TEMP:-/tmp}/qwen-openai-tool-registry"
+          rm -rf "${log_dir}"
+          mkdir -p "${log_dir}"
+
+          printf 'Reply with ok only.\n' | stdbuf -oL -eL qwen \
+            --yolo \
+            --channel CI \
+            --max-session-turns 1 \
+            --output-format text \
+            --openai-logging \
+            --openai-logging-dir "${log_dir}" >/dev/null
+
+          if ! compgen -G "${log_dir}/openai-*.json" >/dev/null; then
+            echo "❌ Qwen Code did not write OpenAI request logs for the tool registry probe."
+            return 1
+          fi
+
+          missing_tools="$(
+            jq -r -s '
+              [.[].request.tools[]?.function.name] | unique as $available
+              | ["read_file", "write_file", "edit", "run_shell_command"] as $required
+              | ($required - $available)[]
+            ' "${log_dir}"/openai-*.json
+          )"
+
+          if [ -n "${missing_tools}" ]; then
+            echo "❌ Qwen Code did not expose required native tools to the model:"
+            printf '%s\n' "${missing_tools}"
+            return 1
+          fi
+
+          echo "Qwen Code exposes required native tools: read_file, write_file, edit, run_shell_command"
+        }
+
+        verify_qwen_tool_calls() {
+          local smoke_file
+          local smoke_prompt
+          smoke_file="${RUNNER_TEMP:-/tmp}/qwen-tool-smoke.txt"
+          rm -f "${smoke_file}"
+          smoke_prompt="$(printf 'Use the run_shell_command tool to run this exact shell command: printf qwen-tool-smoke > %q\nDo not answer in text. Do not print JSON. Call the tool.\n' "${smoke_file}")"
+
+          printf '%s\n' "${smoke_prompt}" | stdbuf -oL -eL qwen \
+            --yolo \
+            --channel CI \
+            --max-session-turns 6 \
+            --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}"
+
+          if [ "$(cat "${smoke_file}" 2>/dev/null || true)" = "qwen-tool-smoke" ]; then
+            rm -f "${smoke_file}"
+            return 0
+          fi
+
+          echo "❌ Qwen Code completed without proving it can call shell tools through '${LOCAL_MODEL}'."
+          return 1
+        }
+
+        verify_qwen_file_edits() {
+          local smoke_file
+          local smoke_prompt
+          smoke_file="${RUNNER_TEMP:-/tmp}/qwen-file-smoke.ts"
+          rm -f "${smoke_file}"
+
+          smoke_prompt="$(cat <<PROMPT
+        Call the write_file tool exactly once with these arguments:
+        file_path: ${smoke_file}
+        content: export function qwenSmoke(): string {\\n    return "after";\\n}\\n
+
+        Do not call open_file.
+        Do not answer in text.
+        Do not print JSON.
+        Call write_file.
+        PROMPT
+        )"
+
+          printf '%s\n' "${smoke_prompt}" | stdbuf -oL -eL qwen \
+            --yolo \
+            --channel CI \
+            --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
+            --include-partial-messages \
+            --output-format stream-json \
+            --debug
+
+          if grep -q 'return "after";' "${smoke_file}" 2>/dev/null; then
+            rm -f "${smoke_file}"
+            return 0
+          fi
+
+          echo "❌ Qwen Code completed without proving it can edit files through '${LOCAL_MODEL}'."
+          [ -f "${smoke_file}" ] && sed -n '1,80p' "${smoke_file}" || true
+          return 1
+        }
+
+        verify_qwen_exposes_required_tools
+        verify_qwen_tool_calls
+        verify_qwen_file_edits
+
+        printf '%s\n' "${QWEN_AGENT_PROMPT}" | stdbuf -oL -eL qwen \
           --yolo \
           --channel CI \
-          --max-session-turns "${QWEN_MAX_SESSION_TURNS}" \
-          --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
-          --auth-type openai \
-          --openai-api-key "${OPENAI_API_KEY}" \
-          --openai-base-url="${OPENAI_BASE_URL}" \
-          --model="${OPENAI_MODEL}" \
-          --output-format stream-json \
-          --debug \
-          --include-partial-messages 2>&1 | tee "$RUNNER_TEMP/qwen-stream.log"
+          --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}"

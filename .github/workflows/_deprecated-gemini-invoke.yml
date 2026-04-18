@@ -24,6 +24,7 @@ jobs:
       additional_context: ${{ github.event.comment.body }}
       agent: gemini
       agent_package: '@google/gemini-cli@latest'
+      validate_local_model: false
       agent_command: |
         set -euo pipefail
 

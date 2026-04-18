@@ -6,14 +6,14 @@
     "skipStartupContext": true,
     "maxSessionTurns": 12,
     "generationConfig": {
-      "timeout": 1200000,
+      "timeout": 900000,
       "maxRetries": 0,
       "samplingParams": {
-        "max_tokens": 2048
+        "max_tokens": 1536
       }
     },
     "chatCompression": {
-      "contextPercentageThreshold": 0.6
+      "contextPercentageThreshold": 0.5
     }
   },
   "tools": {
@@ -30,7 +30,15 @@
         "id": "qwen3:1.7b",
         "name": "Qwen3 1.7B via Ollama",
         "envKey": "OPENAI_API_KEY",
-        "baseUrl": "http://127.0.0.1:11434/v1"
+        "baseUrl": "http://127.0.0.1:11434/v1",
+        "generationConfig": {
+          "timeout": 900000,
+          "maxRetries": 0,
+          "contextWindowSize": 32768,
+          "samplingParams": {
+            "max_tokens": 1536
+          }
+        }
       }
     ]
   },
