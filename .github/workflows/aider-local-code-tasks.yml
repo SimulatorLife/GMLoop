@@ -28,7 +28,7 @@ jobs:
       additional_context: ${{ github.event.comment.body }}
       agent: aider-local
       agent_cli: aider
-      local_ollama_model: ${{ vars.AIDER_LOCAL_MODEL || 'phi-3.5-mini' }}
+      local_ollama_model: ${{ vars.AIDER_LOCAL_MODEL || 'qwen3:1.7b' }}
       agent_command: |
         set -euo pipefail
 

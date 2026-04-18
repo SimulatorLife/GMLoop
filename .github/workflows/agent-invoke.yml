@@ -388,6 +388,7 @@ jobs:
           nl -ba "$script"
           echo "----------------------"
 
+          set -x
           bash "$script"
 
       - name: Auto-commit and push agent changes if needed

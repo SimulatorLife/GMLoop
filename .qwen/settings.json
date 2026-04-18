@@ -1,5 +1,6 @@
 {
   "model": {
+    "name": "qwen3:1.7b",
     "skipLoopDetection": true,
     "skipStartupContext": true,
     "maxSessionTurns": 40,

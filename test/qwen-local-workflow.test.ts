@@ -47,8 +47,8 @@ function assertQwenRunsWithCiAgentLoop(source: string): void {
 
 function assertQwenLocalUsesPrPromptAndToolGate(source: string): void {
     assert.match(source, /QWEN_LOCAL_TASK_PROMPT="\$\(cat <<'PROMPT'/u);
-    assert.match(source, /Use shell and file-edit tools for every repository inspection and edit/u);
-    assert.match(source, /Start by making a shell tool call/u);
+    assert.match(source, /Use Qwen Code tools for every repository inspection and edit/u);
+    assert.match(source, /Start by calling run_shell_command for the first validation or inspection command requested by the user/u);
     assert.match(source, /Do not output a JSON plan, a fake function call, or `startNewTask`/u);
     assert.match(source, /The token startNewTask is not a tool/u);
     assert.match(source, /QWEN_LOCAL_AGENT_PROMPT="\$\(printf '%s\\n\\nUser task from PR comment:\\n%s\\n'/u);
@@ -84,9 +84,10 @@ void test("qwen local workflow routes only @qwen-local comments through the reus
 void test("qwen local workflow uses a small tool-capable Ollama model by default", async () => {
     const source = await readWorkflowSource("qwen-local-code-tasks.yml");
 
-    assert.match(source, /export QWEN_LOCAL_MODEL="\$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}"/u);
+    assert.doesNotMatch(source, /export QWEN_LOCAL_MODEL="\$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}"/u);
     assert.match(source, /local_ollama_model: \$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}/u);
-    assert.match(source, /--model="\$\{QWEN_LOCAL_MODEL\}"/u);
+    assert.match(source, /QWEN_MODEL_ARGS=\(\)/u);
+    assert.doesNotMatch(source, /--model="\$\{QWEN_LOCAL_MODEL\}"/u);
     assert.doesNotMatch(source, /qwen2\.5-coder/u);
 });
 
@@ -104,6 +105,7 @@ void test("qwen settings are tuned for CPU-only local Ollama runs", async () => 
 
     assert.doesNotMatch(workflowSource, /QWEN_CODE_MAX_OUTPUT_TOKENS/u);
     assert.doesNotMatch(workflowSource, /> "\$\{HOME\}\/\.qwen\/settings\.json"/u);
+    assert.match(settingsSource, /"name": "qwen3:1\.7b"/u);
     assert.match(settingsSource, /"skipStartupContext": true/u);
     assert.match(settingsSource, /"maxSessionTurns": 40/u);
     assert.match(settingsSource, /"generationConfig": \{/u);
@@ -121,9 +123,9 @@ void test("qwen local workflow delegates local Ollama setup to the reusable agen
     const source = await readWorkflowSource("qwen-local-code-tasks.yml");
 
     assert.match(source, /local_ollama_model: \$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}/u);
-    assert.doesNotMatch(source, /ollama serve > ollama\.log 2>&1 &/u);
-    assert.doesNotMatch(source, /wait_for_ollama_native_api\(\)/u);
-    assert.doesNotMatch(source, /curl_ollama\(\)/u);
+    assert.match(source, /curl_ollama\(\)/u);
+    assert.match(source, /wait_for_ollama_native_api\(\)/u);
+    assert.match(source, /wait_for_ollama_openai_api\(\)/u);
 });
 
 void test("qwen local workflow selects OpenAI-compatible auth for Ollama", async () => {
@@ -159,14 +161,14 @@ void test("aider local workflow routes only @aider-local comments through the re
     assert.match(localSource, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(localSource, /agent: aider-local/u);
     assert.match(localSource, /agent_cli: aider/u);
-    assert.match(localSource, /local_ollama_model: \$\{\{ vars\.AIDER_LOCAL_MODEL \|\| 'phi-3\.5-mini' \}\}/u);
+    assert.match(localSource, /local_ollama_model: \$\{\{ vars\.AIDER_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}/u);
     assert.match(localSource, /aider --yes-always --no-browser --message-file/u);
 });
 
 void test("aider local workflow uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
     const source = await readFile(path.resolve(process.cwd(), ".aider.conf.yml"), "utf8");
 
-    assert.match(source, /model: phi-3\.5-mini/u);
+    assert.match(source, /model: qwen3:1\.7b/u);
     assert.match(source, /openai-api-key: ollama/u);
     assert.match(source, /openai-api-base: http:\/\/127\.0\.0\.1:11434\/v1/u);
     assert.match(source, /auto-commits: false/u);
