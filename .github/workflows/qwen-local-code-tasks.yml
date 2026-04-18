@@ -234,6 +234,7 @@ jobs:
             --max-session-turns 8 \
             --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
             --auth-type openai \
+            --include-partial-messages \
             --openai-api-key "${OPENAI_API_KEY}" \
             --openai-base-url="${OPENAI_BASE_URL}" \
             "${QWEN_MODEL_ARGS[@]}"

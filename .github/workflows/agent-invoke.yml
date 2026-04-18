@@ -368,6 +368,8 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           ADDITIONAL_CONTEXT: ${{ steps.validate_pr.outputs.additional_context || '' }}
           API_KEY: ${{ secrets.api_key }}
+          LOCAL_OLLAMA_MODEL: ${{ inputs.local_ollama_model || '' }}
+          LOCAL_OLLAMA_BASE_URL: ${{ inputs.local_ollama_base_url || '' }}
         run: |
           set -euo pipefail
           echo "Running agent command"
