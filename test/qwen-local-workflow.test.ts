@@ -45,25 +45,20 @@ function assertQwenRunsWithCiAgentLoop(source: string): void {
     assert.doesNotMatch(source, /--prompt-interactive/u);
 }
 
-function assertQwenLocalUsesExplicitLintPrompt(source: string): void {
+function assertQwenLocalUsesPrPromptAndToolGate(source: string): void {
     assert.match(source, /QWEN_LOCAL_TASK_PROMPT="\$\(cat <<'PROMPT'/u);
-    assert.match(source, /Find and fix exactly one ESLint warning/u);
-    assert.match(source, /First, make a shell tool call to run `pnpm run lint`/u);
+    assert.match(source, /Use shell and file-edit tools for every repository inspection and edit/u);
+    assert.match(source, /Start by making a shell tool call/u);
     assert.match(source, /Do not output a JSON plan, a fake function call, or `startNewTask`/u);
     assert.match(source, /The token startNewTask is not a tool/u);
+    assert.match(source, /QWEN_LOCAL_AGENT_PROMPT="\$\(printf '%s\\n\\nUser task from PR comment:\\n%s\\n'/u);
     assert.ok(
-        source.includes("# printf '%s\\n' \"${ADDITIONAL_CONTEXT}\" | qwen \\"),
-        "Qwen local prompt inheritance should remain commented out while local tool-calling is stabilized."
+        source.includes("printf '%s\\n' \"${QWEN_LOCAL_AGENT_PROMPT}\" | qwen \\"),
+        "Qwen local should receive the composed local guidance and PR prompt through stdin."
     );
-    assert.ok(
-        source.includes("printf '%s\\n' \"${QWEN_LOCAL_TASK_PROMPT}\" | qwen \\"),
-        "Qwen local should receive the focused lint prompt through stdin for non-interactive CI execution."
-    );
-    assert.doesNotMatch(
-        source,
-        /^\s*printf '%s\\n' "\$\{ADDITIONAL_CONTEXT\}" \| qwen \\$/mu,
-        "Qwen local should not execute the inherited comment prompt."
-    );
+    assert.match(source, /verify_qwen_tool_calls\(\)/u);
+    assert.match(source, /qwen-local-tool-smoke/u);
+    assert.match(source, /Qwen Code completed without proving it can call shell tools/u);
     assert.match(source, /--yolo/u);
     assert.match(source, /--channel CI/u);
     assert.match(source, /--max-session-turns "\$\{QWEN_MAX_SESSION_TURNS\}"/u);
@@ -79,18 +74,31 @@ void test("qwen local workflow routes only @qwen-local comments through the reus
     assert.match(localSource, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(localSource, /agent: qwen-local/u);
     assert.match(localSource, /agent_cli: qwen/u);
-    assert.match(localSource, /agent_package: '@qwen-code\/qwen-code@latest'/u);
+    assert.match(
+        localSource,
+        /agent_package: \$\{\{ vars\.QWEN_CODE_PACKAGE \|\| '@qwen-code\/qwen-code@0\.14\.5' \}\}/u
+    );
     assert.match(remoteSource, /!startsWith\(github\.event\.comment\.body \|\| '', '@qwen-local'\)/u);
 });
 
 void test("qwen local workflow uses a small tool-capable Ollama model by default", async () => {
     const source = await readWorkflowSource("qwen-local-code-tasks.yml");
 
-    assert.match(source, /export QWEN_LOCAL_MODEL="\$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen2\.5-coder:1\.5b' \}\}"/u);
+    assert.match(source, /export QWEN_LOCAL_MODEL="\$\{\{ vars\.QWEN_LOCAL_MODEL \|\| 'qwen3:1\.7b' \}\}"/u);
     assert.match(source, /ollama pull "\$\{QWEN_LOCAL_MODEL\}"/u);
-    assert.match(source, /curl -fsS "\$\{OPENAI_BASE_URL\}\/models"/u);
+    assert.match(source, /wait_for_ollama_openai_api/u);
+    assert.match(source, /curl_ollama "\$\{OPENAI_BASE_URL\}\/models"/u);
+    assert.match(source, /warm_ollama_openai_chat/u);
     assert.match(source, /--model="\$\{QWEN_LOCAL_MODEL\}"/u);
-    assert.doesNotMatch(source, /qwen2\.5-coder:0\.5b/u);
+    assert.doesNotMatch(source, /qwen2\.5-coder/u);
+});
+
+void test("qwen local workflow keeps localhost Ollama traffic out of proxies", async () => {
+    const source = await readWorkflowSource("qwen-local-code-tasks.yml");
+
+    assert.match(source, /export NO_PROXY="\$\{NO_PROXY:\+\$\{NO_PROXY\},\}127\.0\.0\.1,localhost"/u);
+    assert.match(source, /export no_proxy="\$\{no_proxy:\+\$\{no_proxy\},\}127\.0\.0\.1,localhost"/u);
+    assert.match(source, /curl_ollama\(\) \{\n\s+curl --noproxy '\*' -fsS "\$@"/u);
 });
 
 void test("qwen settings are tuned for CPU-only local Ollama runs", async () => {
@@ -114,13 +122,16 @@ void test("qwen settings are tuned for CPU-only local Ollama runs", async () => 
 
 void test("qwen local workflow only starts Ollama when the API is unavailable", async () => {
     const source = await readWorkflowSource("qwen-local-code-tasks.yml");
+    const startServerIndex = source.indexOf("ollama serve > ollama.log 2>&1 &");
+    const waitForNativeApiCallIndex = source.indexOf("        wait_for_ollama_native_api\n");
 
-    assert.match(source, /if ! curl -fsS http:\/\/127\.0\.0\.1:11434\/api\/version >\/dev\/null 2>&1; then/u);
+    assert.match(source, /if ! curl_ollama http:\/\/127\.0\.0\.1:11434\/api\/version >\/dev\/null 2>&1; then/u);
     assert.match(source, /ollama serve > ollama\.log 2>&1 &/u);
-    assert.match(source, /for attempt in \{1\.\.30\}; do/u);
+    assert.match(source, /wait_for_ollama_native_api\(\)/u);
+    assert.match(source, /for attempt in \{1\.\.60\}; do/u);
     assert.ok(
-        source.indexOf("ollama serve > ollama.log 2>&1 &") < source.indexOf("for attempt in {1..30}; do"),
-        "workflow should start the fallback server before waiting for the API."
+        startServerIndex < waitForNativeApiCallIndex,
+        "workflow should start the fallback server before waiting."
     );
 });
 
@@ -143,10 +154,10 @@ void test("qwen remote invocation is configured to keep using tools in CI", asyn
     assertQwenRunsWithCiAgentLoop(remoteSource);
 });
 
-void test("qwen local invocation uses a focused lint prompt instead of inherited task text", async () => {
+void test("qwen local invocation uses the PR prompt and verifies tool calls", async () => {
     const localSource = await readWorkflowSource("qwen-local-code-tasks.yml");
 
-    assertQwenLocalUsesExplicitLintPrompt(localSource);
+    assertQwenLocalUsesPrPromptAndToolGate(localSource);
 });
 
 void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
