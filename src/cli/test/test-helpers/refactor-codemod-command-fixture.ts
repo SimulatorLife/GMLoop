@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -101,6 +101,21 @@ export async function createSyntheticRefactorProject(config: Record<string, unkn
     );
     await writeProjectFile(projectRoot, "gmloop.json", `${JSON.stringify(config, null, 4)}\n`);
     return projectRoot;
+}
+
+/**
+ * Create a temporary synthetic project, execute a callback, and always clean up the project directory.
+ */
+export async function withSyntheticRefactorProject<TResult>(
+    config: Record<string, unknown>,
+    runWithProject: (projectRoot: string) => Promise<TResult>
+): Promise<TResult> {
+    const projectRoot = await createSyntheticRefactorProject(config);
+    try {
+        return await runWithProject(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
 }
 
 /**
