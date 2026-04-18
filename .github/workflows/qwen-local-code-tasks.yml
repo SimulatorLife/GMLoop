@@ -1,106 +1,63 @@
-name: qwen-local-code-tasks
+name: '▶️ Qwen Local Invoke'
 
 on:
-  workflow_dispatch:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: '${{ github.workflow }}-invoke-${{ github.event_name }}-${{ github.event.issue.number }}'
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: 'bash'
 
 jobs:
-  qwen_local:
-    runs-on: ubuntu-latest
-    env:
-      GIT_AUTHOR_NAME: "github-actions[bot]"
-      GIT_AUTHOR_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com"
-      GIT_COMMITTER_NAME: "github-actions[bot]"
-      GIT_COMMITTER_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com"
+  invoke:
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body || '', '@qwen-local') }}
+    uses: ./.github/workflows/agent-invoke.yml
+    secrets:
+      api_key: ${{ secrets.OPENROUTER_API_KEY }}
+      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+    with:
+      pr_number: ${{ github.event.issue.number }}
+      additional_context: ${{ github.event.comment.body }}
+      agent: qwen-local
+      agent_command: |
+        set -euo pipefail
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure Git author for Qwen checkpoints
-        run: |
-          git config --global user.name "$GIT_COMMITTER_NAME"
-          git config --global user.email "$GIT_COMMITTER_EMAIL"
-          git config --local user.name "$GIT_COMMITTER_NAME"
-          git config --local user.email "$GIT_COMMITTER_EMAIL"
-
-      - name: Read Node version from .nvmrc
-        id: node-version
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
-
-      - name: Read pnpm version from package.json
-        id: pnpm-version
-        run: |
-          version=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).packageManager.split('@')[1]")
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ steps.pnpm-version.outputs.version }}
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ steps.node-version.outputs.version }}
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Install Ollama
-        run: curl -fsSL https://ollama.com/install.sh | sh
-
-      - name: Start Ollama
-        run: |
-          for attempt in {1..15}; do
-            if curl -fsS http://127.0.0.1:11434/api/version > /dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 1
-          done
-
-          ollama serve > ollama.log 2>&1 &
-
-          for attempt in {1..30}; do
-            if curl -fsS http://127.0.0.1:11434/api/version > /dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 1
-          done
-
-          cat ollama.log || true
+        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
+          echo "❌ Missing prompt context from PR comment."
           exit 1
+        fi
 
-      - name: Pull small coder model
-        run: |
-          ollama pull qwen2.5-coder:0.5b
-          curl http://127.0.0.1:11434/v1/models
+        curl -fsSL https://ollama.com/install.sh | sh
 
-      - name: Run Qwen against local model
-        run: |
-          pnpm dlx @qwen-code/qwen-code \
-            --yolo \
-            --auth-type openai \
-            --openai-api-key "ollama" \
-            --openai-base-url "http://127.0.0.1:11434/v1" \
-            --model "qwen2.5-coder:0.5b" \
-            --prompt "Fix obvious lint issues and add missing function docs in changed TypeScript files only (src/**/*.ts). Do NOT modify .gml files, src/parser/generated/ files, or use eslint-disable/ts-ignore comments. Do not change runtime behavior." \
-            --debug
+        ollama serve > ollama.log 2>&1 &
 
-      - name: Run local formatting and linting (to clean up LLM output)
-        run: |
-          pnpm run format || true
-          pnpm run lint:fix || true
+        for attempt in {1..30}; do
+          if curl -fsS http://127.0.0.1:11434/api/version > /dev/null 2>&1; then
+            break
+          fi
+          sleep 1
+          if [ "$attempt" -eq 30 ]; then
+            echo "❌ Ollama did not start in time"
+            cat ollama.log || true
+            exit 1
+          fi
+        done
 
-      - name: Validate generated changes
-        run: |
-          pnpm run build:ts
-          pnpm run lint:quiet
-
-      - name: Show logs on failure
-        if: failure()
-        run: |
-          cat ollama.log || true
-          ls -R /home/runner/.qwen || true
-          latest_log="$(ls -t /home/runner/.qwen/debug/*.txt 2>/dev/null | head -n 1)"
-          test -n "$latest_log" && cat "$latest_log" || true
+        ollama pull qwen2.5-coder:0.5b
+        pnpm dlx @qwen-code/qwen-code \
+          --yolo \
+          --auth-type openai \
+          --openai-api-key "ollama" \
+          --openai-base-url "http://127.0.0.1:11434/v1" \
+          --model "qwen2.5-coder:0.5b" \
+          --prompt "${ADDITIONAL_CONTEXT}" \
+          --debug
