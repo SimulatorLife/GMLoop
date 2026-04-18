@@ -59,4 +59,15 @@ void describe("createSampleLimitRuntimeOption", () => {
         assert.strictEqual(Object.isFrozen(skippedDirectorySampleLimit), true);
         assert.strictEqual(Object.isFrozen(unsupportedExtensionSampleLimit), true);
     });
+
+    void it("uses the explicit default limit override when resolving empty input", () => {
+        const created = createSampleLimitRuntimeOption({
+            defaultValue: 3,
+            envVar: TEST_SAMPLE_LIMIT_ENV_VAR,
+            subjectLabel: "Test sample"
+        });
+
+        assert.strictEqual(created.resolve(undefined, { defaultLimit: 11 }), 11);
+        assert.strictEqual(created.resolve(undefined), 3);
+    });
 });
