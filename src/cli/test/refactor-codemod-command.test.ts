@@ -11,69 +11,68 @@ import {
     assertProjectGmlFilesParse,
     createSyntheticRefactorProject as createSyntheticProject,
     registerProjectResource,
+    withSyntheticRefactorProject,
     writeObjectResource,
     writeProjectFile,
     writeScriptResource
 } from "./test-helpers/refactor-codemod-command-fixture.js";
 
 void test("refactor codemod --list discovers gmloop.json and tolerates unrelated top-level config", async () => {
-    const projectRoot = await createSyntheticProject({
-        printWidth: 95,
-        lintRules: {
-            "gml/no-globalvar": "error"
-        },
-        refactor: {
-            codemods: {
-                loopLengthHoisting: {}
+    await withSyntheticRefactorProject(
+        {
+            printWidth: 95,
+            lintRules: {
+                "gml/no-globalvar": "error"
+            },
+            refactor: {
+                codemods: {
+                    loopLengthHoisting: {}
+                }
             }
+        },
+        async (projectRoot) => {
+            const result = await runCliTestCommand({
+                argv: ["refactor", "codemod", "--list"],
+                cwd: projectRoot
+            });
+
+            assert.equal(result.exitCode, 0);
+            assert.match(result.stdout, /Project root:/);
+            assert.match(result.stdout, /Config path:/);
+            assert.match(result.stdout, /loopLengthHoisting: configured, selected/);
+            assert.match(result.stdout, /Effective config: \{\}/);
+            assert.match(result.stdout, /namingConvention: not configured, selected/);
         }
-    });
-
-    try {
-        const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--list"],
-            cwd: projectRoot
-        });
-
-        assert.equal(result.exitCode, 0);
-        assert.match(result.stdout, /Project root:/);
-        assert.match(result.stdout, /Config path:/);
-        assert.match(result.stdout, /loopLengthHoisting: configured, selected/);
-        assert.match(result.stdout, /Effective config: \{\}/);
-        assert.match(result.stdout, /namingConvention: not configured, selected/);
-    } finally {
-        await rm(projectRoot, { recursive: true, force: true });
-    }
+    );
 });
 
 void test("refactor codemod --only filters configured codemods during listing", async () => {
-    const projectRoot = await createSyntheticProject({
-        refactor: {
-            codemods: {
-                loopLengthHoisting: {},
-                namingConvention: {
-                    rules: {
-                        localVariable: {
-                            caseStyle: "camel"
+    await withSyntheticRefactorProject(
+        {
+            refactor: {
+                codemods: {
+                    loopLengthHoisting: {},
+                    namingConvention: {
+                        rules: {
+                            localVariable: {
+                                caseStyle: "camel"
+                            }
                         }
                     }
                 }
             }
+        },
+        async (projectRoot) => {
+            const result = await runCliTestCommand({
+                argv: ["refactor", "codemod", "--list", "--only", "loopLengthHoisting"],
+                cwd: projectRoot
+            });
+
+            assert.equal(result.exitCode, 0);
+            assert.match(result.stdout, /loopLengthHoisting: configured, selected/);
+            assert.match(result.stdout, /namingConvention: configured, filtered out/);
         }
-    });
-
-    try {
-        const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--list", "--only", "loopLengthHoisting"],
-            cwd: projectRoot
-        });
-
-        assert.equal(result.exitCode, 0);
-        assert.match(result.stdout, /loopLengthHoisting: configured, selected/);
-        assert.match(result.stdout, /namingConvention: configured, filtered out/);
-    } finally {
-        await rm(projectRoot, { recursive: true, force: true });
-    }
+    );
 });
 
 void test("refactor codemod --write applies configured namingConvention renames across project resources", async () => {

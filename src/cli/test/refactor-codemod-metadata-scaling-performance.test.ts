@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
-import { rm } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 
 import { runCliTestCommand } from "../src/cli.js";
-import {
-    createSyntheticRefactorProject,
-    writeScriptResource
-} from "./test-helpers/refactor-codemod-command-fixture.js";
+import { withSyntheticRefactorProject, writeScriptResource } from "./test-helpers/refactor-codemod-command-fixture.js";
 
 const SMALL_SCRIPT_COUNT = 120;
 const LARGE_SCRIPT_COUNT = 240;
@@ -21,44 +17,43 @@ const MAX_SCALING_RATIO = 3;
 const LARGE_PROJECT_THRESHOLD_MS = 5000;
 
 async function measureCodemodWriteDurationMs(scriptCount: number): Promise<number> {
-    const projectRoot = await createSyntheticRefactorProject({
-        refactor: {
-            codemods: {
-                namingConvention: {
-                    rules: {
-                        scriptResourceName: {
-                            caseStyle: "camel"
+    return withSyntheticRefactorProject(
+        {
+            refactor: {
+                codemods: {
+                    namingConvention: {
+                        rules: {
+                            scriptResourceName: {
+                                caseStyle: "camel"
+                            }
                         }
                     }
                 }
             }
+        },
+        async (projectRoot) => {
+            for (let index = 0; index < scriptCount; index += 1) {
+                const scriptName = `demo_script_${index}`;
+                const previousName = index === 0 ? null : `demo_script_${index - 1}`;
+                const sourceText =
+                    previousName === null
+                        ? `function ${scriptName}() {\n    return ${index};\n}\n`
+                        : `function ${scriptName}() {\n    return ${previousName}() + ${index};\n}\n`;
+                await writeScriptResource(projectRoot, scriptName, sourceText);
+            }
+
+            const startTime = performance.now();
+            const result = await runCliTestCommand({
+                argv: ["refactor", "codemod", "--write"],
+                cwd: projectRoot
+            });
+            const durationMs = performance.now() - startTime;
+
+            assert.equal(result.exitCode, 0);
+            assert.match(result.stdout, /\[namingConvention\] changed/);
+            return durationMs;
         }
-    });
-
-    try {
-        for (let index = 0; index < scriptCount; index += 1) {
-            const scriptName = `demo_script_${index}`;
-            const previousName = index === 0 ? null : `demo_script_${index - 1}`;
-            const sourceText =
-                previousName === null
-                    ? `function ${scriptName}() {\n    return ${index};\n}\n`
-                    : `function ${scriptName}() {\n    return ${previousName}() + ${index};\n}\n`;
-            await writeScriptResource(projectRoot, scriptName, sourceText);
-        }
-
-        const startTime = performance.now();
-        const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--write"],
-            cwd: projectRoot
-        });
-        const durationMs = performance.now() - startTime;
-
-        assert.equal(result.exitCode, 0);
-        assert.match(result.stdout, /\[namingConvention\] changed/);
-        return durationMs;
-    } finally {
-        await rm(projectRoot, { recursive: true, force: true });
-    }
+    );
 }
 
 void test("refactor codemod --write metadata updates scale near-linearly across larger script batches", async () => {
