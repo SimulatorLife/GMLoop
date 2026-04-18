@@ -45,6 +45,32 @@ function assertQwenRunsWithCiAgentLoop(source: string): void {
     assert.doesNotMatch(source, /--prompt-interactive/u);
 }
 
+function assertQwenLocalUsesExplicitLintPrompt(source: string): void {
+    assert.match(source, /QWEN_LOCAL_TASK_PROMPT="\$\(cat <<'PROMPT'/u);
+    assert.match(source, /Find and fix exactly one ESLint warning/u);
+    assert.match(source, /First, make a shell tool call to run `pnpm run lint`/u);
+    assert.match(source, /Do not output a JSON plan, a fake function call, or `startNewTask`/u);
+    assert.match(source, /The token startNewTask is not a tool/u);
+    assert.ok(
+        source.includes("# printf '%s\\n' \"${ADDITIONAL_CONTEXT}\" | qwen \\"),
+        "Qwen local prompt inheritance should remain commented out while local tool-calling is stabilized."
+    );
+    assert.ok(
+        source.includes("printf '%s\\n' \"${QWEN_LOCAL_TASK_PROMPT}\" | qwen \\"),
+        "Qwen local should receive the focused lint prompt through stdin for non-interactive CI execution."
+    );
+    assert.doesNotMatch(
+        source,
+        /^\s*printf '%s\\n' "\$\{ADDITIONAL_CONTEXT\}" \| qwen \\$/mu,
+        "Qwen local should not execute the inherited comment prompt."
+    );
+    assert.match(source, /--yolo/u);
+    assert.match(source, /--channel CI/u);
+    assert.match(source, /--max-session-turns "\$\{QWEN_MAX_SESSION_TURNS\}"/u);
+    assert.match(source, /--append-system-prompt "\$\{QWEN_CI_SYSTEM_PROMPT\}"/u);
+    assert.doesNotMatch(source, /--prompt-interactive/u);
+}
+
 void test("qwen local workflow routes only @qwen-local comments through the reusable agent runner", async () => {
     const localSource = await readWorkflowSource("qwen-local-code-tasks.yml");
     const remoteSource = await readWorkflowSource("qwen-invoke.yml");
@@ -111,12 +137,16 @@ void test("qwen local workflow selects OpenAI-compatible auth for Ollama", async
     assert.ok(apiKeyIndex < baseUrlIndex, "OpenAI-compatible credentials should be paired with the Ollama endpoint.");
 });
 
-void test("qwen invocations are configured to keep using tools in CI", async () => {
-    const localSource = await readWorkflowSource("qwen-local-code-tasks.yml");
+void test("qwen remote invocation is configured to keep using tools in CI", async () => {
     const remoteSource = await readWorkflowSource("qwen-invoke.yml");
 
-    assertQwenRunsWithCiAgentLoop(localSource);
     assertQwenRunsWithCiAgentLoop(remoteSource);
+});
+
+void test("qwen local invocation uses a focused lint prompt instead of inherited task text", async () => {
+    const localSource = await readWorkflowSource("qwen-local-code-tasks.yml");
+
+    assertQwenLocalUsesExplicitLintPrompt(localSource);
 });
 
 void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
