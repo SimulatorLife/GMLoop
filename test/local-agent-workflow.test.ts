@@ -113,7 +113,12 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
         source.lastIndexOf("pull_aider_configured_model") < source.indexOf("AIDER_TASK_MESSAGE_FILE"),
         "Aider must pull the configured local model before invoking the CLI."
     );
-    assert.match(source, /aider[\s\S]*--yes-always[\s\S]*--no-browser[\s\S]*--subtree-only[\s\S]*--message-file/u);
+    assert.match(
+        source,
+        /aider[\s\S]*--yes-always[\s\S]*--no-browser[\s\S]*--subtree-only[\s\S]*--no-auto-commits[\s\S]*--no-dirty-commits[\s\S]*--message-file/u
+    );
+    assert.match(source, /aider_status="\$\{PIPESTATUS\[0\]\}"/u);
+    assert.doesNotMatch(source, /Aider completed without producing local file changes/u);
     assert.doesNotMatch(source, /OPENAI_API_TYPE/u);
     assert.doesNotMatch(source, /@aider-local/u);
     assert.doesNotMatch(source, /--model/u);
@@ -128,7 +133,6 @@ void test("aider invoke uses a repo-local .aider.conf.yml for local Ollama setti
     assert.match(source, /model: openai\/qwen3:1\.7b/u);
     assert.match(source, /openai-api-key: ollama/u);
     assert.match(source, /openai-api-base: http:\/\/127\.0\.0\.1:11434\/v1/u);
-    assert.match(source, /dirty-commits: true/u);
 });
 
 void test("agent invoke validates local OpenAI-compatible endpoint without loading models", async () => {
@@ -175,6 +179,7 @@ void test("agent invoke workflow fails when a successful agent run produces no p
 
     assert.match(source, /if \[ "\$\{\{ steps\.run_agent\.outcome \}\}" = "failure" \] \|\| \[ "\$\{\{ steps\.run_agent\.conclusion \}\}" = "failure" \]; then/u);
     assert.match(source, /if \[ -f "\$SENTINEL" \]; then/u);
+    assert.match(source, /Agent completed without producing pushable local changes/u);
     assert.match(source, /echo "Agent command succeeded with no branch push → FAIL\."/u);
 });
 
@@ -183,11 +188,22 @@ void test("agent invoke workflow always attempts auto-commit and push after the 
 
     assert.match(source, /- name: Auto-commit and push agent changes if needed/u);
     assert.match(source, /if: always\(\)/u);
-    assert.match(source, /if ! git diff --quiet \|\| ! git diff --cached --quiet; then/u);
+    assert.match(source, /echo "\[agent\] Worktree after agent command:"/u);
+    assert.match(source, /worktree_status="\$\(git status --porcelain=v1 --untracked-files=normal\)"/u);
+    assert.match(source, /if \[ -n "\$\{worktree_status\}" \]; then/u);
     assert.match(source, /git add -A/u);
     assert.match(source, /git commit -m "\$commit_message"/u);
-    assert.match(source, /elif \[ "\$\{has_worktree_changes\}" = true \]; then/u);
-    assert.match(source, /echo "\[agent\] New commit created; will push\."/u);
+    assert.match(source, /local_head="\$\(git rev-parse HEAD\)"/u);
+    assert.match(source, /remote_head="\$\(git rev-parse "\$\{remote_ref\}"\)"/u);
+    assert.match(source, /elif git merge-base --is-ancestor "\$\{remote_ref\}" HEAD; then/u);
+    assert.match(source, /if \[ "\$\{remote_head\}" != "\$\{local_head\}" \]; then/u);
+    assert.match(source, /if ! git diff --quiet "\$\{remote_ref\}" HEAD; then/u);
+    assert.match(source, /echo "\[agent\] Local branch has file changes ahead of \$\{remote_ref\}; will push\."/u);
+    assert.match(source, /Local branch has commits ahead of \$\{remote_ref\}, but the net file diff is empty/u);
+    assert.match(source, /elif git merge-base --is-ancestor HEAD "\$\{remote_ref\}"; then/u);
+    assert.match(source, /Remote ref \$\{remote_ref\} moved ahead of local HEAD/u);
+    assert.match(source, /Local branch diverged from \$\{remote_ref\}; refusing to push/u);
+    assert.doesNotMatch(source, /No local commits ahead of \$\{remote_ref\}; nothing to push/u);
 });
 
 void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
