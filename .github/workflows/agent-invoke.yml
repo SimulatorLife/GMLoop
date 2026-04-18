@@ -374,7 +374,11 @@ jobs:
           echo "----------------------"
 
           set -x
-          bash "$script" 2>&1 | tee "$RUNNER_TEMP/agent-live.log"
+          set +e
+          stdbuf -oL -eL bash "$script" 2>&1 | tee "$RUNNER_TEMP/agent-live.log"
+          agent_status="${PIPESTATUS[0]}"
+          set -e
+          exit "${agent_status}"
 
       - name: Auto-commit and push agent changes if needed
         if: always()

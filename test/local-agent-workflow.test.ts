@@ -45,6 +45,9 @@ function assertQwenUsesLocalAgentLoop(source: string): void {
     assert.match(source, /The token startNewTask is not a tool/u);
     assert.match(source, /QWEN_AGENT_PROMPT="\$\(printf '%s\\n\\nUser task from PR comment:\\n%s\\n'/u);
     assert.match(source, /printf '%s\\n' "\$\{QWEN_AGENT_PROMPT\}" \| stdbuf -oL -eL qwen \\/u);
+    assert.match(source, /pull_qwen_configured_model\(\)/u);
+    assert.match(source, /\.qwen\/settings\.json/u);
+    assert.match(source, /ollama pull "\$\{configured_model\}"/u);
     assert.match(source, /verify_qwen_tool_calls\(\)/u);
     assert.match(source, /qwen-tool-smoke/u);
     assert.match(source, /Qwen Code completed without proving it can call shell tools/u);
@@ -59,6 +62,10 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
     const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
 
     assertQwenUsesLocalAgentLoop(source);
+    assert.ok(
+        source.lastIndexOf("pull_qwen_configured_model") < source.lastIndexOf("verify_qwen_exposes_required_tools"),
+        "Qwen must pull the configured local model before probing model-backed tool calls."
+    );
     assert.match(source, /agent_package: \$\{\{ vars\.QWEN_CODE_PACKAGE \|\| '@qwen-code\/qwen-code@0\.14\.5' \}\}/u);
     assert.doesNotMatch(source, /OPENROUTER_API_KEY/u);
     assert.doesNotMatch(source, /QWEN_OPENAI_MODEL/u);
@@ -98,6 +105,14 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: aider/u);
     assert.doesNotMatch(source, /agent_cli:/u);
+    assert.match(source, /pull_aider_configured_model\(\)/u);
+    assert.match(source, /\.aider\.conf\.yml/u);
+    assert.match(source, /ollama_model="\$\{configured_model#openai\/\}"/u);
+    assert.match(source, /ollama pull "\$\{ollama_model\}"/u);
+    assert.ok(
+        source.lastIndexOf("pull_aider_configured_model") < source.indexOf("AIDER_TASK_MESSAGE_FILE"),
+        "Aider must pull the configured local model before invoking the CLI."
+    );
     assert.match(source, /aider[\s\S]*--yes-always[\s\S]*--no-browser[\s\S]*--subtree-only[\s\S]*--message-file/u);
     assert.doesNotMatch(source, /OPENAI_API_TYPE/u);
     assert.doesNotMatch(source, /@aider-local/u);
@@ -146,6 +161,14 @@ void test("agent invoke exports OpenAI API type for every child agent", async ()
     assert.match(parentSource, /env:\n\s+OPENAI_API_TYPE: openai/u);
     assert.doesNotMatch(aiderSource, /export OPENAI_API_TYPE=/u);
     assert.doesNotMatch(aiderSource, /--set-env OPENAI_API_TYPE=openai/u);
+});
+
+void test("agent invoke streams custom command output while preserving exit status", async () => {
+    const source = await readWorkflowSource("agent-invoke.yml");
+
+    assert.match(source, /stdbuf -oL -eL bash "\$script" 2>&1 \| tee "\$RUNNER_TEMP\/agent-live\.log"/u);
+    assert.match(source, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
+    assert.match(source, /exit "\$\{agent_status\}"/u);
 });
 
 void test("agent invoke workflow fails when a successful agent run produces no push", async () => {

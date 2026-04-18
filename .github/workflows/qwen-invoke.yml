@@ -36,6 +36,22 @@ jobs:
           exit 1
         fi
 
+        pull_qwen_configured_model() {
+          local configured_model
+
+          if ! command -v ollama >/dev/null 2>&1; then
+            echo "❌ Ollama CLI is not available after local endpoint validation."
+            return 1
+          fi
+
+          configured_model="$(
+            jq -er '.model.name | select(type == "string" and length > 0)' .qwen/settings.json
+          )"
+
+          echo "Pulling local Qwen model '${configured_model}' from Ollama..."
+          ollama pull "${configured_model}"
+        }
+
         QWEN_CI_SYSTEM_PROMPT="$(cat <<'PROMPT'
         You are running in GitHub Actions as an autonomous coding agent.
         Use real Qwen Code tool calls for shell commands and file edits.
@@ -159,6 +175,7 @@ jobs:
           return 1
         }
 
+        pull_qwen_configured_model
         verify_qwen_exposes_required_tools
         verify_qwen_tool_calls
         verify_qwen_file_edits

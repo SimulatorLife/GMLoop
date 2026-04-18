@@ -35,6 +35,38 @@ jobs:
           exit 1
         fi
 
+        pull_aider_configured_model() {
+          local configured_model
+          local ollama_model
+
+          if ! command -v ollama >/dev/null 2>&1; then
+            echo "❌ Ollama CLI is not available after local endpoint validation."
+            return 1
+          fi
+
+          configured_model="$(
+            awk '
+              /^[[:space:]]*model[[:space:]]*:/ {
+                value = substr($0, index($0, ":") + 1)
+                sub(/#.*/, "", value)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+                gsub(/^["\047]|["\047]$/, "", value)
+                print value
+                exit
+              }
+            ' .aider.conf.yml
+          )"
+
+          if [ -z "${configured_model}" ]; then
+            echo "❌ Could not resolve model from .aider.conf.yml."
+            return 1
+          fi
+
+          ollama_model="${configured_model#openai/}"
+          echo "Pulling local Aider model '${ollama_model}' from Ollama..."
+          ollama pull "${ollama_model}"
+        }
+
         export NO_PROXY="${NO_PROXY:+${NO_PROXY},}127.0.0.1,localhost"
         export no_proxy="${no_proxy:+${no_proxy},}127.0.0.1,localhost"
 
@@ -47,6 +79,8 @@ jobs:
           echo "❌ Could not install Aider CLI."
           exit 1
         fi
+
+        pull_aider_configured_model
 
         AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
         printf '%s\n\nUser task from PR comment:\n%s\n' "You are aider, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint. Use Aider to inspect the repository and make the requested code changes. Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files." "${ADDITIONAL_CONTEXT}" > "${AIDER_TASK_MESSAGE_FILE}"
