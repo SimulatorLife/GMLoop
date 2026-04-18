@@ -133,7 +133,8 @@ void test("agent invoke validates local OpenAI-compatible endpoint without loadi
     assert.match(source, /OLLAMA_NATIVE_URL='http:\/\/127\.0\.0\.1:11434'/u);
     assert.match(source, /\$\{OLLAMA_NATIVE_URL\}\/api\/version/u);
     assert.match(source, /\$\{OPENAI_BASE_URL%\/\}\/models/u);
-    assert.match(source, /jq -e '\.data \| type == "array"'/u);
+    assert.match(source, /jq -e 'type == "object"'/u);
+    assert.doesNotMatch(source, /\.data \| type == "array"/u);
     assert.ok(source.includes('echo "OPENAI_BASE_URL=${OPENAI_BASE_URL}" >> "$GITHUB_ENV"'));
     assert.ok(source.includes('echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "$GITHUB_ENV"'));
 });

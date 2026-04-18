@@ -279,13 +279,18 @@ jobs:
             sleep 1
           done
 
+          models_response=''
           for attempt in {1..30}; do
-            if curl_local "${OPENAI_BASE_URL%/}/models" | jq -e '.data | type == "array"' >/dev/null; then
+            if models_response="$(curl_local "${OPENAI_BASE_URL%/}/models" 2>/dev/null)" \
+              && jq -e 'type == "object"' >/dev/null <<<"${models_response}"; then
               exit 0
             fi
 
             if [ "${attempt}" -eq 30 ]; then
-              echo "❌ OpenAI-compatible /models endpoint did not become ready at ${OPENAI_BASE_URL}."
+              echo "❌ OpenAI-compatible /models endpoint did not return a valid JSON object at ${OPENAI_BASE_URL}."
+              if [ -n "${models_response}" ]; then
+                printf 'Last /models response:\n%s\n' "${models_response}"
+              fi
               cat ollama.log || true
               exit 1
             fi
