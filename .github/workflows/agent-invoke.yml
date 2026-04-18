@@ -482,10 +482,17 @@ jobs:
         run: |
           set -euo pipefail
           SENTINEL="${RUNNER_TEMP}/.agent_push_succeeded"
+
+          if [ "${{ steps.run_agent.outcome }}" = "failure" ] || [ "${{ steps.run_agent.conclusion }}" = "failure" ]; then
+            echo "Run agent step failed → FAIL."
+            gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}" || true
+            exit 1
+          fi
+
           if [ -f "$SENTINEL" ]; then
             echo "Push detected → SUCCESS."
             exit 0
           fi
-          echo "No push sentinel found → FAIL."
-          gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}" || true
-          exit 1
+
+          echo "Agent command succeeded with no branch push → SUCCESS."
+          exit 0

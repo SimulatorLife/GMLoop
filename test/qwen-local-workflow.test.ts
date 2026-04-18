@@ -168,11 +168,19 @@ void test("aider local workflow routes only @aider-local comments through the re
 void test("aider local workflow uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
     const source = await readFile(path.resolve(process.cwd(), ".aider.conf.yml"), "utf8");
 
+    assert.match(source, /provider: openai/u);
     assert.match(source, /model: qwen3:1\.7b/u);
     assert.match(source, /openai-api-key: ollama/u);
     assert.match(source, /openai-api-base: http:\/\/127\.0\.0\.1:11434\/v1/u);
     assert.match(source, /auto-commits: false/u);
     assert.match(source, /dirty-commits: false/u);
+});
+
+void test("agent invoke workflow reports success when a successful agent run produces no push", async () => {
+    const source = await readWorkflowSource("agent-invoke.yml");
+
+    assert.match(source, /if \[ "\$\{\{ steps\.run_agent\.outcome \}\}" = "failure" \] \|\| \[ "\$\{\{ steps\.run_agent\.conclusion \}\}" = "failure" \]; then/u);
+    assert.match(source, /echo "Agent command succeeded with no branch push → SUCCESS\."/u);
 });
 
 void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {

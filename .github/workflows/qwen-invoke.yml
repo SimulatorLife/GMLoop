@@ -63,4 +63,6 @@ jobs:
           --auth-type openai \
           --openai-api-key "${OPENAI_API_KEY}" \
           --openai-base-url="${OPENAI_BASE_URL}" \
-          --model="${OPENAI_MODEL}"
+          --model="${OPENAI_MODEL}" \
+          --output-format stream-json \
+          --include-partial-messages
