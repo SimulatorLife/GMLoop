@@ -18,6 +18,9 @@ on:
       agent:
         type: string
         required: true
+      agent_cli:
+        type: string
+        required: false
       agent_command:
         type: string
         required: false
@@ -26,7 +29,7 @@ on:
         required: false
     secrets:
       api_key: # may contain one key OR multiple newline-separated keys
-        required: true
+        required: false
       GH_USER_TOKEN:
         required: true
 
@@ -92,7 +95,7 @@ jobs:
               echo "Comment does not mention ${mention}; aborting." >&2
               exit 1
             fi
-            ADDITIONAL_CTX=$(printf '%s' "${RAW_COMMENT}" | sed -E "s/^.*${mention}\s*//")
+            ADDITIONAL_CTX=$(printf '%s' "${RAW_COMMENT}" | sed -E "s/^.*${mention}[[:space:]]*//")
             echo "additional_context<<EOF" >> "$GITHUB_OUTPUT"
             printf '%s' "$ADDITIONAL_CTX" >> "$GITHUB_OUTPUT"
             echo >> "$GITHUB_OUTPUT"
@@ -247,14 +250,17 @@ jobs:
 
       - name: Install agent CLI (from child)
         if: ${{ inputs.agent_package != '' }}
+        env:
+          AGENT_CLI: ${{ inputs.agent_cli || inputs.agent }}
+          AGENT_PACKAGE: ${{ inputs.agent_package }}
         run: |
-          echo "Checking for CLI: ${{ inputs.agent }} (from pnpm package: ${{ inputs.agent_package }})"
-          if ! command -v ${{ inputs.agent }} >/dev/null 2>&1; then
-            echo "Not found, installing ${{ inputs.agent_package }} via pnpm..."
-            pnpm add -g ${{ inputs.agent_package }}
-            echo "Installed ${{ inputs.agent_package }}. CLI location: $(command -v ${{ inputs.agent }})"
+          echo "Checking for CLI: ${AGENT_CLI} (from pnpm package: ${AGENT_PACKAGE})"
+          if ! command -v "${AGENT_CLI}" >/dev/null 2>&1; then
+            echo "Not found, installing ${AGENT_PACKAGE} via pnpm..."
+            pnpm add -g "${AGENT_PACKAGE}"
+            echo "Installed ${AGENT_PACKAGE}. CLI location: $(command -v "${AGENT_CLI}")"
           else
-            echo "${{ inputs.agent }} CLI already installed at: $(command -v ${{ inputs.agent }})"
+            echo "${AGENT_CLI} CLI already installed at: $(command -v "${AGENT_CLI}")"
           fi
 
       - name: Run agent custom command
