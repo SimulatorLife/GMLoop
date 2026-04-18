@@ -11,8 +11,8 @@ import {
 } from "./test-helpers/refactor-codemod-command-fixture.js";
 
 const SCRIPT_COUNT = 320;
-// Keep this threshold stable but tolerant of CI variance from workspace-wide TypeScript rebuilds.
-const PERFORMANCE_THRESHOLD_MS = 8000;
+// Tightened threshold after caching mutable metadata documents during batch rename planning.
+const PERFORMANCE_THRESHOLD_MS = 6500;
 
 async function measureMedianDurationMs<T>(
     sampleCount: number,
