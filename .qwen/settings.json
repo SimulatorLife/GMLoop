@@ -19,6 +19,11 @@
   "tools": {
     "approvalMode": "yolo"
   },
+  "security": {
+    "auth": {
+      "selectedType": "openai"
+    }
+  },
   "modelProviders": {
     "openai": [
       {
