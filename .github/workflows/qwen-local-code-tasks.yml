@@ -22,12 +22,13 @@ jobs:
     if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body || '', '@qwen-local') }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
-      api_key: ${{ secrets.OPENROUTER_API_KEY }}
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
     with:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: qwen-local
+      agent_cli: qwen
+      agent_package: '@qwen-code/qwen-code@latest'
       agent_command: |
         set -euo pipefail
 
@@ -36,28 +37,33 @@ jobs:
           exit 1
         fi
 
-        curl -fsSL https://ollama.com/install.sh | sh
+        export QWEN_LOCAL_MODEL="${{ vars.QWEN_LOCAL_MODEL || 'qwen2.5-coder:0.5b' }}"
+        export OPENAI_API_KEY="ollama"
+        export OPENAI_BASE_URL="http://127.0.0.1:11434/v1"
 
-        ollama serve > ollama.log 2>&1 &
+        if ! command -v ollama >/dev/null 2>&1; then
+          curl -fsSL https://ollama.com/install.sh | sh
+        fi
+
+        if ! curl -fsS http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+          ollama serve > ollama.log 2>&1 &
+        fi
 
         for attempt in {1..30}; do
-          if curl -fsS http://127.0.0.1:11434/api/version > /dev/null 2>&1; then
+          if curl -fsS http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
             break
           fi
-          sleep 1
-          if [ "$attempt" -eq 30 ]; then
+
+          if [ "${attempt}" -eq 30 ]; then
             echo "❌ Ollama did not start in time"
             cat ollama.log || true
             exit 1
           fi
+
+          sleep 1
         done
 
-        ollama pull qwen2.5-coder:0.5b
-        pnpm dlx @qwen-code/qwen-code \
-          --yolo \
-          --auth-type openai \
-          --openai-api-key "ollama" \
-          --openai-base-url "http://127.0.0.1:11434/v1" \
-          --model "qwen2.5-coder:0.5b" \
-          --prompt "${ADDITIONAL_CONTEXT}" \
-          --debug
+        ollama pull "${QWEN_LOCAL_MODEL}"
+        curl -fsS "${OPENAI_BASE_URL}/models"
+
+        qwen --yolo --auth-type openai --openai-api-key "${OPENAI_API_KEY}" --openai-base-url="${OPENAI_BASE_URL}" --model="${QWEN_LOCAL_MODEL}" -- "${ADDITIONAL_CONTEXT}"
