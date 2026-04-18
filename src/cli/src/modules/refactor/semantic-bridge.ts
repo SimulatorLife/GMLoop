@@ -32,6 +32,10 @@ type ProjectMetadataReferenceIndex = {
     referencingMetadataRecordsByLowerTargetPath: Map<string, Array<ResourceMetadataRecord>>;
     referencingMetadataRecordsByTargetPath: Map<string, Array<ResourceMetadataRecord>>;
 };
+type MutableProjectMetadataDocument = {
+    parsed: Record<string, unknown>;
+    rawContent: string;
+};
 
 type SemanticResourceRecord = {
     name?: string;
@@ -549,6 +553,10 @@ export class GmlSemanticBridge {
     private readonly latestBatchMetadataDocumentsByEdit = new WeakMap<
         WorkspaceEdit,
         { documents: Map<string, Record<string, unknown>>; metadataObjectCount: number }
+    >();
+    private readonly mutableProjectMetadataDocumentsByEdit = new WeakMap<
+        WorkspaceEdit,
+        Map<string, MutableProjectMetadataDocument | null>
     >();
 
     constructor(projectIndex: unknown, projectRoot: string = process.cwd()) {
@@ -1381,39 +1389,60 @@ export class GmlSemanticBridge {
     }
 
     private loadMutableProjectMetadataDocument(
+        edit: WorkspaceEdit,
         metadataPath: string,
         latestBatchMetadataDocuments: ReadonlyMap<string, Record<string, unknown>>
-    ): { parsed: Record<string, unknown>; rawContent: string } | null {
+    ): MutableProjectMetadataDocument | null {
+        const cachedMutableDocuments = this.mutableProjectMetadataDocumentsByEdit.get(edit);
+        if (cachedMutableDocuments) {
+            const cachedDocument = cachedMutableDocuments.get(metadataPath);
+            if (cachedDocument !== undefined) {
+                return cachedDocument;
+            }
+        }
+        const mutableDocumentsByPath =
+            cachedMutableDocuments ?? new Map<string, MutableProjectMetadataDocument | null>();
+
         const latestBatchMetadataDocument = latestBatchMetadataDocuments.get(metadataPath);
         if (latestBatchMetadataDocument !== undefined) {
-            const parsed = structuredClone(latestBatchMetadataDocument);
-            return {
-                parsed,
-                rawContent: Semantic.stringifyProjectMetadataDocument(parsed, metadataPath)
+            const loadedDocument: MutableProjectMetadataDocument = {
+                parsed: structuredClone(latestBatchMetadataDocument),
+                rawContent: Semantic.stringifyProjectMetadataDocument(latestBatchMetadataDocument, metadataPath)
             };
+            mutableDocumentsByPath.set(metadataPath, loadedDocument);
+            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
+            return loadedDocument;
         }
 
         const stagedParsedMetadata = this.stagedParsedMetadata.get(metadataPath);
         if (stagedParsedMetadata !== undefined) {
-            return {
+            const loadedDocument: MutableProjectMetadataDocument = {
                 parsed: structuredClone(stagedParsedMetadata),
                 rawContent:
                     this.stagedMetadataContents.get(metadataPath) ??
                     Semantic.stringifyProjectMetadataDocument(stagedParsedMetadata, metadataPath)
             };
+            mutableDocumentsByPath.set(metadataPath, loadedDocument);
+            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
+            return loadedDocument;
         }
 
         const cachedParsedMetadata = this.parsedProjectMetadataByPath.get(metadataPath);
         const cachedSourceText = this.projectMetadataSourceByPath.get(metadataPath);
         if (cachedParsedMetadata !== undefined && cachedSourceText !== undefined) {
-            return {
+            const loadedDocument: MutableProjectMetadataDocument = {
                 parsed: structuredClone(cachedParsedMetadata),
                 rawContent: cachedSourceText
             };
+            mutableDocumentsByPath.set(metadataPath, loadedDocument);
+            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
+            return loadedDocument;
         }
 
         const absolutePath = path.resolve(this.projectRoot, metadataPath);
         if (!fs.existsSync(absolutePath)) {
+            mutableDocumentsByPath.set(metadataPath, null);
+            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
             return null;
         }
 
@@ -1422,11 +1451,16 @@ export class GmlSemanticBridge {
             const parsed = Semantic.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
             this.projectMetadataSourceByPath.set(metadataPath, rawContent);
             this.parsedProjectMetadataByPath.set(metadataPath, parsed);
-            return {
+            const loadedDocument: MutableProjectMetadataDocument = {
                 parsed: structuredClone(parsed),
                 rawContent
             };
+            mutableDocumentsByPath.set(metadataPath, loadedDocument);
+            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
+            return loadedDocument;
         } catch {
+            mutableDocumentsByPath.set(metadataPath, null);
+            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
             return null;
         }
     }
@@ -1453,6 +1487,7 @@ export class GmlSemanticBridge {
 
         for (const resourceEntry of this.listResourceMetadataMutationCandidates(resource.path)) {
             const loadedMetadataDocument = this.loadMutableProjectMetadataDocument(
+                edit,
                 resourceEntry.path,
                 latestBatchMetadataDocuments
             );
@@ -1621,6 +1656,7 @@ export class GmlSemanticBridge {
             if (edit.addMetadataObjectEdit) {
                 edit.addMetadataObjectEdit(resourceEntry.path, parsed);
             }
+            loadedMetadataDocument.rawContent = canonicalContent;
         }
 
         this.addResourceOrderMetadataEdit(edit, resource, newName, newResourcePath, latestBatchMetadataDocuments);
@@ -1635,6 +1671,7 @@ export class GmlSemanticBridge {
     ): void {
         const resourceOrderPath = getProjectResourceOrderPath(this.projectRoot);
         const loadedMetadataDocument = this.loadMutableProjectMetadataDocument(
+            edit,
             resourceOrderPath,
             latestBatchMetadataDocuments
         );
@@ -1698,6 +1735,7 @@ export class GmlSemanticBridge {
         if (edit.addMetadataObjectEdit) {
             edit.addMetadataObjectEdit(resourceOrderPath, parsed);
         }
+        loadedMetadataDocument.rawContent = canonicalContent;
     }
 
     private findResourceBySymbol(entry: any, symbolId: string): any {
