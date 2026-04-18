@@ -19,6 +19,16 @@
   "tools": {
     "approvalMode": "yolo"
   },
+  "modelProviders": {
+    "openai": [
+      {
+        "id": "qwen3:1.7b",
+        "name": "Qwen3 1.7B via Ollama",
+        "envKey": "OPENAI_API_KEY",
+        "baseUrl": "http://127.0.0.1:11434/v1"
+      }
+    ]
+  },
   "permissions": {
     "deny": [
       "WebSearch",
