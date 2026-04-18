@@ -1526,17 +1526,19 @@ async function retranspileDependentFiles(
 }
 
 function areSymbolSetsEqual(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
-    if (left.length !== right.length) {
-        return false;
+    if (left.length === 0 || right.length === 0) {
+        return left.length === right.length;
     }
 
     const leftSet = new Set(left);
-    if (leftSet.size !== right.length) {
+    const rightSet = new Set(right);
+
+    if (leftSet.size !== rightSet.size) {
         return false;
     }
 
-    for (const symbol of right) {
-        if (!leftSet.has(symbol)) {
+    for (const symbol of leftSet) {
+        if (!rightSet.has(symbol)) {
             return false;
         }
     }
