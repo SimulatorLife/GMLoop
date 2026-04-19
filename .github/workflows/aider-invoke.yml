@@ -27,6 +27,7 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: aider
+      max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
       agent_command: |
         set -euo pipefail
 

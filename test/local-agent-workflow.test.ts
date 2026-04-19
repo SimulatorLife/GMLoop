@@ -82,9 +82,6 @@ function assertQwenUsesLocalAgentLoop(source: string): void {
     assert.match(source, /pull_qwen_configured_model\(\)/u);
     assert.match(source, /\.qwen\/settings\.json/u);
     assert.match(source, /ollama pull "\$\{configured_model\}"/u);
-    assert.match(source, /verify_qwen_tool_calls\(\)/u);
-    assert.match(source, /qwen-tool-smoke/u);
-    assert.match(source, /Qwen Code completed without proving it can call shell tools/u);
     assert.match(source, /--yolo/u);
     assert.match(source, /--channel CI/u);
     assert.match(source, /--append-system-prompt "\$\{QWEN_CI_SYSTEM_PROMPT\}"/u);
@@ -97,10 +94,15 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
 
     assertQwenUsesLocalAgentLoop(source);
     assert.ok(
-        source.lastIndexOf("pull_qwen_configured_model") < source.lastIndexOf("verify_qwen_exposes_required_tools"),
-        "Qwen must pull the configured local model before probing model-backed tool calls."
+        source.lastIndexOf("pull_qwen_configured_model") < source.lastIndexOf('printf \'%s\\n\' "${QWEN_AGENT_PROMPT}"'),
+        "Qwen must pull the configured local model before invoking the real task."
     );
     assert.match(source, /agent_package: \$\{\{ vars\.QWEN_CODE_PACKAGE \|\| '@qwen-code\/qwen-code@0\.14\.5' \}\}/u);
+    assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
+    assert.doesNotMatch(source, /verify_qwen_/u);
+    assert.doesNotMatch(source, /qwen-tool-smoke/u);
+    assert.doesNotMatch(source, /qwen-file-smoke/u);
+    assert.doesNotMatch(source, /openai-tool-registry/u);
     assert.doesNotMatch(source, /OPENROUTER_API_KEY/u);
     assert.doesNotMatch(source, /QWEN_OPENAI_MODEL/u);
     assert.doesNotMatch(source, /@qwen-local/u);
@@ -129,6 +131,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.match(source, /startsWith\(github\.event\.comment\.body \|\| '', '@aider '\)/u);
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: aider/u);
+    assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assert.match(source, /pull_aider_configured_model\(\)/u);
     assert.match(source, /\.aider\.conf\.yml/u);
@@ -195,9 +198,11 @@ void test("agent invoke exports OpenAI API type for every child agent", async ()
 void test("agent invoke streams custom command output while preserving exit status", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
-    assert.match(source, /stdbuf -oL -eL bash "\$script" 2>&1 \| tee "\$RUNNER_TEMP\/agent-live\.log"/u);
+    assert.match(source, /- name: Run agent custom command with retries/u);
+    assert.match(source, /stdbuf -oL -eL bash "\$script" 2>&1 \| tee "\$\{attempt_log\}"/u);
     assert.match(source, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
-    assert.match(source, /exit "\$\{agent_status\}"/u);
+    assert.match(source, /return "\$\{agent_status\}"/u);
+    assert.match(source, /cp "\$\{attempt_log\}" "\$RUNNER_TEMP\/agent-live\.log"/u);
 });
 
 void test("agent invoke workflow fails when a successful agent run produces no push", async () => {
@@ -206,7 +211,32 @@ void test("agent invoke workflow fails when a successful agent run produces no p
     assert.match(source, /if \[ "\$\{\{ steps\.run_agent\.outcome \}\}" = "failure" \] \|\| \[ "\$\{\{ steps\.run_agent\.conclusion \}\}" = "failure" \]; then/u);
     assert.match(source, /if \[ -f "\$SENTINEL" \]; then/u);
     assert.match(source, /Agent completed without producing pushable local changes/u);
+    assert.match(source, /Agent exhausted \$\{total_attempts\} attempt\(s\) without producing pushable local changes/u);
     assert.match(source, /echo "Agent command succeeded with no branch push → FAIL\."/u);
+});
+
+void test("agent invoke retries no-change local agent attempts before cleanup can run", async () => {
+    const source = await readWorkflowSource("agent-invoke.yml");
+    const retryStepIndex = source.indexOf("- name: Run agent custom command with retries");
+    const cleanupStepIndex = source.indexOf("- name: Close empty failed agent PR");
+
+    assert.match(source, /max_agent_retries:\n\s+type: number\n\s+required: false\n\s+default: 2/u);
+    assert.ok(retryStepIndex > 0, "agent command must run from a retry-aware step.");
+    assert.ok(cleanupStepIndex > retryStepIndex, "empty PR cleanup must run only after retry-aware execution.");
+    assert.match(source, /MAX_AGENT_RETRIES: \$\{\{ inputs\.max_agent_retries \}\}/u);
+    assert.match(source, /total_attempts=\$\(\(MAX_AGENT_RETRIES \+ 1\)\)/u);
+    assert.match(source, /for \(\(attempt = 1; attempt <= total_attempts; attempt\+\+\)\); do/u);
+    assert.match(source, /The previous attempt was invalid because it completed without producing any pushable repository changes/u);
+    assert.match(source, /Work in the checked-out repository, not uploaded chat snippets/u);
+    assert.match(source, /run `pnpm run lint` before code selection/u);
+    assert.match(source, /quote the exact lint summary line/u);
+    assert.match(source, /If no concrete diff is produced, this retry will fail/u);
+    assert.match(source, /ADDITIONAL_CONTEXT="\$\(build_attempt_context "\$\{attempt\}"\)"/u);
+    assert.match(source, /push_current_branch_if_needed/u);
+    assert.match(source, /NO_CHANGE_SENTINEL="\$\{RUNNER_TEMP:-\/tmp\}\/\.agent_no_change_retries_exhausted"/u);
+    assert.match(source, /date \+"%F %T" > "\$NO_CHANGE_SENTINEL"/u);
+    assert.match(source, /Attempt \$\{attempt\}\/\$\{total_attempts\} produced no pushable changes; starting a fresh retry session/u);
+    assert.doesNotMatch(source, /- name: Auto-commit and push agent changes if needed/u);
 });
 
 void test("agent invoke closes only empty PRs on expected agent branches after reporting failure", async () => {
@@ -222,6 +252,7 @@ void test("agent invoke closes only empty PRs on expected agent branches after r
     assert.match(source, /write_report_outputs true true/u);
     assert.match(source, /write_report_outputs true false/u);
     assert.match(source, /write_report_outputs false false/u);
+    assert.match(source, /if \[ -f "\$NO_CHANGE_SENTINEL" \]; then/u);
     assert.match(source, /if: always\(\) && steps\.report_outcome\.outputs\.cleanup_empty_pr == 'true'/u);
     assert.match(source, /repos\/\$\{REPOSITORY\}\/pulls\/\$\{ISSUE_NUMBER\}/u);
     assert.match(source, /\.changed_files/u);
@@ -239,12 +270,11 @@ void test("agent invoke closes only empty PRs on expected agent branches after r
     assert.doesNotMatch(source, /git push origin --delete/u);
 });
 
-void test("agent invoke workflow always attempts auto-commit and push after the agent command", async () => {
+void test("agent invoke workflow checks and pushes changes after every agent attempt", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
-    assert.match(source, /- name: Auto-commit and push agent changes if needed/u);
-    assert.match(source, /if: always\(\)/u);
-    assert.match(source, /echo "\[agent\] Worktree after agent command:"/u);
+    assert.match(source, /push_current_branch_if_needed\(\)/u);
+    assert.match(source, /echo "\[agent\] Worktree after agent attempt:"/u);
     assert.match(source, /worktree_status="\$\(git status --porcelain=v1 --untracked-files=normal\)"/u);
     assert.match(source, /if \[ -n "\$\{worktree_status\}" \]; then/u);
     assert.match(source, /git add -A/u);

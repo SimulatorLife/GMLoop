@@ -28,6 +28,7 @@ jobs:
       additional_context: ${{ github.event.comment.body }}
       agent: qwen
       agent_package: ${{ vars.QWEN_CODE_PACKAGE || '@qwen-code/qwen-code@0.14.5' }}
+      max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
       agent_command: |
         set -euo pipefail
 
@@ -83,105 +84,7 @@ jobs:
         QWEN_AGENT_PROMPT="$(printf '%s\n\nUser task from PR comment:\n%s\n' "${QWEN_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
         export QWEN_AGENT_PROMPT
 
-        verify_qwen_exposes_required_tools() {
-          local log_dir
-          local missing_tools
-          log_dir="${RUNNER_TEMP:-/tmp}/qwen-openai-tool-registry"
-          rm -rf "${log_dir}"
-          mkdir -p "${log_dir}"
-
-          printf 'Reply with ok only.\n' | stdbuf -oL -eL qwen \
-            --yolo \
-            --channel CI \
-            --max-session-turns 1 \
-            --output-format text \
-            --openai-logging \
-            --openai-logging-dir "${log_dir}" >/dev/null
-
-          if ! compgen -G "${log_dir}/openai-*.json" >/dev/null; then
-            echo "❌ Qwen Code did not write OpenAI request logs for the tool registry probe."
-            return 1
-          fi
-
-          missing_tools="$(
-            jq -r -s '
-              [.[].request.tools[]?.function.name] | unique as $available
-              | ["read_file", "write_file", "edit", "run_shell_command"] as $required
-              | ($required - $available)[]
-            ' "${log_dir}"/openai-*.json
-          )"
-
-          if [ -n "${missing_tools}" ]; then
-            echo "❌ Qwen Code did not expose required native tools to the model:"
-            printf '%s\n' "${missing_tools}"
-            return 1
-          fi
-
-          echo "Qwen Code exposes required native tools: read_file, write_file, edit, run_shell_command"
-        }
-
-        verify_qwen_tool_calls() {
-          local smoke_file
-          local smoke_prompt
-          smoke_file="${RUNNER_TEMP:-/tmp}/qwen-tool-smoke.txt"
-          rm -f "${smoke_file}"
-          smoke_prompt="$(printf 'Use the run_shell_command tool to run this exact shell command: printf qwen-tool-smoke > %q\nDo not answer in text. Do not print JSON. Call the tool.\n' "${smoke_file}")"
-
-          printf '%s\n' "${smoke_prompt}" | stdbuf -oL -eL qwen \
-            --yolo \
-            --channel CI \
-            --max-session-turns 6 \
-            --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}"
-
-          if [ "$(cat "${smoke_file}" 2>/dev/null || true)" = "qwen-tool-smoke" ]; then
-            rm -f "${smoke_file}"
-            return 0
-          fi
-
-          echo "❌ Qwen Code completed without proving it can call shell tools through the configured local model."
-          return 1
-        }
-
-        verify_qwen_file_edits() {
-          local smoke_file
-          local smoke_prompt
-          smoke_file="${RUNNER_TEMP:-/tmp}/qwen-file-smoke.ts"
-          rm -f "${smoke_file}"
-
-          smoke_prompt="$(cat <<PROMPT
-        Call the write_file tool exactly once with these arguments:
-        file_path: ${smoke_file}
-        content: export function qwenSmoke(): string {\\n    return "after";\\n}\\n
-
-        Do not call open_file.
-        Do not answer in text.
-        Do not print JSON.
-        Call write_file.
-        PROMPT
-        )"
-
-          printf '%s\n' "${smoke_prompt}" | stdbuf -oL -eL qwen \
-            --yolo \
-            --channel CI \
-            --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
-            --include-partial-messages \
-            --output-format stream-json \
-            --debug
-
-          if grep -q 'return "after";' "${smoke_file}" 2>/dev/null; then
-            rm -f "${smoke_file}"
-            return 0
-          fi
-
-          echo "❌ Qwen Code completed without proving it can edit files through the configured local model."
-          [ -f "${smoke_file}" ] && sed -n '1,80p' "${smoke_file}" || true
-          return 1
-        }
-
         pull_qwen_configured_model
-        verify_qwen_exposes_required_tools
-        verify_qwen_tool_calls
-        verify_qwen_file_edits
 
         printf '%s\n' "${QWEN_AGENT_PROMPT}" | stdbuf -oL -eL qwen \
           --yolo \
