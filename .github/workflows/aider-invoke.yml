@@ -83,7 +83,19 @@ jobs:
         pull_aider_configured_model
 
         AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
-        printf '%s\n\nUser task from PR comment:\n%s\n' "You are aider, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint. Use Aider to inspect the repository and make the requested code changes. Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files." "${ADDITIONAL_CONTEXT}" > "${AIDER_TASK_MESSAGE_FILE}"
+        cat > "${AIDER_TASK_MESSAGE_FILE}" <<PROMPT
+        You are aider, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint.
+        Inspect the repository and make the requested code changes.
+        Start with the first validation or inspection command requested by the user, then base file selection only on command output or repository files you actually read.
+        If the task asks for lint fixes, run \`pnpm run lint\` first, choose one deterministic ESLint issue from the real output, edit the actual source file that produced it, then re-run \`pnpm run lint\`, \`pnpm run build:ts\`, and \`pnpm run lint:quiet\`.
+        Do not speculate about likely files, helper names, or rule failures before command output identifies them.
+        Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree unless a real command or file-access blocker prevents edits.
+        Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless the user explicitly asks for those files.
+        For non-documentation code changes, run \`pnpm run build:ts\` and \`pnpm run lint:quiet\` after edits unless a real blocker prevents validation.
+
+        User task from PR comment:
+        ${ADDITIONAL_CONTEXT}
+        PROMPT
 
         set +e
         stdbuf -oL -eL aider \

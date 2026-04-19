@@ -41,6 +41,10 @@ function assertQwenUsesLocalAgentLoop(source: string): void {
     assert.match(source, /QWEN_TASK_PROMPT="\$\(cat <<'PROMPT'/u);
     assert.match(source, /Use Qwen Code tools for every repository inspection and edit/u);
     assert.match(source, /Start by calling run_shell_command for the first validation or inspection command requested by the user/u);
+    assert.match(source, /run `pnpm run lint` first, choose one deterministic ESLint issue from the real output/u);
+    assert.match(source, /Do not speculate about likely files, helper names, or rule failures before command output identifies them/u);
+    assert.match(source, /Leave a concrete repository diff in the worktree/u);
+    assert.match(source, /For non-documentation code changes, run `pnpm run build:ts` and `pnpm run lint:quiet` after edits/u);
     assert.match(source, /Do not output a JSON plan, a fake function call, or `startNewTask`/u);
     assert.match(source, /The token startNewTask is not a tool/u);
     assert.match(source, /QWEN_AGENT_PROMPT="\$\(printf '%s\\n\\nUser task from PR comment:\\n%s\\n'/u);
@@ -109,6 +113,10 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.match(source, /\.aider\.conf\.yml/u);
     assert.match(source, /ollama_model="\$\{configured_model#openai\/\}"/u);
     assert.match(source, /ollama pull "\$\{ollama_model\}"/u);
+    assert.match(source, /run \\`pnpm run lint\\` first, choose one deterministic ESLint issue from the real output/u);
+    assert.match(source, /Do not speculate about likely files, helper names, or rule failures before command output identifies them/u);
+    assert.match(source, /Leave a concrete repository diff in the worktree/u);
+    assert.match(source, /For non-documentation code changes, run \\`pnpm run build:ts\\` and \\`pnpm run lint:quiet\\` after edits/u);
     assert.ok(
         source.lastIndexOf("pull_aider_configured_model") < source.indexOf("AIDER_TASK_MESSAGE_FILE"),
         "Aider must pull the configured local model before invoking the CLI."
