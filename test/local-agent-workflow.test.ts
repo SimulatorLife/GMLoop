@@ -94,10 +94,9 @@ function assertQwenUsesLocalAgentLoop(source: string): void {
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: qwen/u);
     assert.doesNotMatch(source, /agent_cli:/u);
-    assert.match(prompt, /Use only the Qwen Code write_file tool/u);
-    assert.match(prompt, /line 1 of docs\/local-qwen-smoke-test\.md/u);
-    assert.match(prompt, /local-qwen-smoke: changed by qwen/u);
-    assert.match(prompt, /only that one line/u);
+    assert.match(prompt, /Use only the Qwen Code edit tool/u);
+    assert.match(prompt, /above line 39 of test\/local-agent-workflow\.test\.ts/u);
+    assert.match(prompt, /\/\/ local-qwen-smoke: changed by qwen/u);
     assert.doesNotMatch(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
     assert.doesNotMatch(source, /^\s*QWEN_TASK_PROMPT=/mu);
     assert.match(source, /^\s*# QWEN_CI_SYSTEM_PROMPT=/mu);

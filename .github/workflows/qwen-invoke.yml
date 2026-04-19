@@ -86,7 +86,7 @@ jobs:
         # )"
         # export QWEN_TASK_PROMPT
         # QWEN_AGENT_PROMPT="$(printf '%s\n\nUser task from PR comment:\n%s\n' "${QWEN_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
-        QWEN_AGENT_PROMPT="Use only the Qwen Code write_file tool to set line 1 of docs/local-qwen-smoke-test.md to exactly: local-qwen-smoke: changed by qwen. The file should contain only that one line."
+        QWEN_AGENT_PROMPT="Use only the Qwen Code edit tool to insert exactly this code comment as a new line immediately above line 39 of test/local-agent-workflow.test.ts: // local-qwen-smoke: changed by qwen"
         export QWEN_AGENT_PROMPT
 
         stdbuf -oL -eL qwen \
