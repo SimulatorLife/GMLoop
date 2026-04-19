@@ -52,7 +52,6 @@ gha-creds-*.json
 scripts/
 !/scripts/
 /scripts/*
-!/scripts/qwen-local-smoke.sh
 
 # Logs
 logs/
