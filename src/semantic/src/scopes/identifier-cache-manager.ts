@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 import type { ScopeSymbolMetadata } from "./types.js";
 
 /**
@@ -17,14 +19,8 @@ export class IdentifierCacheManager {
     private readonly maxScopesPerName: number;
 
     constructor(options: { maxTrackedNames?: number; maxScopesPerName?: number } = {}) {
-        this.maxTrackedNames =
-            typeof options.maxTrackedNames === "number" && Number.isFinite(options.maxTrackedNames)
-                ? Math.max(1, Math.floor(options.maxTrackedNames))
-                : 4000;
-        this.maxScopesPerName =
-            typeof options.maxScopesPerName === "number" && Number.isFinite(options.maxScopesPerName)
-                ? Math.max(1, Math.floor(options.maxScopesPerName))
-                : 64;
+        this.maxTrackedNames = Core.coercePositiveIntegerOption(options.maxTrackedNames, 4000);
+        this.maxScopesPerName = Core.coercePositiveIntegerOption(options.maxScopesPerName, 64);
     }
 
     /**
