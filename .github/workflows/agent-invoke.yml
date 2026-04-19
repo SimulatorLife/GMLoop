@@ -457,12 +457,19 @@ jobs:
               echo "[agent] Changes detected; committing before push."
               git status
               git add -A
+              echo "[agent] Staged changes before commit:"
+              git diff --cached --stat
+              git status --short
 
               commit_message="chore: apply @${AGENT_NAME} changes for PR #${PR_NUMBER}"
               if git commit -m "$commit_message"; then
                 echo "[agent] Created commit: ${commit_message}"
               else
                 echo "[agent] git commit failed; aborting auto-push."
+                echo "[agent] Staged diff after failed commit:"
+                git diff --cached --stat || true
+                echo "[agent] Worktree status after failed commit:"
+                git status --short || true
                 return 2
               fi
             fi

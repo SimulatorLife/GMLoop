@@ -283,7 +283,12 @@ void test("agent invoke workflow checks and pushes changes after every agent att
     assert.match(source, /worktree_status="\$\(git status --porcelain=v1 --untracked-files=normal\)"/u);
     assert.match(source, /if \[ -n "\$\{worktree_status\}" \]; then/u);
     assert.match(source, /git add -A/u);
+    assert.match(source, /echo "\[agent\] Staged changes before commit:"/u);
+    assert.match(source, /git diff --cached --stat/u);
+    assert.match(source, /git status --short/u);
     assert.match(source, /git commit -m "\$commit_message"/u);
+    assert.match(source, /echo "\[agent\] Staged diff after failed commit:"/u);
+    assert.match(source, /echo "\[agent\] Worktree status after failed commit:"/u);
     assert.match(source, /local_head="\$\(git rev-parse HEAD\)"/u);
     assert.match(source, /remote_head="\$\(git rev-parse "\$\{remote_ref\}"\)"/u);
     assert.match(source, /elif git merge-base --is-ancestor "\$\{remote_ref\}" HEAD; then/u);
