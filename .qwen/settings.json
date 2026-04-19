@@ -7,7 +7,7 @@
     "maxSessionTurns": 12,
     "generationConfig": {
       "timeout": 900000,
-      "maxRetries": 0,
+      "maxRetries": 2,
       "samplingParams": {
         "max_tokens": 1536
       }
@@ -33,7 +33,7 @@
         "baseUrl": "http://127.0.0.1:11434/v1",
         "generationConfig": {
           "timeout": 900000,
-          "maxRetries": 0,
+          "maxRetries": 2,
           "contextWindowSize": 32768,
           "samplingParams": {
             "max_tokens": 1536
@@ -46,18 +46,65 @@
     "allow": [
       "Read",
       "Edit",
-      "Bash(pnpm run *)",
+      "Write",
+      "Grep",
+      "ListFiles",
+      "Agent",
+      "Glob",
+
+      "Bash(pwd)",
+      "Bash(ls *)",
+      "Bash(rg *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(find *)",
+      "Bash(sed -n *)",
+      "Bash(jq *)",
+      "Bash(test *)",
+      "Bash(git status*)",
       "Bash(git diff*)",
       "Bash(git log*)",
       "Bash(git show*)",
-      "Bash(git status*)",
-      "Bash(ls *)",
-      "Bash(pwd)",
-      "Bash(rg *)"
+      "Bash(git rev-parse *)",
+      "Bash(git ls-files *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(pnpm run *)"
     ],
     "deny": [
-      "WebSearch",
-      "WebFetch"
+      "web_search",
+      "WebFetch",
+
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git fetch*)",
+      "Bash(git merge*)",
+      "Bash(git rebase*)",
+      "Bash(git cherry-pick*)",
+      "Bash(git am*)",
+      "Bash(git apply*)",
+      "Bash(git checkout*)",
+      "Bash(git switch*)",
+      "Bash(git restore*)",
+      "Bash(git reset*)",
+      "Bash(git clean*)",
+      "Bash(git branch*)",
+      "Bash(git tag*)",
+
+      "Bash(rm *)",
+      "Bash(chmod *)",
+      "Bash(chown *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(bash *)",
+      "Bash(sh *)",
+      "Bash(zsh *)",
+      "Bash(fish *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(perl *)",
+      "Bash(ruby *)"
     ]
   },
   "general": {
