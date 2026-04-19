@@ -11,6 +11,10 @@ interface QwenSettings {
     model: {
         name: string;
     };
+    permissions: {
+        allow: string[];
+        deny: string[];
+    };
 }
 
 async function readQwenSettings(): Promise<QwenSettings> {
@@ -36,10 +40,10 @@ async function readAllWorkflowSources(): Promise<string> {
     return workflowSources.join("\n");
 }
 
-function getRequiredQwenAgentPrompt(source: string): string {
-    const match = /^\s*QWEN_AGENT_PROMPT="(?<prompt>[^"]+)"/mu.exec(source);
+function getRequiredQwenTaskPrompt(source: string): string {
+    const match = /QWEN_TASK_PROMPT="\$\(cat <<'PROMPT'\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*\)"/u.exec(source);
 
-    assert.ok(match?.groups?.prompt, "Qwen workflow must define a temporary agent prompt.");
+    assert.ok(match?.groups?.prompt, "Qwen workflow must define a task prompt heredoc.");
 
     return match.groups.prompt;
 }
@@ -85,7 +89,7 @@ function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
 }
 
 function assertQwenUsesLocalAgentLoop(source: string): void {
-    const prompt = getRequiredQwenAgentPrompt(source);
+    const prompt = getRequiredQwenTaskPrompt(source);
     const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
 
@@ -94,14 +98,13 @@ function assertQwenUsesLocalAgentLoop(source: string): void {
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: qwen/u);
     assert.doesNotMatch(source, /agent_cli:/u);
-    assert.match(prompt, /Use only the Qwen Code edit tool/u);
-    assert.match(prompt, /above line 39 of test\/local-agent-workflow\.test\.ts/u);
-    assert.match(prompt, /\/\/ local-qwen-smoke: changed by qwen/u);
-    assert.doesNotMatch(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
-    assert.doesNotMatch(source, /^\s*QWEN_TASK_PROMPT=/mu);
-    assert.match(source, /^\s*# QWEN_CI_SYSTEM_PROMPT=/mu);
-    assert.match(source, /^\s*# QWEN_TASK_PROMPT=/mu);
-    assert.match(source, /^\s*# QWEN_AGENT_PROMPT="\$\(printf '%s\\n\\nUser task from PR comment:\\n%s\\n'/mu);
+    assertPromptEnforcesCommandGroundedEditLoop(prompt);
+    assert.match(prompt, /absolute paths under the repository root/u);
+    assert.match(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
+    assert.match(source, /^\s*QWEN_TASK_PROMPT=/mu);
+    assert.match(source, /REPOSITORY_ROOT="\$\(pwd\)"/u);
+    assert.match(source, /Repository root: %s/u);
+    assert.doesNotMatch(source, /local-qwen-smoke/u);
     assert.match(source, /stdbuf -oL -eL qwen \\/u);
     assert.match(source, /--prompt "\$\{QWEN_AGENT_PROMPT\}"/u);
     assert.doesNotMatch(source, /printf '%s\\n' "\$\{QWEN_AGENT_PROMPT\}" \| stdbuf -oL -eL qwen/u);
@@ -109,9 +112,9 @@ function assertQwenUsesLocalAgentLoop(source: string): void {
     assert.match(setupCommand, /\.qwen\/settings\.json/u);
     assert.match(setupCommand, /ollama pull "\$\{configured_model\}"/u);
     assert.doesNotMatch(agentCommand, /ollama pull/u);
-    assert.match(source, /--yolo/u);
+    assert.match(source, /--approval-mode yolo/u);
     assert.match(source, /--channel CI/u);
-    assert.doesNotMatch(source, /--append-system-prompt/u);
+    assert.match(source, /--append-system-prompt "\$\{QWEN_CI_SYSTEM_PROMPT\}"/u);
     assert.doesNotMatch(source, /--prompt-interactive/u);
 }
 
@@ -144,6 +147,11 @@ void test("qwen invoke uses checked-in settings for local model selection", asyn
     assert.doesNotMatch(workflowSource, /> "\$\{HOME\}\/\.qwen\/settings\.json"/u);
     assert.equal(typeof settings.model.name, "string");
     assert.ok(settings.model.name.length > 0, "Qwen settings must declare a local model name.");
+    assert.ok(settings.permissions.allow.includes("Read"));
+    assert.ok(settings.permissions.allow.includes("Edit"));
+    assert.ok(settings.permissions.allow.includes("Bash(pnpm run *)"));
+    assert.ok(settings.permissions.deny.includes("WebSearch"));
+    assert.ok(settings.permissions.deny.includes("WebFetch"));
 });
 
 void test("aider invoke is the single local-only Aider workflow", async () => {
