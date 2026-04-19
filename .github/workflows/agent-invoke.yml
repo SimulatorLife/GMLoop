@@ -499,10 +499,12 @@ jobs:
 
             if [ -n "${worktree_status}" ]; then
               echo "[agent] Changes detected; committing before push."
-              git status
+              echo "[agent] Worktree status before staging:"
+              git status --short
               git add -A
               echo "[agent] Staged changes before commit:"
               git diff --cached --stat
+              echo "[agent] Worktree status after staging:"
               git status --short
 
               commit_message="chore: apply @${AGENT_NAME} changes for PR #${PR_NUMBER}"

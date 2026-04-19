@@ -88,7 +88,8 @@ jobs:
         QWEN_AGENT_PROMPT="$(printf '%s\n\nUser task from PR comment:\n%s\n' "${QWEN_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
         export QWEN_AGENT_PROMPT
 
-        printf '%s\n' "${QWEN_AGENT_PROMPT}" | stdbuf -oL -eL qwen \
+        stdbuf -oL -eL qwen \
           --yolo \
           --channel CI \
-          --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"
+          --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
+          --prompt "${QWEN_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"

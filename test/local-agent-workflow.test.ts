@@ -101,7 +101,9 @@ function assertQwenUsesLocalAgentLoop(source: string): void {
     assert.doesNotMatch(prompt, /plan-only/u);
     assert.doesNotMatch(prompt, /standalone JSON/u);
     assert.match(source, /QWEN_AGENT_PROMPT="\$\(printf '%s\\n\\nUser task from PR comment:\\n%s\\n'/u);
-    assert.match(source, /printf '%s\\n' "\$\{QWEN_AGENT_PROMPT\}" \| stdbuf -oL -eL qwen \\/u);
+    assert.match(source, /stdbuf -oL -eL qwen \\/u);
+    assert.match(source, /--prompt "\$\{QWEN_AGENT_PROMPT\}"/u);
+    assert.doesNotMatch(source, /printf '%s\\n' "\$\{QWEN_AGENT_PROMPT\}" \| stdbuf -oL -eL qwen/u);
     assert.match(setupCommand, /pull_qwen_configured_model\(\)/u);
     assert.match(setupCommand, /\.qwen\/settings\.json/u);
     assert.match(setupCommand, /ollama pull "\$\{configured_model\}"/u);
@@ -323,8 +325,10 @@ void test("agent invoke workflow checks and pushes changes after every agent att
     assert.match(source, /worktree_status="\$\(git status --porcelain=v1 --untracked-files=normal\)"/u);
     assert.match(source, /if \[ -n "\$\{worktree_status\}" \]; then/u);
     assert.match(source, /git add -A/u);
+    assert.match(source, /echo "\[agent\] Worktree status before staging:"/u);
     assert.match(source, /echo "\[agent\] Staged changes before commit:"/u);
     assert.match(source, /git diff --cached --stat/u);
+    assert.match(source, /echo "\[agent\] Worktree status after staging:"/u);
     assert.match(source, /git status --short/u);
     assert.match(source, /git commit -m "\$commit_message"/u);
     assert.match(source, /echo "\[agent\] Staged diff after failed commit:"/u);
