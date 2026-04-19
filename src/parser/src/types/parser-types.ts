@@ -1,5 +1,6 @@
 import type { ParserRuleContext, Token, TokenStream } from "antlr4";
 
+import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "../config/parser-constants.js";
 import type { ScopeTrackerOptions } from "./scope-tracker.js";
 
 export type ParserContext =
@@ -163,6 +164,24 @@ export interface OutputFormatOptions {
 }
 
 /**
+ * Prediction strategy options.
+ *
+ * Controls when the parser should attempt the fast SLL prediction path before
+ * falling back to LL parsing.
+ */
+export interface PredictionStrategyOptions {
+    /**
+     * Maximum source length that will use SLL prediction mode.
+     *
+     * Values above this threshold skip SLL and parse directly in LL mode.
+     * Set to `0` to disable the SLL fast path globally.
+     *
+     * @default 8000
+     */
+    sllPredictionMaxSourceLength: number;
+}
+
+/**
  * Complete parser options interface.
  *
  * Combines all role-focused option interfaces for consumers that need
@@ -176,6 +195,7 @@ export interface ParserOptions
         LocationMetadataOptions,
         ScopeTrackingOptions,
         DocCommentAttachmentOptions,
+        PredictionStrategyOptions,
         OutputFormatOptions {}
 
 const DEFAULT_SCOPE_TRACKER_OPTIONS: ScopeTrackerOptions = Object.freeze({
@@ -188,6 +208,7 @@ export const defaultParserOptions: ParserOptions = Object.freeze({
     getLocations: true,
     simplifyLocations: true,
     attachFunctionDocComments: true,
+    sllPredictionMaxSourceLength: DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH,
     scopeTrackerOptions: DEFAULT_SCOPE_TRACKER_OPTIONS,
     astFormat: "gml",
     asJSON: false

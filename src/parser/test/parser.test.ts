@@ -274,6 +274,7 @@ void describe("GameMaker parser fixtures", () => {
         assert.equal(parser.options.getComments, true);
         assert.equal(parser.options.getLocations, true);
         assert.equal(parser.options.attachFunctionDocComments, true);
+        assert.equal(parser.options.sllPredictionMaxSourceLength, defaultParserOptions.sllPredictionMaxSourceLength);
         assert.equal(parser.options.astFormat, "gml");
     });
 
@@ -285,6 +286,20 @@ void describe("GameMaker parser fixtures", () => {
         assert.equal(parser.options.getLocations, true);
         assert.deepStrictEqual(overrides, { getComments: false });
         assert.equal(GMLParser.optionDefaults.getComments, true);
+    });
+
+    void it("allows tuning SLL prediction threshold via parser options", () => {
+        const parser = new GMLParser("x = 1;", { sllPredictionMaxSourceLength: 0 });
+
+        assert.equal(parser.options.sllPredictionMaxSourceLength, 0);
+    });
+
+    void it("falls back to defaults when SLL prediction threshold override is invalid", () => {
+        const parser = new GMLParser("x = 1;", {
+            sllPredictionMaxSourceLength: Number.NaN
+        });
+
+        assert.equal(parser.options.sllPredictionMaxSourceLength, defaultParserOptions.sllPredictionMaxSourceLength);
     });
 
     void it("counts CRLF sequences as a single line break", () => {
