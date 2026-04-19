@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, rm } from "node:fs/promises";
+import { access, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
@@ -7,12 +7,15 @@ import test from "node:test";
 import { runCliTestCommand } from "../src/cli.js";
 import {
     createSyntheticRefactorProject,
+    registerProjectResource,
     writeScriptResource
 } from "./test-helpers/refactor-codemod-command-fixture.js";
 
 const SCRIPT_COUNT = 320;
 // Tightened threshold after caching mutable metadata documents during batch rename planning.
 const PERFORMANCE_THRESHOLD_MS = 6500;
+const CASE_INSENSITIVE_MANIFEST_SCRIPT_COUNT = 300;
+const CASE_INSENSITIVE_MANIFEST_THRESHOLD_MS = 6500;
 
 async function measureMedianDurationMs<T>(
     sampleCount: number,
@@ -112,5 +115,61 @@ void test("refactor codemod --write stays within the end-to-end CLI runtime thre
         for (const projectRoot of projectRoots) {
             await rm(projectRoot, { recursive: true, force: true });
         }
+    }
+});
+
+void test("refactor codemod --write keeps mixed-case manifest path rewrites within the runtime threshold", async () => {
+    const projectRoot = await createSyntheticRefactorProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        for (let index = 0; index < CASE_INSENSITIVE_MANIFEST_SCRIPT_COUNT; index += 1) {
+            const scriptName = `demo_script_${index}`;
+            await writeScriptResource(projectRoot, scriptName, `function ${scriptName}() {\n    return ${index};\n}\n`);
+            await registerProjectResource(
+                projectRoot,
+                `UPPER_${index}`,
+                `SCRIPTS/DEMO_SCRIPT_${index}/DEMO_SCRIPT_${index}.YY`
+            );
+        }
+
+        const projectManifestPath = path.join(projectRoot, "MyGame.yyp");
+        const projectManifest = JSON.parse(await readFile(projectManifestPath, "utf8")) as {
+            resources: Array<{ id: { name: string; path: string } }>;
+        };
+        projectManifest.resources = projectManifest.resources.map((entry) => ({
+            id: {
+                name: entry.id.name,
+                path: entry.id.path.replace("scripts/", "SCRIPTS/").replace(".yy", ".YY")
+            }
+        }));
+        await writeFile(projectManifestPath, `${JSON.stringify(projectManifest, null, 4)}\n`, "utf8");
+
+        const startTime = performance.now();
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+        const durationMs = performance.now() - startTime;
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout, /\[namingConvention\] changed/);
+        assert.ok(
+            durationMs <= CASE_INSENSITIVE_MANIFEST_THRESHOLD_MS,
+            `Expected mixed-case manifest codemod runtime under ${CASE_INSENSITIVE_MANIFEST_THRESHOLD_MS}ms, received ${durationMs.toFixed(2)}ms`
+        );
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
     }
 });

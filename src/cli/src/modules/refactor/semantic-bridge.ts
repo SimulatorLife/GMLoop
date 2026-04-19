@@ -438,8 +438,8 @@ function normalizeMetadataReferenceTargetPath(targetPath: string): string {
     return normalizedPath;
 }
 
-function metadataReferenceTargetsMatch(leftPath: string, rightPath: string): boolean {
-    return normalizeMetadataReferenceTargetPath(leftPath) === normalizeMetadataReferenceTargetPath(rightPath);
+function metadataReferenceTargetMatchesNormalizedPath(candidatePath: string, normalizedTargetPath: string): boolean {
+    return normalizeMetadataReferenceTargetPath(candidatePath) === normalizedTargetPath;
 }
 
 function appendProjectMetadataStringMutation(
@@ -461,12 +461,12 @@ function appendProjectMetadataStringMutation(
 
 function updateRoomInstanceCreationOrderSelfPaths({
     parsed,
-    oldResourcePath,
+    normalizedOldResourcePath,
     newResourcePath,
     stringMutations
 }: {
     parsed: Record<string, unknown>;
-    oldResourcePath: string;
+    normalizedOldResourcePath: string;
     newResourcePath: string;
     stringMutations: Array<{ propertyPath: string; value: string }>;
 }): boolean {
@@ -487,7 +487,7 @@ function updateRoomInstanceCreationOrderSelfPaths({
             continue;
         }
 
-        if (!metadataReferenceTargetsMatch(currentPath, oldResourcePath)) {
+        if (!metadataReferenceTargetMatchesNormalizedPath(currentPath, normalizedOldResourcePath)) {
             continue;
         }
 
@@ -1476,6 +1476,7 @@ export class GmlSemanticBridge {
         if (!resources || !resource?.path) {
             return;
         }
+        const normalizedResourcePath = normalizeMetadataReferenceTargetPath(resource.path);
 
         const resourceDirName = path.posix.basename(path.posix.dirname(currentResourcePath));
         const newResourceDir =
@@ -1528,7 +1529,7 @@ export class GmlSemanticBridge {
 
                 const roomInstanceCreationOrderUpdated = updateRoomInstanceCreationOrderSelfPaths({
                     parsed,
-                    oldResourcePath: currentResourcePath,
+                    normalizedOldResourcePath: normalizeMetadataReferenceTargetPath(currentResourcePath),
                     newResourcePath,
                     stringMutations
                 });
@@ -1553,7 +1554,10 @@ export class GmlSemanticBridge {
                     }
 
                     const entryPath = typeof idNode.path === "string" ? idNode.path : null;
-                    if (!Core.isNonEmptyString(entryPath) || !metadataReferenceTargetsMatch(entryPath, resource.path)) {
+                    if (
+                        !Core.isNonEmptyString(entryPath) ||
+                        !metadataReferenceTargetMatchesNormalizedPath(entryPath, normalizedResourcePath)
+                    ) {
                         continue;
                     }
 
@@ -1580,7 +1584,7 @@ export class GmlSemanticBridge {
             }
 
             for (const reference of resourceEntry.assetReferences) {
-                if (!metadataReferenceTargetsMatch(reference.targetPath, resource.path)) {
+                if (!metadataReferenceTargetMatchesNormalizedPath(reference.targetPath, normalizedResourcePath)) {
                     continue;
                 }
 
@@ -1669,6 +1673,7 @@ export class GmlSemanticBridge {
         newResourcePath: string,
         latestBatchMetadataDocuments: ReadonlyMap<string, Record<string, unknown>>
     ): void {
+        const normalizedResourcePath = normalizeMetadataReferenceTargetPath(resource.path ?? "");
         const resourceOrderPath = getProjectResourceOrderPath(this.projectRoot);
         const loadedMetadataDocument = this.loadMutableProjectMetadataDocument(
             edit,
@@ -1694,7 +1699,10 @@ export class GmlSemanticBridge {
             }
 
             const entryPath = typeof resourceOrderEntry.path === "string" ? resourceOrderEntry.path : null;
-            if (!Core.isNonEmptyString(entryPath) || !metadataReferenceTargetsMatch(entryPath, resource.path)) {
+            if (
+                !Core.isNonEmptyString(entryPath) ||
+                !metadataReferenceTargetMatchesNormalizedPath(entryPath, normalizedResourcePath)
+            ) {
                 continue;
             }
 
