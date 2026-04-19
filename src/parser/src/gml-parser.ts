@@ -8,6 +8,7 @@ import GameMakerASTBuilder from "./ast/gml-ast-builder.js";
 import createGameMakerParseErrorListener, { createGameMakerLexerErrorListener } from "./ast/gml-syntax-error.js";
 import { createHiddenNodeProcessor } from "./ast/hidden-node-processor.js";
 import { assertNestedTernaryConsequentsAreParenthesized } from "./ast/ternary-expression-grouping-validation.js";
+import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "./config/parser-constants.js";
 import { installRecognitionExceptionLikeGuard } from "./runtime/index.js";
 import { defaultParserOptions, type ParserOptions } from "./types/index.js";
 
@@ -31,7 +32,11 @@ installRecognitionExceptionLikeGuard();
  */
 function mergeParserOptions(baseOptions: ParserOptions, overrides: Partial<ParserOptions> | undefined): ParserOptions {
     const overrideObject = Core.isObjectLike(overrides) ? overrides : {};
-    return Object.assign({}, baseOptions, overrideObject) as ParserOptions;
+    const mergedOptions = Object.assign({}, baseOptions, overrideObject) as ParserOptions;
+    mergedOptions.sllPredictionMaxSourceLength = normalizeSllPredictionMaxSourceLength(
+        mergedOptions.sllPredictionMaxSourceLength
+    );
+    return mergedOptions;
 }
 
 function getNodeIndex(node: Record<string, unknown>, prop: "start" | "end"): number | undefined {
@@ -85,10 +90,12 @@ function parseProgramWithLlPredictionMode(sourceText: string): unknown {
     }
 }
 
-const MAX_SOURCE_LENGTH_FOR_SLL_PARSING = 8000;
+function normalizeSllPredictionMaxSourceLength(value: unknown): number {
+    return Core.coercePositiveIntegerOption(value, DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH, { zeroReplacement: 0 });
+}
 
-function shouldUseSllPredictionMode(sourceText: string): boolean {
-    return sourceText.length <= MAX_SOURCE_LENGTH_FOR_SLL_PARSING;
+function shouldUseSllPredictionMode(sourceText: string, maxSourceLength: number): boolean {
+    return sourceText.length <= maxSourceLength;
 }
 
 /**
@@ -267,7 +274,7 @@ export class GMLParser {
         parser.addErrorListener(createGameMakerParseErrorListener());
 
         let tree;
-        if (shouldUseSllPredictionMode(this.text)) {
+        if (shouldUseSllPredictionMode(this.text, this.options.sllPredictionMaxSourceLength)) {
             try {
                 parser._interp.predictionMode = getPredictionMode("SLL");
                 tree = parser.program();
