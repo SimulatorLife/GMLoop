@@ -36,10 +36,10 @@ async function readAllWorkflowSources(): Promise<string> {
     return workflowSources.join("\n");
 }
 
-function getRequiredQwenTaskPrompt(source: string): string {
-    const match = /QWEN_TASK_PROMPT="\$\(cat <<'PROMPT'\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*\)"/u.exec(source);
+function getRequiredQwenAgentPrompt(source: string): string {
+    const match = /^\s*QWEN_AGENT_PROMPT="(?<prompt>[^"]+)"/mu.exec(source);
 
-    assert.ok(match?.groups?.prompt, "Qwen workflow must define a task prompt heredoc.");
+    assert.ok(match?.groups?.prompt, "Qwen workflow must define a temporary agent prompt.");
 
     return match.groups.prompt;
 }
@@ -85,7 +85,7 @@ function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
 }
 
 function assertQwenUsesLocalAgentLoop(source: string): void {
-    const prompt = getRequiredQwenTaskPrompt(source);
+    const prompt = getRequiredQwenAgentPrompt(source);
     const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
 
@@ -94,13 +94,15 @@ function assertQwenUsesLocalAgentLoop(source: string): void {
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: qwen/u);
     assert.doesNotMatch(source, /agent_cli:/u);
-    assert.match(prompt, /run_shell_command/u);
-    assert.match(prompt, /read_file/u);
-    assert.match(prompt, /edit|write_file/u);
-    assertPromptEnforcesCommandGroundedEditLoop(prompt);
-    assert.doesNotMatch(prompt, /plan-only/u);
-    assert.doesNotMatch(prompt, /standalone JSON/u);
-    assert.match(source, /QWEN_AGENT_PROMPT="\$\(printf '%s\\n\\nUser task from PR comment:\\n%s\\n'/u);
+    assert.match(prompt, /Use only the Qwen Code write_file tool/u);
+    assert.match(prompt, /line 1 of docs\/local-qwen-smoke-test\.md/u);
+    assert.match(prompt, /local-qwen-smoke: changed by qwen/u);
+    assert.match(prompt, /only that one line/u);
+    assert.doesNotMatch(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
+    assert.doesNotMatch(source, /^\s*QWEN_TASK_PROMPT=/mu);
+    assert.match(source, /^\s*# QWEN_CI_SYSTEM_PROMPT=/mu);
+    assert.match(source, /^\s*# QWEN_TASK_PROMPT=/mu);
+    assert.match(source, /^\s*# QWEN_AGENT_PROMPT="\$\(printf '%s\\n\\nUser task from PR comment:\\n%s\\n'/mu);
     assert.match(source, /stdbuf -oL -eL qwen \\/u);
     assert.match(source, /--prompt "\$\{QWEN_AGENT_PROMPT\}"/u);
     assert.doesNotMatch(source, /printf '%s\\n' "\$\{QWEN_AGENT_PROMPT\}" \| stdbuf -oL -eL qwen/u);
@@ -110,7 +112,7 @@ function assertQwenUsesLocalAgentLoop(source: string): void {
     assert.doesNotMatch(agentCommand, /ollama pull/u);
     assert.match(source, /--yolo/u);
     assert.match(source, /--channel CI/u);
-    assert.match(source, /--append-system-prompt "\$\{QWEN_CI_SYSTEM_PROMPT\}"/u);
+    assert.doesNotMatch(source, /--append-system-prompt/u);
     assert.doesNotMatch(source, /--prompt-interactive/u);
 }
 

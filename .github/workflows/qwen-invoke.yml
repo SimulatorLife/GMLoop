@@ -52,44 +52,44 @@ jobs:
       agent_command: |
         set -euo pipefail
 
-        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
-          echo "❌ Missing prompt context from PR comment."
-          exit 1
-        fi
+        # if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
+        #   echo "❌ Missing prompt context from PR comment."
+        #   exit 1
+        # fi
 
-        QWEN_CI_SYSTEM_PROMPT="$(cat <<'PROMPT'
-        You are running in GitHub Actions as an autonomous coding agent.
-        Use real Qwen Code tool calls for shell commands and file edits.
-        For shell commands, call the native run_shell_command tool by name.
-        For file changes, call the native edit or write_file tools by name.
-        Do not print JSON objects that describe intended tool calls.
-        Do not respond with a plan-only answer, standalone JSON, or instructions for another process.
-        The token startNewTask is not a tool.
-        Keep using tools until the task is complete or a real blocker prevents progress.
-        Leave any code changes in the worktree; the workflow will commit and push them.
-        PROMPT
-        )"
-        export QWEN_CI_SYSTEM_PROMPT
+        # QWEN_CI_SYSTEM_PROMPT="$(cat <<'PROMPT'
+        # You are running in GitHub Actions as an autonomous coding agent.
+        # Use real Qwen Code tool calls for shell commands and file edits.
+        # For shell commands, call the native run_shell_command tool by name.
+        # For file changes, call the native edit or write_file tools by name.
+        # Do not print JSON objects that describe intended tool calls.
+        # Do not respond with a plan-only answer, standalone JSON, or instructions for another process.
+        # The token startNewTask is not a tool.
+        # Keep using tools until the task is complete or a real blocker prevents progress.
+        # Leave any code changes in the worktree; the workflow will commit and push them.
+        # PROMPT
+        # )"
+        # export QWEN_CI_SYSTEM_PROMPT
 
-        QWEN_TASK_PROMPT="$(cat <<'PROMPT'
-        You are qwen, a local model running through Qwen Code in CI.
-        Use Qwen Code tools for every repository inspection and edit.
-        Use run_shell_command for shell commands, read_file for file reads, and edit or write_file for file changes.
-        Start by calling run_shell_command for the first validation or inspection command requested by the user, then base file selection only on command output or repository files you actually read.
-        If the task asks for lint fixes, run `pnpm run lint` first, choose one deterministic ESLint issue from the real output, edit the actual source file that produced it, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
-        Do not speculate about likely files, helper names, or rule failures before command output identifies them.
-        Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree unless a real command or file-access blocker prevents edits.
-        Do not edit golden `.gml` fixtures, generated files, dist files, workflow files, or configuration files unless the user explicitly asks for those files.
-        For non-documentation code changes, run `pnpm run build:ts` and `pnpm run lint:quiet` after edits unless a real blocker prevents validation.
-        Do not output a JSON plan, a fake function call, or `startNewTask`.
-        PROMPT
-        )"
-        export QWEN_TASK_PROMPT
-        QWEN_AGENT_PROMPT="$(printf '%s\n\nUser task from PR comment:\n%s\n' "${QWEN_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
+        # QWEN_TASK_PROMPT="$(cat <<'PROMPT'
+        # You are qwen, a local model running through Qwen Code in CI.
+        # Use Qwen Code tools for every repository inspection and edit.
+        # Use run_shell_command for shell commands, read_file for file reads, and edit or write_file for file changes.
+        # Start by calling run_shell_command for the first validation or inspection command requested by the user, then base file selection only on command output or repository files you actually read.
+        # If the task asks for lint fixes, run `pnpm run lint` first, choose one deterministic ESLint issue from the real output, edit the actual source file that produced it, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
+        # Do not speculate about likely files, helper names, or rule failures before command output identifies them.
+        # Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree unless a real command or file-access blocker prevents edits.
+        # Do not edit golden `.gml` fixtures, generated files, dist files, workflow files, or configuration files unless the user explicitly asks for those files.
+        # For non-documentation code changes, run `pnpm run build:ts` and `pnpm run lint:quiet` after edits unless a real blocker prevents validation.
+        # Do not output a JSON plan, a fake function call, or `startNewTask`.
+        # PROMPT
+        # )"
+        # export QWEN_TASK_PROMPT
+        # QWEN_AGENT_PROMPT="$(printf '%s\n\nUser task from PR comment:\n%s\n' "${QWEN_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
+        QWEN_AGENT_PROMPT="Use only the Qwen Code write_file tool to set line 1 of docs/local-qwen-smoke-test.md to exactly: local-qwen-smoke: changed by qwen. The file should contain only that one line."
         export QWEN_AGENT_PROMPT
 
         stdbuf -oL -eL qwen \
           --yolo \
           --channel CI \
-          --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
           --prompt "${QWEN_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"
