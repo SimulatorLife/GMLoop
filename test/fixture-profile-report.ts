@@ -31,6 +31,10 @@ function formatFixtureFailureMessage(error: unknown): string {
     return typeof error === "string" ? error : JSON.stringify(error);
 }
 
+function isPerformanceBudgetFailureMessage(message: string): boolean {
+    return message.includes("exceeded profiling budgets");
+}
+
 function createDeepCpuArtifactPath(workspaceName: string, caseId: string): string {
     const safeCaseId = caseId.replaceAll(/[^a-zA-Z0-9._-]+/gu, "-");
     return path.resolve(process.cwd(), "reports", "fixture-cpu", `${workspaceName}-${safeCaseId}.cpuprofile`);
@@ -100,6 +104,7 @@ async function runProfileCollection(): Promise<void> {
     const collector = FixtureRunner.createProfileCollector();
     const fixtureSuites = createFixtureSuiteRegistry();
     const runFailures: Array<string> = [];
+    const nonPerformanceFailures: Array<string> = [];
     const deepCpuFailures: Array<string> = [];
     const deepCpuArtifactPathByFixtureId = new Map<string, string>();
 
@@ -110,12 +115,16 @@ async function runProfileCollection(): Promise<void> {
             profileCollector: collector,
             continueOnFailure: true
         });
-        runFailures.push(
-            ...result.failures.map(
-                (failure) =>
-                    `[${fixtureSuite.workspaceName}] ${failure.fixtureCase.caseId}: ${formatFixtureFailureMessage(failure.error)}`
-            )
-        );
+        for (const failure of result.failures) {
+            const formattedFailure = `[${fixtureSuite.workspaceName}] ${failure.fixtureCase.caseId}: ${formatFixtureFailureMessage(failure.error)}`;
+
+            if (isPerformanceBudgetFailureMessage(formattedFailure)) {
+                runFailures.push(formattedFailure);
+                continue;
+            }
+
+            nonPerformanceFailures.push(formattedFailure);
+        }
 
         if (!deepCpuProfilingEnabled()) {
             continue;
@@ -127,7 +136,10 @@ async function runProfileCollection(): Promise<void> {
         }> = [];
 
         for (const fixtureCase of result.fixtureCases) {
-            if (fixtureCase.config.fixture.profile?.deepCpuProfile !== true && process.env.GMLOOP_FIXTURE_DEEP_CPU !== "1") {
+            if (
+                fixtureCase.config.fixture.profile?.deepCpuProfile !== true &&
+                process.env.GMLOOP_FIXTURE_DEEP_CPU !== "1"
+            ) {
                 continue;
             }
 
@@ -179,10 +191,22 @@ async function runProfileCollection(): Promise<void> {
     await FixtureRunner.writeJsonProfileReport(report, outputPath);
     console.log(FixtureRunner.renderHumanProfileReport(report));
 
+    if (nonPerformanceFailures.length > 0) {
+        console.warn(
+            [
+                "Fixture profiling observed non-performance fixture mismatches.",
+                "These are validated by dedicated correctness suites and do not fail performance profiling:",
+                `- ${nonPerformanceFailures.join("\n- ")}`
+            ].join("\n")
+        );
+    }
+
     if (runFailures.length > 0 || deepCpuFailures.length > 0) {
         throw new Error(
             [
-                runFailures.length > 0 ? `Fixture profiling encountered failing cases:\n- ${runFailures.join("\n- ")}` : "",
+                runFailures.length > 0
+                    ? `Fixture profiling encountered failing cases:\n- ${runFailures.join("\n- ")}`
+                    : "",
                 deepCpuFailures.length > 0
                     ? `Fixture deep CPU profiling encountered failing cases:\n- ${deepCpuFailures.join("\n- ")}`
                     : ""
