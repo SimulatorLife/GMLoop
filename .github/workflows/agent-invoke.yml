@@ -480,6 +480,7 @@ jobs:
           fi
 
       - name: Report outcome
+        id: report_outcome
         if: always()
         env:
           RUN_AGENT_OUTCOME: ${{ steps.run_agent.outcome || '' }}
@@ -494,17 +495,107 @@ jobs:
           set -euo pipefail
           SENTINEL="${RUNNER_TEMP}/.agent_push_succeeded"
 
+          write_report_outputs() {
+            {
+              echo "agent_failed=$1"
+              echo "cleanup_empty_pr=$2"
+            } >> "$GITHUB_OUTPUT"
+          }
+
           if [ "${{ steps.run_agent.outcome }}" = "failure" ] || [ "${{ steps.run_agent.conclusion }}" = "failure" ]; then
             echo "Run agent step failed → FAIL."
-            gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}" || true
-            exit 1
+            if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then
+              write_report_outputs true true
+            else
+              echo "::warning::Could not post failure comment; skipping empty-agent cleanup."
+              write_report_outputs true false
+            fi
+            exit 0
           fi
 
           if [ -f "$SENTINEL" ]; then
             echo "Push detected → SUCCESS."
+            write_report_outputs false false
             exit 0
           fi
 
           echo "Agent command succeeded with no branch push → FAIL."
-          gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}" || true
+          if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then
+            write_report_outputs true true
+          else
+            echo "::warning::Could not post failure comment; skipping empty-agent cleanup."
+            write_report_outputs true false
+          fi
+
+      - name: Close empty failed agent PR
+        if: always() && steps.report_outcome.outputs.cleanup_empty_pr == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          pr_json="$(
+            gh api "repos/${REPOSITORY}/pulls/${ISSUE_NUMBER}" \
+              --jq '{
+                changedFiles: .changed_files,
+                headRefName: .head.ref,
+                headRepository: .head.repo.full_name,
+                baseRefName: .base.ref,
+                state: .state
+              }'
+          )"
+
+          changed_files="$(jq -r '.changedFiles // -1' <<<"${pr_json}")"
+          head_ref="$(jq -r '.headRefName // ""' <<<"${pr_json}")"
+          head_repo="$(jq -r '.headRepository // ""' <<<"${pr_json}")"
+          base_ref="$(jq -r '.baseRefName // ""' <<<"${pr_json}")"
+          pr_state="$(jq -r '.state // ""' <<<"${pr_json}")"
+
+          if [ "${pr_state}" != "open" ]; then
+            echo "[agent] PR state is '${pr_state}'; leaving PR and branch unchanged."
+            exit 0
+          fi
+
+          if [ "${changed_files}" != "0" ]; then
+            echo "[agent] PR has ${changed_files} changed file(s); leaving PR and branch open."
+            exit 0
+          fi
+
+          case "${head_ref}" in
+            codex/task-*|copilot/task-*|gemini/task-*|qwen/task-*|qwen-local/task-*|aider/task-*)
+              ;;
+            *)
+              echo "[agent] Branch '${head_ref}' is not an expected empty agent branch; leaving PR and branch open."
+              exit 0
+              ;;
+          esac
+
+          case "${head_ref}" in
+            ""|main|master|develop|development|trunk|production|release|feature/*|bugfix/*|hotfix/*)
+              echo "[agent] Branch '${head_ref}' is protected or human-owned; leaving PR and branch open."
+              exit 0
+              ;;
+          esac
+
+          if [ "${head_ref}" = "${base_ref}" ]; then
+            echo "[agent] Head branch matches base branch '${base_ref}'; leaving PR and branch open."
+            exit 0
+          fi
+
+          if [ "${head_repo}" != "${REPOSITORY}" ]; then
+            echo "[agent] Head repository '${head_repo}' is not '${REPOSITORY}'; leaving PR and branch open."
+            exit 0
+          fi
+
+          echo "[agent] Closing empty agent PR #${ISSUE_NUMBER} and deleting branch '${head_ref}'."
+          gh pr close "${ISSUE_NUMBER}" --repo "${REPOSITORY}"
+          gh api -X DELETE "repos/${REPOSITORY}/git/refs/heads/${head_ref}"
+
+      - name: Fail workflow after unsuccessful agent run
+        if: always() && steps.report_outcome.outputs.agent_failed == 'true'
+        run: |
+          echo "Agent workflow did not produce a successful branch push."
           exit 1

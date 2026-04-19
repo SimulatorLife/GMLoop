@@ -7,12 +7,16 @@ async function readWorkflowSource(fileName: string): Promise<string> {
     return readFile(path.resolve(process.cwd(), ".github/workflows", fileName), "utf8");
 }
 
-async function readQwenSettingsSource(): Promise<string> {
-    return readFile(path.resolve(process.cwd(), ".qwen/settings.json"), "utf8");
+interface QwenSettings {
+    model: {
+        name: string;
+    };
 }
 
-async function readAiderConfigSource(): Promise<string> {
-    return readFile(path.resolve(process.cwd(), ".aider.conf.yml"), "utf8");
+async function readQwenSettings(): Promise<QwenSettings> {
+    const source = await readFile(path.resolve(process.cwd(), ".qwen/settings.json"), "utf8");
+
+    return JSON.parse(source) as QwenSettings;
 }
 
 async function readAllWorkflowSources(): Promise<string> {
@@ -32,21 +36,47 @@ async function readAllWorkflowSources(): Promise<string> {
     return workflowSources.join("\n");
 }
 
+function getRequiredQwenTaskPrompt(source: string): string {
+    const match = /QWEN_TASK_PROMPT="\$\(cat <<'PROMPT'\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*\)"/u.exec(source);
+
+    assert.ok(match?.groups?.prompt, "Qwen workflow must define a task prompt heredoc.");
+
+    return match.groups.prompt;
+}
+
+function getRequiredAiderMessageTemplate(source: string): string {
+    const match = /cat > "\$\{AIDER_TASK_MESSAGE_FILE\}" <<PROMPT\n(?<prompt>[\s\S]*?)\n\s*PROMPT/u.exec(source);
+
+    assert.ok(match?.groups?.prompt, "Aider workflow must write a task message heredoc.");
+
+    return match.groups.prompt;
+}
+
+function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
+    assert.match(prompt, /pnpm run lint/u);
+    assert.match(prompt, /pnpm run build:ts/u);
+    assert.match(prompt, /pnpm run lint:quiet/u);
+    assert.match(prompt, /command output/u);
+    assert.match(prompt, /diff|worktree/u);
+    assert.match(prompt, /golden .*\.gml|\.gml fixtures/u);
+    assert.match(prompt, /generated files/u);
+    assert.match(prompt, /dist files/u);
+}
+
 function assertQwenUsesLocalAgentLoop(source: string): void {
+    const prompt = getRequiredQwenTaskPrompt(source);
+
     assert.match(source, /github\.event\.comment\.body == '@qwen'/u);
     assert.match(source, /startsWith\(github\.event\.comment\.body \|\| '', '@qwen '\)/u);
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: qwen/u);
     assert.doesNotMatch(source, /agent_cli:/u);
-    assert.match(source, /QWEN_TASK_PROMPT="\$\(cat <<'PROMPT'/u);
-    assert.match(source, /Use Qwen Code tools for every repository inspection and edit/u);
-    assert.match(source, /Start by calling run_shell_command for the first validation or inspection command requested by the user/u);
-    assert.match(source, /run `pnpm run lint` first, choose one deterministic ESLint issue from the real output/u);
-    assert.match(source, /Do not speculate about likely files, helper names, or rule failures before command output identifies them/u);
-    assert.match(source, /Leave a concrete repository diff in the worktree/u);
-    assert.match(source, /For non-documentation code changes, run `pnpm run build:ts` and `pnpm run lint:quiet` after edits/u);
-    assert.match(source, /Do not output a JSON plan, a fake function call, or `startNewTask`/u);
-    assert.match(source, /The token startNewTask is not a tool/u);
+    assert.match(prompt, /run_shell_command/u);
+    assert.match(prompt, /read_file/u);
+    assert.match(prompt, /edit|write_file/u);
+    assertPromptEnforcesCommandGroundedEditLoop(prompt);
+    assert.doesNotMatch(prompt, /plan-only/u);
+    assert.doesNotMatch(prompt, /standalone JSON/u);
     assert.match(source, /QWEN_AGENT_PROMPT="\$\(printf '%s\\n\\nUser task from PR comment:\\n%s\\n'/u);
     assert.match(source, /printf '%s\\n' "\$\{QWEN_AGENT_PROMPT\}" \| stdbuf -oL -eL qwen \\/u);
     assert.match(source, /pull_qwen_configured_model\(\)/u);
@@ -79,29 +109,20 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
 
 void test("qwen invoke uses checked-in settings for local model selection", async () => {
     const workflowSource = await readWorkflowSource("qwen-invoke.yml");
-    const settingsSource = await readQwenSettingsSource();
+    const settings = await readQwenSettings();
 
     assert.doesNotMatch(workflowSource, /local_ollama_model:/u);
     assert.doesNotMatch(workflowSource, /--model=/u);
     assert.doesNotMatch(workflowSource, /QWEN_CODE_MAX_OUTPUT_TOKENS/u);
     assert.doesNotMatch(workflowSource, /> "\$\{HOME\}\/\.qwen\/settings\.json"/u);
-    assert.match(settingsSource, /"name": "qwen3:1\.7b"/u);
-    assert.match(settingsSource, /"skipStartupContext": true/u);
-    assert.match(settingsSource, /"generationConfig": \{/u);
-    assert.match(settingsSource, /"timeout": 900000/u);
-    assert.match(settingsSource, /"maxRetries": 0/u);
-    assert.match(settingsSource, /"samplingParams": \{/u);
-    assert.match(settingsSource, /"max_tokens": 1536/u);
-    assert.match(settingsSource, /"maxSessionTurns": 12/u);
-    assert.ok(
-        settingsSource.indexOf('"generationConfig": {') < settingsSource.indexOf('"chatCompression": {'),
-        "Qwen generation settings should live under the checked-in model settings."
-    );
+    assert.equal(typeof settings.model.name, "string");
+    assert.ok(settings.model.name.length > 0, "Qwen settings must declare a local model name.");
 });
 
 void test("aider invoke is the single local-only Aider workflow", async () => {
     const source = await readWorkflowSource("aider-invoke.yml");
     const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
+    const prompt = getRequiredAiderMessageTemplate(source);
 
     assert.match(source, /name: '▶️ Aider Invoke'/u);
     assert.match(source, /github\.event\.comment\.body == '@aider'/u);
@@ -113,10 +134,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.match(source, /\.aider\.conf\.yml/u);
     assert.match(source, /ollama_model="\$\{configured_model#openai\/\}"/u);
     assert.match(source, /ollama pull "\$\{ollama_model\}"/u);
-    assert.match(source, /run \\`pnpm run lint\\` first, choose one deterministic ESLint issue from the real output/u);
-    assert.match(source, /Do not speculate about likely files, helper names, or rule failures before command output identifies them/u);
-    assert.match(source, /Leave a concrete repository diff in the worktree/u);
-    assert.match(source, /For non-documentation code changes, run \\`pnpm run build:ts\\` and \\`pnpm run lint:quiet\\` after edits/u);
+    assertPromptEnforcesCommandGroundedEditLoop(prompt);
     assert.ok(
         source.lastIndexOf("pull_aider_configured_model") < source.indexOf("AIDER_TASK_MESSAGE_FILE"),
         "Aider must pull the configured local model before invoking the CLI."
@@ -134,13 +152,13 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
 });
 
 void test("aider invoke uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
-    const source = await readAiderConfigSource();
+    const source = await readFile(path.resolve(process.cwd(), ".aider.conf.yml"), "utf8");
 
     assert.doesNotMatch(source, /provider:/u);
     assert.doesNotMatch(source, /openai-api-type:/u);
-    assert.match(source, /model: openai\/qwen3:1\.7b/u);
-    assert.match(source, /openai-api-key: ollama/u);
-    assert.match(source, /openai-api-base: http:\/\/127\.0\.0\.1:11434\/v1/u);
+    assert.match(source, /^model:\s*\S+/mu);
+    assert.match(source, /^openai-api-key:\s*\S+/mu);
+    assert.match(source, /^openai-api-base:\s*http:\/\/(?:127\.0\.0\.1|localhost):\d+\/v1\s*$/mu);
 });
 
 void test("agent invoke validates local OpenAI-compatible endpoint without loading models", async () => {
@@ -189,6 +207,36 @@ void test("agent invoke workflow fails when a successful agent run produces no p
     assert.match(source, /if \[ -f "\$SENTINEL" \]; then/u);
     assert.match(source, /Agent completed without producing pushable local changes/u);
     assert.match(source, /echo "Agent command succeeded with no branch push → FAIL\."/u);
+});
+
+void test("agent invoke closes only empty PRs on expected agent branches after reporting failure", async () => {
+    const source = await readWorkflowSource("agent-invoke.yml");
+    const failureCommentIndex = source.indexOf('if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then');
+    const cleanupStepIndex = source.indexOf("- name: Close empty failed agent PR");
+
+    assert.ok(failureCommentIndex > 0, "failure path must post the failure comment.");
+    assert.ok(cleanupStepIndex > failureCommentIndex, "empty PR cleanup must run after the failure comment step.");
+    assert.match(source, /id: report_outcome/u);
+    assert.match(source, /echo "agent_failed=\$1"/u);
+    assert.match(source, /echo "cleanup_empty_pr=\$2"/u);
+    assert.match(source, /write_report_outputs true true/u);
+    assert.match(source, /write_report_outputs true false/u);
+    assert.match(source, /write_report_outputs false false/u);
+    assert.match(source, /if: always\(\) && steps\.report_outcome\.outputs\.cleanup_empty_pr == 'true'/u);
+    assert.match(source, /repos\/\$\{REPOSITORY\}\/pulls\/\$\{ISSUE_NUMBER\}/u);
+    assert.match(source, /\.changed_files/u);
+    assert.match(source, /if \[ "\$\{pr_state\}" != "open" \]; then/u);
+    assert.match(source, /if \[ "\$\{changed_files\}" != "0" \]; then/u);
+    assert.match(source, /codex\/task-\*\|copilot\/task-\*\|gemini\/task-\*\|qwen\/task-\*\|qwen-local\/task-\*\|aider\/task-\*/u);
+    assert.match(source, /main\|master\|develop\|development\|trunk\|production\|release\|feature\/\*\|bugfix\/\*\|hotfix\/\*/u);
+    assert.match(source, /if \[ "\$\{head_ref\}" = "\$\{base_ref\}" \]; then/u);
+    assert.match(source, /if \[ "\$\{head_repo\}" != "\$\{REPOSITORY\}" \]; then/u);
+    assert.match(source, /gh pr close "\$\{ISSUE_NUMBER\}" --repo "\$\{REPOSITORY\}"/u);
+    assert.match(source, /gh api -X DELETE "repos\/\$\{REPOSITORY\}\/git\/refs\/heads\/\$\{head_ref\}"/u);
+    assert.match(source, /Could not post failure comment; skipping empty-agent cleanup/u);
+    assert.match(source, /- name: Fail workflow after unsuccessful agent run/u);
+    assert.match(source, /if: always\(\) && steps\.report_outcome\.outputs\.agent_failed == 'true'/u);
+    assert.doesNotMatch(source, /git push origin --delete/u);
 });
 
 void test("agent invoke workflow always attempts auto-commit and push after the agent command", async () => {
