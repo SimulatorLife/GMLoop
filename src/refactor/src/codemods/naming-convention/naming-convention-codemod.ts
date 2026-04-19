@@ -328,13 +328,9 @@ function processLocalNamingConventionRename(parameters: {
         scopeKey !== null &&
         declarationKey !== null &&
         hasDuplicateScopedDeclaration(parameters.duplicateScopedDeclarations, scopeKey, declarationKey);
-    const scopeDecisions =
-        scopeKey === null
-            ? undefined
-            : (parameters.localDeclarationRenameDecisions.get(scopeKey) ??
-              new Map<string, LocalDeclarationRenameDecision>());
+    const scopeDecisions = scopeKey === null ? undefined : parameters.localDeclarationRenameDecisions.get(scopeKey);
     if (scopeKey !== null && declarationKey !== null && hasDuplicateDeclaration) {
-        const plannedDecision = scopeDecisions.get(declarationKey);
+        const plannedDecision = scopeDecisions?.get(declarationKey);
         if (plannedDecision) {
             if (!plannedDecision.shouldApply) {
                 return 0;
@@ -370,11 +366,14 @@ function processLocalNamingConventionRename(parameters: {
                 `Skipping local rename '${target.name}' -> '${suggestedName}' in ${target.path} because the target name already exists in the same scope.`
             );
             if (scopeKey !== null && declarationKey !== null) {
-                scopeDecisions.set(declarationKey, {
+                const ensuredScopeDecisions = ensureScopeRenameDecisions(
+                    parameters.localDeclarationRenameDecisions,
+                    scopeKey
+                );
+                ensuredScopeDecisions.set(declarationKey, {
                     shouldApply: false,
                     suggestedName
                 });
-                parameters.localDeclarationRenameDecisions.set(scopeKey, scopeDecisions);
             }
             return 0;
         }
@@ -388,11 +387,14 @@ function processLocalNamingConventionRename(parameters: {
             `Skipping local rename '${target.name}' -> '${suggestedName}' in ${target.path} because '${suggestedName}' is a reserved GameMaker identifier.`
         );
         if (scopeKey !== null && declarationKey !== null) {
-            scopeDecisions.set(declarationKey, {
+            const ensuredScopeDecisions = ensureScopeRenameDecisions(
+                parameters.localDeclarationRenameDecisions,
+                scopeKey
+            );
+            ensuredScopeDecisions.set(declarationKey, {
                 shouldApply: false,
                 suggestedName
             });
-            parameters.localDeclarationRenameDecisions.set(scopeKey, scopeDecisions);
         }
         return 0;
     }
@@ -410,11 +412,14 @@ function processLocalNamingConventionRename(parameters: {
             `Skipping local rename '${target.name}' -> '${suggestedName}' in ${target.path} because macro expansion${dependentMacroNames.length === 1 ? "" : "s"} ${dependentMacroNames.map((macroName) => `'${macroName}'`).join(", ")} ${dependentMacroNames.length === 1 ? "depends" : "depend"} on '${target.name}'.`
         );
         if (scopeKey !== null && declarationKey !== null) {
-            scopeDecisions.set(declarationKey, {
+            const ensuredScopeDecisions = ensureScopeRenameDecisions(
+                parameters.localDeclarationRenameDecisions,
+                scopeKey
+            );
+            ensuredScopeDecisions.set(declarationKey, {
                 shouldApply: false,
                 suggestedName
             });
-            parameters.localDeclarationRenameDecisions.set(scopeKey, scopeDecisions);
         }
         return 0;
     }
@@ -424,11 +429,11 @@ function processLocalNamingConventionRename(parameters: {
     }
 
     if (scopeKey !== null && declarationKey !== null && hasDuplicateDeclaration) {
-        scopeDecisions.set(declarationKey, {
+        const ensuredScopeDecisions = ensureScopeRenameDecisions(parameters.localDeclarationRenameDecisions, scopeKey);
+        ensuredScopeDecisions.set(declarationKey, {
             shouldApply: true,
             suggestedName
         });
-        parameters.localDeclarationRenameDecisions.set(scopeKey, scopeDecisions);
     }
     if (existingNames !== undefined) {
         normalizedSuggestedName ??= suggestedName.toLowerCase();
@@ -460,6 +465,20 @@ type LocalNamingConventionTarget = {
     symbolId: string | null;
     occurrences: Array<{ path: string; start: number; end: number }>;
 };
+
+function ensureScopeRenameDecisions(
+    decisionsByScope: LocalDeclarationRenameDecisionByScope,
+    scopeKey: string
+): Map<string, LocalDeclarationRenameDecision> {
+    const existingDecisions = decisionsByScope.get(scopeKey);
+    if (existingDecisions !== undefined) {
+        return existingDecisions;
+    }
+
+    const createdDecisions = new Map<string, LocalDeclarationRenameDecision>();
+    decisionsByScope.set(scopeKey, createdDecisions);
+    return createdDecisions;
+}
 
 function formatTopLevelRenameSkipWarning(rename: RenameRequest, reason: string): string {
     return `Skipping top-level rename '${rename.symbolId}' -> '${rename.newName}': ${reason}`;
