@@ -314,6 +314,11 @@ void test("agent invoke workflow checks and pushes changes after every agent att
     const source = await readWorkflowSource("agent-invoke.yml");
 
     assert.match(source, /push_current_branch_if_needed\(\)/u);
+    assert.match(source, /cd "\$\{GITHUB_WORKSPACE\}"/u);
+    assert.match(source, /echo "\[agent\] Workflow working directory: \$\(pwd\)"/u);
+    assert.match(source, /echo "\[agent\] Attempt working directory before agent command: \$\(pwd\)"/u);
+    assert.match(source, /echo "\[agent\] Checking repository changes in: \$\(pwd\)"/u);
+    assert.match(source, /echo "\[agent\] Change-check git root: \$\(git rev-parse --show-toplevel\)"/u);
     assert.match(source, /echo "\[agent\] Worktree after agent attempt:"/u);
     assert.match(source, /worktree_status="\$\(git status --porcelain=v1 --untracked-files=normal\)"/u);
     assert.match(source, /if \[ -n "\$\{worktree_status\}" \]; then/u);

@@ -356,7 +356,10 @@ jobs:
           API_KEY: ${{ secrets.api_key || '' }}
         run: |
           set -euo pipefail
+          cd "${GITHUB_WORKSPACE}"
           echo "Running one-time agent setup command"
+          echo "[agent] Setup working directory: $(pwd)"
+          echo "[agent] Setup git root: $(git rev-parse --show-toplevel)"
 
           setup_script="$RUNNER_TEMP/agent_setup_cmd.sh"
           # Write the command exactly as-is (no interpolation)
@@ -392,7 +395,11 @@ jobs:
           WORKING_BRANCH: ${{ env.WORKING_BRANCH }}
         run: |
           set -euo pipefail
+          cd "${GITHUB_WORKSPACE}"
           echo "Running agent command with retry support"
+          echo "[agent] Workflow working directory: $(pwd)"
+          echo "[agent] Workflow git root: $(git rev-parse --show-toplevel)"
+          echo "[agent] Workflow branch: $(git branch --show-current)"
 
           script="$RUNNER_TEMP/agent_cmd.sh"
           # Write the command exactly as-is (no interpolation)
@@ -451,10 +458,13 @@ jobs:
             local attempt="$1"
             local attempt_log="$RUNNER_TEMP/agent-live-attempt-${attempt}.log"
 
+            cd "${GITHUB_WORKSPACE}"
             export ADDITIONAL_CONTEXT
             ADDITIONAL_CONTEXT="$(build_attempt_context "${attempt}")"
 
             echo "[agent] Starting agent attempt ${attempt}/${total_attempts}."
+            echo "[agent] Attempt working directory before agent command: $(pwd)"
+            echo "[agent] Attempt git root before agent command: $(git rev-parse --show-toplevel)"
             set -x
             set +e
             stdbuf -oL -eL bash "$script" 2>&1 | tee "${attempt_log}"
@@ -467,6 +477,10 @@ jobs:
           }
 
           push_current_branch_if_needed() {
+            cd "${GITHUB_WORKSPACE}"
+            echo "[agent] Checking repository changes in: $(pwd)"
+            echo "[agent] Change-check git root: $(git rev-parse --show-toplevel)"
+
             # If the shim already saw a successful git push, don't do anything.
             if [ -f "$SENTINEL" ]; then
               echo "[agent] Push sentinel already present; attempt produced a branch push."
