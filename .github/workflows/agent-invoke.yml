@@ -444,6 +444,10 @@ jobs:
           rm -f "$NO_CHANGE_SENTINEL"
           rm -f "$RETRY_COMMENT_SENTINEL"
 
+          redact_git_remote_credentials() {
+            sed -E 's#(https://)[^/@]+@#\1***@#g'
+          }
+
           build_attempt_context() {
             local attempt="$1"
 
@@ -465,6 +469,9 @@ jobs:
             echo "[agent] Starting agent attempt ${attempt}/${total_attempts}."
             echo "[agent] Attempt working directory before agent command: $(pwd)"
             echo "[agent] Attempt git root before agent command: $(git rev-parse --show-toplevel)"
+            echo "[agent] Attempt git remotes before agent command:"
+            git remote -v | redact_git_remote_credentials
+            echo "[agent] Attempt git branch before agent command: $(git branch --show-current)"
             set -x
             set +e
             stdbuf -oL -eL bash "$script" 2>&1 | tee "${attempt_log}"

@@ -322,6 +322,11 @@ void test("agent invoke workflow checks and pushes changes after every agent att
     assert.match(source, /echo "\[agent\] Attempt working directory before agent command: \$\(pwd\)"/u);
     assert.match(source, /echo "\[agent\] Checking repository changes in: \$\(pwd\)"/u);
     assert.match(source, /echo "\[agent\] Change-check git root: \$\(git rev-parse --show-toplevel\)"/u);
+    assert.match(source, /redact_git_remote_credentials\(\)/u);
+    assert.match(source, /sed -E 's#\(https:\/\/\)\[\^\/@\]\+@#\\1\*\*\*@#g'/u);
+    assert.match(source, /echo "\[agent\] Attempt git remotes before agent command:"/u);
+    assert.match(source, /git remote -v \| redact_git_remote_credentials/u);
+    assert.match(source, /echo "\[agent\] Attempt git branch before agent command: \$\(git branch --show-current\)"/u);
     assert.match(source, /echo "\[agent\] Worktree after agent attempt:"/u);
     assert.match(source, /worktree_status="\$\(git status --porcelain=v1 --untracked-files=normal\)"/u);
     assert.match(source, /if \[ -n "\$\{worktree_status\}" \]; then/u);
