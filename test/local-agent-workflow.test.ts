@@ -44,12 +44,33 @@ function getRequiredQwenTaskPrompt(source: string): string {
     return match.groups.prompt;
 }
 
+function getRequiredWorkflowInputBlock(source: string, inputName: string): string {
+    const match = new RegExp(String.raw`\n {6}${inputName}:\n(?<block>(?: {8}.+\n)+)`, "u").exec(source);
+
+    assert.ok(match?.groups?.block, `Workflow must define ${inputName}.`);
+
+    return match.groups.block;
+}
+
 function getRequiredAiderMessageTemplate(source: string): string {
     const match = /cat > "\$\{AIDER_TASK_MESSAGE_FILE\}" <<PROMPT\n(?<prompt>[\s\S]*?)\n\s*PROMPT/u.exec(source);
 
     assert.ok(match?.groups?.prompt, "Aider workflow must write a task message heredoc.");
 
     return match.groups.prompt;
+}
+
+function getRequiredChildWorkflowCommand(source: string, inputName: string): string {
+    const start = source.indexOf(`      ${inputName}: |`);
+
+    assert.notEqual(start, -1, `Child workflow must define ${inputName}.`);
+
+    const nextInput = /\n {6}[a-z_]+: /gu;
+    nextInput.lastIndex = start + 1;
+    const nextMatch = nextInput.exec(source);
+    const end = nextMatch?.index ?? source.length;
+
+    return source.slice(start, end);
 }
 
 function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
@@ -65,6 +86,8 @@ function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
 
 function assertQwenUsesLocalAgentLoop(source: string): void {
     const prompt = getRequiredQwenTaskPrompt(source);
+    const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
+    const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
 
     assert.match(source, /github\.event\.comment\.body == '@qwen'/u);
     assert.match(source, /startsWith\(github\.event\.comment\.body \|\| '', '@qwen '\)/u);
@@ -79,9 +102,10 @@ function assertQwenUsesLocalAgentLoop(source: string): void {
     assert.doesNotMatch(prompt, /standalone JSON/u);
     assert.match(source, /QWEN_AGENT_PROMPT="\$\(printf '%s\\n\\nUser task from PR comment:\\n%s\\n'/u);
     assert.match(source, /printf '%s\\n' "\$\{QWEN_AGENT_PROMPT\}" \| stdbuf -oL -eL qwen \\/u);
-    assert.match(source, /pull_qwen_configured_model\(\)/u);
-    assert.match(source, /\.qwen\/settings\.json/u);
-    assert.match(source, /ollama pull "\$\{configured_model\}"/u);
+    assert.match(setupCommand, /pull_qwen_configured_model\(\)/u);
+    assert.match(setupCommand, /\.qwen\/settings\.json/u);
+    assert.match(setupCommand, /ollama pull "\$\{configured_model\}"/u);
+    assert.doesNotMatch(agentCommand, /ollama pull/u);
     assert.match(source, /--yolo/u);
     assert.match(source, /--channel CI/u);
     assert.match(source, /--append-system-prompt "\$\{QWEN_CI_SYSTEM_PROMPT\}"/u);
@@ -94,7 +118,7 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
 
     assertQwenUsesLocalAgentLoop(source);
     assert.ok(
-        source.lastIndexOf("pull_qwen_configured_model") < source.lastIndexOf('printf \'%s\\n\' "${QWEN_AGENT_PROMPT}"'),
+        source.lastIndexOf("agent_setup_command") < source.lastIndexOf("agent_command"),
         "Qwen must pull the configured local model before invoking the real task."
     );
     assert.match(source, /agent_package: \$\{\{ vars\.QWEN_CODE_PACKAGE \|\| '@qwen-code\/qwen-code@0\.14\.5' \}\}/u);
@@ -123,6 +147,8 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     const source = await readWorkflowSource("aider-invoke.yml");
     const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
     const prompt = getRequiredAiderMessageTemplate(source);
+    const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
+    const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
 
     assert.match(source, /name: '▶️ Aider Invoke'/u);
     assert.match(source, /github\.event\.comment\.body == '@aider'/u);
@@ -131,13 +157,14 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.match(source, /agent: aider/u);
     assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
     assert.doesNotMatch(source, /agent_cli:/u);
-    assert.match(source, /pull_aider_configured_model\(\)/u);
-    assert.match(source, /\.aider\.conf\.yml/u);
-    assert.match(source, /ollama_model="\$\{configured_model#openai\/\}"/u);
-    assert.match(source, /ollama pull "\$\{ollama_model\}"/u);
+    assert.match(setupCommand, /pull_aider_configured_model\(\)/u);
+    assert.match(setupCommand, /\.aider\.conf\.yml/u);
+    assert.match(setupCommand, /ollama_model="\$\{configured_model#openai\/\}"/u);
+    assert.match(setupCommand, /ollama pull "\$\{ollama_model\}"/u);
+    assert.doesNotMatch(agentCommand, /ollama pull/u);
     assertPromptEnforcesCommandGroundedEditLoop(prompt);
     assert.ok(
-        source.lastIndexOf("pull_aider_configured_model") < source.indexOf("AIDER_TASK_MESSAGE_FILE"),
+        source.lastIndexOf("agent_setup_command") < source.indexOf("agent_command"),
         "Aider must pull the configured local model before invoking the CLI."
     );
     assert.match(
@@ -195,7 +222,15 @@ void test("agent invoke exports OpenAI API type for every child agent", async ()
 
 void test("agent invoke streams custom command output while preserving exit status", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
+    const setupInputBlock = getRequiredWorkflowInputBlock(source, "agent_setup_command");
 
+    assert.match(setupInputBlock, /type: string/u);
+    assert.match(setupInputBlock, /required: false/u);
+    assert.match(source, /- name: Run agent setup command/u);
+    assert.match(source, /if: \$\{\{ inputs\.agent_setup_command != '' \}\}/u);
+    assert.match(source, /cat >"\$setup_script" <<'SCRIPT'/u);
+    assert.match(source, /\$\{\{ inputs\.agent_setup_command \}\}/u);
+    assert.match(source, /stdbuf -oL -eL bash "\$setup_script" 2>&1 \| tee "\$RUNNER_TEMP\/agent-setup\.log"/u);
     assert.match(source, /- name: Run agent custom command with retries/u);
     assert.match(source, /stdbuf -oL -eL bash "\$script" 2>&1 \| tee "\$\{attempt_log\}"/u);
     assert.match(source, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);

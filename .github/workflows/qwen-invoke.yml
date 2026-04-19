@@ -29,13 +29,8 @@ jobs:
       agent: qwen
       agent_package: ${{ vars.QWEN_CODE_PACKAGE || '@qwen-code/qwen-code@0.14.5' }}
       max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
-      agent_command: |
+      agent_setup_command: |
         set -euo pipefail
-
-        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
-          echo "❌ Missing prompt context from PR comment."
-          exit 1
-        fi
 
         pull_qwen_configured_model() {
           local configured_model
@@ -52,6 +47,15 @@ jobs:
           echo "Pulling local Qwen model '${configured_model}' from Ollama..."
           ollama pull "${configured_model}"
         }
+
+        pull_qwen_configured_model
+      agent_command: |
+        set -euo pipefail
+
+        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
+          echo "❌ Missing prompt context from PR comment."
+          exit 1
+        fi
 
         QWEN_CI_SYSTEM_PROMPT="$(cat <<'PROMPT'
         You are running in GitHub Actions as an autonomous coding agent.
@@ -83,8 +87,6 @@ jobs:
         export QWEN_TASK_PROMPT
         QWEN_AGENT_PROMPT="$(printf '%s\n\nUser task from PR comment:\n%s\n' "${QWEN_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
         export QWEN_AGENT_PROMPT
-
-        pull_qwen_configured_model
 
         printf '%s\n' "${QWEN_AGENT_PROMPT}" | stdbuf -oL -eL qwen \
           --yolo \

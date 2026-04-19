@@ -21,6 +21,9 @@ on:
       agent_command:
         type: string
         required: false
+      agent_setup_command:
+        type: string
+        required: false
       agent_package:
         type: string
         required: false
@@ -342,6 +345,33 @@ jobs:
           else
             echo "${AGENT_CLI} CLI already installed at: $(command -v "${AGENT_CLI}")"
           fi
+
+      - name: Run agent setup command
+        if: ${{ inputs.agent_setup_command != '' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          API_KEY: ${{ secrets.api_key || '' }}
+        run: |
+          set -euo pipefail
+          echo "Running one-time agent setup command"
+
+          setup_script="$RUNNER_TEMP/agent_setup_cmd.sh"
+          # Write the command exactly as-is (no interpolation)
+          cat >"$setup_script" <<'SCRIPT'
+          ${{ inputs.agent_setup_command }}
+          SCRIPT
+
+          sed -i 's/\r$//' "$setup_script"
+          chmod 700 "$setup_script"
+
+          echo "---- agent_setup_cmd.sh ----"
+          nl -ba "$setup_script"
+          echo "----------------------------"
+
+          stdbuf -oL -eL bash "$setup_script" 2>&1 | tee "$RUNNER_TEMP/agent-setup.log"
 
       - name: Run agent custom command with retries
         if: ${{ inputs.agent_command != '' }}

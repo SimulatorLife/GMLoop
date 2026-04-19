@@ -28,13 +28,8 @@ jobs:
       additional_context: ${{ github.event.comment.body }}
       agent: aider
       max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
-      agent_command: |
+      agent_setup_command: |
         set -euo pipefail
-
-        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
-          echo "❌ Missing prompt context from PR comment."
-          exit 1
-        fi
 
         pull_aider_configured_model() {
           local configured_model
@@ -68,6 +63,15 @@ jobs:
           ollama pull "${ollama_model}"
         }
 
+        pull_aider_configured_model
+      agent_command: |
+        set -euo pipefail
+
+        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
+          echo "❌ Missing prompt context from PR comment."
+          exit 1
+        fi
+
         export NO_PROXY="${NO_PROXY:+${NO_PROXY},}127.0.0.1,localhost"
         export no_proxy="${no_proxy:+${no_proxy},}127.0.0.1,localhost"
 
@@ -80,8 +84,6 @@ jobs:
           echo "❌ Could not install Aider CLI."
           exit 1
         fi
-
-        pull_aider_configured_model
 
         AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
         cat > "${AIDER_TASK_MESSAGE_FILE}" <<PROMPT
