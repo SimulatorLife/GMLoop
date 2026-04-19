@@ -403,7 +403,9 @@ jobs:
 
           SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_push_succeeded"
           NO_CHANGE_SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_no_change_retries_exhausted"
+          RETRY_COMMENT_SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_retry_comment_posted"
           rm -f "$NO_CHANGE_SENTINEL"
+          rm -f "$RETRY_COMMENT_SENTINEL"
 
           build_attempt_context() {
             local attempt="$1"
@@ -521,6 +523,28 @@ jobs:
             return 0
           }
 
+          post_retry_comment_once() {
+            local failed_attempt="$1"
+            local next_attempt="$2"
+
+            if [ -f "$RETRY_COMMENT_SENTINEL" ]; then
+              echo "[agent] Retry comment already posted; skipping duplicate PR comment."
+              return 0
+            fi
+
+            retry_message="$(
+              cat <<MESSAGE
+          **[🤖 ${AGENT_NAME}]** The local agent did not produce pushable repository changes on attempt ${failed_attempt}/${total_attempts}, so I am starting retry attempt ${next_attempt}/${total_attempts} with stricter command-grounded instructions.
+          MESSAGE
+            )"
+
+            if gh issue comment "${PR_NUMBER}" --body "${retry_message}" --repo "${REPOSITORY}"; then
+              date +"%F %T" > "$RETRY_COMMENT_SENTINEL"
+            else
+              echo "::warning::Could not post local-agent retry comment."
+            fi
+          }
+
           for ((attempt = 1; attempt <= total_attempts; attempt++)); do
             set +e
             run_agent_attempt "${attempt}"
@@ -543,6 +567,7 @@ jobs:
             fi
 
             if [ "${attempt}" -lt "${total_attempts}" ]; then
+              post_retry_comment_once "${attempt}" "$((attempt + 1))"
               echo "[agent] Attempt ${attempt}/${total_attempts} produced no pushable changes; starting a fresh retry session."
             else
               echo "❌ Agent exhausted ${total_attempts} attempt(s) without producing pushable local changes."

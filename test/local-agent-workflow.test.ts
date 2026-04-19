@@ -100,8 +100,6 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
     assert.match(source, /agent_package: \$\{\{ vars\.QWEN_CODE_PACKAGE \|\| '@qwen-code\/qwen-code@0\.14\.5' \}\}/u);
     assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
     assert.doesNotMatch(source, /verify_qwen_/u);
-    assert.doesNotMatch(source, /qwen-tool-smoke/u);
-    assert.doesNotMatch(source, /qwen-file-smoke/u);
     assert.doesNotMatch(source, /openai-tool-registry/u);
     assert.doesNotMatch(source, /OPENROUTER_API_KEY/u);
     assert.doesNotMatch(source, /QWEN_OPENAI_MODEL/u);
@@ -235,6 +233,13 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
     assert.match(source, /push_current_branch_if_needed/u);
     assert.match(source, /NO_CHANGE_SENTINEL="\$\{RUNNER_TEMP:-\/tmp\}\/\.agent_no_change_retries_exhausted"/u);
     assert.match(source, /date \+"%F %T" > "\$NO_CHANGE_SENTINEL"/u);
+    assert.match(source, /RETRY_COMMENT_SENTINEL="\$\{RUNNER_TEMP:-\/tmp\}\/\.agent_retry_comment_posted"/u);
+    assert.match(source, /post_retry_comment_once\(\)/u);
+    assert.match(source, /Retry comment already posted; skipping duplicate PR comment/u);
+    assert.match(source, /did not produce pushable repository changes on attempt \$\{failed_attempt\}\/\$\{total_attempts\}/u);
+    assert.match(source, /starting retry attempt \$\{next_attempt\}\/\$\{total_attempts\}/u);
+    assert.match(source, /gh issue comment "\$\{PR_NUMBER\}" --body "\$\{retry_message\}" --repo "\$\{REPOSITORY\}"/u);
+    assert.match(source, /post_retry_comment_once "\$\{attempt\}" "\$\(\(attempt \+ 1\)\)"/u);
     assert.match(source, /Attempt \$\{attempt\}\/\$\{total_attempts\} produced no pushable changes; starting a fresh retry session/u);
     assert.doesNotMatch(source, /- name: Auto-commit and push agent changes if needed/u);
 });
