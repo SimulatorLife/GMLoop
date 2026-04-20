@@ -171,7 +171,12 @@ export function createWebSocketClient({
             state.pendingPatchHead = 0;
 
             for (const patch of deduplicatedPending) {
-                applyIncomingPatch(patch);
+                if (state.patchQueue) {
+                    recordPatchReceived(state);
+                    enqueuePatch(patch);
+                } else {
+                    applyIncomingPatchInternal(patch, state, wrapper, onError, logger);
+                }
             }
         }
 
