@@ -379,7 +379,10 @@ export function createWatchCommand(): Command {
         .description("Watch GML source files and coordinate hot-reload pipeline actions")
         .argument("[targetPath]", "Directory to watch for changes", process.cwd())
         .addOption(
-            new Option("--extensions <extensions...>", "File extensions to watch").default([".gml"], "Only .gml files")
+            new Option("--extensions <extensions...>", "File extensions to watch").default(
+                [".gml"],
+                "Defaults to .gml; custom extensions are allowed"
+            )
         )
         .addOption(new Option("--polling", "Use polling instead of native file watching").default(false))
         .addOption(
