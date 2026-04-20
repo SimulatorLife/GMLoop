@@ -90,6 +90,7 @@ export class GmlToJsEmitter {
      * a separate analysis pass.
      */
     private readonly scriptRefs: Set<string>;
+    private emitDepth: number;
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
     constructor(semantic: IdentifierAnalyzer & CallTargetAnalyzer, options: Partial<EmitOptions> = {}) {
@@ -98,6 +99,7 @@ export class GmlToJsEmitter {
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this.globalVars = new Set();
         this.scriptRefs = new Set();
+        this.emitDepth = 0;
     }
 
     /**
@@ -121,15 +123,25 @@ export class GmlToJsEmitter {
         if (!ast) {
             return "";
         }
-        // Pre-collect all globalvar-declared names before walking the AST so that
-        // identifiers referenced before their `globalvar` declaration (a legal GML
-        // forward reference) are emitted as `global.<name>` rather than bare names.
-        if (ast.type === "Program") {
-            for (const name of collectGlobalVarNames(ast)) {
-                this.globalVars.add(name);
-            }
+        const isTopLevelEmit = this.emitDepth === 0;
+        if (isTopLevelEmit) {
+            this.globalVars.clear();
+            this.scriptRefs.clear();
         }
-        return this.visit(ast);
+        this.emitDepth += 1;
+        try {
+            // Pre-collect all globalvar-declared names before walking the AST so that
+            // identifiers referenced before their `globalvar` declaration (a legal GML
+            // forward reference) are emitted as `global.<name>` rather than bare names.
+            if (ast.type === "Program") {
+                for (const name of collectGlobalVarNames(ast)) {
+                    this.globalVars.add(name);
+                }
+            }
+            return this.visit(ast);
+        } finally {
+            this.emitDepth -= 1;
+        }
     }
 
     private visit(ast: GmlNode): string {
