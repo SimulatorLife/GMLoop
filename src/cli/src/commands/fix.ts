@@ -56,6 +56,12 @@ type StubCommandParameters = {
     helpText: string;
 };
 
+type StageCommandFactoryParameters = {
+    args: Array<string>;
+    helpText: string;
+    createOptions: (options: ValidatedFixCommandOptions) => Record<string, unknown>;
+};
+
 type MemorySnapshot = {
     rss: number;
     heapUsed: number;
@@ -102,6 +108,18 @@ function createStubCommand(parameters: StubCommandParameters): CommanderCommandL
         opts: () => parameters.options,
         helpInformation: () => parameters.helpText
     };
+}
+
+function createWorkflowStageCommand(
+    options: ValidatedFixCommandOptions,
+    parameters: StageCommandFactoryParameters
+): CommanderCommandLike {
+    const resolvedOptions = parameters.createOptions(options);
+    return createStubCommand({
+        args: parameters.args,
+        options: resolvedOptions,
+        helpText: parameters.helpText
+    });
 }
 
 function getFixCommandUsage(command: CommanderCommandLike): string {
@@ -196,17 +214,17 @@ async function runWorkflowStage(parameters: {
 }
 
 function createRefactorStageCommand(options: ValidatedFixCommandOptions): CommanderCommandLike {
-    return createStubCommand({
+    return createWorkflowStageCommand(options, {
         args: ["codemod", options.targetPath],
-        options: {
-            path: options.projectRoot,
-            config: options.configPath,
-            write: !options.dryRun,
-            only: options.only,
+        helpText: "refactor codemod [paths...]",
+        createOptions: (validatedOptions) => ({
+            path: validatedOptions.projectRoot,
+            config: validatedOptions.configPath,
+            write: !validatedOptions.dryRun,
+            only: validatedOptions.only,
             list: false,
-            verbose: options.verbose
-        },
-        helpText: "refactor codemod [paths...]"
+            verbose: validatedOptions.verbose
+        })
     });
 }
 
@@ -282,32 +300,32 @@ function printFixCommandSettings(options: ValidatedFixCommandOptions): void {
 }
 
 function createLintStageCommand(options: ValidatedFixCommandOptions): CommanderCommandLike {
-    return createStubCommand({
+    return createWorkflowStageCommand(options, {
         args: [options.targetPath],
-        options: {
-            write: !options.dryRun,
+        helpText: "lint [paths...]",
+        createOptions: (validatedOptions) => ({
+            write: !validatedOptions.dryRun,
             formatter: "stylish",
-            verbose: options.verbose,
-            path: options.projectRoot,
+            verbose: validatedOptions.verbose,
+            path: validatedOptions.projectRoot,
             projectStrict: true,
             allowParseErrors: true,
             quiet: false,
             noDefaultConfig: false
-        },
-        helpText: "lint [paths...]"
+        })
     });
 }
 
 function createFormatStageCommand(options: ValidatedFixCommandOptions): CommanderCommandLike {
-    return createStubCommand({
+    return createWorkflowStageCommand(options, {
         args: [],
-        options: {
-            path: options.targetPath,
-            write: !options.dryRun,
+        helpText: "format [options]",
+        createOptions: (validatedOptions) => ({
+            path: validatedOptions.targetPath,
+            write: !validatedOptions.dryRun,
             onParseError: "skip",
-            verbose: options.verbose
-        },
-        helpText: "format [options]"
+            verbose: validatedOptions.verbose
+        })
     });
 }
 
