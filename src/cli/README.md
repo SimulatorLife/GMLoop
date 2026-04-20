@@ -145,7 +145,7 @@ pnpm run cli -- watch /path/to/project --auto-inject
 **Options:**
 
 - `[targetPath]` - Directory to watch (default: current directory)
-- `--extensions <ext...>` - File extensions to watch (default: `.gml`)
+- `--extensions <ext...>` - File extensions to watch (default: `.gml`; custom extensions are allowed)
 - `--polling` - Use polling instead of native file watching
 - `--polling-interval <ms>` - Polling interval in milliseconds (default: 1000)
 - `--verbose` - Enable verbose logging with detailed transpilation output

@@ -63,6 +63,7 @@ void describe("watch command", () => {
 
         assert.ok(extensionsOption);
         assert.deepEqual(extensionsOption.defaultValue, [".gml"]);
+        assert.equal(extensionsOption.defaultValueDescription, "Defaults to .gml; custom extensions are allowed");
     });
 
     void it("should have default polling interval of 1000ms", () => {
