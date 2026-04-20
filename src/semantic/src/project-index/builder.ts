@@ -12,6 +12,7 @@ import { resolveProjectIndexParser } from "./gml-parser-facade.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
 import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metrics.js";
+import { runWithMissingPathFallback } from "./missing-path-fallback.js";
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
@@ -1750,19 +1751,20 @@ async function processWithConcurrency(items, limit, worker, options = {}) {
  * record preparation, and AST analysis for the provided file.
  */
 async function readProjectGmlFile({ file, fsFacade, metrics }) {
-    try {
-        const contents = await metrics.timers.timeAsync("fs.readGml", () =>
-            fsFacade.readFile(file.absolutePath, "utf8")
-        );
-        metrics.counters.increment("io.gmlBytes", Buffer.byteLength(contents));
-        return contents;
-    } catch (error) {
-        if (Core.isErrorWithCode(error, "ENOENT")) {
+    const contents = await runWithMissingPathFallback(
+        () => metrics.timers.timeAsync("fs.readGml", () => fsFacade.readFile(file.absolutePath, "utf8")),
+        () => {
             metrics.counters.increment("files.missingDuringRead");
             return null;
         }
-        throw error;
+    );
+
+    if (contents === null) {
+        return null;
     }
+
+    metrics.counters.increment("io.gmlBytes", Buffer.byteLength(contents));
+    return contents;
 }
 function registerFilePathWithScope(scopeRecord, filePath) {
     if (!scopeRecord?.filePaths) {

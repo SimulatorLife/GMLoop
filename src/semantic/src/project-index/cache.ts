@@ -6,6 +6,7 @@ import { Core } from "@gmloop/core";
 import { evaluateProjectIndexCacheSizePolicy, normalizeProjectIndexCacheMaxSizeBytes } from "./cache-write-policy.js";
 import { isProjectManifestPath } from "./constants.js";
 import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
+import { runWithMissingPathFallback } from "./missing-path-fallback.js";
 
 export const PROJECT_INDEX_CACHE_SCHEMA_VERSION = 2;
 export const PROJECT_INDEX_CACHE_DIRECTORY = ".prettier-plugin-gml";
@@ -240,14 +241,13 @@ export async function loadProjectIndexCache(
     const resolvedRoot = path.resolve(projectRoot);
     const cacheFilePath = resolveCacheFilePath(resolvedRoot, explicitPath);
 
-    let rawContents;
-    try {
-        rawContents = await fsFacade.readFile(cacheFilePath, "utf8");
-    } catch (error) {
-        if (Core.isErrorWithCode(error, "ENOENT")) {
-            return createCacheMiss(cacheFilePath, ProjectIndexCacheMissReason.NOT_FOUND);
-        }
-        throw error;
+    const rawContents = await runWithMissingPathFallback(
+        () => fsFacade.readFile(cacheFilePath, "utf8"),
+        () => null
+    );
+
+    if (rawContents === null) {
+        return createCacheMiss(cacheFilePath, ProjectIndexCacheMissReason.NOT_FOUND);
     }
 
     ensureNotAborted();
