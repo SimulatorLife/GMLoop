@@ -216,6 +216,30 @@ function applySourceTextEdits(sourceText: string, edits: ReadonlyArray<LoopLengt
 }
 
 /**
+ * Perform a cheap lexical pre-check before parsing to detect whether the file
+ * could possibly contain any configured loop-length accessor call.
+ *
+ * This intentionally over-approximates (it may return true for comments or
+ * strings) but never under-approximates valid call syntax. Returning `false`
+ * lets the codemod skip AST parsing for files that cannot be rewritten.
+ */
+function sourceContainsPotentialAccessorCall(sourceText: string, accessorNames: ReadonlySet<string>): boolean {
+    for (const accessorName of accessorNames) {
+        const directCallToken = `${accessorName}(`;
+        if (sourceText.includes(directCallToken)) {
+            return true;
+        }
+
+        const callWithWhitespacePattern = new RegExp(String.raw`\b${accessorName}\s+\(`, "u");
+        if (callWithWhitespacePattern.test(sourceText)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
  * Applies the loop-length hoisting codemod to a single GML source file.
  *
  * The codemod rewrites `for` loop tests that repeatedly call configured
@@ -238,6 +262,15 @@ export function applyLoopLengthHoistingCodemod(
 
     const suffixMap = Core.resolveIdentifierKeyedSuffixMap(DEFAULT_HOIST_ACCESSORS, options.functionSuffixes);
     if (suffixMap.size === 0) {
+        return Object.freeze({
+            changed: false,
+            outputText: sourceText,
+            appliedEdits: Object.freeze([]),
+            diagnosticOffsets: Object.freeze([])
+        });
+    }
+
+    if (!sourceContainsPotentialAccessorCall(sourceText, new Set(suffixMap.keys()))) {
         return Object.freeze({
             changed: false,
             outputText: sourceText,

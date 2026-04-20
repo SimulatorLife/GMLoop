@@ -76,3 +76,20 @@ void test("applyLoopLengthHoistingCodemod only rewrites repeated calls matching 
     assert.equal(result.outputText, expected);
     assert.equal(result.diagnosticOffsets.length, 1);
 });
+
+void test("applyLoopLengthHoistingCodemod detects accessor calls with whitespace before parentheses", () => {
+    const input = ["for (var i = 0; i < array_length (items); i++) {", "    total += i;", "}", ""].join("\n");
+    const expected = [
+        "var len = array_length (items);",
+        "for (var i = 0; i < len; i++) {",
+        "    total += i;",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = applyLoopLengthHoistingCodemod(input);
+
+    assert.equal(result.changed, true);
+    assert.equal(result.outputText, expected);
+    assert.equal(result.diagnosticOffsets.length, 1);
+});
