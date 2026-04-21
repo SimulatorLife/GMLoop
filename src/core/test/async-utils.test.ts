@@ -144,30 +144,53 @@ void test("runInParallel works with iterables", async () => {
     assert.deepEqual(results, [11, 12, 13]);
 });
 
-void test("runInParallel is faster than sequential for slow operations", async () => {
-    const delayMs = 50;
-    const count = 5;
-    const delays = Array.from({ length: count }, () => delayMs);
-
-    // Time parallel execution
-    const parallelStart = Date.now();
-    await runInParallel(delays, async (delay) => {
-        await new Promise((resolve) => setTimeout(resolve, delay));
+void test("runInParallel eagerly starts all callbacks unlike runSequentially", async () => {
+    // Historical note: this suite previously asserted Date.now() durations to prove
+    // parallelism. That approach is flaky in busy CI environments where scheduler
+    // jitter can invert close timing comparisons.
+    const startedInParallel: Array<number> = [];
+    let releaseParallelCallbacks: () => void;
+    const parallelGate = new Promise<void>((resolve) => {
+        releaseParallelCallbacks = resolve;
     });
-    const parallelDuration = Date.now() - parallelStart;
 
-    // Time sequential execution
-    const sequentialStart = Date.now();
-    await runSequentially(delays, async (delay) => {
-        await new Promise((resolve) => setTimeout(resolve, delay));
+    const parallelResultsPromise = runInParallel([1, 2, 3], async (value) => {
+        startedInParallel.push(value);
+        await parallelGate;
+        return value;
     });
-    const sequentialDuration = Date.now() - sequentialStart;
 
-    // Parallel should be significantly faster (at least 2x for 5 operations)
-    assert.ok(
-        parallelDuration < sequentialDuration / 2,
-        `Parallel (${parallelDuration}ms) should be much faster than sequential (${sequentialDuration}ms)`
+    assert.deepEqual(
+        startedInParallel,
+        [1, 2, 3],
+        "runInParallel should invoke every callback before any callback is released"
     );
+    releaseParallelCallbacks();
+    await parallelResultsPromise;
+
+    const startedInSequence: Array<number> = [];
+    let releaseFirstSequentialCallback: () => void;
+    const firstSequentialGate = new Promise<void>((resolve) => {
+        releaseFirstSequentialCallback = resolve;
+    });
+
+    const sequentialResultsPromise = runSequentially([1, 2, 3], async (value) => {
+        startedInSequence.push(value);
+        if (value === 1) {
+            await firstSequentialGate;
+        }
+    });
+
+    await Promise.resolve();
+    assert.equal(
+        startedInSequence.length,
+        1,
+        "runSequentially should not invoke the next callback until the current callback settles"
+    );
+    assert.equal(startedInSequence[0], 1);
+    releaseFirstSequentialCallback();
+    await sequentialResultsPromise;
+    assert.deepEqual(startedInSequence, [1, 2, 3]);
 });
 
 // === runInParallelWithLimit tests ===
