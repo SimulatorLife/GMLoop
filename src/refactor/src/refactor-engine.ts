@@ -81,6 +81,7 @@ import {
 
 const RENAME_VALIDATION_CACHE_MAX_SIZE = 4096;
 const APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT = 8;
+const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 256;
 const validatedWorkspaceRevisions = new WeakMap<object, number>();
 
 function hasCurrentValidatedWorkspaceRevision(workspace: object): boolean {
@@ -1374,6 +1375,8 @@ export class RefactorEngine {
         const overlay = new Map<string, string>();
         const overlayByteSizeByPath = new Map<string, number>();
         const overlaySpillIndex = new Set<string>();
+        const readThroughCache = new Map<string, string>();
+        const readThroughCacheOrder: Array<string> = [];
         const appliedFiles = new Map<string, string>();
         let overlayBytes = 0;
         let overlayHighWaterBytes = 0;
@@ -1387,6 +1390,23 @@ export class RefactorEngine {
                 ? (dryRunOverlayStorageBackend ??
                   createTempFileStorageBackend({ readCacheMaxEntries: dryRunOverlayReadCacheMaxEntries }))
                 : null;
+
+        const cacheReadThroughContent = (filePath: string, content: string): void => {
+            if (readThroughCache.has(filePath)) {
+                readThroughCache.set(filePath, content);
+                return;
+            }
+
+            readThroughCache.set(filePath, content);
+            readThroughCacheOrder.push(filePath);
+
+            while (readThroughCacheOrder.length > CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES) {
+                const evictedFilePath = readThroughCacheOrder.shift();
+                if (evictedFilePath !== undefined) {
+                    readThroughCache.delete(evictedFilePath);
+                }
+            }
+        };
 
         const spillEntryToBackend = async (filePath: string): Promise<void> => {
             if (!spillBackend) {
@@ -1459,13 +1479,21 @@ export class RefactorEngine {
             if (useInMemoryOverlay && overlaySpillIndex.has(filePath) && spillBackend) {
                 const spilledContent = await spillBackend.readEntry(filePath);
                 if (typeof spilledContent === "string") {
+                    cacheReadThroughContent(filePath, spilledContent);
                     return spilledContent;
                 }
 
                 overlaySpillIndex.delete(filePath);
             }
 
-            return await readFile(filePath);
+            const cachedContent = readThroughCache.get(filePath);
+            if (cachedContent !== undefined) {
+                return cachedContent;
+            }
+
+            const content = await readFile(filePath);
+            cacheReadThroughContent(filePath, content);
+            return content;
         };
 
         const writeWithOverlay = async (filePath: string, content: string): Promise<void> => {
@@ -1475,6 +1503,7 @@ export class RefactorEngine {
             } else {
                 appliedFiles.set(filePath, "");
             }
+            cacheReadThroughContent(filePath, content);
 
             if (!dryRun && writeFile) {
                 await writeFile(filePath, content);
