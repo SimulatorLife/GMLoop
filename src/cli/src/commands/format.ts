@@ -49,6 +49,10 @@ import {
     trimFormattingCache
 } from "../modules/formatting/index.js";
 import {
+    getDefaultMaxInMemorySnapshots,
+    setDefaultMaxInMemorySnapshots
+} from "../runtime-options/format-memory-snapshots.js";
+import {
     getDefaultIgnoredFileSampleLimit,
     getDefaultSkippedDirectorySampleLimit,
     getDefaultUnsupportedExtensionSampleLimit,
@@ -64,6 +68,7 @@ import {
 } from "../shared/timing/elapsed-time.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
+import { PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES, PERIODIC_CLEANUP_INTERVAL } from "./format-memory-constants.js";
 import {
     isHelpRequest,
     resolveTargetPathFromInput,
@@ -579,15 +584,11 @@ let revertSnapshotDirectory = null;
 let revertSnapshotFileCount = 0;
 let encounteredFormattableFile = false;
 
-// Limit the number of in-memory snapshots to prevent unbounded memory growth
-// when disk writes fail. When this limit is reached, old snapshots are released.
-const MAX_IN_MEMORY_SNAPSHOTS = 50;
+// Track in-memory snapshots so memory limit enforcement can reclaim old entries.
 let inMemorySnapshotCount = 0;
 
-// Track processed files for periodic cache cleanup
+// Track processed files for periodic cache cleanup.
 let processedFileCount = 0;
-// Reduced from 50 to 10 to perform more frequent cleanups and prevent memory buildup
-const PERIODIC_CLEANUP_INTERVAL = 10;
 
 function ensureRevertSnapshotDirectory() {
     if (revertSnapshotDirectory) {
@@ -697,11 +698,13 @@ async function discardFormattedFileOriginalContents() {
  * must be kept in memory.
  */
 async function enforceSnapshotMemoryLimit() {
-    if (inMemorySnapshotCount <= MAX_IN_MEMORY_SNAPSHOTS) {
+    const maxInMemorySnapshots = getDefaultMaxInMemorySnapshots();
+
+    if (inMemorySnapshotCount <= maxInMemorySnapshots) {
         return;
     }
 
-    const snapshotsToRelease = inMemorySnapshotCount - MAX_IN_MEMORY_SNAPSHOTS;
+    const snapshotsToRelease = inMemorySnapshotCount - maxInMemorySnapshots;
     const snapshotsToDelete = collectInlineSnapshotsForEviction(snapshotsToRelease);
 
     // Release snapshots sequentially to maintain correct accounting
@@ -737,7 +740,7 @@ function collectInlineSnapshotsForEviction(snapshotsToRelease) {
 function performPeriodicMemoryCleanup() {
     // Trim the formatting cache more aggressively to limit memory usage.
     // Instead of clearing completely, we keep only a small number of recent entries.
-    trimFormattingCache(5);
+    trimFormattingCache(PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES);
 
     // Trigger garbage collection if exposed (e.g., when running with --expose-gc)
     if (typeof globalThis.gc === "function") {
@@ -2065,7 +2068,7 @@ export const __formatTest__ = Object.freeze({
     // Memory management test helpers
     getMemoryManagementStatsForTests: () => ({
         inMemorySnapshotCount,
-        maxInMemorySnapshots: MAX_IN_MEMORY_SNAPSHOTS,
+        maxInMemorySnapshots: getDefaultMaxInMemorySnapshots(),
         processedFileCount,
         periodicCleanupInterval: PERIODIC_CLEANUP_INTERVAL,
         formattedFileOriginalContentsSize: formattedFileOriginalContents.size,
@@ -2077,6 +2080,9 @@ export const __formatTest__ = Object.freeze({
             return total + snapshot.inlineContents.length * 2;
         }, 0)
     }),
+    setDefaultMaxInMemorySnapshotsForTests: (count: number) => {
+        return setDefaultMaxInMemorySnapshots(count);
+    },
     setInMemorySnapshotCountForTests: (count: number) => {
         inMemorySnapshotCount = count;
     },
