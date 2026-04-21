@@ -305,6 +305,25 @@ void describe("formatter boundaries ownership", () => {
         );
     });
 
+    void it("does not normalize decorative banner comment text (banner normalization belongs in lint)", async () => {
+        const source = [
+            "function demo() {",
+            "\t/*////////////",
+            "\t//// section ////",
+            "\t////////////*/",
+            "\tvalue += 1;",
+            "}",
+            ""
+        ].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.ok(
+            formatted.includes("/*////////////\n\t//// section ////\n\t////////////*/"),
+            "Formatter must preserve decorative banner text verbatim; normalization belongs to gml/normalize-banner-comments."
+        );
+    });
+
     void it("fails fast on invalid syntax instead of repairing parse input", async () => {
         const malformedSource = 'if (ready) {\n    show_debug_message("x");\n';
 
