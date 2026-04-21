@@ -400,7 +400,7 @@ void test("preserves blank lines between adjacent function doc-comment tags", as
     );
 });
 
-void test("keeps mixed doc-comment prefixes attached without normalizing content", async () => {
+void test("does not promote plain comments into doc-comment attachments", async () => {
     const source = [
         "/// @function scr_create_fx",
         "// @param sprite_index",
@@ -415,9 +415,9 @@ void test("keeps mixed doc-comment prefixes attached without normalizing content
     assert.equal(
         formatted,
         [
-            "/// @function scr_create_fx",
             "// @param sprite_index",
             "/* @description Create an effect */",
+            "/// @function scr_create_fx",
             "/// @returns {Id.Instance} instance",
             "function scr_create_fx() {}",
             ""
