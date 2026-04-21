@@ -1268,99 +1268,13 @@ function formatDecorativeBlockComment(comment, originalText) {
 
     const sourceSpan = resolveCommentSourceSpan(comment, originalText);
     if (sourceSpan !== null) {
-        const sourceCommentText = sourceSpan.originalText.slice(sourceSpan.startIndex, sourceSpan.endIndex + 1);
-        return normalizeDecorativeCommentSourceIndentation(sourceCommentText, comment);
+        // Decorative banner content normalization is lint-owned
+        // (`gml/normalize-banner-comments`). The formatter can preserve source
+        // text and only decide placement/whitespace around comments.
+        return sourceSpan.originalText.slice(sourceSpan.startIndex, sourceSpan.endIndex + 1);
     }
 
     return `/*${value}*/`;
-}
-
-function normalizeDecorativeCommentSourceIndentation(sourceCommentText: string, comment: PrinterComment): string {
-    const lines = sourceCommentText.split(/\r?\n/).map((line) => line.replaceAll("\t", "    "));
-    if (lines.length === 0) {
-        return sourceCommentText;
-    }
-
-    const nonEmptyLines = lines.map((line, index) => ({ index, line })).filter(({ line }) => line.trim().length > 0);
-    if (nonEmptyLines.length === 0) {
-        return lines.join("\n");
-    }
-
-    const desiredIndentation = resolveDecorativeCommentTargetIndentation(comment);
-    const firstNonEmptyIndex = nonEmptyLines[0]?.index ?? -1;
-    const lastNonEmptyIndex = nonEmptyLines.at(-1)?.index ?? -1;
-
-    if (firstNonEmptyIndex < 0 || lastNonEmptyIndex < 0) {
-        return lines.join("\n");
-    }
-
-    const openingLine = lines[firstNonEmptyIndex] ?? "";
-    const openingIndentation = openingLine.length - openingLine.trimStart().length;
-    const openingDedent = Math.max(0, openingIndentation - desiredIndentation);
-
-    let minimumInteriorIndentation: number | null = null;
-    for (let lineIndex = firstNonEmptyIndex + 1; lineIndex < lastNonEmptyIndex; lineIndex += 1) {
-        const interiorLine = lines[lineIndex] ?? "";
-        if (interiorLine.trim().length === 0) {
-            continue;
-        }
-
-        const interiorIndentation = interiorLine.length - interiorLine.trimStart().length;
-        if (minimumInteriorIndentation === null || interiorIndentation < minimumInteriorIndentation) {
-            minimumInteriorIndentation = interiorIndentation;
-        }
-    }
-
-    const desiredInteriorIndentation = desiredIndentation + 4;
-    const interiorDedent =
-        minimumInteriorIndentation === null
-            ? openingDedent
-            : Math.max(0, minimumInteriorIndentation - desiredInteriorIndentation);
-
-    const normalizedLines = lines.map((line, lineIndex) => {
-        if (line.trim().length === 0) {
-            return "";
-        }
-
-        if (lineIndex === firstNonEmptyIndex) {
-            return line.slice(Math.min(openingDedent, line.length));
-        }
-
-        if (lineIndex > firstNonEmptyIndex && lineIndex < lastNonEmptyIndex) {
-            const trimmedLine = line.trimStart();
-            const contentIndentation = line.length - trimmedLine.length;
-            const dedentedContentIndentation = Math.max(0, contentIndentation - interiorDedent);
-            const targetIndentation = Math.max(desiredInteriorIndentation, dedentedContentIndentation);
-            return `${" ".repeat(targetIndentation)}${trimmedLine}`;
-        }
-
-        return line.slice(Math.min(openingDedent, line.length));
-    });
-
-    const closingIndex = normalizedLines.findLastIndex((line) => line.trim().length > 0);
-    if (closingIndex !== -1 && /^\s*\*\/{10,}\s*$/.test(normalizedLines[closingIndex])) {
-        normalizedLines[closingIndex] = normalizedLines[closingIndex].trimStart();
-    }
-
-    return normalizedLines.join("\n");
-}
-
-function resolveDecorativeCommentTargetIndentation(comment: PrinterComment): number {
-    const followingColumn = comment?.followingNode?.start?.column;
-    if (typeof followingColumn === "number" && Number.isFinite(followingColumn)) {
-        return Math.max(0, followingColumn);
-    }
-
-    const precedingColumn = comment?.precedingNode?.start?.column;
-    if (typeof precedingColumn === "number" && Number.isFinite(precedingColumn)) {
-        return Math.max(0, precedingColumn);
-    }
-
-    if (comment?.enclosingNode?.type === "Program") {
-        return 0;
-    }
-
-    return 0;
 }
 
 function hasDecorativeSlashBanner(commentValue: string): boolean {
