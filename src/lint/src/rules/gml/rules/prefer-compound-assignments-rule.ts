@@ -14,14 +14,9 @@ import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type SupportedArithmeticOperator = "+" | "-" | "*" | "/" | "%";
 type SupportedBitwiseOperator = "|" | "&" | "^";
-type SupportedShiftOperator = "<<" | ">>";
 type SupportedNullishOperator = "??";
-type SupportedBinaryOperator =
-    | SupportedArithmeticOperator
-    | SupportedBitwiseOperator
-    | SupportedShiftOperator
-    | SupportedNullishOperator;
-type CompoundAssignmentOperator = "+=" | "-=" | "*=" | "/=" | "%=" | "|=" | "&=" | "^=" | "<<=" | ">>=" | "??=";
+type SupportedBinaryOperator = SupportedArithmeticOperator | SupportedBitwiseOperator | SupportedNullishOperator;
+type CompoundAssignmentOperator = "+=" | "-=" | "*=" | "/=" | "%=" | "|=" | "&=" | "^=" | "??=";
 
 type BinaryExpressionNode = AstNodeRecord &
     Readonly<{
@@ -58,8 +53,6 @@ const COMPOUND_OPERATOR_BY_BINARY_OPERATOR = Object.freeze({
     "|": "|=",
     "&": "&=",
     "^": "^=",
-    "<<": "<<=",
-    ">>": ">>=",
     "??": "??="
 } as const satisfies Readonly<Record<SupportedBinaryOperator, CompoundAssignmentOperator>>);
 
@@ -73,8 +66,6 @@ function isSupportedBinaryOperator(operator: unknown): operator is SupportedBina
         operator === "|" ||
         operator === "&" ||
         operator === "^" ||
-        operator === "<<" ||
-        operator === ">>" ||
         operator === "??"
     );
 }
@@ -130,7 +121,7 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
     }
 
     // Right-first pattern for commutative operators: x = y + x → x += y, x = y * x → x *= y.
-    // Commutative: `+`, `*`, `|`, `&`, `^`. Non-commutative: `-`, `/`, `%`, `<<`, `>>`, `??`.
+    // Commutative: `+`, `*`, `|`, `&`, `^`. Non-commutative: `-`, `/`, `%`, `??`.
     const isCommutativeOperator =
         rightExpressionNode.operator === "+" ||
         rightExpressionNode.operator === "*" ||
@@ -167,8 +158,11 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
  *
  * Reports and auto-fixes safe self-assignment patterns:
  * `x = x + y`, `x = x - y`, `x = x * y`, `x = x / y`, `x = x % y`,
- * `x = x | y`, `x = x & y`, `x = x ^ y`, `x = x << y`, `x = x >> y`,
- * and `x = x ?? y`.
+ * `x = x | y`, `x = x & y`, `x = x ^ y`, and `x = x ?? y`.
+ *
+ * IMPORTANT: GML does not support `<<=` or `>>=` compound-assignment syntax.
+ * The linter must never rewrite `x = x << y` or `x = x >> y` into those forms,
+ * because doing so produces invalid, unparsable code.
  */
 export function createPreferCompoundAssignmentsRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({

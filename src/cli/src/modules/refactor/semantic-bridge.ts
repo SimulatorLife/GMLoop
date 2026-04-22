@@ -14,6 +14,7 @@ import {
     listMacroExpansionDependencies
 } from "./macro-expansion-dependencies.js";
 import { ParsedLocalNamingCategoryResolver } from "./parsed-local-naming-categories.js";
+import { collectResourceSidecarRenames, resolveRenamedSoundFileName } from "./resource-sidecar-renames.js";
 import { readExclusiveSemanticLocationIndex, readSemanticLocationIndex } from "./semantic-index-helpers.js";
 
 type ResourceAssetReferenceRecord = {
@@ -1255,6 +1256,7 @@ export class GmlSemanticBridge {
         const destinationDirectoryExists =
             shouldRenameResourceDirectory && this.doesWorkspaceDirectoryPathExist(renamedResourceDirectoryPath);
         const fileRenameDestinationDir = destinationDirectoryExists ? renamedResourceDirectoryPath : resourceDir;
+        const resourceMetadataDocument = this.loadResourceMetadataDocumentForRename(currentResourcePath);
 
         // 1. Rename files inside the directory that match the old name.
         // We do this BEFORE renaming the directory because GameMaker assets keep
@@ -1282,6 +1284,19 @@ export class GmlSemanticBridge {
             if (this.doesWorkspaceFilePathExist(oldFilePath)) {
                 edit.addFileRename(oldFilePath, newFilePath);
             }
+        }
+
+        for (const sidecarRename of collectResourceSidecarRenames({
+            resourceType: resource.resourceType,
+            metadataDocument: resourceMetadataDocument,
+            currentResourcePath,
+            oldName,
+            newName,
+            fileRenameDestinationDir,
+            doesWorkspaceFilePathExist: (candidatePath) => this.doesWorkspaceFilePathExist(candidatePath),
+            doesWorkspaceDirectoryPathExist: (candidatePath) => this.doesWorkspaceDirectoryPathExist(candidatePath)
+        })) {
+            edit.addFileRename(sidecarRename.oldPath, sidecarRename.newPath);
         }
 
         // 2. Rename the directory itself if it matches the resource name.
@@ -1337,6 +1352,28 @@ export class GmlSemanticBridge {
         };
         this.projectMetadataReferenceIndex = createdIndex;
         return createdIndex;
+    }
+
+    private loadResourceMetadataDocumentForRename(resourcePath: string): Record<string, unknown> {
+        const existingDocument = this.parsedProjectMetadataByPath.get(resourcePath);
+        if (existingDocument !== undefined) {
+            return structuredClone(existingDocument);
+        }
+
+        const absolutePath = path.resolve(this.projectRoot, resourcePath);
+        if (!fs.existsSync(absolutePath)) {
+            return {};
+        }
+
+        try {
+            const rawContent = fs.readFileSync(absolutePath, "utf8");
+            const parsed = Semantic.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
+            this.projectMetadataSourceByPath.set(resourcePath, rawContent);
+            this.parsedProjectMetadataByPath.set(resourcePath, parsed);
+            return structuredClone(parsed);
+        } catch {
+            return {};
+        }
     }
 
     private listResourceMetadataMutationCandidates(resourcePath: string): Array<ResourceMetadataRecord> {
@@ -1529,6 +1566,15 @@ export class GmlSemanticBridge {
                     }
                 }
 
+                changed =
+                    this.updateResourceSoundFileMetadata(
+                        parsed,
+                        resource.resourceType,
+                        oldName,
+                        newName,
+                        stringMutations
+                    ) || changed;
+
                 const roomInstanceCreationOrderUpdated = updateRoomInstanceCreationOrderSelfPaths({
                     parsed,
                     normalizedOldResourcePath: normalizeMetadataReferenceTargetPath(currentResourcePath),
@@ -1666,6 +1712,28 @@ export class GmlSemanticBridge {
         }
 
         this.addResourceOrderMetadataEdit(edit, resource, newName, newResourcePath, latestBatchMetadataDocuments);
+    }
+
+    private updateResourceSoundFileMetadata(
+        parsed: Record<string, unknown>,
+        resourceType: string | undefined,
+        oldName: string,
+        newName: string,
+        stringMutations: Array<{ propertyPath: string; value: string }>
+    ): boolean {
+        if (resourceType !== "GMSound") {
+            return false;
+        }
+
+        const currentSoundFile = Core.getNonEmptyString(parsed.soundFile);
+        const renamedSoundFile = resolveRenamedSoundFileName(currentSoundFile, oldName, newName);
+        if (!renamedSoundFile || currentSoundFile === renamedSoundFile) {
+            return false;
+        }
+
+        parsed.soundFile = renamedSoundFile;
+        appendProjectMetadataStringMutation(stringMutations, "soundFile", renamedSoundFile);
+        return true;
     }
 
     private addResourceOrderMetadataEdit(

@@ -79,9 +79,11 @@ function findLineEndIndex(source: string, startIndex: number): number {
 }
 
 function matchesIndexedAssignmentTail(tail: string): boolean {
-    return /^(?:\s*(?:\[[^\]\n]*\]|\.[A-Za-z_][A-Za-z0-9_]*))*\s*(?:<<=|>>=|\+=|-=|\*=|\/=|%=|\^=|&=|\|=|=)(?![=])/.test(
-        tail
-    );
+    // Treat only real GML assignment operators as definition-like writes.
+    // `<<=` and `>>=` are intentionally excluded because GML does not support
+    // shift-compound assignment syntax; recognizing them here would let refactor
+    // analyses model invalid code as a valid write.
+    return /^(?:\s*(?:\[[^\]\n]*\]|\.[A-Za-z_][A-Za-z0-9_]*))*\s*(?:\+=|-=|\*=|\/=|%=|\^=|&=|\|=|=)(?![=])/.test(tail);
 }
 
 function isDefinitionLikeReference(source: string, start: number, end: number): boolean {

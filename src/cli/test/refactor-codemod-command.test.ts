@@ -122,6 +122,52 @@ void test("refactor codemod --write applies configured namingConvention renames 
     }
 });
 
+void test("refactor codemod --write preserves valid bit-shift assignments and never emits unsupported <<= syntax", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "decode_colour",
+            [
+                "function decode_colour() {",
+                "    var _decoded_colour = 1;",
+                "    _decoded_colour = _decoded_colour << 4;",
+                "    return _decoded_colour;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        const source = await readFile(path.join(projectRoot, "scripts/decode_colour/decode_colour.gml"), "utf8");
+        assert.match(source, /= .* << 4;/);
+        assert.match(source, /_decodedColour = _decodedColour << 4;/);
+        assert.doesNotMatch(source, /<<=/);
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write preserves allowed leading underscores while applying safe snake-case renames", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {
@@ -845,6 +891,153 @@ void test("refactor codemod --write renames object resources together with objec
         assert.doesNotMatch(systemSource, /\boCamera\b/);
 
         await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write keeps sprite and sound sidecars aligned when destination resource directories already exist", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        spriteResourceName: {
+                            caseStyle: "lower_snake"
+                        },
+                        audioResourceName: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await mkdir(path.join(projectRoot, "sprites/spr_player"), { recursive: true });
+        await mkdir(path.join(projectRoot, "sounds/snd_colmesh_demo2coin"), { recursive: true });
+
+        const spriteResourcePath = "sprites/sprPlayer/sprPlayer.yy";
+        await writeProjectFile(
+            projectRoot,
+            spriteResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMSprite: "v2",
+                    "%Name": "sprPlayer",
+                    name: "sprPlayer",
+                    resourceType: "GMSprite",
+                    resourceVersion: "2.0",
+                    resourcePath: spriteResourcePath,
+                    frames: [
+                        {
+                            name: "a777fc4d-ac59-4464-b4bd-e93704762166",
+                            resourceType: "GMSpriteFrame",
+                            resourceVersion: "2.0"
+                        }
+                    ],
+                    layers: [
+                        {
+                            name: "c7545ec4-2c29-4b5e-9814-c7ec66e59442",
+                            resourceType: "GMImageLayer",
+                            resourceVersion: "2.0"
+                        }
+                    ],
+                    sequence: {
+                        name: "sprPlayer",
+                        tracks: [
+                            {
+                                keyframes: {
+                                    Keyframes: [
+                                        {
+                                            Channels: {
+                                                0: {
+                                                    Id: {
+                                                        name: "a777fc4d-ac59-4464-b4bd-e93704762166",
+                                                        path: spriteResourcePath
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "sprites/sprPlayer/a777fc4d-ac59-4464-b4bd-e93704762166.png", "sprite");
+        await writeProjectFile(
+            projectRoot,
+            "sprites/sprPlayer/layers/a777fc4d-ac59-4464-b4bd-e93704762166/c7545ec4-2c29-4b5e-9814-c7ec66e59442.png",
+            "layer"
+        );
+        await registerProjectResource(projectRoot, "sprPlayer", spriteResourcePath);
+
+        const soundResourcePath = "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.yy";
+        await writeProjectFile(
+            projectRoot,
+            soundResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMSound: "v2",
+                    "%Name": "sndColmeshDemo2Coin",
+                    name: "sndColmeshDemo2Coin",
+                    resourceType: "GMSound",
+                    resourceVersion: "2.0",
+                    resourcePath: soundResourcePath,
+                    soundFile: "sndColmeshDemo2Coin.mp3"
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.mp3", "sound");
+        await registerProjectResource(projectRoot, "sndColmeshDemo2Coin", soundResourcePath);
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        await assert.doesNotReject(access(path.join(projectRoot, "sprites/spr_player/spr_player.yy")));
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "sprites/spr_player/a777fc4d-ac59-4464-b4bd-e93704762166.png"))
+        );
+        await assert.doesNotReject(
+            access(
+                path.join(
+                    projectRoot,
+                    "sprites/spr_player/layers/a777fc4d-ac59-4464-b4bd-e93704762166/c7545ec4-2c29-4b5e-9814-c7ec66e59442.png"
+                )
+            )
+        );
+        await assert.rejects(
+            access(path.join(projectRoot, "sprites/sprPlayer/a777fc4d-ac59-4464-b4bd-e93704762166.png"))
+        );
+
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"))
+        );
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.mp3"))
+        );
+        await assert.rejects(access(path.join(projectRoot, "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.mp3")));
+
+        const spriteMetadata = await readFile(path.join(projectRoot, "sprites/spr_player/spr_player.yy"), "utf8");
+        const soundMetadata = await readFile(
+            path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"),
+            "utf8"
+        );
+
+        assert.match(spriteMetadata, /"resourcePath"\s*:\s*"sprites\/spr_player\/spr_player\.yy"/);
+        assert.match(soundMetadata, /"soundFile"\s*:\s*"snd_colmesh_demo2coin\.mp3"/);
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }

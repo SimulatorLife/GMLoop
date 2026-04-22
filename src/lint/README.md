@@ -35,6 +35,7 @@ This wires:
 - `plugins.gml = Lint.plugin`
 - `language = "gml/gml"`
 - All recommended `gml/*` rule levels plus the conservative safe Feather subset
+  (`gm1003`, `gm1009`, `gm1033`, `gm1041`, `gm1051`, `gm2007`, `gm2020`)
 
 ## Config Sets
 
@@ -126,7 +127,10 @@ Built-in `gml/*` rule short names:
 - `simplify-real-calls`
 
 `prefer-compound-assignments` rewrites safe self-assignment forms
-`x = x <op> y` to `x <op>= y` for `-`, `*`, `/`, and `??`.
+`x = x <op> y` to `x <op>= y` for arithmetic/bitwise operators that GML
+actually supports in compound form, plus `??`.
+It must never rewrite `x = x << y` or `x = x >> y`, because GML has no `<<=`
+or `>>=` operator.
 
 `prefer-array-push` rewrites direct append assignments of the form
 `array[array_length(array)] = value;` to `array_push(array, value);` when the

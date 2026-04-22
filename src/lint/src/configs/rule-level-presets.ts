@@ -49,6 +49,7 @@ const RECOMMENDED_SAFE_FEATHER_RULES: Readonly<Record<`feather/${string}`, LintR
     "feather/gm1003": "warn",
     "feather/gm1009": "warn",
     "feather/gm1033": "warn",
+    "feather/gm1051": "warn",
     "feather/gm1041": "warn",
     "feather/gm2007": "warn",
     "feather/gm2020": "warn"

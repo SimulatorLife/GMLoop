@@ -885,19 +885,23 @@ function createGm1051Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 
             const inlineCommentStart = line.search(/\/\/|\/\*/u);
             const body = inlineCommentStart === -1 ? line : line.slice(0, inlineCommentStart);
-            const trailingSemicolon = /;\s*$/u.exec(body);
+            const lineContinuation = /\\\s*$/u.exec(body);
+            const continuationSuffix = lineContinuation?.[0] ?? "";
+            const bodyWithoutContinuation =
+                lineContinuation === null ? body : body.slice(0, lineContinuation.index ?? body.length);
+            const trailingSemicolon = /;\s*$/u.exec(bodyWithoutContinuation);
             if (!trailingSemicolon) {
                 return line;
             }
 
             const semicolonIndex = trailingSemicolon.index;
-            const bodyWithoutTrailingSemicolon = `${body.slice(0, semicolonIndex)}${body.slice(semicolonIndex + 1)}`;
+            const bodyWithoutTrailingSemicolon = `${bodyWithoutContinuation.slice(0, semicolonIndex)}${bodyWithoutContinuation.slice(semicolonIndex + 1)}`;
             if (/\w;\w/u.test(bodyWithoutTrailingSemicolon)) {
                 return line;
             }
 
             const commentSuffix = inlineCommentStart === -1 ? "" : line.slice(inlineCommentStart);
-            return `${bodyWithoutTrailingSemicolon}${commentSuffix}`;
+            return `${bodyWithoutTrailingSemicolon}${continuationSuffix}${commentSuffix}`;
         })
     );
 }

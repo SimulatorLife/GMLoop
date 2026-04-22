@@ -650,6 +650,22 @@ void test("gm1051 removes trailing macro semicolons without mutating inline semi
     assertEquals(output.includes("#macro KEEP_WITH_TRAILING value;value;"), true);
 });
 
+void test("gm1051 removes a trailing macro semicolon before a line-continuation backslash", () => {
+    const input =
+        "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count;\\\n" +
+        "                                     _glyph_prev_prev = _glyph_prev;\\\n" +
+        "                                     _glyph_prev = _glyph_write;";
+
+    const { output } = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm1051", input);
+
+    assertEquals(
+        output,
+        "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count\\\n" +
+            "                                     _glyph_prev_prev = _glyph_prev;\\\n" +
+            "                                     _glyph_prev = _glyph_write;"
+    );
+});
+
 void test("gm1033 removes redundant semicolon runs without mutating for-loop headers", () => {
     const input = `for (;;) {
     tick();

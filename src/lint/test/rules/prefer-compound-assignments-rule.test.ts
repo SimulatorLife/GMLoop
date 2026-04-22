@@ -203,7 +203,7 @@ void test("prefer-compound-assignments does not rewrite x = y ?? x (non-commutat
     assertEquals(result.output, input);
 });
 
-void test("prefer-compound-assignments rewrites modulo, bitwise, and shift self-assignments", () => {
+void test("prefer-compound-assignments rewrites modulo and bitwise self-assignments but preserves shifts", () => {
     const input = [
         "angle = angle % 360;",
         "flags = flags | mask;",
@@ -218,14 +218,22 @@ void test("prefer-compound-assignments rewrites modulo, bitwise, and shift self-
         "flags |= mask;",
         "bits &= mask;",
         "state ^= toggle;",
-        "value <<= 2;",
-        "value >>= 1;",
+        "value = value << 2;",
+        "value = value >> 1;",
         ""
     ].join("\n");
 
     const result = runPreferCompoundAssignmentsRule(input);
-    assertEquals(result.messageCount, 6);
+    assertEquals(result.messageCount, 4);
     assertEquals(result.output, expected);
+});
+
+void test("prefer-compound-assignments never rewrites GML shift self-assignments to unsupported compound syntax", () => {
+    const input = "_decoded_colour = _decoded_colour << 4;\n";
+    const result = runPreferCompoundAssignmentsRule(input);
+
+    assertEquals(result.messageCount, 0);
+    assertEquals(result.output, input);
 });
 
 void test("prefer-compound-assignments rewrites x = y | x to x |= y (commutative bitwise)", () => {

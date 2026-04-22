@@ -85,6 +85,23 @@ void test("recommended config auto-fixes prefer-array-push and prefer-increment-
     assert.equal(result.messages.length, 0);
 });
 
+void test("recommended config does not invent unsupported shift-compound assignment syntax", async () => {
+    const sourceText = ["_decoded_colour = _decoded_colour << 4;", ""].join("\n");
+
+    const eslint = new ESLint({
+        overrideConfigFile: true,
+        fix: true,
+        overrideConfig: createMutableRecommendedConfig()
+    });
+
+    const [result] = await eslint.lintText(sourceText, {
+        filePath: "recommended-config-shift-preservation.gml"
+    });
+
+    assert.equal(result.output ?? sourceText, sourceText);
+    assert.equal(result.messages.length, 0);
+});
+
 void test("recommended config auto-fixes malformed region pairs", async () => {
     const sourceText = ["#region This is my region", "var value = 1;", ""].join("\n");
 
@@ -110,6 +127,9 @@ void test("recommended config applies the conservative feather safe subset", asy
         "var flags = fa_readonly + fa_archive;",
         "var nextRoom = room + 1;",
         ";;;",
+        "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count;\\",
+        "                                     _glyph_prev_prev = _glyph_prev;\\",
+        "                                     _glyph_prev = _glyph_write;",
         'var actor = instance_create_layer(0, 0, "Instances", "obj_player");',
         "var counter",
         "all.hp = 0;",
@@ -134,6 +154,9 @@ void test("recommended config applies the conservative feather safe subset", asy
             "}",
             "var flags = fa_readonly | fa_archive;",
             "var nextRoom = room_next(room);",
+            "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count\\",
+            "                                     _glyph_prev_prev = _glyph_prev;\\",
+            "                                     _glyph_prev = _glyph_write;",
             'var actor = instance_create_layer(0, 0, "Instances", obj_player);',
             "var counter;",
             "with (all) {",

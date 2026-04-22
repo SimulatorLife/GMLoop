@@ -1640,6 +1640,172 @@ void describe("GmlSemanticBridge tests", () => {
         assert.ok(!edits.metadataEdits.some((entry) => entry.path === spritePath));
     });
 
+    void it("getAdditionalSymbolEdits carries sprite and sound sidecars into an existing renamed resource directory", () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-sidecars-"));
+        const soundPath = "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.yy";
+        const spritePath = "sprites/sprPlayer/sprPlayer.yy";
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "sounds/sndColmeshDemo2Coin"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "sounds/snd_colmesh_demo2coin"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "sprites/sprPlayer/layers/a777fc4d-ac59-4464-b4bd-e93704762166"), {
+                recursive: true
+            });
+            fs.mkdirSync(path.join(tmpRoot, "sprites/spr_player"), { recursive: true });
+
+            fs.writeFileSync(
+                path.join(tmpRoot, soundPath),
+                `{
+                  "$GMSound":"v2",
+                  "%Name":"sndColmeshDemo2Coin",
+                  "name":"sndColmeshDemo2Coin",
+                  "resourceType":"GMSound",
+                  "resourceVersion":"2.0",
+                  "resourcePath":"${soundPath}",
+                  "soundFile":"sndColmeshDemo2Coin.mp3",
+                }`,
+                "utf8"
+            );
+            fs.writeFileSync(path.join(tmpRoot, "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.mp3"), "sound", "utf8");
+
+            fs.writeFileSync(
+                path.join(tmpRoot, spritePath),
+                `${JSON.stringify(
+                    {
+                        $GMSprite: "v2",
+                        "%Name": "sprPlayer",
+                        name: "sprPlayer",
+                        resourceType: "GMSprite",
+                        resourceVersion: "2.0",
+                        resourcePath: spritePath,
+                        frames: [
+                            {
+                                name: "a777fc4d-ac59-4464-b4bd-e93704762166",
+                                resourceType: "GMSpriteFrame",
+                                resourceVersion: "2.0"
+                            }
+                        ],
+                        layers: [
+                            {
+                                name: "c7545ec4-2c29-4b5e-9814-c7ec66e59442",
+                                resourceType: "GMImageLayer",
+                                resourceVersion: "2.0"
+                            }
+                        ],
+                        sequence: {
+                            name: "sprPlayer",
+                            tracks: [
+                                {
+                                    keyframes: {
+                                        Keyframes: [
+                                            {
+                                                Channels: {
+                                                    0: {
+                                                        Id: {
+                                                            name: "a777fc4d-ac59-4464-b4bd-e93704762166",
+                                                            path: spritePath
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    null,
+                    4
+                )}\n`,
+                "utf8"
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "sprites/sprPlayer/a777fc4d-ac59-4464-b4bd-e93704762166.png"),
+                "sprite",
+                "utf8"
+            );
+            fs.writeFileSync(
+                path.join(
+                    tmpRoot,
+                    "sprites/sprPlayer/layers/a777fc4d-ac59-4464-b4bd-e93704762166/c7545ec4-2c29-4b5e-9814-c7ec66e59442.png"
+                ),
+                "layer",
+                "utf8"
+            );
+
+            const mockProjectIndex = {
+                identifiers: {},
+                resources: {
+                    [soundPath]: {
+                        path: soundPath,
+                        name: "sndColmeshDemo2Coin",
+                        resourceType: "GMSound",
+                        assetReferences: []
+                    },
+                    [spritePath]: {
+                        path: spritePath,
+                        name: "sprPlayer",
+                        resourceType: "GMSprite",
+                        assetReferences: []
+                    }
+                }
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const soundEdits = bridge.getAdditionalSymbolEdits(
+                "gml/sounds/sndColmeshDemo2Coin",
+                "snd_colmesh_demo2coin"
+            );
+            const spriteEdits = bridge.getAdditionalSymbolEdits("gml/sprites/sprPlayer", "spr_player");
+
+            assert.ok(soundEdits);
+            assert.ok(spriteEdits);
+            assert.ok(
+                soundEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === soundPath &&
+                        entry.newPath === "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"
+                )
+            );
+            assert.ok(
+                soundEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.mp3" &&
+                        entry.newPath === "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.mp3"
+                )
+            );
+            assert.ok(
+                soundEdits.metadataEdits.some(
+                    (entry) =>
+                        entry.path === soundPath && entry.content.includes('"soundFile":"snd_colmesh_demo2coin.mp3"')
+                )
+            );
+            assert.ok(
+                spriteEdits.fileRenames.some(
+                    (entry) => entry.oldPath === spritePath && entry.newPath === "sprites/spr_player/spr_player.yy"
+                )
+            );
+            assert.ok(
+                spriteEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "sprites/sprPlayer/a777fc4d-ac59-4464-b4bd-e93704762166.png" &&
+                        entry.newPath === "sprites/spr_player/a777fc4d-ac59-4464-b4bd-e93704762166.png"
+                )
+            );
+            assert.ok(
+                spriteEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "sprites/sprPlayer/layers" && entry.newPath === "sprites/spr_player/layers"
+                )
+            );
+        } finally {
+            fs.rmSync(tmpRoot, {
+                recursive: true,
+                force: true
+            });
+        }
+    });
+
     void it("listNamingConventionTargets classifies resource, callable, macro, global, and local targets", async () => {
         const mockProjectIndex = {
             resources: {
