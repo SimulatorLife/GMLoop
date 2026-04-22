@@ -60,7 +60,6 @@ import {
     resolveSkippedDirectorySampleLimit,
     resolveUnsupportedExtensionSampleLimit
 } from "../runtime-options/sample-limits.js";
-import { isMissingModuleDependency, resolveModuleDefaultExport } from "../shared/module.js";
 import {
     calculateElapsedNanoseconds,
     formatElapsedNanosecondsAsMilliseconds,
@@ -69,6 +68,7 @@ import {
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
 import { PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES, PERIODIC_CLEANUP_INTERVAL } from "./format-memory-constants.js";
+import { isMissingModuleDependency, resolveModuleDefaultExport } from "./format-module-resolution.js";
 import {
     isHelpRequest,
     resolveTargetPathFromInput,
