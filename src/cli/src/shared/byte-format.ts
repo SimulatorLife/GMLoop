@@ -115,6 +115,14 @@ function resolveRadixOverride(radix: number | string | undefined, defaultRadix: 
     );
 }
 
+function normalizeDecimalPlaces(value: number): number {
+    if (!isFiniteNumber(value)) {
+        return 0;
+    }
+
+    return clamp(value, 0, Number.POSITIVE_INFINITY);
+}
+
 function formatByteSize(
     bytes: NumericLike,
     { decimals = 1, decimalsForBytes = 0, separator = "", trimTrailingZeros = false, radix }: FormatByteSizeOptions = {}
@@ -129,7 +137,7 @@ function formatByteSize(
         value /= resolvedRadix;
     }
 
-    const decimalPlaces = clamp(unitIndex === 0 ? decimalsForBytes : decimals, 0, Number.POSITIVE_INFINITY);
+    const decimalPlaces = normalizeDecimalPlaces(unitIndex === 0 ? decimalsForBytes : decimals);
 
     let formattedValue = value.toFixed(decimalPlaces);
 
