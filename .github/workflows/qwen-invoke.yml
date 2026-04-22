@@ -74,7 +74,8 @@ jobs:
         Do not speculate about likely files, helper names, or rule failures before command output identifies them.
         Do not finish with only analysis or a plan; leave a concrete repository diff in the worktree.
         When using file tools, use absolute paths under the repository root if a relative path is not enough.
-        Do not output a JSON plan, a fake function call, or `startNewTask`.
+        Do not output a JSON plan, a fake function call, or `startNewTask`
+        Do not ask the user for a file path: *find* the relevant file path to use/edit.
         PROMPT
         )"
         export QWEN_TASK_PROMPT

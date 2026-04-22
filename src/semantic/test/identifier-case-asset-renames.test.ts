@@ -28,4 +28,22 @@ void describe("identifier case asset rename planning", () => {
             renames: []
         });
     });
+
+    void it("renames folder-backed sprite resources into a matching target directory", () => {
+        const result = planAssetRenames({
+            projectIndex: {
+                resources: {
+                    "sprites/sprPlayer/sprPlayer.yy": {
+                        name: "sprPlayer",
+                        resourceType: "GMSprite"
+                    }
+                }
+            },
+            assetStyle: IdentifierCaseStyle.SNAKE_LOWER
+        });
+
+        assert.deepStrictEqual(result.conflicts, []);
+        assert.strictEqual(result.renames.length, 1);
+        assert.strictEqual(result.renames[0].newResourcePath, "sprites/spr_player/spr_player.yy");
+    });
 });

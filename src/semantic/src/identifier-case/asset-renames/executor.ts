@@ -126,6 +126,75 @@ function ensureWritableFile(fsFacade, filePath) {
     ensureWritableDirectory(fsFacade, path.dirname(filePath));
 }
 
+function buildRenameAction(from: string, to: string) {
+    if (!Core.isNonEmptyString(from) || !Core.isNonEmptyString(to) || from === to) {
+        return null;
+    }
+
+    return { from, to };
+}
+
+function collectMetadataSidecarRenameActions({
+    rename,
+    resourceJson,
+    resourceAbsolute,
+    newResourceAbsolute
+}: {
+    rename: Record<string, unknown>;
+    resourceJson: Record<string, unknown>;
+    resourceAbsolute: string;
+    newResourceAbsolute: string;
+}) {
+    const renameActions = [];
+    const currentResourceDirectory = path.dirname(resourceAbsolute);
+    const nextResourceDirectory = path.dirname(newResourceAbsolute);
+    const nextResourceFileName = path.basename(newResourceAbsolute);
+    const currentResourceName = Core.getNonEmptyString(rename.fromName) ?? Core.getNonEmptyString(resourceJson.name);
+    const nextResourceName = Core.getNonEmptyString(rename.toName);
+
+    if (!currentResourceName || !nextResourceName) {
+        const yyRename = buildRenameAction(resourceAbsolute, newResourceAbsolute);
+        if (yyRename) {
+            renameActions.push(yyRename);
+        }
+        return renameActions;
+    }
+
+    const shouldRenameResourceDirectory = currentResourceDirectory !== nextResourceDirectory;
+    const stagedResourceFileRenameTarget = shouldRenameResourceDirectory
+        ? path.join(currentResourceDirectory, nextResourceFileName)
+        : newResourceAbsolute;
+    const yyRename = buildRenameAction(resourceAbsolute, stagedResourceFileRenameTarget);
+    if (yyRename) {
+        renameActions.push(yyRename);
+    }
+
+    if (resourceJson.resourceType === "GMSound" && typeof resourceJson.soundFile === "string") {
+        const currentSoundExtension = path.extname(resourceJson.soundFile);
+        const currentSoundBaseName = path.basename(resourceJson.soundFile, currentSoundExtension);
+        if (currentSoundExtension && currentSoundBaseName === currentResourceName) {
+            const renamedSoundFileName = `${nextResourceName}${currentSoundExtension}`;
+            const soundFileRename = buildRenameAction(
+                path.join(currentResourceDirectory, resourceJson.soundFile),
+                path.join(currentResourceDirectory, renamedSoundFileName)
+            );
+            if (soundFileRename) {
+                renameActions.push(soundFileRename);
+            }
+            resourceJson.soundFile = renamedSoundFileName;
+        }
+    }
+
+    if (shouldRenameResourceDirectory) {
+        const directoryRename = buildRenameAction(currentResourceDirectory, nextResourceDirectory);
+        if (directoryRename) {
+            renameActions.push(directoryRename);
+        }
+    }
+
+    return renameActions;
+}
+
 export function createAssetRenameExecutor({
     projectIndex,
     fsFacade = null,
@@ -238,12 +307,14 @@ export function createAssetRenameExecutor({
 
             const newResourceAbsolute = resolveAbsolutePath(projectRoot, rename.newResourcePath);
 
-            if (newResourceAbsolute !== resourceAbsolute) {
-                renameActions.push({
-                    from: resourceAbsolute,
-                    to: newResourceAbsolute
-                });
-            }
+            renameActions.push(
+                ...collectMetadataSidecarRenameActions({
+                    rename,
+                    resourceJson,
+                    resourceAbsolute,
+                    newResourceAbsolute
+                })
+            );
 
             for (const gmlRename of rename.gmlRenames ?? []) {
                 if (
@@ -322,5 +393,6 @@ export const __private__: any = {
     updateReferenceObject,
     tryAccess,
     ensureWritableFile,
-    ensureWritableDirectory
+    ensureWritableDirectory,
+    collectMetadataSidecarRenameActions
 };
