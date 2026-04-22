@@ -567,6 +567,32 @@ void test("patch queue flushes automatically when reaching max size", async () =
     }
 });
 
+void test("patch queue normalizes non-positive queue options to safe minimums", async () => {
+    const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
+        patchQueue: {
+            flushIntervalMs: 0,
+            maxQueueSize: 0
+        }
+    });
+
+    try {
+        sendScriptPatch(ws, "script:normalized_queue_config");
+
+        const metrics = await waitForQueueMetrics(
+            client,
+            "queue to flush immediately when normalized max size is reached",
+            (snapshot) => snapshot.totalFlushed === 1 && snapshot.flushCount === 1
+        );
+
+        assert.strictEqual(metrics.totalQueued, 1);
+        assert.strictEqual(metrics.totalFlushed, 1);
+        assert.strictEqual(metrics.maxQueueDepth, 1);
+    } finally {
+        client.disconnect();
+        restoreRuntimeGlobals();
+    }
+});
+
 void test("patch queue drops oldest patches when exceeding max size", async () => {
     const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
         patchQueue: {
