@@ -41,6 +41,22 @@ void describe("byte-format", () => {
             );
         });
 
+        void it("treats non-finite decimal options as zero instead of throwing", () => {
+            assert.strictEqual(
+                formatByteSize(1536, {
+                    decimals: Number.NaN
+                }),
+                "2KB"
+            );
+
+            assert.strictEqual(
+                formatByteSize(512, {
+                    decimalsForBytes: Number.POSITIVE_INFINITY
+                }),
+                "512B"
+            );
+        });
+
         void it("accepts per-call radix overrides", () => {
             assert.strictEqual(formatByteSize(1000, { radix: 1000 }), "1.0KB");
             assert.strictEqual(formatByteSize(1000, { radix: "invalid" }), "1000B");
