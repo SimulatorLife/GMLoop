@@ -12,10 +12,11 @@ import {
 } from "./test-helpers/refactor-codemod-command-fixture.js";
 
 const SCRIPT_COUNT = 320;
-// Tightened threshold after caching mutable metadata documents during batch rename planning.
-const PERFORMANCE_THRESHOLD_MS = 6500;
+// Tightened threshold after caching disk-backed identifier occurrences across
+// resource-rename symbol lookups in one codemod run.
+const PERFORMANCE_THRESHOLD_MS = 6200;
 const CASE_INSENSITIVE_MANIFEST_SCRIPT_COUNT = 300;
-const CASE_INSENSITIVE_MANIFEST_THRESHOLD_MS = 6500;
+const CASE_INSENSITIVE_MANIFEST_THRESHOLD_MS = 5000;
 
 async function measureMedianDurationMs<T>(
     sampleCount: number,

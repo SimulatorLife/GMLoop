@@ -536,6 +536,7 @@ export class GmlSemanticBridge {
     private readonly stagedParsedMetadata = new Map<string, Record<string, unknown>>();
     private readonly sourceTextByPath = new Map<string, string | null>();
     private readonly diskIdentifierOccurrenceIndexesByFilePath = new Map<string, GmlIdentifierOccurrenceIndex | null>();
+    private diskOccurrencesBySymbolName: Map<string, Array<SymbolOccurrence>> | null = null;
     private constructorStaticMemberNameCounts: Map<string, number> | null = null;
     private constructorRuntimeTypeReferencesByExactName: Map<
         string,
@@ -577,6 +578,7 @@ export class GmlSemanticBridge {
         this.parsedProjectMetadataByPath.clear();
         this.sourceTextByPath.clear();
         this.diskIdentifierOccurrenceIndexesByFilePath.clear();
+        this.diskOccurrencesBySymbolName = null;
         this.localReferenceOccurrencesByFilePath.clear();
         this.localNamingCategoryResolver.clear();
         this.constructorStaticMemberNameCounts = null;
@@ -1787,32 +1789,63 @@ export class GmlSemanticBridge {
     }
 
     private collectOccurrencesFromGmlFiles(symbolName: string, occurrences: Array<SymbolOccurrence>): void {
-        const files = this.projectIndex.files;
-        if (!files) return;
-
-        for (const filePath of Object.keys(files)) {
-            if (filePath.endsWith(".gml")) {
-                const hits = this.findIdentifierOccurrences(filePath, symbolName);
-                for (const hit of hits) {
-                    occurrences.push({
-                        path: filePath,
-                        start: hit.start,
-                        end: hit.end,
-                        kind: "reference"
-                    });
-                }
-            }
+        const diskOccurrencesBySymbolName = this.getDiskOccurrencesBySymbolName();
+        if (diskOccurrencesBySymbolName === null) {
+            return;
         }
+
+        occurrences.push(...(diskOccurrencesBySymbolName.get(symbolName) ?? []));
     }
 
-    /**
-     * Find identifier occurrences in a file (respecting boundary characters).
-     */
-    private findIdentifierOccurrences(
-        relativePath: string,
-        name: string
-    ): ReadonlyArray<{ end: number; start: number }> {
-        return this.getDiskIdentifierOccurrenceIndex(relativePath)?.getOccurrences(name) ?? [];
+    private getDiskOccurrencesBySymbolName(): Map<string, Array<SymbolOccurrence>> | null {
+        if (this.diskOccurrencesBySymbolName !== null) {
+            return this.diskOccurrencesBySymbolName;
+        }
+
+        const files = this.projectIndex.files;
+        if (!Core.isObjectLike(files)) {
+            return null;
+        }
+
+        const diskOccurrencesBySymbolName = new Map<string, Array<SymbolOccurrence>>();
+        for (const filePath of Object.keys(files)) {
+            if (!filePath.endsWith(".gml")) {
+                continue;
+            }
+
+            this.appendDiskOccurrencesForFile(filePath, diskOccurrencesBySymbolName);
+        }
+
+        this.diskOccurrencesBySymbolName = diskOccurrencesBySymbolName;
+        return diskOccurrencesBySymbolName;
+    }
+
+    private appendDiskOccurrencesForFile(
+        filePath: string,
+        diskOccurrencesBySymbolName: Map<string, Array<SymbolOccurrence>>
+    ): void {
+        const identifierOccurrenceIndex = this.getDiskIdentifierOccurrenceIndex(filePath);
+        if (identifierOccurrenceIndex === null) {
+            return;
+        }
+
+        identifierOccurrenceIndex.forEachOccurrencesByIdentifierName((identifierName, hits) => {
+            if (hits.length === 0) {
+                return;
+            }
+
+            const occurrencesForName = diskOccurrencesBySymbolName.get(identifierName) ?? [];
+            for (const hit of hits) {
+                occurrencesForName.push({
+                    path: filePath,
+                    start: hit.start,
+                    end: hit.end,
+                    kind: "reference"
+                });
+            }
+
+            diskOccurrencesBySymbolName.set(identifierName, occurrencesForName);
+        });
     }
 
     private getDiskIdentifierOccurrenceIndex(filePath: string): GmlIdentifierOccurrenceIndex | null {
