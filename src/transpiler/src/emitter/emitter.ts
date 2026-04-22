@@ -90,6 +90,7 @@ export class GmlToJsEmitter {
      * a separate analysis pass.
      */
     private readonly scriptRefs: Set<string>;
+    private readonly emittedGlobalVarInitializers: Set<string>;
     private emitDepth: number;
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
@@ -99,6 +100,7 @@ export class GmlToJsEmitter {
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this.globalVars = new Set();
         this.scriptRefs = new Set();
+        this.emittedGlobalVarInitializers = new Set();
         this.emitDepth = 0;
     }
 
@@ -127,6 +129,7 @@ export class GmlToJsEmitter {
         if (isTopLevelEmit) {
             this.globalVars.clear();
             this.scriptRefs.clear();
+            this.emittedGlobalVarInitializers.clear();
         }
         this.emitDepth += 1;
         try {
@@ -654,6 +657,10 @@ export class GmlToJsEmitter {
                     return "";
                 }
                 this.globalVars.add(identifier);
+                if (this.emittedGlobalVarInitializers.has(identifier)) {
+                    return "";
+                }
+                this.emittedGlobalVarInitializers.add(identifier);
                 return `if (!Object.prototype.hasOwnProperty.call(${globalsIdent}, "${identifier}")) { ${globalsIdent}.${identifier} = undefined; }`;
             })
         );
