@@ -7,6 +7,7 @@ import { Core } from "@gmloop/core";
 import { Semantic } from "@gmloop/semantic";
 import { Command, Option } from "commander";
 
+import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
@@ -419,7 +420,7 @@ function addGraphSharedOptions(
     if (includeDepth) {
         command.addOption(
             new Option("--depth <n>", "Neighbor traversal depth")
-                .argParser((value) => Number.parseInt(value, 10))
+                .argParser(createMinimumValueValidator(1, "Depth must be at least 1"))
                 .default(1)
         );
     }
@@ -427,7 +428,7 @@ function addGraphSharedOptions(
     if (includeLimit) {
         command.addOption(
             new Option("--limit <n>", "Maximum number of search results")
-                .argParser((value) => Number.parseInt(value, 10))
+                .argParser(createMinimumValueValidator(1, "Limit must be at least 1"))
                 .default(10)
         );
     }

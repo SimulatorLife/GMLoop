@@ -4,7 +4,12 @@ import { describe, it } from "node:test";
 import { Core } from "@gmloop/core";
 import { Command, InvalidArgumentError } from "commander";
 
-import { parseCommandLine, portValidator, wrapInvalidArgumentResolver } from "../src/cli-core/command-parsing.js";
+import {
+    createMinimumValueValidator,
+    parseCommandLine,
+    portValidator,
+    wrapInvalidArgumentResolver
+} from "../src/cli-core/command-parsing.js";
 import { isCliUsageError } from "../src/cli-core/errors.js";
 
 const { isObjectLike } = Core;
@@ -188,6 +193,36 @@ void describe("portValidator", () => {
         assert.throws(
             () => portValidator("abc"),
             (error) => error instanceof InvalidArgumentError && /Port must be between 1 and 65535/.test(error.message)
+        );
+    });
+});
+
+void describe("createMinimumValueValidator", () => {
+    void it("accepts values at the minimum boundary", () => {
+        const minimumValidator = createMinimumValueValidator(5, "Value must be at least 5");
+        assert.strictEqual(minimumValidator("5"), 5);
+    });
+
+    void it("accepts values above the minimum boundary", () => {
+        const minimumValidator = createMinimumValueValidator(5, "Value must be at least 5");
+        assert.strictEqual(minimumValidator("42"), 42);
+    });
+
+    void it("rejects values below the minimum boundary", () => {
+        const minimumValidator = createMinimumValueValidator(5, "Value must be at least 5");
+
+        assert.throws(
+            () => minimumValidator("4"),
+            (error) => error instanceof InvalidArgumentError && /Value must be at least 5/.test(error.message)
+        );
+    });
+
+    void it("rejects non-numeric values", () => {
+        const minimumValidator = createMinimumValueValidator(5, "Value must be at least 5");
+
+        assert.throws(
+            () => minimumValidator("abc"),
+            (error) => error instanceof InvalidArgumentError && /Value must be at least 5/.test(error.message)
         );
     });
 });

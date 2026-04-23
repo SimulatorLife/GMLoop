@@ -17,16 +17,27 @@ export interface ParseCommandLineResult {
     usage: string;
 }
 
+function parseIntegerWithBounds(
+    value: string,
+    bounds: Readonly<{ errorMessage: string; maximum: number; minimum: number }>
+): number {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed < bounds.minimum || parsed > bounds.maximum) {
+        throw new Error(bounds.errorMessage);
+    }
+    return parsed;
+}
+
 /**
  * An argParser for Commander.js options that validates port numbers.
  * Ports must be integers in the range 1–65535.
  */
 export const portValidator = wrapInvalidArgumentResolver((value: string) => {
-    const parsed = Number.parseInt(value);
-    if (Number.isNaN(parsed) || parsed < 1 || parsed > 65_535) {
-        throw new Error("Port must be between 1 and 65535");
-    }
-    return parsed;
+    return parseIntegerWithBounds(value, {
+        errorMessage: "Port must be between 1 and 65535",
+        maximum: 65_535,
+        minimum: 1
+    });
 });
 
 /**
@@ -39,11 +50,11 @@ export const portValidator = wrapInvalidArgumentResolver((value: string) => {
  */
 export function createMinimumValueValidator(min: number, errorMessage: string) {
     return wrapInvalidArgumentResolver((value: string) => {
-        const parsed = Number.parseInt(value);
-        if (Number.isNaN(parsed) || parsed < min) {
-            throw new Error(errorMessage);
-        }
-        return parsed;
+        return parseIntegerWithBounds(value, {
+            errorMessage,
+            maximum: Number.POSITIVE_INFINITY,
+            minimum: min
+        });
     });
 }
 
