@@ -896,7 +896,7 @@ void test("refactor codemod --write renames object resources together with objec
     }
 });
 
-void test("refactor codemod --write keeps sprite and sound sidecars aligned when destination resource directories already exist", async () => {
+void test("refactor codemod --write keeps sprite, sound, and font sidecars aligned when destination resource directories already exist", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {
             codemods: {
@@ -907,6 +907,10 @@ void test("refactor codemod --write keeps sprite and sound sidecars aligned when
                         },
                         audioResourceName: {
                             caseStyle: "lower_snake"
+                        },
+                        fontResourceName: {
+                            caseStyle: "lower_snake",
+                            prefix: "fnt_"
                         }
                     }
                 }
@@ -917,6 +921,7 @@ void test("refactor codemod --write keeps sprite and sound sidecars aligned when
     try {
         await mkdir(path.join(projectRoot, "sprites/spr_player"), { recursive: true });
         await mkdir(path.join(projectRoot, "sounds/snd_colmesh_demo2coin"), { recursive: true });
+        await mkdir(path.join(projectRoot, "fonts/fnt_scribble_fallback_font"), { recursive: true });
 
         const spriteResourcePath = "sprites/sprPlayer/sprPlayer.yy";
         await writeProjectFile(
@@ -999,6 +1004,29 @@ void test("refactor codemod --write keeps sprite and sound sidecars aligned when
         await writeProjectFile(projectRoot, "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.mp3", "sound");
         await registerProjectResource(projectRoot, "sndColmeshDemo2Coin", soundResourcePath);
 
+        const fontResourcePath = "fonts/scribbleFallbackFont/scribbleFallbackFont.yy";
+        await writeProjectFile(
+            projectRoot,
+            fontResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMFont: "",
+                    "%Name": "scribbleFallbackFont",
+                    name: "scribbleFallbackFont",
+                    resourceType: "GMFont",
+                    resourceVersion: "2.0",
+                    resourcePath: fontResourcePath,
+                    fontName: "Droid Sans Mono",
+                    glyphs: {},
+                    ranges: []
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png", "font");
+        await registerProjectResource(projectRoot, "scribbleFallbackFont", fontResourcePath);
+
         const result = await runCliTestCommand({
             argv: ["refactor", "codemod", "--write"],
             cwd: projectRoot
@@ -1030,14 +1058,98 @@ void test("refactor codemod --write keeps sprite and sound sidecars aligned when
         );
         await assert.rejects(access(path.join(projectRoot, "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.mp3")));
 
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.yy"))
+        );
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.png"))
+        );
+        await assert.rejects(access(path.join(projectRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png")));
+
         const spriteMetadata = await readFile(path.join(projectRoot, "sprites/spr_player/spr_player.yy"), "utf8");
         const soundMetadata = await readFile(
             path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"),
             "utf8"
         );
+        const fontMetadata = await readFile(
+            path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.yy"),
+            "utf8"
+        );
 
         assert.match(spriteMetadata, /"resourcePath"\s*:\s*"sprites\/spr_player\/spr_player\.yy"/);
         assert.match(soundMetadata, /"soundFile"\s*:\s*"snd_colmesh_demo2coin\.mp3"/);
+        assert.match(
+            fontMetadata,
+            /"resourcePath"\s*:\s*"fonts\/fnt_scribble_fallback_font\/fnt_scribble_fallback_font\.yy"/
+        );
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write renames font bitmap files to the new resource name during normal font resource renames", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        fontResourceName: {
+                            caseStyle: "lower_snake",
+                            prefix: "fnt_"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        const fontResourcePath = "fonts/scribbleFallbackFont/scribbleFallbackFont.yy";
+        await writeProjectFile(
+            projectRoot,
+            fontResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMFont: "",
+                    "%Name": "scribbleFallbackFont",
+                    name: "scribbleFallbackFont",
+                    resourceType: "GMFont",
+                    resourceVersion: "2.0",
+                    resourcePath: fontResourcePath,
+                    fontName: "Droid Sans Mono",
+                    glyphs: {},
+                    ranges: []
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png", "font");
+        await registerProjectResource(projectRoot, "scribbleFallbackFont", fontResourcePath);
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.yy"))
+        );
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.png"))
+        );
+        await assert.rejects(access(path.join(projectRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png")));
+
+        const fontMetadata = await readFile(
+            path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.yy"),
+            "utf8"
+        );
+        assert.match(
+            fontMetadata,
+            /"resourcePath"\s*:\s*"fonts\/fnt_scribble_fallback_font\/fnt_scribble_fallback_font\.yy"/
+        );
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }

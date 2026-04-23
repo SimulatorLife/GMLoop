@@ -1640,10 +1640,11 @@ void describe("GmlSemanticBridge tests", () => {
         assert.ok(!edits.metadataEdits.some((entry) => entry.path === spritePath));
     });
 
-    void it("getAdditionalSymbolEdits carries sprite and sound sidecars into an existing renamed resource directory", () => {
+    void it("getAdditionalSymbolEdits carries sprite, sound, and font sidecars into an existing renamed resource directory", () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-sidecars-"));
         const soundPath = "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.yy";
         const spritePath = "sprites/sprPlayer/sprPlayer.yy";
+        const fontPath = "fonts/scribbleFallbackFont/scribbleFallbackFont.yy";
 
         try {
             fs.mkdirSync(path.join(tmpRoot, "sounds/sndColmeshDemo2Coin"), { recursive: true });
@@ -1652,6 +1653,8 @@ void describe("GmlSemanticBridge tests", () => {
                 recursive: true
             });
             fs.mkdirSync(path.join(tmpRoot, "sprites/spr_player"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "fonts/scribbleFallbackFont"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "fonts/fnt_scribble_fallback_font"), { recursive: true });
 
             fs.writeFileSync(
                 path.join(tmpRoot, soundPath),
@@ -1732,6 +1735,22 @@ void describe("GmlSemanticBridge tests", () => {
                 "layer",
                 "utf8"
             );
+            fs.writeFileSync(
+                path.join(tmpRoot, fontPath),
+                `${JSON.stringify(
+                    {
+                        $GMFont: "",
+                        "%Name": "scribbleFallbackFont",
+                        name: "scribbleFallbackFont",
+                        resourceType: "GMFont",
+                        resourceVersion: "2.0"
+                    },
+                    null,
+                    4
+                )}\n`,
+                "utf8"
+            );
+            fs.writeFileSync(path.join(tmpRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png"), "font", "utf8");
 
             const mockProjectIndex = {
                 identifiers: {},
@@ -1747,6 +1766,12 @@ void describe("GmlSemanticBridge tests", () => {
                         name: "sprPlayer",
                         resourceType: "GMSprite",
                         assetReferences: []
+                    },
+                    [fontPath]: {
+                        path: fontPath,
+                        name: "scribbleFallbackFont",
+                        resourceType: "GMFont",
+                        assetReferences: []
                     }
                 }
             };
@@ -1757,9 +1782,14 @@ void describe("GmlSemanticBridge tests", () => {
                 "snd_colmesh_demo2coin"
             );
             const spriteEdits = bridge.getAdditionalSymbolEdits("gml/sprites/sprPlayer", "spr_player");
+            const fontEdits = bridge.getAdditionalSymbolEdits(
+                "gml/fonts/scribbleFallbackFont",
+                "fnt_scribble_fallback_font"
+            );
 
             assert.ok(soundEdits);
             assert.ok(spriteEdits);
+            assert.ok(fontEdits);
             assert.ok(
                 soundEdits.fileRenames.some(
                     (entry) =>
@@ -1796,6 +1826,20 @@ void describe("GmlSemanticBridge tests", () => {
                 spriteEdits.fileRenames.some(
                     (entry) =>
                         entry.oldPath === "sprites/sprPlayer/layers" && entry.newPath === "sprites/spr_player/layers"
+                )
+            );
+            assert.ok(
+                fontEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === fontPath &&
+                        entry.newPath === "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.yy"
+                )
+            );
+            assert.ok(
+                fontEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "fonts/scribbleFallbackFont/scribbleFallbackFont.png" &&
+                        entry.newPath === "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.png"
                 )
             );
         } finally {

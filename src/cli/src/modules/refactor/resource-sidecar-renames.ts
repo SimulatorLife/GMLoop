@@ -172,8 +172,35 @@ function collectSpriteSidecarRenames({
     return renames;
 }
 
+function collectFontSidecarRenames({
+    currentResourcePath,
+    oldName,
+    newName,
+    fileRenameDestinationDir,
+    doesWorkspaceFilePathExist
+}: Omit<
+    SidecarRenamePlanningParameters,
+    "resourceType" | "metadataDocument" | "doesWorkspaceDirectoryPathExist"
+>): Array<ResourceSidecarRename> {
+    const resourceDir = path.posix.dirname(currentResourcePath);
+    const renames: Array<ResourceSidecarRename> = [];
+
+    // GameMaker bitmap fonts keep a generated texture page beside the `.yy`
+    // using the resource basename. Renaming only the metadata/folder leaves the
+    // font pointing at a missing `<newName>.png`, which causes runtime load
+    // failures in real projects such as Scribble fallback fonts.
+    appendRenameIfNeeded(
+        renames,
+        path.posix.join(resourceDir, `${oldName}.png`),
+        path.posix.join(fileRenameDestinationDir, `${newName}.png`),
+        doesWorkspaceFilePathExist
+    );
+
+    return renames;
+}
+
 /**
- * Collect sprite/sound payload renames that must accompany a resource metadata
+ * Collect sprite/sound/font payload renames that must accompany a resource metadata
  * rename when the refactor engine cannot rely on a single enclosing directory
  * rename to move every artifact.
  *
@@ -194,6 +221,9 @@ export function collectResourceSidecarRenames(
         }
         case "GMSprite": {
             return collectSpriteSidecarRenames(parameters);
+        }
+        case "GMFont": {
+            return collectFontSidecarRenames(parameters);
         }
         default: {
             return [];

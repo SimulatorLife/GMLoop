@@ -26,6 +26,8 @@ function createMutableRecommendedConfig(): Array<Record<string, unknown>> {
     }));
 }
 
+const backslash = String.fromCharCode(92);
+
 void test("recommended config auto-fixes simplify-real-calls and no-legacy-api together", async () => {
     CoreWorkspace.Core.setReservedIdentifierMetadataLoader(() => ({
         identifiers: {
@@ -55,6 +57,42 @@ void test("recommended config auto-fixes simplify-real-calls and no-legacy-api t
     });
 
     assert.equal(result.output, ["var total = 5;", "var count = array_length(items);", ""].join("\n"));
+    assert.equal(result.messages.length, 0);
+});
+
+void test("recommended config auto-fixes gm1051 across multiline macro continuation lines", async () => {
+    const sourceText = [
+        `${String.raw`#macro __SCRIBBLE_PARSER_WRITE_NEWLINE _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__UNICODE      ] = 0x0A`}${backslash} //ASCII line break (dec = 10)`,
+        `${String.raw`                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__BIDI         ] = e__ScribbleBidi.ISOLATED;`}${backslash}`,
+        `${String.raw`                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__CONTROL_COUNT] = _control_count;`}${backslash}`,
+        `                                        ;${backslash}`,
+        `                                        ++_glyph_count;${backslash}`,
+        "                                        _glyph_prev = 0x0A;",
+        ""
+    ].join("\n");
+
+    const eslint = new ESLint({
+        overrideConfigFile: true,
+        fix: true,
+        overrideConfig: createMutableRecommendedConfig()
+    });
+
+    const [result] = await eslint.lintText(sourceText, {
+        filePath: "recommended-config-gm1051-multiline-macro.gml"
+    });
+
+    assert.equal(
+        result.output,
+        [
+            `${String.raw`#macro __SCRIBBLE_PARSER_WRITE_NEWLINE _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__UNICODE      ] = 0x0A`}${backslash} //ASCII line break (dec = 10)`,
+            `${String.raw`                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__BIDI         ] = e__ScribbleBidi.ISOLATED`}${backslash}`,
+            `${String.raw`                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__CONTROL_COUNT] = _control_count`}${backslash}`,
+            `                                        ${backslash}`,
+            `                                        ++_glyph_count${backslash}`,
+            "                                        _glyph_prev = 0x0A",
+            ""
+        ].join("\n")
+    );
     assert.equal(result.messages.length, 0);
 });
 
@@ -155,8 +193,8 @@ void test("recommended config applies the conservative feather safe subset", asy
             "var flags = fa_readonly | fa_archive;",
             "var nextRoom = room_next(room);",
             "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count\\",
-            "                                     _glyph_prev_prev = _glyph_prev;\\",
-            "                                     _glyph_prev = _glyph_write;",
+            "                                     _glyph_prev_prev = _glyph_prev\\",
+            "                                     _glyph_prev = _glyph_write",
             'var actor = instance_create_layer(0, 0, "Instances", obj_player);',
             "var counter;",
             "with (all) {",
