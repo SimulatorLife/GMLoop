@@ -535,6 +535,7 @@ export class GmlSemanticBridge {
     private readonly stagedFileRenames: Array<{ newPath: string; oldPath: string }> = [];
     private readonly stagedMetadataContents = new Map<string, string>();
     private readonly stagedParsedMetadata = new Map<string, Record<string, unknown>>();
+    private readonly stagedMetadataParseFailures = new Set<string>();
     private readonly sourceTextByPath = new Map<string, string | null>();
     private readonly diskIdentifierOccurrenceIndexesByFilePath = new Map<string, GmlIdentifierOccurrenceIndex | null>();
     private diskOccurrencesBySymbolName: Map<string, Array<SymbolOccurrence>> | null = null;
@@ -597,6 +598,7 @@ export class GmlSemanticBridge {
         this.stagedFileRenames.length = 0;
         this.stagedMetadataContents.clear();
         this.stagedParsedMetadata.clear();
+        this.stagedMetadataParseFailures.clear();
     }
 
     /**
@@ -630,17 +632,37 @@ export class GmlSemanticBridge {
             }
 
             this.stagedMetadataContents.set(metadataEdit.path, metadataEdit.content);
+            this.stagedParsedMetadata.delete(metadataEdit.path);
+            this.stagedMetadataParseFailures.delete(metadataEdit.path);
+        }
+    }
 
-            try {
-                const absolutePath = path.resolve(this.projectRoot, metadataEdit.path);
-                const parsed = Semantic.parseProjectMetadataDocumentForMutation(
-                    metadataEdit.content,
-                    absolutePath
-                ).document;
-                this.stagedParsedMetadata.set(metadataEdit.path, parsed);
-            } catch {
-                // Ignore parse errors here, it will just re-read or fail later
-            }
+    private getStagedParsedMetadata(metadataPath: string): Record<string, unknown> | null {
+        const cachedParsedMetadata = this.stagedParsedMetadata.get(metadataPath);
+        if (cachedParsedMetadata !== undefined) {
+            return cachedParsedMetadata;
+        }
+
+        if (this.stagedMetadataParseFailures.has(metadataPath)) {
+            return null;
+        }
+
+        const stagedMetadataContent = this.stagedMetadataContents.get(metadataPath);
+        if (stagedMetadataContent === undefined) {
+            return null;
+        }
+
+        try {
+            const absolutePath = path.resolve(this.projectRoot, metadataPath);
+            const parsed = Semantic.parseProjectMetadataDocumentForMutation(
+                stagedMetadataContent,
+                absolutePath
+            ).document;
+            this.stagedParsedMetadata.set(metadataPath, parsed);
+            return parsed;
+        } catch {
+            this.stagedMetadataParseFailures.add(metadataPath);
+            return null;
         }
     }
 
@@ -1476,8 +1498,8 @@ export class GmlSemanticBridge {
             return loadedDocument;
         }
 
-        const stagedParsedMetadata = this.stagedParsedMetadata.get(metadataPath);
-        if (stagedParsedMetadata !== undefined) {
+        const stagedParsedMetadata = this.getStagedParsedMetadata(metadataPath);
+        if (stagedParsedMetadata !== null) {
             const loadedDocument: MutableProjectMetadataDocument = {
                 parsed: structuredClone(stagedParsedMetadata),
                 rawContent:
