@@ -151,3 +151,32 @@ void test("graph search does not build missing databases unless rebuild is reque
         await fixture.cleanup();
     }
 });
+
+void test("graph command options validate minimum values for depth and limit", async () => {
+    const cliModule = await loadCliModule();
+    const fixture = await createDualRootFixture();
+
+    try {
+        const invalidDepthResult = await cliModule.runCliTestCommand({
+            argv: [
+                "graph",
+                "neighbors",
+                "project::gml/script/player_update",
+                "--path",
+                fixture.projectRoot,
+                "--depth",
+                "0"
+            ]
+        });
+        assert.equal(invalidDepthResult.exitCode, 1);
+        assert.match(invalidDepthResult.stderr, /Depth must be at least 1/);
+
+        const invalidLimitResult = await cliModule.runCliTestCommand({
+            argv: ["graph", "search", "shared_toolset_fn", "--path", fixture.projectRoot, "--limit", "0"]
+        });
+        assert.equal(invalidLimitResult.exitCode, 1);
+        assert.match(invalidLimitResult.stderr, /Limit must be at least 1/);
+    } finally {
+        await fixture.cleanup();
+    }
+});
