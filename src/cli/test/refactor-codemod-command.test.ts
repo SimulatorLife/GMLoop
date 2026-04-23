@@ -1087,6 +1087,134 @@ void test("refactor codemod --write keeps sprite, sound, and font sidecars align
     }
 });
 
+void test("refactor codemod --write keeps note, tileset, and extension sidecars aligned when destination resource directories already exist", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        noteResourceName: {
+                            caseStyle: "lower_snake"
+                        },
+                        tilesetResourceName: {
+                            caseStyle: "lower_snake"
+                        },
+                        extensionResourceName: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await mkdir(path.join(projectRoot, "notes/note_design"), { recursive: true });
+        await mkdir(path.join(projectRoot, "tilesets/tileset_wall"), { recursive: true });
+        await mkdir(path.join(projectRoot, "extensions/ext_physics/AndroidSource"), { recursive: true });
+
+        const noteResourcePath = "notes/noteDesign/noteDesign.yy";
+        await writeProjectFile(
+            projectRoot,
+            noteResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMNotes: "",
+                    "%Name": "noteDesign",
+                    name: "noteDesign",
+                    resourceType: "GMNotes",
+                    resourceVersion: "2.0",
+                    resourcePath: noteResourcePath
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "notes/noteDesign/noteDesign.txt", "note");
+        await registerProjectResource(projectRoot, "noteDesign", noteResourcePath);
+
+        const tilesetResourcePath = "tilesets/tilesetWall/tilesetWall.yy";
+        await writeProjectFile(
+            projectRoot,
+            tilesetResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMTileSet: "",
+                    "%Name": "tilesetWall",
+                    name: "tilesetWall",
+                    resourceType: "GMTileSet",
+                    resourceVersion: "2.0",
+                    resourcePath: tilesetResourcePath
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "tilesets/tilesetWall/output_tileset.png", "tileset");
+        await registerProjectResource(projectRoot, "tilesetWall", tilesetResourcePath);
+
+        const extensionResourcePath = "extensions/extPhysics/extPhysics.yy";
+        await writeProjectFile(
+            projectRoot,
+            extensionResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMExtension: "",
+                    "%Name": "extPhysics",
+                    name: "extPhysics",
+                    resourceType: "GMExtension",
+                    resourceVersion: "2.0",
+                    resourcePath: extensionResourcePath
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "extensions/extPhysics/extPhysics.gml", "extension");
+        await writeProjectFile(
+            projectRoot,
+            "extensions/extPhysics/AndroidSource/ProjectFiles/google-services.json",
+            "{}"
+        );
+        await registerProjectResource(projectRoot, "extPhysics", extensionResourcePath);
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        await assert.doesNotReject(access(path.join(projectRoot, "notes/note_design/note_design.yy")));
+        await assert.doesNotReject(access(path.join(projectRoot, "notes/note_design/note_design.txt")));
+        await assert.rejects(access(path.join(projectRoot, "notes/noteDesign/noteDesign.txt")));
+
+        await assert.doesNotReject(access(path.join(projectRoot, "tilesets/tileset_wall/tileset_wall.yy")));
+        await assert.doesNotReject(access(path.join(projectRoot, "tilesets/tileset_wall/output_tileset.png")));
+        await assert.rejects(access(path.join(projectRoot, "tilesets/tilesetWall/output_tileset.png")));
+
+        await assert.doesNotReject(access(path.join(projectRoot, "extensions/ext_physics/ext_physics.yy")));
+        await assert.doesNotReject(access(path.join(projectRoot, "extensions/ext_physics/extPhysics.gml")));
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "extensions/ext_physics/AndroidSource/ProjectFiles/google-services.json"))
+        );
+        await assert.rejects(access(path.join(projectRoot, "extensions/extPhysics/extPhysics.gml")));
+
+        const noteMetadata = await readFile(path.join(projectRoot, "notes/note_design/note_design.yy"), "utf8");
+        const tilesetMetadata = await readFile(path.join(projectRoot, "tilesets/tileset_wall/tileset_wall.yy"), "utf8");
+        const extensionMetadata = await readFile(
+            path.join(projectRoot, "extensions/ext_physics/ext_physics.yy"),
+            "utf8"
+        );
+
+        assert.match(noteMetadata, /"resourcePath"\s*:\s*"notes\/note_design\/note_design\.yy"/);
+        assert.match(tilesetMetadata, /"resourcePath"\s*:\s*"tilesets\/tileset_wall\/tileset_wall\.yy"/);
+        assert.match(extensionMetadata, /"resourcePath"\s*:\s*"extensions\/ext_physics\/ext_physics\.yy"/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write renames font bitmap files to the new resource name during normal font resource renames", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {

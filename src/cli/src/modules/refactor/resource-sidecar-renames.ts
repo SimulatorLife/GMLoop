@@ -18,8 +18,10 @@ type SidecarRenamePlanningParameters = {
     oldName: string;
     newName: string;
     fileRenameDestinationDir: string;
+    primaryRenamedPaths: ReadonlyArray<string>;
     doesWorkspaceFilePathExist: (candidatePath: string) => boolean;
     doesWorkspaceDirectoryPathExist: (candidatePath: string) => boolean;
+    listWorkspaceDirectoryEntries: (candidatePath: string) => Array<string>;
 };
 
 function collectNamedChildIds(entries: unknown): Array<string> {
@@ -53,6 +55,16 @@ function appendRenameIfNeeded(
     }
 
     renames.push({ oldPath, newPath });
+}
+
+function pathIsInsideAnyDirectory(candidatePath: string, directoryPaths: ReadonlySet<string>): boolean {
+    for (const directoryPath of directoryPaths) {
+        if (candidatePath === directoryPath || candidatePath.startsWith(`${directoryPath}/`)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
@@ -89,7 +101,7 @@ function collectSoundSidecarRenames({
     doesWorkspaceFilePathExist
 }: Omit<
     SidecarRenamePlanningParameters,
-    "resourceType" | "doesWorkspaceDirectoryPathExist"
+    "resourceType" | "doesWorkspaceDirectoryPathExist" | "listWorkspaceDirectoryEntries"
 >): Array<ResourceSidecarRename> {
     const soundFile = Core.getNonEmptyString(metadataDocument.soundFile);
     const renamedSoundFile = resolveRenamedSoundFileName(soundFile, newName);
@@ -111,7 +123,10 @@ function collectSpriteSidecarRenames({
     fileRenameDestinationDir,
     doesWorkspaceFilePathExist,
     doesWorkspaceDirectoryPathExist
-}: Omit<SidecarRenamePlanningParameters, "resourceType" | "oldName" | "newName">): Array<ResourceSidecarRename> {
+}: Omit<
+    SidecarRenamePlanningParameters,
+    "resourceType" | "oldName" | "newName" | "listWorkspaceDirectoryEntries"
+>): Array<ResourceSidecarRename> {
     const resourceDir = path.posix.dirname(currentResourcePath);
     if (fileRenameDestinationDir === resourceDir) {
         return [];
@@ -180,7 +195,7 @@ function collectFontSidecarRenames({
     doesWorkspaceFilePathExist
 }: Omit<
     SidecarRenamePlanningParameters,
-    "resourceType" | "metadataDocument" | "doesWorkspaceDirectoryPathExist"
+    "resourceType" | "metadataDocument" | "doesWorkspaceDirectoryPathExist" | "listWorkspaceDirectoryEntries"
 >): Array<ResourceSidecarRename> {
     const resourceDir = path.posix.dirname(currentResourcePath);
     const renames: Array<ResourceSidecarRename> = [];
@@ -196,6 +211,72 @@ function collectFontSidecarRenames({
         doesWorkspaceFilePathExist
     );
 
+    return renames;
+}
+
+function collectNoteSidecarRenames({
+    currentResourcePath,
+    oldName,
+    newName,
+    fileRenameDestinationDir,
+    doesWorkspaceFilePathExist
+}: Omit<
+    SidecarRenamePlanningParameters,
+    "resourceType" | "metadataDocument" | "doesWorkspaceDirectoryPathExist" | "listWorkspaceDirectoryEntries"
+>): Array<ResourceSidecarRename> {
+    const resourceDir = path.posix.dirname(currentResourcePath);
+    const renames: Array<ResourceSidecarRename> = [];
+
+    appendRenameIfNeeded(
+        renames,
+        path.posix.join(resourceDir, `${oldName}.txt`),
+        path.posix.join(fileRenameDestinationDir, `${newName}.txt`),
+        doesWorkspaceFilePathExist
+    );
+
+    return renames;
+}
+
+function collectDirectoryCarryoverRenames(parameters: {
+    sourceDirectoryPath: string;
+    destinationDirectoryPath: string;
+    doesWorkspaceFilePathExist: (candidatePath: string) => boolean;
+    doesWorkspaceDirectoryPathExist: (candidatePath: string) => boolean;
+    listWorkspaceDirectoryEntries: (candidatePath: string) => Array<string>;
+    excludedPaths: ReadonlySet<string>;
+    excludedDirectoryPaths: ReadonlySet<string>;
+}): Array<ResourceSidecarRename> {
+    const renames: Array<ResourceSidecarRename> = [];
+
+    const visitDirectory = (sourceDirectoryPath: string, destinationDirectoryPath: string): void => {
+        for (const entryName of parameters.listWorkspaceDirectoryEntries(sourceDirectoryPath)) {
+            const oldEntryPath = path.posix.join(sourceDirectoryPath, entryName);
+            if (
+                parameters.excludedPaths.has(oldEntryPath) ||
+                pathIsInsideAnyDirectory(oldEntryPath, parameters.excludedDirectoryPaths)
+            ) {
+                continue;
+            }
+
+            const newEntryPath = path.posix.join(destinationDirectoryPath, entryName);
+            if (parameters.doesWorkspaceDirectoryPathExist(oldEntryPath)) {
+                if (!parameters.doesWorkspaceDirectoryPathExist(newEntryPath)) {
+                    renames.push({
+                        oldPath: oldEntryPath,
+                        newPath: newEntryPath
+                    });
+                    continue;
+                }
+
+                visitDirectory(oldEntryPath, newEntryPath);
+                continue;
+            }
+
+            appendRenameIfNeeded(renames, oldEntryPath, newEntryPath, parameters.doesWorkspaceFilePathExist);
+        }
+    };
+
+    visitDirectory(parameters.sourceDirectoryPath, parameters.destinationDirectoryPath);
     return renames;
 }
 
@@ -215,18 +296,55 @@ export function collectResourceSidecarRenames(
         return [];
     }
 
-    switch (resourceType) {
-        case "GMSound": {
-            return collectSoundSidecarRenames(parameters);
-        }
-        case "GMSprite": {
-            return collectSpriteSidecarRenames(parameters);
-        }
-        case "GMFont": {
-            return collectFontSidecarRenames(parameters);
-        }
-        default: {
-            return [];
+    const renames =
+        (() => {
+            switch (resourceType) {
+                case "GMSound": {
+                    return collectSoundSidecarRenames(parameters);
+                }
+                case "GMSprite": {
+                    return collectSpriteSidecarRenames(parameters);
+                }
+                case "GMFont": {
+                    return collectFontSidecarRenames(parameters);
+                }
+                case "GMNote":
+                case "GMNotes": {
+                    return collectNoteSidecarRenames(parameters);
+                }
+                default: {
+                    return [];
+                }
+            }
+        })() ?? [];
+
+    const resourceDir = path.posix.dirname(parameters.currentResourcePath);
+    if (parameters.fileRenameDestinationDir === resourceDir) {
+        return renames;
+    }
+
+    const excludedPaths = new Set<string>([
+        ...parameters.primaryRenamedPaths,
+        ...renames.map((rename) => rename.oldPath)
+    ]);
+    const excludedDirectoryPaths = new Set<string>();
+    for (const rename of renames) {
+        if (parameters.doesWorkspaceDirectoryPathExist(rename.oldPath)) {
+            excludedDirectoryPaths.add(rename.oldPath);
         }
     }
+
+    renames.push(
+        ...collectDirectoryCarryoverRenames({
+            sourceDirectoryPath: resourceDir,
+            destinationDirectoryPath: parameters.fileRenameDestinationDir,
+            doesWorkspaceFilePathExist: parameters.doesWorkspaceFilePathExist,
+            doesWorkspaceDirectoryPathExist: parameters.doesWorkspaceDirectoryPathExist,
+            listWorkspaceDirectoryEntries: parameters.listWorkspaceDirectoryEntries,
+            excludedPaths,
+            excludedDirectoryPaths
+        })
+    );
+
+    return renames;
 }

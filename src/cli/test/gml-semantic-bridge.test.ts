@@ -1640,11 +1640,14 @@ void describe("GmlSemanticBridge tests", () => {
         assert.ok(!edits.metadataEdits.some((entry) => entry.path === spritePath));
     });
 
-    void it("getAdditionalSymbolEdits carries sprite, sound, and font sidecars into an existing renamed resource directory", () => {
+    void it("getAdditionalSymbolEdits carries sprite, sound, font, note, tileset, and extension sidecars into an existing renamed resource directory", () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-sidecars-"));
         const soundPath = "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.yy";
         const spritePath = "sprites/sprPlayer/sprPlayer.yy";
         const fontPath = "fonts/scribbleFallbackFont/scribbleFallbackFont.yy";
+        const notePath = "notes/noteDesign/noteDesign.yy";
+        const tilesetPath = "tilesets/tilesetWall/tilesetWall.yy";
+        const extensionPath = "extensions/extPhysics/extPhysics.yy";
 
         try {
             fs.mkdirSync(path.join(tmpRoot, "sounds/sndColmeshDemo2Coin"), { recursive: true });
@@ -1655,6 +1658,12 @@ void describe("GmlSemanticBridge tests", () => {
             fs.mkdirSync(path.join(tmpRoot, "sprites/spr_player"), { recursive: true });
             fs.mkdirSync(path.join(tmpRoot, "fonts/scribbleFallbackFont"), { recursive: true });
             fs.mkdirSync(path.join(tmpRoot, "fonts/fnt_scribble_fallback_font"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "notes/noteDesign"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "notes/note_design"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "tilesets/tilesetWall"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "tilesets/tileset_wall"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "extensions/extPhysics/AndroidSource/ProjectFiles"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "extensions/ext_physics/AndroidSource"), { recursive: true });
 
             fs.writeFileSync(
                 path.join(tmpRoot, soundPath),
@@ -1751,6 +1760,59 @@ void describe("GmlSemanticBridge tests", () => {
                 "utf8"
             );
             fs.writeFileSync(path.join(tmpRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png"), "font", "utf8");
+            fs.writeFileSync(
+                path.join(tmpRoot, notePath),
+                `${JSON.stringify(
+                    {
+                        $GMNotes: "",
+                        "%Name": "noteDesign",
+                        name: "noteDesign",
+                        resourceType: "GMNotes",
+                        resourceVersion: "2.0"
+                    },
+                    null,
+                    4
+                )}\n`,
+                "utf8"
+            );
+            fs.writeFileSync(path.join(tmpRoot, "notes/noteDesign/noteDesign.txt"), "note", "utf8");
+            fs.writeFileSync(
+                path.join(tmpRoot, tilesetPath),
+                `${JSON.stringify(
+                    {
+                        $GMTileSet: "",
+                        "%Name": "tilesetWall",
+                        name: "tilesetWall",
+                        resourceType: "GMTileSet",
+                        resourceVersion: "2.0"
+                    },
+                    null,
+                    4
+                )}\n`,
+                "utf8"
+            );
+            fs.writeFileSync(path.join(tmpRoot, "tilesets/tilesetWall/output_tileset.png"), "tileset", "utf8");
+            fs.writeFileSync(
+                path.join(tmpRoot, extensionPath),
+                `${JSON.stringify(
+                    {
+                        $GMExtension: "",
+                        "%Name": "extPhysics",
+                        name: "extPhysics",
+                        resourceType: "GMExtension",
+                        resourceVersion: "2.0"
+                    },
+                    null,
+                    4
+                )}\n`,
+                "utf8"
+            );
+            fs.writeFileSync(path.join(tmpRoot, "extensions/extPhysics/extPhysics.gml"), "extension", "utf8");
+            fs.writeFileSync(
+                path.join(tmpRoot, "extensions/extPhysics/AndroidSource/ProjectFiles/google-services.json"),
+                "{}",
+                "utf8"
+            );
 
             const mockProjectIndex = {
                 identifiers: {},
@@ -1772,6 +1834,24 @@ void describe("GmlSemanticBridge tests", () => {
                         name: "scribbleFallbackFont",
                         resourceType: "GMFont",
                         assetReferences: []
+                    },
+                    [notePath]: {
+                        path: notePath,
+                        name: "noteDesign",
+                        resourceType: "GMNotes",
+                        assetReferences: []
+                    },
+                    [tilesetPath]: {
+                        path: tilesetPath,
+                        name: "tilesetWall",
+                        resourceType: "GMTileSet",
+                        assetReferences: []
+                    },
+                    [extensionPath]: {
+                        path: extensionPath,
+                        name: "extPhysics",
+                        resourceType: "GMExtension",
+                        assetReferences: []
                     }
                 }
             };
@@ -1786,10 +1866,16 @@ void describe("GmlSemanticBridge tests", () => {
                 "gml/fonts/scribbleFallbackFont",
                 "fnt_scribble_fallback_font"
             );
+            const noteEdits = bridge.getAdditionalSymbolEdits("gml/notes/noteDesign", "note_design");
+            const tilesetEdits = bridge.getAdditionalSymbolEdits("gml/tilesets/tilesetWall", "tileset_wall");
+            const extensionEdits = bridge.getAdditionalSymbolEdits("gml/extensions/extPhysics", "ext_physics");
 
             assert.ok(soundEdits);
             assert.ok(spriteEdits);
             assert.ok(fontEdits);
+            assert.ok(noteEdits);
+            assert.ok(tilesetEdits);
+            assert.ok(extensionEdits);
             assert.ok(
                 soundEdits.fileRenames.some(
                     (entry) =>
@@ -1840,6 +1926,51 @@ void describe("GmlSemanticBridge tests", () => {
                     (entry) =>
                         entry.oldPath === "fonts/scribbleFallbackFont/scribbleFallbackFont.png" &&
                         entry.newPath === "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.png"
+                )
+            );
+            assert.ok(
+                noteEdits.fileRenames.some(
+                    (entry) => entry.oldPath === notePath && entry.newPath === "notes/note_design/note_design.yy"
+                )
+            );
+            assert.ok(
+                noteEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "notes/noteDesign/noteDesign.txt" &&
+                        entry.newPath === "notes/note_design/note_design.txt"
+                )
+            );
+            assert.ok(
+                tilesetEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === tilesetPath && entry.newPath === "tilesets/tileset_wall/tileset_wall.yy"
+                )
+            );
+            assert.ok(
+                tilesetEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "tilesets/tilesetWall/output_tileset.png" &&
+                        entry.newPath === "tilesets/tileset_wall/output_tileset.png"
+                )
+            );
+            assert.ok(
+                extensionEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === extensionPath && entry.newPath === "extensions/ext_physics/ext_physics.yy"
+                )
+            );
+            assert.ok(
+                extensionEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "extensions/extPhysics/extPhysics.gml" &&
+                        entry.newPath === "extensions/ext_physics/extPhysics.gml"
+                )
+            );
+            assert.ok(
+                extensionEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "extensions/extPhysics/AndroidSource/ProjectFiles" &&
+                        entry.newPath === "extensions/ext_physics/AndroidSource/ProjectFiles"
                 )
             );
         } finally {

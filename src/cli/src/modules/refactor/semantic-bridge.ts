@@ -722,6 +722,25 @@ export class GmlSemanticBridge {
         return fs.existsSync(absoluteSourcePath) && fs.lstatSync(absoluteSourcePath).isDirectory();
     }
 
+    private listWorkspaceDirectoryEntries(candidatePath: string): Array<string> {
+        const absoluteCandidatePath = path.resolve(this.projectRoot, candidatePath);
+        if (fs.existsSync(absoluteCandidatePath) && fs.lstatSync(absoluteCandidatePath).isDirectory()) {
+            return fs.readdirSync(absoluteCandidatePath);
+        }
+
+        const sourcePath = this.resolveWorkspaceSourcePath(candidatePath);
+        if (sourcePath === candidatePath) {
+            return [];
+        }
+
+        const absoluteSourcePath = path.resolve(this.projectRoot, sourcePath);
+        if (!fs.existsSync(absoluteSourcePath) || !fs.lstatSync(absoluteSourcePath).isDirectory()) {
+            return [];
+        }
+
+        return fs.readdirSync(absoluteSourcePath);
+    }
+
     /**
      * Get the resources map from the project index.
      */
@@ -1274,9 +1293,11 @@ export class GmlSemanticBridge {
             extensionsToRename.push(".fsh", ".vsh");
         }
 
+        const primaryRenamedPaths: Array<string> = [];
         for (const ext of extensionsToRename) {
             const oldFilePath = ext === ".yy" ? currentResourcePath : path.posix.join(resourceDir, `${oldName}${ext}`);
             const newFilePath = path.posix.join(fileRenameDestinationDir, `${newName}${ext}`);
+            primaryRenamedPaths.push(oldFilePath);
 
             // Later batch plans may target a path introduced by an earlier staged
             // folder rename. Accept either the current staged destination or the
@@ -1293,8 +1314,10 @@ export class GmlSemanticBridge {
             oldName,
             newName,
             fileRenameDestinationDir,
+            primaryRenamedPaths,
             doesWorkspaceFilePathExist: (candidatePath) => this.doesWorkspaceFilePathExist(candidatePath),
-            doesWorkspaceDirectoryPathExist: (candidatePath) => this.doesWorkspaceDirectoryPathExist(candidatePath)
+            doesWorkspaceDirectoryPathExist: (candidatePath) => this.doesWorkspaceDirectoryPathExist(candidatePath),
+            listWorkspaceDirectoryEntries: (candidatePath) => this.listWorkspaceDirectoryEntries(candidatePath)
         })) {
             edit.addFileRename(sidecarRename.oldPath, sidecarRename.newPath);
         }
