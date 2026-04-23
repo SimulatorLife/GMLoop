@@ -1726,7 +1726,7 @@ export class GmlSemanticBridge {
         }
 
         const currentSoundFile = Core.getNonEmptyString(parsed.soundFile);
-        const renamedSoundFile = resolveRenamedSoundFileName(currentSoundFile, oldName, newName);
+        const renamedSoundFile = resolveRenamedSoundFileName(currentSoundFile, newName);
         if (!renamedSoundFile || currentSoundFile === renamedSoundFile) {
             return false;
         }

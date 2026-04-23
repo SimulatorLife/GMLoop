@@ -1043,6 +1043,68 @@ void test("refactor codemod --write keeps sprite and sound sidecars aligned when
     }
 });
 
+void test("refactor codemod --write renames sound payload files to the new resource name during normal audio resource renames", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        audioResourceName: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        const soundResourcePath = "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.yy";
+        await writeProjectFile(
+            projectRoot,
+            soundResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMSound: "v2",
+                    "%Name": "sndColmeshDemo2Coin",
+                    name: "sndColmeshDemo2Coin",
+                    resourceType: "GMSound",
+                    resourceVersion: "2.0",
+                    resourcePath: soundResourcePath,
+                    soundFile: "coin_payload.mp3"
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "sounds/sndColmeshDemo2Coin/coin_payload.mp3", "sound");
+        await registerProjectResource(projectRoot, "sndColmeshDemo2Coin", soundResourcePath);
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"))
+        );
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.mp3"))
+        );
+        await assert.rejects(access(path.join(projectRoot, "sounds/sndColmeshDemo2Coin/coin_payload.mp3")));
+
+        const soundMetadata = await readFile(
+            path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"),
+            "utf8"
+        );
+        assert.match(soundMetadata, /"soundFile"\s*:\s*"snd_colmesh_demo2coin\.mp3"/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write renames cross-file enum member references without splitting digit tokens", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {

@@ -57,18 +57,13 @@ function appendRenameIfNeeded(
 
 /**
  * Compute the renamed `soundFile` basename for a sound resource when the
- * payload file follows the resource name.
+ * payload file should follow the renamed resource name.
  *
  * @param soundFile - Current metadata `soundFile` value.
- * @param oldName - Current resource name.
  * @param newName - Planned resource name.
  * @returns Renamed payload filename or `null` when no rename is needed.
  */
-export function resolveRenamedSoundFileName(
-    soundFile: string | null | undefined,
-    oldName: string,
-    newName: string
-): string | null {
+export function resolveRenamedSoundFileName(soundFile: string | null | undefined, newName: string): string | null {
     if (!Core.isNonEmptyString(soundFile)) {
         return null;
     }
@@ -78,18 +73,17 @@ export function resolveRenamedSoundFileName(
         return null;
     }
 
-    const baseName = path.posix.basename(soundFile, extension);
-    if (baseName !== oldName) {
-        return null;
-    }
-
+    // Keep the payload extension, but always normalize the basename to the
+    // renamed sound resource. GameMaker projects conventionally keep
+    // `soundFile` aligned with the resource name, and leaving the old basename
+    // behind causes IDE conversion failures once metadata points at the renamed
+    // resource directory.
     return `${newName}${extension}`;
 }
 
 function collectSoundSidecarRenames({
     metadataDocument,
     currentResourcePath,
-    oldName,
     newName,
     fileRenameDestinationDir,
     doesWorkspaceFilePathExist
@@ -98,7 +92,7 @@ function collectSoundSidecarRenames({
     "resourceType" | "doesWorkspaceDirectoryPathExist"
 >): Array<ResourceSidecarRename> {
     const soundFile = Core.getNonEmptyString(metadataDocument.soundFile);
-    const renamedSoundFile = resolveRenamedSoundFileName(soundFile, oldName, newName);
+    const renamedSoundFile = resolveRenamedSoundFileName(soundFile, newName);
     if (!renamedSoundFile || !soundFile) {
         return [];
     }
