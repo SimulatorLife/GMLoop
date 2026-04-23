@@ -612,6 +612,23 @@ void describe("formatter boundaries ownership", () => {
         );
     });
 
+    void it("does not rewrite plain line-comment text content", async () => {
+        // Formatter ownership is layout only. Rewriting `//TODO` into `// TODO`
+        // is a comment-content mutation and belongs in lint if desired.
+        const source = ["function demo() {", "    //TODO keep this exact token text", "    return 1;", "}", ""].join(
+            "\n"
+        );
+
+        const formatted = await Format.format(source);
+
+        assert.match(
+            formatted,
+            /\/\/TODO keep this exact token text/,
+            "Formatter must preserve plain comment text verbatim; content normalization belongs in @gmloop/lint."
+        );
+        assert.doesNotMatch(formatted, /\/\/ TODO keep this exact token text/);
+    });
+
     void it("preserves multiline @description continuation text verbatim", async () => {
         const source = [
             "/// @description Build packet metadata",
