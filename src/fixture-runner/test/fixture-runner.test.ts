@@ -198,11 +198,13 @@ void test("runFixtureSuite records profiling metrics and writes reports", async 
                     return kind === "format";
                 },
                 async run({ runProfiledStage }) {
-                    return await runProfiledStage("format", async () => ({
-                        resultKind: "text",
-                        outputText: "output\n",
-                        changed: true
-                    }));
+                    return await runProfiledStage("format", async () =>
+                        runProfiledStage("format", async () => ({
+                            resultKind: "text",
+                            outputText: "output\n",
+                            changed: true
+                        }))
+                    );
                 }
             },
             profileCollector: collector
@@ -221,6 +223,7 @@ void test("runFixtureSuite records profiling metrics and writes reports", async 
             report.entries[0]?.stages.some((stage) => stage.stageName === "format"),
             true
         );
+        assert.equal(report.entries[0]?.stages.filter((stage) => stage.stageName === "format").length, 2);
         assert.equal(typeof report.entries[0]?.memorySummary.totalHeapUsedDeltaBytes, "number");
         assert.equal(typeof report.entries[0]?.memorySummary.totalMaxRssDeltaBytes, "number");
         assert.equal(typeof report.entries[0]?.memorySummary.peakStageHeapUsedDeltaBytes, "number");
