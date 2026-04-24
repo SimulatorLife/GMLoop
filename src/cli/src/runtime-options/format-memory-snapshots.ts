@@ -1,10 +1,7 @@
 import { Core } from "@gmloop/core";
 
-import {
-    DEFAULT_MAX_IN_MEMORY_SNAPSHOTS,
-    MAX_IN_MEMORY_SNAPSHOTS_ENV_VAR
-} from "../commands/format-memory-constants.js";
 import { createIntegerEnvConfiguredValue } from "../shared/env-configured-integer.js";
+import { DEFAULT_MAX_IN_MEMORY_SNAPSHOTS, MAX_IN_MEMORY_SNAPSHOTS_ENV_VAR } from "./format-memory-constants.js";
 
 const { callWithFallback, coerceNonNegativeInteger, createNumericTypeErrorFormatter, describeValueForError } = Core;
 

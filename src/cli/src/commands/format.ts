@@ -49,6 +49,10 @@ import {
     trimFormattingCache
 } from "../modules/formatting/index.js";
 import {
+    PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES,
+    PERIODIC_CLEANUP_INTERVAL
+} from "../runtime-options/format-memory-constants.js";
+import {
     getDefaultMaxInMemorySnapshots,
     setDefaultMaxInMemorySnapshots
 } from "../runtime-options/format-memory-snapshots.js";
@@ -67,7 +71,6 @@ import {
 } from "../shared/timing/elapsed-time.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
-import { PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES, PERIODIC_CLEANUP_INTERVAL } from "./format-memory-constants.js";
 import { isMissingModuleDependency, resolveModuleDefaultExport } from "./format-module-resolution.js";
 import {
     isHelpRequest,
