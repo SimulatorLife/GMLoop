@@ -181,6 +181,21 @@ void describe("ScopeTracker.getBatchFilePathsDeclaringSymbols", () => {
         assert.equal(disabledResults.size, 0);
     });
 
+    void it("accepts Set inputs for declaration symbol batches", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        tracker.enterScope("file", { path: "/project/scripts/shared.gml" });
+        tracker.declare("alpha", { name: "alpha" });
+        tracker.declare("beta", { name: "beta" });
+        tracker.exitScope();
+
+        const symbolSet = new Set(["alpha", "beta"]);
+        const results = tracker.getBatchFilePathsDeclaringSymbols(symbolSet);
+
+        assert.deepEqual([...(results.get("alpha") ?? [])], ["/project/scripts/shared.gml"]);
+        assert.deepEqual([...(results.get("beta") ?? [])], ["/project/scripts/shared.gml"]);
+    });
+
     void it("reuses normalized-path computations across declaration symbol batches", () => {
         const tracker = new ScopeTracker({ enabled: true });
 
