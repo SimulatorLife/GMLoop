@@ -36,8 +36,7 @@ export const gmlFormatComponents: GmlFormatComponentBundle = Object.freeze(
 export function createDefaultGmlFormatComponents(): GmlFormatComponentBundle {
     return {
         parsers: {
-            "gml-parse": defaultGmlFormatComponentImplementations.gmlParserAdapter,
-            gmlParserAdapter: defaultGmlFormatComponentImplementations.gmlParserAdapter
+            "gml-parse": defaultGmlFormatComponentImplementations.gmlParserAdapter
         },
         printers: {
             "gml-ast": {
