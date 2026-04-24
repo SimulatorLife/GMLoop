@@ -7,7 +7,6 @@ export * from "./enumerated-options.js";
 export * from "./environment.js";
 export * from "./error.js";
 export * from "./function.js";
-export * from "./input-validation.js";
 export * from "./json.js";
 export * from "./metrics.js";
 export * from "./number.js";
