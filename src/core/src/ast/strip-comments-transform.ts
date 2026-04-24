@@ -3,9 +3,9 @@
  * Shared between the lint and plugin pipelines so both use the same canonical implementation.
  */
 import { isCommentNode } from "../comments/comment-utils.js";
+import { createParserTransform } from "../transforms/parser-transform.js";
 import { isObjectLike } from "../utils/object.js";
 import { walkObjectGraph } from "./object-graph.js";
-import { createParserTransform } from "./parser-transform.js";
 import type { MutableGameMakerAstNode } from "./types.js";
 
 export type StripCommentsTransformOptions = {
