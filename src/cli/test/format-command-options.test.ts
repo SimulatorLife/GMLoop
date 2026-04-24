@@ -132,3 +132,23 @@ void test("collectFormatCommandOptions sets log level to debug when verbose is t
     assert.strictEqual(result.verbose, true);
     assert.strictEqual(result.prettierLogLevel, "debug");
 });
+
+void test("collectFormatCommandOptions does not emit option dumps to stdout", () => {
+    const command = createStubCommand({
+        opts: () => ({ path: "./project" })
+    });
+
+    const originalConsoleLog = console.log;
+    const capturedLogs: Array<unknown> = [];
+    console.log = (...args: Array<unknown>) => {
+        capturedLogs.push(args);
+    };
+
+    try {
+        collectFormatCommandOptions(command, DEFAULTS);
+    } finally {
+        console.log = originalConsoleLog;
+    }
+
+    assert.deepStrictEqual(capturedLogs, []);
+});
