@@ -8,13 +8,15 @@ import { Transpiler } from "../index.js";
 type SemanticAnalyzers = ConstructorParameters<typeof Transpiler.GmlToJsEmitter>[0];
 
 /**
- * Create a mock AST node with an unknown type for testing error handling.
- * @param type - The node type string to use in the mock
- * @returns A mock AST node
+ * Create a mock AST node with an unknown type for testing strict emitter
+ * behavior when parser output drifts from supported node contracts.
+ *
+ * @param type - The node type string to use in the mock.
+ * @returns A mock AST node.
  */
-function createMockUnknownNode(type: string) {
+function createMockUnknownNode(type: string): { type: string } {
     return {
-        type: type as "UnknownNodeType"
+        type
     };
 }
 
@@ -207,14 +209,6 @@ void test("Transpiler.emitJavaScript exports a function", () => {
 
 void test("Transpiler.emitJavaScript handles empty AST gracefully", () => {
     const result = Transpiler.emitJavaScript(null);
-    assert.equal(result, "");
-});
-
-void test("Transpiler.emitJavaScript returns empty string for unsupported node types", () => {
-    const ast = {
-        type: "UnsupportedNode"
-    } as unknown as Parameters<typeof Transpiler.emitJavaScript>[0];
-    const result = Transpiler.emitJavaScript(ast);
     assert.equal(result, "");
 });
 
@@ -1970,15 +1964,17 @@ void test("Transpiler.emitJavaScript handles compound assignment in loop", () =>
     assert.ok(result.includes("sum += i"), "Should emit compound assignment in loop body");
 });
 
-void test("GmlToJsEmitter handles unknown node types gracefully", () => {
+void test("GmlToJsEmitter throws for unknown node types", () => {
     // Create a mock AST node with an unrecognized type
     const mockAst = createMockUnknownNode("UnknownNodeType");
 
-    // The emitter should handle unknown nodes gracefully by returning empty string
+    // Unknown nodes should fail fast instead of being silently dropped.
     const emitter = new Transpiler.GmlToJsEmitter(Transpiler.createSemanticOracle());
-    const result = emitter.emit(mockAst as unknown as Parameters<typeof emitter.emit>[0]);
-
-    assert.strictEqual(result, "", "Should return empty string for unknown node types");
+    assert.throws(
+        () => emitter.emit(mockAst as Parameters<typeof emitter.emit>[0]),
+        /Unsupported AST node type in GML emitter: UnknownNodeType/,
+        "Should throw for unknown node types to prevent silent source loss"
+    );
 });
 
 // Integration tests for unary constant folding in the emitter

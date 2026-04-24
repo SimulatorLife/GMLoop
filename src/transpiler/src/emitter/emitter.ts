@@ -313,17 +313,13 @@ export class GmlToJsEmitter {
     }
 
     /**
-     * Handle AST nodes that don't have explicit visitor methods.
-     * This serves as a safety net for unimplemented or unexpected node types.
+     * Handle AST nodes that do not have explicit visitor methods.
      *
-     * Currently returns an empty string to maintain backward compatibility.
-     *
-     * @param ast - The unhandled AST node
-     * @returns Empty string (node is skipped in output)
+     * Unknown nodes are treated as hard failures so transpilation cannot silently
+     * drop source constructs and emit incomplete JavaScript.
      */
-    private handleUnknownNode(_ast: GmlNode): string {
-        void _ast;
-        return "";
+    private handleUnknownNode(ast: GmlNode): never {
+        throw new TypeError(`Unsupported AST node type in GML emitter: ${ast.type}`);
     }
 
     private visitDefaultParameter(ast: DefaultParameterNode): string {
