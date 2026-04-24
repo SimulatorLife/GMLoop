@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { printExpression } from "../print-expression.js";
+import { printExpression } from "../../../language/autofix-printing.js";
 import {
     type AstNodeRecord,
     createMeta,
