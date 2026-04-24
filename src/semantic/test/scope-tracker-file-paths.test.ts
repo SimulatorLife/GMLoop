@@ -203,6 +203,26 @@ void describe("ScopeTracker: getBatchFilePathsReferencingSymbols", () => {
         assert.equal(disabledResults.size, 0);
     });
 
+    void it("accepts Set inputs for symbol batches", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        tracker.enterScope("program", { path: "/project/lib.gml" });
+        tracker.declare("alpha", { name: "alpha" });
+        tracker.declare("beta", { name: "beta" });
+        tracker.exitScope();
+
+        tracker.enterScope("program", { path: "/project/consumer.gml" });
+        tracker.reference("alpha", { name: "alpha" });
+        tracker.reference("beta", { name: "beta" });
+        tracker.exitScope();
+
+        const symbolSet = new Set(["alpha", "beta"]);
+        const results = tracker.getBatchFilePathsReferencingSymbols(symbolSet);
+
+        assert.deepEqual([...(results.get("alpha") ?? [])], ["/project/consumer.gml"]);
+        assert.deepEqual([...(results.get("beta") ?? [])], ["/project/consumer.gml"]);
+    });
+
     void it("reuses normalized-path computations across symbol batches", () => {
         const tracker = new ScopeTracker({ enabled: true });
 

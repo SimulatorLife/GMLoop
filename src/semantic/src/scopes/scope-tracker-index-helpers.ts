@@ -8,10 +8,35 @@ interface FilePathCollectionOptions {
     normalizePath?: PathNormalizer;
 }
 
+function isReadonlySetLike(names: Iterable<string>): names is ReadonlySet<string> {
+    if (typeof names !== "object" || names === null) {
+        return false;
+    }
+
+    const candidate = names as { size?: unknown; has?: unknown };
+    return typeof candidate.size === "number" && typeof candidate.has === "function";
+}
+
 /**
  * Collects non-empty symbol names while preserving first-seen order.
+ *
+ * This helper fast-paths Set-like inputs to avoid allocating an intermediate
+ * deduplication Set for hot-reload workflows that already pass unique names.
  */
 export function collectUniqueSymbolNames(names: Iterable<string>): string[] {
+    if (isReadonlySetLike(names)) {
+        const uniqueNames: string[] = [];
+        for (const name of names) {
+            if (!name) {
+                continue;
+            }
+
+            uniqueNames.push(name);
+        }
+
+        return uniqueNames;
+    }
+
     const uniqueNames = new Set<string>();
 
     for (const name of names) {
