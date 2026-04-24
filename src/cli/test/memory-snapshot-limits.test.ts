@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import { __test__ } from "../src/cli.js";
-import { DEFAULT_MAX_IN_MEMORY_SNAPSHOTS } from "../src/commands/format-memory-constants.js";
+import { DEFAULT_MAX_IN_MEMORY_SNAPSHOTS } from "../src/runtime-options/format-memory-constants.js";
 
 const {
     getMemoryManagementStatsForTests,

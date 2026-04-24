@@ -4,7 +4,7 @@ import { afterEach, describe, it } from "node:test";
 import {
     DEFAULT_MAX_IN_MEMORY_SNAPSHOTS,
     MAX_IN_MEMORY_SNAPSHOTS_ENV_VAR
-} from "../src/commands/format-memory-constants.js";
+} from "../src/runtime-options/format-memory-constants.js";
 import {
     applyMaxInMemorySnapshotsEnvOverride,
     getDefaultMaxInMemorySnapshots,
