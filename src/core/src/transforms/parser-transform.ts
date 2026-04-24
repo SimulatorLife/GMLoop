@@ -1,4 +1,4 @@
-import type { MutableGameMakerAstNode } from "./types.js";
+import type { MutableGameMakerAstNode } from "../ast/types.js";
 
 /**
  * Shared base for parser transforms so each transform follows a consistent API.
