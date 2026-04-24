@@ -1,5 +1,6 @@
 import { Core } from "@gmloop/core";
 
+import { getPatchKindMetadata, getSupportedPatchKinds } from "./patch-kind.js";
 import { calculateTimingMetrics } from "./patch-utils.js";
 import type {
     PatchDiagnostics,
@@ -17,7 +18,7 @@ import type {
     RuntimeWrapperState
 } from "./types.js";
 
-const PATCH_KINDS: ReadonlyArray<PatchKind> = ["script", "event", "closure"];
+const PATCH_KINDS = getSupportedPatchKinds();
 
 /**
  * Returns the sub-collection of the registry that stores entries for the
@@ -27,40 +28,15 @@ export function getRegistryCollectionForPatchKind(
     registry: RuntimeWrapperState["registry"],
     kind: PatchKind
 ): Record<string, RuntimeFunction> {
-    switch (kind) {
-        case "script": {
-            return registry.scripts;
-        }
-        case "event": {
-            return registry.events;
-        }
-        case "closure": {
-            return registry.closures;
-        }
-        default: {
-            throw new TypeError("Unsupported patch kind");
-        }
-    }
+    const metadata = getPatchKindMetadata(kind);
+    return registry[metadata.registryCollectionKey];
 }
 
 /**
  * Returns a human-readable display name for a {@link PatchKind}.
  */
 function getPatchKindDisplayName(kind: PatchKind): string {
-    switch (kind) {
-        case "script": {
-            return "Script";
-        }
-        case "event": {
-            return "Event";
-        }
-        case "closure": {
-            return "Closure";
-        }
-        default: {
-            throw new TypeError("Unsupported patch kind");
-        }
-    }
+    return getPatchKindMetadata(kind).displayName;
 }
 
 /**
