@@ -57,6 +57,24 @@ function appendRenameIfNeeded(
     renames.push({ oldPath, newPath });
 }
 
+function collectSingleFileSidecarRenames(parameters: {
+    currentResourcePath: string;
+    fileRenameDestinationDir: string;
+    oldFileName: string;
+    newFileName: string;
+    doesWorkspaceFilePathExist: (candidatePath: string) => boolean;
+}): Array<ResourceSidecarRename> {
+    const resourceDir = path.posix.dirname(parameters.currentResourcePath);
+    const renames: Array<ResourceSidecarRename> = [];
+    appendRenameIfNeeded(
+        renames,
+        path.posix.join(resourceDir, parameters.oldFileName),
+        path.posix.join(parameters.fileRenameDestinationDir, parameters.newFileName),
+        parameters.doesWorkspaceFilePathExist
+    );
+    return renames;
+}
+
 function pathIsInsideAnyDirectory(candidatePath: string, directoryPaths: ReadonlySet<string>): boolean {
     for (const directoryPath of directoryPaths) {
         if (candidatePath === directoryPath || candidatePath.startsWith(`${directoryPath}/`)) {
@@ -109,12 +127,13 @@ function collectSoundSidecarRenames({
         return [];
     }
 
-    const resourceDir = path.posix.dirname(currentResourcePath);
-    const oldSoundPath = path.posix.join(resourceDir, soundFile);
-    const newSoundPath = path.posix.join(fileRenameDestinationDir, renamedSoundFile);
-    const renames: Array<ResourceSidecarRename> = [];
-    appendRenameIfNeeded(renames, oldSoundPath, newSoundPath, doesWorkspaceFilePathExist);
-    return renames;
+    return collectSingleFileSidecarRenames({
+        currentResourcePath,
+        fileRenameDestinationDir,
+        oldFileName: soundFile,
+        newFileName: renamedSoundFile,
+        doesWorkspaceFilePathExist
+    });
 }
 
 function collectSpriteSidecarRenames({
@@ -197,21 +216,17 @@ function collectFontSidecarRenames({
     SidecarRenamePlanningParameters,
     "resourceType" | "metadataDocument" | "doesWorkspaceDirectoryPathExist" | "listWorkspaceDirectoryEntries"
 >): Array<ResourceSidecarRename> {
-    const resourceDir = path.posix.dirname(currentResourcePath);
-    const renames: Array<ResourceSidecarRename> = [];
-
     // GameMaker bitmap fonts keep a generated texture page beside the `.yy`
     // using the resource basename. Renaming only the metadata/folder leaves the
     // font pointing at a missing `<newName>.png`, which causes runtime load
     // failures in real projects such as Scribble fallback fonts.
-    appendRenameIfNeeded(
-        renames,
-        path.posix.join(resourceDir, `${oldName}.png`),
-        path.posix.join(fileRenameDestinationDir, `${newName}.png`),
+    return collectSingleFileSidecarRenames({
+        currentResourcePath,
+        fileRenameDestinationDir,
+        oldFileName: `${oldName}.png`,
+        newFileName: `${newName}.png`,
         doesWorkspaceFilePathExist
-    );
-
-    return renames;
+    });
 }
 
 function collectNoteSidecarRenames({
@@ -224,17 +239,13 @@ function collectNoteSidecarRenames({
     SidecarRenamePlanningParameters,
     "resourceType" | "metadataDocument" | "doesWorkspaceDirectoryPathExist" | "listWorkspaceDirectoryEntries"
 >): Array<ResourceSidecarRename> {
-    const resourceDir = path.posix.dirname(currentResourcePath);
-    const renames: Array<ResourceSidecarRename> = [];
-
-    appendRenameIfNeeded(
-        renames,
-        path.posix.join(resourceDir, `${oldName}.txt`),
-        path.posix.join(fileRenameDestinationDir, `${newName}.txt`),
+    return collectSingleFileSidecarRenames({
+        currentResourcePath,
+        fileRenameDestinationDir,
+        oldFileName: `${oldName}.txt`,
+        newFileName: `${newName}.txt`,
         doesWorkspaceFilePathExist
-    );
-
-    return renames;
+    });
 }
 
 function collectDirectoryCarryoverRenames(parameters: {
