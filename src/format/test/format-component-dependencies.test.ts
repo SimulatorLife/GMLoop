@@ -41,3 +41,13 @@ void test("default component factory wires the dependency bundle", async () => {
 
     assert.deepStrictEqual(parserResult, dependencyResult, "parser results should match the canonical parser adapter");
 });
+
+void test("default component factory exposes only the canonical parser id", () => {
+    const components = createDefaultGmlFormatComponents();
+
+    assert.deepStrictEqual(
+        Object.keys(components.parsers),
+        ["gml-parse"],
+        "default parser map should avoid redundant aliases and expose only Prettier's canonical parser id"
+    );
+});
