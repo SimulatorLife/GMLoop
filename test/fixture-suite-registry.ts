@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { type FixtureAdapter, FixtureRunner } from "@gmloop/fixture-runner";
@@ -8,6 +8,10 @@ import { Refactor } from "@gmloop/refactor";
 import { ESLint } from "eslint";
 
 import { createIntegrationFixtureSuiteDefinition } from "./integration-fixture-suite-definition.js";
+import {
+    collectRefactorProjectGmlFiles,
+    createRefactorFixtureSemanticAnalyzer
+} from "./refactor-fixture-semantic-analyzer.js";
 
 export interface FixtureSuiteRegistration {
     workspaceName: string;
@@ -18,26 +22,6 @@ export interface FixtureSuiteRegistration {
 }
 
 type LintRuleEntries = ReturnType<typeof Lint.configs.projectConfig.createLintRuleEntriesFromProjectConfig>;
-type RefactorFixtureSymbolOccurrence = {
-    path: string;
-    start: number;
-    end: number;
-    kind: "definition" | "reference";
-};
-type RefactorFixtureNamingTarget = {
-    name: string;
-    category: "function";
-    path: string;
-    scopeId: string | null;
-    symbolId: string;
-    occurrences: Array<RefactorFixtureSymbolOccurrence>;
-};
-
-type RefactorFixtureSemanticAnalyzer = {
-    listNamingConventionTargets(filePaths?: Array<string>): Array<RefactorFixtureNamingTarget>;
-    getSymbolOccurrences(symbolName: string): Array<RefactorFixtureSymbolOccurrence>;
-};
-
 function resolveFixtureRoot(
     moduleUrl: string,
     sourceRelativeSegments: Array<string>,
@@ -165,140 +149,6 @@ function createLintFixtureSuiteRegistration(): FixtureSuiteRegistration {
     });
 }
 
-function escapeRegularExpression(source: string): string {
-    return source.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
-}
-
-function collectFunctionDeclarations(sourceText: string): Array<{ name: string; start: number }> {
-    const declarations: Array<{ name: string; start: number }> = [];
-    const declarationPattern = /function\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
-    let match: RegExpExecArray | null = declarationPattern.exec(sourceText);
-
-    while (match !== null) {
-        const functionName = match.groups?.name ?? "";
-        const functionNameStart = (match.index ?? 0) + match[0].indexOf(functionName);
-        declarations.push({
-            name: functionName,
-            start: functionNameStart
-        });
-
-        match = declarationPattern.exec(sourceText);
-    }
-
-    return declarations;
-}
-
-function collectNameOccurrences(sourceText: string, name: string): Array<{ start: number; end: number }> {
-    const escapedName = escapeRegularExpression(name);
-    const pattern = new RegExp(`(?<=^|[^A-Za-z0-9_])${escapedName}(?=[^A-Za-z0-9_]|$)`, "g");
-    const hits: Array<{ start: number; end: number }> = [];
-    let match: RegExpExecArray | null = pattern.exec(sourceText);
-
-    while (match !== null) {
-        const start = match.index ?? 0;
-        hits.push({
-            start,
-            end: start + name.length
-        });
-
-        match = pattern.exec(sourceText);
-    }
-
-    return hits;
-}
-
-async function createFixtureSemanticAnalyzer(projectRoot: string, gmlFilePaths: ReadonlyArray<string>) {
-    const sourceByPath = new Map<string, string>();
-    const declarationIndex = new Map<string, { path: string; start: number }>();
-
-    await Promise.all(
-        gmlFilePaths.map(async (relativePath) => {
-            const absolutePath = path.join(projectRoot, relativePath);
-            const sourceText = await readFile(absolutePath, "utf8");
-            sourceByPath.set(relativePath, sourceText);
-
-            for (const declaration of collectFunctionDeclarations(sourceText)) {
-                declarationIndex.set(declaration.name, {
-                    path: relativePath,
-                    start: declaration.start
-                });
-            }
-        })
-    );
-
-    const occurrencesByName = new Map<string, Array<RefactorFixtureSymbolOccurrence>>();
-    for (const functionName of declarationIndex.keys()) {
-        const occurrences: Array<RefactorFixtureSymbolOccurrence> = [];
-        for (const [relativePath, sourceText] of sourceByPath.entries()) {
-            for (const hit of collectNameOccurrences(sourceText, functionName)) {
-                const declaration = declarationIndex.get(functionName) ?? null;
-                const isDefinition =
-                    declaration !== null && declaration.path === relativePath && declaration.start === hit.start;
-
-                occurrences.push({
-                    path: relativePath,
-                    start: hit.start,
-                    end: hit.end,
-                    kind: isDefinition ? "definition" : "reference"
-                });
-            }
-        }
-
-        occurrencesByName.set(functionName, occurrences);
-    }
-
-    const namingTargets: Array<RefactorFixtureNamingTarget> = [...declarationIndex.entries()].map(
-        ([name, declaration]) => ({
-            name,
-            category: "function",
-            path: declaration.path,
-            scopeId: null,
-            symbolId: `gml/script/${name}`,
-            occurrences: []
-        })
-    );
-
-    return {
-        listNamingConventionTargets(filePaths?: Array<string>) {
-            if (!Array.isArray(filePaths) || filePaths.length === 0) {
-                return namingTargets;
-            }
-
-            const selectedPaths = new Set(filePaths.map((entry) => path.resolve(projectRoot, entry)));
-            return namingTargets.filter((target) => selectedPaths.has(path.resolve(projectRoot, target.path)));
-        },
-        getSymbolOccurrences(symbolName: string) {
-            return occurrencesByName.get(symbolName) ?? [];
-        }
-    } satisfies RefactorFixtureSemanticAnalyzer;
-}
-
-async function collectProjectGmlFiles(projectRoot: string): Promise<Array<string>> {
-    const relativePaths: Array<string> = [];
-
-    async function walk(currentPath: string): Promise<void> {
-        const entries = await readdir(currentPath, { withFileTypes: true });
-        await Promise.all(
-            entries.map(async (entry) => {
-                const entryPath = path.join(currentPath, entry.name);
-                if (entry.isDirectory()) {
-                    await walk(entryPath);
-                    return;
-                }
-
-                if (!entry.isFile() || !entry.name.endsWith(".gml")) {
-                    return;
-                }
-
-                relativePaths.push(path.relative(projectRoot, entryPath).split(path.sep).join("/"));
-            })
-        );
-    }
-
-    await walk(projectRoot);
-    return relativePaths.sort((left, right) => left.localeCompare(right));
-}
-
 function createRefactorFixtureSuiteRegistration(): FixtureSuiteRegistration {
     const adapter: FixtureAdapter = Object.freeze({
         workspaceName: "refactor",
@@ -309,8 +159,8 @@ function createRefactorFixtureSuiteRegistration(): FixtureSuiteRegistration {
         async run({ config, workingProjectDirectoryPath, runProfiledStage }) {
             const normalizedConfig = Refactor.normalizeRefactorProjectConfig(config.refactor);
             const projectRoot = workingProjectDirectoryPath ?? "";
-            const gmlFilePaths = await collectProjectGmlFiles(projectRoot);
-            const semantic = await createFixtureSemanticAnalyzer(projectRoot, gmlFilePaths);
+            const gmlFilePaths = await collectRefactorProjectGmlFiles(projectRoot);
+            const semantic = await createRefactorFixtureSemanticAnalyzer(projectRoot, gmlFilePaths);
             const engine = new Refactor.RefactorEngine({ semantic });
 
             await runProfiledStage("refactor", async () => {
