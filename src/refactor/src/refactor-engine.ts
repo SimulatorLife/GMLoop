@@ -17,6 +17,14 @@ import { planNamingConventionCodemod } from "./codemods/naming-convention/index.
 import * as HotReload from "./hot-reload.js";
 import { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
 import { assertRenameRequest, assertValidIdentifierName, extractSymbolName } from "./rename/index.js";
+import {
+    detectCircularRenames,
+    detectCrossRenameNameConfusion,
+    detectDuplicateSourceSymbolIds,
+    detectDuplicateTargetNames,
+    detectRenameConflicts,
+    validateCrossFileConsistency
+} from "./rename/rename-validation.js";
 import { RenameValidationCache } from "./rename-validation-cache.js";
 import { SemanticQueryCache } from "./semantic-cache.js";
 import * as SymbolQueries from "./symbol-queries.js";
@@ -60,14 +68,6 @@ import {
     type ValidationSummary,
     type WorkspaceReadFile
 } from "./types.js";
-import {
-    detectCircularRenames,
-    detectCrossRenameNameConfusion,
-    detectDuplicateSourceSymbolIds,
-    detectDuplicateTargetNames,
-    detectRenameConflicts,
-    validateCrossFileConsistency
-} from "./validation.js";
 import {
     getWorkspaceArrays,
     getWorkspaceEditRevision,

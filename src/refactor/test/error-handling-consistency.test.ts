@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { RefactorEngine } from "../src/refactor-engine.js";
-import { detectRenameConflicts, validateRenameStructure } from "../src/validation.js";
+import { detectRenameConflicts, validateRenameStructure } from "../src/rename/rename-validation.js";
 
 /**
  * Test suite verifying that error message extraction is consistent across the

@@ -2,6 +2,11 @@ import { Core } from "@gmloop/core";
 
 import { evaluateNamingConvention, resolveNamingConventionRules } from "../../naming-convention-policy.js";
 import { DEFAULT_RESERVED_KEYWORDS } from "../../rename/index.js";
+import {
+    detectCircularRenames,
+    detectCrossRenameNameConfusion,
+    detectDuplicateTargetNames
+} from "../../rename/rename-validation.js";
 import type {
     ApplyWorkspaceEditOptions,
     BatchRenamePlanSummary,
@@ -19,7 +24,6 @@ import type {
     RenameRequest,
     ValidationSummary
 } from "../../types.js";
-import { detectCircularRenames, detectCrossRenameNameConfusion, detectDuplicateTargetNames } from "../../validation.js";
 import { type WorkspaceEdit, WorkspaceEdit as WorkspaceEditClass } from "../../workspace-edit.js";
 import { createPathSelectionMatcher, resolveProjectPath } from "./path-selection.js";
 
