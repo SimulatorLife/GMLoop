@@ -58,6 +58,8 @@ type ProjectIndexIdentifierEntry = {
     declarationKinds?: Array<string>;
     declarations?: Array<Record<string, unknown>>;
     displayName?: string;
+    enumKey?: string;
+    enumName?: string;
     filePath?: string;
     id?: string;
     identifierId?: string;
@@ -112,6 +114,7 @@ type ProjectionContext = {
     nodeIdsByScopeId: Map<string, string>;
     nodeRecords: Array<GraphNodeRecord>;
     projectIndex: ProjectIndexSnapshot;
+    resourcePathByGmlFile: Map<string, string>;
     rootPath: string;
 };
 
@@ -192,10 +195,10 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
             return `gml/macro/${name}`;
         }
         case "enum": {
-            return `gml/enum/${name}`;
+            return `gml/enum/${identifierId ?? entry.key ?? name}`;
         }
         case "enum_member": {
-            return `gml/enum-member/${name}`;
+            return `gml/enum-member/${identifierId ?? entry.key ?? name}`;
         }
         case "function": {
             return `gml/function/${identifierId ?? entry.key ?? entry.scopeId ?? name}`;
@@ -386,11 +389,16 @@ function resolveScopedFileOwnerNodeId(
                 scopedNode?.kind === "script"
                     ? findPrimaryFunctionNodeForFile(context, filePath, scopedNode.name)
                     : null;
-            return primaryFunctionNodeId ?? scopedNodeId;
+            if (primaryFunctionNodeId) {
+                return primaryFunctionNodeId;
+            }
+            if (scopedNode && !scopedNode.kind.endsWith("_variable")) {
+                return scopedNodeId;
+            }
         }
     }
 
-    return fallbackFileNodeId;
+    return resolveFileSemanticOwnerNodeId(context, filePath) ?? fallbackFileNodeId;
 }
 
 function resolveCallerNodeId(
@@ -456,6 +464,36 @@ function registerNodeIndexes(context: ProjectionContext, node: GraphNodeRecord):
     if (node.scopeId && node.kind !== "function") {
         context.nodeIdsByScopeId.set(node.scopeId, node.id);
     }
+}
+
+function resolveResourcePathForFile(context: ProjectionContext, filePath: string | null): string | null {
+    if (!filePath) {
+        return null;
+    }
+
+    return context.resourcePathByGmlFile.get(filePath) ?? null;
+}
+
+function resolveEnumOwnerNodeId(context: ProjectionContext, entry: ProjectIndexIdentifierEntry): string | null {
+    const enumKey = getString(entry.enumKey);
+    if (enumKey) {
+        return lookupNodeByScipSymbol(context, `gml/enum/enum:${enumKey}`);
+    }
+
+    const enumName = getString(entry.enumName);
+    return enumName ? lookupUniqueNodeByNameAndKind(context, enumName, "enum") : null;
+}
+
+function resolveFileSemanticOwnerNodeId(context: ProjectionContext, filePath: string | null): string | null {
+    const resourcePath = resolveResourcePathForFile(context, filePath);
+    if (!resourcePath) {
+        return null;
+    }
+
+    const scriptNode = context.nodeRecords.find(
+        (node) => node.kind === "script" && node.resourcePath === resourcePath && node.scipSymbol !== null
+    );
+    return scriptNode?.id ?? createGraphNodeId(context.graphId, "resource", resourcePath);
 }
 
 function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKind | null {
@@ -692,6 +730,8 @@ function createNodeRecord(parameters: {
 
 function projectResources(context: ProjectionContext): void {
     const resources = asRecord(context.projectIndex.resources);
+    let projectNodeId: string | null = null;
+    const containedResourceNodeIds = new Set<string>();
 
     for (const [resourcePath, rawRecord] of Object.entries(resources)) {
         const resourceRecord = asRecord(rawRecord);
@@ -716,14 +756,27 @@ function projectResources(context: ProjectionContext): void {
         context.nodeRecords.push(node);
         registerNodeIndexes(context, node);
 
+        if (kind === "project") {
+            projectNodeId = node.id;
+        } else {
+            containedResourceNodeIds.add(node.id);
+        }
+
         const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
         for (const gmlFile of gmlFiles) {
             if (typeof gmlFile !== "string") {
                 continue;
             }
 
+            context.resourcePathByGmlFile.set(gmlFile, resourcePath);
             const fileNodeId = createGraphNodeId(context.graphId, "file", gmlFile);
             context.edgeRecords.push({ fromId: node.id, toId: fileNodeId, type: "contains" });
+        }
+    }
+
+    if (projectNodeId) {
+        for (const resourceNodeId of containedResourceNodeIds) {
+            context.edgeRecords.push({ fromId: projectNodeId, toId: resourceNodeId, type: "contains" });
         }
     }
 }
@@ -773,6 +826,7 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 getString(declaration?.filePath) ??
                 getString(entry.filePath) ??
                 getString((Array.isArray(entry.references) ? entry.references[0] : null)?.filePath);
+            const resourcePath = getString(entry.resourcePath) ?? resolveResourcePathForFile(context, filePath);
             const scipSymbol = resolveScipSymbol(kind, name, entry);
             const sourceText = readSourceText(context.rootPath, filePath);
             const displayName = getString(entry.displayName) ?? name;
@@ -786,7 +840,7 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 lineEnd: readLocationLine(asRecord(declaration?.end)),
                 lineStart: readLocationLine(asRecord(declaration?.start)),
                 name,
-                resourcePath: getString(entry.resourcePath),
+                resourcePath,
                 scopeId,
                 scipSymbol,
                 snippet: createGraphNodeSnippet(sourceText, declarationStart, declarationEnd),
@@ -795,7 +849,7 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                     filePath,
                     kind,
                     name,
-                    resourcePath: getString(entry.resourcePath)
+                    resourcePath
                 })
             });
 
@@ -816,6 +870,17 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                     toId: node.id,
                     type: "defines"
                 });
+            }
+
+            if (kind === "enum_member") {
+                const enumNodeId = resolveEnumOwnerNodeId(context, entry);
+                if (enumNodeId) {
+                    context.edgeRecords.push({
+                        fromId: enumNodeId,
+                        toId: node.id,
+                        type: "defines"
+                    });
+                }
             }
         }
     }
@@ -1058,6 +1123,7 @@ function createProjectionContext(
         nodeIdsByScopeId: new Map(),
         nodeRecords: [],
         projectIndex,
+        resourcePathByGmlFile: new Map(),
         rootPath
     };
 }
@@ -1445,10 +1511,10 @@ export function searchGraphIndex(
         }
 
         const exactRows = database
-            .prepare("SELECT id FROM nodes WHERE name = ? OR scip_symbol = ?")
-            .all(normalizedQuery, normalizedQuery) as Array<{ id: string }>;
+            .prepare("SELECT id, scip_symbol AS scipSymbol FROM nodes WHERE name = ? OR scip_symbol = ?")
+            .all(normalizedQuery, normalizedQuery) as Array<{ id: string; scipSymbol: string | null }>;
         for (const row of exactRows) {
-            candidateScores.set(row.id, (candidateScores.get(row.id) ?? 0) + 5);
+            candidateScores.set(row.id, (candidateScores.get(row.id) ?? 0) + (row.scipSymbol ? 7 : 5));
         }
 
         const aliasRows = database
@@ -1726,3 +1792,8 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
         database.close();
     }
 }
+
+export const __graphIndexBuilderTest__ = Object.freeze({
+    createSafeFtsQuery,
+    resolveScipSymbol
+});

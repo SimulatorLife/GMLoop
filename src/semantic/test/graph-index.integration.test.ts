@@ -6,6 +6,7 @@ import test from "node:test";
 import {
     buildGraphIndex,
     doctorGraphIndex,
+    exportGraphVisualizationData,
     getGraphContext,
     getGraphUsages,
     openExistingGraphIndexDatabase,
@@ -625,6 +626,178 @@ void test("buildGraphIndex connects macro, global, and local variable symbols to
     }
 });
 
+void test("graph visualization data keeps top-level language symbols connected without file nodes", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-visible-symbol-owners-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/visible_symbols/visible_symbols.yy",
+            JSON.stringify({ name: "visible_symbols", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/visible_symbols/visible_symbols.gml",
+            [
+                "#macro STARTING_SCORE 10",
+                "globalvar visible_global_score;",
+                "enum VisibleState {",
+                "    Ready,",
+                "    Active",
+                "}",
+                "function visible_symbols() {",
+                "    visible_global_score = STARTING_SCORE;",
+                "    return VisibleState.Active;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const visibleNodeIds = new Set(
+                visualizationData.nodes.filter((node) => node.kind !== "file").map((node) => node.id)
+            );
+            const visibleEdges = visualizationData.edges.filter(
+                (edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)
+            );
+            const connectedVisibleNodeIds = new Set<string>();
+            for (const edge of visibleEdges) {
+                connectedVisibleNodeIds.add(edge.source);
+                connectedVisibleNodeIds.add(edge.target);
+            }
+
+            for (const expectedNode of [
+                { kind: "macro", name: "STARTING_SCORE" },
+                { kind: "global_variable", name: "visible_global_score" },
+                { kind: "enum", name: "VisibleState" },
+                { kind: "enum_member", name: "Ready" },
+                { kind: "enum_member", name: "Active" },
+                { kind: "function", name: "visible_symbols" }
+            ]) {
+                const node = visualizationData.nodes.find(
+                    (candidate) => candidate.kind === expectedNode.kind && candidate.name === expectedNode.name
+                );
+                assert.ok(node, `expected ${expectedNode.kind} ${expectedNode.name} node`);
+                assert.ok(
+                    connectedVisibleNodeIds.has(node.id),
+                    `expected ${expectedNode.kind} ${expectedNode.name} to have a visible non-file edge`
+                );
+            }
+
+            assert.ok(
+                visibleEdges.some(
+                    (edge) =>
+                        edge.source.includes("gml/enum/enum:scripts/visible_symbols/visible_symbols.gml") &&
+                        edge.target.includes(
+                            "gml/enum-member/enum-member:scripts/visible_symbols/visible_symbols.gml"
+                        ) &&
+                        edge.type === "defines"
+                ),
+                "expected enum members to be directly connected to their enum"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex keeps same-named enum members distinct across different enums", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-enum-member-collisions-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/state_graph/state_graph.yy",
+            JSON.stringify({ name: "state_graph", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/state_graph/state_graph.gml",
+            [
+                "enum MoveState {",
+                "    Idle,",
+                "    Run",
+                "}",
+                "",
+                "enum CombatState {",
+                "    Idle,",
+                "    Attack",
+                "}",
+                "",
+                "function state_graph() {",
+                "    return [MoveState.Idle, CombatState.Idle];",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const idleMemberNodes = database
+                .prepare(
+                    `
+                        SELECT id, scip_symbol AS scipSymbol
+                        FROM nodes
+                        WHERE kind = 'enum_member' AND name = 'Idle'
+                        ORDER BY id
+                    `
+                )
+                .all() as Array<{ id: string; scipSymbol: string }>;
+
+            assert.equal(idleMemberNodes.length, 2);
+            assert.notEqual(idleMemberNodes[0]?.id, idleMemberNodes[1]?.id);
+            assert.notEqual(idleMemberNodes[0]?.scipSymbol, idleMemberNodes[1]?.scipSymbol);
+
+            const enumOwnershipEdges = database
+                .prepare(
+                    `
+                        SELECT from_id AS fromId, to_id AS toId, type
+                        FROM edges
+                        WHERE type = 'defines' AND from_id IN (
+                            SELECT id FROM nodes WHERE kind = 'enum'
+                        ) AND to_id IN (
+                            SELECT id FROM nodes WHERE kind = 'enum_member' AND name = 'Idle'
+                        )
+                        ORDER BY from_id, to_id
+                    `
+                )
+                .all() as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.equal(enumOwnershipEdges.length, 2);
+            assert.notEqual(enumOwnershipEdges[0]?.fromId, enumOwnershipEdges[1]?.fromId);
+            assert.notEqual(enumOwnershipEdges[0]?.toId, enumOwnershipEdges[1]?.toId);
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
 void test("buildGraphIndex connects function call edges for script-local and object-local functions", async () => {
     const fixture = await createTempProjectWorkspace("graph-index-function-calls-");
 
@@ -779,17 +952,13 @@ void test("buildGraphIndex connects global variables to their defining and refer
             );
             assert.ok(
                 edges.some(
-                    (edge) =>
-                        edge.fromId === "project::file::scripts/configure_globals/configure_globals.gml" &&
-                        edge.type === "references"
+                    (edge) => edge.fromId === "project::gml/script/configure_globals" && edge.type === "references"
                 ),
-                "expected the defining file to reference the global variable node"
+                "expected the owning script to reference the global variable node"
             );
             assert.ok(
                 edges.some(
-                    (edge) =>
-                        edge.fromId === "project::file::scripts/configure_globals/configure_globals.gml" &&
-                        edge.type === "references"
+                    (edge) => edge.fromId === "project::gml/script/configure_globals" && edge.type === "references"
                 ),
                 "expected tracked global references to connect to the global variable node"
             );
