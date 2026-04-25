@@ -6,13 +6,6 @@
 import { Core } from "@gmloop/core";
 
 import {
-    assertValidIdentifierName,
-    DEFAULT_RESERVED_KEYWORDS,
-    extractSymbolName,
-    parseSymbolIdParts,
-    tryNormalizeIdentifierName
-} from "./rename/index.js";
-import {
     type ConflictEntry,
     ConflictType,
     type FileSymbolProvider,
@@ -20,7 +13,14 @@ import {
     type RenameRequest,
     type SymbolOccurrence,
     type SymbolResolver
-} from "./types.js";
+} from "../types.js";
+import {
+    assertValidIdentifierName,
+    DEFAULT_RESERVED_KEYWORDS,
+    extractSymbolName,
+    parseSymbolIdParts,
+    tryNormalizeIdentifierName
+} from "./index.js";
 
 type MaybePromise<T> = Promise<T> | T;
 

@@ -7,6 +7,7 @@
 import { Core } from "@gmloop/core";
 
 import { assertValidIdentifierName, extractSymbolName, parseSymbolIdParts } from "./rename/index.js";
+import { detectRenameConflicts } from "./rename/rename-validation.js";
 import * as SymbolQueries from "./symbol-queries.js";
 import {
     type CascadeEntry,
@@ -24,7 +25,6 @@ import {
     type TranspilerPatch,
     type WorkspaceReadFile
 } from "./types.js";
-import { detectRenameConflicts } from "./validation.js";
 import type { WorkspaceEdit } from "./workspace-edit.js";
 
 const SCRIPT_RESOURCE_SYMBOL_KINDS = new Set(["scripts"]);

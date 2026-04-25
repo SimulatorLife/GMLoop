@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { validateCrossFileConsistency } from "../src/rename/rename-validation.js";
 import { ConflictType, type FileSymbolProvider, type SymbolOccurrence } from "../src/types.js";
-import { validateCrossFileConsistency } from "../src/validation.js";
 
 void describe("validateCrossFileConsistency", () => {
     void it("returns empty array without file provider", async () => {
