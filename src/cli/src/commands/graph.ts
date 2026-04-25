@@ -112,7 +112,7 @@ async function ensureGraphIndexForQuery(
     try {
         await access(config.databasePath, constants.R_OK);
     } catch {
-        throw new Error(`Graph database not found at ${config.databasePath}. Run 'gmloop graph index' first.`);
+        await ensureGraphIndex(options, context);
     }
 }
 

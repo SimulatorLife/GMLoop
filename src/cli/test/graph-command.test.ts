@@ -118,19 +118,14 @@ void test("graph index and graph search return stable JSON envelopes", async () 
     }
 });
 
-void test("graph search does not build missing databases unless rebuild is requested", async () => {
+void test("graph search builds a missing database before querying", async () => {
     const cliModule = await loadCliModule();
     const fixture = await createDualRootFixture();
 
     try {
+        const databasePath = path.join(fixture.projectRoot, ".gmloop", "graph-index.sqlite");
+
         const searchResult = await cliModule.runCliTestCommand({
-            argv: ["graph", "search", "shared_toolset_fn", "--path", fixture.projectRoot, "--json"]
-        });
-
-        assert.equal(searchResult.exitCode, 1);
-        assert.match(searchResult.stderr, /Graph database not found/);
-
-        const rebuildResult = await cliModule.runCliTestCommand({
             argv: [
                 "graph",
                 "search",
@@ -139,14 +134,49 @@ void test("graph search does not build missing databases unless rebuild is reque
                 fixture.projectRoot,
                 "--toolset-root",
                 fixture.toolsetRoot,
-                "--rebuild",
                 "--json"
             ]
         });
 
-        assert.equal(rebuildResult.exitCode, 0);
-        const payload = JSON.parse(rebuildResult.stdout);
+        assert.equal(searchResult.exitCode, 0);
+        const payload = JSON.parse(searchResult.stdout);
         assert.equal(payload.payload.results[0].id, "toolset::gml/script/shared_toolset_fn");
+        await fs.access(databasePath);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("graph visualize builds a missing database before exporting HTML", async () => {
+    const cliModule = await loadCliModule();
+    const fixture = await createDualRootFixture();
+
+    try {
+        const outputPath = path.join(fixture.projectRoot, ".gmloop", "graph-test.html");
+        const databasePath = path.join(fixture.projectRoot, ".gmloop", "graph-index.sqlite");
+
+        const visualizeResult = await cliModule.runCliTestCommand({
+            argv: [
+                "graph",
+                "visualize",
+                "--path",
+                fixture.projectRoot,
+                "--toolset-root",
+                fixture.toolsetRoot,
+                "--output",
+                outputPath,
+                "--no-open",
+                "--json"
+            ]
+        });
+
+        assert.equal(visualizeResult.exitCode, 0);
+        const payload = JSON.parse(visualizeResult.stdout);
+        assert.equal(payload.command, "graph visualize");
+        assert.equal(payload.payload.outputPath, outputPath);
+        await fs.access(databasePath);
+        const html = await fs.readFile(outputPath, "utf8");
+        assert.match(html, /shared_toolset_fn/u);
     } finally {
         await fixture.cleanup();
     }

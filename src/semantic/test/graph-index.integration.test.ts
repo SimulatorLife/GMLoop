@@ -8,6 +8,7 @@ import {
     doctorGraphIndex,
     getGraphContext,
     getGraphUsages,
+    openExistingGraphIndexDatabase,
     openGraphIndexDatabase,
     resolveGraphIndexConfig,
     searchGraphIndex
@@ -181,6 +182,175 @@ void test("buildGraphIndex honors disabled embeddings and doctor reports stale f
         });
         assert.ok(report.issues.some((issue) => issue.code === "GRAPH_DB_STALE"));
         assert.ok(!report.issues.some((issue) => issue.code === "GRAPH_EMBEDDINGS_MISSING"));
+        assert.equal(report.runtime?.driver, "node:sqlite");
+        assert.equal(report.runtime?.experimental, true);
+        assert.equal(report.integrity?.ok, true);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("openExistingGraphIndexDatabase migrates a v1 database to the current schema", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-migration-");
+
+    try {
+        const databasePath = path.join(fixture.projectRoot, ".gmloop", "graph-index.sqlite");
+        const database = openGraphIndexDatabase(databasePath);
+        try {
+            database.exec("DROP TABLE IF EXISTS index_state");
+            database.exec("DROP TABLE IF EXISTS embeddings");
+            database.exec("DROP TABLE IF EXISTS aliases");
+            database.exec("DROP TABLE IF EXISTS edges");
+            database.exec("DROP TABLE IF EXISTS node_fts");
+            database.exec("DROP TABLE IF EXISTS nodes");
+            database.exec("DROP TABLE IF EXISTS files");
+            database.exec("DROP TABLE IF EXISTS graphs");
+            database.exec("UPDATE schema_meta SET value = '1' WHERE key = 'schema_version'");
+            database.exec(`
+                CREATE TABLE graphs (
+                    id TEXT PRIMARY KEY,
+                    scope TEXT NOT NULL,
+                    root_path TEXT NOT NULL,
+                    manifest_path TEXT,
+                    last_indexed_at TEXT NOT NULL,
+                    schema_version INTEGER NOT NULL
+                );
+                CREATE TABLE files (
+                    graph_id TEXT NOT NULL,
+                    relative_path TEXT NOT NULL,
+                    content_hash TEXT,
+                    mtime_ms INTEGER,
+                    indexed_at TEXT NOT NULL,
+                    PRIMARY KEY (graph_id, relative_path)
+                );
+                CREATE TABLE nodes (
+                    id TEXT PRIMARY KEY,
+                    graph_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    scip_symbol TEXT,
+                    relative_path TEXT,
+                    resource_path TEXT,
+                    scope_id TEXT,
+                    line_start INTEGER,
+                    line_end INTEGER,
+                    summary TEXT NOT NULL,
+                    snippet TEXT NOT NULL,
+                    content_hash TEXT
+                );
+                CREATE TABLE edges (
+                    from_id TEXT NOT NULL,
+                    to_id TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    ordinal INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (from_id, to_id, type, ordinal)
+                );
+                CREATE TABLE aliases (
+                    alias TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    PRIMARY KEY (alias, node_id, source)
+                );
+                CREATE TABLE embeddings (
+                    node_id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    vector_blob BLOB NOT NULL,
+                    content_hash TEXT NOT NULL
+                );
+                CREATE TABLE index_state (
+                    graph_id TEXT PRIMARY KEY,
+                    file_count INTEGER NOT NULL,
+                    node_count INTEGER NOT NULL,
+                    edge_count INTEGER NOT NULL,
+                    embedding_model TEXT NOT NULL,
+                    build_duration_ms INTEGER NOT NULL
+                );
+                CREATE VIRTUAL TABLE node_fts USING fts5(
+                    id UNINDEXED,
+                    name,
+                    display_name,
+                    summary,
+                    content
+                );
+            `);
+            database
+                .prepare(
+                    "INSERT INTO graphs(id, scope, root_path, manifest_path, last_indexed_at, schema_version) VALUES (?, ?, ?, ?, ?, ?)"
+                )
+                .run("project", "project", fixture.projectRoot, null, new Date().toISOString(), 1);
+            database
+                .prepare(
+                    "INSERT INTO nodes(id, graph_id, kind, name, display_name, summary, snippet) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                )
+                .run("project::gml/script/example", "project", "script", "example", "example", "script 'example'.", "");
+            database
+                .prepare("INSERT INTO node_fts(id, name, display_name, summary, content) VALUES (?, ?, ?, ?, ?)")
+                .run("project::gml/script/example", "example", "example", "script 'example'.", "script 'example'.");
+        } finally {
+            database.close();
+        }
+
+        const migrated = openExistingGraphIndexDatabase(databasePath);
+        try {
+            const schemaVersion = migrated
+                .prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'")
+                .get() as { value: string } | undefined;
+            assert.equal(schemaVersion?.value, "2");
+            const nodeCount = migrated.prepare("SELECT COUNT(*) AS count FROM nodes").get() as { count: number };
+            assert.equal(nodeCount.count, 1);
+            const foreignKeys = migrated.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number };
+            assert.equal(foreignKeys.foreign_keys, 1);
+        } finally {
+            migrated.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex preserves unchanged graph slices across incremental rebuilds", async () => {
+    const fixture = await createDualRootFixture();
+
+    try {
+        const result = await buildGraphIndex({
+            projectRoot: fixture.projectRoot,
+            toolsetRoot: fixture.toolsetRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        const initialRows = database
+            .prepare("SELECT id, last_indexed_at AS lastIndexedAt FROM graphs ORDER BY id")
+            .all() as Array<{ id: string; lastIndexedAt: string }>;
+        database.close();
+
+        await fs.writeFile(
+            path.join(fixture.projectRoot, "scripts/player_update/player_update.gml"),
+            ["function player_update() {", "    return shared_toolset_fn() + 1;", "}", ""].join("\n"),
+            "utf8"
+        );
+
+        await buildGraphIndex({
+            projectRoot: fixture.projectRoot,
+            toolsetRoot: fixture.toolsetRoot
+        });
+
+        const rebuiltDatabase = openGraphIndexDatabase(result.databasePath);
+        try {
+            const rebuiltRows = rebuiltDatabase
+                .prepare("SELECT id, last_indexed_at AS lastIndexedAt FROM graphs ORDER BY id")
+                .all() as Array<{ id: string; lastIndexedAt: string }>;
+            const initialProject = initialRows.find((row) => row.id === "project");
+            const initialToolset = initialRows.find((row) => row.id === "toolset");
+            const rebuiltProject = rebuiltRows.find((row) => row.id === "project");
+            const rebuiltToolset = rebuiltRows.find((row) => row.id === "toolset");
+
+            assert.notEqual(initialProject?.lastIndexedAt, rebuiltProject?.lastIndexedAt);
+            assert.equal(initialToolset?.lastIndexedAt, rebuiltToolset?.lastIndexedAt);
+        } finally {
+            rebuiltDatabase.close();
+        }
     } finally {
         await fixture.cleanup();
     }

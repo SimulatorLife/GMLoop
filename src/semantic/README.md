@@ -10,6 +10,8 @@ This `src/semantic` subsystem is a semantic layer that annotates parse tree(s) t
 - Does **not** own refactor edit planning or rename application.
 - Does **not** depend on `@gmloop/refactor`.
 
+The graph index is SQLite-backed through a semantic-owned adapter seam. The current runtime uses Node's `node:sqlite`, which remains experimentally labeled by Node itself; that status is treated as an explicit runtime constraint and is surfaced through graph-doctor reporting rather than left as an implicit implementation detail.
+
 Downstream tools consume semantic data:
 
 - `@gmloop/refactor` uses semantic data to validate and plan workspace edits.

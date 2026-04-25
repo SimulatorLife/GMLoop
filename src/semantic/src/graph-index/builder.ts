@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { DatabaseSync } from "node:sqlite";
 
 import { Core } from "@gmloop/core";
 
@@ -13,8 +12,7 @@ import {
     GRAPH_INDEX_SCHEMA_VERSION,
     openExistingGraphIndexDatabase,
     openGraphIndexDatabase,
-    readGraphIndexSchemaVersion,
-    resetGraphIndexDatabase
+    readGraphIndexSchemaVersion
 } from "./database.js";
 import {
     cosineSimilarity,
@@ -24,6 +22,12 @@ import {
     serializeEmbeddingVector
 } from "./embeddings.js";
 import {
+    getGraphDatabaseRuntimeInfo,
+    type GraphDatabase,
+    inspectGraphDatabaseIntegrity,
+    optimizeGraphDatabase
+} from "./sqlite-adapter.js";
+import {
     createGraphAliases,
     createGraphNodeSnippet,
     createGraphNodeSummary,
@@ -31,6 +35,7 @@ import {
 } from "./summary.js";
 import type {
     GraphContextBundle,
+    GraphDatabaseIntegrityStatus,
     GraphDoctorGraphStatus,
     GraphDoctorIssue,
     GraphDoctorReport,
@@ -94,8 +99,13 @@ type ProjectIndexSnapshot = {
 };
 
 type ProjectionContext = {
-    database: DatabaseSync;
     edgeRecords: Array<GraphEdgeRecord>;
+    fileRecords: Array<{
+        contentHash: string;
+        indexedAt: string;
+        mtimeMs: number | null;
+        relativePath: string;
+    }>;
     graphId: GraphIndexScope;
     nodeIdsByName: Map<string, Set<string>>;
     nodeIdsByScipSymbol: Map<string, string>;
@@ -401,7 +411,7 @@ function readSourceText(rootPath: string, relativePath: string | null): string |
     return readFileSync(absolutePath, "utf8");
 }
 
-function insertGraph(database: DatabaseSync, graphId: GraphIndexScope, rootPath: string): void {
+function insertGraph(database: GraphDatabase, graphId: GraphIndexScope, rootPath: string): void {
     database
         .prepare(
             `
@@ -409,19 +419,34 @@ function insertGraph(database: DatabaseSync, graphId: GraphIndexScope, rootPath:
                 VALUES (?, ?, ?, ?, ?, ?)
             `
         )
-        .run(graphId, graphId, rootPath, null, new Date().toISOString(), 1);
+        .run(graphId, graphId, rootPath, null, new Date().toISOString(), GRAPH_INDEX_SCHEMA_VERSION);
 }
 
-function insertFileRecord(
-    database: DatabaseSync,
-    graphId: GraphIndexScope,
+function createFileRecord(
     rootPath: string,
     relativePath: string
-): void {
+): {
+    contentHash: string;
+    indexedAt: string;
+    mtimeMs: number | null;
+    relativePath: string;
+} {
     const absolutePath = path.join(rootPath, relativePath);
     const stats = existsSync(absolutePath) ? statSync(absolutePath) : null;
     const fileContents = readSourceText(rootPath, relativePath) ?? "";
+    return {
+        contentHash: hashContent(fileContents),
+        indexedAt: new Date().toISOString(),
+        mtimeMs: stats?.mtimeMs ?? null,
+        relativePath
+    };
+}
 
+function insertFileRecord(
+    database: GraphDatabase,
+    graphId: GraphIndexScope,
+    fileRecord: ProjectionContext["fileRecords"][number]
+): void {
     database
         .prepare(
             `
@@ -429,10 +454,10 @@ function insertFileRecord(
                 VALUES (?, ?, ?, ?, ?)
             `
         )
-        .run(graphId, relativePath, hashContent(fileContents), stats?.mtimeMs ?? null, new Date().toISOString());
+        .run(graphId, fileRecord.relativePath, fileRecord.contentHash, fileRecord.mtimeMs, fileRecord.indexedAt);
 }
 
-function insertNodeRecord(database: DatabaseSync, node: GraphNodeRecord): void {
+function insertNodeRecord(database: GraphDatabase, node: GraphNodeRecord): void {
     database
         .prepare(
             `
@@ -470,7 +495,7 @@ function insertNodeRecord(database: DatabaseSync, node: GraphNodeRecord): void {
     }
 }
 
-function insertEdgeRecord(database: DatabaseSync, edge: GraphEdgeRecord): void {
+function insertEdgeRecord(database: GraphDatabase, edge: GraphEdgeRecord): void {
     database
         .prepare("INSERT OR IGNORE INTO edges(from_id, to_id, type, ordinal) VALUES (?, ?, ?, 0)")
         .run(edge.fromId, edge.toId, edge.type);
@@ -549,7 +574,7 @@ function projectResources(context: ProjectionContext): void {
 function projectFiles(context: ProjectionContext): void {
     const files = asRecord(context.projectIndex.files);
     for (const relativePath of Object.keys(files)) {
-        insertFileRecord(context.database, context.graphId, context.rootPath, relativePath);
+        context.fileRecords.push(createFileRecord(context.rootPath, relativePath));
         const nodeId = createGraphNodeId(context.graphId, "file", relativePath);
         const node = createNodeRecord({
             displayName: relativePath,
@@ -689,7 +714,7 @@ function projectRelationshipEdges(context: ProjectionContext): void {
 }
 
 function addCrossGraphEdges(
-    database: DatabaseSync,
+    database: GraphDatabase,
     projectContext: ProjectionContext | null,
     toolsetContext: ProjectionContext | null
 ): Array<GraphEdgeRecord> {
@@ -740,12 +765,18 @@ function addCrossGraphEdges(
 }
 
 function persistProjection(
-    database: DatabaseSync,
+    database: GraphDatabase,
     context: ProjectionContext,
     embeddingsConfig: GraphEmbeddingsConfig,
     buildDurationMs: number
 ): void {
     const embeddingProvider = embeddingsConfig.enabled ? createGraphEmbeddingProvider(embeddingsConfig) : null;
+
+    insertGraph(database, context.graphId, context.rootPath);
+
+    for (const fileRecord of context.fileRecords) {
+        insertFileRecord(database, context.graphId, fileRecord);
+    }
 
     for (const node of context.nodeRecords) {
         insertNodeRecord(database, node);
@@ -787,14 +818,13 @@ function persistProjection(
 }
 
 function createProjectionContext(
-    database: DatabaseSync,
     graphId: GraphIndexScope,
     rootPath: string,
     projectIndex: ProjectIndexSnapshot
 ): ProjectionContext {
     return {
-        database,
         edgeRecords: [],
+        fileRecords: [],
         graphId,
         nodeIdsByName: new Map(),
         nodeIdsByScipSymbol: new Map(),
@@ -805,7 +835,7 @@ function createProjectionContext(
     };
 }
 
-function queryNodeById(database: DatabaseSync, nodeId: string): GraphNodeRecord | null {
+function queryNodeById(database: GraphDatabase, nodeId: string): GraphNodeRecord | null {
     const row = database
         .prepare(
             `
@@ -840,7 +870,7 @@ function queryNodeById(database: DatabaseSync, nodeId: string): GraphNodeRecord 
     });
 }
 
-function listNodeNeighbors(database: DatabaseSync, nodeId: string, depth = 1): Array<GraphNeighborRecord> {
+function listNodeNeighbors(database: GraphDatabase, nodeId: string, depth = 1): Array<GraphNeighborRecord> {
     const visited = new Set<string>([nodeId]);
     const collected: Array<GraphNeighborRecord> = [];
     const pending: Array<{ currentId: string; level: number }> = [{ currentId: nodeId, level: 0 }];
@@ -888,7 +918,7 @@ function listNodeNeighbors(database: DatabaseSync, nodeId: string, depth = 1): A
     return collected;
 }
 
-function listUsageRecords(database: DatabaseSync, nodeId: string, depth = 1): Array<GraphUsageRecord> {
+function listUsageRecords(database: GraphDatabase, nodeId: string, depth = 1): Array<GraphUsageRecord> {
     const incomingNeighbors = listNodeNeighbors(database, nodeId, depth).filter(
         (entry) =>
             entry.direction === "incoming" &&
@@ -916,7 +946,7 @@ function listUsageRecords(database: DatabaseSync, nodeId: string, depth = 1): Ar
 }
 
 function rankSemanticMatches(
-    database: DatabaseSync,
+    database: GraphDatabase,
     query: string,
     candidateScores: Map<string, number>,
     embeddingsConfig: GraphEmbeddingsConfig
@@ -937,7 +967,7 @@ function rankSemanticMatches(
     }
 }
 
-function applyGraphProximityBoost(database: DatabaseSync, candidateScores: Map<string, number>): void {
+function applyGraphProximityBoost(database: GraphDatabase, candidateScores: Map<string, number>): void {
     const highConfidenceNodeIds = [...candidateScores.entries()]
         .filter(([, score]) => score >= 5)
         .map(([nodeId]) => nodeId);
@@ -966,7 +996,7 @@ function createSafeFtsQuery(rawQuery: string): string {
         .join(" OR ");
 }
 
-function refreshIndexStateEdgeCounts(database: DatabaseSync): void {
+function refreshIndexStateEdgeCounts(database: GraphDatabase): void {
     const graphRows = database.prepare("SELECT id FROM graphs").all() as Array<{ id: string }>;
     for (const row of graphRows) {
         const edgeCount = database
@@ -983,25 +1013,78 @@ function refreshIndexStateEdgeCounts(database: DatabaseSync): void {
     }
 }
 
-function resetDatabaseWhenSchemaIsIncompatible(databasePath: string): void {
-    if (!existsSync(databasePath)) {
-        return;
+function readIndexedFileHashes(database: GraphDatabase, graphId: GraphIndexScope): Map<string, string> {
+    const rows = database
+        .prepare("SELECT relative_path AS relativePath, content_hash AS contentHash FROM files WHERE graph_id = ?")
+        .all(graphId) as Array<{ contentHash: string | null; relativePath: string }>;
+    return new Map(rows.map((row) => [row.relativePath, row.contentHash ?? ""]));
+}
+
+function shouldReprojectGraph(
+    database: GraphDatabase,
+    context: ProjectionContext,
+    embeddingsConfig: GraphEmbeddingsConfig
+): boolean {
+    const graphRow = database.prepare("SELECT root_path AS rootPath FROM graphs WHERE id = ?").get(context.graphId) as
+        | { rootPath: string }
+        | undefined;
+    if (!graphRow || graphRow.rootPath !== context.rootPath) {
+        return true;
     }
 
-    const database = new DatabaseSync(databasePath);
-    try {
-        const schemaVersion = readGraphIndexSchemaVersion(database);
-        if (schemaVersion !== GRAPH_INDEX_SCHEMA_VERSION) {
-            database.close();
-            rmSync(databasePath, { force: true });
-        }
-    } finally {
-        try {
-            database.close();
-        } catch {
-            // The database may have already been closed before removing an incompatible file.
+    const indexStateRow = database
+        .prepare("SELECT embedding_model AS embeddingModel FROM index_state WHERE graph_id = ?")
+        .get(context.graphId) as { embeddingModel: string } | undefined;
+    if (!indexStateRow) {
+        return true;
+    }
+
+    const expectedEmbeddingModel = embeddingsConfig.enabled ? embeddingsConfig.provider : "disabled";
+    if (indexStateRow.embeddingModel !== expectedEmbeddingModel) {
+        return true;
+    }
+
+    const indexedFileHashes = readIndexedFileHashes(database, context.graphId);
+    if (indexedFileHashes.size !== context.fileRecords.length) {
+        return true;
+    }
+
+    for (const fileRecord of context.fileRecords) {
+        if (indexedFileHashes.get(fileRecord.relativePath) !== fileRecord.contentHash) {
+            return true;
         }
     }
+
+    return false;
+}
+
+function deleteGraphProjection(database: GraphDatabase, graphId: GraphIndexScope): void {
+    database.prepare("DELETE FROM node_fts WHERE id IN (SELECT id FROM nodes WHERE graph_id = ?)").run(graphId);
+    database.prepare("DELETE FROM graphs WHERE id = ?").run(graphId);
+}
+
+function rebuildGraphProjectionIfNeeded(
+    database: GraphDatabase,
+    context: ProjectionContext,
+    embeddingsConfig: GraphEmbeddingsConfig,
+    buildDurationMs: number
+): boolean {
+    if (!shouldReprojectGraph(database, context, embeddingsConfig)) {
+        return false;
+    }
+
+    deleteGraphProjection(database, context.graphId);
+    persistProjection(database, context, embeddingsConfig, buildDurationMs);
+    return true;
+}
+
+function readGraphDatabaseIntegrityStatus(database: GraphDatabase): GraphDatabaseIntegrityStatus {
+    const integrity = inspectGraphDatabaseIntegrity(database);
+    return Object.freeze({
+        foreignKeyViolationCount: integrity.foreignKeyViolationCount,
+        ok: integrity.ok,
+        quickCheckResult: integrity.quickCheckResult
+    });
 }
 
 /**
@@ -1012,18 +1095,15 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
     if (options.rebuild && existsSync(config.databasePath)) {
         rmSync(config.databasePath, { force: true });
     }
-    resetDatabaseWhenSchemaIsIncompatible(config.databasePath);
 
     const database = openGraphIndexDatabase(config.databasePath);
-    resetGraphIndexDatabase(database);
     if (config.embeddings.enabled) {
         ensureGraphEmbeddingModelAssets(config.embeddings);
     }
     const buildStart = performance.now();
 
     const projectIndex = (await buildProjectIndex(config.projectRoot)) as ProjectIndexSnapshot;
-    const projectContext = createProjectionContext(database, "project", config.projectRoot, projectIndex);
-    insertGraph(database, "project", config.projectRoot);
+    const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
     projectFiles(projectContext);
     projectResources(projectContext);
     projectIdentifierCollections(projectContext);
@@ -1032,8 +1112,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
     let toolsetContext: ProjectionContext | null = null;
     if (config.toolsetRoot) {
         const toolsetIndex = (await buildProjectIndex(config.toolsetRoot)) as ProjectIndexSnapshot;
-        toolsetContext = createProjectionContext(database, "toolset", config.toolsetRoot, toolsetIndex);
-        insertGraph(database, "toolset", config.toolsetRoot);
+        toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
         projectFiles(toolsetContext);
         projectResources(toolsetContext);
         projectIdentifierCollections(toolsetContext);
@@ -1041,14 +1120,15 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
     }
 
     const buildDurationMs = performance.now() - buildStart;
-    persistProjection(database, projectContext, config.embeddings, buildDurationMs);
-
+    rebuildGraphProjectionIfNeeded(database, projectContext, config.embeddings, buildDurationMs);
     if (toolsetContext) {
-        persistProjection(database, toolsetContext, config.embeddings, buildDurationMs);
+        rebuildGraphProjectionIfNeeded(database, toolsetContext, config.embeddings, buildDurationMs);
     }
 
+    database.prepare("DELETE FROM edges WHERE type = 'uses_toolset'").run();
     addCrossGraphEdges(database, projectContext, toolsetContext);
     refreshIndexStateEdgeCounts(database);
+    optimizeGraphDatabase(database);
     database.close();
 
     const graphIds: Array<GraphIndexScope> = config.toolsetRoot ? ["project", "toolset"] : ["project"];
@@ -1296,17 +1376,28 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
         return Object.freeze({
             databasePath: config.databasePath,
             graphs: [],
-            issues
+            integrity: null,
+            issues,
+            runtime: null
         });
     }
 
     const database = openExistingGraphIndexDatabase(config.databasePath);
     try {
+        const runtime = getGraphDatabaseRuntimeInfo(database);
+        const integrity = readGraphDatabaseIntegrityStatus(database);
         const schemaVersion = readGraphIndexSchemaVersion(database);
         if (schemaVersion !== GRAPH_INDEX_SCHEMA_VERSION) {
             issues.push({
                 code: "GRAPH_SCHEMA_INCOMPATIBLE",
                 message: `Graph database schema ${String(schemaVersion)} is incompatible with expected schema ${String(GRAPH_INDEX_SCHEMA_VERSION)}. Run 'gmloop graph index --rebuild'.`,
+                severity: "error"
+            });
+        }
+        if (!integrity.ok) {
+            issues.push({
+                code: "GRAPH_DB_INTEGRITY",
+                message: `Graph database integrity check returned '${integrity.quickCheckResult}' with ${String(integrity.foreignKeyViolationCount)} foreign-key violation(s). Run 'gmloop graph index --rebuild'.`,
                 severity: "error"
             });
         }
@@ -1398,7 +1489,9 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
         return Object.freeze({
             databasePath: config.databasePath,
             graphs,
-            issues
+            integrity,
+            issues,
+            runtime
         });
     } finally {
         database.close();

@@ -7,6 +7,22 @@ export type GraphEmbeddingsConfig = Readonly<{
     provider: string;
 }>;
 
+export type GraphDatabaseRuntimeInfo = Readonly<{
+    busyTimeoutMs: number;
+    driver: "node:sqlite";
+    experimental: true;
+    foreignKeysEnabled: boolean;
+    journalMode: string;
+    synchronousMode: string;
+    warningPolicy: "documented-and-reported";
+}>;
+
+export type GraphDatabaseIntegrityStatus = Readonly<{
+    foreignKeyViolationCount: number;
+    ok: boolean;
+    quickCheckResult: string;
+}>;
+
 export type GraphIndexConfig = Readonly<{
     databasePath: string;
     embeddings: GraphEmbeddingsConfig;
@@ -181,7 +197,9 @@ export type GraphDoctorGraphStatus = Readonly<{
 export type GraphDoctorReport = Readonly<{
     databasePath: string;
     graphs: ReadonlyArray<GraphDoctorGraphStatus>;
+    integrity: GraphDatabaseIntegrityStatus | null;
     issues: ReadonlyArray<GraphDoctorIssue>;
+    runtime: GraphDatabaseRuntimeInfo | null;
 }>;
 
 export type GraphIndexHandle = Readonly<{

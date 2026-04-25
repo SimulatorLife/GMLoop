@@ -25,6 +25,14 @@ export {
 } from "./embeddings.js";
 export { exportGraphVisualizationData } from "./export-visualization-data.js";
 export {
+    getGraphDatabaseRuntimeInfo,
+    inspectGraphDatabaseIntegrity,
+    openExistingGraphDatabase,
+    openGraphDatabase,
+    optimizeGraphDatabase,
+    runGraphDatabaseTransaction
+} from "./sqlite-adapter.js";
+export {
     createGraphAliases,
     createGraphNodeSnippet,
     createGraphNodeSummary,
@@ -32,6 +40,8 @@ export {
 } from "./summary.js";
 export type {
     GraphContextBundle,
+    GraphDatabaseIntegrityStatus,
+    GraphDatabaseRuntimeInfo,
     GraphDoctorGraphStatus,
     GraphDoctorIssue,
     GraphDoctorReport,

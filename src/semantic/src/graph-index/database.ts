@@ -1,8 +1,11 @@
-import { existsSync, mkdirSync } from "node:fs";
-import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import {
+    type GraphDatabase,
+    openExistingGraphDatabase,
+    openGraphDatabase,
+    runGraphDatabaseTransaction
+} from "./sqlite-adapter.js";
 
-export const GRAPH_INDEX_SCHEMA_VERSION = 1;
+export const GRAPH_INDEX_SCHEMA_VERSION = 2;
 
 const TABLE_RESET_STATEMENTS = Object.freeze([
     "DELETE FROM index_state",
@@ -15,13 +18,26 @@ const TABLE_RESET_STATEMENTS = Object.freeze([
     "DELETE FROM graphs"
 ]);
 
-function createGraphIndexSchema(database: DatabaseSync): void {
+const LEGACY_TABLE_NAMES = Object.freeze(["graphs", "files", "nodes", "edges", "aliases", "embeddings", "index_state"]);
+
+function tableExists(database: GraphDatabase, tableName: string): boolean {
+    const row = database
+        .prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?")
+        .get(tableName) as { name?: string } | undefined;
+    return row?.name === tableName;
+}
+
+function createSchemaMetaTable(database: GraphDatabase): void {
     database.exec(`
         CREATE TABLE IF NOT EXISTS schema_meta (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+    `);
+}
 
+function createGraphIndexSchemaV2(database: GraphDatabase): void {
+    database.exec(`
         CREATE TABLE IF NOT EXISTS graphs (
             id TEXT PRIMARY KEY,
             scope TEXT NOT NULL,
@@ -37,7 +53,8 @@ function createGraphIndexSchema(database: DatabaseSync): void {
             content_hash TEXT,
             mtime_ms INTEGER,
             indexed_at TEXT NOT NULL,
-            PRIMARY KEY (graph_id, relative_path)
+            PRIMARY KEY (graph_id, relative_path),
+            FOREIGN KEY (graph_id) REFERENCES graphs(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS nodes (
@@ -54,7 +71,8 @@ function createGraphIndexSchema(database: DatabaseSync): void {
             line_end INTEGER,
             summary TEXT NOT NULL,
             snippet TEXT NOT NULL,
-            content_hash TEXT
+            content_hash TEXT,
+            FOREIGN KEY (graph_id) REFERENCES graphs(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS edges (
@@ -62,14 +80,17 @@ function createGraphIndexSchema(database: DatabaseSync): void {
             to_id TEXT NOT NULL,
             type TEXT NOT NULL,
             ordinal INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (from_id, to_id, type, ordinal)
+            PRIMARY KEY (from_id, to_id, type, ordinal),
+            FOREIGN KEY (from_id) REFERENCES nodes(id) ON DELETE CASCADE,
+            FOREIGN KEY (to_id) REFERENCES nodes(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS aliases (
             alias TEXT NOT NULL,
             node_id TEXT NOT NULL,
             source TEXT NOT NULL,
-            PRIMARY KEY (alias, node_id, source)
+            PRIMARY KEY (alias, node_id, source),
+            FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS embeddings (
@@ -77,7 +98,8 @@ function createGraphIndexSchema(database: DatabaseSync): void {
             model_id TEXT NOT NULL,
             dimensions INTEGER NOT NULL,
             vector_blob BLOB NOT NULL,
-            content_hash TEXT NOT NULL
+            content_hash TEXT NOT NULL,
+            FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS index_state (
@@ -86,7 +108,8 @@ function createGraphIndexSchema(database: DatabaseSync): void {
             node_count INTEGER NOT NULL,
             edge_count INTEGER NOT NULL,
             embedding_model TEXT NOT NULL,
-            build_duration_ms INTEGER NOT NULL
+            build_duration_ms INTEGER NOT NULL,
+            FOREIGN KEY (graph_id) REFERENCES graphs(id) ON DELETE CASCADE
         );
 
         CREATE VIRTUAL TABLE IF NOT EXISTS node_fts USING fts5(
@@ -99,24 +122,136 @@ function createGraphIndexSchema(database: DatabaseSync): void {
 
         CREATE INDEX IF NOT EXISTS idx_nodes_graph_kind_name ON nodes(graph_id, kind, name);
         CREATE INDEX IF NOT EXISTS idx_nodes_scip_symbol ON nodes(scip_symbol);
+        CREATE INDEX IF NOT EXISTS idx_files_graph_path ON files(graph_id, relative_path);
         CREATE INDEX IF NOT EXISTS idx_edges_from_type ON edges(from_id, type);
         CREATE INDEX IF NOT EXISTS idx_edges_to_type ON edges(to_id, type);
         CREATE INDEX IF NOT EXISTS idx_aliases_alias ON aliases(alias);
     `);
+}
+
+function writeGraphIndexSchemaVersion(database: GraphDatabase): void {
     database
         .prepare("INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', ?)")
         .run(String(GRAPH_INDEX_SCHEMA_VERSION));
 }
 
+function createGraphIndexSchema(database: GraphDatabase): void {
+    createSchemaMetaTable(database);
+    createGraphIndexSchemaV2(database);
+    writeGraphIndexSchemaVersion(database);
+}
+
+function migrateGraphIndexSchemaV1ToV2(database: GraphDatabase): void {
+    runGraphDatabaseTransaction(database, () => {
+        for (const tableName of LEGACY_TABLE_NAMES) {
+            if (tableExists(database, tableName)) {
+                database.exec(`ALTER TABLE ${tableName} RENAME TO ${tableName}_v1_legacy`);
+            }
+        }
+        if (tableExists(database, "node_fts")) {
+            database.exec("DROP TABLE node_fts");
+        }
+        database.exec("DROP TABLE IF EXISTS schema_meta");
+
+        createGraphIndexSchema(database);
+
+        if (tableExists(database, "graphs_v1_legacy")) {
+            database.exec(`
+                INSERT OR REPLACE INTO graphs(id, scope, root_path, manifest_path, last_indexed_at, schema_version)
+                SELECT id, scope, root_path, manifest_path, last_indexed_at, ${String(GRAPH_INDEX_SCHEMA_VERSION)}
+                FROM graphs_v1_legacy
+            `);
+        }
+        if (tableExists(database, "files_v1_legacy")) {
+            database.exec(`
+                INSERT OR REPLACE INTO files(graph_id, relative_path, content_hash, mtime_ms, indexed_at)
+                SELECT graph_id, relative_path, content_hash, mtime_ms, indexed_at
+                FROM files_v1_legacy
+            `);
+        }
+        if (tableExists(database, "nodes_v1_legacy")) {
+            database.exec(`
+                INSERT OR REPLACE INTO nodes(
+                    id, graph_id, kind, name, display_name, scip_symbol, relative_path, resource_path, scope_id,
+                    line_start, line_end, summary, snippet, content_hash
+                )
+                SELECT
+                    id, graph_id, kind, name, display_name, scip_symbol, relative_path, resource_path, scope_id,
+                    line_start, line_end, summary, snippet, content_hash
+                FROM nodes_v1_legacy
+            `);
+            database.exec(`
+                INSERT OR REPLACE INTO node_fts(id, name, display_name, summary, content)
+                SELECT id, name, display_name, summary, summary || '\n' || snippet
+                FROM nodes_v1_legacy
+            `);
+        }
+        if (tableExists(database, "edges_v1_legacy")) {
+            database.exec(`
+                INSERT OR REPLACE INTO edges(from_id, to_id, type, ordinal)
+                SELECT from_id, to_id, type, ordinal
+                FROM edges_v1_legacy
+            `);
+        }
+        if (tableExists(database, "aliases_v1_legacy")) {
+            database.exec(`
+                INSERT OR REPLACE INTO aliases(alias, node_id, source)
+                SELECT alias, node_id, source
+                FROM aliases_v1_legacy
+            `);
+        }
+        if (tableExists(database, "embeddings_v1_legacy")) {
+            database.exec(`
+                INSERT OR REPLACE INTO embeddings(node_id, model_id, dimensions, vector_blob, content_hash)
+                SELECT node_id, model_id, dimensions, vector_blob, content_hash
+                FROM embeddings_v1_legacy
+            `);
+        }
+        if (tableExists(database, "index_state_v1_legacy")) {
+            database.exec(`
+                INSERT OR REPLACE INTO index_state(graph_id, file_count, node_count, edge_count, embedding_model, build_duration_ms)
+                SELECT graph_id, file_count, node_count, edge_count, embedding_model, build_duration_ms
+                FROM index_state_v1_legacy
+            `);
+        }
+
+        for (const tableName of LEGACY_TABLE_NAMES) {
+            if (tableExists(database, `${tableName}_v1_legacy`)) {
+                database.exec(`DROP TABLE ${tableName}_v1_legacy`);
+            }
+        }
+    });
+}
+
+function ensureGraphIndexSchema(database: GraphDatabase): void {
+    createSchemaMetaTable(database);
+    const schemaVersion = readGraphIndexSchemaVersion(database);
+    if (schemaVersion === null) {
+        createGraphIndexSchema(database);
+        return;
+    }
+
+    if (schemaVersion === 1) {
+        migrateGraphIndexSchemaV1ToV2(database);
+        return;
+    }
+
+    if (schemaVersion !== GRAPH_INDEX_SCHEMA_VERSION) {
+        throw new Error(
+            `Graph database schema ${String(schemaVersion)} is incompatible with expected schema ${String(GRAPH_INDEX_SCHEMA_VERSION)}.`
+        );
+    }
+
+    createGraphIndexSchemaV2(database);
+    writeGraphIndexSchemaVersion(database);
+}
+
 /**
- * Open the graph-index database and ensure the v1 schema exists.
+ * Open the graph-index database and ensure the latest schema exists.
  */
-export function openGraphIndexDatabase(databasePath: string): DatabaseSync {
-    mkdirSync(path.dirname(databasePath), { recursive: true });
-    const database = new DatabaseSync(databasePath);
-    database.exec("PRAGMA journal_mode = WAL;");
-    database.exec("PRAGMA foreign_keys = ON;");
-    createGraphIndexSchema(database);
+export function openGraphIndexDatabase(databasePath: string): GraphDatabase {
+    const database = openGraphDatabase(databasePath);
+    ensureGraphIndexSchema(database);
 
     return database;
 }
@@ -124,20 +259,16 @@ export function openGraphIndexDatabase(databasePath: string): DatabaseSync {
 /**
  * Open an existing graph-index database without creating a missing database.
  */
-export function openExistingGraphIndexDatabase(databasePath: string): DatabaseSync {
-    if (!existsSync(databasePath)) {
-        throw new Error(`Graph database not found at ${databasePath}. Run 'gmloop graph index' first.`);
-    }
-
-    const database = new DatabaseSync(databasePath);
-    database.exec("PRAGMA foreign_keys = ON;");
+export function openExistingGraphIndexDatabase(databasePath: string): GraphDatabase {
+    const database = openExistingGraphDatabase(databasePath);
+    ensureGraphIndexSchema(database);
     return database;
 }
 
 /**
  * Read the schema version stored in a graph-index database.
  */
-export function readGraphIndexSchemaVersion(database: DatabaseSync): number | null {
+export function readGraphIndexSchemaVersion(database: GraphDatabase): number | null {
     try {
         const row = database.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get() as
             | { value: string }
@@ -152,15 +283,10 @@ export function readGraphIndexSchemaVersion(database: DatabaseSync): number | nu
 /**
  * Reset all graph-index tables before a full rebuild.
  */
-export function resetGraphIndexDatabase(database: DatabaseSync): void {
-    database.exec("BEGIN");
-    try {
+export function resetGraphIndexDatabase(database: GraphDatabase): void {
+    runGraphDatabaseTransaction(database, () => {
         for (const statement of TABLE_RESET_STATEMENTS) {
             database.exec(statement);
         }
-        database.exec("COMMIT");
-    } catch (error) {
-        database.exec("ROLLBACK");
-        throw error;
-    }
+    });
 }
