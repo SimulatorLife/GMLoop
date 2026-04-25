@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { createGraphCommand } from "../src/commands/graph.js";
+
 const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
 const SKIP_CLI_ENV_VALUE = "1";
 
@@ -147,6 +149,53 @@ void test("graph search builds a missing database before querying", async () => 
     }
 });
 
+void test("graph search --force regenerates an existing database before querying", async () => {
+    const cliModule = await loadCliModule();
+    const fixture = await createDualRootFixture();
+
+    try {
+        const databasePath = path.join(fixture.projectRoot, ".gmloop", "graph-index.sqlite");
+
+        const initialIndexResult = await cliModule.runCliTestCommand({
+            argv: ["graph", "index", "--path", fixture.projectRoot, "--toolset-root", fixture.toolsetRoot, "--json"]
+        });
+        assert.equal(initialIndexResult.exitCode, 0);
+
+        await fs.mkdir(path.join(fixture.toolsetRoot, "scripts/added_after_index"), { recursive: true });
+        await fs.writeFile(
+            path.join(fixture.toolsetRoot, "scripts/added_after_index/added_after_index.yy"),
+            JSON.stringify({ name: "added_after_index", resourceType: "GMScript" }),
+            "utf8"
+        );
+        await fs.writeFile(
+            path.join(fixture.toolsetRoot, "scripts/added_after_index/added_after_index.gml"),
+            ["function added_after_index() {", "    return 99;", "}", ""].join("\n"),
+            "utf8"
+        );
+
+        const forcedSearchResult = await cliModule.runCliTestCommand({
+            argv: [
+                "graph",
+                "search",
+                "added_after_index",
+                "--path",
+                fixture.projectRoot,
+                "--toolset-root",
+                fixture.toolsetRoot,
+                "--force",
+                "--json"
+            ]
+        });
+
+        assert.equal(forcedSearchResult.exitCode, 0);
+        const payload = JSON.parse(forcedSearchResult.stdout);
+        assert.equal(payload.payload.results[0].id, "toolset::gml/script/added_after_index");
+        await fs.access(databasePath);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
 void test("graph visualize builds a missing database before exporting HTML", async () => {
     const cliModule = await loadCliModule();
     const fixture = await createDualRootFixture();
@@ -209,4 +258,25 @@ void test("graph command options validate minimum values for depth and limit", a
     } finally {
         await fixture.cleanup();
     }
+});
+
+void test("graph subcommands expose the force flag consistently", async () => {
+    const command = createGraphCommand();
+    const subcommandNames = ["index", "search", "symbol", "context", "neighbors", "usages", "visualize"] as const;
+
+    for (const subcommandName of subcommandNames) {
+        const subcommand = command.commands.find((entry) => entry.name() === subcommandName);
+        assert.ok(subcommand, `Expected graph ${subcommandName} subcommand to exist.`);
+        const longOptionFlags = new Set(subcommand.options.flatMap((option) => option.long ?? []));
+        assert.ok(longOptionFlags.has("--force"), `Expected graph ${subcommandName} to expose the --force option.`);
+        assert.ok(
+            !longOptionFlags.has("--rebuild"),
+            `Expected graph ${subcommandName} to stop exposing the legacy --rebuild option.`
+        );
+    }
+
+    const doctorCommand = command.commands.find((entry) => entry.name() === "doctor");
+    assert.ok(doctorCommand);
+    const doctorOptionFlags = new Set(doctorCommand.options.flatMap((option) => option.long ?? []));
+    assert.ok(!doctorOptionFlags.has("--force"));
 });

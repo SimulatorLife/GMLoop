@@ -18,10 +18,10 @@ type GraphCommandSharedOptions = {
     config?: string;
     databasePath?: string;
     depth?: number;
+    force?: boolean;
     json?: boolean;
     limit?: number;
     path?: string;
-    rebuild?: boolean;
     toolsetRoot?: string;
     verbose?: boolean;
     open?: boolean;
@@ -88,7 +88,7 @@ async function ensureGraphIndex(
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
-        rebuild: options.rebuild === true,
+        rebuild: options.force === true,
         toolsetRoot: options.toolsetRoot
     });
 }
@@ -97,7 +97,7 @@ async function ensureGraphIndexForQuery(
     options: GraphCommandSharedOptions,
     context: GraphResolutionContext
 ): Promise<void> {
-    if (options.rebuild === true) {
+    if (options.force === true) {
         await ensureGraphIndex(options, context);
         return;
     }
@@ -342,7 +342,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 res.writeHead(200, { "Content-Type": "text/html" });
                 res.end(htmlContent);
             } else if (req.method === "POST" && req.url === "/api/reindex") {
-                ensureGraphIndex({ ...options, rebuild: true }, context)
+                ensureGraphIndex({ ...options, force: true }, context)
                     .then(() => {
                         res.writeHead(200, { "Content-Type": "application/json" });
                         res.end(JSON.stringify({ ok: true }));
@@ -407,7 +407,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
 function addGraphSharedOptions(
     command: Command,
-    { includeDepth = false, includeLimit = false, includeRebuild = false } = {}
+    { includeDepth = false, includeLimit = false, includeForce = false } = {}
 ): Command {
     command
         .addOption(createPathOption())
@@ -433,8 +433,8 @@ function addGraphSharedOptions(
         );
     }
 
-    if (includeRebuild) {
-        command.addOption(new Option("--rebuild", "Force a full graph-index rebuild before querying").default(false));
+    if (includeForce) {
+        command.addOption(new Option("--force", "Force graph-index regeneration before continuing.").default(false));
     }
 
     return command;
@@ -461,7 +461,7 @@ export function createGraphCommand(): Command {
 
     const indexCommand = addGraphSharedOptions(
         applyStandardCommandOptions(new Command("index")).description("Build or rebuild the graph index."),
-        { includeRebuild: true }
+        { includeForce: true }
     );
     indexCommand.action(async function graphIndexCommandAction() {
         await runGraphCommandAction(async () => {
@@ -473,7 +473,7 @@ export function createGraphCommand(): Command {
         applyStandardCommandOptions(new Command("search"))
             .description("Search the graph index.")
             .argument("<query...>", "Search query"),
-        { includeLimit: true, includeRebuild: true }
+        { includeLimit: true, includeForce: true }
     );
     searchCommand.action(async function graphSearchCommandAction(query: Array<string>) {
         await runGraphCommandAction(async () => {
@@ -485,7 +485,7 @@ export function createGraphCommand(): Command {
         applyStandardCommandOptions(new Command("symbol"))
             .description("Resolve and print a single symbol from a name, SCIP id, or graph node id.")
             .argument("<nameOrId>", "Name, SCIP symbol, or graph-qualified node id"),
-        { includeRebuild: true }
+        { includeForce: true }
     );
     symbolCommand.action(async function graphSymbolCommandAction(nameOrId: string) {
         await runGraphCommandAction(async () => {
@@ -497,7 +497,7 @@ export function createGraphCommand(): Command {
         applyStandardCommandOptions(new Command("context"))
             .description("Retrieve a structured context bundle for a graph node.")
             .argument("<nodeId>", "Graph-qualified node id"),
-        { includeDepth: true, includeRebuild: true }
+        { includeDepth: true, includeForce: true }
     );
     contextCommand.action(async function graphContextCommandAction(nodeId: string) {
         await runGraphCommandAction(async () => {
@@ -509,7 +509,7 @@ export function createGraphCommand(): Command {
         applyStandardCommandOptions(new Command("neighbors"))
             .description("List neighboring graph nodes around a target node.")
             .argument("<nodeId>", "Graph-qualified node id"),
-        { includeDepth: true, includeRebuild: true }
+        { includeDepth: true, includeForce: true }
     );
     neighborsCommand.action(async function graphNeighborsCommandAction(nodeId: string) {
         await runGraphCommandAction(async () => {
@@ -521,7 +521,7 @@ export function createGraphCommand(): Command {
         applyStandardCommandOptions(new Command("usages"))
             .description("List incoming usage relationships for a target graph node.")
             .argument("<nodeId>", "Graph-qualified node id"),
-        { includeDepth: true, includeRebuild: true }
+        { includeDepth: true, includeForce: true }
     );
     usagesCommand.action(async function graphUsagesCommandAction(nodeId: string) {
         await runGraphCommandAction(async () => {
@@ -543,7 +543,7 @@ export function createGraphCommand(): Command {
         applyStandardCommandOptions(new Command("visualize")).description(
             "Render an interactive graph index visualization HTML file."
         ),
-        { includeRebuild: true }
+        { includeForce: true }
     );
     visualizeCommand
         .addOption(new Option("--output <path>", "Output HTML file path"))

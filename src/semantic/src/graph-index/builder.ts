@@ -1619,14 +1619,14 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
         if (schemaVersion !== GRAPH_INDEX_SCHEMA_VERSION) {
             issues.push({
                 code: "GRAPH_SCHEMA_INCOMPATIBLE",
-                message: `Graph database schema ${String(schemaVersion)} is incompatible with expected schema ${String(GRAPH_INDEX_SCHEMA_VERSION)}. Run 'gmloop graph index --rebuild'.`,
+                message: `Graph database schema ${String(schemaVersion)} is incompatible with expected schema ${String(GRAPH_INDEX_SCHEMA_VERSION)}. Run 'gmloop graph index --force'.`,
                 severity: "error"
             });
         }
         if (!integrity.ok) {
             issues.push({
                 code: "GRAPH_DB_INTEGRITY",
-                message: `Graph database integrity check returned '${integrity.quickCheckResult}' with ${String(integrity.foreignKeyViolationCount)} foreign-key violation(s). Run 'gmloop graph index --rebuild'.`,
+                message: `Graph database integrity check returned '${integrity.quickCheckResult}' with ${String(integrity.foreignKeyViolationCount)} foreign-key violation(s). Run 'gmloop graph index --force'.`,
                 severity: "error"
             });
         }
@@ -1662,7 +1662,7 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
             if (staleFileCount > 0) {
                 issues.push({
                     code: "GRAPH_DB_STALE",
-                    message: `${String(staleFileCount)} indexed file(s) changed or disappeared under ${row.rootPath}. Run 'gmloop graph index --rebuild'.`,
+                    message: `${String(staleFileCount)} indexed file(s) changed or disappeared under ${row.rootPath}. Run 'gmloop graph index --force'.`,
                     severity: "warning"
                 });
             }
