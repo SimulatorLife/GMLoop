@@ -103,12 +103,58 @@ void test("graph visualization template exposes view and label toggles", () => {
     assert.match(html, /activeView = "visual"/);
 });
 
+void test("graph visualization template exposes layout controls for spacing, repulsion, clustering, similarity, and alignment", () => {
+    const html = renderEmptyGraphVisualizationHtml("Layout Controls Test");
+
+    assert.match(html, /id="layout-spacing"/);
+    assert.match(html, /id="layout-repulsion"/);
+    assert.match(html, /id="layout-clustering"/);
+    assert.match(html, /id="layout-similarity"/);
+    assert.match(html, /id="layout-mode"/);
+    assert.match(html, /<option value="semantic">By Semantics<\/option>/);
+    assert.match(html, /<option value="kind">By Kind<\/option>/);
+    assert.match(html, /<option value="graph">By Graph<\/option>/);
+    assert.match(html, /<option value="radial">Radial<\/option>/);
+});
+
+void test("graph visualization template wires layout-only forces without changing edge data", () => {
+    const html = renderEmptyGraphVisualizationHtml("Layout Force Test");
+
+    assert.match(html, /const layoutSettings = \{/);
+    assert.match(html, /force\("alignment-x", d3\.forceX\(width \/ 2\)\.strength\(0\)\)/);
+    assert.match(html, /force\("alignment-y", d3\.forceY\(height \/ 2\)\.strength\(0\)\)/);
+    assert.match(
+        html,
+        /force\("semantic-link", d3\.forceLink\(\[\]\)\.id\(d => d\.id\)\.distance\(35\)\.strength\(0\)\)/
+    );
+    assert.match(html, /function buildSemanticSimilarityLinks\(nodeValues\)/);
+    assert.match(html, /function applyLayoutForces\(activeNodeValues = nodesRaw\)/);
+    assert.match(html, /layoutSpacingInput\.on\("input", updateLayoutSettingsFromControls\)/);
+    assert.match(html, /layoutModeInput\.on\("change", updateLayoutSettingsFromControls\)/);
+    assert.match(html, /simulation\.force\("link"\)\.links\(graphLinks\)/);
+    assert.match(html, /buildSemanticSimilarityLinks\(activeNodeValues\)/);
+    assert.match(html, /applyLayoutForces\(filteredNodes\)/);
+    assert.match(html, /source: sourceNode/);
+    assert.match(html, /target: targetNode/);
+});
+
 void test("graph visualization template keeps tooltip interactive for text selection", () => {
     const html = renderEmptyGraphVisualizationHtml("Tooltip Test");
 
     assert.match(html, /pointer-events: auto/);
     assert.match(html, /tooltip\.on\("mouseenter"/);
     assert.match(html, /hideTooltipWithDelay/);
+});
+
+void test("graph visualization template keeps dimmed links visible enough to inspect long-distance connections", () => {
+    const html = renderEmptyGraphVisualizationHtml("Edge Visibility Test");
+    const linkCssRuleBody = extractCssRuleBody(html, ".link");
+    const dimmedLinkCssRuleBody = extractCssRuleBody(html, ".link.dimmed");
+
+    assert.match(linkCssRuleBody, /stroke-opacity: 0\.72;/);
+    assert.match(linkCssRuleBody, /stroke-linecap: round;/);
+    assert.match(linkCssRuleBody, /vector-effect: non-scaling-stroke;/);
+    assert.match(dimmedLinkCssRuleBody, /stroke-opacity: 0\.2 !important;/);
 });
 
 void test("graph visualization template wraps and positions tooltip text inside the tooltip box", () => {
@@ -347,8 +393,8 @@ void test("graph visualization template hides fallback resource nodes from the l
     assert.match(html, /"enum_member"/);
     assert.match(html, /"function"/);
     assert.match(html, /"data_file"/);
-    assert.doesNotMatch(html, /const resourceKinds = new Set\(\[[\s\S]*"resource"[\s\S]*\]\)/);
     assert.doesNotMatch(html, /filter-node-resource/);
+    assert.match(html, /kindValue !== "resource"/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"struct_variable"[\s\S]*\]\)/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"instance_variable"[\s\S]*\]\)/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"local_variable"[\s\S]*\]\)/);

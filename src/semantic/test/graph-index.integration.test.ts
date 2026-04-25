@@ -887,6 +887,25 @@ void test("buildGraphIndex connects function call edges for script-local and obj
                 callEdges.some((edge) => edge.fromId !== localHelperNode.id && edge.toId === localHelperNode.id),
                 "expected object-event calls to resolve to local function nodes"
             );
+
+            const ownershipEdges = database
+                .prepare(
+                    `
+                        SELECT from_id AS fromId, to_id AS toId, type
+                        FROM edges
+                        WHERE to_id = ?
+                        ORDER BY from_id, type
+                    `
+                )
+                .all(localHelperNode.id) as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.ok(
+                ownershipEdges.some(
+                    (edge) =>
+                        edge.fromId === "project::resource::objects/obj_player/obj_player.yy" && edge.type === "defines"
+                ),
+                "expected object-defined functions to stay connected to their owning object resource"
+            );
         } finally {
             database.close();
         }

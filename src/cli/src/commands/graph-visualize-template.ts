@@ -161,11 +161,16 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
   <title>GMLoop Graph Index - ${title}</title>
   <style>
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #1e1e1e; color: #e0e0e0; }
-    header { position: absolute; top: 0; left: 0; right: 0; padding: 10px 20px; background: #252526; box-shadow: 0 1px 3px rgba(0,0,0,0.5); z-index: 10; display: flex; gap: 15px; align-items: center; }
+    header { position: absolute; top: 0; left: 0; right: 0; padding: 10px 20px; background: #252526; box-shadow: 0 1px 3px rgba(0,0,0,0.5); z-index: 10; display: flex; gap: 15px; align-items: flex-start; flex-wrap: wrap; }
     h1 { margin: 0; font-size: 16px; font-weight: 600; color: #e0e0e0; }
     #search { padding: 4px 8px; border: 1px solid #555; border-radius: 4px; font-size: 14px; width: 200px; background: #333; color: #eee; }
-    button { padding: 4px 10px; border: 1px solid #555; border-radius: 4px; background: #333; color: #eee; cursor: pointer; font-size: 14px; }
+    button, select { padding: 4px 10px; border: 1px solid #555; border-radius: 4px; background: #333; color: #eee; cursor: pointer; font-size: 14px; }
+    input[type="range"] { width: 110px; accent-color: #5ea1ff; }
     button:hover { background: #444; }
+    .toolbar-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .layout-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 6px 10px; border: 1px solid #3f3f46; border-radius: 6px; background: rgba(18, 18, 20, 0.55); }
+    .layout-control { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #d7d7dc; white-space: nowrap; }
+    .layout-control output { min-width: 30px; text-align: right; color: #9fc5ff; font-variant-numeric: tabular-nums; }
     main { width: 100%; height: 100%; }
     svg { width: 100%; height: 100%; cursor: grab; }
     svg:active { cursor: grabbing; }
@@ -175,8 +180,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     .node.dimmed { opacity: 0.1 !important; }
     .node.highlighted { stroke: #fff; stroke-width: 3px; }
     
-    .link { stroke-opacity: 0.6; fill: none; }
-    .link.dimmed { stroke-opacity: 0.05 !important; }
+    .link { stroke-opacity: 0.72; fill: none; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+    .link.dimmed { stroke-opacity: 0.2 !important; }
     
     /* Edge colors */
     ${renderEdgeLineCssRules()}
@@ -207,12 +212,21 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
 </head>
 <body>
   <header>
-    <h1>Graph Index</h1>
-    <input type="search" id="search" placeholder="Search nodes…" />
-    <button id="toggle-view">JSON</button>
-    <button id="toggle-labels">Labels: Auto</button>
-    <button id="reset-default">Reset</button>
-    ${isServerMode ? `<button id="regenerate" style="background: #007acc; border-color: #007acc; font-weight: bold; color: white;">Regenerate</button>` : ""}
+    <div class="toolbar-group">
+      <h1>Graph Index</h1>
+      <input type="search" id="search" placeholder="Search nodes…" />
+      <button id="toggle-view">JSON</button>
+      <button id="toggle-labels">Labels: Auto</button>
+      <button id="reset-default">Reset</button>
+      ${isServerMode ? `<button id="regenerate" style="background: #007acc; border-color: #007acc; font-weight: bold; color: white;">Regenerate</button>` : ""}
+    </div>
+    <div class="layout-controls">
+      <label class="layout-control" for="layout-spacing">Spacing <input id="layout-spacing" type="range" min="0.6" max="2.2" step="0.1" value="1"><output id="layout-spacing-value">1.0x</output></label>
+      <label class="layout-control" for="layout-repulsion">Repulsion <input id="layout-repulsion" type="range" min="0.4" max="2.5" step="0.1" value="1"><output id="layout-repulsion-value">1.0x</output></label>
+      <label class="layout-control" for="layout-clustering">Clustering <input id="layout-clustering" type="range" min="0" max="2" step="0.1" value="0.6"><output id="layout-clustering-value">0.6x</output></label>
+      <label class="layout-control" for="layout-similarity">Semantic <input id="layout-similarity" type="range" min="0" max="2" step="0.1" value="0.5"><output id="layout-similarity-value">0.5x</output></label>
+      <label class="layout-control" for="layout-mode">Alignment <select id="layout-mode"><option value="free">Free</option><option value="kind">By Kind</option><option value="graph">By Graph</option><option value="semantic">By Semantics</option><option value="radial">Radial</option></select></label>
+    </div>
   </header>
   <main>
     <svg id="graph">
@@ -243,10 +257,23 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     const tooltip = d3.select("#tooltip");
     let labelMode = "auto";
     let activeView = "visual";
+    const layoutSpacingInput = d3.select("#layout-spacing");
+    const layoutRepulsionInput = d3.select("#layout-repulsion");
+    const layoutClusteringInput = d3.select("#layout-clustering");
+    const layoutSimilarityInput = d3.select("#layout-similarity");
+    const layoutModeInput = d3.select("#layout-mode");
+    const layoutSettings = {
+        spacing: 1,
+        repulsion: 1,
+        clustering: 0.6,
+        similarity: 0.5,
+        mode: "free"
+    };
     const edgeLineVisualStyles = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};
     const edgeLineVisualStyleByType = new Map(edgeLineVisualStyles.map((style) => [style.type, style]));
     const nodeVisualStyles = ${JSON.stringify(NODE_VISUAL_STYLES)};
     const nodeVisualStyleByKind = new Map(nodeVisualStyles.map((style) => [style.kind, style]));
+    const semanticTokenCache = new Map();
     
     // Setup Zoom
     const zoom = d3.zoom()
@@ -322,6 +349,18 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
        });
        syncGroupCheckboxState(resourceCheckbox, resourceTypesPresent);
        syncGroupCheckboxState(enumCheckbox, enumTypesPresent);
+       layoutSettings.spacing = 1;
+       layoutSettings.repulsion = 1;
+       layoutSettings.clustering = 0.6;
+       layoutSettings.similarity = 0.5;
+       layoutSettings.mode = "free";
+       layoutSpacingInput.property("value", String(layoutSettings.spacing));
+       layoutRepulsionInput.property("value", String(layoutSettings.repulsion));
+       layoutClusteringInput.property("value", String(layoutSettings.clustering));
+       layoutSimilarityInput.property("value", String(layoutSettings.similarity));
+       layoutModeInput.property("value", layoutSettings.mode);
+       updateLayoutControlLabels();
+       applyLayoutForces();
        
        updateGraph();
     });
@@ -376,6 +415,139 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
             kindValue !== "enum_member"
     );
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
+    const kindLaneIndex = new Map(allNodeKinds.map((kindValue, index) => [kindValue, index]));
+    const graphLaneIndex = new Map(Array.from(new Set(allNodes.map((nodeValue) => nodeValue.graphId))).map((graphId, index) => [graphId, index]));
+
+    function clampLayoutStrength(value) {
+        return Number.isFinite(value) ? value : 0;
+    }
+
+    function parseLayoutNumber(inputSelection, fallbackValue) {
+        const parsedValue = Number.parseFloat(inputSelection.property("value"));
+        return Number.isFinite(parsedValue) ? parsedValue : fallbackValue;
+    }
+
+    function updateLayoutControlLabels() {
+        d3.select("#layout-spacing-value").text(layoutSettings.spacing.toFixed(1) + "x");
+        d3.select("#layout-repulsion-value").text(layoutSettings.repulsion.toFixed(1) + "x");
+        d3.select("#layout-clustering-value").text(layoutSettings.clustering.toFixed(1) + "x");
+        d3.select("#layout-similarity-value").text(layoutSettings.similarity.toFixed(1) + "x");
+    }
+
+    function tokenizeSemanticDescriptor(nodeValue) {
+        const cachedTokens = semanticTokenCache.get(nodeValue.id);
+        if (cachedTokens) {
+            return cachedTokens;
+        }
+
+        const tokens = new Set(
+            (nodeValue.name + " " + nodeValue.displayName + " " + nodeValue.summary)
+                .toLowerCase()
+                .split(/[^a-z0-9_]+/u)
+                .filter((tokenValue) => tokenValue.length >= 3)
+        );
+        semanticTokenCache.set(nodeValue.id, tokens);
+        return tokens;
+    }
+
+    function measureSemanticSimilarity(sourceNode, targetNode) {
+        if (sourceNode.id === targetNode.id) {
+            return 0;
+        }
+
+        const sourceTokens = tokenizeSemanticDescriptor(sourceNode);
+        const targetTokens = tokenizeSemanticDescriptor(targetNode);
+        let sharedTokenCount = 0;
+        for (const tokenValue of sourceTokens) {
+            if (targetTokens.has(tokenValue)) {
+                sharedTokenCount += 1;
+            }
+        }
+
+        let similarityScore = sharedTokenCount;
+        if (sourceNode.kind === targetNode.kind) {
+            similarityScore += 1.5;
+        }
+        if (sourceNode.graphId === targetNode.graphId) {
+            similarityScore += 0.25;
+        }
+        return similarityScore;
+    }
+
+    function buildSemanticSimilarityLinks(nodeValues) {
+        const semanticLinks = [];
+        for (let sourceIndex = 0; sourceIndex < nodeValues.length; sourceIndex += 1) {
+            const sourceNode = nodeValues[sourceIndex];
+            for (let targetIndex = sourceIndex + 1; targetIndex < nodeValues.length; targetIndex += 1) {
+                const targetNode = nodeValues[targetIndex];
+                const similarityScore = measureSemanticSimilarity(sourceNode, targetNode);
+                if (similarityScore >= 2) {
+                    semanticLinks.push({
+                        source: sourceNode,
+                        target: targetNode,
+                        weight: Math.min(similarityScore, 5)
+                    });
+                }
+            }
+        }
+        return semanticLinks;
+    }
+
+    function resolveAlignmentTargetX(nodeValue) {
+        const usableWidth = Math.max(width - 220, 200);
+        if (layoutSettings.mode === "kind") {
+            const kindIndex = kindLaneIndex.get(nodeValue.kind) ?? 0;
+            const laneCount = Math.max(kindLaneIndex.size, 1);
+            return usableWidth * ((kindIndex + 1) / (laneCount + 1));
+        }
+        if (layoutSettings.mode === "graph") {
+            const graphIndex = graphLaneIndex.get(nodeValue.graphId) ?? 0;
+            const laneCount = Math.max(graphLaneIndex.size, 1);
+            return usableWidth * ((graphIndex + 1) / (laneCount + 1));
+        }
+        if (layoutSettings.mode === "semantic") {
+            const semanticTokens = [...tokenizeSemanticDescriptor(nodeValue)];
+            const semanticFingerprint = semanticTokens.join("|");
+            let semanticIndex = 0;
+            for (let fingerprintIndex = 0; fingerprintIndex < semanticFingerprint.length; fingerprintIndex += 1) {
+                semanticIndex = (semanticIndex + semanticFingerprint.charCodeAt(fingerprintIndex)) % 9;
+            }
+            return usableWidth * ((semanticIndex + 1) / 10);
+        }
+        if (layoutSettings.mode === "radial") {
+            const kindIndex = kindLaneIndex.get(nodeValue.kind) ?? 0;
+            const angle = (Math.PI * 2 * kindIndex) / Math.max(kindLaneIndex.size, 1);
+            return width / 2 + Math.cos(angle) * Math.min(width, height) * 0.28;
+        }
+        return width / 2;
+    }
+
+    function resolveAlignmentTargetY(nodeValue) {
+        const usableHeight = Math.max(height - 220, 200);
+        if (layoutSettings.mode === "kind") {
+            return height / 2;
+        }
+        if (layoutSettings.mode === "graph") {
+            const kindIndex = kindLaneIndex.get(nodeValue.kind) ?? 0;
+            const laneCount = Math.max(kindLaneIndex.size, 1);
+            return usableHeight * ((kindIndex + 1) / (laneCount + 1));
+        }
+        if (layoutSettings.mode === "semantic") {
+            const semanticTokens = [...tokenizeSemanticDescriptor(nodeValue)];
+            const semanticFingerprint = semanticTokens.join("|");
+            let semanticIndex = 0;
+            for (let fingerprintIndex = 0; fingerprintIndex < semanticFingerprint.length; fingerprintIndex += 1) {
+                semanticIndex = (semanticIndex + semanticFingerprint.charCodeAt(fingerprintIndex)) % 7;
+            }
+            return usableHeight * ((semanticIndex + 1) / 8);
+        }
+        if (layoutSettings.mode === "radial") {
+            const kindIndex = kindLaneIndex.get(nodeValue.kind) ?? 0;
+            const angle = (Math.PI * 2 * kindIndex) / Math.max(kindLaneIndex.size, 1);
+            return height / 2 + Math.sin(angle) * Math.min(width, height) * 0.28;
+        }
+        return height / 2;
+    }
 
     function isNodeGroupCheckedByDefault(typeVal) {
         if (typeVal === "resource-group") {
@@ -509,6 +681,9 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         .force("charge", d3.forceManyBody().strength(-100))
         .force("center", d3.forceCenter(width / 2, height / 2))
         .force("collide", d3.forceCollide().radius(d => getRadius(d) + 5).iterations(2))
+        .force("alignment-x", d3.forceX(width / 2).strength(0))
+        .force("alignment-y", d3.forceY(height / 2).strength(0))
+        .force("semantic-link", d3.forceLink([]).id(d => d.id).distance(35).strength(0))
         .alphaDecay(0.02)
         .velocityDecay(0.3);
         
@@ -544,7 +719,70 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     let searchHighlightNodeIds = new Set();
     let focusNodeId = null;
     let pinnedTooltipNodeId = null;
-    
+
+    function applyLayoutForces(activeNodeValues = nodesRaw) {
+        const linkForce = simulation.force("link");
+        if (linkForce) {
+            linkForce
+                .distance((edgeValue) => {
+                    const baseDistance = edgeValue.type === "contains" ? 42 : edgeValue.type === "defines" ? 52 : 66;
+                    return baseDistance * layoutSettings.spacing;
+                })
+                .strength((edgeValue) => edgeValue.type === "contains" ? 0.18 : edgeValue.type === "defines" ? 0.16 : 0.1);
+        }
+
+        const chargeForce = simulation.force("charge");
+        if (chargeForce) {
+            chargeForce.strength(-100 * layoutSettings.repulsion);
+        }
+
+        const collideForce = simulation.force("collide");
+        if (collideForce) {
+            collideForce.radius((nodeValue) => getRadius(nodeValue) + 5 + layoutSettings.spacing * 4);
+        }
+
+        const alignmentXForce = simulation.force("alignment-x");
+        if (alignmentXForce) {
+            alignmentXForce
+                .x((nodeValue) => resolveAlignmentTargetX(nodeValue))
+                .strength(layoutSettings.mode === "free" ? 0 : clampLayoutStrength(0.04 * layoutSettings.clustering));
+        }
+
+        const alignmentYForce = simulation.force("alignment-y");
+        if (alignmentYForce) {
+            alignmentYForce
+                .y((nodeValue) => resolveAlignmentTargetY(nodeValue))
+                .strength(layoutSettings.mode === "free" ? 0 : clampLayoutStrength(0.03 * layoutSettings.clustering));
+        }
+
+        const semanticLinkForce = simulation.force("semantic-link");
+        if (semanticLinkForce) {
+            semanticLinkForce
+                .links(buildSemanticSimilarityLinks(activeNodeValues))
+                .distance((linkValue) => 34 + (4 - Math.min(linkValue.weight, 4)) * 12 * layoutSettings.spacing)
+                .strength((linkValue) => clampLayoutStrength((linkValue.weight / 16) * layoutSettings.similarity));
+        }
+    }
+
+    function updateLayoutSettingsFromControls() {
+        layoutSettings.spacing = parseLayoutNumber(layoutSpacingInput, 1);
+        layoutSettings.repulsion = parseLayoutNumber(layoutRepulsionInput, 1);
+        layoutSettings.clustering = parseLayoutNumber(layoutClusteringInput, 0.6);
+        layoutSettings.similarity = parseLayoutNumber(layoutSimilarityInput, 0.5);
+        layoutSettings.mode = layoutModeInput.property("value");
+        updateLayoutControlLabels();
+        applyLayoutForces();
+        simulation.alpha(0.45).restart();
+    }
+
+    layoutSpacingInput.on("input", updateLayoutSettingsFromControls);
+    layoutRepulsionInput.on("input", updateLayoutSettingsFromControls);
+    layoutClusteringInput.on("input", updateLayoutSettingsFromControls);
+    layoutSimilarityInput.on("input", updateLayoutSettingsFromControls);
+    layoutModeInput.on("change", updateLayoutSettingsFromControls);
+    updateLayoutControlLabels();
+    applyLayoutForces();
+
     function updateGraph() {
         const validNodeIds = new Set(nodesRaw.filter(n => activeNodeFilters.has(n.kind)).map(n => n.id));
         const filteredLinks = linksRaw.filter(l => {
@@ -643,6 +881,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         // Restart simulation
         simulation.nodes(filteredNodes).on("tick", ticked);
         simulation.force("link").links(graphLinks);
+        applyLayoutForces(filteredNodes);
         simulation.alpha(0.3).restart();
         
         applyHighlights();
