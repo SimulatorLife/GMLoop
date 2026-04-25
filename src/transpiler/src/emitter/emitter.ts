@@ -484,10 +484,11 @@ export class GmlToJsEmitter {
             const code = this.emit(stmts[0]);
             return code ? this.ensureStatementTermination(code) : "";
         }
-        // Multiple statements: use StringBuilder for efficiency
+        // Multiple statements: use StringBuilder for efficiency.
+        // Call `visit` directly to avoid re-entering the `emit` lifecycle for each statement.
         const builder = new StringBuilder(stmts.length);
         for (const stmt of stmts) {
-            const code = this.emit(stmt);
+            const code = this.visit(stmt);
             if (code) {
                 builder.append(this.ensureStatementTermination(code));
             }
@@ -500,12 +501,13 @@ export class GmlToJsEmitter {
         if (stmts.length === 0) {
             return "{\n}";
         }
-        // Build block body with StringBuilder for efficiency
+        // Build block body with StringBuilder for efficiency.
+        // Use `visit` directly so nested statements do not repeatedly invoke emit setup/teardown.
         // Capacity: statements count + opening brace + closing brace
         const builder = new StringBuilder(stmts.length + 2);
         builder.append("{\n");
         for (const stmt of stmts) {
-            const code = this.emit(stmt);
+            const code = this.visit(stmt);
             if (code) {
                 builder.append(`${this.ensureStatementTermination(code)}\n`);
             }
@@ -885,7 +887,7 @@ export class GmlToJsEmitter {
         builder.append("{\n");
         builder.append(`${prologueStatement};\n`);
         for (const statement of statements) {
-            const code = this.emit(statement);
+            const code = this.visit(statement);
             if (!code) {
                 continue;
             }
