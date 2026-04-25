@@ -120,6 +120,8 @@ void test("graph visualization template exposes layout controls for spacing, rep
 void test("graph visualization template wires layout-only forces without changing edge data", () => {
     const html = renderEmptyGraphVisualizationHtml("Layout Force Test");
 
+    assert.match(html, /clustering: 0\.35,/);
+    assert.match(html, /similarity: 0\.2,/);
     assert.match(html, /const layoutSettings = \{/);
     assert.match(html, /force\("alignment-x", d3\.forceX\(width \/ 2\)\.strength\(0\)\)/);
     assert.match(html, /force\("alignment-y", d3\.forceY\(height \/ 2\)\.strength\(0\)\)/);
@@ -127,6 +129,8 @@ void test("graph visualization template wires layout-only forces without changin
         html,
         /force\("semantic-link", d3\.forceLink\(\[\]\)\.id\(d => d\.id\)\.distance\(35\)\.strength\(0\)\)/
     );
+    assert.match(html, /\.alphaDecay\(0\.08\)/);
+    assert.match(html, /\.velocityDecay\(0\.55\)/);
     assert.match(html, /function buildSemanticSimilarityLinks\(nodeValues\)/);
     assert.match(html, /function applyLayoutForces\(activeNodeValues = nodesRaw\)/);
     assert.match(html, /layoutSpacingInput\.on\("input", updateLayoutSettingsFromControls\)/);
@@ -134,6 +138,9 @@ void test("graph visualization template wires layout-only forces without changin
     assert.match(html, /simulation\.force\("link"\)\.links\(graphLinks\)/);
     assert.match(html, /buildSemanticSimilarityLinks\(activeNodeValues\)/);
     assert.match(html, /applyLayoutForces\(filteredNodes\)/);
+    assert.match(html, /simulation\.alpha\(0\.16\)\.restart\(\)/);
+    assert.match(html, /simulation\.alpha\(0\.12\)\.restart\(\)/);
+    assert.match(html, /simulation\.alphaTarget\(0\.12\)\.restart\(\)/);
     assert.match(html, /source: sourceNode/);
     assert.match(html, /target: targetNode/);
 });

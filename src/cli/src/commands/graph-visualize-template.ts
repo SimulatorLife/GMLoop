@@ -265,8 +265,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     const layoutSettings = {
         spacing: 1,
         repulsion: 1,
-        clustering: 0.6,
-        similarity: 0.5,
+        clustering: 0.35,
+        similarity: 0.2,
         mode: "free"
     };
     const edgeLineVisualStyles = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};
@@ -684,8 +684,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         .force("alignment-x", d3.forceX(width / 2).strength(0))
         .force("alignment-y", d3.forceY(height / 2).strength(0))
         .force("semantic-link", d3.forceLink([]).id(d => d.id).distance(35).strength(0))
-        .alphaDecay(0.02)
-        .velocityDecay(0.3);
+        .alphaDecay(0.08)
+        .velocityDecay(0.55);
         
     // Map data for D3
     let nodesRaw = allNodes.map(d => Object.assign({}, d));
@@ -767,12 +767,12 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     function updateLayoutSettingsFromControls() {
         layoutSettings.spacing = parseLayoutNumber(layoutSpacingInput, 1);
         layoutSettings.repulsion = parseLayoutNumber(layoutRepulsionInput, 1);
-        layoutSettings.clustering = parseLayoutNumber(layoutClusteringInput, 0.6);
-        layoutSettings.similarity = parseLayoutNumber(layoutSimilarityInput, 0.5);
+        layoutSettings.clustering = parseLayoutNumber(layoutClusteringInput, 0.35);
+        layoutSettings.similarity = parseLayoutNumber(layoutSimilarityInput, 0.2);
         layoutSettings.mode = layoutModeInput.property("value");
         updateLayoutControlLabels();
         applyLayoutForces();
-        simulation.alpha(0.45).restart();
+        simulation.alpha(0.16).restart();
     }
 
     layoutSpacingInput.on("input", updateLayoutSettingsFromControls);
@@ -882,7 +882,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         simulation.nodes(filteredNodes).on("tick", ticked);
         simulation.force("link").links(graphLinks);
         applyLayoutForces(filteredNodes);
-        simulation.alpha(0.3).restart();
+        simulation.alpha(0.12).restart();
         
         applyHighlights();
     }
@@ -904,7 +904,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     
     // Interactions
     function dragstarted(event, d) {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
+        if (!event.active) simulation.alphaTarget(0.12).restart();
         d.fx = d.x;
         d.fy = d.y;
     }
