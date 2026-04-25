@@ -1402,7 +1402,7 @@ export class GmlSemanticBridge {
     private loadResourceMetadataDocumentForRename(resourcePath: string): Record<string, unknown> {
         const existingDocument = this.parsedProjectMetadataByPath.get(resourcePath);
         if (existingDocument !== undefined) {
-            return structuredClone(existingDocument);
+            return existingDocument;
         }
 
         const absolutePath = path.resolve(this.projectRoot, resourcePath);
@@ -1415,7 +1415,7 @@ export class GmlSemanticBridge {
             const parsed = Semantic.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
             this.projectMetadataSourceByPath.set(resourcePath, rawContent);
             this.parsedProjectMetadataByPath.set(resourcePath, parsed);
-            return structuredClone(parsed);
+            return parsed;
         } catch {
             return {};
         }
@@ -1583,8 +1583,7 @@ export class GmlSemanticBridge {
             const { parsed, rawContent } = loadedMetadataDocument;
             const oldResourcePathLiteral = JSON.stringify(currentResourcePath);
             const newResourcePathLiteral = JSON.stringify(newResourcePath);
-            const hasRawPathLiteralMatch =
-                oldResourcePathLiteral !== newResourcePathLiteral && rawContent.includes(oldResourcePathLiteral);
+            const shouldApplyRawResourcePathFallback = oldResourcePathLiteral !== newResourcePathLiteral;
 
             let changed = false;
             const stringMutations: Array<{ propertyPath: string; value: string }> = [];
@@ -1724,11 +1723,12 @@ export class GmlSemanticBridge {
                     changed = true;
                 }
             }
-            if (hasRawPathLiteralMatch) {
-                changed = true;
-            }
-
-            if (!changed) {
+            // Guard the expensive whole-document fallback scan behind the
+            // "no structured changes" branch. In the common rename path we
+            // already mutated parsed fields above, so scanning the full raw
+            // metadata text for every candidate (especially MyGame.yyp) is
+            // redundant and dominates runtime on large projects.
+            if (!changed && (!shouldApplyRawResourcePathFallback || !rawContent.includes(oldResourcePathLiteral))) {
                 continue;
             }
 
@@ -1738,7 +1738,7 @@ export class GmlSemanticBridge {
                 : (Semantic.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
                   Semantic.stringifyProjectMetadataDocument(parsed, resourceEntry.path));
             if (
-                hasRawPathLiteralMatch &&
+                shouldApplyRawResourcePathFallback &&
                 !shouldNormalizeResourcePathOrdering &&
                 canonicalContent.includes(oldResourcePathLiteral)
             ) {
