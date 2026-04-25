@@ -822,30 +822,60 @@ function projectIdentifierCollections(context: ProjectionContext): void {
 }
 
 function projectGlobalVariableReferenceEdges(context: ProjectionContext): void {
-    const globalVariables = asRecord(context.projectIndex.identifiers?.globalVariables);
+    projectIdentifierOwnershipEdges(context, "globalVariables", "global_variable");
+    projectIdentifierOwnershipEdges(context, "macros", "macro");
+    projectIdentifierOwnershipEdges(context, "localVariables", "local_variable");
+}
 
-    for (const entryValue of Object.values(globalVariables)) {
+function projectIdentifierOwnershipEdges(
+    context: ProjectionContext,
+    collectionName: "globalVariables" | "localVariables" | "macros",
+    kind: "global_variable" | "local_variable" | "macro"
+): void {
+    const identifiers = asRecord(context.projectIndex.identifiers?.[collectionName]);
+
+    for (const entryValue of Object.values(identifiers)) {
         const entry = asRecord(entryValue) as ProjectIndexIdentifierEntry;
         const name = getString(entry.name);
         if (!name) {
             continue;
         }
 
-        const targetNodeId = lookupUniqueNodeByNameAndKind(context, name, "global_variable");
+        const targetScipSymbol = resolveScipSymbol(kind, name, entry);
+        const targetNodeId = context.nodeIdsByScipSymbol.get(targetScipSymbol) ?? null;
         if (!targetNodeId) {
             continue;
         }
 
-        const references = Array.isArray(entry.references) ? entry.references : [];
-        for (const rawReference of references) {
-            const reference = asRecord(rawReference);
-            const filePath = getString(reference.filePath);
+        const declarations = Array.isArray(entry.declarations) ? entry.declarations : [];
+        for (const rawDeclaration of declarations) {
+            const declaration = asRecord(rawDeclaration);
+            const filePath = getString(declaration.filePath) ?? getString(entry.filePath);
             if (!filePath) {
                 continue;
             }
 
             const fileNodeId = createGraphNodeId(context.graphId, "file", filePath);
-            const scopeId = getString(reference.scopeId);
+            const scopeId = getString(declaration.scopeId) ?? getString(entry.scopeId);
+            const locationLine = readLocationLine(asRecord(declaration.start));
+            const sourceNodeId = resolveScopedFileOwnerNodeId(context, filePath, fileNodeId, scopeId, locationLine);
+            context.edgeRecords.push({
+                fromId: sourceNodeId,
+                toId: targetNodeId,
+                type: "defines"
+            });
+        }
+
+        const references = Array.isArray(entry.references) ? entry.references : [];
+        for (const rawReference of references) {
+            const reference = asRecord(rawReference);
+            const filePath = getString(reference.filePath) ?? getString(entry.filePath);
+            if (!filePath) {
+                continue;
+            }
+
+            const fileNodeId = createGraphNodeId(context.graphId, "file", filePath);
+            const scopeId = getString(reference.scopeId) ?? getString(entry.scopeId);
             const locationLine = readLocationLine(asRecord(reference.start));
             const sourceNodeId = resolveScopedFileOwnerNodeId(context, filePath, fileNodeId, scopeId, locationLine);
             context.edgeRecords.push({

@@ -552,6 +552,79 @@ void test("buildGraphIndex projects structs, variables, functions, and concrete 
     }
 });
 
+void test("buildGraphIndex connects macro, global, and local variable symbols to visible owners", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-variable-owners-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/identifier_ownership/identifier_ownership.yy",
+            JSON.stringify({ name: "identifier_ownership", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/identifier_ownership/identifier_ownership.gml",
+            [
+                "#macro MAX_ENEMIES 3",
+                "globalvar enemy_limit;",
+                "function identifier_ownership() {",
+                "    var local_value = MAX_ENEMIES;",
+                "    enemy_limit = enemy_limit + local_value;",
+                "    return local_value;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const symbolRows = database
+                .prepare(
+                    `
+                        SELECT id, kind, name
+                        FROM nodes
+                        WHERE kind IN ('macro', 'global_variable', 'local_variable')
+                        ORDER BY kind, name
+                    `
+                )
+                .all() as Array<{ id: string; kind: string; name: string }>;
+
+            const macroNode = symbolRows.find((row) => row.kind === "macro" && row.name === "MAX_ENEMIES");
+            const globalNode = symbolRows.find((row) => row.kind === "global_variable" && row.name === "enemy_limit");
+            const localNode = symbolRows.find((row) => row.kind === "local_variable" && row.name === "local_value");
+
+            assert.ok(macroNode, "expected macro node to be indexed");
+            assert.ok(globalNode, "expected global variable node to be indexed");
+            assert.ok(localNode, "expected local variable node to be indexed");
+
+            for (const node of [macroNode, globalNode, localNode]) {
+                const incomingEdges = database
+                    .prepare("SELECT from_id AS fromId, type FROM edges WHERE to_id = ? ORDER BY from_id, type")
+                    .all(node.id) as Array<{ fromId: string; type: string }>;
+
+                assert.ok(
+                    incomingEdges.some((edge) => edge.fromId.startsWith("project::gml/")),
+                    `expected ${node.kind} ${node.name} to be connected from a visible semantic owner`
+                );
+            }
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
 void test("buildGraphIndex connects function call edges for script-local and object-local functions", async () => {
     const fixture = await createTempProjectWorkspace("graph-index-function-calls-");
 
