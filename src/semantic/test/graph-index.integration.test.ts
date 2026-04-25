@@ -93,7 +93,8 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
             assert.ok(
                 edgeRows.some(
                     (entry) =>
-                        entry.fromId === "project::gml/script/player_update" &&
+                        entry.fromId ===
+                            "project::gml/function/function:scripts/player_update/player_update.gml::1:9:9" &&
                         entry.toId === "toolset::gml/script/shared_toolset_fn"
                 )
             );
@@ -405,7 +406,10 @@ void test("graph usages return incoming usage records with source and target nod
             toolsetRoot: fixture.toolsetRoot
         });
 
-        assert.equal(usages[0]?.from.id, "project::gml/script/player_update");
+        assert.equal(
+            usages[0]?.from.id,
+            "project::gml/function/function:scripts/player_update/player_update.gml::1:9:9"
+        );
         assert.equal(usages[0]?.to.id, "toolset::gml/script/shared_toolset_fn");
     } finally {
         await fixture.cleanup();
@@ -540,6 +544,268 @@ void test("buildGraphIndex projects structs, variables, functions, and concrete 
             assert.ok(nodeNamesByKind.get("struct_variable")?.has("struct_health"));
             assert.ok(nodeNamesByKind.get("instance_variable")?.has("speed_bonus"));
             assert.equal(nodeKinds.has("resource"), false);
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex connects function call edges for script-local and object-local functions", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-function-calls-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/graph_functions/graph_functions.yy",
+            JSON.stringify({ name: "graph_functions", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/graph_functions/graph_functions.gml",
+            [
+                "function graph_functions() {",
+                "    return helper();",
+                "}",
+                "",
+                "function helper() {",
+                "    return 42;",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_player/obj_player.yy",
+            JSON.stringify({
+                name: "obj_player",
+                resourceType: "GMObject",
+                eventList: [
+                    {
+                        eventType: 0,
+                        eventNum: 0,
+                        name: "Create_0",
+                        eventId: {
+                            path: "objects/obj_player/obj_player_Create_0.gml"
+                        }
+                    }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_player/obj_player_Create_0.gml",
+            ["function local_helper() {", "    return 1;", "}", "", "local_helper();", ""].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const functionNodes = database
+                .prepare("SELECT id, kind, name, scope_id AS scopeId FROM nodes WHERE kind = 'function' ORDER BY name")
+                .all() as Array<{ id: string; kind: string; name: string; scopeId: string | null }>;
+            const helperNode = functionNodes.find((node) => node.name === "helper");
+            const localHelperNode = functionNodes.find((node) => node.name === "local_helper");
+            const graphFunctionsNode = functionNodes.find((node) => node.name === "graph_functions");
+
+            assert.ok(graphFunctionsNode);
+            assert.ok(helperNode);
+            assert.ok(localHelperNode);
+            assert.ok(helperNode.scopeId);
+            assert.ok(localHelperNode.scopeId);
+
+            const callEdges = database
+                .prepare(
+                    `
+                        SELECT from_id AS fromId, to_id AS toId, type
+                        FROM edges
+                        WHERE type = 'calls'
+                        ORDER BY from_id, to_id
+                    `
+                )
+                .all() as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.ok(
+                callEdges.some((edge) => edge.fromId === graphFunctionsNode.id && edge.toId === helperNode.id),
+                "expected the top-level function node to call the helper function node"
+            );
+            assert.ok(
+                callEdges.some((edge) => edge.fromId !== localHelperNode.id && edge.toId === localHelperNode.id),
+                "expected object-event calls to resolve to local function nodes"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex connects global variables to their defining and referencing owners", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-global-variables-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/configure_globals/configure_globals.yy",
+            JSON.stringify({ name: "configure_globals", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/configure_globals/configure_globals.gml",
+            ["globalvar enemy_limit;", "function configure_globals() {", "    enemy_limit = 4;", "}", ""].join("\n")
+        );
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const globalNode = database
+                .prepare("SELECT id FROM nodes WHERE kind = 'global_variable' AND name = 'enemy_limit'")
+                .get() as { id: string } | undefined;
+            const configureFunctionNode = database
+                .prepare("SELECT id FROM nodes WHERE kind = 'function' AND name = 'configure_globals'")
+                .get() as { id: string } | undefined;
+
+            assert.ok(globalNode);
+            assert.ok(configureFunctionNode);
+
+            const edges = database
+                .prepare(
+                    `
+                        SELECT from_id AS fromId, to_id AS toId, type
+                        FROM edges
+                        WHERE to_id = ?
+                        ORDER BY from_id, type
+                    `
+                )
+                .all(globalNode.id) as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.ok(
+                edges.some(
+                    (edge) =>
+                        edge.fromId === "project::file::scripts/configure_globals/configure_globals.gml" &&
+                        edge.type === "defines"
+                ),
+                "expected the global variable node to stay connected to its defining file"
+            );
+            assert.ok(
+                edges.some(
+                    (edge) =>
+                        edge.fromId === "project::file::scripts/configure_globals/configure_globals.gml" &&
+                        edge.type === "references"
+                ),
+                "expected the defining file to reference the global variable node"
+            );
+            assert.ok(
+                edges.some(
+                    (edge) =>
+                        edge.fromId === "project::file::scripts/configure_globals/configure_globals.gml" &&
+                        edge.type === "references"
+                ),
+                "expected tracked global references to connect to the global variable node"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex skips dangling edges from stale project references instead of failing the build", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-dangling-edges-");
+
+    try {
+        await fixture.writeProjectFile(
+            "InterplanetaryFootball.yyp",
+            JSON.stringify({
+                name: "InterplanetaryFootball",
+                resourceType: "GMProject",
+                resources: [
+                    {
+                        id: {
+                            name: "kickoff",
+                            path: "scripts/kickoff/kickoff.yy"
+                        }
+                    },
+                    {
+                        id: {
+                            name: "missing_script",
+                            path: "scripts/missing_script/missing_script.yy"
+                        }
+                    }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "scripts/kickoff/kickoff.yy",
+            JSON.stringify({
+                name: "kickoff",
+                resourceType: "GMScript"
+            })
+        );
+        await fixture.writeProjectFile(
+            "scripts/kickoff/kickoff.gml",
+            ["function kickoff() {", "    return 1;", "}", ""].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const kickoffNode = database
+                .prepare("SELECT id FROM nodes WHERE kind = 'script' AND name = 'kickoff'")
+                .get() as { id: string } | undefined;
+            assert.ok(
+                kickoffNode,
+                "expected graph indexing to succeed even when the project manifest references stale resources"
+            );
+
+            const missingResourceNode = database
+                .prepare("SELECT id FROM nodes WHERE resource_path = ?")
+                .get("scripts/missing_script/missing_script.yy") as { id: string } | undefined;
+            assert.equal(missingResourceNode, undefined);
+
+            const danglingEdgeCount = database
+                .prepare(
+                    `
+                        SELECT COUNT(*) AS count
+                        FROM edges
+                        WHERE from_id = ? OR to_id = ?
+                    `
+                )
+                .get(
+                    "project::resource::scripts/missing_script/missing_script.yy",
+                    "project::resource::scripts/missing_script/missing_script.yy"
+                ) as {
+                count: number;
+            };
+            assert.equal(danglingEdgeCount.count, 0);
         } finally {
             database.close();
         }

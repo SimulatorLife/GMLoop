@@ -1420,30 +1420,90 @@ function handleCallExpressionNode({
     if (!calleeName || builtInNames.has(calleeName)) {
         return;
     }
-    const targetScopeId = scriptNameToScopeId.get(calleeName) ?? null;
-    const targetResourcePath = targetScopeId ? (scriptNameToResourcePath.get(calleeName) ?? null) : null;
+    recordFunctionOrScriptCall({
+        builtInNames,
+        callee,
+        calleeName,
+        fileRecord,
+        metrics,
+        relationships,
+        scopeRecord,
+        scriptNameToResourcePath,
+        scriptNameToScopeId
+    });
+}
+
+function resolveCallTargetKind(identifierNode) {
+    const declarationClassifications = Core.asArray(identifierNode?.declaration?.classifications).filter(
+        (value) => typeof value === "string"
+    );
+    const identifierClassifications = Core.asArray(identifierNode?.classifications).filter(
+        (value) => typeof value === "string"
+    );
+    const classifications = new Set([...declarationClassifications, ...identifierClassifications]);
+
+    if (classifications.has("function")) {
+        return "function";
+    }
+
+    if (classifications.has("script")) {
+        return "script";
+    }
+
+    return null;
+}
+
+function recordFunctionOrScriptCall({
+    builtInNames,
+    callee,
+    calleeName,
+    fileRecord,
+    metrics,
+    relationships,
+    scopeRecord,
+    scriptNameToResourcePath,
+    scriptNameToScopeId
+}) {
+    if (!calleeName || builtInNames.has(calleeName)) {
+        return;
+    }
+
+    const declaredTargetScopeId = callee?.declaration?.scopeId ?? null;
+    const resolvedTargetKind = resolveCallTargetKind(callee);
+    const fallbackTargetScopeId = scriptNameToScopeId.get(calleeName) ?? null;
+    const targetScopeId = declaredTargetScopeId ?? fallbackTargetScopeId;
+    const targetKind = resolvedTargetKind ?? "script";
+    const targetIdentifierId =
+        targetKind === "function"
+            ? buildIdentifierId("function", createFunctionLikeCollectionKey(fileRecord.filePath, callee?.declaration))
+            : null;
+    const targetResourcePath =
+        targetKind === "script" && targetScopeId ? (scriptNameToResourcePath.get(calleeName) ?? null) : null;
     const callRecord = {
-        kind: "script",
+        kind: targetKind,
         from: {
             filePath: fileRecord.filePath,
             scopeId: scopeRecord.id
         },
         target: {
+            identifierId: targetIdentifierId,
             name: calleeName,
             scopeId: targetScopeId,
             resourcePath: targetResourcePath
         },
         isResolved: Boolean(targetScopeId),
         location: {
-            start: Core.cloneLocation(callee?.start),
-            end: Core.cloneLocation(callee?.end)
+            start: Core.cloneLocation(callee?.start ?? null),
+            end: Core.cloneLocation(callee?.end ?? null)
         }
     };
+
     fileRecord.scriptCalls.push(callRecord);
     scopeRecord.scriptCalls.push(callRecord);
     relationships.scriptCalls.push(callRecord);
     metrics?.counters?.increment("scriptCalls.discovered");
 }
+
 function handleNewExpressionScriptCall({
     node,
     builtInNames,
@@ -1462,29 +1522,17 @@ function handleNewExpressionScriptCall({
     if (typeof calleeName !== "string" || builtInNames.has(calleeName)) {
         return;
     }
-    const targetScopeId = scriptNameToScopeId.get(calleeName) ?? null;
-    const targetResourcePath = targetScopeId ? (scriptNameToResourcePath.get(calleeName) ?? null) : null;
-    const callRecord = {
-        kind: "script",
-        from: {
-            filePath: fileRecord.filePath,
-            scopeId: scopeRecord.id
-        },
-        target: {
-            name: calleeName,
-            scopeId: targetScopeId,
-            resourcePath: targetResourcePath
-        },
-        isResolved: Boolean(targetScopeId),
-        location: {
-            start: Core.cloneLocation(callee.start),
-            end: Core.cloneLocation(callee.end)
-        }
-    };
-    fileRecord.scriptCalls.push(callRecord);
-    scopeRecord.scriptCalls.push(callRecord);
-    relationships.scriptCalls.push(callRecord);
-    metrics?.counters?.increment("scriptCalls.discovered");
+    recordFunctionOrScriptCall({
+        builtInNames,
+        callee,
+        calleeName,
+        fileRecord,
+        metrics,
+        relationships,
+        scopeRecord,
+        scriptNameToResourcePath,
+        scriptNameToScopeId
+    });
 }
 function handleConstructorParentScriptCall({
     node,
@@ -1504,9 +1552,15 @@ function handleConstructorParentScriptCall({
     if (!calleeName || builtInNames.has(calleeName)) {
         return;
     }
-
-    const targetScopeId = scriptNameToScopeId.get(calleeName) ?? null;
-    const targetResourcePath = targetScopeId ? (scriptNameToResourcePath.get(calleeName) ?? null) : null;
+    const callee = {
+        classifications: ["script"],
+        declaration: {
+            scopeId: scriptNameToScopeId.get(calleeName) ?? null
+        },
+        end: node.idLocation?.end ?? null,
+        name: calleeName,
+        start: node.idLocation?.start ?? null
+    };
     const parentStart = Core.cloneLocation(node.idLocation?.start ?? null);
     const parentEnd = Core.cloneLocation(node.idLocation?.end ?? null);
     if (parentStart === null || parentEnd === null) {
@@ -1516,28 +1570,21 @@ function handleConstructorParentScriptCall({
     if (typeof parentEnd.column === "number") {
         parentEnd.column -= 1;
     }
-
-    const callRecord = {
-        kind: "script",
-        from: {
-            filePath: fileRecord.filePath,
-            scopeId: scopeRecord.id
+    recordFunctionOrScriptCall({
+        builtInNames,
+        callee: {
+            ...callee,
+            end: parentEnd,
+            start: parentStart
         },
-        target: {
-            name: calleeName,
-            scopeId: targetScopeId,
-            resourcePath: targetResourcePath
-        },
-        isResolved: Boolean(targetScopeId),
-        location: {
-            start: parentStart,
-            end: parentEnd
-        }
-    };
-    fileRecord.scriptCalls.push(callRecord);
-    scopeRecord.scriptCalls.push(callRecord);
-    relationships.scriptCalls.push(callRecord);
-    metrics?.counters?.increment("scriptCalls.discovered");
+        calleeName,
+        fileRecord,
+        metrics,
+        relationships,
+        scopeRecord,
+        scriptNameToResourcePath,
+        scriptNameToScopeId
+    });
 }
 function handleObjectEventAssignmentNode({
     node,

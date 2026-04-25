@@ -347,7 +347,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         "object",
         "particle_system",
         "path",
-        "resource",
         "room",
         "script",
         "sequence",
@@ -370,7 +369,11 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     const resourceTypesPresent = allNodeKinds.filter((kindValue) => resourceKinds.has(kindValue));
     const enumTypesPresent = allNodeKinds.filter((kindValue) => kindValue === "enum" || kindValue === "enum_member");
     const otherTypesPresent = allNodeKinds.filter(
-        (kindValue) => !resourceKinds.has(kindValue) && kindValue !== "enum" && kindValue !== "enum_member"
+        (kindValue) =>
+            kindValue !== "resource" &&
+            !resourceKinds.has(kindValue) &&
+            kindValue !== "enum" &&
+            kindValue !== "enum_member"
     );
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
 

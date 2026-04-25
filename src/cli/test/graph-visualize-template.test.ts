@@ -155,17 +155,17 @@ void test("graph visualization template gives contains and defines distinct edge
     assert.notEqual(containsStyle.legendBorderStyle, definesStyle.legendBorderStyle);
 });
 
-void test("graph visualization template gives resource, room, shader, and sprite distinct node colors", () => {
+void test("graph visualization template gives fallback, room, shader, and sprite distinct node colors", () => {
     const html = renderEmptyGraphVisualizationHtml("Node Color Test");
     const embeddedStyles = extractEmbeddedNodeVisualStyles(html);
-    const resourceStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "resource");
+    const defaultStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "default");
     const roomStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "room");
     const shaderStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "shader");
     const spriteStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "sprite");
-    const targetColors = new Set([resourceStyle.color, roomStyle.color, shaderStyle.color, spriteStyle.color]);
+    const targetColors = new Set([defaultStyle.color, roomStyle.color, shaderStyle.color, spriteStyle.color]);
 
     assert.equal(targetColors.size, 4);
-    assert.match(extractCssRuleBody(html, ".node-resource"), new RegExp(`fill: ${resourceStyle.color};`));
+    assert.match(extractCssRuleBody(html, ".node-default"), new RegExp(`fill: ${defaultStyle.color};`));
     assert.match(extractCssRuleBody(html, ".node-room"), new RegExp(`fill: ${roomStyle.color};`));
     assert.match(extractCssRuleBody(html, ".node-shader"), new RegExp(`fill: ${shaderStyle.color};`));
     assert.match(extractCssRuleBody(html, ".node-sprite"), new RegExp(`fill: ${spriteStyle.color};`));
@@ -205,7 +205,7 @@ void test("graph visualization template relies on semantic project nodes instead
     assert.match(html, /InterplanetaryFootball/);
 });
 
-void test("graph visualization template exposes missing node kinds with requested default filters", () => {
+void test("graph visualization template hides fallback resource nodes from the legend while keeping other node kinds filterable", () => {
     const html = renderGraphVisualizationHtml(
         JSON.stringify({
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -347,7 +347,8 @@ void test("graph visualization template exposes missing node kinds with requeste
     assert.match(html, /"enum_member"/);
     assert.match(html, /"function"/);
     assert.match(html, /"data_file"/);
-    assert.match(html, /"resource"/);
+    assert.doesNotMatch(html, /const resourceKinds = new Set\(\[[\s\S]*"resource"[\s\S]*\]\)/);
+    assert.doesNotMatch(html, /filter-node-resource/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"struct_variable"[\s\S]*\]\)/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"instance_variable"[\s\S]*\]\)/);
     assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"local_variable"[\s\S]*\]\)/);

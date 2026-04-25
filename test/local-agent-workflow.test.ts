@@ -287,6 +287,9 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
     assert.match(source, /gh issue comment "\$\{PR_NUMBER\}" --body "\$\{retry_message\}" --repo "\$\{REPOSITORY\}"/u);
     assert.match(source, /post_retry_comment_once "\$\{attempt\}" "\$\(\(attempt \+ 1\)\)"/u);
     assert.match(source, /Attempt \$\{attempt\}\/\$\{total_attempts\} produced no pushable changes; starting a fresh retry session/u);
+    assert.match(source, /reset_branch_to_retry_baseline\(\)/u);
+    assert.match(source, /git reset --hard "origin\/\$\{target_ref\}"/u);
+    assert.match(source, /git submodule update --init --recursive/u);
     assert.doesNotMatch(source, /- name: Auto-commit and push agent changes if needed/u);
 });
 
@@ -338,7 +341,14 @@ void test("agent invoke workflow checks and pushes changes after every agent att
     assert.match(source, /echo "\[agent\] Worktree after agent attempt:"/u);
     assert.match(source, /worktree_status="\$\(git status --porcelain=v1 --untracked-files=normal\)"/u);
     assert.match(source, /if \[ -n "\$\{worktree_status\}" \]; then/u);
-    assert.match(source, /git add -A/u);
+    assert.match(source, /is_stageable_untracked_path\(\)/u);
+    assert.match(source, /cleanup_malformed_untracked_paths\(\)/u);
+    assert.match(source, /stage_pushable_changes\(\)/u);
+    assert.match(source, /git ls-files --others --exclude-standard/u);
+    assert.match(source, /Removing malformed untracked path left by agent output/u);
+    assert.match(source, /git add -u/u);
+    assert.match(source, /git add -- "\$\{path\}"/u);
+    assert.match(source, /Only malformed untracked files were present; nothing pushable remains/u);
     assert.match(source, /echo "\[agent\] Worktree status before staging:"/u);
     assert.match(source, /echo "\[agent\] Staged changes before commit:"/u);
     assert.match(source, /git diff --cached --stat/u);

@@ -448,6 +448,82 @@ jobs:
             sed -E 's#(https://)[^/@]+@#\1***@#g'
           }
 
+          is_stageable_untracked_path() {
+            local candidate="$1"
+
+            if [ -z "${candidate}" ]; then
+              return 1
+            fi
+
+            if [[ "${candidate}" =~ [[:cntrl:]] ]]; then
+              return 1
+            fi
+
+            if [[ "${candidate}" =~ [\<\>\{\}\`\$\|] ]]; then
+              return 1
+            fi
+
+            case "${candidate}" in
+              /*|../*|*/../*|*/..|..)
+                return 1
+                ;;
+            esac
+
+            return 0
+          }
+
+          cleanup_malformed_untracked_paths() {
+            local removed_any=0
+
+            while IFS= read -r path; do
+              [ -n "${path}" ] || continue
+
+              if is_stageable_untracked_path "${path}"; then
+                continue
+              fi
+
+              echo "[agent] Removing malformed untracked path left by agent output: ${path}"
+              rm -rf -- "${path}"
+              removed_any=1
+            done < <(git ls-files --others --exclude-standard)
+
+            if [ "${removed_any}" -eq 1 ]; then
+              echo "[agent] Removed malformed untracked paths before staging."
+            fi
+          }
+
+          stage_pushable_changes() {
+            git add -u
+
+            while IFS= read -r path; do
+              [ -n "${path}" ] || continue
+
+              if is_stageable_untracked_path "${path}"; then
+                git add -- "${path}"
+              else
+                echo "[agent] Skipping malformed untracked path during staging: ${path}"
+              fi
+            done < <(git ls-files --others --exclude-standard)
+          }
+
+          reset_branch_to_retry_baseline() {
+            local target_ref="${WORKING_BRANCH}"
+
+            cd "${GITHUB_WORKSPACE}"
+            echo "[agent] Resetting retry worktree to origin/${target_ref}."
+
+            git fetch origin "${target_ref}" || true
+
+            if git rev-parse --verify --quiet "origin/${target_ref}" >/dev/null; then
+              git reset --hard "origin/${target_ref}"
+            else
+              git reset --hard HEAD
+            fi
+
+            git submodule update --init --recursive
+            cleanup_malformed_untracked_paths
+          }
+
           build_attempt_context() {
             local attempt="$1"
 
@@ -508,11 +584,17 @@ jobs:
               echo "[agent] Changes detected; committing before push."
               echo "[agent] Worktree status before staging:"
               git status --short
-              git add -A
+              cleanup_malformed_untracked_paths
+              stage_pushable_changes
               echo "[agent] Staged changes before commit:"
               git diff --cached --stat
               echo "[agent] Worktree status after staging:"
               git status --short
+
+              if git diff --cached --quiet; then
+                echo "[agent] Only malformed untracked files were present; nothing pushable remains."
+                return 1
+              fi
 
               commit_message="chore: apply @${AGENT_NAME} changes for PR #${PR_NUMBER}"
               if git commit -m "$commit_message"; then
@@ -629,6 +711,7 @@ jobs:
             if [ "${attempt}" -lt "${total_attempts}" ]; then
               post_retry_comment_once "${attempt}" "$((attempt + 1))"
               echo "[agent] Attempt ${attempt}/${total_attempts} produced no pushable changes; starting a fresh retry session."
+              reset_branch_to_retry_baseline
             else
               echo "❌ Agent exhausted ${total_attempts} attempt(s) without producing pushable local changes."
               date +"%F %T" > "$NO_CHANGE_SENTINEL"

@@ -277,6 +277,19 @@ function lookupUniqueNodeByNameAndKind(context: ProjectionContext, name: string,
     return null;
 }
 
+function lookupUniqueFunctionOrScriptNodeByName(context: ProjectionContext, name: string): string | null {
+    const functionNodeId = lookupUniqueNodeByNameAndKind(context, name, "function");
+    if (functionNodeId) {
+        return functionNodeId;
+    }
+
+    return lookupUniqueNodeByNameAndKind(context, name, "script");
+}
+
+function lookupNodeByScipSymbol(context: ProjectionContext, scipSymbol: string): string | null {
+    return context.nodeIdsByScipSymbol.get(scipSymbol) ?? null;
+}
+
 function hasNodeNameAndKind(context: ProjectionContext, name: string, kind: GraphNodeKind): boolean {
     const candidateIds = context.nodeIdsByName.get(name.toLowerCase());
     if (!candidateIds) {
@@ -288,6 +301,150 @@ function hasNodeNameAndKind(context: ProjectionContext, name: string, kind: Grap
     );
 }
 
+function hasFunctionOrScriptNodeByName(context: ProjectionContext, name: string): boolean {
+    return hasNodeNameAndKind(context, name, "function") || hasNodeNameAndKind(context, name, "script");
+}
+
+function findEnclosingCallableNodeId(
+    context: ProjectionContext,
+    filePath: string | null,
+    locationLine: number | null
+): string | null {
+    if (!filePath || locationLine === null) {
+        return null;
+    }
+
+    const candidates = context.nodeRecords.filter(
+        (node) =>
+            node.filePath === filePath &&
+            (node.kind === "function" || node.kind === "script" || node.kind === "struct") &&
+            node.lineStart !== null &&
+            node.lineEnd !== null &&
+            locationLine >= node.lineStart &&
+            locationLine <= node.lineEnd
+    );
+    if (candidates.length === 0) {
+        return null;
+    }
+
+    candidates.sort((left, right) => {
+        const leftSpan = (left.lineEnd ?? left.lineStart ?? 0) - (left.lineStart ?? 0);
+        const rightSpan = (right.lineEnd ?? right.lineStart ?? 0) - (right.lineStart ?? 0);
+        return leftSpan - rightSpan;
+    });
+
+    return candidates[0]?.id ?? null;
+}
+
+function findPrimaryFunctionNodeForFile(
+    context: ProjectionContext,
+    filePath: string | null,
+    scriptName: string | null
+): string | null {
+    if (!filePath || !scriptName) {
+        return null;
+    }
+
+    const functionNode = context.nodeRecords.find(
+        (node) => node.kind === "function" && node.filePath === filePath && node.name === scriptName
+    );
+    return functionNode?.id ?? null;
+}
+
+function findFunctionNodeByNameInFile(
+    context: ProjectionContext,
+    filePath: string | null,
+    functionName: string
+): string | null {
+    if (!filePath) {
+        return null;
+    }
+
+    const matches = context.nodeRecords.filter(
+        (node) => node.kind === "function" && node.filePath === filePath && node.name === functionName
+    );
+    return matches.length === 1 ? (matches[0]?.id ?? null) : null;
+}
+
+function resolveScopedFileOwnerNodeId(
+    context: ProjectionContext,
+    filePath: string | null,
+    fallbackFileNodeId: string,
+    scopeId: string | null,
+    locationLine: number | null
+): string {
+    const enclosingCallableNodeId = findEnclosingCallableNodeId(context, filePath, locationLine);
+    if (enclosingCallableNodeId) {
+        return enclosingCallableNodeId;
+    }
+
+    if (scopeId) {
+        const scopedNodeId = context.nodeIdsByScopeId.get(scopeId);
+        if (scopedNodeId) {
+            const scopedNode = context.nodeRecords.find((node) => node.id === scopedNodeId) ?? null;
+            const primaryFunctionNodeId =
+                scopedNode?.kind === "script"
+                    ? findPrimaryFunctionNodeForFile(context, filePath, scopedNode.name)
+                    : null;
+            return primaryFunctionNodeId ?? scopedNodeId;
+        }
+    }
+
+    return fallbackFileNodeId;
+}
+
+function resolveCallerNodeId(
+    context: ProjectionContext,
+    relativePath: string,
+    callerFileNodeId: string,
+    callRecord: Record<string, unknown>
+): string {
+    const callLocationLine = readLocationLine(asRecord(asRecord(callRecord.location).start));
+    const callerFilePath = getString(asRecord(callRecord.from).filePath) ?? relativePath;
+    const callerScopeId = getString(asRecord(callRecord.from).scopeId);
+    return resolveScopedFileOwnerNodeId(context, callerFilePath, callerFileNodeId, callerScopeId, callLocationLine);
+}
+
+function resolveCallTargetNodeId(
+    context: ProjectionContext,
+    callRecord: Record<string, unknown>,
+    targetName: string,
+    relativePath: string
+): string | null {
+    const targetRecord = asRecord(callRecord.target);
+    const targetIdentifierId = getString(targetRecord.identifierId);
+    const targetScopeId = getString(targetRecord.scopeId);
+    const targetKind = getString(callRecord.kind);
+    const callerFilePath = getString(asRecord(callRecord.from).filePath) ?? relativePath;
+
+    if (targetKind === "function" && targetIdentifierId) {
+        const functionScipSymbol = `gml/function/${targetIdentifierId}`;
+        const functionNodeId = lookupNodeByScipSymbol(context, functionScipSymbol);
+        if (functionNodeId) {
+            return functionNodeId;
+        }
+    }
+
+    if (targetScopeId) {
+        return context.nodeIdsByScopeId.get(targetScopeId) ?? null;
+    }
+
+    const sameFileFunctionNodeId = findFunctionNodeByNameInFile(context, callerFilePath, targetName);
+    if (sameFileFunctionNodeId) {
+        return sameFileFunctionNodeId;
+    }
+
+    if (targetKind === "function") {
+        return lookupUniqueNodeByNameAndKind(context, targetName, "function");
+    }
+
+    if (targetKind === "script") {
+        return lookupUniqueNodeByNameAndKind(context, targetName, "script");
+    }
+
+    return lookupUniqueFunctionOrScriptNodeByName(context, targetName);
+}
+
 function registerNodeIndexes(context: ProjectionContext, node: GraphNodeRecord): void {
     addNameIndexEntry(context, node.name, node.id);
     addNameIndexEntry(context, node.displayName, node.id);
@@ -296,7 +453,7 @@ function registerNodeIndexes(context: ProjectionContext, node: GraphNodeRecord):
         context.nodeIdsByScipSymbol.set(node.scipSymbol, node.id);
     }
 
-    if (node.scopeId) {
+    if (node.scopeId && node.kind !== "function") {
         context.nodeIdsByScopeId.set(node.scopeId, node.id);
     }
 }
@@ -619,8 +776,7 @@ function projectIdentifierCollections(context: ProjectionContext): void {
             const scipSymbol = resolveScipSymbol(kind, name, entry);
             const sourceText = readSourceText(context.rootPath, filePath);
             const displayName = getString(entry.displayName) ?? name;
-            const scopeId =
-                kind === "function" || kind === "struct" ? null : (getString(entry.scopeId) ?? getString(entry.id));
+            const scopeId = getString(entry.scopeId) ?? getString(entry.id);
             const node = createNodeRecord({
                 displayName,
                 filePath,
@@ -665,16 +821,48 @@ function projectIdentifierCollections(context: ProjectionContext): void {
     }
 }
 
+function projectGlobalVariableReferenceEdges(context: ProjectionContext): void {
+    const globalVariables = asRecord(context.projectIndex.identifiers?.globalVariables);
+
+    for (const entryValue of Object.values(globalVariables)) {
+        const entry = asRecord(entryValue) as ProjectIndexIdentifierEntry;
+        const name = getString(entry.name);
+        if (!name) {
+            continue;
+        }
+
+        const targetNodeId = lookupUniqueNodeByNameAndKind(context, name, "global_variable");
+        if (!targetNodeId) {
+            continue;
+        }
+
+        const references = Array.isArray(entry.references) ? entry.references : [];
+        for (const rawReference of references) {
+            const reference = asRecord(rawReference);
+            const filePath = getString(reference.filePath);
+            if (!filePath) {
+                continue;
+            }
+
+            const fileNodeId = createGraphNodeId(context.graphId, "file", filePath);
+            const scopeId = getString(reference.scopeId);
+            const locationLine = readLocationLine(asRecord(reference.start));
+            const sourceNodeId = resolveScopedFileOwnerNodeId(context, filePath, fileNodeId, scopeId, locationLine);
+            context.edgeRecords.push({
+                fromId: sourceNodeId,
+                toId: targetNodeId,
+                type: "references"
+            });
+        }
+    }
+}
+
 function projectRelationshipEdges(context: ProjectionContext): void {
     const files = asRecord(context.projectIndex.files);
     for (const [relativePath, rawFileRecord] of Object.entries(files)) {
         const fileRecord = asRecord(rawFileRecord);
         const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
         const callerFileNodeId = createGraphNodeId(context.graphId, "file", relativePath);
-        const callerScopeId = getString(fileRecord.scopeId);
-        const callerNodeId = callerScopeId
-            ? (context.nodeIdsByScopeId.get(callerScopeId) ?? callerFileNodeId)
-            : callerFileNodeId;
 
         for (const rawCall of scriptCalls) {
             const callRecord = asRecord(rawCall);
@@ -683,10 +871,8 @@ function projectRelationshipEdges(context: ProjectionContext): void {
                 continue;
             }
 
-            const targetScopeId = getString(asRecord(callRecord.target).scopeId);
-            const targetNodeId = targetScopeId
-                ? (context.nodeIdsByScopeId.get(targetScopeId) ?? null)
-                : lookupUniqueNodeByNameAndKind(context, targetName, "script");
+            const callerNodeId = resolveCallerNodeId(context, relativePath, callerFileNodeId, callRecord);
+            const targetNodeId = resolveCallTargetNodeId(context, callRecord, targetName, relativePath);
             if (targetNodeId) {
                 context.edgeRecords.push({ fromId: callerNodeId, toId: targetNodeId, type: "calls" });
             }
@@ -711,6 +897,8 @@ function projectRelationshipEdges(context: ProjectionContext): void {
             type: isProjectManifestPath(fromResourcePath) ? "contains" : "references"
         });
     }
+
+    projectGlobalVariableReferenceEdges(context);
 }
 
 function addCrossGraphEdges(
@@ -729,21 +917,25 @@ function addCrossGraphEdges(
         const fileRecord = asRecord(rawFileRecord);
         const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
         const projectCallerFileNodeId = createGraphNodeId("project", "file", relativePath);
-        const callerScopeId = getString(fileRecord.scopeId);
-        const projectCallerNodeId = callerScopeId
-            ? (projectContext.nodeIdsByScopeId.get(callerScopeId) ?? projectCallerFileNodeId)
-            : projectCallerFileNodeId;
 
         for (const rawCall of scriptCalls) {
-            const targetName = getString(asRecord(asRecord(rawCall).target).name);
+            const callRecord = asRecord(rawCall);
+            const targetName = getString(asRecord(callRecord.target).name);
             if (!targetName) {
                 continue;
             }
 
-            if (hasNodeNameAndKind(projectContext, targetName, "script")) {
+            const targetKind = getString(callRecord.kind);
+            if (targetKind === "function" || hasFunctionOrScriptNodeByName(projectContext, targetName)) {
                 continue;
             }
 
+            const projectCallerNodeId = resolveCallerNodeId(
+                projectContext,
+                relativePath,
+                projectCallerFileNodeId,
+                callRecord
+            );
             const toolsetTargetNodeId = lookupUniqueNodeByNameAndKind(toolsetContext, targetName, "script");
             if (!toolsetTargetNodeId) {
                 continue;
@@ -762,6 +954,11 @@ function addCrossGraphEdges(
     }
 
     return crossEdges;
+}
+
+function removeDanglingEdges(context: ProjectionContext): void {
+    const nodeIds = new Set(context.nodeRecords.map((node) => node.id));
+    context.edgeRecords = context.edgeRecords.filter((edge) => nodeIds.has(edge.fromId) && nodeIds.has(edge.toId));
 }
 
 function persistProjection(
@@ -1108,6 +1305,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
     projectResources(projectContext);
     projectIdentifierCollections(projectContext);
     projectRelationshipEdges(projectContext);
+    removeDanglingEdges(projectContext);
 
     let toolsetContext: ProjectionContext | null = null;
     if (config.toolsetRoot) {
@@ -1117,6 +1315,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         projectResources(toolsetContext);
         projectIdentifierCollections(toolsetContext);
         projectRelationshipEdges(toolsetContext);
+        removeDanglingEdges(toolsetContext);
     }
 
     const buildDurationMs = performance.now() - buildStart;
