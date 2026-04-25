@@ -9,7 +9,6 @@ export * from "./node-classification.js";
 export * from "./node-helpers/index.js";
 export * from "./node-types.js";
 export * from "./object-graph.js";
-export * from "./strip-comments-transform.js";
 export * from "./syntax-error-guards.js";
 export * from "./type-guards.js";
 export type {
