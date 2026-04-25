@@ -112,7 +112,10 @@ void test("graph index and graph search return stable JSON envelopes", async () 
         const searchPayload = JSON.parse(searchResult.stdout);
         assert.equal(searchPayload.command, "graph search");
         assert.equal(searchPayload.payload.query, "shared_toolset_fn");
-        assert.equal(searchPayload.payload.results[0].id, "toolset::gml/script/shared_toolset_fn");
+        assert.match(
+            searchPayload.payload.results[0].id,
+            /^toolset::gml\/function\/function:scripts\/shared_toolset_fn\/shared_toolset_fn\.gml::\d+:\d+:\d+$/
+        );
     } finally {
         await fixture.cleanup();
     }
@@ -146,7 +149,10 @@ void test("graph search does not build missing databases unless rebuild is reque
 
         assert.equal(rebuildResult.exitCode, 0);
         const payload = JSON.parse(rebuildResult.stdout);
-        assert.equal(payload.payload.results[0].id, "toolset::gml/script/shared_toolset_fn");
+        assert.match(
+            payload.payload.results[0].id,
+            /^toolset::gml\/function\/function:scripts\/shared_toolset_fn\/shared_toolset_fn\.gml::\d+:\d+:\d+$/
+        );
     } finally {
         await fixture.cleanup();
     }

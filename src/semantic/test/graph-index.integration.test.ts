@@ -67,15 +67,20 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
             query: "shared_toolset_fn",
             toolsetRoot: fixture.toolsetRoot
         });
-        assert.equal(search.results[0]?.id, "toolset::gml/script/shared_toolset_fn");
+        const sharedToolsetFunctionId = search.results[0]?.id;
+        const sharedToolsetScriptResourceId = "toolset::resource::scripts/shared_toolset_fn/shared_toolset_fn.yy";
+        assert.match(
+            sharedToolsetFunctionId ?? "",
+            /^toolset::gml\/function\/function:scripts\/shared_toolset_fn\/shared_toolset_fn\.gml::\d+:\d+:\d+$/
+        );
 
         const context = getGraphContext({
-            nodeId: "toolset::gml/script/shared_toolset_fn",
+            nodeId: sharedToolsetFunctionId ?? "",
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
         assert.ok(context);
-        assert.equal(context?.target.id, "toolset::gml/script/shared_toolset_fn");
+        assert.equal(context?.target.id, sharedToolsetFunctionId);
         assert.ok((context?.summary.length ?? 0) > 0);
 
         const database = openGraphIndexDatabase(result.databasePath);
@@ -92,8 +97,8 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
             assert.ok(
                 edgeRows.some(
                     (entry) =>
-                        entry.fromId === "project::gml/script/player_update" &&
-                        entry.toId === "toolset::gml/script/shared_toolset_fn"
+                        /^project::file::scripts\/player_update\/player_update\.gml$/.test(entry.fromId) &&
+                        entry.toId === sharedToolsetScriptResourceId
                 )
             );
         } finally {
@@ -228,15 +233,22 @@ void test("graph usages return incoming usage records with source and target nod
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
+        const search = searchGraphIndex({
+            projectRoot: fixture.projectRoot,
+            query: "shared_toolset_fn",
+            toolsetRoot: fixture.toolsetRoot
+        });
+        assert.ok(search.results[0]?.id);
+        const sharedToolsetScriptResourceId = "toolset::resource::scripts/shared_toolset_fn/shared_toolset_fn.yy";
 
         const usages = getGraphUsages({
-            nodeId: "toolset::gml/script/shared_toolset_fn",
+            nodeId: sharedToolsetScriptResourceId,
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
 
-        assert.equal(usages[0]?.from.id, "project::gml/script/player_update");
-        assert.equal(usages[0]?.to.id, "toolset::gml/script/shared_toolset_fn");
+        assert.match(usages[0]?.from.id ?? "", /^project::file::scripts\/player_update\/player_update\.gml$/);
+        assert.equal(usages[0]?.to.id, sharedToolsetScriptResourceId);
     } finally {
         await fixture.cleanup();
     }
