@@ -64,6 +64,7 @@ void test("scheduler still has weighted workflows after agent pool migration", a
     assert.ok(config.workflows.length > 0, "scheduler should have workflows to dispatch.");
     assert.ok(workflowNames.has("agent-02-resolve-merge-conflicts"));
     assert.ok(workflowNames.has("agent-41-test-failure"));
+    assert.ok(workflowNames.has("agent-104-test-deduplication"));
 });
 
 void test("workflows use task-specific agent pools", async () => {
@@ -104,4 +105,17 @@ void test("failing test recovery probes the full validation surface before openi
     assert.match(workflow, /pnpm run test:ci/u);
     assert.match(workflow, /pnpm run test:performance/u);
     assert.doesNotMatch(workflow, /tests_failed/u);
+});
+
+void test("test deduplication workflow protects edge coverage while consolidating redundant tests", async () => {
+    const workflow = await readFile(
+        path.resolve(process.cwd(), ".github/workflows/agent-104-test-deduplication.yml"),
+        "utf8"
+    );
+
+    assert.match(workflow, /Find exactly one small cluster of duplicate or near-duplicate unit tests/u);
+    assert.match(workflow, /Preserve edge-case coverage\./u);
+    assert.match(workflow, /If you are not confident the cases are truly redundant, do not combine them\./u);
+    assert.match(workflow, /shared helper, table-driven structure, or a single stronger assertion shape/u);
+    assert.match(workflow, /validation commands you ran to confirm coverage was preserved/u);
 });
