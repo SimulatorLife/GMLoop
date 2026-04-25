@@ -2,11 +2,11 @@
  * Provides a configurable transform that can remove comments or JSDoc before formatting/printing.
  * Shared between the lint and plugin pipelines so both use the same canonical implementation.
  */
-import { isCommentNode } from "../comments/comment-utils.js";
+import { walkObjectGraph } from "../ast/object-graph.js";
+import type { MutableGameMakerAstNode } from "../ast/types.js";
 import { createParserTransform } from "../transforms/parser-transform.js";
 import { isObjectLike } from "../utils/object.js";
-import { walkObjectGraph } from "./object-graph.js";
-import type { MutableGameMakerAstNode } from "./types.js";
+import { isCommentNode } from "./comment-utils.js";
 
 export type StripCommentsTransformOptions = {
     stripComments: boolean;
