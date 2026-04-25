@@ -12,11 +12,12 @@ import {
 } from "./test-helpers/refactor-codemod-command-fixture.js";
 
 const SCRIPT_COUNT = 320;
-// Tightened threshold after caching disk-backed identifier occurrences across
-// resource-rename symbol lookups in one codemod run.
-const PERFORMANCE_THRESHOLD_MS = 6200;
+// Threshold tightened after eliminating per-resource structuredClone calls in
+// the metadata sidecar planning path. Local median on Apr 25, 2026 for this
+// fixture improved from ~2077ms to ~1873ms (5-sample median, --write path).
+const PERFORMANCE_THRESHOLD_MS = 5200;
 const CASE_INSENSITIVE_MANIFEST_SCRIPT_COUNT = 300;
-const CASE_INSENSITIVE_MANIFEST_THRESHOLD_MS = 5000;
+const CASE_INSENSITIVE_MANIFEST_THRESHOLD_MS = 4400;
 
 async function measureMedianDurationMs<T>(
     sampleCount: number,
