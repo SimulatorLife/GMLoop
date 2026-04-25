@@ -71,7 +71,6 @@ import {
 } from "../shared/timing/elapsed-time.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
-import { isMissingModuleDependency, resolveModuleDefaultExport } from "./format-module-resolution.js";
 import {
     isHelpRequest,
     resolveTargetPathFromInput,
@@ -126,6 +125,58 @@ const FORMAT_COMMAND_FIX_EXAMPLE = `pnpm dlx prettier-plugin-gml format --write 
 
 const PRETTIER_MODULE_ID = process.env.PRETTIER_PLUGIN_GML_PRETTIER_MODULE ?? "prettier";
 const TARGET_EXTENSIONS = Object.freeze([GML_EXTENSION]);
+
+type ModuleWithDefault<TValue> = TValue & {
+    default?: unknown;
+};
+
+type ModuleDefaultExport<TValue> = TValue extends {
+    default?: infer TDefault;
+}
+    ? TValue | TDefault
+    : TValue;
+
+/**
+ * Normalize dynamically imported modules to their default export when available.
+ *
+ * @template TModule
+ * @param module Namespace object returned from a dynamic import.
+ * @returns The module's default export when populated, otherwise the original module reference.
+ */
+function resolveModuleDefaultExport<TModule>(module?: TModule): ModuleDefaultExport<TModule> {
+    if (module == null || !Core.isObjectOrFunction(module)) {
+        return module as ModuleDefaultExport<TModule>;
+    }
+
+    const { default: defaultExport } = module as ModuleWithDefault<TModule>;
+    return (defaultExport ?? module) as ModuleDefaultExport<TModule>;
+}
+
+/**
+ * Determine whether an error corresponds to a missing module dependency for a specific module id.
+ *
+ * @param error Value thrown from a dynamic import.
+ * @param moduleId Module identifier expected in the error message.
+ * @returns `true` when the error matches the missing module.
+ */
+function isMissingModuleDependency(error: unknown, moduleId: string): boolean {
+    if (!Core.isErrorWithCode(error, "ERR_MODULE_NOT_FOUND")) {
+        return false;
+    }
+
+    const normalizedModuleId = Core.assertNonEmptyString(moduleId, {
+        name: "moduleId",
+        trim: true
+    });
+    const message = Core.getErrorMessage(error, { fallback: "" });
+
+    if (message.length === 0) {
+        return false;
+    }
+
+    const quotedIdentifiers = [`'${normalizedModuleId}'`, `"${normalizedModuleId}"`];
+    return quotedIdentifiers.some((identifier) => message.includes(identifier));
+}
 
 function formatExtensionListForDisplay(extensions) {
     return extensions.map((extension) => `"${extension}"`).join(", ");
@@ -2061,6 +2112,8 @@ export const __formatTest__ = Object.freeze({
     getPrettierOptionsForTests: () => options,
     validateTargetPathInputForTests: validateTargetPathInput,
     resolveTargetPathFromInputForTests: resolveTargetPathFromInput,
+    resolveModuleDefaultExportForTests: resolveModuleDefaultExport,
+    isMissingModuleDependencyForTests: isMissingModuleDependency,
     resolveProjectIgnorePathsForTests: resolveProjectIgnorePaths,
     clearFormattingCacheForTests: clearFormattingCache,
     getFormattingCacheStatsForTests: getFormattingCacheStats,
