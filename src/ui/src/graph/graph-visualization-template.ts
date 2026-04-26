@@ -1,13 +1,14 @@
 import { renderGraphVisualizationClientScript } from "./graph-visualization-client-script.js";
 import {
+    renderGraphVisualizationDocumentTitle,
+    serializeGraphVisualizationDataForInlineScript,
+    serializeGraphVisualizationLoadedTargetForInlineScript
+} from "./graph-visualization-inline-data.js";
+import {
     getEdgeLineColor,
     renderEdgeLineCssRules,
     renderNodeFillCssRules
 } from "./graph-visualization-style-metadata.js";
-import {
-    renderGraphVisualizationDocumentTitle,
-    serializeGraphVisualizationDataForInlineScript
-} from "./graph-visualization-inline-data.js";
 import type { GraphVisualizationData, GraphVisualizationRenderOptions } from "./types.js";
 
 /**
@@ -18,6 +19,7 @@ export function renderGraphVisualizationHtml(
     options: GraphVisualizationRenderOptions
 ): string {
     const serializedData = serializeGraphVisualizationDataForInlineScript(data);
+    const serializedLoadedTarget = serializeGraphVisualizationLoadedTargetForInlineScript(options.loadedTarget ?? null);
     const documentTitle = renderGraphVisualizationDocumentTitle(options.title);
     const isServerMode = options.isServerMode === true;
 
@@ -29,13 +31,16 @@ export function renderGraphVisualizationHtml(
   <title>GMLoop Graph Index - ${documentTitle}</title>
   <style>
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #1e1e1e; color: #e0e0e0; }
-    header { position: absolute; top: 0; left: 0; right: 0; padding: 10px 20px; background: #252526; box-shadow: 0 1px 3px rgba(0,0,0,0.5); z-index: 10; display: flex; gap: 15px; align-items: flex-start; flex-wrap: wrap; }
+    header { position: absolute; top: 0; left: 0; right: 0; padding: 10px 20px; background: #252526; box-shadow: 0 1px 3px rgba(0,0,0,0.5); z-index: 10; display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
     h1 { margin: 0; font-size: 16px; font-weight: 600; color: #e0e0e0; }
     #search { padding: 4px 8px; border: 1px solid #555; border-radius: 4px; font-size: 14px; width: 200px; background: #333; color: #eee; }
     button { padding: 4px 10px; border: 1px solid #555; border-radius: 4px; background: #333; color: #eee; cursor: pointer; font-size: 14px; }
     button:hover { background: #444; }
     button:disabled { cursor: wait; opacity: 0.8; }
     .toolbar-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .toolbar-stack { display: flex; flex-direction: column; gap: 4px; min-width: 280px; max-width: 100%; }
+    .loaded-path { font-size: 12px; line-height: 1.35; color: #c6d4e5; overflow-wrap: anywhere; word-break: break-word; }
+    .loaded-path strong { color: #e8f2ff; }
     .button-content { display: inline-flex; align-items: center; gap: 8px; }
     .button-spinner { width: 12px; height: 12px; border: 2px solid rgba(255, 255, 255, 0.32); border-top-color: #fff; border-radius: 50%; animation: graph-button-spin 0.8s linear infinite; display: inline-block; }
     @keyframes graph-button-spin { to { transform: rotate(360deg); } }
@@ -61,7 +66,7 @@ export function renderGraphVisualizationHtml(
     #tooltip h3 { margin: 0 0 5px 0; font-size: 14px; overflow-wrap: anywhere; word-break: normal; color: #fff; }
     #tooltip div, #tooltip p { overflow-wrap: anywhere; }
     #tooltip p { margin: 8px 0 0 0; }
-    #json-view { position: absolute; inset: 58px 0 0 0; overflow: auto; margin: 0; padding: 10px 20px 20px; font-size: 12px; background: #181818; color: #eaeaea; display: none; }
+    #json-view { position: absolute; inset: 102px 0 0 0; overflow: auto; margin: 0; padding: 10px 20px 20px; font-size: 12px; background: #181818; color: #eaeaea; display: none; }
     .hidden { display: none !important; }
     
     #legend { position: absolute; bottom: 20px; right: 20px; background: rgba(37, 37, 38, 0.9); padding: 10px; border: 1px solid #444; border-radius: 4px; font-size: 12px; z-index: 10; color: #eee; max-height: 80%; overflow-y: auto; }
@@ -70,6 +75,9 @@ export function renderGraphVisualizationHtml(
     .filter-section { margin-bottom: 10px; }
     .filter-section strong { display: block; margin-bottom: 5px; cursor: pointer; }
     .sub-filter { margin-left: 15px; }
+    @media (max-width: 920px) {
+      #json-view { inset: 168px 0 0 0; }
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 </head>
@@ -82,6 +90,13 @@ export function renderGraphVisualizationHtml(
       <button id="toggle-labels">Labels: Auto</button>
       <button id="reset-default">Reset</button>
       ${isServerMode ? `<button id="regenerate" style="background: #007acc; border-color: #007acc; font-weight: bold; color: white;"><span class="button-content"><span class="button-label">Regenerate</span></span></button>` : ""}
+      ${isServerMode ? `<button id="load-directory"><span class="button-content"><span class="button-label">Load Folder</span></span></button>` : ""}
+      ${isServerMode ? `<button id="load-files"><span class="button-content"><span class="button-label">Load Files</span></span></button>` : ""}
+    </div>
+    <div class="toolbar-stack">
+      <div id="loaded-target" class="loaded-path"><strong>Active:</strong> ${documentTitle}</div>
+      <div id="loaded-source" class="loaded-path"></div>
+      <div id="loaded-selected" class="loaded-path"></div>
     </div>
   </header>
   <main>
@@ -98,6 +113,7 @@ export function renderGraphVisualizationHtml(
     <aside id="legend"></aside>
   </main>
   <script>
+window.__GMLOOP_LOADED_TARGET__ = ${serializedLoadedTarget};
 ${renderGraphVisualizationClientScript(serializedData, isServerMode)}
   </script>
 </body>

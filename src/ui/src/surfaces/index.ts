@@ -21,36 +21,39 @@ export type UISurfaceDefinition = Readonly<{
 /**
  * Canonical catalog of cross-project UI surfaces managed by `@gmloop/ui`.
  */
+const PLANNED_SURFACE_STATUS: UISurfaceStatus = "planned";
+const UI_OWNING_WORKSPACE: UISurfaceDefinition["owningWorkspace"] = "@gmloop/ui";
+
 export const UI_SURFACE_DEFINITIONS: ReadonlyArray<UISurfaceDefinition> = Object.freeze([
     {
         description: "Graph-index visualization and hosted graph inspection flows.",
         id: "graph",
-        owningWorkspace: "@gmloop/ui",
+        owningWorkspace: UI_OWNING_WORKSPACE,
         status: "implemented"
     },
     {
         description: "AST preview and structural inspection surfaces sourced from parser-owned data contracts.",
         id: "ast",
-        owningWorkspace: "@gmloop/ui",
-        status: "planned"
+        owningWorkspace: UI_OWNING_WORKSPACE,
+        status: PLANNED_SURFACE_STATUS
     },
     {
         description: "CLI command and help-document browsing surfaces sourced from CLI-owned metadata.",
         id: "cli-docs",
-        owningWorkspace: "@gmloop/ui",
-        status: "planned"
+        owningWorkspace: UI_OWNING_WORKSPACE,
+        status: PLANNED_SURFACE_STATUS
     },
     {
         description: "MCP tool and capability browsing surfaces sourced from MCP-owned tool metadata.",
         id: "mcp",
-        owningWorkspace: "@gmloop/ui",
-        status: "planned"
+        owningWorkspace: UI_OWNING_WORKSPACE,
+        status: PLANNED_SURFACE_STATUS
     },
     {
         description: "Formatter, lint, and refactor rule explorer surfaces sourced from workspace-owned rule catalogs.",
         id: "rules",
-        owningWorkspace: "@gmloop/ui",
-        status: "planned"
+        owningWorkspace: UI_OWNING_WORKSPACE,
+        status: PLANNED_SURFACE_STATUS
     }
 ]);
 

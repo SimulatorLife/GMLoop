@@ -99,5 +99,16 @@ export type GraphVisualizationData = Readonly<{
  */
 export type GraphVisualizationRenderOptions = Readonly<{
     isServerMode?: boolean;
+    loadedTarget?: GraphVisualizationLoadedTarget;
     title: string;
+}>;
+
+/**
+ * Summary of the current path input selection loaded by the UI host.
+ */
+export type GraphVisualizationLoadedTarget = Readonly<{
+    activePath: string;
+    projectRoot: string;
+    selectedPaths: ReadonlyArray<string>;
+    source: "cli-path" | "finder-directory" | "finder-files" | "working-directory";
 }>;

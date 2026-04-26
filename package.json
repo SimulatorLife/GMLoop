@@ -113,6 +113,7 @@
     "prepare": "husky",
     "submodules": "chmod -R u+w vendor && git submodule foreach --recursive 'git reset --hard && git clean -fd' && git submodule sync --recursive && git submodule update --init --recursive --remote && chmod -R a-w vendor && chmod -R a+X vendor && chmod -R u+w vendor/3DSpider && git ls-files vendor | xargs git update-index --skip-worktree",
     "cli": "pnpm --filter @gmloop/cli run build:types && node ./src/cli/dist/index.js",
+    "serve": "pnpm run cli -- graph visualize --serve",
     "demo:refactor": "chmod -R u+w vendor/3DSpider && bash -lc 'cd vendor/3DSpider && git reset --hard && git clean -fd' && git submodule update --init --recursive --remote vendor/3DSpider && pnpm run cli -- refactor --path ./vendor/3DSpider --write && mkdir -p reports && bash -lc 'cd vendor/3DSpider && git diff > ../../reports/3DSpider.diff'",
     "demo:lint": "chmod -R u+w vendor/3DSpider && bash -lc 'cd vendor/3DSpider && git reset --hard && git clean -fd' && git submodule update --init --recursive --remote vendor/3DSpider && pnpm run cli -- lint --path ./vendor/3DSpider --write && mkdir -p reports && bash -lc 'cd vendor/3DSpider && git diff > ../../reports/3DSpider.diff'",
     "demo:format": "chmod -R u+w vendor/3DSpider && bash -lc 'cd vendor/3DSpider && git reset --hard && git clean -fd' && git submodule update --init --recursive --remote vendor/3DSpider && pnpm run cli -- format --path ./vendor/3DSpider --write --on-parse-error skip && mkdir -p reports && bash -lc 'cd vendor/3DSpider && git diff > ../../reports/3DSpider.diff'",

@@ -248,6 +248,8 @@ void test("graph visualize builds a missing database before exporting HTML", asy
         const html = await fs.readFile(outputPath, "utf8");
         assert.match(html, /shared_toolset_fn/u);
         assert.doesNotMatch(html, /id="regenerate"/u);
+        assert.doesNotMatch(html, /id="load-directory"/u);
+        assert.doesNotMatch(html, /id="load-files"/u);
     } finally {
         await fixture.cleanup();
     }

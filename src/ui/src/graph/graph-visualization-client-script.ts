@@ -4,6 +4,7 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
     return `
     const DATA = ${serializedData};
     const IS_SERVER_MODE = ${isServerMode ? "true" : "false"};
+    const LOADED_TARGET = window.__GMLOOP_LOADED_TARGET__ ?? null;
     const width = window.innerWidth;
     const height = window.innerHeight;
     const svg = d3.select("#graph");
@@ -71,6 +72,32 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
             nodeLabels.style("display", currentTransform.k > 0.8 ? "block" : "none");
         }
     });
+
+    function renderLoadedTargetSummary() {
+        const loadedTargetEl = document.getElementById("loaded-target");
+        const loadedSourceEl = document.getElementById("loaded-source");
+        const loadedSelectedEl = document.getElementById("loaded-selected");
+        if (!(loadedTargetEl instanceof HTMLElement) || !(loadedSourceEl instanceof HTMLElement) || !(loadedSelectedEl instanceof HTMLElement)) {
+            return;
+        }
+
+        if (!LOADED_TARGET || typeof LOADED_TARGET !== "object") {
+            loadedTargetEl.textContent = "No active target";
+            loadedSourceEl.textContent = "";
+            loadedSelectedEl.textContent = "";
+            return;
+        }
+
+        loadedTargetEl.textContent = "Active: " + LOADED_TARGET.activePath;
+        loadedSourceEl.textContent = "Source: " + LOADED_TARGET.source + " | Project: " + LOADED_TARGET.projectRoot;
+        if (Array.isArray(LOADED_TARGET.selectedPaths) && LOADED_TARGET.selectedPaths.length > 1) {
+            loadedSelectedEl.textContent = "Selected paths: " + LOADED_TARGET.selectedPaths.join(", ");
+        } else {
+            loadedSelectedEl.textContent = "";
+        }
+    }
+
+    renderLoadedTargetSummary();
     
     if (DATA.nodes.length > 2000) {
         console.warn("Large graph detected:", DATA.nodes.length, "nodes. Adjusting rendering parameters.");
@@ -613,6 +640,54 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
     updateGraph();
 
     if (IS_SERVER_MODE) {
+        const loadFromDirectoryButton = d3.select("#load-directory");
+        if (!loadFromDirectoryButton.empty()) {
+            loadFromDirectoryButton.on("click", async () => {
+                const btn = d3.select("#load-directory");
+                btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Loading…</span></span>');
+                try {
+                    const res = await fetch("/api/select-directory", { method: "POST" });
+                    if (res.ok) {
+                        const payload = await res.json();
+                        if (payload.changed === true) {
+                            window.location.reload();
+                            return;
+                        }
+                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Load Folder</span></span>');
+                    } else {
+                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Failed</span></span>');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Error</span></span>');
+                }
+            });
+        }
+
+        const loadFromFilesButton = d3.select("#load-files");
+        if (!loadFromFilesButton.empty()) {
+            loadFromFilesButton.on("click", async () => {
+                const btn = d3.select("#load-files");
+                btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Loading…</span></span>');
+                try {
+                    const res = await fetch("/api/select-files", { method: "POST" });
+                    if (res.ok) {
+                        const payload = await res.json();
+                        if (payload.changed === true) {
+                            window.location.reload();
+                            return;
+                        }
+                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Load Files</span></span>');
+                    } else {
+                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Failed</span></span>');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Error</span></span>');
+                }
+            });
+        }
+
         d3.select("#regenerate").on("click", async () => {
             const btn = d3.select("#regenerate");
             btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Regenerating…</span></span>');

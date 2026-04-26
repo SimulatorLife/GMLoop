@@ -169,6 +169,12 @@ void test("graph visualization server mode keeps the current view live while reg
     );
 
     assert.match(html, /id="regenerate"/);
+    assert.match(html, /id="load-directory"/);
+    assert.match(html, /id="load-files"/);
+    assert.match(html, /window\.__GMLOOP_LOADED_TARGET__/);
+    assert.match(html, /function renderLoadedTargetSummary\(\)/);
+    assert.match(html, /fetch\("\/api\/select-directory", \{ method: "POST" \}\)/);
+    assert.match(html, /fetch\("\/api\/select-files", \{ method: "POST" \}\)/);
     assert.match(html, /class="button-content"/);
     assert.match(html, /class="button-label">Regenerate<\/span>/);
     assert.match(html, /\.button-spinner/);
