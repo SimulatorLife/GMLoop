@@ -33,33 +33,37 @@ export async function startGraphVisualizationServer(
     const port = options.port ?? 0;
     const activeSockets = new Set<import("node:net").Socket>();
 
-    const server = http.createServer(async (request, response) => {
-        if (request.method === "GET" && (request.url === "/" || request.url === "")) {
-            try {
-                const htmlContent = await options.renderHtml(true);
-                response.writeHead(200, { "Content-Type": "text/html" });
-                response.end(htmlContent);
-            } catch (error: unknown) {
-                response.writeHead(500, { "Content-Type": "text/plain" });
-                response.end(error instanceof Error ? error.message : String(error));
+    const server = http.createServer((request, response) => {
+        void (async () => {
+            if (request.method === "GET" && (request.url === "/" || request.url === "")) {
+                try {
+                    const htmlContent = await options.renderHtml(true);
+                    response.writeHead(200, { "Content-Type": "text/html" });
+                    response.end(htmlContent);
+                } catch (error: unknown) {
+                    response.writeHead(500, { "Content-Type": "text/plain" });
+                    response.end(error instanceof Error ? error.message : "Unknown server error");
+                }
+                return;
             }
-            return;
-        }
 
-        if (request.method === "POST" && request.url === "/api/reindex") {
-            try {
-                const regenerationResult = await options.regenerate();
-                response.writeHead(200, { "Content-Type": "application/json" });
-                response.end(JSON.stringify({ changed: regenerationResult.changed, ok: true }));
-            } catch (error: unknown) {
-                response.writeHead(500, { "Content-Type": "application/json" });
-                response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+            if (request.method === "POST" && request.url === "/api/reindex") {
+                try {
+                    const regenerationResult = await options.regenerate();
+                    response.writeHead(200, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ changed: regenerationResult.changed, ok: true }));
+                } catch (error: unknown) {
+                    response.writeHead(500, { "Content-Type": "application/json" });
+                    response.end(
+                        JSON.stringify({ error: error instanceof Error ? error.message : "Unknown server error" })
+                    );
+                }
+                return;
             }
-            return;
-        }
 
-        response.writeHead(404, { "Content-Type": "text/plain" });
-        response.end("Not found");
+            response.writeHead(404, { "Content-Type": "text/plain" });
+            response.end("Not found");
+        })();
     });
 
     server.on("connection", (socket) => {

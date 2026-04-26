@@ -45,7 +45,7 @@ void describe("formatter boundaries ownership", () => {
         assert.doesNotMatch(formatted, /third = undefined/);
     });
 
-    void it("owns brace synthesis for single-statement control flow while leaving semantic rewrites to lint", async () => {
+    void it("currently expands single-statement control flow into braces before lint semantic rewrites run", async () => {
         const source = ['if (isGameStart) global.state = "RUNNING";', "if (isPaused) return;", ""].join("\n");
 
         const formatted = await Format.format(source, {

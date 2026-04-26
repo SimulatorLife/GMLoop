@@ -334,12 +334,13 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     if (options.serve === true) {
         const server = await startGraphVisualizationServer({
             regenerate: async () => {
-                let previousPayloadString = "";
-                try {
-                    previousPayloadString = JSON.stringify(exportVisualizationPayload());
-                } catch {
-                    previousPayloadString = "";
-                }
+                const previousPayloadString = (() => {
+                    try {
+                        return JSON.stringify(exportVisualizationPayload());
+                    } catch {
+                        return "";
+                    }
+                })();
 
                 await ensureGraphIndex({ ...options, force: true }, context);
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
