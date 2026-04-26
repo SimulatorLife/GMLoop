@@ -339,21 +339,6 @@ function findEnclosingCallableNodeId(
     return candidates[0]?.id ?? null;
 }
 
-function findPrimaryFunctionNodeForFile(
-    context: ProjectionContext,
-    filePath: string | null,
-    scriptName: string | null
-): string | null {
-    if (!filePath || !scriptName) {
-        return null;
-    }
-
-    const functionNode = context.nodeRecords.find(
-        (node) => node.kind === "function" && node.filePath === filePath && node.name === scriptName
-    );
-    return functionNode?.id ?? null;
-}
-
 function findFunctionNodeByNameInFile(
     context: ProjectionContext,
     filePath: string | null,
@@ -367,6 +352,18 @@ function findFunctionNodeByNameInFile(
         (node) => node.kind === "function" && node.filePath === filePath && node.name === functionName
     );
     return matches.length === 1 ? (matches[0]?.id ?? null) : null;
+}
+
+function findPrimaryFunctionNodeForFile(
+    context: ProjectionContext,
+    filePath: string | null,
+    scriptName: string | null
+): string | null {
+    if (!filePath || !scriptName) {
+        return null;
+    }
+
+    return findFunctionNodeByNameInFile(context, filePath, scriptName);
 }
 
 function resolveScopedFileOwnerNodeId(
@@ -385,12 +382,11 @@ function resolveScopedFileOwnerNodeId(
         const scopedNodeId = context.nodeIdsByScopeId.get(scopeId);
         if (scopedNodeId) {
             const scopedNode = context.nodeRecords.find((node) => node.id === scopedNodeId) ?? null;
-            const primaryFunctionNodeId =
-                scopedNode?.kind === "script"
-                    ? findPrimaryFunctionNodeForFile(context, filePath, scopedNode.name)
-                    : null;
-            if (primaryFunctionNodeId) {
-                return primaryFunctionNodeId;
+            if (scopedNode?.kind === "script" && locationLine === null) {
+                const primaryFunctionNodeId = findPrimaryFunctionNodeForFile(context, filePath, scopedNode.name);
+                if (primaryFunctionNodeId) {
+                    return primaryFunctionNodeId;
+                }
             }
             if (scopedNode && !scopedNode.kind.endsWith("_variable")) {
                 return scopedNodeId;
@@ -410,6 +406,24 @@ function resolveCallerNodeId(
     const callLocationLine = readLocationLine(asRecord(asRecord(callRecord.location).start));
     const callerFilePath = getString(asRecord(callRecord.from).filePath) ?? relativePath;
     const callerScopeId = getString(asRecord(callRecord.from).scopeId);
+    if (callerScopeId === null && callLocationLine === null) {
+        const callerResourcePath = resolveResourcePathForFile(context, callerFilePath);
+        const callerScriptNode =
+            callerResourcePath === null
+                ? null
+                : (context.nodeRecords.find(
+                      (node) =>
+                          node.kind === "script" && node.resourcePath === callerResourcePath && node.scipSymbol !== null
+                  ) ?? null);
+        const primaryFunctionNodeId = findPrimaryFunctionNodeForFile(
+            context,
+            callerFilePath,
+            callerScriptNode?.name ?? null
+        );
+        if (primaryFunctionNodeId) {
+            return primaryFunctionNodeId;
+        }
+    }
     return resolveScopedFileOwnerNodeId(context, callerFilePath, callerFileNodeId, callerScopeId, callLocationLine);
 }
 
@@ -728,6 +742,62 @@ function createNodeRecord(parameters: {
     });
 }
 
+function mergeScriptIdentifierIntoResourceNode(parameters: {
+    context: ProjectionContext;
+    displayName: string;
+    filePath: string | null;
+    lineEnd: number | null;
+    lineStart: number | null;
+    resourcePath: string | null;
+    scopeId: string | null;
+    scipSymbol: string;
+    snippet: string;
+    summary: string;
+}): boolean {
+    const { context, displayName, filePath, lineEnd, lineStart, resourcePath, scopeId, scipSymbol, snippet, summary } =
+        parameters;
+    if (!resourcePath) {
+        return false;
+    }
+
+    const resourceNodeId = createGraphNodeId(context.graphId, "resource", resourcePath);
+    const resourceNodeIndex = context.nodeRecords.findIndex(
+        (node) => node.id === resourceNodeId && node.kind === "script"
+    );
+    if (resourceNodeIndex === -1) {
+        return false;
+    }
+
+    const existingResourceNode = context.nodeRecords[resourceNodeIndex];
+    if (!existingResourceNode) {
+        return false;
+    }
+
+    context.nodeRecords[resourceNodeIndex] = createNodeRecord({
+        displayName: existingResourceNode.displayName,
+        filePath: filePath ?? existingResourceNode.filePath,
+        graphId: existingResourceNode.graphId,
+        id: existingResourceNode.id,
+        kind: existingResourceNode.kind,
+        lineEnd: lineEnd ?? existingResourceNode.lineEnd,
+        lineStart: lineStart ?? existingResourceNode.lineStart,
+        name: existingResourceNode.name,
+        resourcePath: existingResourceNode.resourcePath,
+        scopeId: scopeId ?? existingResourceNode.scopeId,
+        scipSymbol,
+        snippet: snippet.length > 0 ? snippet : existingResourceNode.snippet,
+        summary
+    });
+
+    addNameIndexEntry(context, displayName, resourceNodeId);
+    context.nodeIdsByScipSymbol.set(scipSymbol, resourceNodeId);
+    if (scopeId) {
+        context.nodeIdsByScopeId.set(scopeId, resourceNodeId);
+    }
+
+    return true;
+}
+
 function projectResources(context: ProjectionContext): void {
     const resources = asRecord(context.projectIndex.resources);
     let projectNodeId: string | null = null;
@@ -831,6 +901,38 @@ function projectIdentifierCollections(context: ProjectionContext): void {
             const sourceText = readSourceText(context.rootPath, filePath);
             const displayName = getString(entry.displayName) ?? name;
             const scopeId = getString(entry.scopeId) ?? getString(entry.id);
+            const snippet = createGraphNodeSnippet(sourceText, declarationStart, declarationEnd);
+            const summary = createGraphNodeSummary({
+                docCommentSummary: extractDocCommentFirstSentence(sourceText, declarationStart),
+                filePath,
+                kind,
+                name,
+                resourcePath
+            });
+            if (
+                kind === "script" &&
+                mergeScriptIdentifierIntoResourceNode({
+                    context,
+                    displayName,
+                    filePath,
+                    lineEnd: readLocationLine(asRecord(declaration?.end)),
+                    lineStart: readLocationLine(asRecord(declaration?.start)),
+                    resourcePath,
+                    scopeId,
+                    scipSymbol,
+                    snippet,
+                    summary
+                })
+            ) {
+                if (filePath) {
+                    context.edgeRecords.push({
+                        fromId: createGraphNodeId(context.graphId, "file", filePath),
+                        toId: createGraphNodeId(context.graphId, "resource", resourcePath),
+                        type: "defines"
+                    });
+                }
+                continue;
+            }
             const node = createNodeRecord({
                 displayName,
                 filePath,
@@ -843,14 +945,8 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 resourcePath,
                 scopeId,
                 scipSymbol,
-                snippet: createGraphNodeSnippet(sourceText, declarationStart, declarationEnd),
-                summary: createGraphNodeSummary({
-                    docCommentSummary: extractDocCommentFirstSentence(sourceText, declarationStart),
-                    filePath,
-                    kind,
-                    name,
-                    resourcePath
-                })
+                snippet,
+                summary
             });
 
             context.nodeRecords.push(node);

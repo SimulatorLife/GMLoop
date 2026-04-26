@@ -265,8 +265,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     const layoutSettings = {
         spacing: 1,
         repulsion: 1,
-        clustering: 0.35,
-        similarity: 0.2,
+        clustering: 0,
+        similarity: 0,
         mode: "free"
     };
     const edgeLineVisualStyles = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};
@@ -351,8 +351,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
        syncGroupCheckboxState(enumCheckbox, enumTypesPresent);
        layoutSettings.spacing = 1;
        layoutSettings.repulsion = 1;
-       layoutSettings.clustering = 0.6;
-       layoutSettings.similarity = 0.5;
+       layoutSettings.clustering = 0;
+       layoutSettings.similarity = 0;
        layoutSettings.mode = "free";
        layoutSpacingInput.property("value", String(layoutSettings.spacing));
        layoutRepulsionInput.property("value", String(layoutSettings.repulsion));
@@ -684,8 +684,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         .force("alignment-x", d3.forceX(width / 2).strength(0))
         .force("alignment-y", d3.forceY(height / 2).strength(0))
         .force("semantic-link", d3.forceLink([]).id(d => d.id).distance(35).strength(0))
-        .alphaDecay(0.08)
-        .velocityDecay(0.55);
+        .alphaDecay(0.02)
+        .velocityDecay(0.3);
         
     // Map data for D3
     let nodesRaw = allNodes.map(d => Object.assign({}, d));
@@ -724,10 +724,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         const linkForce = simulation.force("link");
         if (linkForce) {
             linkForce
-                .distance((edgeValue) => {
-                    const baseDistance = edgeValue.type === "contains" ? 42 : edgeValue.type === "defines" ? 52 : 66;
-                    return baseDistance * layoutSettings.spacing;
-                })
+                .distance(() => 50 * layoutSettings.spacing)
                 .strength((edgeValue) => edgeValue.type === "contains" ? 0.18 : edgeValue.type === "defines" ? 0.16 : 0.1);
         }
 
@@ -738,7 +735,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
 
         const collideForce = simulation.force("collide");
         if (collideForce) {
-            collideForce.radius((nodeValue) => getRadius(nodeValue) + 5 + layoutSettings.spacing * 4);
+            collideForce.radius((nodeValue) => getRadius(nodeValue) + 5 + Math.max(0, layoutSettings.spacing - 1) * 4);
         }
 
         const alignmentXForce = simulation.force("alignment-x");
@@ -758,7 +755,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         const semanticLinkForce = simulation.force("semantic-link");
         if (semanticLinkForce) {
             semanticLinkForce
-                .links(buildSemanticSimilarityLinks(activeNodeValues))
+                .links(layoutSettings.similarity <= 0 ? [] : buildSemanticSimilarityLinks(activeNodeValues))
                 .distance((linkValue) => 34 + (4 - Math.min(linkValue.weight, 4)) * 12 * layoutSettings.spacing)
                 .strength((linkValue) => clampLayoutStrength((linkValue.weight / 16) * layoutSettings.similarity));
         }
@@ -767,12 +764,12 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     function updateLayoutSettingsFromControls() {
         layoutSettings.spacing = parseLayoutNumber(layoutSpacingInput, 1);
         layoutSettings.repulsion = parseLayoutNumber(layoutRepulsionInput, 1);
-        layoutSettings.clustering = parseLayoutNumber(layoutClusteringInput, 0.35);
-        layoutSettings.similarity = parseLayoutNumber(layoutSimilarityInput, 0.2);
+        layoutSettings.clustering = parseLayoutNumber(layoutClusteringInput, 0);
+        layoutSettings.similarity = parseLayoutNumber(layoutSimilarityInput, 0);
         layoutSettings.mode = layoutModeInput.property("value");
         updateLayoutControlLabels();
         applyLayoutForces();
-        simulation.alpha(0.16).restart();
+        simulation.alpha(0.3).restart();
     }
 
     layoutSpacingInput.on("input", updateLayoutSettingsFromControls);
@@ -882,7 +879,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         simulation.nodes(filteredNodes).on("tick", ticked);
         simulation.force("link").links(graphLinks);
         applyLayoutForces(filteredNodes);
-        simulation.alpha(0.12).restart();
+        simulation.alpha(0.3).restart();
         
         applyHighlights();
     }
@@ -904,7 +901,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     
     // Interactions
     function dragstarted(event, d) {
-        if (!event.active) simulation.alphaTarget(0.12).restart();
+        if (!event.active) simulation.alphaTarget(0.3).restart();
         d.fx = d.x;
         d.fy = d.y;
     }

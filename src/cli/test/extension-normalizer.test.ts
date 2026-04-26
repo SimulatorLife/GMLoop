@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
 
-import { normalizeExtensions } from "../src/workflow/extension-normalizer.js";
+import { normalizeExtensions } from "../src/commands/watch/extension-normalizer.js";
 
 void test("normalizeExtensions splits strings on commas and path delimiters", () => {
     const input = ["scripts/*.gml,.YY", `.OBJ${path.delimiter}rooms/*.gml`].join(path.delimiter);
