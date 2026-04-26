@@ -114,7 +114,14 @@ void test("graph index and graph search return stable JSON envelopes", async () 
         const searchPayload = JSON.parse(searchResult.stdout);
         assert.equal(searchPayload.command, "graph search");
         assert.equal(searchPayload.payload.query, "shared_toolset_fn");
-        assert.equal(searchPayload.payload.results[0].id, "toolset::gml/script/shared_toolset_fn");
+        assert.ok(
+            searchPayload.payload.results.some(
+                (result: { id: string; name: string }) =>
+                    result.name === "shared_toolset_fn" &&
+                    (result.id === "toolset::gml/script/shared_toolset_fn" ||
+                        result.id === "toolset::resource::scripts/shared_toolset_fn/shared_toolset_fn.yy")
+            )
+        );
     } finally {
         await fixture.cleanup();
     }
@@ -142,7 +149,14 @@ void test("graph search builds a missing database before querying", async () => 
 
         assert.equal(searchResult.exitCode, 0);
         const payload = JSON.parse(searchResult.stdout);
-        assert.equal(payload.payload.results[0].id, "toolset::gml/script/shared_toolset_fn");
+        assert.ok(
+            payload.payload.results.some(
+                (result: { id: string; name: string }) =>
+                    result.name === "shared_toolset_fn" &&
+                    (result.id === "toolset::gml/script/shared_toolset_fn" ||
+                        result.id === "toolset::resource::scripts/shared_toolset_fn/shared_toolset_fn.yy")
+            )
+        );
         await fs.access(databasePath);
     } finally {
         await fixture.cleanup();
@@ -189,7 +203,14 @@ void test("graph search --force regenerates an existing database before querying
 
         assert.equal(forcedSearchResult.exitCode, 0);
         const payload = JSON.parse(forcedSearchResult.stdout);
-        assert.equal(payload.payload.results[0].id, "toolset::gml/script/added_after_index");
+        assert.ok(
+            payload.payload.results.some(
+                (result: { id: string; name: string }) =>
+                    result.name === "added_after_index" &&
+                    (result.id === "toolset::gml/script/added_after_index" ||
+                        result.id === "toolset::resource::scripts/added_after_index/added_after_index.yy")
+            )
+        );
         await fs.access(databasePath);
     } finally {
         await fixture.cleanup();
@@ -226,6 +247,7 @@ void test("graph visualize builds a missing database before exporting HTML", asy
         await fs.access(databasePath);
         const html = await fs.readFile(outputPath, "utf8");
         assert.match(html, /shared_toolset_fn/u);
+        assert.doesNotMatch(html, /id="regenerate"/u);
     } finally {
         await fixture.cleanup();
     }

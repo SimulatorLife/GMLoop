@@ -1,7 +1,9 @@
 import * as Graph from "./graph/index.js";
+import * as Surfaces from "./surfaces/index.js";
 
 type UINamespace = typeof Graph & {
     Graph: typeof Graph;
+    Surfaces: typeof Surfaces;
 };
 
 /**
@@ -9,5 +11,7 @@ type UINamespace = typeof Graph & {
  */
 export const UI: UINamespace = Object.freeze({
     ...Graph,
-    Graph
+    ...Surfaces,
+    Graph,
+    Surfaces
 });

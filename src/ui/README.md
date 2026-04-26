@@ -11,6 +11,12 @@ The workspace exists to keep UI code separate from domain logic. The long-term s
 - formatter, lint, and refactor rule explorers
 - other cross-workspace dashboards and inspectors
 
+The implemented v1 contract is now:
+
+- producing workspaces own data/view-model generation
+- `@gmloop/ui` owns typed renderers and client interaction code
+- host layers such as `@gmloop/cli` own write/serve/regenerate lifecycle
+
 ## Goals
 
 - Provide a single UI workspace for all product-facing views instead of embedding UI logic into `@gmloop/cli`, `@gmloop/semantic`, `@gmloop/lint`, or other functional workspaces.
@@ -26,6 +32,7 @@ The workspace exists to keep UI code separate from domain logic. The long-term s
 - view state, local filtering, local toggles, and presentational interaction behavior
 - composition of already-produced data into user-facing interfaces
 - UI-specific affordances such as loading indicators, tab shells, inspector panels, and view switching
+- typed rendering contracts for UI surfaces
 
 `@gmloop/ui` does not own:
 
@@ -63,6 +70,17 @@ This pattern should remain the template for future UI surfaces:
 2. `@gmloop/cli` or another orchestration layer handles command/server lifecycle when needed.
 3. `@gmloop/ui` renders that data without recreating the source logic.
 
+## Implemented Contract
+
+The current graph UI now uses a typed render boundary instead of a raw JSON-string API.
+
+- `renderGraphVisualizationHtml(data, options)` is the renderer entrypoint
+- the renderer accepts typed graph payload objects
+- JSON serialization for inline browser execution happens inside `@gmloop/ui`, not in CLI call sites
+- CLI host code is responsible only for obtaining payloads and invoking the renderer
+
+This keeps UI rendering typed while still keeping serialization at the browser-document edge.
+
 ## Design Rules
 
 - UI modules should accept explicit data payloads and configuration inputs.
@@ -71,6 +89,7 @@ This pattern should remain the template for future UI surfaces:
 - When a UI needs new data, add a narrow API to the owning workspace rather than copying the logic into `@gmloop/ui`.
 - When a UI needs a new action, the action should be implemented by the owning workspace or orchestration layer and surfaced into the UI as a callback, endpoint, or serialized contract.
 - Keep UI feature code organized by surface or domain, for example `graph/`, `ast/`, `cli-docs/`, `mcp/`, `rules/`.
+- Maintain a canonical top-level surface catalog in code so future UI tabs are discoverable and consistently named.
 
 ## Initial Structure
 
@@ -84,11 +103,18 @@ src/ui/
   tsconfig.json
   src/
     index.ts
+    surfaces/
+      index.ts
     graph/
       index.ts
+      graph-visualization-client-script.ts
+      graph-visualization-inline-data.ts
+      graph-visualization-style-metadata.ts
       graph-visualization-template.ts
+      types.ts
   test/
     graph-visualization-template.test.ts
+    ui-surfaces.test.ts
 ```
 
 This keeps the public API explicit while leaving room for additional UI domains.
@@ -100,7 +126,24 @@ The first `@gmloop/ui` feature is the graph-index visualization template that wa
 The split is now:
 
 - `@gmloop/semantic`: exports the graph visualization payload
-- `@gmloop/ui`: renders the graph visualization HTML and client behavior
-- `@gmloop/cli`: chooses whether to write or serve the UI, and whether to trigger regeneration
+- `@gmloop/ui`: renders the graph visualization HTML, owns typed graph UI contracts, and owns client behavior
+- `@gmloop/cli`: chooses whether to write or serve the UI, owns the HTTP host server, and owns regeneration endpoints
 
 That separation is intentional and should be preserved as more UI surfaces are added.
+
+## Surface Convention
+
+The canonical current and planned top-level UI surfaces are tracked in code through `UI_SURFACE_DEFINITIONS`.
+
+- `graph`: implemented
+- `ast`: planned
+- `cli-docs`: planned
+- `mcp`: planned
+- `rules`: planned
+
+New top-level UI additions should:
+
+1. Add a stable surface id to the catalog.
+2. Add a dedicated `src/<surface>/` domain directory.
+3. Consume data only from the owning functional workspace or orchestration layer.
+4. Avoid recreating parser, semantic, lint, refactor, CLI, or MCP logic inside `@gmloop/ui`.

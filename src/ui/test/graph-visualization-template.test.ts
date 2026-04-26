@@ -20,14 +20,14 @@ type EmbeddedNodeVisualStyle = Readonly<{
 
 function renderEmptyGraphVisualizationHtml(title: string): string {
     return renderGraphVisualizationHtml(
-        JSON.stringify({
+        {
             generatedAt: "2026-01-01T00:00:00.000Z",
             graphs: [],
             edges: [],
             nodes: [],
             projectRoot: "/tmp/project"
-        }),
-        title
+        },
+        { title }
     );
 }
 
@@ -155,15 +155,17 @@ void test("graph visualization reset rebuilds the live simulation state from the
 
 void test("graph visualization server mode keeps the current view live while regenerate runs and only reloads on changed data", () => {
     const html = renderGraphVisualizationHtml(
-        JSON.stringify({
+        {
             generatedAt: "2026-01-01T00:00:00.000Z",
             graphs: [],
             edges: [],
             nodes: [],
             projectRoot: "/tmp/project"
-        }),
-        "Server Regenerate Test",
-        true
+        },
+        {
+            isServerMode: true,
+            title: "Server Regenerate Test"
+        }
     );
 
     assert.match(html, /id="regenerate"/);
@@ -268,7 +270,7 @@ void test("graph visualization template gives fallback, room, shader, and sprite
 
 void test("graph visualization template relies on semantic project nodes instead of a synthetic center node", () => {
     const html = renderGraphVisualizationHtml(
-        JSON.stringify({
+        {
             generatedAt: "2026-01-01T00:00:00.000Z",
             graphs: [],
             edges: [
@@ -290,8 +292,8 @@ void test("graph visualization template relies on semantic project nodes instead
                 }
             ],
             projectRoot: "/tmp/project"
-        }),
-        "Project Root Test"
+        },
+        { title: "Project Root Test" }
     );
 
     assert.doesNotMatch(html, /project::center/);

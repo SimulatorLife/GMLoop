@@ -1,6 +1,5 @@
 import child_process from "node:child_process";
 import { access, constants, writeFile } from "node:fs/promises";
-import * as http from "node:http";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -12,6 +11,7 @@ import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
+import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type GraphCommandSharedOptions = {
@@ -322,76 +322,51 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         toolsetRoot: options.toolsetRoot
     });
 
-    function exportVisualizationPayloadString(): string {
+    function exportVisualizationPayload() {
         const database = Semantic.openExistingGraphIndexDatabase(config.databasePath);
         try {
-            return JSON.stringify(Semantic.exportGraphVisualizationData(database, config.projectRoot));
+            return Semantic.exportGraphVisualizationData(database, config.projectRoot);
         } finally {
             database.close();
         }
     }
 
     if (options.serve === true) {
-        const server = http.createServer((req, res) => {
-            if (req.method === "GET" && (req.url === "/" || req.url === "")) {
+        const server = await startGraphVisualizationServer({
+            regenerate: async () => {
+                let previousPayloadString = "";
                 try {
-                    const payloadStr = exportVisualizationPayloadString();
-                    const htmlContent = UI.renderGraphVisualizationHtml(payloadStr, config.projectRoot, true);
-                    res.writeHead(200, { "Content-Type": "text/html" });
-                    res.end(htmlContent);
-                } catch (error: unknown) {
-                    res.writeHead(500, { "Content-Type": "text/plain" });
-                    res.end(`Error exporting data: ${Core.getErrorMessageOrFallback(error)}`);
-                }
-            } else if (req.method === "POST" && req.url === "/api/reindex") {
-                let previousPayloadStr = "";
-                try {
-                    previousPayloadStr = exportVisualizationPayloadString();
+                    previousPayloadString = JSON.stringify(exportVisualizationPayload());
                 } catch {
-                    previousPayloadStr = "";
+                    previousPayloadString = "";
                 }
-                ensureGraphIndex({ ...options, force: true }, context)
-                    .then(() => {
-                        const nextPayloadStr = exportVisualizationPayloadString();
-                        res.writeHead(200, { "Content-Type": "application/json" });
-                        res.end(JSON.stringify({ changed: previousPayloadStr !== nextPayloadStr, ok: true }));
-                        return null;
-                    })
-                    .catch((error: unknown) => {
-                        res.writeHead(500, { "Content-Type": "application/json" });
-                        res.end(JSON.stringify({ error: Core.getErrorMessageOrFallback(error) }));
-                    });
-            } else {
-                res.writeHead(404);
-                res.end("Not found");
-            }
+
+                await ensureGraphIndex({ ...options, force: true }, context);
+                const nextPayloadString = JSON.stringify(exportVisualizationPayload());
+                return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
+            },
+            renderHtml: (isServerMode) =>
+                UI.renderGraphVisualizationHtml(exportVisualizationPayload(), {
+                    isServerMode,
+                    title: config.projectRoot
+                })
         });
 
-        await new Promise<void>((resolve, reject) => {
-            server.listen(0, "127.0.0.1", () => {
-                const address = server.address();
-                if (address && typeof address === "object") {
-                    const url = `http://127.0.0.1:${String(address.port)}`;
-                    printGraphOutput(
-                        createGraphEnvelope("graph visualize", context, options, { url }),
-                        options.json === true,
-                        `Serving graph visualization at ${url}`
-                    );
-                    if (options.open) {
-                        openHtmlInDefaultBrowser(url);
-                    }
-                }
-            });
-            server.on("error", reject);
-        });
+        printGraphOutput(
+            createGraphEnvelope("graph visualize", context, options, { url: server.url }),
+            options.json === true,
+            `Serving graph visualization at ${server.url}`
+        );
+        if (options.open) {
+            openHtmlInDefaultBrowser(server.url);
+        }
 
         return;
     }
 
     const dbPath = config.databasePath;
-    const payloadStr = exportVisualizationPayloadString();
-
-    const htmlContent = UI.renderGraphVisualizationHtml(payloadStr, config.projectRoot);
+    const payload = exportVisualizationPayload();
+    const htmlContent = UI.renderGraphVisualizationHtml(payload, { title: config.projectRoot });
     const outputPath = options.output ?? path.join(path.dirname(dbPath), "graph.html");
 
     await writeFile(outputPath, htmlContent, "utf8");
