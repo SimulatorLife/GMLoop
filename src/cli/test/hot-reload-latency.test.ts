@@ -78,6 +78,19 @@ void describe("computeHotReloadLatencyStats", () => {
         assert.strictEqual(result.p95, 19);
     });
 
+    void it("computes p95 correctly when latencies arrive out of order", () => {
+        const result = computeHotReloadLatencyStats([
+            { hotReloadLatencyMs: 200 },
+            { hotReloadLatencyMs: 50 },
+            { hotReloadLatencyMs: 150 },
+            { hotReloadLatencyMs: 100 }
+        ]);
+
+        assert.ok(result !== undefined, "Should return stats");
+        assert.strictEqual(result.avg, 125);
+        assert.strictEqual(result.p95, 200);
+    });
+
     void it("average rounds correctly for non-integer averages", () => {
         const result = computeHotReloadLatencyStats([
             { hotReloadLatencyMs: 10 },
