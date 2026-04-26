@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import { Semantic } from "@gmloop/semantic";
+import { UI } from "@gmloop/ui";
 import { Command, Option } from "commander";
 
 import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
@@ -12,7 +13,6 @@ import { applyStandardCommandOptions } from "../cli-core/command-standard-option
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
-import { renderGraphVisualizationHtml } from "./graph-visualize-template.js";
 
 type GraphCommandSharedOptions = {
     config?: string;
@@ -322,30 +322,39 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         toolsetRoot: options.toolsetRoot
     });
 
+    function exportVisualizationPayloadString(): string {
+        const database = Semantic.openExistingGraphIndexDatabase(config.databasePath);
+        try {
+            return JSON.stringify(Semantic.exportGraphVisualizationData(database, config.projectRoot));
+        } finally {
+            database.close();
+        }
+    }
+
     if (options.serve === true) {
         const server = http.createServer((req, res) => {
             if (req.method === "GET" && (req.url === "/" || req.url === "")) {
-                const db = Semantic.openExistingGraphIndexDatabase(config.databasePath);
-                let payloadStr: string;
                 try {
-                    const payload = Semantic.exportGraphVisualizationData(db, config.projectRoot);
-                    payloadStr = JSON.stringify(payload);
+                    const payloadStr = exportVisualizationPayloadString();
+                    const htmlContent = UI.renderGraphVisualizationHtml(payloadStr, config.projectRoot, true);
+                    res.writeHead(200, { "Content-Type": "text/html" });
+                    res.end(htmlContent);
                 } catch (error: unknown) {
                     res.writeHead(500, { "Content-Type": "text/plain" });
                     res.end(`Error exporting data: ${Core.getErrorMessageOrFallback(error)}`);
-                    return;
-                } finally {
-                    db.close();
                 }
-
-                const htmlContent = renderGraphVisualizationHtml(payloadStr, config.projectRoot, true);
-                res.writeHead(200, { "Content-Type": "text/html" });
-                res.end(htmlContent);
             } else if (req.method === "POST" && req.url === "/api/reindex") {
+                let previousPayloadStr = "";
+                try {
+                    previousPayloadStr = exportVisualizationPayloadString();
+                } catch {
+                    previousPayloadStr = "";
+                }
                 ensureGraphIndex({ ...options, force: true }, context)
                     .then(() => {
+                        const nextPayloadStr = exportVisualizationPayloadString();
                         res.writeHead(200, { "Content-Type": "application/json" });
-                        res.end(JSON.stringify({ ok: true }));
+                        res.end(JSON.stringify({ changed: previousPayloadStr !== nextPayloadStr, ok: true }));
                         return null;
                     })
                     .catch((error: unknown) => {
@@ -380,16 +389,9 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     }
 
     const dbPath = config.databasePath;
-    const db = Semantic.openExistingGraphIndexDatabase(dbPath);
-    let payloadStr: string;
-    try {
-        const payload = Semantic.exportGraphVisualizationData(db, config.projectRoot);
-        payloadStr = JSON.stringify(payload);
-    } finally {
-        db.close();
-    }
+    const payloadStr = exportVisualizationPayloadString();
 
-    const htmlContent = renderGraphVisualizationHtml(payloadStr, config.projectRoot);
+    const htmlContent = UI.renderGraphVisualizationHtml(payloadStr, config.projectRoot);
     const outputPath = options.output ?? path.join(path.dirname(dbPath), "graph.html");
 
     await writeFile(outputPath, htmlContent, "utf8");

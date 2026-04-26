@@ -4,6 +4,7 @@ packages:
   - src/format
   - src/parser
   - src/core
+  - src/ui
   - src/semantic
   - src/transpiler
   - src/runtime-wrapper

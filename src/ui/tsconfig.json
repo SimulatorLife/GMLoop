@@ -7,20 +7,20 @@
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@gmloop/cli": ["./index.ts"],
+      "@gmloop/cli": ["../cli/index.ts"],
       "@gmloop/core": ["../core/index.ts"],
       "@gmloop/fixture-runner": ["../fixture-runner/index.ts"],
-      "@gmloop/lint": ["../lint/index.ts"],
-      "@gmloop/parser": ["../parser/index.ts"],
       "@gmloop/format": ["../format/index.ts"],
+      "@gmloop/lint": ["../lint/index.ts"],
+      "@gmloop/mcp": ["../mcp/index.ts"],
+      "@gmloop/parser": ["../parser/index.ts"],
       "@gmloop/refactor": ["../refactor/index.ts"],
       "@gmloop/runtime-wrapper": ["../runtime-wrapper/index.ts"],
       "@gmloop/semantic": ["../semantic/index.ts"],
       "@gmloop/transpiler": ["../transpiler/index.ts"],
-      "@gmloop/ui": ["../ui/index.ts"]
+      "@gmloop/ui": ["./index.ts"]
     }
   },
-  "references": [{ "path": "../core" }, { "path": "../lint" }, { "path": "../parser" }, { "path": "../format" }, { "path": "../refactor" }, { "path": "../semantic" }, { "path": "../transpiler" }, { "path": "../ui" }],
-  "include": ["*.ts", "src/**/*.ts", "src/**/*.d.ts", "test/**/*.ts"],
-  "exclude": ["dist"]
+  "include": ["*.ts", "src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["dist", "tmp", "node_modules"]
 }

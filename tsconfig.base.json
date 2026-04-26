@@ -6,6 +6,7 @@
     "baseUrl": ".",
     "paths": {
       "@gmloop/core": ["src/core/index.ts"],
+      "@gmloop/ui": ["src/ui/index.ts"],
       "@gmloop/parser": ["src/parser/index.ts"],
       "@gmloop/format": ["src/format/index.ts"],
       "@gmloop/fixture-runner": ["src/fixture-runner/index.ts"],

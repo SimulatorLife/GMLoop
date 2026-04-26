@@ -152,6 +152,9 @@ function renderNodeFillCssRules(): string {
     return NODE_VISUAL_STYLES.map((style) => renderNodeFillCssRule(style)).join("\n    ");
 }
 
+/**
+ * Render the self-contained graph visualization HTML document for a graph-index payload.
+ */
 export function renderGraphVisualizationHtml(dataJson: string, title: string, isServerMode: boolean = false): string {
     return `<!DOCTYPE html>
 <html lang="en">
@@ -164,13 +167,13 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     header { position: absolute; top: 0; left: 0; right: 0; padding: 10px 20px; background: #252526; box-shadow: 0 1px 3px rgba(0,0,0,0.5); z-index: 10; display: flex; gap: 15px; align-items: flex-start; flex-wrap: wrap; }
     h1 { margin: 0; font-size: 16px; font-weight: 600; color: #e0e0e0; }
     #search { padding: 4px 8px; border: 1px solid #555; border-radius: 4px; font-size: 14px; width: 200px; background: #333; color: #eee; }
-    button, select { padding: 4px 10px; border: 1px solid #555; border-radius: 4px; background: #333; color: #eee; cursor: pointer; font-size: 14px; }
-    input[type="range"] { width: 110px; accent-color: #5ea1ff; }
+    button { padding: 4px 10px; border: 1px solid #555; border-radius: 4px; background: #333; color: #eee; cursor: pointer; font-size: 14px; }
     button:hover { background: #444; }
+    button:disabled { cursor: wait; opacity: 0.8; }
     .toolbar-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .layout-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 6px 10px; border: 1px solid #3f3f46; border-radius: 6px; background: rgba(18, 18, 20, 0.55); }
-    .layout-control { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #d7d7dc; white-space: nowrap; }
-    .layout-control output { min-width: 30px; text-align: right; color: #9fc5ff; font-variant-numeric: tabular-nums; }
+    .button-content { display: inline-flex; align-items: center; gap: 8px; }
+    .button-spinner { width: 12px; height: 12px; border: 2px solid rgba(255, 255, 255, 0.32); border-top-color: #fff; border-radius: 50%; animation: graph-button-spin 0.8s linear infinite; display: inline-block; }
+    @keyframes graph-button-spin { to { transform: rotate(360deg); } }
     main { width: 100%; height: 100%; }
     svg { width: 100%; height: 100%; cursor: grab; }
     svg:active { cursor: grabbing; }
@@ -183,10 +186,7 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     .link { stroke-opacity: 0.72; fill: none; stroke-linecap: round; vector-effect: non-scaling-stroke; }
     .link.dimmed { stroke-opacity: 0.2 !important; }
     
-    /* Edge colors */
     ${renderEdgeLineCssRules()}
-    
-    /* Node colors */
     ${renderNodeFillCssRules()}
     
     text { font-size: 10px; pointer-events: none; fill: #e0e0e0; text-shadow: 0 1px 2px #1e1e1e, 0 -1px 2px #1e1e1e, 1px 0 2px #1e1e1e, -1px 0 2px #1e1e1e; }
@@ -205,8 +205,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     .filter-section { margin-bottom: 10px; }
     .filter-section strong { display: block; margin-bottom: 5px; cursor: pointer; }
     .sub-filter { margin-left: 15px; }
-    
-    /* Marker definitions */
   </style>
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 </head>
@@ -218,20 +216,12 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
       <button id="toggle-view">JSON</button>
       <button id="toggle-labels">Labels: Auto</button>
       <button id="reset-default">Reset</button>
-      ${isServerMode ? `<button id="regenerate" style="background: #007acc; border-color: #007acc; font-weight: bold; color: white;">Regenerate</button>` : ""}
-    </div>
-    <div class="layout-controls">
-      <label class="layout-control" for="layout-spacing">Spacing <input id="layout-spacing" type="range" min="0.6" max="2.2" step="0.1" value="1"><output id="layout-spacing-value">1.0x</output></label>
-      <label class="layout-control" for="layout-repulsion">Repulsion <input id="layout-repulsion" type="range" min="0.4" max="2.5" step="0.1" value="1"><output id="layout-repulsion-value">1.0x</output></label>
-      <label class="layout-control" for="layout-clustering">Clustering <input id="layout-clustering" type="range" min="0" max="2" step="0.1" value="0.6"><output id="layout-clustering-value">0.6x</output></label>
-      <label class="layout-control" for="layout-similarity">Semantic <input id="layout-similarity" type="range" min="0" max="2" step="0.1" value="0.5"><output id="layout-similarity-value">0.5x</output></label>
-      <label class="layout-control" for="layout-mode">Alignment <select id="layout-mode"><option value="free">Free</option><option value="kind">By Kind</option><option value="graph">By Graph</option><option value="semantic">By Semantics</option><option value="radial">Radial</option></select></label>
+      ${isServerMode ? `<button id="regenerate" style="background: #007acc; border-color: #007acc; font-weight: bold; color: white;"><span class="button-content"><span class="button-label">Regenerate</span></span></button>` : ""}
     </div>
   </header>
   <main>
     <svg id="graph">
       <defs>
-        <!-- Arrow markers -->
         <marker id="arrow-calls" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="${getEdgeLineColor("calls")}"></path></marker>
         <marker id="arrow-inherits" viewBox="0 -5 10 10" refX="20" refY="0" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,-5L10,0L0,5" fill="${getEdgeLineColor("inherits")}"></path></marker>
         <marker id="arrow-depends_on" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="${getEdgeLineColor("depends_on")}"></path></marker>
@@ -241,47 +231,28 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     <div id="tooltip"></div>
     <pre id="json-view"></pre>
     <aside id="legend">
-        <!-- Rendered by JS -->
     </aside>
   </main>
   <script>
     const DATA = ${dataJson};
     const IS_SERVER_MODE = ${isServerMode ? "true" : "false"};
-    
     const width = window.innerWidth;
     const height = window.innerHeight;
-    
     const svg = d3.select("#graph");
     const jsonView = d3.select("#json-view");
     const container = d3.select("#container");
     const tooltip = d3.select("#tooltip");
     let labelMode = "auto";
     let activeView = "visual";
-    const layoutSpacingInput = d3.select("#layout-spacing");
-    const layoutRepulsionInput = d3.select("#layout-repulsion");
-    const layoutClusteringInput = d3.select("#layout-clustering");
-    const layoutSimilarityInput = d3.select("#layout-similarity");
-    const layoutModeInput = d3.select("#layout-mode");
-    const layoutSettings = {
-        spacing: 1,
-        repulsion: 1,
-        clustering: 0,
-        similarity: 0,
-        mode: "free"
-    };
     const edgeLineVisualStyles = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};
     const edgeLineVisualStyleByType = new Map(edgeLineVisualStyles.map((style) => [style.type, style]));
     const nodeVisualStyles = ${JSON.stringify(NODE_VISUAL_STYLES)};
     const nodeVisualStyleByKind = new Map(nodeVisualStyles.map((style) => [style.kind, style]));
-    const semanticTokenCache = new Map();
     
-    // Setup Zoom
     const zoom = d3.zoom()
         .scaleExtent([0.1, 4])
         .on("zoom", (e) => {
             container.attr("transform", e.transform);
-            
-            // Progressive label rendering
             if (labelMode === "on") {
                 nodeLabels.style("display", "block");
             } else if (labelMode === "off") {
@@ -333,50 +304,14 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         }
     });
     
-    d3.select("#reset-default").on("click", () => {
-       svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
-       if (typeof clearFocus === 'function') clearFocus();
-       
-       // Reset filters
-       activeFilters = new Set(edgeTypes);
-       activeNodeFilters = new Set(defaultEnabledNodeKinds);
-       d3.selectAll("#legend input[type='checkbox']").property("indeterminate", false);
-       allNodeKinds.forEach((kindValue) => {
-            d3.select(\`#filter-node-\${kindValue}\`).property("checked", defaultEnabledNodeKinds.includes(kindValue));
-       });
-       edgeTypes.forEach((edgeTypeValue) => {
-            d3.select(\`#filter-edge-\${edgeTypeValue}\`).property("checked", true);
-       });
-       syncGroupCheckboxState(resourceCheckbox, resourceTypesPresent);
-       syncGroupCheckboxState(enumCheckbox, enumTypesPresent);
-       layoutSettings.spacing = 1;
-       layoutSettings.repulsion = 1;
-       layoutSettings.clustering = 0;
-       layoutSettings.similarity = 0;
-       layoutSettings.mode = "free";
-       layoutSpacingInput.property("value", String(layoutSettings.spacing));
-       layoutRepulsionInput.property("value", String(layoutSettings.repulsion));
-       layoutClusteringInput.property("value", String(layoutSettings.clustering));
-       layoutSimilarityInput.property("value", String(layoutSettings.similarity));
-       layoutModeInput.property("value", layoutSettings.mode);
-       updateLayoutControlLabels();
-       applyLayoutForces();
-       
-       updateGraph();
-    });
-    
-    // Performance guardrails
     if (DATA.nodes.length > 2000) {
         console.warn("Large graph detected:", DATA.nodes.length, "nodes. Adjusting rendering parameters.");
     }
     
-    // Extract filters
     const edgeTypes = Array.from(new Set(DATA.edges.map(e => e.type)));
     let activeFilters = new Set(edgeTypes);
-    
     const allNodes = DATA.nodes.filter((nodeValue) => nodeValue.kind !== "file");
     const allNodeKinds = Array.from(new Set(allNodes.map((nodeValue) => nodeValue.kind)));
-
     const resourceKinds = new Set([
         "anim_curve",
         "data_file",
@@ -415,139 +350,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
             kindValue !== "enum_member"
     );
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
-    const kindLaneIndex = new Map(allNodeKinds.map((kindValue, index) => [kindValue, index]));
-    const graphLaneIndex = new Map(Array.from(new Set(allNodes.map((nodeValue) => nodeValue.graphId))).map((graphId, index) => [graphId, index]));
-
-    function clampLayoutStrength(value) {
-        return Number.isFinite(value) ? value : 0;
-    }
-
-    function parseLayoutNumber(inputSelection, fallbackValue) {
-        const parsedValue = Number.parseFloat(inputSelection.property("value"));
-        return Number.isFinite(parsedValue) ? parsedValue : fallbackValue;
-    }
-
-    function updateLayoutControlLabels() {
-        d3.select("#layout-spacing-value").text(layoutSettings.spacing.toFixed(1) + "x");
-        d3.select("#layout-repulsion-value").text(layoutSettings.repulsion.toFixed(1) + "x");
-        d3.select("#layout-clustering-value").text(layoutSettings.clustering.toFixed(1) + "x");
-        d3.select("#layout-similarity-value").text(layoutSettings.similarity.toFixed(1) + "x");
-    }
-
-    function tokenizeSemanticDescriptor(nodeValue) {
-        const cachedTokens = semanticTokenCache.get(nodeValue.id);
-        if (cachedTokens) {
-            return cachedTokens;
-        }
-
-        const tokens = new Set(
-            (nodeValue.name + " " + nodeValue.displayName + " " + nodeValue.summary)
-                .toLowerCase()
-                .split(/[^a-z0-9_]+/u)
-                .filter((tokenValue) => tokenValue.length >= 3)
-        );
-        semanticTokenCache.set(nodeValue.id, tokens);
-        return tokens;
-    }
-
-    function measureSemanticSimilarity(sourceNode, targetNode) {
-        if (sourceNode.id === targetNode.id) {
-            return 0;
-        }
-
-        const sourceTokens = tokenizeSemanticDescriptor(sourceNode);
-        const targetTokens = tokenizeSemanticDescriptor(targetNode);
-        let sharedTokenCount = 0;
-        for (const tokenValue of sourceTokens) {
-            if (targetTokens.has(tokenValue)) {
-                sharedTokenCount += 1;
-            }
-        }
-
-        let similarityScore = sharedTokenCount;
-        if (sourceNode.kind === targetNode.kind) {
-            similarityScore += 1.5;
-        }
-        if (sourceNode.graphId === targetNode.graphId) {
-            similarityScore += 0.25;
-        }
-        return similarityScore;
-    }
-
-    function buildSemanticSimilarityLinks(nodeValues) {
-        const semanticLinks = [];
-        for (let sourceIndex = 0; sourceIndex < nodeValues.length; sourceIndex += 1) {
-            const sourceNode = nodeValues[sourceIndex];
-            for (let targetIndex = sourceIndex + 1; targetIndex < nodeValues.length; targetIndex += 1) {
-                const targetNode = nodeValues[targetIndex];
-                const similarityScore = measureSemanticSimilarity(sourceNode, targetNode);
-                if (similarityScore >= 2) {
-                    semanticLinks.push({
-                        source: sourceNode,
-                        target: targetNode,
-                        weight: Math.min(similarityScore, 5)
-                    });
-                }
-            }
-        }
-        return semanticLinks;
-    }
-
-    function resolveAlignmentTargetX(nodeValue) {
-        const usableWidth = Math.max(width - 220, 200);
-        if (layoutSettings.mode === "kind") {
-            const kindIndex = kindLaneIndex.get(nodeValue.kind) ?? 0;
-            const laneCount = Math.max(kindLaneIndex.size, 1);
-            return usableWidth * ((kindIndex + 1) / (laneCount + 1));
-        }
-        if (layoutSettings.mode === "graph") {
-            const graphIndex = graphLaneIndex.get(nodeValue.graphId) ?? 0;
-            const laneCount = Math.max(graphLaneIndex.size, 1);
-            return usableWidth * ((graphIndex + 1) / (laneCount + 1));
-        }
-        if (layoutSettings.mode === "semantic") {
-            const semanticTokens = [...tokenizeSemanticDescriptor(nodeValue)];
-            const semanticFingerprint = semanticTokens.join("|");
-            let semanticIndex = 0;
-            for (let fingerprintIndex = 0; fingerprintIndex < semanticFingerprint.length; fingerprintIndex += 1) {
-                semanticIndex = (semanticIndex + semanticFingerprint.charCodeAt(fingerprintIndex)) % 9;
-            }
-            return usableWidth * ((semanticIndex + 1) / 10);
-        }
-        if (layoutSettings.mode === "radial") {
-            const kindIndex = kindLaneIndex.get(nodeValue.kind) ?? 0;
-            const angle = (Math.PI * 2 * kindIndex) / Math.max(kindLaneIndex.size, 1);
-            return width / 2 + Math.cos(angle) * Math.min(width, height) * 0.28;
-        }
-        return width / 2;
-    }
-
-    function resolveAlignmentTargetY(nodeValue) {
-        const usableHeight = Math.max(height - 220, 200);
-        if (layoutSettings.mode === "kind") {
-            return height / 2;
-        }
-        if (layoutSettings.mode === "graph") {
-            const kindIndex = kindLaneIndex.get(nodeValue.kind) ?? 0;
-            const laneCount = Math.max(kindLaneIndex.size, 1);
-            return usableHeight * ((kindIndex + 1) / (laneCount + 1));
-        }
-        if (layoutSettings.mode === "semantic") {
-            const semanticTokens = [...tokenizeSemanticDescriptor(nodeValue)];
-            const semanticFingerprint = semanticTokens.join("|");
-            let semanticIndex = 0;
-            for (let fingerprintIndex = 0; fingerprintIndex < semanticFingerprint.length; fingerprintIndex += 1) {
-                semanticIndex = (semanticIndex + semanticFingerprint.charCodeAt(fingerprintIndex)) % 7;
-            }
-            return usableHeight * ((semanticIndex + 1) / 8);
-        }
-        if (layoutSettings.mode === "radial") {
-            const kindIndex = kindLaneIndex.get(nodeValue.kind) ?? 0;
-            const angle = (Math.PI * 2 * kindIndex) / Math.max(kindLaneIndex.size, 1);
-            return height / 2 + Math.sin(angle) * Math.min(width, height) * 0.28;
-        }
-        return height / 2;
-    }
 
     function isNodeGroupCheckedByDefault(typeVal) {
         if (typeVal === "resource-group") {
@@ -592,11 +394,11 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         
         if (category === 'node' || category === 'node-group') {
              const color = nodeVisualStyleByKind.get(typeVal)?.color ?? nodeVisualStyleByKind.get("default").color;
-             let shapeHtml = \`<span style="color:\${color}">&#9679;</span>\`; // circle
+             let shapeHtml = \`<span style="color:\${color}">&#9679;</span>\`;
              if (typeVal.endsWith("_variable")) {
-                 shapeHtml = \`<span style="color:\${color}">&#9830;</span>\`; // diamond
+                 shapeHtml = \`<span style="color:\${color}">&#9830;</span>\`;
              } else if (resourceKinds.has(typeVal) || typeVal === "resource-group") {
-                 shapeHtml = \`<span style="color:\${color}">&#9632;</span>\`; // square
+                 shapeHtml = \`<span style="color:\${color}">&#9632;</span>\`;
              }
              wrap.append("span").html(\`\${shapeHtml} \${labelText}\`);
         } else {
@@ -610,15 +412,11 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     }
 
     const formatLabel = (t) => t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ');
-
     const legendDiv = d3.select("#legend");
     legendDiv.html("");
-    
-    // --- Nodes Section ---
     const nodesSection = legendDiv.append("div").attr("class", "filter-section");
     nodesSection.append("strong").text("Nodes");
     
-    // Setup resource overarching toggle
     let resourceCheckbox;
     if (resourceTypesPresent.length > 0) {
         resourceCheckbox = createFilterCheckbox(nodesSection, "filter-resource", "Resources", "node-group", "resource-group", (checked) => {
@@ -665,7 +463,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         });
     });
     
-    // --- Edges Section ---
     const edgesSection = legendDiv.append("div").attr("class", "filter-section").style("margin-top", "15px");
     edgesSection.append("strong").text("Edges");
     
@@ -675,23 +472,25 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         });
     });
     
-    // D3 Force Simulation
     let simulation = d3.forceSimulation()
         .force("link", d3.forceLink().id(d => d.id).distance(50))
         .force("charge", d3.forceManyBody().strength(-100))
         .force("center", d3.forceCenter(width / 2, height / 2))
         .force("collide", d3.forceCollide().radius(d => getRadius(d) + 5).iterations(2))
-        .force("alignment-x", d3.forceX(width / 2).strength(0))
-        .force("alignment-y", d3.forceY(height / 2).strength(0))
-        .force("semantic-link", d3.forceLink([]).id(d => d.id).distance(35).strength(0))
         .alphaDecay(0.02)
         .velocityDecay(0.3);
         
-    // Map data for D3
-    let nodesRaw = allNodes.map(d => Object.assign({}, d));
-    let linksRaw = DATA.edges.map(d => Object.assign({}, d));
+    function cloneGraphNodes() {
+        return allNodes.map((nodeValue) => Object.assign({}, nodeValue));
+    }
+
+    function cloneGraphEdges() {
+        return DATA.edges.map((edgeValue) => Object.assign({}, edgeValue));
+    }
+
+    let nodesRaw = cloneGraphNodes();
+    let linksRaw = cloneGraphEdges();
     
-    // Compute node degrees
     const incomingCount = new Map();
     const outgoingCount = new Map();
     const neighborMap = new Map();
@@ -699,7 +498,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     linksRaw.forEach(l => {
         incomingCount.set(l.target, (incomingCount.get(l.target) || 0) + 1);
         outgoingCount.set(l.source, (outgoingCount.get(l.source) || 0) + 1);
-        
         if (!neighborMap.has(l.source)) neighborMap.set(l.source, new Set());
         if (!neighborMap.has(l.target)) neighborMap.set(l.target, new Set());
         neighborMap.get(l.source).add(l.target);
@@ -715,70 +513,41 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     let nodeGroup = container.append("g").selectAll(".node-group");
     let node = null;
     let nodeLabels = null;
-    
     let searchHighlightNodeIds = new Set();
     let focusNodeId = null;
     let pinnedTooltipNodeId = null;
 
-    function applyLayoutForces(activeNodeValues = nodesRaw) {
-        const linkForce = simulation.force("link");
-        if (linkForce) {
-            linkForce
-                .distance(() => 50 * layoutSettings.spacing)
-                .strength((edgeValue) => edgeValue.type === "contains" ? 0.18 : edgeValue.type === "defines" ? 0.16 : 0.1);
+    function resetGraphStateToDefaults() {
+        nodesRaw = cloneGraphNodes();
+        linksRaw = cloneGraphEdges();
+        activeFilters = new Set(edgeTypes);
+        activeNodeFilters = new Set(defaultEnabledNodeKinds);
+        searchHighlightNodeIds.clear();
+        focusNodeId = null;
+        pinnedTooltipNodeId = null;
+        hideTooltip();
+
+        const searchInput = document.getElementById("search");
+        if (searchInput instanceof HTMLInputElement) {
+            searchInput.value = "";
         }
 
-        const chargeForce = simulation.force("charge");
-        if (chargeForce) {
-            chargeForce.strength(-100 * layoutSettings.repulsion);
-        }
-
-        const collideForce = simulation.force("collide");
-        if (collideForce) {
-            collideForce.radius((nodeValue) => getRadius(nodeValue) + 5 + Math.max(0, layoutSettings.spacing - 1) * 4);
-        }
-
-        const alignmentXForce = simulation.force("alignment-x");
-        if (alignmentXForce) {
-            alignmentXForce
-                .x((nodeValue) => resolveAlignmentTargetX(nodeValue))
-                .strength(layoutSettings.mode === "free" ? 0 : clampLayoutStrength(0.04 * layoutSettings.clustering));
-        }
-
-        const alignmentYForce = simulation.force("alignment-y");
-        if (alignmentYForce) {
-            alignmentYForce
-                .y((nodeValue) => resolveAlignmentTargetY(nodeValue))
-                .strength(layoutSettings.mode === "free" ? 0 : clampLayoutStrength(0.03 * layoutSettings.clustering));
-        }
-
-        const semanticLinkForce = simulation.force("semantic-link");
-        if (semanticLinkForce) {
-            semanticLinkForce
-                .links(layoutSettings.similarity <= 0 ? [] : buildSemanticSimilarityLinks(activeNodeValues))
-                .distance((linkValue) => 34 + (4 - Math.min(linkValue.weight, 4)) * 12 * layoutSettings.spacing)
-                .strength((linkValue) => clampLayoutStrength((linkValue.weight / 16) * layoutSettings.similarity));
-        }
+        d3.selectAll("#legend input[type='checkbox']").property("indeterminate", false);
+        allNodeKinds.forEach((kindValue) => {
+            d3.select(\`#filter-node-\${kindValue}\`).property("checked", defaultEnabledNodeKinds.includes(kindValue));
+        });
+        edgeTypes.forEach((edgeTypeValue) => {
+            d3.select(\`#filter-edge-\${edgeTypeValue}\`).property("checked", true);
+        });
+        syncGroupCheckboxState(resourceCheckbox, resourceTypesPresent);
+        syncGroupCheckboxState(enumCheckbox, enumTypesPresent);
     }
 
-    function updateLayoutSettingsFromControls() {
-        layoutSettings.spacing = parseLayoutNumber(layoutSpacingInput, 1);
-        layoutSettings.repulsion = parseLayoutNumber(layoutRepulsionInput, 1);
-        layoutSettings.clustering = parseLayoutNumber(layoutClusteringInput, 0);
-        layoutSettings.similarity = parseLayoutNumber(layoutSimilarityInput, 0);
-        layoutSettings.mode = layoutModeInput.property("value");
-        updateLayoutControlLabels();
-        applyLayoutForces();
-        simulation.alpha(0.3).restart();
-    }
-
-    layoutSpacingInput.on("input", updateLayoutSettingsFromControls);
-    layoutRepulsionInput.on("input", updateLayoutSettingsFromControls);
-    layoutClusteringInput.on("input", updateLayoutSettingsFromControls);
-    layoutSimilarityInput.on("input", updateLayoutSettingsFromControls);
-    layoutModeInput.on("change", updateLayoutSettingsFromControls);
-    updateLayoutControlLabels();
-    applyLayoutForces();
+    d3.select("#reset-default").on("click", () => {
+       svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
+       resetGraphStateToDefaults();
+       updateGraph();
+    });
 
     function updateGraph() {
         const validNodeIds = new Set(nodesRaw.filter(n => activeNodeFilters.has(n.kind)).map(n => n.id));
@@ -788,14 +557,12 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
             return activeFilters.has(l.type) && validNodeIds.has(sid) && validNodeIds.has(tid);
         });
         
-        // Find visible nodes
         const activeNodeIds = new Set(validNodeIds);
         filteredLinks.forEach(l => {
             activeNodeIds.add(typeof l.source === 'object' ? l.source.id : l.source);
             activeNodeIds.add(typeof l.target === 'object' ? l.target.id : l.target);
         });
         
-        // Keep nodes that match search even if isolated (and their kind is checked)
         nodesRaw.forEach(n => {
             if (searchHighlightNodeIds.has(n.id) && activeNodeFilters.has(n.kind)) {
                 activeNodeIds.add(n.id);
@@ -805,7 +572,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         const filteredNodes = nodesRaw.filter(n => activeNodeIds.has(n.id) && activeNodeFilters.has(n.kind));
         const graphLinks = filteredLinks;
         
-        // Update links
         link = link.data(graphLinks, d => {
             const sid = typeof d.source === 'object' ? d.source.id : d.source;
             const tid = typeof d.target === 'object' ? d.target.id : d.target;
@@ -824,7 +590,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
             
         link = linkEnter.merge(link);
         
-        // Update nodes
         nodeGroup = nodeGroup.data(filteredNodes, d => d.id);
         nodeGroup.exit().remove();
         
@@ -834,7 +599,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
                 .on("drag", dragged)
                 .on("end", dragended));
                 
-        // Add shapes
         nodeEnter.append("path")
             .attr("class", d => \`node node-\${d.kind} \${d.graphId === 'toolset' ? 'toolset' : ''}\`)
             .attr("d", d => {
@@ -854,19 +618,16 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
             .on("click", handleNodeClick)
             .on("dblclick", handleNodeDblClick);
             
-        // Add labels
         nodeEnter.append("text")
             .attr("dx", 12)
             .attr("dy", ".35em")
             .text(d => d.displayName)
-            .style("display", "none"); // Hidden by default based on zoom
+            .style("display", "none");
             
         nodeGroup = nodeEnter.merge(nodeGroup);
-        
         node = nodeGroup.select("path.node");
         nodeLabels = nodeGroup.select("text");
         
-        // Re-assign classes based on kind
         node.attr("class", d => {
             let k = "default";
             if (nodeVisualStyleByKind.has(d.kind)) {
@@ -875,10 +636,8 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
             return \`node node-\${k} \${d.graphId === 'toolset' ? 'toolset' : ''}\`;
         });
         
-        // Restart simulation
         simulation.nodes(filteredNodes).on("tick", ticked);
         simulation.force("link").links(graphLinks);
-        applyLayoutForces(filteredNodes);
         simulation.alpha(0.3).restart();
         
         applyHighlights();
@@ -888,7 +647,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         link.attr("d", d => {
             const dx = d.target.x - d.source.x;
             const dy = d.target.y - d.source.y;
-            // Provide faint curve for non-calls
             if(d.type === 'references' || d.type === 'contains') {
                  const dr = Math.sqrt(dx * dx + dy * dy);
                  return \`M\${d.source.x},\${d.source.y}A\${dr},\${dr} 0 0,1 \${d.target.x},\${d.target.y}\`;
@@ -899,7 +657,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         nodeGroup.attr("transform", d => \`translate(\${d.x},\${d.y})\`);
     }
     
-    // Interactions
     function dragstarted(event, d) {
         if (!event.active) simulation.alphaTarget(0.3).restart();
         d.fx = d.x;
@@ -911,13 +668,11 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     }
     function dragended(event, d) {
         if (!event.active) simulation.alphaTarget(0);
-        // keep pinned if fx/fy exist
     }
     
     function renderTooltip(event, d) {
         const inC = incomingCount.get(d.id) || 0;
         const outC = outgoingCount.get(d.id) || 0;
-        
         let sub = d.summary || "";
         if (sub.length > 200) sub = sub.substring(0, 197) + "...";
         
@@ -998,7 +753,6 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
     }
     
     function handleNodeDblClick(event, d) {
-        // Toggle pin
         event.stopPropagation();
         if (d.fx == null) {
             d.fx = d.x;
@@ -1021,11 +775,10 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         applyHighlights();
     }
     
-    // Search
     d3.select("#search").on("input", function() {
         const term = this.value.toLowerCase().trim();
         searchHighlightNodeIds.clear();
-        focusNodeId = null; // clear focus on search
+        focusNodeId = null;
         hideTooltip();
         
         if (term.length > 0) {
@@ -1089,24 +842,29 @@ export function renderGraphVisualizationHtml(dataJson: string, title: string, is
         }
     });
 
-    // Initial render
     updateGraph();
 
     if (IS_SERVER_MODE) {
         d3.select("#regenerate").on("click", async () => {
             const btn = d3.select("#regenerate");
-            btn.text("Regenerating...").attr("disabled", "true");
+            btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Regenerating…</span></span>');
             try {
                 const res = await fetch("/api/reindex", { method: "POST" });
                 if (res.ok) {
-                    window.location.reload();
+                    const payload = await res.json();
+                    if (payload.changed === true) {
+                        window.location.reload();
+                        return;
+                    }
+                    btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Regenerate</span></span>');
                 } else {
-                    console.error("Reindex failed", await res.text());
-                    btn.text("Failed").attr("disabled", null);
+                    const responseText = await res.text();
+                    console.error("Reindex failed", responseText);
+                    btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Failed</span></span>');
                 }
             } catch (err) {
                 console.error(err);
-                btn.text("Error").attr("disabled", null);
+                btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Error</span></span>');
             }
         });
     }

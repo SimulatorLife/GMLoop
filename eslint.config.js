@@ -200,6 +200,7 @@ const tsConfig = defineConfig({
             { type: "test", pattern: "src/**/test/**" }, // Put tests first to avoid matching other types
             { type: "integration", pattern: "test/**" }, // Root-level integration tests
             { type: "core", pattern: "src/core/**" },
+            { type: "ui", pattern: "src/ui/**" },
             { type: "parser", pattern: "src/parser/**" },
             { type: "parser-generated", pattern: "src/parser/generated/**" },
             { type: "transpiler", pattern: "src/transpiler/**" },
@@ -485,6 +486,7 @@ const tsConfig = defineConfig({
                             "semantic",
                             "plugin",
                             "lint",
+                            "ui",
                             "fixture-runner",
                             "refactor",
                             "runtime-wrapper",
@@ -526,6 +528,10 @@ const tsConfig = defineConfig({
                         allow: ["core", "parser", "lint", "fixture-runner"]
                     },
                     {
+                        from: "ui",
+                        allow: ["ui"]
+                    },
+                    {
                         from: "fixture-runner",
                         allow: ["core", "fixture-runner"]
                     },
@@ -560,6 +566,7 @@ const tsConfig = defineConfig({
                             "runtime-wrapper",
                             "plugin",
                             "lint",
+                            "ui",
                             "refactor",
                             "cli"
                         ]

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderGraphVisualizationHtml } from "../src/commands/graph-visualize-template.js";
+import { renderGraphVisualizationHtml } from "../src/graph/graph-visualization-template.js";
 
 type EmbeddedEdgeLineVisualStyle = Readonly<{
     color: string;
@@ -103,48 +103,87 @@ void test("graph visualization template exposes view and label toggles", () => {
     assert.match(html, /activeView = "visual"/);
 });
 
-void test("graph visualization template exposes layout controls for spacing, repulsion, clustering, similarity, and alignment", () => {
-    const html = renderEmptyGraphVisualizationHtml("Layout Controls Test");
+void test("graph visualization template omits unstable layout controls and alternate forces", () => {
+    const html = renderEmptyGraphVisualizationHtml("Layout Simplification Test");
 
-    assert.match(html, /id="layout-spacing"/);
-    assert.match(html, /id="layout-repulsion"/);
-    assert.match(html, /id="layout-clustering"/);
-    assert.match(html, /id="layout-similarity"/);
-    assert.match(html, /id="layout-mode"/);
-    assert.match(html, /<option value="semantic">By Semantics<\/option>/);
-    assert.match(html, /<option value="kind">By Kind<\/option>/);
-    assert.match(html, /<option value="graph">By Graph<\/option>/);
-    assert.match(html, /<option value="radial">Radial<\/option>/);
-});
-
-void test("graph visualization template wires layout-only forces without changing edge data", () => {
-    const html = renderEmptyGraphVisualizationHtml("Layout Force Test");
-
-    assert.match(html, /clustering: 0,/);
-    assert.match(html, /similarity: 0,/);
-    assert.match(html, /const layoutSettings = \{/);
-    assert.match(html, /force\("alignment-x", d3\.forceX\(width \/ 2\)\.strength\(0\)\)/);
-    assert.match(html, /force\("alignment-y", d3\.forceY\(height \/ 2\)\.strength\(0\)\)/);
+    assert.doesNotMatch(html, /id="layout-spacing"/);
+    assert.doesNotMatch(html, /id="layout-repulsion"/);
+    assert.doesNotMatch(html, /id="layout-clustering"/);
+    assert.doesNotMatch(html, /id="layout-similarity"/);
+    assert.doesNotMatch(html, /id="layout-mode"/);
+    assert.doesNotMatch(html, /layoutSettings/u);
+    assert.doesNotMatch(html, /applyLayoutForces/u);
+    assert.doesNotMatch(html, /alignment-x/u);
+    assert.doesNotMatch(html, /alignment-y/u);
+    assert.doesNotMatch(html, /semantic-link/u);
+    assert.doesNotMatch(html, /buildSemanticSimilarityLinks/u);
+    assert.doesNotMatch(html, /tokenizeSemanticDescriptor/u);
+    assert.doesNotMatch(html, /measureSemanticSimilarity/u);
+    assert.match(html, /\.force\("link", d3\.forceLink\(\)\.id\(d => d\.id\)\.distance\(50\)\)/);
+    assert.match(html, /\.force\("charge", d3\.forceManyBody\(\)\.strength\(-100\)\)/);
+    assert.match(html, /\.force\("center", d3\.forceCenter\(width \/ 2, height \/ 2\)\)/);
     assert.match(
         html,
-        /force\("semantic-link", d3\.forceLink\(\[\]\)\.id\(d => d\.id\)\.distance\(35\)\.strength\(0\)\)/
+        /\.force\("collide", d3\.forceCollide\(\)\.radius\(d => getRadius\(d\) \+ 5\)\.iterations\(2\)\)/
     );
     assert.match(html, /\.alphaDecay\(0\.02\)/);
     assert.match(html, /\.velocityDecay\(0\.3\)/);
-    assert.match(html, /function buildSemanticSimilarityLinks\(nodeValues\)/);
-    assert.match(html, /function applyLayoutForces\(activeNodeValues = nodesRaw\)/);
-    assert.match(html, /layoutSpacingInput\.on\("input", updateLayoutSettingsFromControls\)/);
-    assert.match(html, /layoutModeInput\.on\("change", updateLayoutSettingsFromControls\)/);
     assert.match(html, /simulation\.force\("link"\)\.links\(graphLinks\)/);
-    assert.match(html, /buildSemanticSimilarityLinks\(activeNodeValues\)/);
-    assert.match(html, /applyLayoutForces\(filteredNodes\)/);
-    assert.match(html, /\.distance\(\(\) => 50 \* layoutSettings\.spacing\)/);
-    assert.match(html, /getRadius\(nodeValue\) \+ 5 \+ Math\.max\(0, layoutSettings\.spacing - 1\) \* 4/);
-    assert.match(html, /layoutSettings\.similarity <= 0 \? \[\] : buildSemanticSimilarityLinks\(activeNodeValues\)/);
     assert.match(html, /simulation\.alpha\(0\.3\)\.restart\(\)/);
     assert.match(html, /simulation\.alphaTarget\(0\.3\)\.restart\(\)/);
-    assert.match(html, /source: sourceNode/);
-    assert.match(html, /target: targetNode/);
+});
+
+void test("graph visualization reset rebuilds the live simulation state from the original exported graph", () => {
+    const html = renderEmptyGraphVisualizationHtml("Reset Test");
+
+    assert.match(html, /function cloneGraphNodes\(\)/);
+    assert.match(html, /function cloneGraphEdges\(\)/);
+    assert.match(html, /function resetGraphStateToDefaults\(\)/);
+    assert.match(html, /nodesRaw = cloneGraphNodes\(\);/);
+    assert.match(html, /linksRaw = cloneGraphEdges\(\);/);
+    assert.match(html, /activeFilters = new Set\(edgeTypes\);/);
+    assert.match(html, /activeNodeFilters = new Set\(defaultEnabledNodeKinds\);/);
+    assert.match(html, /searchHighlightNodeIds\.clear\(\);/);
+    assert.match(html, /focusNodeId = null;/);
+    assert.match(html, /pinnedTooltipNodeId = null;/);
+    assert.match(html, /hideTooltip\(\);/);
+    assert.match(html, /searchInput\.value = "";/);
+    assert.match(html, /d3\.select\("#reset-default"\)\.on\("click", \(\) => \{/);
+    assert.match(html, /resetGraphStateToDefaults\(\);/);
+    assert.match(html, /updateGraph\(\);/);
+});
+
+void test("graph visualization server mode keeps the current view live while regenerate runs and only reloads on changed data", () => {
+    const html = renderGraphVisualizationHtml(
+        JSON.stringify({
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            edges: [],
+            nodes: [],
+            projectRoot: "/tmp/project"
+        }),
+        "Server Regenerate Test",
+        true
+    );
+
+    assert.match(html, /id="regenerate"/);
+    assert.match(html, /class="button-content"/);
+    assert.match(html, /class="button-label">Regenerate<\/span>/);
+    assert.match(html, /\.button-spinner/);
+    assert.match(html, /@keyframes graph-button-spin/);
+    assert.match(html, /button:disabled \{ cursor: wait; opacity: 0\.8; \}/);
+    assert.match(html, /fetch\("\/api\/reindex", \{ method: "POST" \}\)/);
+    assert.match(html, /btn\.attr\("disabled", "true"\)/);
+    assert.match(html, /button-spinner/);
+    assert.match(html, /Regenerating…/u);
+    assert.match(html, /const payload = await res\.json\(\);/);
+    assert.match(html, /if \(payload\.changed === true\) \{/);
+    assert.match(html, /window\.location\.reload\(\);/);
+    assert.match(
+        html,
+        /btn\.attr\("disabled", null\)\.html\('<span class="button-content"><span class="button-label">Regenerate<\/span><\/span>'\);/
+    );
+    assert.match(html, /console\.error\("Reindex failed", responseText\);/);
 });
 
 void test("graph visualization template keeps tooltip interactive for text selection", () => {
@@ -258,158 +297,4 @@ void test("graph visualization template relies on semantic project nodes instead
     assert.doesNotMatch(html, /project::center/);
     assert.doesNotMatch(html, /Project root node/);
     assert.match(html, /InterplanetaryFootball/);
-});
-
-void test("graph visualization template hides fallback resource nodes from the legend while keeping other node kinds filterable", () => {
-    const html = renderGraphVisualizationHtml(
-        JSON.stringify({
-            generatedAt: "2026-01-01T00:00:00.000Z",
-            graphs: [],
-            edges: [],
-            nodes: [
-                {
-                    displayName: "Player",
-                    graphId: "project",
-                    id: "struct",
-                    kind: "struct",
-                    name: "Player",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "health",
-                    graphId: "project",
-                    id: "struct-variable",
-                    kind: "struct_variable",
-                    name: "health",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "speed_bonus",
-                    graphId: "project",
-                    id: "instance-variable",
-                    kind: "instance_variable",
-                    name: "speed_bonus",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "local_value",
-                    graphId: "project",
-                    id: "local-variable",
-                    kind: "local_variable",
-                    name: "local_value",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "State.Idle",
-                    graphId: "project",
-                    id: "enum-member",
-                    kind: "enum_member",
-                    name: "Idle",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "helper",
-                    graphId: "project",
-                    id: "function",
-                    kind: "function",
-                    name: "helper",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "snd_hit",
-                    graphId: "project",
-                    id: "sound",
-                    kind: "sound",
-                    name: "snd_hit",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "pth_patrol",
-                    graphId: "project",
-                    id: "path",
-                    kind: "path",
-                    name: "pth_patrol",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "seq_intro",
-                    graphId: "project",
-                    id: "sequence",
-                    kind: "sequence",
-                    name: "seq_intro",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "note_design",
-                    graphId: "project",
-                    id: "note",
-                    kind: "note",
-                    name: "note_design",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "ps_sparks",
-                    graphId: "project",
-                    id: "particle-system",
-                    kind: "particle_system",
-                    name: "ps_sparks",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "config",
-                    graphId: "project",
-                    id: "data-file",
-                    kind: "data_file",
-                    name: "config",
-                    snippet: "",
-                    summary: ""
-                },
-                {
-                    displayName: "mystery_resource",
-                    graphId: "project",
-                    id: "resource",
-                    kind: "resource",
-                    name: "mystery_resource",
-                    snippet: "",
-                    summary: ""
-                }
-            ],
-            projectRoot: "/tmp/project"
-        }),
-        "Filter Test"
-    );
-
-    assert.match(html, /const allNodes = DATA\.nodes\.filter\(\(nodeValue\) => nodeValue\.kind !== "file"\)/);
-    assert.match(html, /"sound"/);
-    assert.match(html, /"path"/);
-    assert.match(html, /"sequence"/);
-    assert.match(html, /"note"/);
-    assert.match(html, /"particle_system"/);
-    assert.match(html, /"struct_variable"/);
-    assert.match(html, /"instance_variable"/);
-    assert.match(html, /"local_variable"/);
-    assert.match(html, /"enum_member"/);
-    assert.match(html, /"function"/);
-    assert.match(html, /"data_file"/);
-    assert.doesNotMatch(html, /filter-node-resource/);
-    assert.match(html, /kindValue !== "resource"/);
-    assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"struct_variable"[\s\S]*\]\)/);
-    assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"instance_variable"[\s\S]*\]\)/);
-    assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"local_variable"[\s\S]*\]\)/);
-    assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"enum_member"[\s\S]*\]\)/);
-    assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"function"[\s\S]*\]\)/);
-    assert.match(html, /const defaultDisabledNodeKinds = new Set\(\[[\s\S]*"data_file"[\s\S]*\]\)/);
-    assert.match(html, /\.property\("checked", createInitialFilterCheckedState\(category, typeVal\)\)/);
-    assert.doesNotMatch(html, /\.attr\("checked", createInitialFilterCheckedState\(category, typeVal\)\)/);
 });
