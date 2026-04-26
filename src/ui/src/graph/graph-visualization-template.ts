@@ -1,13 +1,13 @@
 import { renderGraphVisualizationClientScript } from "./graph-visualization-client-script.js";
 import {
+    renderGraphVisualizationDocumentTitle,
+    serializeGraphVisualizationDataForInlineScript
+} from "./graph-visualization-inline-data.js";
+import {
     getEdgeLineColor,
     renderEdgeLineCssRules,
     renderNodeFillCssRules
 } from "./graph-visualization-style-metadata.js";
-import {
-    renderGraphVisualizationDocumentTitle,
-    serializeGraphVisualizationDataForInlineScript
-} from "./graph-visualization-inline-data.js";
 import type { GraphVisualizationData, GraphVisualizationRenderOptions } from "./types.js";
 
 /**
