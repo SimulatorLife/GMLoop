@@ -56,6 +56,7 @@ async function createDualRootFixture(): Promise<{
 }
 
 const SHARED_TOOLSET_SCRIPT_NODE_ID = "toolset::resource::scripts/shared_toolset_fn/shared_toolset_fn.yy";
+const PLAYER_UPDATE_SCRIPT_RESOURCE_NODE_ID = "project::resource::scripts/player_update/player_update.yy";
 
 void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edges", async () => {
     const fixture = await createDualRootFixture();
@@ -96,8 +97,7 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
             assert.ok(
                 edgeRows.some(
                     (entry) =>
-                        entry.fromId ===
-                            "project::gml/function/function:scripts/player_update/player_update.gml::1:9:9" &&
+                        entry.fromId === PLAYER_UPDATE_SCRIPT_RESOURCE_NODE_ID &&
                         entry.toId === SHARED_TOOLSET_SCRIPT_NODE_ID
                 )
             );
@@ -409,10 +409,7 @@ void test("graph usages return incoming usage records with source and target nod
             toolsetRoot: fixture.toolsetRoot
         });
 
-        assert.equal(
-            usages[0]?.from.id,
-            "project::gml/function/function:scripts/player_update/player_update.gml::1:9:9"
-        );
+        assert.equal(usages[0]?.from.id, PLAYER_UPDATE_SCRIPT_RESOURCE_NODE_ID);
         assert.equal(usages[0]?.to.id, SHARED_TOOLSET_SCRIPT_NODE_ID);
     } finally {
         await fixture.cleanup();
@@ -890,8 +887,13 @@ void test("buildGraphIndex connects function call edges for script-local and obj
                 .all() as Array<{ fromId: string; toId: string; type: string }>;
 
             assert.ok(
-                callEdges.some((edge) => edge.fromId === graphFunctionsNode.id && edge.toId === helperNode.id),
-                "expected the top-level function node to call the helper function node"
+                callEdges.some(
+                    (edge) =>
+                        (edge.fromId === graphFunctionsNode.id ||
+                            edge.fromId === "project::resource::scripts/graph_functions/graph_functions.yy") &&
+                        edge.toId === helperNode.id
+                ),
+                "expected the top-level script owner to call the helper function node"
             );
             assert.ok(
                 callEdges.some((edge) => edge.fromId !== localHelperNode.id && edge.toId === localHelperNode.id),
@@ -970,10 +972,10 @@ void test("buildGraphIndex connects global variables to their defining and refer
             assert.ok(
                 edges.some(
                     (edge) =>
-                        edge.fromId === "project::file::scripts/configure_globals/configure_globals.gml" &&
+                        edge.fromId === "project::resource::scripts/configure_globals/configure_globals.yy" &&
                         edge.type === "defines"
                 ),
-                "expected the global variable node to stay connected to its defining file"
+                "expected the global variable node to stay connected to its defining script resource"
             );
             assert.ok(
                 edges.some(
@@ -990,6 +992,23 @@ void test("buildGraphIndex connects global variables to their defining and refer
                         edge.fromId !== "project::file::scripts/configure_globals/configure_globals.gml"
                 ),
                 "expected at least one visible owner to reference the global variable node"
+            );
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const visibleNodeIds = new Set(
+                visualizationData.nodes.filter((node) => node.kind !== "file").map((node) => node.id)
+            );
+            const visibleGlobalEdges = visualizationData.edges.filter(
+                (edge) =>
+                    visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target) && edge.target === globalNode.id
+            );
+            assert.ok(
+                visibleGlobalEdges.some(
+                    (edge) =>
+                        edge.source === "project::resource::scripts/configure_globals/configure_globals.yy" &&
+                        edge.type === "defines"
+                ),
+                "expected top-level global declarations to remain visibly connected without file nodes"
             );
         } finally {
             database.close();

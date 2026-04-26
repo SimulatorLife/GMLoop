@@ -339,21 +339,6 @@ function findEnclosingCallableNodeId(
     return candidates[0]?.id ?? null;
 }
 
-function findPrimaryFunctionNodeForFile(
-    context: ProjectionContext,
-    filePath: string | null,
-    scriptName: string | null
-): string | null {
-    if (!filePath || !scriptName) {
-        return null;
-    }
-
-    const functionNode = context.nodeRecords.find(
-        (node) => node.kind === "function" && node.filePath === filePath && node.name === scriptName
-    );
-    return functionNode?.id ?? null;
-}
-
 function findFunctionNodeByNameInFile(
     context: ProjectionContext,
     filePath: string | null,
@@ -367,6 +352,18 @@ function findFunctionNodeByNameInFile(
         (node) => node.kind === "function" && node.filePath === filePath && node.name === functionName
     );
     return matches.length === 1 ? (matches[0]?.id ?? null) : null;
+}
+
+function findPrimaryFunctionNodeForFile(
+    context: ProjectionContext,
+    filePath: string | null,
+    scriptName: string | null
+): string | null {
+    if (!filePath || !scriptName) {
+        return null;
+    }
+
+    return findFunctionNodeByNameInFile(context, filePath, scriptName);
 }
 
 function resolveScopedFileOwnerNodeId(
@@ -385,12 +382,11 @@ function resolveScopedFileOwnerNodeId(
         const scopedNodeId = context.nodeIdsByScopeId.get(scopeId);
         if (scopedNodeId) {
             const scopedNode = context.nodeRecords.find((node) => node.id === scopedNodeId) ?? null;
-            const primaryFunctionNodeId =
-                scopedNode?.kind === "script"
-                    ? findPrimaryFunctionNodeForFile(context, filePath, scopedNode.name)
-                    : null;
-            if (primaryFunctionNodeId) {
-                return primaryFunctionNodeId;
+            if (scopedNode?.kind === "script" && locationLine === null) {
+                const primaryFunctionNodeId = findPrimaryFunctionNodeForFile(context, filePath, scopedNode.name);
+                if (primaryFunctionNodeId) {
+                    return primaryFunctionNodeId;
+                }
             }
             if (scopedNode && !scopedNode.kind.endsWith("_variable")) {
                 return scopedNodeId;
@@ -410,6 +406,24 @@ function resolveCallerNodeId(
     const callLocationLine = readLocationLine(asRecord(asRecord(callRecord.location).start));
     const callerFilePath = getString(asRecord(callRecord.from).filePath) ?? relativePath;
     const callerScopeId = getString(asRecord(callRecord.from).scopeId);
+    if (callerScopeId === null && callLocationLine === null) {
+        const callerResourcePath = resolveResourcePathForFile(context, callerFilePath);
+        const callerScriptNode =
+            callerResourcePath === null
+                ? null
+                : (context.nodeRecords.find(
+                      (node) =>
+                          node.kind === "script" && node.resourcePath === callerResourcePath && node.scipSymbol !== null
+                  ) ?? null);
+        const primaryFunctionNodeId = findPrimaryFunctionNodeForFile(
+            context,
+            callerFilePath,
+            callerScriptNode?.name ?? null
+        );
+        if (primaryFunctionNodeId) {
+            return primaryFunctionNodeId;
+        }
+    }
     return resolveScopedFileOwnerNodeId(context, callerFilePath, callerFileNodeId, callerScopeId, callLocationLine);
 }
 
