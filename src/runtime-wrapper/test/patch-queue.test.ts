@@ -413,6 +413,55 @@ void test("patch queue handles duplicate dependency entries when reordering batc
     }
 });
 
+void test("patch queue preserves invalid payloads when dependency reordering is considered", async () => {
+    let receivedBatchLength = 0;
+
+    const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
+        patchQueue: {
+            flushIntervalMs: 1000
+        },
+        wrapperMutator: (wrapper) => ({
+            ...wrapper,
+            applyPatchBatch: (patches) => {
+                receivedBatchLength = patches.length;
+                return {
+                    success: true,
+                    version: wrapper.getVersion(),
+                    appliedCount: patches.length,
+                    rolledBack: false
+                };
+            }
+        })
+    });
+
+    try {
+        sendScriptPatchWithDependencies(ws, "gml/script/dependent_with_invalid_payload", [
+            "gml/script/provider_for_invalid"
+        ]);
+        sendScriptPatch(ws, "gml/script/provider_for_invalid", "return 42;");
+        ws.simulateMessage(JSON.stringify({ kind: "script", js_body: "return 0;" }));
+
+        const flushedCount = client.flushPatchQueue();
+        assert.strictEqual(flushedCount, 3);
+
+        await waitForQueueMetrics(
+            client,
+            "queue metrics to report all three flushed patches",
+            (snapshot) => snapshot.totalFlushed >= 3 && snapshot.flushCount >= 1,
+            150
+        );
+
+        assert.strictEqual(
+            receivedBatchLength,
+            3,
+            "Dependency reordering must not drop invalid payloads from the batch"
+        );
+    } finally {
+        client.disconnect();
+        restoreRuntimeGlobals();
+    }
+});
+
 void test("patch queue applies long dependency chains from reverse receive order", async () => {
     const { wrapper, client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
         patchQueue: {
