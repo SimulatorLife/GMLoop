@@ -16,7 +16,7 @@ import { readFile } from "node:fs/promises";
 
 import { Core } from "@gmloop/core";
 
-import { normalizeExtensions } from "../../workflow/extension-normalizer.js";
+import { normalizeExtensions } from "./extension-normalizer.js";
 
 const { clamp, getLineBreakCount } = Core;
 
