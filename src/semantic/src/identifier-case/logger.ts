@@ -2,38 +2,50 @@ import { Core } from "@gmloop/core";
 
 const DEFAULT_WARNING_FALLBACK = "Unknown error";
 
-function resolveWarningReason(candidates, fallback = DEFAULT_WARNING_FALLBACK) {
-    const stack = [];
-    for (let i = candidates.length - 1; i >= 0; i--) {
-        stack.push(candidates[i]);
+type WarningLogger = Readonly<{
+    warn?: (message: string) => void;
+}>;
+
+function resolveWarningReason(
+    warningCandidates: ReadonlyArray<unknown>,
+    fallbackMessage: string = DEFAULT_WARNING_FALLBACK
+): string {
+    const pendingCandidates: Array<unknown> = [];
+    for (let index = warningCandidates.length - 1; index >= 0; index -= 1) {
+        pendingCandidates.push(warningCandidates[index]);
     }
 
-    while (stack.length > 0) {
-        const candidate = stack.pop();
+    while (pendingCandidates.length > 0) {
+        const warningCandidate = pendingCandidates.pop();
 
-        if (Array.isArray(candidate)) {
-            for (let index = candidate.length - 1; index >= 0; index -= 1) {
-                stack.push(candidate[index]);
+        if (Array.isArray(warningCandidate)) {
+            for (let index = warningCandidate.length - 1; index >= 0; index -= 1) {
+                pendingCandidates.push(warningCandidate[index]);
             }
             continue;
         }
 
-        const reason = Core.getErrorMessage(candidate, { fallback: "" });
-        if (reason) {
+        const reason = Core.getErrorMessage(warningCandidate, { fallback: "" });
+        if (reason.length > 0) {
             return reason;
         }
     }
 
-    return fallback;
+    return fallbackMessage;
 }
 
-export function warnWithReason(logger, namespace, message, ...candidates) {
+export function warnWithReason(
+    logger: WarningLogger | null | undefined,
+    namespace: string,
+    message: string,
+    ...warningCandidates: ReadonlyArray<unknown>
+): void {
     if (typeof logger?.warn !== "function") {
         return;
     }
 
-    const reason = resolveWarningReason(candidates);
-    const suffix = reason ? `: ${reason}` : "";
+    const reason = resolveWarningReason(warningCandidates);
+    const suffix = reason.length > 0 ? `: ${reason}` : "";
 
     logger.warn(`[${namespace}] ${message}${suffix}`);
 }
