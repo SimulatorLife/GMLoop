@@ -55,6 +55,8 @@ async function createDualRootFixture(): Promise<{
     };
 }
 
+const SHARED_TOOLSET_SCRIPT_NODE_ID = "toolset::resource::scripts/shared_toolset_fn/shared_toolset_fn.yy";
+
 void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edges", async () => {
     const fixture = await createDualRootFixture();
 
@@ -69,15 +71,15 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
             query: "shared_toolset_fn",
             toolsetRoot: fixture.toolsetRoot
         });
-        assert.equal(search.results[0]?.id, "toolset::gml/script/shared_toolset_fn");
+        assert.equal(search.results[0]?.id, SHARED_TOOLSET_SCRIPT_NODE_ID);
 
         const context = getGraphContext({
-            nodeId: "toolset::gml/script/shared_toolset_fn",
+            nodeId: SHARED_TOOLSET_SCRIPT_NODE_ID,
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
         assert.ok(context);
-        assert.equal(context?.target.id, "toolset::gml/script/shared_toolset_fn");
+        assert.equal(context?.target.id, SHARED_TOOLSET_SCRIPT_NODE_ID);
         assert.ok((context?.summary.length ?? 0) > 0);
 
         const database = openGraphIndexDatabase(result.databasePath);
@@ -96,7 +98,7 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
                     (entry) =>
                         entry.fromId ===
                             "project::gml/function/function:scripts/player_update/player_update.gml::1:9:9" &&
-                        entry.toId === "toolset::gml/script/shared_toolset_fn"
+                        entry.toId === SHARED_TOOLSET_SCRIPT_NODE_ID
                 )
             );
         } finally {
@@ -402,7 +404,7 @@ void test("graph usages return incoming usage records with source and target nod
         });
 
         const usages = getGraphUsages({
-            nodeId: "toolset::gml/script/shared_toolset_fn",
+            nodeId: SHARED_TOOLSET_SCRIPT_NODE_ID,
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
@@ -411,7 +413,7 @@ void test("graph usages return incoming usage records with source and target nod
             usages[0]?.from.id,
             "project::gml/function/function:scripts/player_update/player_update.gml::1:9:9"
         );
-        assert.equal(usages[0]?.to.id, "toolset::gml/script/shared_toolset_fn");
+        assert.equal(usages[0]?.to.id, SHARED_TOOLSET_SCRIPT_NODE_ID);
     } finally {
         await fixture.cleanup();
     }
@@ -610,11 +612,19 @@ void test("buildGraphIndex connects macro, global, and local variable symbols to
 
             for (const node of [macroNode, globalNode, localNode]) {
                 const incomingEdges = database
-                    .prepare("SELECT from_id AS fromId, type FROM edges WHERE to_id = ? ORDER BY from_id, type")
-                    .all(node.id) as Array<{ fromId: string; type: string }>;
+                    .prepare(
+                        `
+                            SELECT edges.from_id AS fromId, edges.type, nodes.kind AS fromKind
+                            FROM edges
+                            LEFT JOIN nodes ON nodes.id = edges.from_id
+                            WHERE edges.to_id = ?
+                            ORDER BY edges.from_id, edges.type
+                        `
+                    )
+                    .all(node.id) as Array<{ fromId: string; fromKind: string | null; type: string }>;
 
                 assert.ok(
-                    incomingEdges.some((edge) => edge.fromId.startsWith("project::gml/")),
+                    incomingEdges.some((edge) => edge.fromKind !== "file" && edge.fromId.startsWith("project::")),
                     `expected ${node.kind} ${node.name} to be connected from a visible semantic owner`
                 );
             }
@@ -943,12 +953,8 @@ void test("buildGraphIndex connects global variables to their defining and refer
             const globalNode = database
                 .prepare("SELECT id FROM nodes WHERE kind = 'global_variable' AND name = 'enemy_limit'")
                 .get() as { id: string } | undefined;
-            const configureFunctionNode = database
-                .prepare("SELECT id FROM nodes WHERE kind = 'function' AND name = 'configure_globals'")
-                .get() as { id: string } | undefined;
 
             assert.ok(globalNode);
-            assert.ok(configureFunctionNode);
 
             const edges = database
                 .prepare(
@@ -971,15 +977,19 @@ void test("buildGraphIndex connects global variables to their defining and refer
             );
             assert.ok(
                 edges.some(
-                    (edge) => edge.fromId === "project::gml/script/configure_globals" && edge.type === "references"
+                    (edge) =>
+                        edge.fromId === "project::resource::scripts/configure_globals/configure_globals.yy" &&
+                        edge.type === "references"
                 ),
                 "expected the owning script to reference the global variable node"
             );
             assert.ok(
                 edges.some(
-                    (edge) => edge.fromId === "project::gml/script/configure_globals" && edge.type === "references"
+                    (edge) =>
+                        edge.type === "references" &&
+                        edge.fromId !== "project::file::scripts/configure_globals/configure_globals.gml"
                 ),
-                "expected tracked global references to connect to the global variable node"
+                "expected at least one visible owner to reference the global variable node"
             );
         } finally {
             database.close();
@@ -1067,6 +1077,96 @@ void test("buildGraphIndex skips dangling edges from stale project references in
                 count: number;
             };
             assert.equal(danglingEdgeCount.count, 0);
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex merges script scope identifiers into the script resource node instead of creating duplicates", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-script-dedup-");
+
+    try {
+        await fixture.writeProjectFile(
+            "InterplanetaryFootball.yyp",
+            JSON.stringify({
+                name: "InterplanetaryFootball",
+                resourceType: "GMProject",
+                resources: [
+                    {
+                        id: {
+                            name: "macros",
+                            path: "scripts/macros/macros.yy"
+                        }
+                    }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "scripts/macros/macros.yy",
+            JSON.stringify({
+                name: "macros",
+                resourceType: "GMScript"
+            })
+        );
+        await fixture.writeProjectFile(
+            "scripts/macros/macros.gml",
+            ["/// @description Macro helpers.", "function macros() {", "    return 1;", "}", ""].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const scriptNodes = database
+                .prepare(
+                    `
+                        SELECT id, display_name AS displayName, resource_path AS resourcePath, scip_symbol AS scipSymbol
+                        FROM nodes
+                        WHERE kind = 'script'
+                        ORDER BY id
+                    `
+                )
+                .all() as Array<{
+                displayName: string;
+                id: string;
+                resourcePath: string | null;
+                scipSymbol: string | null;
+            }>;
+
+            assert.deepEqual(
+                scriptNodes.map((node) => ({
+                    displayName: node.displayName,
+                    id: node.id,
+                    resourcePath: node.resourcePath
+                })),
+                [
+                    {
+                        displayName: "macros",
+                        id: "project::resource::scripts/macros/macros.yy",
+                        resourcePath: "scripts/macros/macros.yy"
+                    }
+                ]
+            );
+            assert.equal(scriptNodes[0]?.scipSymbol, "gml/script/macros");
+
+            const duplicateScopeNodeCount = database
+                .prepare("SELECT COUNT(*) AS count FROM nodes WHERE kind = 'script' AND display_name = 'script.macros'")
+                .get() as {
+                count: number;
+            };
+            assert.equal(duplicateScopeNodeCount.count, 0);
         } finally {
             database.close();
         }
