@@ -1376,7 +1376,6 @@ export class RefactorEngine {
         const overlayByteSizeByPath = new Map<string, number>();
         const overlaySpillIndex = new Set<string>();
         const readThroughCache = new Map<string, string>();
-        const readThroughCacheOrder: Array<string> = [];
         const appliedFiles = new Map<string, string>();
         let overlayBytes = 0;
         let overlayHighWaterBytes = 0;
@@ -1392,19 +1391,22 @@ export class RefactorEngine {
                 : null;
 
         const cacheReadThroughContent = (filePath: string, content: string): void => {
+            // Maintain insertion order directly in the Map so we can evict the
+            // oldest key without paying Array#shift()'s O(n) copy cost whenever
+            // the read-through cache exceeds its entry limit.
             if (readThroughCache.has(filePath)) {
-                readThroughCache.set(filePath, content);
-                return;
+                readThroughCache.delete(filePath);
             }
 
             readThroughCache.set(filePath, content);
-            readThroughCacheOrder.push(filePath);
 
-            while (readThroughCacheOrder.length > CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES) {
-                const evictedFilePath = readThroughCacheOrder.shift();
-                if (evictedFilePath !== undefined) {
-                    readThroughCache.delete(evictedFilePath);
+            while (readThroughCache.size > CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES) {
+                const oldestEntry = readThroughCache.keys().next();
+                if (oldestEntry.done) {
+                    break;
                 }
+
+                readThroughCache.delete(oldestEntry.value);
             }
         };
 
