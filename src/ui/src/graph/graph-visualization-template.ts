@@ -223,7 +223,8 @@ export function renderGraphVisualizationHtml(
       </section>
     </main>
   </div>
-  <script>
+  <script type="module">
+import { fileOpen, directoryOpen } from "https://cdn.jsdelivr.net/npm/browser-fs-access@0.38.0/dist/index.js";
 window.__GMLOOP_DOCUMENTATION_CATALOGS__ = ${serializedDocumentationCatalogs};
 window.__GMLOOP_LOADED_TARGET__ = ${serializedLoadedTarget};
 window.__GMLOOP_PROJECT_CONFIGURATION__ = ${serializedProjectConfigurationCatalog};

@@ -1046,19 +1046,27 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
                 const btn = d3.select("#open-project");
                 btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Opening…</span></span>');
                 try {
-                    const res = await fetch("/api/open", { method: "POST" });
-                    if (res.ok) {
-                        const payload = await res.json();
-                        if (payload.changed === true) {
-                            window.location.reload();
+                    let targetName = "selected items";
+                    try {
+                        const directoryHandle = await directoryOpen({ recursive: false });
+                        targetName = directoryHandle.name || targetName;
+                    } catch (directoryError) {
+                        if (directoryError?.name === "AbortError") {
+                            btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Open...</span></span>');
                             return;
                         }
-                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Open...</span></span>');
-                    } else {
-                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Failed</span></span>');
+                        const fileHandle = await fileOpen({ multiple: false });
+                        targetName = fileHandle.name || targetName;
                     }
+
+                    const loadedTargetEl = document.getElementById("loaded-target");
+                    if (loadedTargetEl instanceof HTMLElement) {
+                        loadedTargetEl.textContent = "Active: " + targetName;
+                    }
+
+                    btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Open...</span></span>');
                 } catch (err) {
-                    console.error(err);
+                    console.error("File picker failed:", err);
                     btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Error</span></span>');
                 }
             });

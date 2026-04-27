@@ -16,10 +16,12 @@ export async function pickProjectTargetsWithNativeDialog(): Promise<NativeFilePi
     return await runNativeOpenPanel();
 }
 
+const OSASCRIPT_COMMAND = "/usr/bin/osascript";
+
 async function runNativeOpenPanel(): Promise<NativeFilePickerResult> {
     const script = buildOpenPanelScript();
     return await new Promise((resolve, reject) => {
-        execFile("osascript", ["-l", "JavaScript", "-e", script], (error, stdout, stderr) => {
+        execFile(OSASCRIPT_COMMAND, ["-e", script], { windowsHide: true }, (error, stdout, stderr) => {
             if (isAppleScriptCancel(error, stderr)) {
                 resolve(
                     Object.freeze({
@@ -52,25 +54,26 @@ async function runNativeOpenPanel(): Promise<NativeFilePickerResult> {
 
 function buildOpenPanelScript(): string {
     return `
-ObjC.import('AppKit');
+set promptText to "Select a GameMaker project folder, .yyp file, or .gml files"
 
-const panel = $.NSOpenPanel.openPanel;
-panel.setCanChooseFiles(true);
-panel.setCanChooseDirectories(true);
-panel.setAllowsMultipleSelection(true);
-panel.setCanCreateDirectories(false);
-panel.setPrompt('Open...');
-panel.setMessage('Select a GameMaker project folder, .yyp file, or .gml files');
+tell application "Finder"
+    activate
+end tell
 
-const response = panel.runModal();
-if (response !== $.NSModalResponseOK) {
-    throw new Error('-128');
-}
+set chosenItems to choose file or folder with prompt promptText with multiple selections allowed
 
-const selectedUrls = ObjC.deepUnwrap(panel.URLs);
-for (const selectedUrl of selectedUrls) {
-    console.log(selectedUrl.path);
-}
+set selectedPaths to {}
+if class of chosenItems is list then
+    repeat with chosenItem in chosenItems
+        set end of selectedPaths to POSIX path of chosenItem
+    end repeat
+else
+    set end of selectedPaths to POSIX path of chosenItems
+end if
+
+set AppleScript's text item delimiters to "\n"
+set chosenResult to selectedPaths as string
+return chosenResult
 `;
 }
 
