@@ -118,13 +118,6 @@ async function ensureGraphIndexForQuery(
     }
 }
 
-async function ensureGraphIndexForVisualizationTarget(
-    options: GraphCommandSharedOptions,
-    context: GraphResolutionContext
-): Promise<void> {
-    await ensureGraphIndexForQuery({ ...options, force: false }, context);
-}
-
 function createGraphEnvelope<TPayload>(
     command: string,
     context: GraphResolutionContext,
@@ -317,7 +310,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     const initialSelectedPath = resolveExplicitWorkflowTargetPath(options.path);
     let activeContext: GraphResolutionContext | null = null;
     let activeSelectedPaths = initialSelectedPath ? [initialSelectedPath] : [];
-    let activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
+    const activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
 
     if (options.serve === true) {
         if (initialSelectedPath) {
@@ -393,45 +386,6 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         } catch {
             return "";
         }
-    }
-
-    async function resolveGraphContextFromTargetPath(targetPath: string): Promise<GraphResolutionContext> {
-        const projectRoot = await discoverProjectRoot({
-            configPath: options.config,
-            explicitProjectPath: targetPath
-        });
-
-        return Object.freeze({
-            projectConfig: await loadOptionalProjectConfig(projectRoot, options.config),
-            projectRoot
-        });
-    }
-
-    async function reloadServerTarget(selection: {
-        selectedPaths: ReadonlyArray<string>;
-        source: GraphServeSource;
-    }): Promise<Readonly<{ changed: boolean }>> {
-        const normalizedSelectedPaths = selection.selectedPaths
-            .map((selectedPathValue) => selectedPathValue.trim())
-            .filter((selectedPathValue) => selectedPathValue.length > 0);
-        if (normalizedSelectedPaths.length === 0) {
-            return Object.freeze({ changed: false });
-        }
-
-        const previousPayload = JSON.stringify(exportVisualizationPayload());
-        const previousLoadedTarget = createLoadedTarget();
-        const nextTargetPath = normalizedSelectedPaths[0];
-        const nextContext = await resolveGraphContextFromTargetPath(nextTargetPath);
-        await ensureGraphIndexForVisualizationTarget(options, nextContext);
-
-        activeContext = nextContext;
-        activeSelectedPaths = normalizedSelectedPaths;
-        activeSource = selection.source;
-
-        const nextPayload = JSON.stringify(exportVisualizationPayload());
-        const nextLoadedTarget = createLoadedTarget();
-        const metadataChanged = JSON.stringify(previousLoadedTarget) !== JSON.stringify(nextLoadedTarget);
-        return Object.freeze({ changed: metadataChanged || previousPayload !== nextPayload });
     }
 
     if (options.serve === true) {
