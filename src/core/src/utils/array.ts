@@ -229,38 +229,16 @@ export function uniqueArray(values, { freeze = false } = {}) {
  * @returns {Array<T> | ReadonlyArray<T>}
  */
 export function compactArray(values?, { freeze = false } = {}) {
-    // Fast path: handle arrays directly without intermediate copy. This avoids
-    // the allocation and iteration overhead of toArrayFromIterable's spread
-    // operator, which would traverse the array once to copy it, then again to
-    // filter it. Benchmarked at ~34% faster than the previous implementation.
-    // The performance gain matters in hot paths like comment attachment and AST
-    // traversal where compactArray may be called thousands of times per file.
-    // Skipping this optimization would add measurable latency to formatting large
-    // GML projects, degrading the interactive editing experience.
+    if (values == null || typeof values[Symbol.iterator] !== "function") {
+        return freeze ? Object.freeze([]) : [];
+    }
+
     const result = [];
 
-    if (Array.isArray(values)) {
-        const { length } = values;
-
-        for (let i = 0; i < length; ++i) {
-            const item = values[i];
-            if (item) {
-                result.push(item);
-            }
+    for (const item of values) {
+        if (item) {
+            result.push(item);
         }
-    } else if (values && typeof values[Symbol.iterator] === "function") {
-        // Slow path: handle null/iterables. Non-array inputs (nullish values,
-        // iterables) are converted to arrays first, then filtered. This path is
-        // less common in practice because most call sites pass arrays directly,
-        // but it ensures the function can handle edge cases gracefully without
-        // crashing on unexpected input types.
-        for (const item of values) {
-            if (item) {
-                result.push(item);
-            }
-        }
-    } else {
-        return freeze ? Object.freeze([]) : [];
     }
 
     return freeze ? Object.freeze(result) : result;
