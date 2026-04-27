@@ -255,7 +255,7 @@ void test("graph visualization server mode keeps the current view live while reg
     assert.match(html, /<script type="module">/);
     assert.match(
         html,
-        /import \{ fileOpen, directoryOpen \} from "https:\/\/cdn\.jsdelivr\.net\/npm\/browser-fs-access@0\.38\.0\/dist\/index\.js";/
+        /import \{ fileOpen, directoryOpen \} from "https:\/\/cdn\.jsdelivr\.net\/npm\/browser-fs-access@0\.38\.0\/dist\/index\.modern\.js";/
     );
     assert.doesNotMatch(html, /fetch\("\/api\/open", \{ method: "POST" \}\)/);
     assert.match(html, /window\.__GMLOOP_DOCUMENTATION_CATALOGS__/);
