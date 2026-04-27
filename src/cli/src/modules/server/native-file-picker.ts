@@ -5,6 +5,8 @@ type NativeFilePickerResult = Readonly<{
     selectedPaths: ReadonlyArray<string>;
 }>;
 
+type NativeOpenPanelMode = "directories" | "game-maker-files";
+
 /**
  * Open the macOS native file picker and select one directory target.
  */
@@ -13,11 +15,7 @@ export async function pickDirectoryWithNativeDialog(): Promise<NativeFilePickerR
         throw new Error("Native folder selection is currently supported on macOS only.");
     }
 
-    const script = [
-        'set pickedFolder to choose folder with prompt "Select a GameMaker project folder or subfolder"',
-        "return POSIX path of pickedFolder"
-    ];
-    return await runAppleScriptSelection(script);
+    return await runNativeOpenPanel("directories");
 }
 
 /**
@@ -28,21 +26,13 @@ export async function pickGameMakerFilesWithNativeDialog(): Promise<NativeFilePi
         throw new Error("Native file selection is currently supported on macOS only.");
     }
 
-    const script = [
-        'set pickedFiles to choose file with prompt "Select .gml or .yyp files" of type {"gml", "yyp"} with multiple selections allowed',
-        'set outputText to ""',
-        "repeat with pickedFile in pickedFiles",
-        "    set outputText to outputText & (POSIX path of pickedFile) & linefeed",
-        "end repeat",
-        "return outputText"
-    ];
-    return await runAppleScriptSelection(script);
+    return await runNativeOpenPanel("game-maker-files");
 }
 
-function runAppleScriptSelection(scriptLines: ReadonlyArray<string>): Promise<NativeFilePickerResult> {
-    const flattenedScript = scriptLines.join("\n");
-    return new Promise((resolve, reject) => {
-        execFile("osascript", ["-e", flattenedScript], (error, stdout, stderr) => {
+async function runNativeOpenPanel(mode: NativeOpenPanelMode): Promise<NativeFilePickerResult> {
+    const script = buildOpenPanelScript(mode);
+    return await new Promise((resolve, reject) => {
+        execFile("osascript", ["-l", "JavaScript", "-e", script], (error, stdout, stderr) => {
             if (isAppleScriptCancel(error, stderr)) {
                 resolve(
                     Object.freeze({
@@ -71,6 +61,52 @@ function runAppleScriptSelection(scriptLines: ReadonlyArray<string>): Promise<Na
             );
         });
     });
+}
+
+function buildOpenPanelScript(mode: NativeOpenPanelMode): string {
+    if (mode === "directories") {
+        return `
+ObjC.import('AppKit');
+
+const panel = $.NSOpenPanel.openPanel;
+panel.setCanChooseFiles(false);
+panel.setCanChooseDirectories(true);
+panel.setAllowsMultipleSelection(false);
+panel.setCanCreateDirectories(false);
+panel.setPrompt('Load Folder');
+panel.setMessage('Select a GameMaker project folder or subfolder');
+
+const response = panel.runModal();
+if (response !== $.NSModalResponseOK) {
+    throw new Error('-128');
+}
+
+const selectedUrl = panel.URL;
+console.log(ObjC.unwrap(selectedUrl.path));
+`;
+    }
+
+    return `
+ObjC.import('AppKit');
+
+const panel = $.NSOpenPanel.openPanel;
+panel.setCanChooseFiles(true);
+panel.setCanChooseDirectories(false);
+panel.setAllowsMultipleSelection(true);
+panel.setAllowedFileTypes(['gml', 'yyp']);
+panel.setPrompt('Load Files');
+panel.setMessage('Select .gml or .yyp files');
+
+const response = panel.runModal();
+if (response !== $.NSModalResponseOK) {
+    throw new Error('-128');
+}
+
+const selectedUrls = ObjC.deepUnwrap(panel.URLs);
+for (const selectedUrl of selectedUrls) {
+    console.log(selectedUrl.path);
+}
+`;
 }
 
 function isAppleScriptCancel(error: Error | null, stderr: string): boolean {

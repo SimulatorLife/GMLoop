@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -252,6 +253,146 @@ void test("graph visualize builds a missing database before exporting HTML", asy
         assert.doesNotMatch(html, /id="load-files"/u);
     } finally {
         await fixture.cleanup();
+    }
+});
+
+void test("graph visualize reuses an existing graph index instead of rebuilding it implicitly", async () => {
+    const cliModule = await loadCliModule();
+    const fixture = await createDualRootFixture();
+
+    try {
+        const outputPath = path.join(fixture.projectRoot, ".gmloop", "graph-existing-index.html");
+
+        const initialIndexResult = await cliModule.runCliTestCommand({
+            argv: ["graph", "index", "--path", fixture.projectRoot, "--toolset-root", fixture.toolsetRoot, "--json"]
+        });
+        assert.equal(initialIndexResult.exitCode, 0);
+
+        await fs.writeFile(
+            path.join(fixture.toolsetRoot, "scripts/shared_toolset_fn/shared_toolset_fn.gml"),
+            ["function shared_toolset_fn() {", "    return 999;", "}", ""].join("\n"),
+            "utf8"
+        );
+
+        const visualizeResult = await cliModule.runCliTestCommand({
+            argv: [
+                "graph",
+                "visualize",
+                "--path",
+                fixture.projectRoot,
+                "--toolset-root",
+                fixture.toolsetRoot,
+                "--output",
+                outputPath,
+                "--no-open",
+                "--json"
+            ]
+        });
+
+        assert.equal(visualizeResult.exitCode, 0);
+        const html = await fs.readFile(outputPath, "utf8");
+        assert.match(html, /return 42;/u);
+        assert.doesNotMatch(html, /return 999;/u);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("graph visualize --serve boots without a project path and waits for UI-driven loading", async () => {
+    const emptyWorkingDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-serve-empty-"));
+    let serveProcess: ReturnType<typeof spawn> | null = null;
+
+    try {
+        serveProcess = spawn(
+            process.execPath,
+            [
+                path.resolve(process.cwd(), "src/cli/dist/index.js"),
+                "graph",
+                "visualize",
+                "--serve",
+                "--json",
+                "--no-open"
+            ],
+            {
+                cwd: emptyWorkingDirectory,
+                stdio: ["ignore", "pipe", "pipe"]
+            }
+        );
+
+        const stdoutChunks: Array<string> = [];
+        const stderrChunks: Array<string> = [];
+        if (serveProcess.stdout) {
+            serveProcess.stdout.on("data", (chunk: Buffer | string) => {
+                stdoutChunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+            });
+        }
+        if (serveProcess.stderr) {
+            serveProcess.stderr.on("data", (chunk: Buffer | string) => {
+                stderrChunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+            });
+        }
+
+        const outputPayload = await new Promise<
+            { databasePath: string; payload: { url: string }; projectRoot: string } | { skipped: true }
+        >((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(
+                    new Error(
+                        `Timed out waiting for serve startup.\nSTDOUT:\n${stdoutChunks.join("")}\nSTDERR:\n${stderrChunks.join("")}`
+                    )
+                );
+            }, 5000);
+
+            const maybeResolve = (): void => {
+                const stdoutText = stdoutChunks.join("");
+                const startIndex = stdoutText.indexOf("{");
+                if (startIndex === -1) {
+                    return;
+                }
+
+                try {
+                    const parsed = JSON.parse(stdoutText.slice(startIndex)) as {
+                        databasePath: string;
+                        payload: { url: string };
+                        projectRoot: string;
+                    };
+                    clearTimeout(timeout);
+                    resolve(parsed);
+                } catch {
+                    // Wait for more stdout if the JSON is incomplete.
+                }
+            };
+
+            serveProcess.on("error", (error) => {
+                clearTimeout(timeout);
+                reject(error);
+            });
+            serveProcess.on("exit", (code) => {
+                clearTimeout(timeout);
+                const stderrText = stderrChunks.join("");
+                if (stderrText.includes("listen EPERM")) {
+                    resolve({ skipped: true });
+                    return;
+                }
+                reject(
+                    new Error(
+                        `Serve process exited before startup with code ${String(code)}.\nSTDOUT:\n${stdoutChunks.join("")}\nSTDERR:\n${stderrText}`
+                    )
+                );
+            });
+            serveProcess.stdout?.on("data", maybeResolve);
+        });
+
+        if ("skipped" in outputPayload) {
+            return;
+        }
+
+        assert.equal(outputPayload.projectRoot, "");
+        assert.equal(outputPayload.databasePath, "");
+        assert.match(outputPayload.payload.url, /^http:\/\/127\.0\.0\.1:\d+$/u);
+    } finally {
+        serveProcess?.kill("SIGTERM");
+        await fs.rm(emptyWorkingDirectory, { force: true, recursive: true });
     }
 });
 

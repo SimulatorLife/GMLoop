@@ -194,6 +194,31 @@ void test("graph visualization server mode keeps the current view live while reg
     assert.match(html, /console\.error\("Reindex failed", responseText\);/);
 });
 
+void test("graph visualization server mode supports an empty boot state before any project is loaded", () => {
+    const html = renderGraphVisualizationHtml(
+        {
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            edges: [],
+            nodes: [],
+            projectRoot: ""
+        },
+        {
+            isServerMode: true,
+            title: "No project loaded"
+        }
+    );
+
+    assert.match(
+        html,
+        /<div id="loaded-target" class="loaded-path"><strong>Active:<\/strong> No project loaded<\/div>/u
+    );
+    assert.match(html, /window\.__GMLOOP_LOADED_TARGET__ = null;/);
+    assert.match(html, /loadedTargetEl\.textContent = "No active target";/);
+    assert.match(html, /id="load-directory"/);
+    assert.match(html, /id="load-files"/);
+});
+
 void test("graph visualization template keeps tooltip interactive for text selection", () => {
     const html = renderEmptyGraphVisualizationHtml("Tooltip Test");
 

@@ -120,6 +120,13 @@ async function ensureGraphIndexForQuery(
     }
 }
 
+async function ensureGraphIndexForVisualizationTarget(
+    options: GraphCommandSharedOptions,
+    context: GraphResolutionContext
+): Promise<void> {
+    await ensureGraphIndexForQuery({ ...options, force: false }, context);
+}
+
 function createGraphEnvelope<TPayload>(
     command: string,
     context: GraphResolutionContext,
@@ -309,15 +316,36 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         source: GraphServeSource;
     }>;
 
-    const initialContext = await resolveGraphContext(options);
-    await ensureGraphIndexForQuery(options, initialContext);
-
-    const initialSelectedPath = resolveExplicitWorkflowTargetPath(options.path) ?? initialContext.projectRoot;
-    let activeContext = initialContext;
-    let activeSelectedPaths = [initialSelectedPath];
+    const initialSelectedPath = resolveExplicitWorkflowTargetPath(options.path);
+    let activeContext: GraphResolutionContext | null = null;
+    let activeSelectedPaths = initialSelectedPath ? [initialSelectedPath] : [];
     let activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
 
+    if (options.serve === true) {
+        if (initialSelectedPath) {
+            activeContext = await resolveGraphContext(options);
+            await ensureGraphIndexForQuery(options, activeContext);
+        } else {
+            try {
+                activeContext = await resolveGraphContext(options);
+                await ensureGraphIndexForQuery(options, activeContext);
+                activeSelectedPaths = [activeContext.projectRoot];
+            } catch {
+                activeContext = null;
+                activeSelectedPaths = [];
+            }
+        }
+    } else {
+        activeContext = await resolveGraphContext(options);
+        await ensureGraphIndexForQuery(options, activeContext);
+        activeSelectedPaths = [initialSelectedPath ?? activeContext.projectRoot];
+    }
+
     function resolveActiveConfig() {
+        if (!activeContext) {
+            return null;
+        }
+
         return Semantic.resolveGraphIndexConfig({
             databasePath: options.databasePath,
             projectConfig: activeContext.projectConfig,
@@ -330,10 +358,12 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         const resolvedSelectedPaths = activeSelectedPaths.map(
             (selectedPathValue) => resolveExplicitWorkflowTargetPath(selectedPathValue) ?? selectedPathValue
         );
+        const activePath = resolvedSelectedPaths[0] ?? "";
+        const projectRoot = activeContext?.projectRoot ?? "";
 
         return Object.freeze({
-            activePath: resolvedSelectedPaths[0] ?? activeContext.projectRoot,
-            projectRoot: activeContext.projectRoot,
+            activePath,
+            projectRoot,
             selectedPaths: resolvedSelectedPaths,
             source: activeSource
         });
@@ -341,6 +371,16 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
     function exportVisualizationPayload() {
         const activeConfig = resolveActiveConfig();
+        if (!activeConfig) {
+            return Object.freeze({
+                edges: [],
+                generatedAt: new Date().toISOString(),
+                graphs: [],
+                nodes: [],
+                projectRoot: ""
+            });
+        }
+
         const database = Semantic.openExistingGraphIndexDatabase(activeConfig.databasePath);
         try {
             return Semantic.exportGraphVisualizationData(database, activeConfig.projectRoot);
@@ -384,7 +424,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         const previousLoadedTarget = createLoadedTarget();
         const nextTargetPath = normalizedSelectedPaths[0];
         const nextContext = await resolveGraphContextFromTargetPath(nextTargetPath);
-        await ensureGraphIndex({ ...options, force: true }, nextContext);
+        await ensureGraphIndexForVisualizationTarget(options, nextContext);
 
         activeContext = nextContext;
         activeSelectedPaths = normalizedSelectedPaths;
@@ -400,6 +440,9 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         const server = await startGraphVisualizationServer({
             regenerate: async () => {
                 const previousPayloadString = safeStringifyVisualizationPayload();
+                if (!activeContext) {
+                    return Object.freeze({ changed: false });
+                }
                 await ensureGraphIndex({ ...options, force: true }, activeContext);
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
@@ -429,13 +472,20 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             renderHtml: (isServerMode) =>
                 UI.renderGraphVisualizationHtml(exportVisualizationPayload(), {
                     isServerMode,
-                    loadedTarget: createLoadedTarget(),
-                    title: resolveActiveConfig().projectRoot
+                    loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
+                    title: activeContext?.projectRoot ?? "No project loaded"
                 })
         });
 
         printGraphOutput(
-            createGraphEnvelope("graph visualize", activeContext, options, { url: server.url }),
+            {
+                command: "graph visualize",
+                databasePath: resolveActiveConfig()?.databasePath ?? "",
+                ok: true,
+                payload: { url: server.url },
+                projectRoot: activeContext?.projectRoot ?? "",
+                toolsetRoot: resolveActiveConfig()?.toolsetRoot ?? null
+            },
             options.json === true,
             `Serving graph visualization at ${server.url}`
         );
@@ -447,6 +497,9 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     }
 
     const activeConfig = resolveActiveConfig();
+    if (!activeConfig || !activeContext) {
+        throw new Error("Could not locate a GameMaker project root. Pass --path or run inside a project tree.");
+    }
     const dbPath = activeConfig.databasePath;
     const payload = exportVisualizationPayload();
     const htmlContent = UI.renderGraphVisualizationHtml(payload, {
