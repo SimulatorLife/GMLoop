@@ -138,8 +138,7 @@ That separation is intentional and should be preserved as more UI surfaces are a
 Current graph serve-mode host actions are:
 
 - `POST /api/reindex`: force-regenerate the current graph index
-- `POST /api/select-directory`: open native directory picker and switch active target
-- `POST /api/select-files`: open native file picker for `.gml` / `.yyp` and switch active target
+- `POST /api/open`: open the native project picker and switch the active UI project globally
 
 The renderer receives a typed `loadedTarget` object and only displays it. Target-path resolution remains in CLI using the same path handling contract as `--path` (`.yyp` normalization, `.gml` file path handling, project-root discovery).
 

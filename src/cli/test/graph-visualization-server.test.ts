@@ -61,8 +61,7 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
     try {
         handle = await startGraphVisualizationServer({
             regenerate: async () => ({ changed: true }),
-            selectDirectory: async () => ({ changed: true }),
-            selectFiles: async () => ({ changed: false }),
+            openProjectTargets: async () => ({ changed: true }),
             renderHtml: (isServerMode) =>
                 UI.renderGraphVisualizationHtml(createSampleGraphVisualizationData(), {
                     isServerMode,
@@ -89,15 +88,10 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         const reindexPayload = (await reindexResponse.json()) as { changed: boolean; ok: boolean };
         assert.deepEqual(reindexPayload, { changed: true, ok: true });
 
-        const selectDirectoryResponse = await fetch(`${handle.url}/api/select-directory`, { method: "POST" });
-        assert.equal(selectDirectoryResponse.status, 200);
-        const selectDirectoryPayload = (await selectDirectoryResponse.json()) as { changed: boolean; ok: boolean };
-        assert.deepEqual(selectDirectoryPayload, { changed: true, ok: true });
-
-        const selectFilesResponse = await fetch(`${handle.url}/api/select-files`, { method: "POST" });
-        assert.equal(selectFilesResponse.status, 200);
-        const selectFilesPayload = (await selectFilesResponse.json()) as { changed: boolean; ok: boolean };
-        assert.deepEqual(selectFilesPayload, { changed: false, ok: true });
+        const openResponse = await fetch(`${handle.url}/api/open`, { method: "POST" });
+        assert.equal(openResponse.status, 200);
+        const openPayload = (await openResponse.json()) as { changed: boolean; ok: boolean };
+        assert.deepEqual(openPayload, { changed: true, ok: true });
     } finally {
         await handle.stop();
     }

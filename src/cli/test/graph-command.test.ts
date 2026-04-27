@@ -248,9 +248,10 @@ void test("graph visualize builds a missing database before exporting HTML", asy
         await fs.access(databasePath);
         const html = await fs.readFile(outputPath, "utf8");
         assert.match(html, /shared_toolset_fn/u);
+        assert.match(html, /gmloop_format/u);
+        assert.match(html, /Format GameMaker Language files using the prettier plugin\./u);
         assert.doesNotMatch(html, /id="regenerate"/u);
-        assert.doesNotMatch(html, /id="load-directory"/u);
-        assert.doesNotMatch(html, /id="load-files"/u);
+        assert.doesNotMatch(html, /id="open-project"/u);
     } finally {
         await fixture.cleanup();
     }

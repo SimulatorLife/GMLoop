@@ -3,8 +3,10 @@ import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "./graph-visualizati
 export function renderGraphVisualizationClientScript(serializedData: string, isServerMode: boolean): string {
     return `
     const DATA = ${serializedData};
+    const DOCUMENTATION_CATALOGS = window.__GMLOOP_DOCUMENTATION_CATALOGS__ ?? null;
     const IS_SERVER_MODE = ${isServerMode ? "true" : "false"};
     const LOADED_TARGET = window.__GMLOOP_LOADED_TARGET__ ?? null;
+    const PROJECT_CONFIGURATION = window.__GMLOOP_PROJECT_CONFIGURATION__ ?? null;
     const width = window.innerWidth;
     const height = window.innerHeight;
     const svg = d3.select("#graph");
@@ -12,7 +14,8 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
     const container = d3.select("#container");
     const tooltip = d3.select("#tooltip");
     let labelMode = "auto";
-    let activeView = "visual";
+    let activeGraphView = "visual";
+    let activePage = "graph";
     const edgeLineVisualStyles = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};
     const edgeLineVisualStyleByType = new Map(edgeLineVisualStyles.map((style) => [style.type, style]));
     const nodeVisualStyles = ${JSON.stringify(NODE_VISUAL_STYLES)};
@@ -35,9 +38,10 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
         
     svg.call(zoom);
 
-    d3.select("#toggle-view").on("click", () => {
-        activeView = activeView === "visual" ? "json" : "visual";
-        const isVisualView = activeView === "visual";
+    let activeDocsView = "cli";
+
+    function updateGraphViewMode() {
+        const isVisualView = activeGraphView === "visual";
         svg.classed("hidden", !isVisualView);
         d3.select("#legend").classed("hidden", !isVisualView);
         d3.select("#tooltip").classed("hidden", !isVisualView);
@@ -50,6 +54,11 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
                 edges: linksRaw.filter((edgeValue) => activeFilters.has(edgeValue.type))
             }, null, 2));
         }
+    }
+
+    d3.select("#toggle-view").on("click", () => {
+        activeGraphView = activeGraphView === "visual" ? "json" : "visual";
+        updateGraphViewMode();
     });
 
     d3.select("#toggle-labels").on("click", () => {
@@ -98,6 +107,397 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
     }
 
     renderLoadedTargetSummary();
+
+    function createCatalogItemRow(labelText, valueText) {
+        const row = document.createElement("li");
+        row.className = "catalog-item";
+        row.innerHTML = "<code>" + labelText + "</code> " + valueText;
+        return row;
+    }
+
+    function createCatalogCard(title, descriptionText, usageText, rows) {
+        const card = document.createElement("section");
+        card.className = "catalog-card";
+
+        const heading = document.createElement("h3");
+        heading.textContent = title;
+        card.append(heading);
+
+        if (usageText) {
+            const usage = document.createElement("code");
+            usage.className = "catalog-usage";
+            usage.textContent = usageText;
+            card.append(usage);
+        }
+
+        if (descriptionText) {
+            const description = document.createElement("p");
+            description.textContent = descriptionText;
+            card.append(description);
+        }
+
+        if (rows.length > 0) {
+            const list = document.createElement("ul");
+            list.className = "catalog-list";
+            rows.forEach((row) => list.append(row));
+            card.append(list);
+        }
+
+        return card;
+    }
+
+    let cliMetaText = "";
+    let mcpMetaText = "";
+
+    function renderDocumentationCatalog() {
+        const docsMetaElement = document.getElementById("docs-meta");
+        const cliContentElement = document.getElementById("cli-content");
+        const mcpContentElement = document.getElementById("mcp-content");
+        if (!(docsMetaElement instanceof HTMLElement) || !(cliContentElement instanceof HTMLElement) || !(mcpContentElement instanceof HTMLElement)) {
+            return;
+        }
+
+        cliContentElement.innerHTML = "";
+        mcpContentElement.innerHTML = "";
+
+        if (!DOCUMENTATION_CATALOGS || typeof DOCUMENTATION_CATALOGS !== "object") {
+            cliMetaText = "No CLI catalog metadata is available for this view.";
+            mcpMetaText = "No MCP catalog metadata is available for this view.";
+            const emptyState = document.createElement("div");
+            emptyState.className = "catalog-empty";
+            emptyState.textContent = "Documentation catalogs are not available.";
+            cliContentElement.append(emptyState.cloneNode(true));
+            mcpContentElement.append(emptyState);
+            updateDocsViewState();
+            return;
+        }
+
+        const cliCommands = Array.isArray(DOCUMENTATION_CATALOGS.cliCommands) ? DOCUMENTATION_CATALOGS.cliCommands : [];
+        cliMetaText = cliCommands.length + " CLI command entries sourced directly from the Commander command catalog.";
+        cliCommands.forEach((entry) => {
+            const rows = [];
+            if (Array.isArray(entry.arguments)) {
+                entry.arguments.forEach((argument) => {
+                    const detailParts = [];
+                    detailParts.push(argument.required ? "required" : "optional");
+                    if (argument.variadic) {
+                        detailParts.push("variadic");
+                    }
+                    if (Array.isArray(argument.choices) && argument.choices.length > 0) {
+                        detailParts.push("choices: " + argument.choices.join(", "));
+                    }
+                    const suffix = detailParts.length > 0 ? " (" + detailParts.join(", ") + ")" : "";
+                    rows.push(createCatalogItemRow("<" + argument.name + ">", (argument.description || "No description.") + suffix));
+                });
+            }
+            if (Array.isArray(entry.options)) {
+                entry.options.forEach((option) => {
+                    const optionName = option.long || option.flags;
+                    const detailParts = [];
+                    if (option.boolean) {
+                        detailParts.push("boolean");
+                    }
+                    if (option.variadic) {
+                        detailParts.push("variadic");
+                    }
+                    if (Array.isArray(option.choices) && option.choices.length > 0) {
+                        detailParts.push("choices: " + option.choices.join(", "));
+                    }
+                    const suffix = detailParts.length > 0 ? " (" + detailParts.join(", ") + ")" : "";
+                    rows.push(createCatalogItemRow(optionName, (option.description || "No description.") + suffix));
+                });
+            }
+            cliContentElement.append(createCatalogCard(entry.displayName, entry.description, entry.usage, rows));
+        });
+
+        const mcpTools = Array.isArray(DOCUMENTATION_CATALOGS.mcpTools) ? DOCUMENTATION_CATALOGS.mcpTools : [];
+        const mcpServer = DOCUMENTATION_CATALOGS.mcpServer || null;
+        mcpMetaText = (mcpServer ? (mcpServer.name + " v" + mcpServer.version + " | ") : "") + mcpTools.length + " MCP tools derived from the CLI catalog.";
+        mcpTools.forEach((entry) => {
+            const rows = [];
+            if (Array.isArray(entry.fields)) {
+                entry.fields.forEach((field) => {
+                    const detailParts = [];
+                    detailParts.push(field.kind);
+                    detailParts.push(field.required ? "required" : "optional");
+                    if (field.multiple) {
+                        detailParts.push("multiple");
+                    }
+                    if (Array.isArray(field.choices) && field.choices.length > 0) {
+                        detailParts.push("choices: " + field.choices.join(", "));
+                    }
+                    rows.push(createCatalogItemRow(field.name, (field.description || "No description.") + " (" + detailParts.join(", ") + ")"));
+                });
+            }
+            mcpContentElement.append(createCatalogCard(entry.toolName, entry.description, entry.commandDisplayName, rows));
+        });
+
+        updateDocsViewState();
+    }
+
+    function updateDocsViewState() {
+        const cliPage = document.getElementById("cli-page");
+        const mcpPage = document.getElementById("mcp-page");
+        const cliButton = document.getElementById("docs-view-cli");
+        const mcpButton = document.getElementById("docs-view-mcp");
+        const docsMetaElement = document.getElementById("docs-meta");
+
+        if (!(cliPage instanceof HTMLElement) || !(mcpPage instanceof HTMLElement) || !(cliButton instanceof HTMLButtonElement) || !(mcpButton instanceof HTMLButtonElement) || !(docsMetaElement instanceof HTMLElement)) {
+            return;
+        }
+
+        cliPage.classList.toggle("hidden", activeDocsView !== "cli");
+        mcpPage.classList.toggle("hidden", activeDocsView !== "mcp");
+        cliButton.classList.toggle("active", activeDocsView === "cli");
+        mcpButton.classList.toggle("active", activeDocsView === "mcp");
+        docsMetaElement.textContent = activeDocsView === "cli" ? cliMetaText : mcpMetaText;
+    }
+
+    function createBadge(labelText) {
+        const badge = document.createElement("span");
+        badge.className = "config-badge";
+        badge.textContent = labelText;
+        return badge;
+    }
+
+    function createConfigItem(title, descriptionText, valueText, badges) {
+        const item = document.createElement("li");
+        item.className = "config-item";
+
+        const heading = document.createElement("strong");
+        heading.textContent = title;
+        item.append(heading);
+
+        if (descriptionText) {
+            const description = document.createElement("span");
+            description.textContent = descriptionText;
+            item.append(description);
+        }
+
+        if (Array.isArray(badges) && badges.length > 0) {
+            const badgeRow = document.createElement("div");
+            badgeRow.className = "config-badge-row";
+            badges.forEach((badgeText) => badgeRow.append(createBadge(badgeText)));
+            item.append(badgeRow);
+        }
+
+        if (valueText) {
+            const value = document.createElement("div");
+            value.className = "config-value";
+            value.textContent = valueText;
+            item.append(value);
+        }
+
+        return item;
+    }
+
+    function createConfigCard(title, descriptionText, children) {
+        const card = document.createElement("section");
+        card.className = "config-card";
+
+        const heading = document.createElement("h3");
+        heading.textContent = title;
+        card.append(heading);
+
+        if (descriptionText) {
+            const description = document.createElement("p");
+            description.textContent = descriptionText;
+            card.append(description);
+        }
+
+        children.forEach((child) => card.append(child));
+        return card;
+    }
+
+    function renderProjectConfigurationCatalog() {
+        const configMetaElement = document.getElementById("config-meta");
+        const configContentElement = document.getElementById("config-content");
+        if (!(configMetaElement instanceof HTMLElement) || !(configContentElement instanceof HTMLElement)) {
+            return;
+        }
+
+        configContentElement.innerHTML = "";
+
+        if (!PROJECT_CONFIGURATION || typeof PROJECT_CONFIGURATION !== "object") {
+            configMetaElement.textContent = "No project configuration is available for this view.";
+            const emptyState = document.createElement("div");
+            emptyState.className = "catalog-empty";
+            emptyState.textContent = "Load a project to inspect gmloop, lint, format, and refactor configuration.";
+            configContentElement.append(emptyState);
+            return;
+        }
+
+        const gmloopConfig = PROJECT_CONFIGURATION.gmloop || { configPath: null, exists: false, projectRoot: "", rawConfig: {} };
+        configMetaElement.textContent = gmloopConfig.exists
+            ? "Loaded project configuration and workspace-owned normalized views for the active project."
+            : "No gmloop.json was found for the active selection. Defaults and registered workspace metadata are shown where available.";
+
+        const overviewGrid = document.createElement("div");
+        overviewGrid.className = "config-grid";
+
+        const gmloopRaw = document.createElement("pre");
+        gmloopRaw.className = "config-raw";
+        gmloopRaw.textContent = JSON.stringify(gmloopConfig.rawConfig || {}, null, 2);
+        overviewGrid.append(
+            createConfigCard("gmloop.json", gmloopConfig.configPath || "No gmloop.json file is currently loaded.", [gmloopRaw])
+        );
+
+        const repositoryLink = document.createElement("a");
+        repositoryLink.className = "github-link";
+        repositoryLink.href = PROJECT_CONFIGURATION.githubRepositoryUrl;
+        repositoryLink.target = "_blank";
+        repositoryLink.rel = "noreferrer";
+        repositoryLink.textContent = "Open Public Repository";
+        overviewGrid.append(
+            createConfigCard("Repository", "Project root and canonical public repository for GMLoop.", [
+                createConfigItem(
+                    "Project Root",
+                    "Active project root used by graph, lint, format, and refactor workflows.",
+                    gmloopConfig.projectRoot || "(none)",
+                    []
+                ),
+                repositoryLink
+            ])
+        );
+        configContentElement.append(overviewGrid);
+
+        const formatEntries = Array.isArray(PROJECT_CONFIGURATION.format?.entries)
+            ? PROJECT_CONFIGURATION.format.entries
+            : [];
+        const formatList = document.createElement("ul");
+        formatList.className = "config-list";
+        formatEntries.forEach((entry) => {
+            formatList.append(
+                createConfigItem(
+                    entry.name,
+                    entry.description,
+                    JSON.stringify(entry.value, null, 2),
+                    [entry.source]
+                )
+            );
+        });
+        configContentElement.append(
+            createConfigCard("Format / Prettier", "Formatter-owned options sourced from the format workspace.", [formatList])
+        );
+
+        const lintRules = Array.isArray(PROJECT_CONFIGURATION.lint?.rules) ? PROJECT_CONFIGURATION.lint.rules : [];
+        const lintList = document.createElement("ul");
+        lintList.className = "config-list";
+        lintRules.forEach((entry) => {
+            const badges = [entry.level];
+            if (entry.fixable) {
+                badges.push("fixable:" + entry.fixable);
+            }
+            lintList.append(
+                createConfigItem(entry.ruleId, entry.description, JSON.stringify(entry.options, null, 2), badges)
+            );
+        });
+        configContentElement.append(
+            createConfigCard(
+                "Lint",
+                PROJECT_CONFIGURATION.lint?.ruleset
+                    ? "Resolved lint rules for the active gmloop lintRuleset: " + PROJECT_CONFIGURATION.lint.ruleset
+                    : "Resolved lint rules for the active project configuration.",
+                [lintList]
+            )
+        );
+
+        const refactorCodemods = Array.isArray(PROJECT_CONFIGURATION.refactor?.codemods)
+            ? PROJECT_CONFIGURATION.refactor.codemods
+            : [];
+        const refactorList = document.createElement("ul");
+        refactorList.className = "config-list";
+        refactorCodemods.forEach((entry) => {
+            const badges = [entry.enabled ? "enabled" : "disabled"];
+            if (entry.requiresSemanticProjectIndex) {
+                badges.push("semantic-index");
+            }
+            refactorList.append(
+                createConfigItem(entry.id, entry.description, JSON.stringify(entry.config, null, 2), badges)
+            );
+        });
+        configContentElement.append(
+            createConfigCard("Refactor", "Registered codemods and the active project-level codemod configuration.", [
+                refactorList
+            ])
+        );
+    }
+
+    function updatePageState() {
+        const pages = [
+            { buttonId: "tab-graph", pageId: "graph-page", pageValue: "graph" },
+            { buttonId: "tab-docs", pageId: "docs-page", pageValue: "docs" },
+            { buttonId: "tab-config", pageId: "config-page", pageValue: "config" }
+        ];
+        pages.forEach((entry) => {
+            const button = document.getElementById(entry.buttonId);
+            const page = document.getElementById(entry.pageId);
+            if (button instanceof HTMLButtonElement) {
+                button.classList.toggle("active", activePage === entry.pageValue);
+            }
+            if (page instanceof HTMLElement) {
+                page.classList.toggle("active", activePage === entry.pageValue);
+            }
+        });
+
+        const toolbarHeading = document.getElementById("toolbar-heading");
+        const toolbarSubheading = document.getElementById("toolbar-subheading");
+        const graphControls = document.getElementById("graph-controls");
+        if (toolbarHeading instanceof HTMLElement && toolbarSubheading instanceof HTMLElement && graphControls instanceof HTMLElement) {
+            graphControls.classList.toggle("hidden", activePage !== "graph");
+            if (activePage === "graph") {
+                toolbarHeading.textContent = "Graph Index";
+                toolbarSubheading.textContent = "Interactive graph exploration controls for the current graph index.";
+            } else if (activePage === "cli") {
+                toolbarHeading.textContent = "CLI";
+                toolbarSubheading.textContent = "Live command catalog sourced directly from the CLI workspace.";
+            } else if (activePage === "docs") {
+                toolbarHeading.textContent = "Docs";
+                toolbarSubheading.textContent = "Live CLI and MCP workspace catalogs are combined in a single Docs view.";
+            } else {
+                toolbarHeading.textContent = "Config";
+                toolbarSubheading.textContent = "Loaded project configuration rendered from lint, format, refactor, and gmloop workspace data.";
+            }
+        }
+
+        if (activePage === "graph") {
+            updateGraphViewMode();
+        } else {
+            svg.classed("hidden", true);
+            d3.select("#legend").classed("hidden", true);
+            d3.select("#tooltip").classed("hidden", true);
+            jsonView.classed("hidden", true).style("display", "none");
+        }
+    }
+
+    ["graph", "docs", "config"].forEach((pageValue) => {
+        const button = document.getElementById("tab-" + pageValue);
+        if (button instanceof HTMLButtonElement) {
+            button.addEventListener("click", () => {
+                activePage = pageValue;
+                updatePageState();
+            });
+        }
+    });
+
+    const docsCliButton = document.getElementById("docs-view-cli");
+    const docsMcpButton = document.getElementById("docs-view-mcp");
+    if (docsCliButton instanceof HTMLButtonElement) {
+        docsCliButton.addEventListener("click", () => {
+            activeDocsView = "cli";
+            updateDocsViewState();
+        });
+    }
+    if (docsMcpButton instanceof HTMLButtonElement) {
+        docsMcpButton.addEventListener("click", () => {
+            activeDocsView = "mcp";
+            updateDocsViewState();
+        });
+    }
+
+    renderDocumentationCatalog();
+    renderProjectConfigurationCatalog();
+    updatePageState();
     
     if (DATA.nodes.length > 2000) {
         console.warn("Large graph detected:", DATA.nodes.length, "nodes. Adjusting rendering parameters.");
@@ -640,44 +1040,20 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
     updateGraph();
 
     if (IS_SERVER_MODE) {
-        const loadFromDirectoryButton = d3.select("#load-directory");
-        if (!loadFromDirectoryButton.empty()) {
-            loadFromDirectoryButton.on("click", async () => {
-                const btn = d3.select("#load-directory");
-                btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Loading…</span></span>');
+        const openProjectButton = d3.select("#open-project");
+        if (!openProjectButton.empty()) {
+            openProjectButton.on("click", async () => {
+                const btn = d3.select("#open-project");
+                btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Opening…</span></span>');
                 try {
-                    const res = await fetch("/api/select-directory", { method: "POST" });
+                    const res = await fetch("/api/open", { method: "POST" });
                     if (res.ok) {
                         const payload = await res.json();
                         if (payload.changed === true) {
                             window.location.reload();
                             return;
                         }
-                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Load Folder</span></span>');
-                    } else {
-                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Failed</span></span>');
-                    }
-                } catch (err) {
-                    console.error(err);
-                    btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Error</span></span>');
-                }
-            });
-        }
-
-        const loadFromFilesButton = d3.select("#load-files");
-        if (!loadFromFilesButton.empty()) {
-            loadFromFilesButton.on("click", async () => {
-                const btn = d3.select("#load-files");
-                btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Loading…</span></span>');
-                try {
-                    const res = await fetch("/api/select-files", { method: "POST" });
-                    if (res.ok) {
-                        const payload = await res.json();
-                        if (payload.changed === true) {
-                            window.location.reload();
-                            return;
-                        }
-                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Load Files</span></span>');
+                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Open...</span></span>');
                     } else {
                         btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Failed</span></span>');
                     }

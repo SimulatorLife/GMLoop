@@ -15,8 +15,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     port?: number;
     regenerate: GraphVisualizationServerRegenerate;
     renderHtml: GraphVisualizationServerRenderHtml;
-    selectDirectory?: GraphVisualizationServerRegenerate;
-    selectFiles?: GraphVisualizationServerRegenerate;
+    openProjectTargets?: GraphVisualizationServerRegenerate;
 }>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
@@ -61,21 +60,9 @@ export async function startGraphVisualizationServer(
                 return;
             }
 
-            if (request.method === "POST" && request.url === "/api/select-directory" && options.selectDirectory) {
+            if (request.method === "POST" && request.url === "/api/open" && options.openProjectTargets) {
                 try {
-                    const selectionResult = await options.selectDirectory();
-                    response.writeHead(200, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ changed: selectionResult.changed, ok: true }));
-                } catch (error: unknown) {
-                    response.writeHead(500, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
-                }
-                return;
-            }
-
-            if (request.method === "POST" && request.url === "/api/select-files" && options.selectFiles) {
-                try {
-                    const selectionResult = await options.selectFiles();
+                    const selectionResult = await options.openProjectTargets();
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ changed: selectionResult.changed, ok: true }));
                 } catch (error: unknown) {

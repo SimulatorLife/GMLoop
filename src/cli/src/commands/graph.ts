@@ -6,16 +6,15 @@ import { Semantic } from "@gmloop/semantic";
 import { UI } from "@gmloop/ui";
 import { Command, Option } from "commander";
 
+import { getCliCommandCatalog, getMcpToolCatalogEntries } from "../cli.js";
 import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
 import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
-import {
-    pickDirectoryWithNativeDialog,
-    pickGameMakerFilesWithNativeDialog
-} from "../modules/server/native-file-picker.js";
+import { pickProjectTargetsWithNativeDialog } from "../modules/server/native-file-picker.js";
 import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
+import { createGraphVisualizationProjectConfigurationCatalog } from "../modules/ui/index.js";
 import { discoverProjectRoot, resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 
 type GraphCommandSharedOptions = {
@@ -308,7 +307,7 @@ async function runGraphDoctorAction(options: GraphCommandSharedOptions): Promise
 }
 
 async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Promise<void> {
-    type GraphServeSource = "cli-path" | "finder-directory" | "finder-files" | "working-directory";
+    type GraphServeSource = "cli-path" | "finder-open" | "working-directory";
     type GraphVisualizedLoadedTarget = Readonly<{
         activePath: string;
         projectRoot: string;
@@ -437,6 +436,11 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     }
 
     if (options.serve === true) {
+        const documentationCatalogs = createDocumentationCatalogs();
+        const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(activeContext, {
+            config: options.config
+        });
+
         const server = await startGraphVisualizationServer({
             regenerate: async () => {
                 const previousPayloadString = safeStringifyVisualizationPayload();
@@ -447,32 +451,23 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
-            selectDirectory: async () => {
-                const pickedDirectory = await pickDirectoryWithNativeDialog();
-                if (pickedDirectory.cancelled || pickedDirectory.selectedPaths.length === 0) {
+            openProjectTargets: async () => {
+                const pickedTargets = await pickProjectTargetsWithNativeDialog();
+                if (pickedTargets.cancelled || pickedTargets.selectedPaths.length === 0) {
                     return Object.freeze({ changed: false });
                 }
 
                 return await reloadServerTarget({
-                    selectedPaths: pickedDirectory.selectedPaths,
-                    source: "finder-directory"
-                });
-            },
-            selectFiles: async () => {
-                const pickedFiles = await pickGameMakerFilesWithNativeDialog();
-                if (pickedFiles.cancelled || pickedFiles.selectedPaths.length === 0) {
-                    return Object.freeze({ changed: false });
-                }
-
-                return await reloadServerTarget({
-                    selectedPaths: pickedFiles.selectedPaths,
-                    source: "finder-files"
+                    selectedPaths: pickedTargets.selectedPaths,
+                    source: "finder-open"
                 });
             },
             renderHtml: (isServerMode) =>
                 UI.renderGraphVisualizationHtml(exportVisualizationPayload(), {
+                    documentationCatalogs,
                     isServerMode,
                     loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
+                    projectConfigurationCatalog,
                     title: activeContext?.projectRoot ?? "No project loaded"
                 })
         });
@@ -500,10 +495,16 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     if (!activeConfig || !activeContext) {
         throw new Error("Could not locate a GameMaker project root. Pass --path or run inside a project tree.");
     }
+    const documentationCatalogs = createDocumentationCatalogs();
+    const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(activeContext, {
+        config: options.config
+    });
     const dbPath = activeConfig.databasePath;
     const payload = exportVisualizationPayload();
     const htmlContent = UI.renderGraphVisualizationHtml(payload, {
+        documentationCatalogs,
         loadedTarget: createLoadedTarget(),
+        projectConfigurationCatalog,
         title: activeConfig.projectRoot
     });
     const outputPath = options.output ?? path.join(path.dirname(dbPath), "graph.html");
@@ -682,4 +683,15 @@ export function createGraphCommand(): Command {
     graphCommand.addCommand(visualizeCommand);
 
     return graphCommand;
+}
+function createDocumentationCatalogs() {
+    const cliCommands = getCliCommandCatalog();
+    return Object.freeze({
+        cliCommands,
+        mcpServer: Object.freeze({
+            name: "gmloop-mcp",
+            version: "0.0.1"
+        }),
+        mcpTools: getMcpToolCatalogEntries()
+    });
 }

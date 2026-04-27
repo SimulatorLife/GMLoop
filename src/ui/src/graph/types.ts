@@ -98,8 +98,10 @@ export type GraphVisualizationData = Readonly<{
  * Options that control how the graph-index visualization HTML document is rendered.
  */
 export type GraphVisualizationRenderOptions = Readonly<{
+    documentationCatalogs?: GraphVisualizationDocumentationCatalogs;
     isServerMode?: boolean;
     loadedTarget?: GraphVisualizationLoadedTarget;
+    projectConfigurationCatalog?: GraphVisualizationProjectConfigurationCatalog;
     title: string;
 }>;
 
@@ -110,5 +112,103 @@ export type GraphVisualizationLoadedTarget = Readonly<{
     activePath: string;
     projectRoot: string;
     selectedPaths: ReadonlyArray<string>;
-    source: "cli-path" | "finder-directory" | "finder-files" | "working-directory";
+    source: "cli-path" | "finder-open" | "working-directory";
+}>;
+
+export type GraphVisualizationCliCatalogArgument = Readonly<{
+    choices: ReadonlyArray<string>;
+    description: string;
+    name: string;
+    required: boolean;
+    variadic: boolean;
+}>;
+
+export type GraphVisualizationCliCatalogOption = Readonly<{
+    attributeName: string;
+    boolean: boolean;
+    choices: ReadonlyArray<string>;
+    description: string;
+    flags: string;
+    long: string | undefined;
+    short: string | undefined;
+    variadic: boolean;
+}>;
+
+export type GraphVisualizationCliCatalogEntry = Readonly<{
+    arguments: ReadonlyArray<GraphVisualizationCliCatalogArgument>;
+    commandPath: ReadonlyArray<string>;
+    description: string;
+    displayName: string;
+    options: ReadonlyArray<GraphVisualizationCliCatalogOption>;
+    usage: string;
+}>;
+
+export type GraphVisualizationMcpToolCatalogField = Readonly<{
+    attributeName: string;
+    choices: ReadonlyArray<string>;
+    description: string;
+    kind: "argument" | "option";
+    multiple: boolean;
+    name: string;
+    required: boolean;
+    valueType: "boolean" | "string";
+}>;
+
+export type GraphVisualizationMcpToolCatalogEntry = Readonly<{
+    commandDisplayName: string;
+    description: string;
+    fields: ReadonlyArray<GraphVisualizationMcpToolCatalogField>;
+    toolName: string;
+}>;
+
+export type GraphVisualizationDocumentationCatalogs = Readonly<{
+    cliCommands: ReadonlyArray<GraphVisualizationCliCatalogEntry>;
+    mcpServer: Readonly<{
+        name: string;
+        version: string;
+    }>;
+    mcpTools: ReadonlyArray<GraphVisualizationMcpToolCatalogEntry>;
+}>;
+
+export type GraphVisualizationProjectConfigurationEntry = Readonly<{
+    description: string;
+    name: string;
+    source: "configured" | "default";
+    value: unknown;
+}>;
+
+export type GraphVisualizationProjectConfigurationLintRuleEntry = Readonly<{
+    description: string;
+    fixable: "code" | "whitespace" | null;
+    level: string;
+    options: Readonly<Record<string, unknown>>;
+    ruleId: string;
+}>;
+
+export type GraphVisualizationProjectConfigurationRefactorCodemodEntry = Readonly<{
+    config: unknown;
+    description: string;
+    enabled: boolean;
+    id: string;
+    requiresSemanticProjectIndex: boolean;
+}>;
+
+export type GraphVisualizationProjectConfigurationCatalog = Readonly<{
+    format: Readonly<{
+        entries: ReadonlyArray<GraphVisualizationProjectConfigurationEntry>;
+    }>;
+    githubRepositoryUrl: string;
+    gmloop: Readonly<{
+        configPath: string | null;
+        exists: boolean;
+        projectRoot: string;
+        rawConfig: Readonly<Record<string, unknown>>;
+    }>;
+    lint: Readonly<{
+        rules: ReadonlyArray<GraphVisualizationProjectConfigurationLintRuleEntry>;
+        ruleset: string | null;
+    }>;
+    refactor: Readonly<{
+        codemods: ReadonlyArray<GraphVisualizationProjectConfigurationRefactorCodemodEntry>;
+    }>;
 }>;

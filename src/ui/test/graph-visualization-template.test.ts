@@ -31,6 +31,73 @@ function renderEmptyGraphVisualizationHtml(title: string): string {
     );
 }
 
+function createDocumentationCatalogsFixture() {
+    return {
+        cliCommands: [
+            {
+                arguments: [
+                    {
+                        choices: [],
+                        description: "Target graph node id.",
+                        name: "nodeId",
+                        required: true,
+                        variadic: false
+                    }
+                ],
+                commandPath: ["graph", "context"],
+                description: "Retrieve a structured context bundle for a graph node.",
+                displayName: "graph context",
+                options: [
+                    {
+                        attributeName: "depth",
+                        boolean: false,
+                        choices: [],
+                        description: "Neighbor traversal depth",
+                        flags: "--depth <n>",
+                        long: "--depth",
+                        short: undefined,
+                        variadic: false
+                    }
+                ],
+                usage: "graph context <nodeId> [options]"
+            }
+        ],
+        mcpServer: {
+            name: "gmloop-mcp",
+            version: "0.0.1"
+        },
+        mcpTools: [
+            {
+                commandDisplayName: "graph context",
+                description: "Retrieve a structured context bundle for a graph node.",
+                fields: [
+                    {
+                        attributeName: "cwd",
+                        choices: [],
+                        description: "Optional working directory for the CLI invocation.",
+                        kind: "option",
+                        multiple: false,
+                        name: "cwd",
+                        required: false,
+                        valueType: "string"
+                    },
+                    {
+                        attributeName: "nodeId",
+                        choices: [],
+                        description: "Target graph node id.",
+                        kind: "argument",
+                        multiple: false,
+                        name: "nodeId",
+                        required: true,
+                        valueType: "string"
+                    }
+                ],
+                toolName: "gmloop_graph_context"
+            }
+        ]
+    } as const;
+}
+
 function extractCssRuleBody(html: string, selector: string): string {
     const rulePrefix = `${selector} { `;
     const ruleStart = html.indexOf(rulePrefix);
@@ -96,11 +163,23 @@ function findEmbeddedNodeVisualStyle(
 void test("graph visualization template exposes view and label toggles", () => {
     const html = renderEmptyGraphVisualizationHtml("Test Graph");
 
+    assert.match(html, /GMLoop/);
+    assert.match(html, /id="tab-graph"/);
+    assert.match(html, /id="tab-docs"/);
+    assert.match(html, /id="tab-config"/);
+    assert.match(html, /id="page-toolbar"/);
+    assert.match(html, /id="docs-view-cli"/);
+    assert.match(html, /id="docs-view-mcp"/);
+    assert.match(html, /id="graph-controls"/);
+    assert.match(html, /font-size: 15px;/);
     assert.match(html, /id="toggle-view"/);
     assert.match(html, /id="toggle-labels"/);
     assert.match(html, /id="json-view"/);
     assert.match(html, /labelMode = "auto"/);
-    assert.match(html, /activeView = "visual"/);
+    assert.match(html, /activeGraphView = "visual"/);
+    assert.match(html, /activePage = "graph"/);
+    assert.match(html, /function updatePageState\(\)/);
+    assert.match(html, /graphControls\.classList\.toggle\("hidden", activePage !== "graph"\)/);
 });
 
 void test("graph visualization template omits unstable layout controls and alternate forces", () => {
@@ -163,23 +242,41 @@ void test("graph visualization server mode keeps the current view live while reg
             projectRoot: "/tmp/project"
         },
         {
+            documentationCatalogs: createDocumentationCatalogsFixture(),
             isServerMode: true,
             title: "Server Regenerate Test"
         }
     );
 
     assert.match(html, /id="regenerate"/);
-    assert.match(html, /id="load-directory"/);
-    assert.match(html, /id="load-files"/);
+    assert.match(html, /id="open-project"/);
     assert.match(html, /window\.__GMLOOP_LOADED_TARGET__/);
     assert.match(html, /function renderLoadedTargetSummary\(\)/);
-    assert.match(html, /fetch\("\/api\/select-directory", \{ method: "POST" \}\)/);
-    assert.match(html, /fetch\("\/api\/select-files", \{ method: "POST" \}\)/);
+    assert.match(html, /fetch\("\/api\/open", \{ method: "POST" \}\)/);
+    assert.match(html, /window\.__GMLOOP_DOCUMENTATION_CATALOGS__/);
+    assert.match(html, /window\.__GMLOOP_PROJECT_CONFIGURATION__/);
+    assert.match(html, /id="docs-page"/);
+    assert.match(html, /id="cli-page"/);
+    assert.match(html, /id="mcp-page"/);
+    assert.match(html, /id="config-page"/);
+    assert.match(html, /id="cli-content"/);
+    assert.match(html, /id="mcp-content"/);
+    assert.match(html, /id="config-content"/);
+    assert.match(html, /function renderDocumentationCatalog\(\)/);
+    assert.match(html, /function renderProjectConfigurationCatalog\(\)/);
+    assert.match(html, /gmloop_graph_context/u);
+    assert.match(html, /graph context/u);
+    assert.match(html, /Workspace UI driven directly from live CLI and MCP catalogs\./);
+    assert.match(html, /id="docs-view-cli"/);
+    assert.match(html, /id="docs-view-mcp"/);
+    assert.match(html, /Live CLI and MCP workspace catalogs are combined in a single Docs view\./);
+    assert.match(html, /Loaded project configuration and workspace-owned normalized views/);
     assert.match(html, /class="button-content"/);
     assert.match(html, /class="button-label">Regenerate<\/span>/);
+    assert.match(html, /class="button-label">Open\.\.\.<\/span>/);
     assert.match(html, /\.button-spinner/);
     assert.match(html, /@keyframes graph-button-spin/);
-    assert.match(html, /button:disabled \{ cursor: wait; opacity: 0\.8; \}/);
+    assert.match(html, /button:disabled \{ cursor: wait; opacity: 0\.8; transform: none; \}/);
     assert.match(html, /fetch\("\/api\/reindex", \{ method: "POST" \}\)/);
     assert.match(html, /btn\.attr\("disabled", "true"\)/);
     assert.match(html, /button-spinner/);
@@ -215,8 +312,7 @@ void test("graph visualization server mode supports an empty boot state before a
     );
     assert.match(html, /window\.__GMLOOP_LOADED_TARGET__ = null;/);
     assert.match(html, /loadedTargetEl\.textContent = "No active target";/);
-    assert.match(html, /id="load-directory"/);
-    assert.match(html, /id="load-files"/);
+    assert.match(html, /id="open-project"/);
 });
 
 void test("graph visualization template keeps tooltip interactive for text selection", () => {

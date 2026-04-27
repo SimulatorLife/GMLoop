@@ -1,7 +1,7 @@
 /**
  * Supported top-level UI surface identifiers.
  */
-export type UISurfaceId = "ast" | "cli-docs" | "graph" | "mcp" | "rules";
+export type UISurfaceId = "ast" | "docs" | "graph" | "rules";
 
 /**
  * Delivery status for a top-level UI surface.
@@ -38,16 +38,10 @@ export const UI_SURFACE_DEFINITIONS: ReadonlyArray<UISurfaceDefinition> = Object
         status: PLANNED_SURFACE_STATUS
     },
     {
-        description: "CLI command and help-document browsing surfaces sourced from CLI-owned metadata.",
-        id: "cli-docs",
+        description: "Combined CLI and MCP documentation browsing surface with an internal view toggle.",
+        id: "docs",
         owningWorkspace: UI_OWNING_WORKSPACE,
-        status: PLANNED_SURFACE_STATUS
-    },
-    {
-        description: "MCP tool and capability browsing surfaces sourced from MCP-owned tool metadata.",
-        id: "mcp",
-        owningWorkspace: UI_OWNING_WORKSPACE,
-        status: PLANNED_SURFACE_STATUS
+        status: "implemented"
     },
     {
         description: "Formatter, lint, and refactor rule explorer surfaces sourced from workspace-owned rule catalogs.",

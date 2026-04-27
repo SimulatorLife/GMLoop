@@ -11,6 +11,7 @@ import { gmlFormatComponents } from "./components/default-format-components.js";
 import type { GmlFormat, GmlFormatDefaultOptions } from "./components/format-types.js";
 import { resolveCoreOptionOverrides } from "./options/core-option-overrides.js";
 import { extractProjectFormatOptions } from "./options/project-config.js";
+import { listProjectFormatOptionCatalogEntries } from "./options/project-config-catalog.js";
 import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "./printer/constants.js";
 import { normalizeFormattedOutput } from "./printer/normalize-formatted-output.js";
 
@@ -90,6 +91,7 @@ export const Format: GmlFormat = {
     options: formatOptions,
     defaultOptions,
     extractProjectFormatOptions,
+    listProjectFormatOptionCatalogEntries,
     format,
     normalizeFormattedOutput
 };
