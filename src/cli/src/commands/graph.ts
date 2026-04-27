@@ -12,7 +12,6 @@ import { applyStandardCommandOptions } from "../cli-core/command-standard-option
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
 import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
-import { pickProjectTargetsWithNativeDialog } from "../modules/server/native-file-picker.js";
 import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
 import { createGraphVisualizationProjectConfigurationCatalog } from "../modules/ui/index.js";
 import { discoverProjectRoot, resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
@@ -437,9 +436,6 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
     if (options.serve === true) {
         const documentationCatalogs = createDocumentationCatalogs();
-        const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(activeContext, {
-            config: options.config
-        });
 
         const server = await startGraphVisualizationServer({
             regenerate: async () => {
@@ -451,25 +447,22 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
-            openProjectTargets: async () => {
-                const pickedTargets = await pickProjectTargetsWithNativeDialog();
-                if (pickedTargets.cancelled || pickedTargets.selectedPaths.length === 0) {
-                    return Object.freeze({ changed: false });
-                }
+            renderHtml: async (isServerMode) => {
+                const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(
+                    activeContext,
+                    {
+                        config: options.config
+                    }
+                );
 
-                return await reloadServerTarget({
-                    selectedPaths: pickedTargets.selectedPaths,
-                    source: "finder-open"
-                });
-            },
-            renderHtml: (isServerMode) =>
-                UI.renderGraphVisualizationHtml(exportVisualizationPayload(), {
+                return UI.renderGraphVisualizationHtml(exportVisualizationPayload(), {
                     documentationCatalogs,
                     isServerMode,
                     loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
                     projectConfigurationCatalog,
                     title: activeContext?.projectRoot ?? "No project loaded"
-                })
+                });
+            }
         });
 
         printGraphOutput(

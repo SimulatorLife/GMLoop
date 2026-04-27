@@ -7,6 +7,9 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
     const IS_SERVER_MODE = ${isServerMode ? "true" : "false"};
     const LOADED_TARGET = window.__GMLOOP_LOADED_TARGET__ ?? null;
     const PROJECT_CONFIGURATION = window.__GMLOOP_PROJECT_CONFIGURATION__ ?? null;
+    let currentLoadedTarget = LOADED_TARGET;
+    let currentProjectConfiguration = PROJECT_CONFIGURATION;
+    let selectedProjectConfiguration = null;
     const width = window.innerWidth;
     const height = window.innerHeight;
     const svg = d3.select("#graph");
@@ -90,17 +93,17 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
             return;
         }
 
-        if (!LOADED_TARGET || typeof LOADED_TARGET !== "object") {
+        if (!currentLoadedTarget || typeof currentLoadedTarget !== "object") {
             loadedTargetEl.textContent = "No active target";
             loadedSourceEl.textContent = "";
             loadedSelectedEl.textContent = "";
             return;
         }
 
-        loadedTargetEl.textContent = "Active: " + LOADED_TARGET.activePath;
-        loadedSourceEl.textContent = "Source: " + LOADED_TARGET.source + " | Project: " + LOADED_TARGET.projectRoot;
-        if (Array.isArray(LOADED_TARGET.selectedPaths) && LOADED_TARGET.selectedPaths.length > 1) {
-            loadedSelectedEl.textContent = "Selected paths: " + LOADED_TARGET.selectedPaths.join(", ");
+        loadedTargetEl.textContent = "Active: " + currentLoadedTarget.activePath;
+        loadedSourceEl.textContent = "Source: " + currentLoadedTarget.source + " | Project: " + currentLoadedTarget.projectRoot;
+        if (Array.isArray(currentLoadedTarget.selectedPaths) && currentLoadedTarget.selectedPaths.length > 1) {
+            loadedSelectedEl.textContent = "Selected paths: " + currentLoadedTarget.selectedPaths.join(", ");
         } else {
             loadedSelectedEl.textContent = "";
         }
@@ -113,6 +116,79 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
         row.className = "catalog-item";
         row.innerHTML = "<code>" + labelText + "</code> " + valueText;
         return row;
+    }
+
+    async function loadProjectConfigurationFromFiles(files) {
+        const normalizePath = (file) =>
+            typeof file.webkitRelativePath === "string" && file.webkitRelativePath.length > 0
+                ? file.webkitRelativePath
+                : file.name;
+
+        const projectFiles = files.map((file) => ({
+            file,
+            path: normalizePath(file),
+            basename: normalizePath(file).replace(/^.*[\\/]/u, "")
+        }));
+
+        const gmloopEntry = projectFiles.find((entry) => entry.basename.toLowerCase() === "gmloop.json");
+        let gmloopRawConfig = {};
+        let gmloopConfigPath = null;
+        if (gmloopEntry) {
+            try {
+                gmloopRawConfig = JSON.parse(await gmloopEntry.file.text());
+                gmloopConfigPath = gmloopEntry.path;
+            } catch {
+                gmloopRawConfig = {};
+                gmloopConfigPath = gmloopEntry.path;
+            }
+        }
+
+        const prettierConfigNames = [
+            ".prettierrc",
+            ".prettierrc.json",
+            ".prettierrc.yaml",
+            ".prettierrc.yml",
+            ".prettierrc.js",
+            "prettier.config.js",
+            "prettier.config.cjs",
+            "prettier.config.mjs"
+        ];
+        const eslintConfigNames = [
+            ".eslintrc",
+            ".eslintrc.json",
+            ".eslintrc.yaml",
+            ".eslintrc.yml",
+            ".eslintrc.js",
+            ".eslintrc.cjs",
+            ".eslintrc.mjs",
+            "eslint.config.js",
+            "eslint.config.cjs",
+            "eslint.config.mjs"
+        ];
+
+        const prettierFiles = projectFiles.filter((entry) => prettierConfigNames.includes(entry.basename.toLowerCase()));
+        const eslintFiles = projectFiles.filter((entry) => eslintConfigNames.includes(entry.basename.toLowerCase()));
+
+        const readFileContent = async (entry) => {
+            try {
+                return await entry.file.text();
+            } catch {
+                return "";
+            }
+        };
+
+        return {
+            gmloop: {
+                configPath: gmloopConfigPath,
+                rawConfig: gmloopRawConfig
+            },
+            prettier: await Promise.all(
+                prettierFiles.map(async (entry) => ({ path: entry.path, content: await readFileContent(entry) }))
+            ),
+            eslint: await Promise.all(
+                eslintFiles.map(async (entry) => ({ path: entry.path, content: await readFileContent(entry) }))
+            )
+        };
     }
 
     function createCatalogCard(title, descriptionText, usageText, rows) {
@@ -318,7 +394,7 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
 
         configContentElement.innerHTML = "";
 
-        if (!PROJECT_CONFIGURATION || typeof PROJECT_CONFIGURATION !== "object") {
+        if (!PROJECT_CONFIGURATION && !selectedProjectConfiguration) {
             configMetaElement.textContent = "No project configuration is available for this view.";
             const emptyState = document.createElement("div");
             emptyState.className = "catalog-empty";
@@ -327,8 +403,14 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
             return;
         }
 
-        const gmloopConfig = PROJECT_CONFIGURATION.gmloop || { configPath: null, exists: false, projectRoot: "", rawConfig: {} };
-        configMetaElement.textContent = gmloopConfig.exists
+        const effectiveConfiguration = selectedProjectConfiguration
+            ? { ...(PROJECT_CONFIGURATION || {}), gmloop: selectedProjectConfiguration.gmloop }
+            : PROJECT_CONFIGURATION;
+
+        const gmloopConfig = (effectiveConfiguration && effectiveConfiguration.gmloop) || { configPath: null, exists: false, projectRoot: "", rawConfig: {} };
+        configMetaElement.textContent = selectedProjectConfiguration
+            ? "Loaded project configuration from the selected project."
+            : gmloopConfig.exists
             ? "Loaded project configuration and workspace-owned normalized views for the active project."
             : "No gmloop.json was found for the active selection. Defaults and registered workspace metadata are shown where available.";
 
@@ -344,7 +426,7 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
 
         const repositoryLink = document.createElement("a");
         repositoryLink.className = "github-link";
-        repositoryLink.href = PROJECT_CONFIGURATION.githubRepositoryUrl;
+        repositoryLink.href = (effectiveConfiguration || {}).githubRepositoryUrl || "https://github.com/SimulatorLife/GMLoop";
         repositoryLink.target = "_blank";
         repositoryLink.rel = "noreferrer";
         repositoryLink.textContent = "Open Public Repository";
@@ -361,8 +443,37 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
         );
         configContentElement.append(overviewGrid);
 
-        const formatEntries = Array.isArray(PROJECT_CONFIGURATION.format?.entries)
-            ? PROJECT_CONFIGURATION.format.entries
+        if (selectedProjectConfiguration) {
+            const selectedConfigContainer = document.createElement("div");
+            selectedConfigContainer.className = "config-grid";
+
+            if (Array.isArray(selectedProjectConfiguration.prettier) && selectedProjectConfiguration.prettier.length > 0) {
+                const prettierCards = selectedProjectConfiguration.prettier.map((entry) => {
+                    const contentPre = document.createElement("pre");
+                    contentPre.className = "config-raw";
+                    contentPre.textContent = entry.content || "";
+                    return createConfigCard("Prettier config: " + entry.path, "Selected project Prettier configuration file.", [contentPre]);
+                });
+                prettierCards.forEach((card) => selectedConfigContainer.append(card));
+            }
+
+            if (Array.isArray(selectedProjectConfiguration.eslint) && selectedProjectConfiguration.eslint.length > 0) {
+                const eslintCards = selectedProjectConfiguration.eslint.map((entry) => {
+                    const contentPre = document.createElement("pre");
+                    contentPre.className = "config-raw";
+                    contentPre.textContent = entry.content || "";
+                    return createConfigCard("ESLint config: " + entry.path, "Selected project ESLint configuration file.", [contentPre]);
+                });
+                eslintCards.forEach((card) => selectedConfigContainer.append(card));
+            }
+
+            if (selectedConfigContainer.children.length > 0) {
+                configContentElement.append(selectedConfigContainer);
+            }
+        }
+
+        const formatEntries = Array.isArray(effectiveConfiguration?.format?.entries)
+            ? effectiveConfiguration.format.entries
             : [];
         const formatList = document.createElement("ul");
         formatList.className = "config-list";
@@ -380,7 +491,7 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
             createConfigCard("Format / Prettier", "Formatter-owned options sourced from the format workspace.", [formatList])
         );
 
-        const lintRules = Array.isArray(PROJECT_CONFIGURATION.lint?.rules) ? PROJECT_CONFIGURATION.lint.rules : [];
+        const lintRules = Array.isArray(effectiveConfiguration?.lint?.rules) ? effectiveConfiguration.lint.rules : [];
         const lintList = document.createElement("ul");
         lintList.className = "config-list";
         lintRules.forEach((entry) => {
@@ -395,15 +506,15 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
         configContentElement.append(
             createConfigCard(
                 "Lint",
-                PROJECT_CONFIGURATION.lint?.ruleset
-                    ? "Resolved lint rules for the active gmloop lintRuleset: " + PROJECT_CONFIGURATION.lint.ruleset
+                effectiveConfiguration?.lint?.ruleset
+                    ? "Resolved lint rules for the active gmloop lintRuleset: " + effectiveConfiguration.lint.ruleset
                     : "Resolved lint rules for the active project configuration.",
                 [lintList]
             )
         );
 
-        const refactorCodemods = Array.isArray(PROJECT_CONFIGURATION.refactor?.codemods)
-            ? PROJECT_CONFIGURATION.refactor.codemods
+        const refactorCodemods = Array.isArray(effectiveConfiguration?.refactor?.codemods)
+            ? effectiveConfiguration.refactor.codemods
             : [];
         const refactorList = document.createElement("ul");
         refactorList.className = "config-list";
@@ -1039,39 +1150,64 @@ export function renderGraphVisualizationClientScript(serializedData: string, isS
 
     updateGraph();
 
-    if (IS_SERVER_MODE) {
-        const openProjectButton = d3.select("#open-project");
-        if (!openProjectButton.empty()) {
-            openProjectButton.on("click", async () => {
-                const btn = d3.select("#open-project");
-                btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Opening…</span></span>');
+    const openProjectButton = d3.select("#open-project");
+    if (!openProjectButton.empty()) {
+        openProjectButton.on("click", async () => {
+            const btn = d3.select("#open-project");
+            btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Opening…</span></span>');
+            try {
+                let selectedFiles = null;
                 try {
-                    let targetName = "selected items";
-                    try {
-                        const directoryHandle = await directoryOpen({ recursive: false });
-                        targetName = directoryHandle.name || targetName;
-                    } catch (directoryError) {
-                        if (directoryError?.name === "AbortError") {
-                            btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Open...</span></span>');
-                            return;
-                        }
-                        const fileHandle = await fileOpen({ multiple: false });
-                        targetName = fileHandle.name || targetName;
+                    selectedFiles = await directoryOpen({ recursive: true });
+                } catch (directoryError) {
+                    if (directoryError?.name === "AbortError") {
+                        btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Open...</span></span>');
+                        return;
                     }
-
-                    const loadedTargetEl = document.getElementById("loaded-target");
-                    if (loadedTargetEl instanceof HTMLElement) {
-                        loadedTargetEl.textContent = "Active: " + targetName;
-                    }
-
-                    btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Open...</span></span>');
-                } catch (err) {
-                    console.error("File picker failed:", err);
-                    btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Error</span></span>');
+                    console.warn("Directory picker failed, falling back to file picker:", directoryError);
                 }
-            });
-        }
 
+                if (!selectedFiles || (Array.isArray(selectedFiles) && selectedFiles.length === 0)) {
+                    const fileSelection = await fileOpen({
+                        multiple: true,
+                        extensions: [".gml", ".yyp", ".json"],
+                        description: "GameMaker project files and folders"
+                    });
+                    selectedFiles = Array.isArray(fileSelection) ? fileSelection : [fileSelection];
+                }
+
+                const files = Array.isArray(selectedFiles) ? selectedFiles : [selectedFiles];
+                if (files.length === 0) {
+                    btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Open...</span></span>');
+                    return;
+                }
+
+                const selectedPaths = files.map((file) =>
+                    typeof file.webkitRelativePath === "string" && file.webkitRelativePath.length > 0
+                        ? file.webkitRelativePath
+                        : file.name
+                );
+                const activePath = selectedPaths[0] ?? "selected items";
+                currentLoadedTarget = Object.freeze({
+                    activePath,
+                    source: "finder-open",
+                    projectRoot: activePath,
+                    selectedPaths
+                });
+
+                selectedProjectConfiguration = await loadProjectConfigurationFromFiles(files);
+                renderLoadedTargetSummary();
+                renderProjectConfigurationCatalog();
+
+                btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Open...</span></span>');
+            } catch (err) {
+                console.error("Open project failed:", err);
+                btn.attr("disabled", null).html('<span class="button-content"><span class="button-label">Error</span></span>');
+            }
+        });
+    }
+
+    if (IS_SERVER_MODE) {
         d3.select("#regenerate").on("click", async () => {
             const btn = d3.select("#regenerate");
             btn.attr("disabled", "true").html('<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Regenerating…</span></span>');

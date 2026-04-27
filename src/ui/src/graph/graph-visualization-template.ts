@@ -165,7 +165,7 @@ export function renderGraphVisualizationHtml(
               <button id="tab-config" class="top-nav-button">Config</button>
             </nav>
             <a id="github-link" class="github-link" href="https://github.com/SimulatorLife/GMLoop" target="_blank" rel="noreferrer">GitHub Repo</a>
-            ${isServerMode ? `<button id="open-project" class="open-button"><span class="button-content"><span class="button-label">Open...</span></span></button>` : ""}
+            <button id="open-project" class="open-button"><span class="button-content"><span class="button-label">Open...</span></span></button>
           </div>
         </div>
         <div class="loaded-target-stack">
