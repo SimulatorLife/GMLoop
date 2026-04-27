@@ -105,6 +105,10 @@ void test("compactArray normalizes nullish inputs to empty arrays", () => {
     assert.deepEqual(compactArray(), []);
 });
 
+void test("compactArray ignores non-iterable values", () => {
+    assert.deepEqual(compactArray({ value: "alpha" }), []);
+});
+
 void test("pushUnique appends values that are not present", () => {
     const entries = ["alpha"];
 
