@@ -431,11 +431,30 @@ export interface RefactorProjectAnalysisProvider {
     };
 }
 
+/**
+ * Hot reload coordination entry points consumed by {@link RefactorEngine}.
+ *
+ * This seam allows tests (and advanced embedders) to inject deterministic
+ * collaborators without subclassing the engine to override hot-reload methods.
+ */
+export interface RefactorHotReloadCoordinator {
+    checkHotReloadSafety(
+        request: RenameRequest,
+        semantic: PartialSemanticAnalyzer | null
+    ): Promise<HotReloadSafetySummary>;
+    computeHotReloadCascade(
+        changedSymbolIds: Array<string>,
+        semantic: PartialSemanticAnalyzer | null
+    ): Promise<HotReloadCascadeResult>;
+    computeRenameImpactGraph(symbolId: string, semantic: PartialSemanticAnalyzer | null): Promise<RenameImpactGraph>;
+}
+
 export interface RefactorEngineDependencies {
     parser: ParserBridge | null;
     semantic: PartialSemanticAnalyzer | null;
     formatter: TranspilerBridge | null;
     projectAnalysisProvider: RefactorProjectAnalysisProvider | null;
+    hotReloadCoordinator: RefactorHotReloadCoordinator | null;
 }
 
 /**
