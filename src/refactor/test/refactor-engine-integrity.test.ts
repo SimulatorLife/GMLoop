@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    type HotReloadSafetySummary,
     type ParserBridge,
     type PartialSemanticAnalyzer,
     Refactor,
@@ -26,6 +27,36 @@ function createSingleEditWorkspace(fixture: VerifyPostEditIntegrityFixture): Wor
     const workspace = new WorkspaceEditFactory();
     workspace.addEdit(fixture.filePath, fixture.editStart, fixture.editEnd, fixture.replacementText);
     return workspace;
+}
+
+function createMinimalRenameImpactGraph(symbolId: string, symbolName: string) {
+    return {
+        nodes: new Map([
+            [symbolId, { symbolId, symbolName, distance: 0, isDirectlyAffected: true, dependents: [], dependsOn: [] }]
+        ]),
+        rootSymbol: symbolId,
+        totalAffectedSymbols: 1,
+        maxDepth: 0,
+        criticalPath: [],
+        estimatedTotalReloadTime: 0
+    };
+}
+
+function createHotReloadCoordinatorForValidation(
+    symbolId: string,
+    symbolName: string,
+    checkHotReloadSafety: () => Promise<HotReloadSafetySummary>
+) {
+    return {
+        computeHotReloadCascade: async () => ({
+            cascade: [],
+            order: [],
+            circular: [],
+            metadata: { totalSymbols: 0, maxDistance: 0, hasCircular: false }
+        }),
+        computeRenameImpactGraph: async () => createMinimalRenameImpactGraph(symbolId, symbolName),
+        checkHotReloadSafety
+    };
 }
 
 async function verifyPostEditIntegrityForSingleEdit(
@@ -393,25 +424,22 @@ void test("validateRenameRequest surfaces cross-file conflicts", async () => {
 });
 
 void test("validateRenameRequest can include hot reload safety summary", async () => {
-    class MockEngine extends RefactorEngineClass {
-        override async checkHotReloadSafety() {
-            return {
-                safe: false,
-                reason: "Mock hot reload block",
-                requiresRestart: true,
-                canAutoFix: false,
-                suggestions: []
-            };
-        }
-    }
-
     const mockSemantic: PartialSemanticAnalyzer = {
         hasSymbol: async () => true,
         getSymbolOccurrences: async () => [{ path: "test.gml", start: 0, end: 5, scopeId: "scope-1" }],
         getReservedKeywords: async () => []
     };
 
-    const engine = new MockEngine({ semantic: mockSemantic });
+    const engine = new RefactorEngineClass({
+        semantic: mockSemantic,
+        hotReloadCoordinator: createHotReloadCoordinatorForValidation("gml/script/scr_test", "scr_test", async () => ({
+            safe: false,
+            reason: "Mock hot reload block",
+            requiresRestart: true,
+            canAutoFix: false,
+            suggestions: []
+        }))
+    });
 
     const result = await engine.validateRenameRequest(
         {
@@ -428,25 +456,22 @@ void test("validateRenameRequest can include hot reload safety summary", async (
 });
 
 void test("validateRenameRequest passes through safe hot reload summary", async () => {
-    class MockEngine extends RefactorEngineClass {
-        override async checkHotReloadSafety() {
-            return {
-                safe: true,
-                reason: "Safe to hot reload",
-                requiresRestart: false,
-                canAutoFix: true,
-                suggestions: ["none"]
-            };
-        }
-    }
-
     const mockSemantic: PartialSemanticAnalyzer = {
         hasSymbol: async () => true,
         getSymbolOccurrences: async () => [{ path: "test.gml", start: 0, end: 3, scopeId: "scope-1" }],
         getReservedKeywords: async () => []
     };
 
-    const engine = new MockEngine({ semantic: mockSemantic });
+    const engine = new RefactorEngineClass({
+        semantic: mockSemantic,
+        hotReloadCoordinator: createHotReloadCoordinatorForValidation("gml/script/scr_test", "scr_test", async () => ({
+            safe: true,
+            reason: "Safe to hot reload",
+            requiresRestart: false,
+            canAutoFix: true,
+            suggestions: ["none"]
+        }))
+    });
 
     const result = await engine.validateRenameRequest(
         {
@@ -559,26 +584,29 @@ void test("validateRenameRequest reuses cached result for repeated requests", as
 void test("validateRenameRequest bypasses cache when hot reload summary is requested", async () => {
     let hotReloadChecks = 0;
 
-    class MockEngine extends RefactorEngineClass {
-        override async checkHotReloadSafety() {
-            hotReloadChecks += 1;
-            return {
-                safe: true,
-                reason: "safe",
-                requiresRestart: false,
-                canAutoFix: true,
-                suggestions: []
-            };
-        }
-    }
-
     const mockSemantic: PartialSemanticAnalyzer = {
         hasSymbol: async () => true,
         getSymbolOccurrences: async () => [{ path: "scripts/player.gml", start: 0, end: 8, scopeId: "scope-1" }],
         getReservedKeywords: async () => []
     };
 
-    const engine = new MockEngine({ semantic: mockSemantic });
+    const engine = new RefactorEngineClass({
+        semantic: mockSemantic,
+        hotReloadCoordinator: createHotReloadCoordinatorForValidation(
+            "gml/script/scr_player",
+            "scr_player",
+            async () => {
+                hotReloadChecks += 1;
+                return {
+                    safe: true,
+                    reason: "safe",
+                    requiresRestart: false,
+                    canAutoFix: true,
+                    suggestions: []
+                };
+            }
+        )
+    });
 
     await engine.validateRenameRequest(
         {
