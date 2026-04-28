@@ -1,5 +1,5 @@
-import { getNodeEndIndex, getNodeStartIndex } from "./locations.js";
-import { walkAst } from "./object-graph.js";
+import { getNodeEndIndex, getNodeStartIndex } from "../locations.js";
+import { walkAst } from "../object-graph.js";
 
 /**
  * A single occurrence of a loop-length accessor call (e.g. `array_length(arr)`)
