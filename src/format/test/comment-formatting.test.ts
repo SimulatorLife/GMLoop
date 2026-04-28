@@ -400,7 +400,7 @@ void test("preserves blank lines between adjacent function doc-comment tags", as
     );
 });
 
-void test("does not promote plain comments into doc-comment attachments", async () => {
+void test("preserves source order for mixed comment styles before functions", async () => {
     const source = [
         "/// @function scr_create_fx",
         "// @param sprite_index",
@@ -415,9 +415,9 @@ void test("does not promote plain comments into doc-comment attachments", async 
     assert.equal(
         formatted,
         [
+            "/// @function scr_create_fx",
             "// @param sprite_index",
             "/* @description Create an effect */",
-            "/// @function scr_create_fx",
             "/// @returns {Id.Instance} instance",
             "function scr_create_fx() {}",
             ""
