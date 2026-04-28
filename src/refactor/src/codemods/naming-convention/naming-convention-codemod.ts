@@ -652,6 +652,15 @@ function buildNamingTargetQueryPaths(projectRoot: string, selectedFilePaths: Arr
     return [...queryPaths];
 }
 
+function includesWholeProjectSelection(projectRoot: string, targetPaths: ReadonlyArray<string>): boolean {
+    if (targetPaths.length === 0) {
+        return true;
+    }
+
+    const absoluteProjectRoot = resolveProjectPath(projectRoot, projectRoot);
+    return targetPaths.every((targetPath) => resolveProjectPath(projectRoot, targetPath) === absoluteProjectRoot);
+}
+
 function getNamingTargetIdentity(target: NamingConventionTarget): string {
     const occurrenceIdentity = target.occurrences
         .map(
@@ -791,9 +800,13 @@ export async function planNamingConventionCodemod(
     const seenTopLevelRenames = new Set<string>();
     let localRenameCount = 0;
     const isSelectedTargetPath = createPathSelectionMatcher(parameters.projectRoot, parameters.targetPaths, []);
-
-    const selectedFilePaths = (parameters.gmlFilePaths ?? []).filter((filePath) => isSelectedTargetPath(filePath));
-    const queryPaths = buildNamingTargetQueryPaths(parameters.projectRoot, selectedFilePaths);
+    const selectedWholeProject = includesWholeProjectSelection(parameters.projectRoot, parameters.targetPaths);
+    const selectedFilePaths = selectedWholeProject
+        ? [...(parameters.gmlFilePaths ?? [])]
+        : (parameters.gmlFilePaths ?? []).filter((filePath) => isSelectedTargetPath(filePath));
+    const queryPaths = selectedWholeProject
+        ? []
+        : buildNamingTargetQueryPaths(parameters.projectRoot, selectedFilePaths);
     const namingTargetProvider = {
         listNamingConventionTargets: semantic.listNamingConventionTargets.bind(semantic)
     };
