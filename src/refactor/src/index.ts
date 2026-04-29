@@ -188,6 +188,7 @@ export type {
     RefactorCodemodConfigMap,
     RefactorCodemodId,
     RefactorEngineDependencies,
+    RefactorHotReloadCoordinator,
     RefactorProjectAnalysisProvider,
     RefactorProjectConfig,
     RegisteredCodemod,

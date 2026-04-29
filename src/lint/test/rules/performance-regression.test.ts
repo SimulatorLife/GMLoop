@@ -9,7 +9,7 @@ import {
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     STILE_FIXTURE_URL,
     STILE_OPTIMIZE_MATH_OUTPUT_HASH
-} from "./performance-test-helpers.js";
+} from "../performance/index.js";
 
 function buildNonMathAssignmentBatchSource(statementCount: number): string {
     const lines: string[] = [];
