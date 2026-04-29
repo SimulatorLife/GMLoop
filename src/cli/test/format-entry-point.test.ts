@@ -69,6 +69,13 @@ void describe("resolveFormatEntryPoint", () => {
         assert.strictEqual(resolved, expected);
     });
 
+    void it("treats primitive options bags as absent overrides", () => {
+        const expected = resolveFormatEntryPoint();
+        const resolved = resolveFormatEntryPoint("invalid-options-bag");
+
+        assert.strictEqual(resolved, expected);
+    });
+
     void it("checks each environment entry before falling back to defaults", () => {
         const formatPath = createTemporaryFormatModuleFile();
         const nonexistent = path.join(path.dirname(formatPath), "missing.mjs");
