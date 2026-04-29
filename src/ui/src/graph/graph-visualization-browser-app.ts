@@ -1712,5 +1712,4 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             })();
         });
     }
-
 }
