@@ -148,6 +148,15 @@ type TooltipMouseEvent = MouseEvent &
         pageY: number;
     }>;
 
+const NODE_GROUP_FILTER_CATEGORY = "node-group";
+const RESOURCE_GROUP_FILTER_TYPE = "resource-group";
+type FilterCategory = "edge" | "node" | typeof NODE_GROUP_FILTER_CATEGORY;
+type FilterType =
+    | GraphVisualizationNodeKind
+    | "enum-group"
+    | typeof RESOURCE_GROUP_FILTER_TYPE
+    | GraphVisualizationEdgeRecord["type"];
+
 /**
  * Bootstrap the graph visualization browser application.
  */
@@ -1035,8 +1044,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 nodesSection,
                 "filter-resource",
                 "Resources",
-                "node-group",
-                "resource-group",
+                NODE_GROUP_FILTER_CATEGORY,
+                RESOURCE_GROUP_FILTER_TYPE,
                 (checked) => {
                     resourceTypesPresent.forEach((kindValue) => {
                         if (checked) {
@@ -1082,7 +1091,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 nodesSection,
                 "filter-enum",
                 "Enums",
-                "node-group",
+                NODE_GROUP_FILTER_CATEGORY,
                 "enum-group",
                 (checked) => {
                     enumTypesPresent.forEach((kindValue) => {
@@ -1164,8 +1173,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         containerSelection: GraphSelectionApi,
         id: string,
         labelText: string,
-        category: "edge" | "node" | "node-group",
-        typeValue: GraphVisualizationNodeKind | "enum-group" | "resource-group" | GraphVisualizationEdgeRecord["type"],
+        category: FilterCategory,
+        typeValue: FilterType,
         changeHandler: (checked: boolean) => void,
         customClass = ""
     ): GraphSelectionApi {
@@ -1184,9 +1193,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 updateGraph();
             });
 
-        if (category === "node" || category === "node-group") {
+        if (category === "node" || category === NODE_GROUP_FILTER_CATEGORY) {
             const styleKind: GraphVisualizationNodeKind | "default" =
-                typeValue === "resource-group" || typeValue === "enum-group"
+                typeValue === RESOURCE_GROUP_FILTER_TYPE || typeValue === "enum-group"
                     ? "default"
                     : (typeValue as GraphVisualizationNodeKind | "default");
             const color =
@@ -1195,7 +1204,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             if (typeof typeValue === "string" && typeValue.endsWith("_variable")) {
                 shapeHtml = `<span style="color:${color}">&#9830;</span>`;
             } else if (
-                typeValue === "resource-group" ||
+                typeValue === RESOURCE_GROUP_FILTER_TYPE ||
                 (typeof typeValue === "string" && resourceKinds.has(typeValue as GraphVisualizationNodeKind))
             ) {
                 shapeHtml = `<span style="color:${color}">&#9632;</span>`;
@@ -1219,23 +1228,18 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         return checkbox;
     }
 
-    function createInitialFilterCheckedState(
-        category: "edge" | "node" | "node-group",
-        typeValue: GraphVisualizationNodeKind | "enum-group" | "resource-group" | GraphVisualizationEdgeRecord["type"]
-    ): boolean {
+    function createInitialFilterCheckedState(category: FilterCategory, typeValue: FilterType): boolean {
         if (category === "edge") {
             return true;
         }
-        if (category === "node-group") {
+        if (category === NODE_GROUP_FILTER_CATEGORY) {
             return isNodeGroupCheckedByDefault(typeValue);
         }
         return defaultEnabledNodeKinds.includes(typeValue as GraphVisualizationNodeKind);
     }
 
-    function isNodeGroupCheckedByDefault(
-        typeValue: GraphVisualizationNodeKind | "enum-group" | "resource-group" | GraphVisualizationEdgeRecord["type"]
-    ): boolean {
-        if (typeValue === "resource-group") {
+    function isNodeGroupCheckedByDefault(typeValue: FilterType): boolean {
+        if (typeValue === RESOURCE_GROUP_FILTER_TYPE) {
             return (
                 resourceTypesPresent.length > 0 &&
                 resourceTypesPresent.every((kindValue) => defaultEnabledNodeKinds.includes(kindValue))
