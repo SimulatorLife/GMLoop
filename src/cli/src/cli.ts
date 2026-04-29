@@ -24,6 +24,7 @@ import { type CliCatalogEntry, createCliCommandCatalog } from "./cli-core/comman
 import { createCliCommandManager } from "./cli-core/command-manager.js";
 import { applyStandardCommandOptions } from "./cli-core/command-standard-options.js";
 import { handleCliError } from "./cli-core/errors.js";
+import { createMcpToolCatalogEntries, type McpToolCatalogEntry } from "./cli-core/mcp-tool-catalog.js";
 import { resolveCliVersion } from "./cli-core/version.js";
 import { createCollectStatsCommand, runCollectStats } from "./commands/collect-stats.js";
 import { createFixCommand, runFixCommand } from "./commands/fix.js";
@@ -386,8 +387,13 @@ export function getCliCommandCatalog(): ReadonlyArray<CliCatalogEntry> {
     return Object.freeze(createCliCommandCatalog(program));
 }
 
+export function getMcpToolCatalogEntries(): ReadonlyArray<McpToolCatalogEntry> {
+    return createMcpToolCatalogEntries(getCliCommandCatalog());
+}
+
 export const __test__ = Object.freeze({
     ...__formatTest__,
+    getMcpToolCatalogEntries,
     getCliCommandCatalog,
     isNodeTestRunnerProcess,
     normalizeCommandLineArguments,

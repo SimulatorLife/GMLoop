@@ -127,9 +127,20 @@ The split is now:
 
 - `@gmloop/semantic`: exports the graph visualization payload
 - `@gmloop/ui`: renders the graph visualization HTML, owns typed graph UI contracts, and owns client behavior
-- `@gmloop/cli`: chooses whether to write or serve the UI, owns the HTTP host server, and owns regeneration endpoints
+- `@gmloop/cli`: chooses whether to write or serve the UI, owns the HTTP host server, owns regeneration endpoints, and owns native file-picker integration
 
 That separation is intentional and should be preserved as more UI surfaces are added.
+
+## Serve Host Contract
+
+`@gmloop/ui` does not invoke native dialogs or perform local filesystem selection itself. The host workspace provides that behavior and passes loaded-target metadata into the renderer.
+
+Current graph serve-mode host actions are:
+
+- `POST /api/reindex`: force-regenerate the current graph index
+- `POST /api/open`: open the native project picker and switch the active UI project globally
+
+The renderer receives a typed `loadedTarget` object and only displays it. Target-path resolution remains in CLI using the same path handling contract as `--path` (`.yyp` normalization, `.gml` file path handling, project-root discovery).
 
 ## Surface Convention
 

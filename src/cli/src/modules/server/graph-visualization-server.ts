@@ -15,6 +15,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     port?: number;
     regenerate: GraphVisualizationServerRegenerate;
     renderHtml: GraphVisualizationServerRenderHtml;
+    openProjectTargets?: GraphVisualizationServerRegenerate;
 }>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
@@ -33,33 +34,47 @@ export async function startGraphVisualizationServer(
     const port = options.port ?? 0;
     const activeSockets = new Set<import("node:net").Socket>();
 
-    const server = http.createServer(async (request, response) => {
-        if (request.method === "GET" && (request.url === "/" || request.url === "")) {
-            try {
-                const htmlContent = await options.renderHtml(true);
-                response.writeHead(200, { "Content-Type": "text/html" });
-                response.end(htmlContent);
-            } catch (error: unknown) {
-                response.writeHead(500, { "Content-Type": "text/plain" });
-                response.end(error instanceof Error ? error.message : String(error));
+    const server = http.createServer((request, response) => {
+        void (async () => {
+            if (request.method === "GET" && (request.url === "/" || request.url === "")) {
+                try {
+                    const htmlContent = await options.renderHtml(true);
+                    response.writeHead(200, { "Content-Type": "text/html" });
+                    response.end(htmlContent);
+                } catch (error: unknown) {
+                    response.writeHead(500, { "Content-Type": "text/plain" });
+                    response.end(resolveErrorMessage(error));
+                }
+                return;
             }
-            return;
-        }
 
-        if (request.method === "POST" && request.url === "/api/reindex") {
-            try {
-                const regenerationResult = await options.regenerate();
-                response.writeHead(200, { "Content-Type": "application/json" });
-                response.end(JSON.stringify({ changed: regenerationResult.changed, ok: true }));
-            } catch (error: unknown) {
-                response.writeHead(500, { "Content-Type": "application/json" });
-                response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+            if (request.method === "POST" && request.url === "/api/reindex") {
+                try {
+                    const regenerationResult = await options.regenerate();
+                    response.writeHead(200, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ changed: regenerationResult.changed, ok: true }));
+                } catch (error: unknown) {
+                    response.writeHead(500, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
+                }
+                return;
             }
-            return;
-        }
 
-        response.writeHead(404, { "Content-Type": "text/plain" });
-        response.end("Not found");
+            if (request.method === "POST" && request.url === "/api/open" && options.openProjectTargets) {
+                try {
+                    const selectionResult = await options.openProjectTargets();
+                    response.writeHead(200, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ changed: selectionResult.changed, ok: true }));
+                } catch (error: unknown) {
+                    response.writeHead(500, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
+                }
+                return;
+            }
+
+            response.writeHead(404, { "Content-Type": "text/plain" });
+            response.end("Not found");
+        })();
     });
 
     server.on("connection", (socket) => {
@@ -105,4 +120,8 @@ export async function startGraphVisualizationServer(
         },
         url: resolvedUrl
     });
+}
+
+function resolveErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : "Unknown error";
 }

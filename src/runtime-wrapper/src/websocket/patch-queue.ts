@@ -322,16 +322,26 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
     const patchIds = new Set<string>();
     const patchById = new Map<string, unknown>();
     const orderedIds: Array<string> = [];
+    let containsPatchWithoutStringId = false;
 
     for (const patch of patches) {
         const patchId = extractPatchId(patch);
-        if (patchId === null || patchById.has(patchId)) {
+        if (patchId === null) {
+            containsPatchWithoutStringId = true;
+            continue;
+        }
+
+        if (patchById.has(patchId)) {
             continue;
         }
 
         patchIds.add(patchId);
         patchById.set(patchId, patch);
         orderedIds.push(patchId);
+    }
+
+    if (containsPatchWithoutStringId) {
+        return patches;
     }
 
     if (orderedIds.length < 2) {

@@ -6,6 +6,7 @@ reports/
 vendor/
 resources/
 docs/
+dist
 
 .aider.conf.yml
 .aiderignore

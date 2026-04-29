@@ -1,4 +1,3 @@
-import child_process from "node:child_process";
 import { access, constants, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -7,12 +6,15 @@ import { Semantic } from "@gmloop/semantic";
 import { UI } from "@gmloop/ui";
 import { Command, Option } from "commander";
 
+import { getCliCommandCatalog, getMcpToolCatalogEntries } from "../cli.js";
 import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
 import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
-import { discoverProjectRoot } from "../workflow/project-root.js";
+import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
+import { createGraphVisualizationProjectConfigurationCatalog } from "../modules/ui/index.js";
+import { discoverProjectRoot, resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 
 type GraphCommandSharedOptions = {
     config?: string;
@@ -114,21 +116,6 @@ async function ensureGraphIndexForQuery(
     } catch {
         await ensureGraphIndex(options, context);
     }
-}
-
-function openHtmlInDefaultBrowser(filePath: string): void {
-    const platform = process.platform;
-    let cmd: string;
-    if (platform === "darwin") {
-        cmd = "open";
-    } else if (platform === "win32") {
-        cmd = "start";
-    } else {
-        cmd = "xdg-open";
-    }
-    // Expected behavior: we want to open a dynamic path provided by user args
-    // eslint-disable-next-line security/detect-child-process -- Intentionally opening default browser
-    child_process.exec(`${cmd} "${filePath}"`);
 }
 
 function createGraphEnvelope<TPayload>(
@@ -312,73 +299,173 @@ async function runGraphDoctorAction(options: GraphCommandSharedOptions): Promise
 }
 
 async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Promise<void> {
-    const context = await resolveGraphContext(options);
-    await ensureGraphIndexForQuery(options, context);
+    type GraphServeSource = "cli-path" | "finder-open" | "working-directory";
+    type GraphVisualizedLoadedTarget = Readonly<{
+        activePath: string;
+        projectRoot: string;
+        selectedPaths: ReadonlyArray<string>;
+        source: GraphServeSource;
+    }>;
 
-    const config = Semantic.resolveGraphIndexConfig({
-        databasePath: options.databasePath,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
+    const initialSelectedPath = resolveExplicitWorkflowTargetPath(options.path);
+    let activeContext: GraphResolutionContext | null = null;
+    let activeSelectedPaths = initialSelectedPath ? [initialSelectedPath] : [];
+    const activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
+
+    if (options.serve === true) {
+        if (initialSelectedPath) {
+            activeContext = await resolveGraphContext(options);
+            await ensureGraphIndexForQuery(options, activeContext);
+        } else {
+            try {
+                activeContext = await resolveGraphContext(options);
+                await ensureGraphIndexForQuery(options, activeContext);
+                activeSelectedPaths = [activeContext.projectRoot];
+            } catch {
+                activeContext = null;
+                activeSelectedPaths = [];
+            }
+        }
+    } else {
+        activeContext = await resolveGraphContext(options);
+        await ensureGraphIndexForQuery(options, activeContext);
+        activeSelectedPaths = [initialSelectedPath ?? activeContext.projectRoot];
+    }
+
+    function resolveActiveConfig() {
+        if (!activeContext) {
+            return null;
+        }
+
+        return Semantic.resolveGraphIndexConfig({
+            databasePath: options.databasePath,
+            projectConfig: activeContext.projectConfig,
+            projectRoot: activeContext.projectRoot,
+            toolsetRoot: options.toolsetRoot
+        });
+    }
+
+    function createLoadedTarget(): GraphVisualizedLoadedTarget {
+        const resolvedSelectedPaths = activeSelectedPaths.map(
+            (selectedPathValue) => resolveExplicitWorkflowTargetPath(selectedPathValue) ?? selectedPathValue
+        );
+        const activePath = resolvedSelectedPaths[0] ?? "";
+        const projectRoot = activeContext?.projectRoot ?? "";
+
+        return Object.freeze({
+            activePath,
+            projectRoot,
+            selectedPaths: resolvedSelectedPaths,
+            source: activeSource
+        });
+    }
 
     function exportVisualizationPayload() {
-        const database = Semantic.openExistingGraphIndexDatabase(config.databasePath);
+        const activeConfig = resolveActiveConfig();
+        if (!activeConfig) {
+            return Object.freeze({
+                edges: [],
+                generatedAt: new Date().toISOString(),
+                graphs: [],
+                nodes: [],
+                projectRoot: ""
+            });
+        }
+
+        const database = Semantic.openExistingGraphIndexDatabase(activeConfig.databasePath);
         try {
-            return Semantic.exportGraphVisualizationData(database, config.projectRoot);
+            return Semantic.exportGraphVisualizationData(database, activeConfig.projectRoot);
         } finally {
             database.close();
         }
     }
 
+    function safeStringifyVisualizationPayload(): string {
+        try {
+            return JSON.stringify(exportVisualizationPayload());
+        } catch {
+            return "";
+        }
+    }
+
     if (options.serve === true) {
+        const documentationCatalogs = createDocumentationCatalogs();
+
         const server = await startGraphVisualizationServer({
             regenerate: async () => {
-                let previousPayloadString = "";
-                try {
-                    previousPayloadString = JSON.stringify(exportVisualizationPayload());
-                } catch {
-                    previousPayloadString = "";
+                const previousPayloadString = safeStringifyVisualizationPayload();
+                if (!activeContext) {
+                    return Object.freeze({ changed: false });
                 }
-
-                await ensureGraphIndex({ ...options, force: true }, context);
+                await ensureGraphIndex({ ...options, force: true }, activeContext);
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
-            renderHtml: (isServerMode) =>
-                UI.renderGraphVisualizationHtml(exportVisualizationPayload(), {
+            renderHtml: async (isServerMode) => {
+                const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(
+                    activeContext,
+                    {
+                        config: options.config
+                    }
+                );
+
+                return UI.renderGraphVisualizationHtml(exportVisualizationPayload(), {
+                    documentationCatalogs,
                     isServerMode,
-                    title: config.projectRoot
-                })
+                    loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
+                    projectConfigurationCatalog,
+                    title: activeContext?.projectRoot ?? "No project loaded"
+                });
+            }
         });
 
         printGraphOutput(
-            createGraphEnvelope("graph visualize", context, options, { url: server.url }),
+            {
+                command: "graph visualize",
+                databasePath: resolveActiveConfig()?.databasePath ?? "",
+                ok: true,
+                payload: { url: server.url },
+                projectRoot: activeContext?.projectRoot ?? "",
+                toolsetRoot: resolveActiveConfig()?.toolsetRoot ?? null
+            },
             options.json === true,
             `Serving graph visualization at ${server.url}`
         );
         if (options.open) {
-            openHtmlInDefaultBrowser(server.url);
+            openUrlInDefaultBrowser(server.url);
         }
 
         return;
     }
 
-    const dbPath = config.databasePath;
+    const activeConfig = resolveActiveConfig();
+    if (!activeConfig || !activeContext) {
+        throw new Error("Could not locate a GameMaker project root. Pass --path or run inside a project tree.");
+    }
+    const documentationCatalogs = createDocumentationCatalogs();
+    const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(activeContext, {
+        config: options.config
+    });
+    const dbPath = activeConfig.databasePath;
     const payload = exportVisualizationPayload();
-    const htmlContent = UI.renderGraphVisualizationHtml(payload, { title: config.projectRoot });
+    const htmlContent = UI.renderGraphVisualizationHtml(payload, {
+        documentationCatalogs,
+        loadedTarget: createLoadedTarget(),
+        projectConfigurationCatalog,
+        title: activeConfig.projectRoot
+    });
     const outputPath = options.output ?? path.join(path.dirname(dbPath), "graph.html");
 
     await writeFile(outputPath, htmlContent, "utf8");
 
     printGraphOutput(
-        createGraphEnvelope("graph visualize", context, options, { outputPath }),
+        createGraphEnvelope("graph visualize", activeContext, options, { outputPath }),
         options.json === true,
         `Exported graph visualization to ${outputPath}`
     );
 
     if (options.open) {
-        openHtmlInDefaultBrowser(outputPath);
+        openUrlInDefaultBrowser(outputPath);
     }
 }
 
@@ -543,4 +630,15 @@ export function createGraphCommand(): Command {
     graphCommand.addCommand(visualizeCommand);
 
     return graphCommand;
+}
+function createDocumentationCatalogs() {
+    const cliCommands = getCliCommandCatalog();
+    return Object.freeze({
+        cliCommands,
+        mcpServer: Object.freeze({
+            name: "gmloop-mcp",
+            version: "0.0.1"
+        }),
+        mcpTools: getMcpToolCatalogEntries()
+    });
 }

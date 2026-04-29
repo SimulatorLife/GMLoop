@@ -6,6 +6,7 @@ import { z } from "zod";
 type CliCatalogEntry = ReturnType<typeof CLI.getCliCommandCatalog>[number];
 type CliCatalogArgument = CliCatalogEntry["arguments"][number];
 type CliCatalogOption = CliCatalogEntry["options"][number];
+type McpToolCatalogEntry = ReturnType<typeof CLI.getMcpToolCatalogEntries>[number];
 
 /**
  * Stable identity used by MCP clients when they connect to the GMLoop MCP server.
@@ -19,10 +20,6 @@ export const GMLOOP_MCP_SERVER_METADATA: GmloopMcpServerMetadata = Object.freeze
     name: "gmloop-mcp",
     version: "0.0.1"
 });
-
-function normalizeMcpToolName(commandPath: ReadonlyArray<string>): string {
-    return `gmloop_${commandPath.join("_").replaceAll("-", "_")}`;
-}
 
 function normalizeSchemaFieldName(name: string): string {
     return name.replaceAll(/[^a-zA-Z0-9_]/g, "_");
@@ -212,12 +209,23 @@ function getTemplateVariable(variables: Record<string, string | Array<string>>, 
 }
 
 export function listGmloopMcpToolNames(): Array<string> {
-    return CLI.getCliCommandCatalog().map((entry) => normalizeMcpToolName(entry.commandPath));
+    return listGmloopMcpToolCatalogEntries().map((entry) => entry.toolName);
+}
+
+export function listGmloopMcpToolCatalogEntries(): ReadonlyArray<McpToolCatalogEntry> {
+    return CLI.getMcpToolCatalogEntries();
 }
 
 function registerCliTools(server: McpServer): void {
+    const toolCatalogByCommandDisplayName = new Map(
+        listGmloopMcpToolCatalogEntries().map((entry) => [entry.commandDisplayName, entry.toolName])
+    );
+
     for (const entry of CLI.getCliCommandCatalog()) {
-        const toolName = normalizeMcpToolName(entry.commandPath);
+        const toolName = toolCatalogByCommandDisplayName.get(entry.displayName);
+        if (!toolName) {
+            throw new Error(`Missing MCP tool catalog entry for CLI command '${entry.displayName}'.`);
+        }
 
         server.registerTool(
             toolName,

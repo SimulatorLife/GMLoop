@@ -47,15 +47,34 @@ function createSampleGraphVisualizationData() {
     } as const;
 }
 
-void test("graph visualization server serves UI-rendered HTML and exposes regeneration JSON", async () => {
-    const handle = await startGraphVisualizationServer({
-        regenerate: async () => ({ changed: true }),
-        renderHtml: (isServerMode) =>
-            UI.renderGraphVisualizationHtml(createSampleGraphVisualizationData(), {
-                isServerMode,
-                title: "/tmp/project"
-            })
-    });
+function isListenPermissionError(error: unknown): boolean {
+    return (
+        error instanceof Error &&
+        "code" in error &&
+        typeof (error as { code?: unknown }).code === "string" &&
+        (error as { code: string }).code === "EPERM"
+    );
+}
+
+void test("graph visualization server serves UI-rendered HTML and exposes regeneration JSON", async (testContext) => {
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            openProjectTargets: async () => ({ changed: true }),
+            renderHtml: (isServerMode) =>
+                UI.renderGraphVisualizationHtml(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
 
     try {
         const htmlResponse = await fetch(handle.url);
@@ -68,28 +87,42 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         assert.equal(reindexResponse.status, 200);
         const reindexPayload = (await reindexResponse.json()) as { changed: boolean; ok: boolean };
         assert.deepEqual(reindexPayload, { changed: true, ok: true });
+
+        const openResponse = await fetch(`${handle.url}/api/open`, { method: "POST" });
+        assert.equal(openResponse.status, 200);
+        const openPayload = (await openResponse.json()) as { changed: boolean; ok: boolean };
+        assert.deepEqual(openPayload, { changed: true, ok: true });
     } finally {
         await handle.stop();
     }
 });
 
-void test("graph visualization server keeps the current view accessible while regeneration is pending", async () => {
+void test("graph visualization server keeps the current view accessible while regeneration is pending", async (testContext) => {
     let finishRegeneration: (() => void) | null = null;
     const regenerationComplete = new Promise<void>((resolve) => {
         finishRegeneration = resolve;
     });
 
-    const handle = await startGraphVisualizationServer({
-        regenerate: async () => {
-            await regenerationComplete;
-            return { changed: false };
-        },
-        renderHtml: (isServerMode) =>
-            UI.renderGraphVisualizationHtml(createSampleGraphVisualizationData(), {
-                isServerMode,
-                title: "/tmp/project"
-            })
-    });
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => {
+                await regenerationComplete;
+                return { changed: false };
+            },
+            renderHtml: (isServerMode) =>
+                UI.renderGraphVisualizationHtml(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
 
     try {
         const reindexPromise = fetch(`${handle.url}/api/reindex`, { method: "POST" });

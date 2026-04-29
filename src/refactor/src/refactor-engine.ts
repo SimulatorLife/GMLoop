@@ -55,6 +55,7 @@ import {
     type PrepareBatchRenamePlanOptions,
     type PrepareRenamePlanOptions,
     type RefactorEngineDependencies,
+    type RefactorHotReloadCoordinator,
     type RefactorProjectAnalysisProvider,
     type RenameImpactAnalysis,
     type RenameImpactGraph,
@@ -83,6 +84,11 @@ const RENAME_VALIDATION_CACHE_MAX_SIZE = 4096;
 const APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT = 8;
 const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 256;
 const validatedWorkspaceRevisions = new WeakMap<object, number>();
+const DEFAULT_HOT_RELOAD_COORDINATOR: RefactorHotReloadCoordinator = Object.freeze({
+    checkHotReloadSafety: HotReload.checkHotReloadSafety,
+    computeHotReloadCascade: HotReload.computeHotReloadCascade,
+    computeRenameImpactGraph: HotReload.computeRenameImpactGraph
+});
 
 function hasCurrentValidatedWorkspaceRevision(workspace: object): boolean {
     const currentRevision = getWorkspaceEditRevision(workspace);
@@ -224,6 +230,7 @@ export class RefactorEngine {
     public readonly semantic: PartialSemanticAnalyzer | null;
     public readonly formatter: TranspilerBridge | null;
     private readonly projectAnalysisProvider: RefactorProjectAnalysisProvider;
+    private readonly hotReloadCoordinator: RefactorHotReloadCoordinator;
     private readonly renameValidationCache: RenameValidationCache;
     private readonly semanticCache: SemanticQueryCache;
 
@@ -231,12 +238,14 @@ export class RefactorEngine {
         parser = null,
         semantic = null,
         formatter = null,
-        projectAnalysisProvider = null
+        projectAnalysisProvider = null,
+        hotReloadCoordinator = null
     }: Partial<RefactorEngineDependencies> = {}) {
         this.parser = parser ?? null;
         this.semantic = semantic ?? null;
         this.formatter = formatter ?? null;
         this.projectAnalysisProvider = projectAnalysisProvider ?? DEFAULT_PROJECT_ANALYSIS_PROVIDER;
+        this.hotReloadCoordinator = hotReloadCoordinator ?? DEFAULT_HOT_RELOAD_COORDINATOR;
         this.renameValidationCache = new RenameValidationCache({
             maxSize: RENAME_VALIDATION_CACHE_MAX_SIZE
         });
@@ -2203,14 +2212,14 @@ export class RefactorEngine {
      * that need to be reloaded, ordered for safe application.
      */
     async computeHotReloadCascade(changedSymbolIds: Array<string>): Promise<HotReloadCascadeResult> {
-        return await HotReload.computeHotReloadCascade(changedSymbolIds, this.semantic);
+        return await this.hotReloadCoordinator.computeHotReloadCascade(changedSymbolIds, this.semantic);
     }
 
     /**
      * Check whether a rename operation is safe for hot reload.
      */
     async checkHotReloadSafety(request: RenameRequest): Promise<HotReloadSafetySummary> {
-        return await HotReload.checkHotReloadSafety(request, this.semantic);
+        return await this.hotReloadCoordinator.checkHotReloadSafety(request, this.semantic);
     }
 
     /**
@@ -2238,7 +2247,7 @@ export class RefactorEngine {
      * }
      */
     async computeRenameImpactGraph(symbolId: string): Promise<RenameImpactGraph> {
-        return await HotReload.computeRenameImpactGraph(symbolId, this.semantic);
+        return await this.hotReloadCoordinator.computeRenameImpactGraph(symbolId, this.semantic);
     }
 
     /**

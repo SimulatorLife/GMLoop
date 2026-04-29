@@ -4,7 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { createGmloopMcpServer, listGmloopMcpToolNames } from "../src/server/index.js";
+import { createGmloopMcpServer, listGmloopMcpToolCatalogEntries, listGmloopMcpToolNames } from "../src/server/index.js";
 
 const WORKSPACE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -35,4 +35,14 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
     assert.ok(Object.hasOwn(server._registeredResources, "gm://graph/overview"));
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-node"));
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-context"));
+});
+
+void test("MCP tool catalog exports live tool fields derived from the CLI catalog", () => {
+    const catalog = listGmloopMcpToolCatalogEntries();
+    const formatTool = catalog.find((entry) => entry.toolName === "gmloop_format");
+    assert.ok(formatTool);
+    assert.equal(formatTool.commandDisplayName, "format");
+    assert.match(formatTool.description, /Format GameMaker Language files/u);
+    assert.ok(formatTool.fields.some((field) => field.name === "cwd"));
+    assert.ok(formatTool.fields.some((field) => field.name === "--path"));
 });
