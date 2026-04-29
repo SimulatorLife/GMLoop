@@ -6,6 +6,7 @@ import * as NamingConventionPolicy from "./naming-convention-policy.js";
 import * as OccurrenceAnalysis from "./occurrence-analysis.js";
 import * as ProjectAnalysisProvider from "./project-analysis-provider.js";
 import * as ProjectConfig from "./project-config.js";
+import * as ProjectResources from "./project-resources/index.js";
 import * as RefactorEngineAPI from "./refactor-engine.js";
 import * as Validation from "./rename/rename-validation.js";
 import * as RenamePreview from "./rename-preview.js";
@@ -31,6 +32,7 @@ export const Refactor = Object.freeze({
     ...RefactorEngineAPI,
     ...ProjectAnalysisProvider,
     ...ProjectConfig,
+    ...ProjectResources,
     ...NamingConventionPolicy,
     ...CodemodRegistry,
     ...Codemods,
@@ -97,6 +99,20 @@ export {
 } from "./occurrence-analysis.js";
 export { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
 export { normalizeRefactorProjectConfig } from "./project-config.js";
+export type {
+    AddProjectResourceRequest,
+    ProjectResourceKindValue,
+    ProjectResourceMutationResult,
+    RemoveProjectResourceRequest
+} from "./project-resources/index.js";
+export * as ProjectResources from "./project-resources/index.js";
+export { addProjectResource, removeProjectResource } from "./project-resources/index.js";
+export {
+    isProjectResourceKind,
+    parseProjectResourceKind,
+    ProjectResourceKind,
+    requireProjectResourceKind
+} from "./project-resources/index.js";
 export { RefactorEngine } from "./refactor-engine.js";
 export type {
     CrossRenameConfusion,

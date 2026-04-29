@@ -9,6 +9,7 @@ export * from "./lookup-gml-identifier.js";
 export * from "./parse.js";
 export * from "./prepare-hot-reload.js";
 export * from "./refactor.js";
+export * from "./resource.js";
 export * from "./transpile.js";
 export * from "./watch.js";
 export * from "./watch/index.js";

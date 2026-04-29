@@ -38,6 +38,7 @@ import { createLookupGmlIdentifierCommand, runLookupGmlIdentifierCommand } from 
 import { createParseCommand, runParseCommand } from "./commands/parse.js";
 import { createPrepareHotReloadCommand, runPrepareHotReloadCommand } from "./commands/prepare-hot-reload.js";
 import { createRefactorCommand, runRefactorCommand } from "./commands/refactor.js";
+import { createResourceCommand } from "./commands/resource.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
 import { createWatchCommand, runWatchCommand } from "./commands/watch.js";
 import { createWatchStatusCommand, runWatchStatusCommand } from "./commands/watch/status.js";
@@ -517,6 +518,15 @@ cliCommandRegistry.registerCommand({
     onError: (error) =>
         handleCliError(error, {
             prefix: "Failed to perform refactor operation.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createResourceCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Failed to perform resource operation.",
             exitCode: 1
         })
 });

@@ -115,25 +115,25 @@ function extractCssRuleBody(html: string, selector: string): string {
 }
 
 function extractEmbeddedEdgeLineVisualStyles(html: string): ReadonlyArray<EmbeddedEdgeLineVisualStyle> {
-    const declarationPrefix = "const edgeLineVisualStyles = ";
+    const declarationPrefix = "const EDGE_LINE_VISUAL_STYLES = ";
     const declarationStart = html.indexOf(declarationPrefix);
     assert.notEqual(declarationStart, -1, "edge line visual styles should be embedded in the template");
 
     const valueStart = declarationStart + declarationPrefix.length;
-    const valueEnd = html.indexOf(";\n    const edgeLineVisualStyleByType", valueStart);
-    assert.notEqual(valueEnd, -1, "edge line visual styles declaration should end before its lookup map");
+    const valueEnd = html.indexOf(";\nconst NODE_VISUAL_STYLES", valueStart);
+    assert.notEqual(valueEnd, -1, "edge line visual styles declaration should end before the node styles");
 
     return JSON.parse(html.slice(valueStart, valueEnd)) as Array<EmbeddedEdgeLineVisualStyle>;
 }
 
 function extractEmbeddedNodeVisualStyles(html: string): ReadonlyArray<EmbeddedNodeVisualStyle> {
-    const declarationPrefix = "const nodeVisualStyles = ";
+    const declarationPrefix = "const NODE_VISUAL_STYLES = ";
     const declarationStart = html.indexOf(declarationPrefix);
     assert.notEqual(declarationStart, -1, "node visual styles should be embedded in the template");
 
     const valueStart = declarationStart + declarationPrefix.length;
-    const valueEnd = html.indexOf(";\n    const nodeVisualStyleByKind", valueStart);
-    assert.notEqual(valueEnd, -1, "node visual styles declaration should end before its lookup map");
+    const valueEnd = html.indexOf(";\n\nwindow.__GMLOOP_DOCUMENTATION_CATALOGS__", valueStart);
+    assert.notEqual(valueEnd, -1, "node visual styles declaration should end before the boot globals");
 
     return JSON.parse(html.slice(valueStart, valueEnd)) as Array<EmbeddedNodeVisualStyle>;
 }
@@ -198,16 +198,19 @@ void test("graph visualization template omits unstable layout controls and alter
     assert.doesNotMatch(html, /buildSemanticSimilarityLinks/u);
     assert.doesNotMatch(html, /tokenizeSemanticDescriptor/u);
     assert.doesNotMatch(html, /measureSemanticSimilarity/u);
-    assert.match(html, /\.force\("link", d3\.forceLink\(\)\.id\(d => d\.id\)\.distance\(50\)\)/);
-    assert.match(html, /\.force\("charge", d3\.forceManyBody\(\)\.strength\(-100\)\)/);
-    assert.match(html, /\.force\("center", d3\.forceCenter\(width \/ 2, height \/ 2\)\)/);
     assert.match(
         html,
-        /\.force\("collide", d3\.forceCollide\(\)\.radius\(d => getRadius\(d\) \+ 5\)\.iterations\(2\)\)/
+        /\.force\("link", graphRuntime\.forceLink\(\)\.id\(\(datum\) => readNodeIdentifier\(datum\)\)\.distance\(50\)\)/
+    );
+    assert.match(html, /\.force\("charge", graphRuntime\.forceManyBody\(\)\.strength\(-100\)\)/);
+    assert.match(html, /\.force\("center", graphRuntime\.forceCenter\(width \/ 2, height \/ 2\)\)/);
+    assert.match(
+        html,
+        /\.force\("collide", graphRuntime\.forceCollide\(\)\.radius\(\(datum\) => getRadius\(readGraphNode\(datum\)\)\)\.iterations\(2\)\)/
     );
     assert.match(html, /\.alphaDecay\(0\.02\)/);
     assert.match(html, /\.velocityDecay\(0\.3\)/);
-    assert.match(html, /simulation\.force\("link"\)\.links\(graphLinks\)/);
+    assert.match(html, /simulation\.force\("link"\)\.links\(filteredLinks\)/);
     assert.match(html, /simulation\.alpha\(0\.3\)\.restart\(\)/);
     assert.match(html, /simulation\.alphaTarget\(0\.3\)\.restart\(\)/);
 });
@@ -215,11 +218,11 @@ void test("graph visualization template omits unstable layout controls and alter
 void test("graph visualization reset rebuilds the live simulation state from the original exported graph", () => {
     const html = renderEmptyGraphVisualizationHtml("Reset Test");
 
-    assert.match(html, /function cloneGraphNodes\(\)/);
-    assert.match(html, /function cloneGraphEdges\(\)/);
+    assert.match(html, /function cloneGraphNodes\(nodeValues\)/);
+    assert.match(html, /function cloneGraphEdges\(edgeValues\)/);
     assert.match(html, /function resetGraphStateToDefaults\(\)/);
-    assert.match(html, /nodesRaw = cloneGraphNodes\(\);/);
-    assert.match(html, /linksRaw = cloneGraphEdges\(\);/);
+    assert.match(html, /nodesRaw = cloneGraphNodes\(allNodes\);/);
+    assert.match(html, /linksRaw = cloneGraphEdges\(dependencies\.data\.edges\);/);
     assert.match(html, /activeFilters = new Set\(edgeTypes\);/);
     assert.match(html, /activeNodeFilters = new Set\(defaultEnabledNodeKinds\);/);
     assert.match(html, /searchHighlightNodeIds\.clear\(\);/);
@@ -227,7 +230,7 @@ void test("graph visualization reset rebuilds the live simulation state from the
     assert.match(html, /pinnedTooltipNodeId = null;/);
     assert.match(html, /hideTooltip\(\);/);
     assert.match(html, /searchInput\.value = "";/);
-    assert.match(html, /d3\.select\("#reset-default"\)\.on\("click", \(\) => \{/);
+    assert.match(html, /graphRuntime\.select\("#reset-default"\)\.on\("click", \(\) => \{/);
     assert.match(html, /resetGraphStateToDefaults\(\);/);
     assert.match(html, /updateGraph\(\);/);
 });
@@ -283,16 +286,13 @@ void test("graph visualization server mode keeps the current view live while reg
     assert.match(html, /@keyframes graph-button-spin/);
     assert.match(html, /button:disabled \{ cursor: wait; opacity: 0\.8; transform: none; \}/);
     assert.match(html, /fetch\("\/api\/reindex", \{ method: "POST" \}\)/);
-    assert.match(html, /btn\.attr\("disabled", "true"\)/);
+    assert.match(html, /button\.attr\("disabled", "true"\)/);
     assert.match(html, /button-spinner/);
     assert.match(html, /Regenerating…/u);
-    assert.match(html, /const payload = await res\.json\(\);/);
+    assert.match(html, /const payload = \(await response\.json\(\)\)/);
     assert.match(html, /if \(payload\.changed === true\) \{/);
-    assert.match(html, /window\.location\.reload\(\);/);
-    assert.match(
-        html,
-        /btn\.attr\("disabled", null\)\.html\('<span class="button-content"><span class="button-label">Regenerate<\/span><\/span>'\);/
-    );
+    assert.match(html, /location\.reload\(\);/);
+    assert.match(html, /button\.attr\("disabled", null\)\.html\(regenerateButtonLabel\);/);
     assert.match(html, /console\.error\("Reindex failed", responseText\);/);
 });
 
@@ -315,8 +315,8 @@ void test("graph visualization server mode supports an empty boot state before a
         html,
         /<div id="loaded-target" class="loaded-path"><strong>Active:<\/strong> No project loaded<\/div>/u
     );
-    assert.match(html, /window\.__GMLOOP_LOADED_TARGET__ = null;/);
-    assert.match(html, /loadedTargetEl\.textContent = "No active target";/);
+    assert.match(html, /window\.__GMLOOP_LOADED_TARGET__ = graphVisualizationLoadedTarget;/);
+    assert.match(html, /loadedTargetElement\.textContent = "No active target";/);
     assert.match(html, /id="open-project"/);
 });
 
@@ -348,19 +348,22 @@ void test("graph visualization template wraps and positions tooltip text inside 
     assert.match(tooltipCssRuleBody, /box-sizing: border-box;/);
     assert.match(tooltipCssRuleBody, /overflow-wrap: anywhere;/);
     assert.match(tooltipCssRuleBody, /white-space: normal;/);
-    assert.match(html, /function positionTooltip\(event\)/);
+    assert.match(html, /function positionTooltip\(eventValue\)/);
     assert.match(html, /getBoundingClientRect\(\)/);
-    assert.match(html, /tooltip\.append\("h3"\)\.text\(d\.displayName\)/);
+    assert.match(html, /tooltip\.append\("h3"\)\.text\(nodeValue\.displayName\)/);
 });
 
 void test("graph visualization template pins selected node tooltip until selection changes", () => {
     const html = renderEmptyGraphVisualizationHtml("Pinned Tooltip Test");
 
     assert.match(html, /let pinnedTooltipNodeId = null/);
-    assert.match(html, /pinnedTooltipNodeId = d\.id/);
-    assert.match(html, /focusNodeId = d\.id/);
-    assert.match(html, /pinnedTooltipNodeId !== null && pinnedTooltipNodeId !== d\.id/);
-    assert.match(html, /pinnedTooltipNodeId === null && !tooltip\.node\(\)\.matches\(":hover"\)/);
+    assert.match(html, /pinnedTooltipNodeId = nodeValue\.id/);
+    assert.match(html, /focusNodeId = nodeValue\.id/);
+    assert.match(html, /pinnedTooltipNodeId !== null && pinnedTooltipNodeId !== nodeValue\.id/);
+    assert.match(
+        html,
+        /pinnedTooltipNodeId === null && tooltipElement instanceof Element && !tooltipElement\.matches\(":hover"\)/
+    );
     assert.doesNotMatch(html, /focusNodeId = focusNodeId === d\.id \? null : d\.id/);
 });
 
@@ -397,7 +400,7 @@ void test("graph visualization template gives fallback, room, shader, and sprite
     assert.match(extractCssRuleBody(html, ".node-room"), new RegExp(`fill: ${roomStyle.color};`));
     assert.match(extractCssRuleBody(html, ".node-shader"), new RegExp(`fill: ${shaderStyle.color};`));
     assert.match(extractCssRuleBody(html, ".node-sprite"), new RegExp(`fill: ${spriteStyle.color};`));
-    assert.match(html, /nodeVisualStyleByKind\.get\(typeVal\)\?\.color/);
+    assert.match(html, /nodeVisualStyleByKind\.get\(styleKind\)\?\.color/);
 });
 
 void test("graph visualization template relies on semantic project nodes instead of a synthetic center node", () => {

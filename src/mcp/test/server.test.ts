@@ -30,8 +30,11 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
     assert.ok(toolNames.includes("gmloop_graph_index"));
     assert.ok(toolNames.includes("gmloop_graph_search"));
     assert.ok(toolNames.includes("gmloop_graph_context"));
+    assert.ok(toolNames.includes("gmloop_resource_add"));
+    assert.ok(toolNames.includes("gmloop_resource_remove"));
 
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_graph_search"));
+    assert.ok(Object.hasOwn(server._registeredTools, "gmloop_resource_add"));
     assert.ok(Object.hasOwn(server._registeredResources, "gm://graph/overview"));
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-node"));
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-context"));

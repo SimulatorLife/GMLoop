@@ -1,4 +1,5 @@
 export type {
+    AddProjectResourceRequest,
     ApplyWorkspaceEditOptions,
     AstNode,
     BatchRenamePlanSummary,
@@ -55,6 +56,8 @@ export type {
     ParserBridge,
     PartialSemanticAnalyzer,
     PrepareRenamePlanOptions,
+    ProjectResourceKindValue,
+    ProjectResourceMutationResult,
     Range,
     RefactorCodemodConfigEntry,
     RefactorCodemodConfigMap,
@@ -65,6 +68,7 @@ export type {
     RefactorProjectConfig,
     RegisteredCodemod,
     RegisteredCodemodSelection,
+    RemoveProjectResourceRequest,
     RenameImpactAnalysis,
     RenameImpactGraph,
     RenameImpactNode,

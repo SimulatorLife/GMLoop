@@ -1,0 +1,74 @@
+<div id="app-shell">
+  <header id="app-header">
+    <div class="topbar-row">
+      <div class="brand-block">
+        <div class="brand-mark">GM</div>
+        <div class="brand-copy">
+          <h1 class="brand-title">GMLoop</h1>
+          <div class="brand-subtitle">Workspace UI driven directly from live CLI and MCP catalogs.</div>
+        </div>
+        <div class="top-nav-cluster">
+          <nav class="top-nav" aria-label="Primary">
+            <button id="tab-graph" class="top-nav-button active">Graph Index</button>
+            <button id="tab-docs" class="top-nav-button">Docs</button>
+            <button id="tab-config" class="top-nav-button">Config</button>
+          </nav>
+          <a id="github-link" class="github-link" href="https://github.com/SimulatorLife/GMLoop" target="_blank" rel="noreferrer">GitHub Repo</a>
+          <button id="open-project" class="open-button"><span class="button-content"><span class="button-label">Open...</span></span></button>
+        </div>
+      </div>
+      <div class="loaded-target-stack">
+        <div id="loaded-target" class="loaded-path"><strong>Active:</strong> {{DOCUMENT_TITLE}}</div>
+        <div id="loaded-source" class="loaded-path"></div>
+        <div id="loaded-selected" class="loaded-path"></div>
+      </div>
+    </div>
+    <div id="page-toolbar">
+      <div class="toolbar-title">
+        <strong id="toolbar-heading">Graph Index</strong>
+        <span id="toolbar-subheading">Interactive graph exploration controls for the current graph index.</span>
+      </div>
+      <div id="graph-controls" class="toolbar-controls">
+        <input type="search" id="search" placeholder="Search nodes…" />
+        <button id="toggle-view">JSON</button>
+        <button id="toggle-labels">Labels: Auto</button>
+        <button id="reset-default">Reset</button>
+        {{REGENERATE_BUTTON}}
+      </div>
+    </div>
+  </header>
+  <main>
+    <section id="graph-page" class="page active">
+      <svg id="graph">
+        <defs>
+          <marker id="arrow-calls" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="{{ARROW_CALLS_COLOR}}"></path></marker>
+          <marker id="arrow-inherits" viewBox="0 -5 10 10" refX="20" refY="0" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,-5L10,0L0,5" fill="{{ARROW_INHERITS_COLOR}}"></path></marker>
+          <marker id="arrow-depends_on" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-5L10,0L0,5" fill="{{ARROW_DEPENDS_ON_COLOR}}"></path></marker>
+        </defs>
+        <g id="container"></g>
+      </svg>
+      <div id="tooltip"></div>
+      <pre id="json-view"></pre>
+      <aside id="legend"></aside>
+    </section>
+    <section id="docs-page" class="page docs-page">
+      <div class="docs-toggle-row">
+        <button id="docs-view-cli" class="top-nav-button active">CLI</button>
+        <button id="docs-view-mcp" class="top-nav-button">MCP</button>
+      </div>
+      <p id="docs-meta" class="docs-meta"></p>
+      <div id="docs-content">
+        <div id="cli-page" class="docs-subpage">
+          <div id="cli-content" class="docs-grid"></div>
+        </div>
+        <div id="mcp-page" class="docs-subpage hidden">
+          <div id="mcp-content" class="docs-grid"></div>
+        </div>
+      </div>
+    </section>
+    <section id="config-page" class="page docs-page">
+      <p id="config-meta" class="docs-meta"></p>
+      <div id="config-content" class="config-stack"></div>
+    </section>
+  </main>
+</div>

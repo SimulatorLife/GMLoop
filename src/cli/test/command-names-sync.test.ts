@@ -25,6 +25,7 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
         "generate-feather-metadata",
         "prepare-hot-reload",
         "refactor",
+        "resource",
         "transpile",
         "watch",
         "watch-status",
