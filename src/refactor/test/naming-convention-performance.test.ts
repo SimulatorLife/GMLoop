@@ -13,6 +13,13 @@ import type {
 const FILE_COUNT = 180;
 const TARGETS_PER_FILE = 32;
 const PERFORMANCE_THRESHOLD_MS = 700;
+const DEFAULT_LOCAL_VARIABLE_NAMING_CONFIG: RefactorProjectConfig["codemods"]["namingConvention"] = {
+    rules: {
+        localVariable: {
+            caseStyle: "camel"
+        }
+    }
+};
 
 type SyntheticFileFixture = {
     sourceText: string;
@@ -146,17 +153,12 @@ function buildNamingConventionCodemodExecutor(
     engine: InstanceType<typeof Refactor.RefactorEngine>,
     gmlFilePaths: Array<string>,
     sourceTexts: Map<string, string>,
-    projectRoot: string
+    projectRoot: string,
+    namingConfig?: RefactorProjectConfig["codemods"]["namingConvention"]
 ): () => Promise<ConfiguredCodemodRunResult> {
     const config: RefactorProjectConfig = {
         codemods: {
-            namingConvention: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
-                    }
-                }
-            }
+            namingConvention: namingConfig ?? DEFAULT_LOCAL_VARIABLE_NAMING_CONFIG
         }
     };
 
@@ -239,6 +241,8 @@ void test("namingConvention stress test stays within the selected-file planning 
 const LARGE_FILE_COUNT = 300;
 const LARGE_TARGETS_PER_FILE = 50;
 const LARGE_PERFORMANCE_THRESHOLD_MS = 700;
+const ROOT_SELECTION_FILE_COUNT = 5000;
+const ROOT_SELECTION_THRESHOLD_MS = 140;
 
 void test("namingConvention large-scale stress test locks in the hot-path optimisation gain", async () => {
     const projectRoot = "/project";
@@ -270,6 +274,48 @@ void test("namingConvention large-scale stress test locks in the hot-path optimi
     assert.ok(
         durationMs <= LARGE_PERFORMANCE_THRESHOLD_MS,
         `Expected large-scale namingConvention stress test to finish within ${LARGE_PERFORMANCE_THRESHOLD_MS}ms, ` +
+            `received ${durationMs.toFixed(2)}ms`
+    );
+});
+
+void test("namingConvention full-project selection stays within the root-target discovery threshold", async () => {
+    const projectRoot = "/project";
+    const gmlFilePaths = Array.from(
+        { length: ROOT_SELECTION_FILE_COUNT },
+        (_, fileIndex) => `scripts/script_${fileIndex}.gml`
+    );
+    const sourceTexts = new Map(gmlFilePaths.map((filePath) => [filePath, `function ${filePath.length}() {}\n`]));
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async (filePaths?: Array<string>) => {
+            assert.equal(filePaths, undefined);
+            return [];
+        },
+        validateEdits: async () => ({
+            errors: [],
+            warnings: []
+        })
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const executeStressRun = buildNamingConventionCodemodExecutor(engine, gmlFilePaths, sourceTexts, projectRoot, {
+        rules: {
+            scriptResourceName: {
+                caseStyle: "camel"
+            }
+        }
+    });
+
+    await executeStressRun();
+
+    const SAMPLE_COUNT = 5;
+    const { durationMs, result } = await measureMedianDurationMs(SAMPLE_COUNT, executeStressRun);
+    assert.equal(result.summaries.length, 1);
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, false);
+    assert.ok(
+        durationMs <= ROOT_SELECTION_THRESHOLD_MS,
+        `Expected root-target namingConvention discovery to finish within ${ROOT_SELECTION_THRESHOLD_MS}ms, ` +
             `received ${durationMs.toFixed(2)}ms`
     );
 });

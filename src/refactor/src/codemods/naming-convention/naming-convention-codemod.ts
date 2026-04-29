@@ -652,6 +652,15 @@ function buildNamingTargetQueryPaths(projectRoot: string, selectedFilePaths: Arr
     return [...queryPaths];
 }
 
+function includesWholeProjectSelection(projectRoot: string, targetPaths: ReadonlyArray<string>): boolean {
+    if (targetPaths.length === 0) {
+        return true;
+    }
+
+    const absoluteProjectRoot = resolveProjectPath(projectRoot, projectRoot);
+    return targetPaths.every((targetPath) => resolveProjectPath(projectRoot, targetPath) === absoluteProjectRoot);
+}
+
 function getNamingTargetIdentity(target: NamingConventionTarget): string {
     const occurrenceIdentity = target.occurrences
         .map(
@@ -782,6 +791,7 @@ export async function planNamingConventionCodemod(
     const includeViolations = parameters.includeViolations !== false;
     const resolvedRules = resolveNamingConventionRules(policy);
     const requestedCategories = Object.keys(resolvedRules) as Array<NamingCategory>;
+    const tracksLocalTargets = requestedCategoriesMayContainLocalTargets(requestedCategories);
     let workspace = new WorkspaceEditClass();
     const warnings: Array<string> = [];
     const errors: Array<string> = [];
@@ -791,9 +801,14 @@ export async function planNamingConventionCodemod(
     const seenTopLevelRenames = new Set<string>();
     let localRenameCount = 0;
     const isSelectedTargetPath = createPathSelectionMatcher(parameters.projectRoot, parameters.targetPaths, []);
-
-    const selectedFilePaths = (parameters.gmlFilePaths ?? []).filter((filePath) => isSelectedTargetPath(filePath));
-    const queryPaths = buildNamingTargetQueryPaths(parameters.projectRoot, selectedFilePaths);
+    const selectedWholeProject =
+        includesWholeProjectSelection(parameters.projectRoot, parameters.targetPaths) && !tracksLocalTargets;
+    const selectedFilePaths = selectedWholeProject
+        ? [...(parameters.gmlFilePaths ?? [])]
+        : (parameters.gmlFilePaths ?? []).filter((filePath) => isSelectedTargetPath(filePath));
+    const queryPaths = selectedWholeProject
+        ? []
+        : buildNamingTargetQueryPaths(parameters.projectRoot, selectedFilePaths);
     const namingTargetProvider = {
         listNamingConventionTargets: semantic.listNamingConventionTargets.bind(semantic)
     };
@@ -808,7 +823,7 @@ export async function planNamingConventionCodemod(
         queriedTargets,
         queryPaths,
         isSelectedTargetPath,
-        trackLocalTargets: requestedCategoriesMayContainLocalTargets(requestedCategories)
+        trackLocalTargets: tracksLocalTargets
     });
     const macroDependencyNamesByFile =
         hasLocalNamingTargets && typeof semantic.listMacroExpansionDependencies === "function"
