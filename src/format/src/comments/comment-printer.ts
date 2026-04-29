@@ -1069,7 +1069,11 @@ function handleCommentInEmptyLiteral(comment /*, text, options, ast, isLastComme
     return attachDanglingCommentToEmptyNode(comment, EMPTY_LITERAL_TARGETS);
 }
 
-function handleOnlyComments(comment, _text, _options, ast /*, isLastComment */) {
+function handleOnlyComments(comment, options, ast /*, isLastComment */) {
+    if (attachDocCommentToFollowingNode(comment, options, ast)) {
+        return true;
+    }
+
     const emptyProgram = findEmptyProgramTarget(ast, comment.enclosingNode, comment.followingNode);
     if (emptyProgram) {
         addDanglingComment(emptyProgram, comment, false);
@@ -1077,6 +1081,146 @@ function handleOnlyComments(comment, _text, _options, ast /*, isLastComment */) 
     }
 
     return false;
+}
+
+function attachDocCommentToFollowingNode(comment, options, ast) {
+    if (comment?._gmlAttachedDocComment === true) {
+        comment.printed = true;
+        return true;
+    }
+
+    const immediateFollowingNode = resolveFollowingNonCommentNode(comment);
+    const followingNode =
+        isDocCommentTargetNode(immediateFollowingNode) || !ast
+            ? immediateFollowingNode
+            : findFollowingNodeForComment(ast, comment);
+
+    if (!isDocCommentCandidate(comment, followingNode)) {
+        return false;
+    }
+    if (hasMixedCommentSyntaxBetweenCommentAndTarget(comment, followingNode, options?.originalText)) {
+        return false;
+    }
+
+    const rawText = Core.getLineCommentRawText(comment, {
+        originalText: options?.originalText
+    });
+    const shouldAttachAsDocComment = /^\s*\/\/\//u.test(rawText);
+
+    if (!shouldAttachAsDocComment) {
+        return false;
+    }
+
+    if (!followingNode.docComments) {
+        followingNode.docComments = [];
+    }
+
+    followingNode.docComments.push(comment);
+    comment._gmlAttachedDocComment = true;
+    comment.printed = true;
+    return true;
+}
+
+function hasMixedCommentSyntaxBetweenCommentAndTarget(comment, followingNode, originalText) {
+    if (typeof originalText !== "string") {
+        return false;
+    }
+
+    const commentEndIndex = getCommentEndIndex(comment);
+    const followingNodeStartIndex = Core.getNodeStartIndex(followingNode);
+    if (
+        commentEndIndex === null ||
+        typeof followingNodeStartIndex !== "number" ||
+        commentEndIndex >= followingNodeStartIndex
+    ) {
+        return false;
+    }
+
+    const textBetweenCommentAndTarget = originalText.slice(commentEndIndex + 1, followingNodeStartIndex);
+    return /(^|\r?\n)[ \t]*\/\/(?!\/)|\/\*/u.test(textBetweenCommentAndTarget);
+}
+
+function isDocCommentCandidate(comment, followingNode) {
+    if (comment.type !== "CommentLine" && comment.type !== "CommentBlock") {
+        return false;
+    }
+
+    return isDocCommentTargetNode(followingNode);
+}
+
+function isFunctionLikeDocInitializer(node: unknown): boolean {
+    if (!isObjectLike(node)) {
+        return false;
+    }
+
+    const nodeRecord = node as Record<string, unknown>;
+    const initializerType = nodeRecord.type;
+    if (
+        initializerType === "FunctionDeclaration" ||
+        initializerType === "FunctionExpression" ||
+        initializerType === "ConstructorDeclaration"
+    ) {
+        return true;
+    }
+
+    if (initializerType === "ParenthesizedExpression") {
+        return isFunctionLikeDocInitializer(nodeRecord.expression);
+    }
+
+    return false;
+}
+
+function isFunctionInitializedVariableDeclaration(node: unknown): boolean {
+    if (!isObjectLike(node)) {
+        return false;
+    }
+
+    const nodeRecord = node as Record<string, unknown>;
+    if (nodeRecord.type !== "VariableDeclaration") {
+        return false;
+    }
+
+    const declarations = nodeRecord.declarations;
+    if (!Array.isArray(declarations) || declarations.length !== 1) {
+        return false;
+    }
+
+    const declarator = declarations[0];
+    if (!isObjectLike(declarator)) {
+        return false;
+    }
+
+    const declaratorRecord = declarator as Record<string, unknown>;
+    if (declaratorRecord.type !== "VariableDeclarator") {
+        return false;
+    }
+
+    return isFunctionLikeDocInitializer(declaratorRecord.init);
+}
+
+function isDocCommentTargetNode(node) {
+    if (!isObjectLike(node)) {
+        return false;
+    }
+
+    const nodeType = Reflect.get(node, "type");
+    return nodeType === "FunctionDeclaration" || nodeType === "ConstructorDeclaration"
+        ? true
+        : isFunctionInitializedVariableDeclaration(node);
+}
+
+function resolveFollowingNonCommentNode(comment) {
+    let candidate = comment?.followingNode ?? null;
+
+    while (Core.isCommentNode(candidate) && isObjectLike(candidate) && "followingNode" in candidate) {
+        const nextCandidate = candidate.followingNode;
+        if (!nextCandidate || nextCandidate === candidate) {
+            break;
+        }
+        candidate = nextCandidate;
+    }
+
+    return candidate;
 }
 
 function hasEmptyBody(candidate) {
