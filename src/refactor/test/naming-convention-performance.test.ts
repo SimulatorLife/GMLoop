@@ -13,6 +13,13 @@ import type {
 const FILE_COUNT = 180;
 const TARGETS_PER_FILE = 32;
 const PERFORMANCE_THRESHOLD_MS = 700;
+const DEFAULT_LOCAL_VARIABLE_NAMING_CONFIG: RefactorProjectConfig["codemods"]["namingConvention"] = {
+    rules: {
+        localVariable: {
+            caseStyle: "camel"
+        }
+    }
+};
 
 type SyntheticFileFixture = {
     sourceText: string;
@@ -146,17 +153,12 @@ function buildNamingConventionCodemodExecutor(
     engine: InstanceType<typeof Refactor.RefactorEngine>,
     gmlFilePaths: Array<string>,
     sourceTexts: Map<string, string>,
-    projectRoot: string
+    projectRoot: string,
+    namingConfig?: RefactorProjectConfig["codemods"]["namingConvention"]
 ): () => Promise<ConfiguredCodemodRunResult> {
     const config: RefactorProjectConfig = {
         codemods: {
-            namingConvention: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
-                    }
-                }
-            }
+            namingConvention: namingConfig ?? DEFAULT_LOCAL_VARIABLE_NAMING_CONFIG
         }
     };
 
@@ -296,7 +298,13 @@ void test("namingConvention full-project selection stays within the root-target 
     };
 
     const engine = new Refactor.RefactorEngine({ semantic });
-    const executeStressRun = buildNamingConventionCodemodExecutor(engine, gmlFilePaths, sourceTexts, projectRoot);
+    const executeStressRun = buildNamingConventionCodemodExecutor(engine, gmlFilePaths, sourceTexts, projectRoot, {
+        rules: {
+            scriptResourceName: {
+                caseStyle: "camel"
+            }
+        }
+    });
 
     await executeStressRun();
 

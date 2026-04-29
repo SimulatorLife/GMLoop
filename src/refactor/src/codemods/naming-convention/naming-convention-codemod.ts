@@ -791,6 +791,7 @@ export async function planNamingConventionCodemod(
     const includeViolations = parameters.includeViolations !== false;
     const resolvedRules = resolveNamingConventionRules(policy);
     const requestedCategories = Object.keys(resolvedRules) as Array<NamingCategory>;
+    const tracksLocalTargets = requestedCategoriesMayContainLocalTargets(requestedCategories);
     let workspace = new WorkspaceEditClass();
     const warnings: Array<string> = [];
     const errors: Array<string> = [];
@@ -800,7 +801,8 @@ export async function planNamingConventionCodemod(
     const seenTopLevelRenames = new Set<string>();
     let localRenameCount = 0;
     const isSelectedTargetPath = createPathSelectionMatcher(parameters.projectRoot, parameters.targetPaths, []);
-    const selectedWholeProject = includesWholeProjectSelection(parameters.projectRoot, parameters.targetPaths);
+    const selectedWholeProject =
+        includesWholeProjectSelection(parameters.projectRoot, parameters.targetPaths) && !tracksLocalTargets;
     const selectedFilePaths = selectedWholeProject
         ? [...(parameters.gmlFilePaths ?? [])]
         : (parameters.gmlFilePaths ?? []).filter((filePath) => isSelectedTargetPath(filePath));
@@ -821,7 +823,7 @@ export async function planNamingConventionCodemod(
         queriedTargets,
         queryPaths,
         isSelectedTargetPath,
-        trackLocalTargets: requestedCategoriesMayContainLocalTargets(requestedCategories)
+        trackLocalTargets: tracksLocalTargets
     });
     const macroDependencyNamesByFile =
         hasLocalNamingTargets && typeof semantic.listMacroExpansionDependencies === "function"
