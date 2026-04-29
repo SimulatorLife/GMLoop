@@ -115,28 +115,6 @@ function resolveCandidatePath(candidate) {
     return null;
 }
 
-/**
- * Collect candidate inputs from call-site overrides, environment variables,
- * and workspace defaults. Returning a dedicated list keeps
- * {@link resolveFormatEntryPoint} focused on resolution instead of array
- * assembly details.
- */
-function collectCandidateInputs(candidates: readonly unknown[], env: NodeJS.ProcessEnv) {
-    return [...candidates, ...getEnvironmentCandidates(env), ...DEFAULT_CANDIDATE_FORMAT_PATHS];
-}
-
-/**
- * Normalize the mixed candidate inputs into a deduplicated list of resolved
- * file-system paths. Centralizing the map/filter bookkeeping keeps the
- * orchestrator logic in {@link resolveFormatEntryPoint} at a consistent
- * abstraction level.
- */
-function normalizeCandidatePaths(candidateInputs) {
-    const resolvedCandidates = compactArray(candidateInputs.map((candidate) => resolveCandidatePath(candidate)));
-
-    return uniqueArray(resolvedCandidates);
-}
-
 function candidateExistsAsFile(candidate) {
     try {
         const stats = fs.statSync(candidate);
@@ -146,33 +124,27 @@ function candidateExistsAsFile(candidate) {
     }
 }
 
-function findFirstExistingPath(candidates) {
-    for (const candidate of candidates) {
+export function resolveFormatEntryPoint(options = {}) {
+    const normalizedOptions = normalizeOptionsBag(options);
+    const resolvedCandidates = uniqueArray(
+        compactArray(
+            [
+                ...normalizedOptions.candidates,
+                ...getEnvironmentCandidates(normalizedOptions.env),
+                ...DEFAULT_CANDIDATE_FORMAT_PATHS
+            ].map((candidate) => resolveCandidatePath(candidate))
+        )
+    );
+
+    for (const candidate of resolvedCandidates) {
         if (candidateExistsAsFile(candidate)) {
             return candidate;
         }
     }
 
-    return null;
-}
-
-function createMissingEntryPointError(resolvedCandidates) {
-    return new Error(
+    throw new Error(
         `Unable to locate the Prettier format workspace entry point. Expected one of: ${resolvedCandidates.join(", ")}`
     );
-}
-
-export function resolveFormatEntryPoint(options = {}) {
-    const normalizedOptions = normalizeOptionsBag(options);
-    const candidateInputs = collectCandidateInputs(normalizedOptions.candidates, normalizedOptions.env);
-    const resolvedCandidates = normalizeCandidatePaths(candidateInputs);
-    const existingPath = findFirstExistingPath(resolvedCandidates);
-
-    if (existingPath) {
-        return existingPath;
-    }
-
-    throw createMissingEntryPointError(resolvedCandidates);
 }
 
 export function importFormatModule(options = {}) {
