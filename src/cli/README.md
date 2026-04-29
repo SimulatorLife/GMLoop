@@ -924,3 +924,9 @@ Provides ANTLR-based GML parsing used by the transpiler.
     - Added verbose logging for transpilation details
     - Added test coverage for transpilation integration
     - Stores patches in runtime context for future streaming
+
+----
+
+## TODO
+- Need a command to **validate** a given `.gml`, `.yy`, `.yyp`, and shader files (`.vsh`, `.fsh`) files to check if it is valid GML code/file
+- Need a command to **inspect** if a given GML identifier (e.g. `gml/script/scr_player`, `scr_player`, or `max`) is a built-in or user-defined symbol, and if built-in, provide metadata about it (parameters, description, etc.). If user-defined, provide information about where it's defined in the project and provide metadata from its definition/function-doc (parameters, etc.). NOTE: we do already have `graph search`, so we may just be able to leverage/enhance that instead. Or, we could have a separate command that just queries the manual-derived identifier snapshot for built-in metadata.
