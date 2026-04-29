@@ -5,10 +5,10 @@ import {
     computeLineStartOffsets,
     createMeta,
     findFirstChangedCharacterOffset,
-    isCommentOnlyLine
+    isCommentOnlyLine,
+    shouldReportUnsafe
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
-import { shouldReportUnsafe } from "../rule-helpers.js";
 
 type StructAssignmentRecord = Readonly<{
     indentation: string;

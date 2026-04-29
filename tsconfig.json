@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./src/core" },
+    { "path": "./src/ui" },
     { "path": "./src/fixture-runner" },
     { "path": "./src/parser" },
     { "path": "./src/semantic" },

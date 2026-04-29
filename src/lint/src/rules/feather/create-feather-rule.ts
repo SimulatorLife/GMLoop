@@ -253,23 +253,7 @@ function findEnumBlocks(text: string): Array<EnumBlockMatch> {
             continue;
         }
 
-        let depth = 0;
-        let blockEnd = -1;
-        for (let index = openBraceIndex; index < text.length; index += 1) {
-            const character = text[index];
-            if (character === "{") {
-                depth += 1;
-                continue;
-            }
-
-            if (character === "}") {
-                depth -= 1;
-                if (depth === 0) {
-                    blockEnd = index + 1;
-                    break;
-                }
-            }
-        }
+        const blockEnd = findMatchingBraceEndIndex(text, openBraceIndex);
 
         if (blockEnd > blockStart) {
             blocks.push({
@@ -298,23 +282,7 @@ function findEnumDeclarations(text: string): Array<EnumDeclarationMatch> {
             continue;
         }
 
-        let depth = 0;
-        let declarationEnd = -1;
-        for (let index = openBraceIndex; index < text.length; index += 1) {
-            const character = text[index];
-            if (character === "{") {
-                depth += 1;
-                continue;
-            }
-
-            if (character === "}") {
-                depth -= 1;
-                if (depth === 0) {
-                    declarationEnd = index + 1;
-                    break;
-                }
-            }
-        }
+        const declarationEnd = findMatchingBraceEndIndex(text, openBraceIndex);
 
         if (declarationEnd > declarationStart) {
             declarations.push({
@@ -908,30 +876,64 @@ function createGm1041Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     );
 }
 
+type MacroLineSegments = Readonly<{
+    bodyWithoutContinuation: string;
+    continuationSuffix: string;
+    commentSuffix: string;
+    hasContinuation: boolean;
+}>;
+
+function splitMacroLineSegments(line: string): MacroLineSegments {
+    const inlineCommentStart = line.search(/\/\/|\/\*/u);
+    const body = inlineCommentStart === -1 ? line : line.slice(0, inlineCommentStart);
+    const continuationMatch = /\\\s*$/u.exec(body);
+
+    return Object.freeze({
+        bodyWithoutContinuation:
+            continuationMatch === null ? body : body.slice(0, continuationMatch.index ?? body.length),
+        continuationSuffix: continuationMatch?.[0] ?? "",
+        commentSuffix: inlineCommentStart === -1 ? "" : line.slice(inlineCommentStart),
+        hasContinuation: continuationMatch !== null
+    });
+}
+
+function removeTrailingMacroSemicolonIfSafe(line: string): string {
+    const macroLineSegments = splitMacroLineSegments(line);
+    const trailingSemicolon = /;\s*$/u.exec(macroLineSegments.bodyWithoutContinuation);
+    if (!trailingSemicolon) {
+        return line;
+    }
+
+    const semicolonIndex = trailingSemicolon.index;
+    const bodyWithoutTrailingSemicolon = `${macroLineSegments.bodyWithoutContinuation.slice(0, semicolonIndex)}${macroLineSegments.bodyWithoutContinuation.slice(semicolonIndex + 1)}`;
+    if (/\w;\w/u.test(bodyWithoutTrailingSemicolon)) {
+        return line;
+    }
+
+    return `${bodyWithoutTrailingSemicolon}${macroLineSegments.continuationSuffix}${macroLineSegments.commentSuffix}`;
+}
+
 function createGm1051Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) =>
-        sourceText.replaceAll(/^[^\r\n]*$/gmu, (line) => {
-            if (!/^\s*#macro\b/u.test(line)) {
+    return createFullTextRewriteRule(entry, (sourceText) => {
+        let isInsideContinuedMacro = false;
+
+        return sourceText.replaceAll(/^[^\r\n]*$/gmu, (line) => {
+            const startsMacroDefinition = /^\s*#macro\b/u.test(line);
+            const shouldFixMacroLine = startsMacroDefinition || isInsideContinuedMacro;
+            if (!shouldFixMacroLine) {
                 return line;
             }
 
-            const inlineCommentStart = line.search(/\/\/|\/\*/u);
-            const body = inlineCommentStart === -1 ? line : line.slice(0, inlineCommentStart);
-            const trailingSemicolon = /;\s*$/u.exec(body);
-            if (!trailingSemicolon) {
-                return line;
-            }
+            const fixedLine = removeTrailingMacroSemicolonIfSafe(line);
 
-            const semicolonIndex = trailingSemicolon.index;
-            const bodyWithoutTrailingSemicolon = `${body.slice(0, semicolonIndex)}${body.slice(semicolonIndex + 1)}`;
-            if (/\w;\w/u.test(bodyWithoutTrailingSemicolon)) {
-                return line;
-            }
+            // GameMaker multiline macros continue across physical lines via a trailing
+            // backslash. GM1051 must inspect those continuation lines too, because GML
+            // does not treat a standalone `;\` as meaningful macro content.
+            isInsideContinuedMacro = splitMacroLineSegments(fixedLine).hasContinuation;
 
-            const commentSuffix = inlineCommentStart === -1 ? "" : line.slice(inlineCommentStart);
-            return `${bodyWithoutTrailingSemicolon}${commentSuffix}`;
-        })
-    );
+            return fixedLine;
+        });
+    });
 }
 
 function createGm1052Rule(entry: FeatherManifestEntry): Rule.RuleModule {

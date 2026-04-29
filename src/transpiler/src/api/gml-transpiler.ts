@@ -10,7 +10,8 @@ import {
     type FunctionDeclarationNode,
     GmlToJsEmitter,
     type IdentifierAnalyzer,
-    type ProgramNode
+    type ProgramNode,
+    StringBuilder
 } from "../emitter/index.js";
 import { EventContextOracle } from "../event-context/index.js";
 
@@ -162,7 +163,10 @@ export class GmlTranspiler {
     }
 
     private emitFunctionParameterUnpacking(func: FunctionDeclarationNode, emitter: GmlToJsEmitter): string {
-        const lines: string[] = [];
+        if (func.params.length === 0) {
+            return "";
+        }
+        const builder = new StringBuilder(func.params.length);
 
         for (let index = 0; index < func.params.length; index += 1) {
             const parameter = func.params[index];
@@ -186,10 +190,10 @@ export class GmlTranspiler {
                 continue;
             }
 
-            lines.push(line);
+            builder.append(line);
         }
 
-        return lines.join("\n");
+        return builder.toString("\n");
     }
 
     private emitUnwrappedFunctionBody(body: ProgramNode["body"][number], emitter: GmlToJsEmitter): string {
@@ -197,17 +201,17 @@ export class GmlTranspiler {
             return emitter.emit(body).trim();
         }
 
-        const lines: string[] = [];
+        const builder = new StringBuilder(body.body.length);
         for (const statement of body.body) {
             const code = emitter.emit(statement);
             if (!code) {
                 continue;
             }
 
-            lines.push(ensureStatementTerminated(code));
+            builder.append(ensureStatementTerminated(code));
         }
 
-        return lines.join("\n");
+        return builder.toString("\n");
     }
 
     private createTranspileError(contextLabel: string, error: unknown): Error {

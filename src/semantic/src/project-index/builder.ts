@@ -12,6 +12,7 @@ import { resolveProjectIndexParser } from "./gml-parser-facade.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
 import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metrics.js";
+import { runWithMissingPathFallback } from "./missing-path-fallback.js";
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
@@ -35,11 +36,15 @@ const IDENTIFIER_DECLARATION_LOCATION_KEYS = Symbol("identifierDeclarationLocati
 
 const IDENTIFIER_COLLECTION_NAMES = Object.freeze({
     scripts: "scripts",
+    functions: "functions",
+    structs: "structs",
     macros: "macros",
     enums: "enums",
     enumMembers: "enumMembers",
     globalVariables: "globalVariables",
-    instanceVariables: "instanceVariables"
+    instanceVariables: "instanceVariables",
+    localVariables: "localVariables",
+    structVariables: "structVariables"
 });
 
 /**
@@ -249,11 +254,15 @@ function assignIdentifierEntryMetadata(entry, metadata) {
 function createIdentifierCollections() {
     return {
         scripts: new Map(),
+        functions: new Map(),
+        structs: new Map(),
         macros: new Map(),
         enums: new Map(),
         enumMembers: new Map(),
         globalVariables: new Map(),
-        instanceVariables: new Map()
+        instanceVariables: new Map(),
+        localVariables: new Map(),
+        structVariables: new Map()
     };
 }
 function buildIdentifierId(scope, value) {
@@ -483,6 +492,89 @@ function ensureScriptEntry(identifierCollections, descriptor) {
             resourcePath: descriptor.resourcePath ?? null,
             declarationKinds: []
         })
+    });
+}
+function createFunctionLikeCollectionKey(filePath, declarationRecord) {
+    const locationKey = Core.buildFileLocationKey(filePath, declarationRecord?.start);
+    if (locationKey) {
+        return locationKey;
+    }
+
+    if (declarationRecord?.scopeId && declarationRecord?.name) {
+        return `${declarationRecord.scopeId}:${declarationRecord.name}`;
+    }
+
+    return declarationRecord?.name ?? null;
+}
+function registerFunctionLikeSymbolDeclaration({
+    collection,
+    collectionName,
+    identifierCollections,
+    declarationRecord,
+    filePath,
+    kind,
+    identifierSink
+}) {
+    if (!identifierCollections || !declarationRecord?.name) {
+        return;
+    }
+
+    const collectionKey = createFunctionLikeCollectionKey(filePath, declarationRecord);
+    if (!collectionKey) {
+        return;
+    }
+
+    const identifierId = buildIdentifierId(kind, collectionKey);
+    const entry = ensureIdentifierCollectionEntry({
+        collection,
+        key: collectionKey,
+        identifierId,
+        initializer: () => ({
+            key: collectionKey,
+            name: declarationRecord.name,
+            displayName: declarationRecord.name,
+            filePath: filePath ?? null,
+            scopeId: declarationRecord.scopeId ?? null
+        })
+    });
+
+    assignIdentifierEntryMetadata(entry, {
+        identifierId,
+        name: declarationRecord.name,
+        displayName: declarationRecord.name,
+        scopeId: declarationRecord.scopeId ?? null
+    });
+
+    recordIdentifierCollectionRole({
+        entry,
+        identifierRecord: declarationRecord,
+        filePath,
+        role: IdentifierRole.DECLARATION,
+        collectionName,
+        collectionKey,
+        identifierSink
+    });
+}
+function registerFunctionDeclaration({ identifierCollections, declarationRecord, filePath, identifierSink }) {
+    registerFunctionLikeSymbolDeclaration({
+        collection: identifierCollections.functions,
+        collectionName: IDENTIFIER_COLLECTION_NAMES.functions,
+        identifierCollections,
+        declarationRecord,
+        filePath,
+        kind: "function",
+        identifierSink
+    });
+}
+function registerStructDeclaration({ identifierCollections, declarationRecord, filePath, identifierSink }) {
+    registerFunctionLikeSymbolDeclaration({
+        collection: identifierCollections.structs,
+        collectionName: IDENTIFIER_COLLECTION_NAMES.structs,
+        identifierCollections,
+        declarationRecord,
+        filePath,
+        kind: "struct",
+        identifierSink
     });
 }
 function ensureDeclarationLocationKeySet(entry): Set<string> {
@@ -808,6 +900,86 @@ function registerInstanceOccurrence({
         identifierSink
     });
 }
+function getIdentifierDeclarationScopeId(identifierRecord) {
+    return identifierRecord?.declaration?.scopeId ?? identifierRecord?.scopeId ?? null;
+}
+function createScopedVariableKey(identifierRecord) {
+    if (!identifierRecord?.name) {
+        return null;
+    }
+
+    const declarationScopeId = getIdentifierDeclarationScopeId(identifierRecord);
+    if (!declarationScopeId) {
+        return null;
+    }
+
+    return `${declarationScopeId}:${identifierRecord.name}`;
+}
+function registerScopedVariableOccurrence({
+    collection,
+    collectionName,
+    identifierCollections,
+    identifierRecord,
+    filePath,
+    role,
+    kind,
+    identifierSink
+}) {
+    const collectionKey = createScopedVariableKey(identifierRecord);
+    if (!identifierCollections || !collectionKey || !identifierRecord?.name) {
+        return;
+    }
+
+    const validatedRole = assertValidIdentifierRole(role);
+    const declarationScopeId = getIdentifierDeclarationScopeId(identifierRecord);
+    const identifierId = buildIdentifierId(kind, collectionKey);
+
+    ensureIdentifierEntryWithRole({
+        collection,
+        key: collectionKey,
+        collectionName,
+        identifierId,
+        initializer: () => ({
+            key: collectionKey,
+            name: identifierRecord.name,
+            scopeId: declarationScopeId,
+            scopeKind: null
+        }),
+        metadata: {
+            identifierId,
+            scopeId: declarationScopeId,
+            scopeKind: null
+        },
+        identifierRecord,
+        filePath,
+        role: validatedRole,
+        identifierSink
+    });
+}
+function registerLocalVariableOccurrence({ identifierCollections, identifierRecord, filePath, role, identifierSink }) {
+    registerScopedVariableOccurrence({
+        collection: identifierCollections.localVariables,
+        collectionName: IDENTIFIER_COLLECTION_NAMES.localVariables,
+        identifierCollections,
+        identifierRecord,
+        filePath,
+        role,
+        kind: "local",
+        identifierSink
+    });
+}
+function registerStructVariableOccurrence({ identifierCollections, identifierRecord, filePath, role, identifierSink }) {
+    registerScopedVariableOccurrence({
+        collection: identifierCollections.structVariables,
+        collectionName: IDENTIFIER_COLLECTION_NAMES.structVariables,
+        identifierCollections,
+        identifierRecord,
+        filePath,
+        role,
+        kind: "struct-variable",
+        identifierSink
+    });
+}
 function shouldTreatAsInstance({ identifierRecord, role, scopeDescriptor }) {
     if (!identifierRecord) {
         return false;
@@ -834,6 +1006,31 @@ function shouldTreatAsInstance({ identifierRecord, role, scopeDescriptor }) {
     }
     return true;
 }
+function shouldTreatAsScopedVariable(identifierRecord, role) {
+    if (!identifierRecord?.name) {
+        return false;
+    }
+
+    const validatedRole = assertValidIdentifierRole(role);
+    const classifications = Core.asArray(identifierRecord?.classifications);
+    if (!classifications.includes("variable")) {
+        return false;
+    }
+
+    if (classifications.includes("global") || identifierRecord.isGlobalIdentifier) {
+        return false;
+    }
+
+    if (validatedRole === IdentifierRole.DECLARATION) {
+        return Boolean(identifierRecord.scopeId);
+    }
+
+    return Boolean(identifierRecord.declaration?.scopeId);
+}
+function shouldTreatAsStructVariable(identifierRecord, structVariableDeclarationScopeIds) {
+    const declarationScopeId = getIdentifierDeclarationScopeId(identifierRecord);
+    return Boolean(declarationScopeId && structVariableDeclarationScopeIds?.has(declarationScopeId));
+}
 function registerIdentifierOccurrence({
     identifierCollections,
     identifierRecord,
@@ -841,6 +1038,7 @@ function registerIdentifierOccurrence({
     role,
     enumLookup,
     scopeDescriptor,
+    structVariableDeclarationScopeIds,
     identifierSink
 }) {
     if (!identifierRecord || !identifierCollections) {
@@ -853,6 +1051,17 @@ function registerIdentifierOccurrence({
             identifierCollections,
             descriptor: scopeDescriptor,
             declarationRecord: identifierRecord,
+            filePath,
+            identifierSink
+        });
+    }
+    if (validatedRole === IdentifierRole.DECLARATION && classifications.includes("struct")) {
+        registerStructDeclaration({
+            identifierCollections,
+            declarationRecord: {
+                ...identifierRecord,
+                classifications: ["identifier", "declaration", "struct"]
+            },
             filePath,
             identifierSink
         });
@@ -894,6 +1103,32 @@ function registerIdentifierOccurrence({
             role: validatedRole,
             identifierSink
         });
+    }
+    if (
+        shouldTreatAsScopedVariable(identifierRecord, validatedRole) &&
+        !shouldTreatAsInstance({
+            identifierRecord,
+            role: validatedRole,
+            scopeDescriptor
+        })
+    ) {
+        if (shouldTreatAsStructVariable(identifierRecord, structVariableDeclarationScopeIds)) {
+            registerStructVariableOccurrence({
+                identifierCollections,
+                identifierRecord,
+                filePath,
+                role: validatedRole,
+                identifierSink
+            });
+        } else {
+            registerLocalVariableOccurrence({
+                identifierCollections,
+                identifierRecord,
+                filePath,
+                role: validatedRole,
+                identifierSink
+            });
+        }
     }
     if (
         shouldTreatAsInstance({
@@ -1028,7 +1263,7 @@ function pushNodeValueChildren(stack: Array<any>, value: unknown) {
         stack.push(value);
     }
 }
-function handleScriptScopeFunctionDeclarationNode({
+function handleFunctionLikeDeclarationNode({
     node,
     scopeDescriptor,
     scopeRecord,
@@ -1038,10 +1273,7 @@ function handleScriptScopeFunctionDeclarationNode({
     lineOffsets,
     identifierSink
 }) {
-    if (
-        scopeDescriptor?.kind !== "script" ||
-        (node?.type !== "FunctionDeclaration" && node?.type !== "ConstructorDeclaration")
-    ) {
+    if (node?.type !== "FunctionDeclaration" && node?.type !== "ConstructorDeclaration") {
         return;
     }
     const classificationTags =
@@ -1057,6 +1289,33 @@ function handleScriptScopeFunctionDeclarationNode({
     if (!declarationRecord) {
         return;
     }
+
+    if (node.type === "ConstructorDeclaration") {
+        registerStructDeclaration({
+            identifierCollections,
+            declarationRecord: {
+                ...declarationRecord,
+                classifications: ["identifier", "declaration", "struct"]
+            },
+            filePath: fileRecord?.filePath ?? null,
+            identifierSink
+        });
+    } else {
+        registerFunctionDeclaration({
+            identifierCollections,
+            declarationRecord: {
+                ...declarationRecord,
+                classifications: ["identifier", "declaration", "function"]
+            },
+            filePath: fileRecord?.filePath ?? null,
+            identifierSink
+        });
+    }
+
+    if (scopeDescriptor?.kind !== "script") {
+        return;
+    }
+
     const removalDescriptor = {
         name: declarationRecord.name,
         scopeId: scopeRecord.id
@@ -1093,6 +1352,7 @@ function handleIdentifierNode({
     enumLookup,
     scopeDescriptor,
     metrics,
+    structVariableDeclarationScopeIds,
     identifierSink
 }) {
     if (node?.type !== "Identifier" || !Array.isArray(node.classifications)) {
@@ -1121,6 +1381,7 @@ function handleIdentifierNode({
             role: IdentifierRole.DECLARATION,
             enumLookup,
             scopeDescriptor: scopeDescriptor ?? scopeRecord,
+            structVariableDeclarationScopeIds,
             identifierSink
         });
     }
@@ -1135,6 +1396,7 @@ function handleIdentifierNode({
             role: IdentifierRole.REFERENCE,
             enumLookup,
             scopeDescriptor: scopeDescriptor ?? scopeRecord,
+            structVariableDeclarationScopeIds,
             identifierSink
         });
     }
@@ -1158,30 +1420,90 @@ function handleCallExpressionNode({
     if (!calleeName || builtInNames.has(calleeName)) {
         return;
     }
-    const targetScopeId = scriptNameToScopeId.get(calleeName) ?? null;
-    const targetResourcePath = targetScopeId ? (scriptNameToResourcePath.get(calleeName) ?? null) : null;
+    recordFunctionOrScriptCall({
+        builtInNames,
+        callee,
+        calleeName,
+        fileRecord,
+        metrics,
+        relationships,
+        scopeRecord,
+        scriptNameToResourcePath,
+        scriptNameToScopeId
+    });
+}
+
+function resolveCallTargetKind(identifierNode) {
+    const declarationClassifications = Core.asArray(identifierNode?.declaration?.classifications).filter(
+        (value) => typeof value === "string"
+    );
+    const identifierClassifications = Core.asArray(identifierNode?.classifications).filter(
+        (value) => typeof value === "string"
+    );
+    const classifications = new Set([...declarationClassifications, ...identifierClassifications]);
+
+    if (classifications.has("function")) {
+        return "function";
+    }
+
+    if (classifications.has("script")) {
+        return "script";
+    }
+
+    return null;
+}
+
+function recordFunctionOrScriptCall({
+    builtInNames,
+    callee,
+    calleeName,
+    fileRecord,
+    metrics,
+    relationships,
+    scopeRecord,
+    scriptNameToResourcePath,
+    scriptNameToScopeId
+}) {
+    if (!calleeName || builtInNames.has(calleeName)) {
+        return;
+    }
+
+    const declaredTargetScopeId = callee?.declaration?.scopeId ?? null;
+    const resolvedTargetKind = resolveCallTargetKind(callee);
+    const fallbackTargetScopeId = scriptNameToScopeId.get(calleeName) ?? null;
+    const targetScopeId = declaredTargetScopeId ?? fallbackTargetScopeId;
+    const targetKind = resolvedTargetKind ?? "script";
+    const targetIdentifierId =
+        targetKind === "function"
+            ? buildIdentifierId("function", createFunctionLikeCollectionKey(fileRecord.filePath, callee?.declaration))
+            : null;
+    const targetResourcePath =
+        targetKind === "script" && targetScopeId ? (scriptNameToResourcePath.get(calleeName) ?? null) : null;
     const callRecord = {
-        kind: "script",
+        kind: targetKind,
         from: {
             filePath: fileRecord.filePath,
             scopeId: scopeRecord.id
         },
         target: {
+            identifierId: targetIdentifierId,
             name: calleeName,
             scopeId: targetScopeId,
             resourcePath: targetResourcePath
         },
         isResolved: Boolean(targetScopeId),
         location: {
-            start: Core.cloneLocation(callee?.start),
-            end: Core.cloneLocation(callee?.end)
+            start: Core.cloneLocation(callee?.start ?? null),
+            end: Core.cloneLocation(callee?.end ?? null)
         }
     };
+
     fileRecord.scriptCalls.push(callRecord);
     scopeRecord.scriptCalls.push(callRecord);
     relationships.scriptCalls.push(callRecord);
     metrics?.counters?.increment("scriptCalls.discovered");
 }
+
 function handleNewExpressionScriptCall({
     node,
     builtInNames,
@@ -1200,29 +1522,17 @@ function handleNewExpressionScriptCall({
     if (typeof calleeName !== "string" || builtInNames.has(calleeName)) {
         return;
     }
-    const targetScopeId = scriptNameToScopeId.get(calleeName) ?? null;
-    const targetResourcePath = targetScopeId ? (scriptNameToResourcePath.get(calleeName) ?? null) : null;
-    const callRecord = {
-        kind: "script",
-        from: {
-            filePath: fileRecord.filePath,
-            scopeId: scopeRecord.id
-        },
-        target: {
-            name: calleeName,
-            scopeId: targetScopeId,
-            resourcePath: targetResourcePath
-        },
-        isResolved: Boolean(targetScopeId),
-        location: {
-            start: Core.cloneLocation(callee.start),
-            end: Core.cloneLocation(callee.end)
-        }
-    };
-    fileRecord.scriptCalls.push(callRecord);
-    scopeRecord.scriptCalls.push(callRecord);
-    relationships.scriptCalls.push(callRecord);
-    metrics?.counters?.increment("scriptCalls.discovered");
+    recordFunctionOrScriptCall({
+        builtInNames,
+        callee,
+        calleeName,
+        fileRecord,
+        metrics,
+        relationships,
+        scopeRecord,
+        scriptNameToResourcePath,
+        scriptNameToScopeId
+    });
 }
 function handleConstructorParentScriptCall({
     node,
@@ -1242,9 +1552,15 @@ function handleConstructorParentScriptCall({
     if (!calleeName || builtInNames.has(calleeName)) {
         return;
     }
-
-    const targetScopeId = scriptNameToScopeId.get(calleeName) ?? null;
-    const targetResourcePath = targetScopeId ? (scriptNameToResourcePath.get(calleeName) ?? null) : null;
+    const callee = {
+        classifications: ["script"],
+        declaration: {
+            scopeId: scriptNameToScopeId.get(calleeName) ?? null
+        },
+        end: node.idLocation?.end ?? null,
+        name: calleeName,
+        start: node.idLocation?.start ?? null
+    };
     const parentStart = Core.cloneLocation(node.idLocation?.start ?? null);
     const parentEnd = Core.cloneLocation(node.idLocation?.end ?? null);
     if (parentStart === null || parentEnd === null) {
@@ -1254,28 +1570,21 @@ function handleConstructorParentScriptCall({
     if (typeof parentEnd.column === "number") {
         parentEnd.column -= 1;
     }
-
-    const callRecord = {
-        kind: "script",
-        from: {
-            filePath: fileRecord.filePath,
-            scopeId: scopeRecord.id
+    recordFunctionOrScriptCall({
+        builtInNames,
+        callee: {
+            ...callee,
+            end: parentEnd,
+            start: parentStart
         },
-        target: {
-            name: calleeName,
-            scopeId: targetScopeId,
-            resourcePath: targetResourcePath
-        },
-        isResolved: Boolean(targetScopeId),
-        location: {
-            start: parentStart,
-            end: parentEnd
-        }
-    };
-    fileRecord.scriptCalls.push(callRecord);
-    scopeRecord.scriptCalls.push(callRecord);
-    relationships.scriptCalls.push(callRecord);
-    metrics?.counters?.increment("scriptCalls.discovered");
+        calleeName,
+        fileRecord,
+        metrics,
+        relationships,
+        scopeRecord,
+        scriptNameToResourcePath,
+        scriptNameToScopeId
+    });
 }
 function handleObjectEventAssignmentNode({
     node,
@@ -1315,6 +1624,53 @@ function handleObjectEventAssignmentNode({
         metrics?.counters?.increment("identifiers.instanceAssignments");
     }
 }
+function collectConstructorVariableDeclarationScopeIds(ast) {
+    const scopeIds = new Set();
+
+    const visit = (node, insideConstructor) => {
+        if (!Core.isObjectLike(node)) {
+            return;
+        }
+
+        const nodeType = node.type;
+        if (
+            insideConstructor &&
+            (nodeType === "FunctionDeclaration" ||
+                nodeType === "ConstructorDeclaration" ||
+                nodeType === "StructDeclaration")
+        ) {
+            return;
+        }
+
+        if (
+            insideConstructor &&
+            nodeType === "Identifier" &&
+            Array.isArray(node.classifications) &&
+            node.classifications.includes("declaration") &&
+            node.classifications.includes("variable")
+        ) {
+            const declarationScopeId = node.declaration?.scopeId ?? node.scopeId ?? null;
+            if (declarationScopeId) {
+                scopeIds.add(declarationScopeId);
+            }
+        }
+
+        const childInsideConstructor = insideConstructor || nodeType === "ConstructorDeclaration";
+        for (const value of Object.values(node)) {
+            if (Array.isArray(value)) {
+                for (const child of value) {
+                    visit(child, childInsideConstructor);
+                }
+                continue;
+            }
+
+            visit(value, childInsideConstructor);
+        }
+    };
+
+    visit(ast, false);
+    return scopeIds;
+}
 function analyseGmlAst({
     ast,
     builtInNames,
@@ -1328,11 +1684,12 @@ function analyseGmlAst({
     metrics = null,
     sourceContents = "",
     lineOffsets = null,
+    structVariableDeclarationScopeIds = new Set(),
     identifierSink
 }) {
     const enumLookup = createEnumLookup(ast, fileRecord?.filePath ?? null);
     traverseAst(ast, (node) => {
-        handleScriptScopeFunctionDeclarationNode({
+        handleFunctionLikeDeclarationNode({
             node,
             scopeDescriptor,
             scopeRecord,
@@ -1351,6 +1708,7 @@ function analyseGmlAst({
             enumLookup,
             scopeDescriptor,
             metrics,
+            structVariableDeclarationScopeIds,
             identifierSink
         });
         if (identifierHandled) {
@@ -1440,19 +1798,20 @@ async function processWithConcurrency(items, limit, worker, options = {}) {
  * record preparation, and AST analysis for the provided file.
  */
 async function readProjectGmlFile({ file, fsFacade, metrics }) {
-    try {
-        const contents = await metrics.timers.timeAsync("fs.readGml", () =>
-            fsFacade.readFile(file.absolutePath, "utf8")
-        );
-        metrics.counters.increment("io.gmlBytes", Buffer.byteLength(contents));
-        return contents;
-    } catch (error) {
-        if (Core.isErrorWithCode(error, "ENOENT")) {
+    const contents = await runWithMissingPathFallback(
+        () => metrics.timers.timeAsync("fs.readGml", () => fsFacade.readFile(file.absolutePath, "utf8")),
+        () => {
             metrics.counters.increment("files.missingDuringRead");
             return null;
         }
-        throw error;
+    );
+
+    if (contents === null) {
+        return null;
     }
+
+    metrics.counters.increment("io.gmlBytes", Buffer.byteLength(contents));
+    return contents;
 }
 function registerFilePathWithScope(scopeRecord, filePath) {
     if (!scopeRecord?.filePaths) {
@@ -1529,6 +1888,7 @@ function analyseProjectGmlAst({
     lineOffsets,
     identifierSink
 }) {
+    const structVariableDeclarationScopeIds = collectConstructorVariableDeclarationScopeIds(ast);
     metrics.timers.timeSync("gml.analyse", () =>
         analyseGmlAst({
             ast,
@@ -1543,6 +1903,7 @@ function analyseProjectGmlAst({
             metrics,
             sourceContents,
             lineOffsets,
+            structVariableDeclarationScopeIds,
             identifierSink
         })
     );
@@ -1741,6 +2102,50 @@ function createProjectIndexResultSnapshot({
                 isResolved: reference.isResolved ?? false
             }))
         })),
+        functions: mapToObject(identifierCollections.functions, (entry) => ({
+            identifierId: entry.identifierId ?? buildIdentifierId("function", entry.key ?? entry.name ?? ""),
+            key: entry.key,
+            name: entry.name ?? null,
+            displayName: entry.displayName ?? entry.name ?? entry.key,
+            filePath: entry.filePath ?? null,
+            scopeId: entry.scopeId ?? null,
+            declarations: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.functions,
+                key: entry.key,
+                role: "declarations",
+                fallbackRecords: entry.declarations
+            }),
+            references: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.functions,
+                key: entry.key,
+                role: "references",
+                fallbackRecords: entry.references
+            })
+        })),
+        structs: mapToObject(identifierCollections.structs, (entry) => ({
+            identifierId: entry.identifierId ?? buildIdentifierId("struct", entry.key ?? entry.name ?? ""),
+            key: entry.key,
+            name: entry.name ?? null,
+            displayName: entry.displayName ?? entry.name ?? entry.key,
+            filePath: entry.filePath ?? null,
+            scopeId: entry.scopeId ?? null,
+            declarations: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.structs,
+                key: entry.key,
+                role: "declarations",
+                fallbackRecords: entry.declarations
+            }),
+            references: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.structs,
+                key: entry.key,
+                role: "references",
+                fallbackRecords: entry.references
+            })
+        })),
         macros: mapToObject(identifierCollections.macros, (entry) => ({
             identifierId: entry.identifierId ?? buildIdentifierId("macro", entry.name ?? ""),
             name: entry.name,
@@ -1835,6 +2240,48 @@ function createProjectIndexResultSnapshot({
             references: resolveIdentifierRoleRecords({
                 identifierSink,
                 collection: IDENTIFIER_COLLECTION_NAMES.instanceVariables,
+                key: entry.key,
+                role: "references",
+                fallbackRecords: entry.references
+            })
+        })),
+        localVariables: mapToObject(identifierCollections.localVariables, (entry) => ({
+            identifierId: entry.identifierId ?? buildIdentifierId("local", entry.key ?? ""),
+            key: entry.key,
+            name: entry.name ?? null,
+            scopeId: entry.scopeId ?? null,
+            scopeKind: entry.scopeKind ?? null,
+            declarations: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.localVariables,
+                key: entry.key,
+                role: "declarations",
+                fallbackRecords: entry.declarations
+            }),
+            references: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.localVariables,
+                key: entry.key,
+                role: "references",
+                fallbackRecords: entry.references
+            })
+        })),
+        structVariables: mapToObject(identifierCollections.structVariables, (entry) => ({
+            identifierId: entry.identifierId ?? buildIdentifierId("struct-variable", entry.key ?? ""),
+            key: entry.key,
+            name: entry.name ?? null,
+            scopeId: entry.scopeId ?? null,
+            scopeKind: entry.scopeKind ?? null,
+            declarations: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.structVariables,
+                key: entry.key,
+                role: "declarations",
+                fallbackRecords: entry.declarations
+            }),
+            references: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.structVariables,
                 key: entry.key,
                 role: "references",
                 fallbackRecords: entry.references

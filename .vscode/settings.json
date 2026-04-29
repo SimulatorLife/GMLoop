@@ -1,0 +1,11 @@
+{
+  "github.copilot.chat.mcp.enabled": true,
+  "github.copilot.chat.mcp.servers": {
+    "gmloop-mcp": {
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/src/mcp/dist/src/main.js"
+      ]
+    }
+  }
+}

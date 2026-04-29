@@ -1,8 +1,8 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { printNodeForAutofix } from "../print-expression.js";
-import { createMeta, resolveLocFromIndex } from "../rule-base-helpers.js";
+import { printNodeForAutofix } from "../../../language/autofix-printing.js";
+import { createMeta, findPreviousNonWhitespaceIndex, resolveLocFromIndex } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../transforms/logical-expression-traversal-normalization.js";
 
@@ -48,11 +48,11 @@ function containsUnsafeCommentSyntax(sourceText: string): boolean {
 }
 
 function isElsePrefixedIfAtIndex(fullSourceText: string, ifKeywordStartIndex: number): boolean {
-    let cursor = ifKeywordStartIndex - 1;
-    while (cursor >= 0 && /\s/u.test(fullSourceText[cursor])) {
-        cursor -= 1;
+    const previousNonWhitespaceIndex = findPreviousNonWhitespaceIndex(fullSourceText, ifKeywordStartIndex, false);
+    if (previousNonWhitespaceIndex === null) {
+        return false;
     }
-
+    const cursor = previousNonWhitespaceIndex;
     const elseStart = cursor - 3;
     if (elseStart < 0) {
         return false;

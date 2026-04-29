@@ -650,6 +650,62 @@ void test("gm1051 removes trailing macro semicolons without mutating inline semi
     assertEquals(output.includes("#macro KEEP_WITH_TRAILING value;value;"), true);
 });
 
+void test("gm1051 removes a trailing macro semicolon before a line-continuation backslash", () => {
+    const input =
+        "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count;\\\n" +
+        "                                     _glyph_prev_prev = _glyph_prev;\\\n" +
+        "                                     _glyph_prev = _glyph_write;";
+
+    const { output } = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm1051", input);
+
+    assertEquals(
+        output,
+        "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count\\\n" +
+            "                                     _glyph_prev_prev = _glyph_prev\\\n" +
+            "                                     _glyph_prev = _glyph_write"
+    );
+});
+
+void test("gm1051 fixes multiline macro continuation lines without mutating comment-bearing continuations", () => {
+    const input =
+        "#macro __SCRIBBLE_PARSER_WRITE_NEWLINE _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__UNICODE      ] = 0x0A\\ //ASCII line break (dec = 10)\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__BIDI         ] = e__ScribbleBidi.ISOLATED;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__X            ] = 0;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__Y            ] = 0;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__WIDTH        ] = 0;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__HEIGHT       ] = _font_line_height;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__FONT_HEIGHT  ] = _font_line_height;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__SEPARATION   ] = 0;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__LEFT_OFFSET  ] = 0;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__CONTROL_COUNT] = _control_count;\\\n" +
+        "                                        ;\\\n" +
+        "                                        ++_glyph_count;\\\n" +
+        "                                        _glyph_prev_arabic_join_next = false;\\\n" +
+        "                                        _glyph_prev_prev = _glyph_prev;\\\n" +
+        "                                        _glyph_prev = 0x0A;";
+
+    const { output } = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm1051", input);
+
+    assertEquals(
+        output,
+        "#macro __SCRIBBLE_PARSER_WRITE_NEWLINE _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__UNICODE      ] = 0x0A\\ //ASCII line break (dec = 10)\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__BIDI         ] = e__ScribbleBidi.ISOLATED\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__X            ] = 0\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__Y            ] = 0\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__WIDTH        ] = 0\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__HEIGHT       ] = _font_line_height\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__FONT_HEIGHT  ] = _font_line_height\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__SEPARATION   ] = 0\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__LEFT_OFFSET  ] = 0\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__CONTROL_COUNT] = _control_count\\\n" +
+            "                                        \\\n" +
+            "                                        ++_glyph_count\\\n" +
+            "                                        _glyph_prev_arabic_join_next = false\\\n" +
+            "                                        _glyph_prev_prev = _glyph_prev\\\n" +
+            "                                        _glyph_prev = 0x0A"
+    );
+});
+
 void test("gm1033 removes redundant semicolon runs without mutating for-loop headers", () => {
     const input = `for (;;) {
     tick();

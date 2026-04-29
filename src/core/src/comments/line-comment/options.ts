@@ -1,4 +1,4 @@
-import { assertFunction, isObjectLike, isRegExpLike } from "./utils.js";
+import { assertFunction, isObjectLike, isRegExpLike } from "../../utils/index.js";
 
 const DEFAULT_COMMENTED_OUT_CODE_PATTERNS = Object.freeze([
     /^(?:if|else|for|while|switch|do|return|break|continue|repeat|with|var|global|enum|function|try|catch|finally|throw|delete|new)\b(?!\s+(?:a|an|the)\s+\w)/i,

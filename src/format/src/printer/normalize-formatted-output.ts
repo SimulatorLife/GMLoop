@@ -3,7 +3,7 @@ import { Core } from "@gmloop/core";
 const { isNonEmptyTrimmedString } = Core;
 
 const MULTIPLE_BLANK_LINE_PATTERN = /\n{3,}/g;
-const WHITESPACE_ONLY_BLANK_LINE_PATTERN = /\n[ \t]+\n/g;
+const WHITESPACE_ONLY_BLANK_LINE_PATTERN = /\n([ \t]+\n)+/g;
 const LINE_COMMENT_TO_BLOCK_COMMENT_BLANK_PATTERN = /(\/\/(?!\/)[^\n]*\n)[ \t]*\n(?=[ \t]*\/\*)/g;
 // Matches a blank line immediately after `{`, but not when the next
 // non-blank content is a comment (`///`, `//`, or `/*`).  Comments that
@@ -155,5 +155,5 @@ export function normalizeFormattedOutput(formatted: string): string {
         collapseLineCommentToBlockCommentBlankLines
     ].reduce<string>((current, step) => step(current), formatted);
 
-    return collapseWhitespaceOnlyBlankLines(normalized);
+    return collapseDuplicateBlankLines(collapseWhitespaceOnlyBlankLines(normalized));
 }

@@ -17,8 +17,8 @@ function hasConfiguredRefactorStage(config: Record<string, unknown>): boolean {
     return Object.hasOwn(config, "refactor") && config.refactor !== undefined;
 }
 
-function resolveIntegrationWorkspaceFilePath(tempProjectDirectoryPath: string): string {
-    return path.join(tempProjectDirectoryPath, "input.gml");
+function resolveIntegrationWorkspaceFilePath(temporaryProjectDirectoryPath: string): string {
+    return path.join(temporaryProjectDirectoryPath, "input.gml");
 }
 
 async function createIntegrationRefactorWorkspace(inputText: string): Promise<string> {
@@ -29,21 +29,21 @@ async function createIntegrationRefactorWorkspace(inputText: string): Promise<st
 
 async function runConfiguredIntegrationRefactorStage(
     config: Record<string, unknown>,
-    tempProjectDirectoryPath: string
+    temporaryProjectDirectoryPath: string
 ): Promise<string> {
-    const projectFilePath = resolveIntegrationWorkspaceFilePath(tempProjectDirectoryPath);
+    const projectFilePath = resolveIntegrationWorkspaceFilePath(temporaryProjectDirectoryPath);
     const engine = new Refactor.RefactorEngine();
 
     await engine.executeConfiguredCodemods({
-        projectRoot: tempProjectDirectoryPath,
+        projectRoot: temporaryProjectDirectoryPath,
         targetPaths: ["input.gml"],
         gmlFilePaths: ["input.gml"],
         config: Refactor.normalizeRefactorProjectConfig(config.refactor),
         readFile: async (filePath) =>
-            readFile(path.isAbsolute(filePath) ? filePath : path.join(tempProjectDirectoryPath, filePath), "utf8"),
+            readFile(path.isAbsolute(filePath) ? filePath : path.join(temporaryProjectDirectoryPath, filePath), "utf8"),
         writeFile: async (filePath, content) =>
             writeFile(
-                path.isAbsolute(filePath) ? filePath : path.join(tempProjectDirectoryPath, filePath),
+                path.isAbsolute(filePath) ? filePath : path.join(temporaryProjectDirectoryPath, filePath),
                 content,
                 "utf8"
             ),

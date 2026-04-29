@@ -185,6 +185,31 @@ void test("executeConfiguredCodemods deduplicates repeated target and gml file p
     assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
 });
 
+void test("executeConfiguredCodemods reuses read-through cache across codemod passes", async () => {
+    const sourceText = "function sample_script() {\n    return 1;\n}\n";
+    const engine = new Refactor.RefactorEngine();
+    let readCount = 0;
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/example.gml"],
+        config: {
+            codemods: {
+                loopLengthHoisting: {},
+                globalvarToGlobal: {}
+            }
+        },
+        readFile: async () => {
+            readCount += 1;
+            return sourceText;
+        }
+    });
+
+    assert.equal(result.summaries.length, 2);
+    assert.equal(readCount, 1);
+});
+
 void test("executeConfiguredCodemods avoids retaining full file content in write mode", async () => {
     const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
     const writes = new Map<string, string>();

@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 
 import { resolveBuiltinConstants } from "./builtin-constants.js";
+import { getPatchKindMetadata, isSupportedPatchKind, type RegistryCollectionKey } from "./patch-kind.js";
 import type {
     ApplyPatchResult,
     ClosurePatch,
@@ -796,8 +797,6 @@ function applyClosurePatch(registry: RuntimeRegistry, patch: ClosurePatch): Runt
     return updateRegistryCollection(registry, "closures", patch.id, fn);
 }
 
-type RegistryCollectionKey = "scripts" | "events" | "closures";
-
 function updateRegistryCollection(
     registry: RuntimeRegistry,
     key: RegistryCollectionKey,
@@ -824,9 +823,27 @@ type PatchKindHandler = {
 // `captureSnapshot`, `applyPatchToRegistry`, and `restoreSnapshot` invocation —
 // calls that occur on the hot path during each 60 fps hot-reload cycle.
 const PATCH_KIND_HANDLERS: ReadonlyMap<string, PatchKindHandler> = new Map<string, PatchKindHandler>([
-    ["script", { key: "scripts", apply: (registry, patch) => applyScriptPatch(registry, patch as ScriptPatch) }],
-    ["event", { key: "events", apply: (registry, patch) => applyEventPatch(registry, patch as EventPatch) }],
-    ["closure", { key: "closures", apply: (registry, patch) => applyClosurePatch(registry, patch as ClosurePatch) }]
+    [
+        "script",
+        {
+            key: getPatchKindMetadata("script").registryCollectionKey,
+            apply: (registry, patch) => applyScriptPatch(registry, patch as ScriptPatch)
+        }
+    ],
+    [
+        "event",
+        {
+            key: getPatchKindMetadata("event").registryCollectionKey,
+            apply: (registry, patch) => applyEventPatch(registry, patch as EventPatch)
+        }
+    ],
+    [
+        "closure",
+        {
+            key: getPatchKindMetadata("closure").registryCollectionKey,
+            apply: (registry, patch) => applyClosurePatch(registry, patch as ClosurePatch)
+        }
+    ]
 ]);
 
 function resolvePatchKindHandler(kind: Patch["kind"]): PatchKindHandler {
@@ -850,10 +867,6 @@ function restoreEntry(registry: RuntimeRegistry, snapshot: PatchSnapshot, key: R
         ...registry,
         [key]: collection
     };
-}
-
-function isSupportedPatchKind(value: string): value is Patch["kind"] {
-    return value === "script" || value === "event" || value === "closure";
 }
 
 export function calculateTimingMetrics(durations: Array<number>): {

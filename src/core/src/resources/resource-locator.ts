@@ -37,32 +37,34 @@ function tryReadConfiguredResourceDirectory(packageDirectoryPath: string): strin
     return configValue.resourceDirectory;
 }
 
+function tryReadPackageName(directoryPath: string): string | null {
+    const packageJsonPath = path.resolve(directoryPath, PACKAGE_JSON_FILE_NAME);
+    if (!existsSync(packageJsonPath)) {
+        return null;
+    }
+
+    const packageContents = readFileSync(packageJsonPath, "utf8");
+    const packageValue = JSON.parse(packageContents) as unknown;
+    if (typeof packageValue !== "object" || packageValue === null || !("name" in packageValue)) {
+        return null;
+    }
+
+    return typeof packageValue.name === "string" ? packageValue.name : null;
+}
+
 function findCorePackageDirectory(moduleDirectoryPath: string): string {
-    let currentDirectoryPath = moduleDirectoryPath;
-
-    while (true) {
-        const packageJsonPath = path.resolve(currentDirectoryPath, PACKAGE_JSON_FILE_NAME);
-        if (existsSync(packageJsonPath)) {
-            const packageContents = readFileSync(packageJsonPath, "utf8");
-            const packageValue = JSON.parse(packageContents) as unknown;
-
-            if (
-                typeof packageValue === "object" &&
-                packageValue !== null &&
-                "name" in packageValue &&
-                packageValue.name === CORE_PACKAGE_NAME
-            ) {
-                return currentDirectoryPath;
-            }
+    for (let currentDirectoryPath = moduleDirectoryPath; ; currentDirectoryPath = path.dirname(currentDirectoryPath)) {
+        if (tryReadPackageName(currentDirectoryPath) === CORE_PACKAGE_NAME) {
+            return currentDirectoryPath;
         }
 
         const parentDirectoryPath = path.dirname(currentDirectoryPath);
         if (parentDirectoryPath === currentDirectoryPath) {
-            throw new Error(`Unable to locate the ${CORE_PACKAGE_NAME} package directory from ${moduleDirectoryPath}.`);
+            break;
         }
-
-        currentDirectoryPath = parentDirectoryPath;
     }
+
+    throw new Error(`Unable to locate the ${CORE_PACKAGE_NAME} package directory from ${moduleDirectoryPath}.`);
 }
 
 function resolveResourceBaseDirectory(moduleDirectoryPath: string): string {

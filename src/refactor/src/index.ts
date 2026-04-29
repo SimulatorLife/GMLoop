@@ -7,6 +7,7 @@ import * as OccurrenceAnalysis from "./occurrence-analysis.js";
 import * as ProjectAnalysisProvider from "./project-analysis-provider.js";
 import * as ProjectConfig from "./project-config.js";
 import * as RefactorEngineAPI from "./refactor-engine.js";
+import * as Validation from "./rename/rename-validation.js";
 import * as RenamePreview from "./rename-preview.js";
 import { RenameValidationCache } from "./rename-validation-cache.js";
 import { SemanticQueryCache } from "./semantic-cache.js";
@@ -24,7 +25,6 @@ import {
     requireSymbolKind,
     SymbolKind
 } from "./types.js";
-import * as Validation from "./validation.js";
 import { WorkspaceEdit } from "./workspace-edit.js";
 
 export const Refactor = Object.freeze({
@@ -98,6 +98,21 @@ export {
 export { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
 export { normalizeRefactorProjectConfig } from "./project-config.js";
 export { RefactorEngine } from "./refactor-engine.js";
+export type {
+    CrossRenameConfusion,
+    DuplicateSymbolIdEntry,
+    DuplicateTargetNameEntry
+} from "./rename/rename-validation.js";
+export {
+    batchValidateScopeConflicts,
+    detectCircularRenames,
+    detectCrossRenameNameConfusion,
+    detectDuplicateSourceSymbolIds,
+    detectDuplicateTargetNames,
+    detectRenameConflicts,
+    validateCrossFileConsistency,
+    validateRenameStructure
+} from "./rename/rename-validation.js";
 export type { FilePreview, RenamePreview } from "./rename-preview.js";
 export {
     formatBatchRenamePlanReport,
@@ -173,6 +188,7 @@ export type {
     RefactorCodemodConfigMap,
     RefactorCodemodId,
     RefactorEngineDependencies,
+    RefactorHotReloadCoordinator,
     RefactorProjectAnalysisProvider,
     RefactorProjectConfig,
     RegisteredCodemod,
@@ -202,16 +218,5 @@ export type {
 export { isSymbolKind, parseSymbolKind, requireSymbolKind, SymbolKind } from "./types.js";
 export { ConflictType, isConflictType, parseConflictType, requireConflictType } from "./types.js";
 export { isOccurrenceKind, OccurrenceKind, parseOccurrenceKind, requireOccurrenceKind } from "./types.js";
-export type { CrossRenameConfusion, DuplicateSymbolIdEntry, DuplicateTargetNameEntry } from "./validation.js";
-export {
-    batchValidateScopeConflicts,
-    detectCircularRenames,
-    detectCrossRenameNameConfusion,
-    detectDuplicateSourceSymbolIds,
-    detectDuplicateTargetNames,
-    detectRenameConflicts,
-    validateCrossFileConsistency,
-    validateRenameStructure
-} from "./validation.js";
 export type { WorkspaceRevisionProvider } from "./workspace-edit.js";
 export { WORKSPACE_EDIT_REVISION_TOKEN, WorkspaceEdit } from "./workspace-edit.js";

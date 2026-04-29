@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { beforeEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 
 import { __test__ } from "../src/cli.js";
+import { DEFAULT_MAX_IN_MEMORY_SNAPSHOTS } from "../src/runtime-options/format-memory-constants.js";
 
 const {
     getMemoryManagementStatsForTests,
@@ -13,8 +14,13 @@ const {
     performPeriodicMemoryCleanupForTests,
     clearFormattingCacheForTests,
     getFormattingCacheStatsForTests,
-    setFormattingCacheEntryForTests
+    setFormattingCacheEntryForTests,
+    setDefaultMaxInMemorySnapshotsForTests
 } = __test__;
+
+afterEach(() => {
+    setDefaultMaxInMemorySnapshotsForTests(DEFAULT_MAX_IN_MEMORY_SNAPSHOTS);
+});
 
 void describe("memory snapshot limits", () => {
     beforeEach(() => {
@@ -50,6 +56,21 @@ void describe("memory snapshot limits", () => {
             statsAfterEnforce.inMemorySnapshotCount <= maxInMemorySnapshots,
             `in-memory snapshot count should be at or below ${maxInMemorySnapshots} after enforcement (saw ${statsAfterEnforce.inMemorySnapshotCount})`
         );
+    });
+
+    void it("supports tuning the in-memory snapshot limit", async () => {
+        setDefaultMaxInMemorySnapshotsForTests(3);
+
+        for (let i = 0; i < 5; i++) {
+            addFormattedFileSnapshotForTests(`custom-limit-${i}.gml`, `contents-${i}`, null);
+        }
+        setInMemorySnapshotCountForTests(5);
+
+        await enforceSnapshotMemoryLimitForTests();
+
+        const statsAfter = getMemoryManagementStatsForTests();
+        assert.equal(statsAfter.maxInMemorySnapshots, 3);
+        assert.ok(statsAfter.inMemorySnapshotCount <= 3);
     });
 
     void it("tracks in-memory snapshot count correctly", () => {

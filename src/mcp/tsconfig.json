@@ -19,7 +19,7 @@
       "@gmloop/transpiler": ["../transpiler/index.ts"]
     }
   },
-  "references": [{ "path": "../core" }, { "path": "../cli" }],
+  "references": [{ "path": "../cli" }],
   "include": ["*.ts", "src/**/*.ts", "test/**/*.ts"],
   "exclude": ["dist"]
 }

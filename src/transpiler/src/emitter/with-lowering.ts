@@ -20,13 +20,13 @@ import { Core } from "@gmloop/core";
  * 5. Restores the original `self` and `other` after the loop
  *
  * @param testExpression - The evaluated test expression (e.g., "obj_player")
- * @param indentedBody - The body of the with statement, already indented
+ * @param rawBody - The body of the with statement before lowering-controlled indentation
  * @param resolveWithTargetsIdent - Identifier for the runtime target resolver
  * @returns JavaScript code implementing the with statement semantics
  *
  * @example
  * ```typescript
- * const code = lowerWithStatement("obj_player", "    x += 1;", "globalThis.__resolve_with_targets");
+ * const code = lowerWithStatement("obj_player", "x += 1;", "globalThis.__resolve_with_targets");
  * // Generates:
  * // {
  * //     const __with_prev_self = self;
@@ -44,11 +44,12 @@ import { Core } from "@gmloop/core";
  * // }
  * ```
  */
-export function lowerWithStatement(
-    testExpression: string,
-    indentedBody: string,
-    resolveWithTargetsIdent: string
-): string {
+export function lowerWithStatement(testExpression: string, rawBody: string, resolveWithTargetsIdent: string): string {
+    // Keep indentation policy local to lowering so callers pass only semantic body text.
+    // The regex ^(?=.) matches non-empty lines (including whitespace-only lines),
+    // preserving existing formatting behavior while removing call-site plumbing.
+    const indentedBody = rawBody.replaceAll(/^(?=.)/gm, "        ");
+
     const lines = [
         "{",
         "    const __with_prev_self = self;",

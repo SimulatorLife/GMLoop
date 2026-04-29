@@ -17,6 +17,14 @@ import { planNamingConventionCodemod } from "./codemods/naming-convention/index.
 import * as HotReload from "./hot-reload.js";
 import { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
 import { assertRenameRequest, assertValidIdentifierName, extractSymbolName } from "./rename/index.js";
+import {
+    detectCircularRenames,
+    detectCrossRenameNameConfusion,
+    detectDuplicateSourceSymbolIds,
+    detectDuplicateTargetNames,
+    detectRenameConflicts,
+    validateCrossFileConsistency
+} from "./rename/rename-validation.js";
 import { RenameValidationCache } from "./rename-validation-cache.js";
 import { SemanticQueryCache } from "./semantic-cache.js";
 import * as SymbolQueries from "./symbol-queries.js";
@@ -47,6 +55,7 @@ import {
     type PrepareBatchRenamePlanOptions,
     type PrepareRenamePlanOptions,
     type RefactorEngineDependencies,
+    type RefactorHotReloadCoordinator,
     type RefactorProjectAnalysisProvider,
     type RenameImpactAnalysis,
     type RenameImpactGraph,
@@ -61,14 +70,6 @@ import {
     type WorkspaceReadFile
 } from "./types.js";
 import {
-    detectCircularRenames,
-    detectCrossRenameNameConfusion,
-    detectDuplicateSourceSymbolIds,
-    detectDuplicateTargetNames,
-    detectRenameConflicts,
-    validateCrossFileConsistency
-} from "./validation.js";
-import {
     getWorkspaceArrays,
     getWorkspaceEditRevision,
     type GroupedTextEdits,
@@ -80,7 +81,14 @@ import {
 } from "./workspace-edit.js";
 
 const RENAME_VALIDATION_CACHE_MAX_SIZE = 4096;
+const APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT = 8;
+const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 256;
 const validatedWorkspaceRevisions = new WeakMap<object, number>();
+const DEFAULT_HOT_RELOAD_COORDINATOR: RefactorHotReloadCoordinator = Object.freeze({
+    checkHotReloadSafety: HotReload.checkHotReloadSafety,
+    computeHotReloadCascade: HotReload.computeHotReloadCascade,
+    computeRenameImpactGraph: HotReload.computeRenameImpactGraph
+});
 
 function hasCurrentValidatedWorkspaceRevision(workspace: object): boolean {
     const currentRevision = getWorkspaceEditRevision(workspace);
@@ -222,6 +230,7 @@ export class RefactorEngine {
     public readonly semantic: PartialSemanticAnalyzer | null;
     public readonly formatter: TranspilerBridge | null;
     private readonly projectAnalysisProvider: RefactorProjectAnalysisProvider;
+    private readonly hotReloadCoordinator: RefactorHotReloadCoordinator;
     private readonly renameValidationCache: RenameValidationCache;
     private readonly semanticCache: SemanticQueryCache;
 
@@ -229,12 +238,14 @@ export class RefactorEngine {
         parser = null,
         semantic = null,
         formatter = null,
-        projectAnalysisProvider = null
+        projectAnalysisProvider = null,
+        hotReloadCoordinator = null
     }: Partial<RefactorEngineDependencies> = {}) {
         this.parser = parser ?? null;
         this.semantic = semantic ?? null;
         this.formatter = formatter ?? null;
         this.projectAnalysisProvider = projectAnalysisProvider ?? DEFAULT_PROJECT_ANALYSIS_PROVIDER;
+        this.hotReloadCoordinator = hotReloadCoordinator ?? DEFAULT_HOT_RELOAD_COORDINATOR;
         this.renameValidationCache = new RenameValidationCache({
             maxSize: RENAME_VALIDATION_CACHE_MAX_SIZE
         });
@@ -885,31 +896,43 @@ export class RefactorEngine {
         const grouped = workspace.groupByFile();
         const results = new Map<string, string>();
 
-        // Process each file sequentially: load content, apply edits, optionally write.
-        // Uses Core.runSequentially (promise-chain based) instead of the previous
-        // recursive async pattern to keep sequential semantics while avoiding the
-        // overhead of creating a new closure + Promise frame per recursive call.
-        await Core.runSequentially(grouped, async ([filePath, edits]) => {
-            const originalContent = sourceTextByPath?.get(filePath) ?? (await readFile(filePath));
-            const newContent = applyGroupedTextEditsToContent(originalContent, edits);
+        const textEditResults = await Core.runInParallelWithLimit(
+            grouped,
+            async ([filePath, edits]) => {
+                const originalContent = sourceTextByPath?.get(filePath) ?? (await readFile(filePath));
+                const newContent = applyGroupedTextEditsToContent(originalContent, edits);
 
-            results.set(filePath, includeResultContent ? newContent : "");
+                // Write the modified content to disk unless we're in dry-run mode, which
+                // lets callers preview changes before committing them.
+                if (!dryRun && writeFile !== undefined) {
+                    await writeFile(filePath, newContent);
+                }
 
-            // Write the modified content to disk unless we're in dry-run mode, which
-            // lets callers preview changes before committing them.
-            if (!dryRun && writeFile !== undefined) {
-                await writeFile(filePath, newContent);
-            }
-        });
+                return [filePath, includeResultContent ? newContent : ""] as const;
+            },
+            APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT
+        );
+
+        for (const [filePath, newContent] of textEditResults) {
+            results.set(filePath, newContent);
+        }
 
         const { metadataEdits, fileRenames } = getWorkspaceArrays(workspace);
-        await Core.runSequentially(metadataEdits, async (metadataEdit) => {
-            results.set(metadataEdit.path, includeResultContent ? metadataEdit.content : "");
+        const metadataResults = await Core.runInParallelWithLimit(
+            metadataEdits,
+            async (metadataEdit) => {
+                if (!dryRun && writeFile !== undefined) {
+                    await writeFile(metadataEdit.path, metadataEdit.content);
+                }
 
-            if (!dryRun && writeFile !== undefined) {
-                await writeFile(metadataEdit.path, metadataEdit.content);
-            }
-        });
+                return [metadataEdit.path, includeResultContent ? metadataEdit.content : ""] as const;
+            },
+            APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT
+        );
+
+        for (const [filePath, content] of metadataResults) {
+            results.set(filePath, content);
+        }
 
         // Process file renames last to ensure we don't move files before we're done
         // with their text edits. This stabilizes path references during the build phase.
@@ -1361,6 +1384,8 @@ export class RefactorEngine {
         const overlay = new Map<string, string>();
         const overlayByteSizeByPath = new Map<string, number>();
         const overlaySpillIndex = new Set<string>();
+        const readThroughCache = new Map<string, string>();
+        const readThroughCacheOrder: Array<string> = [];
         const appliedFiles = new Map<string, string>();
         let overlayBytes = 0;
         let overlayHighWaterBytes = 0;
@@ -1374,6 +1399,23 @@ export class RefactorEngine {
                 ? (dryRunOverlayStorageBackend ??
                   createTempFileStorageBackend({ readCacheMaxEntries: dryRunOverlayReadCacheMaxEntries }))
                 : null;
+
+        const cacheReadThroughContent = (filePath: string, content: string): void => {
+            if (readThroughCache.has(filePath)) {
+                readThroughCache.set(filePath, content);
+                return;
+            }
+
+            readThroughCache.set(filePath, content);
+            readThroughCacheOrder.push(filePath);
+
+            while (readThroughCacheOrder.length > CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES) {
+                const evictedFilePath = readThroughCacheOrder.shift();
+                if (evictedFilePath !== undefined) {
+                    readThroughCache.delete(evictedFilePath);
+                }
+            }
+        };
 
         const spillEntryToBackend = async (filePath: string): Promise<void> => {
             if (!spillBackend) {
@@ -1446,13 +1488,21 @@ export class RefactorEngine {
             if (useInMemoryOverlay && overlaySpillIndex.has(filePath) && spillBackend) {
                 const spilledContent = await spillBackend.readEntry(filePath);
                 if (typeof spilledContent === "string") {
+                    cacheReadThroughContent(filePath, spilledContent);
                     return spilledContent;
                 }
 
                 overlaySpillIndex.delete(filePath);
             }
 
-            return await readFile(filePath);
+            const cachedContent = readThroughCache.get(filePath);
+            if (cachedContent !== undefined) {
+                return cachedContent;
+            }
+
+            const content = await readFile(filePath);
+            cacheReadThroughContent(filePath, content);
+            return content;
         };
 
         const writeWithOverlay = async (filePath: string, content: string): Promise<void> => {
@@ -1462,6 +1512,7 @@ export class RefactorEngine {
             } else {
                 appliedFiles.set(filePath, "");
             }
+            cacheReadThroughContent(filePath, content);
 
             if (!dryRun && writeFile) {
                 await writeFile(filePath, content);
@@ -2161,14 +2212,14 @@ export class RefactorEngine {
      * that need to be reloaded, ordered for safe application.
      */
     async computeHotReloadCascade(changedSymbolIds: Array<string>): Promise<HotReloadCascadeResult> {
-        return await HotReload.computeHotReloadCascade(changedSymbolIds, this.semantic);
+        return await this.hotReloadCoordinator.computeHotReloadCascade(changedSymbolIds, this.semantic);
     }
 
     /**
      * Check whether a rename operation is safe for hot reload.
      */
     async checkHotReloadSafety(request: RenameRequest): Promise<HotReloadSafetySummary> {
-        return await HotReload.checkHotReloadSafety(request, this.semantic);
+        return await this.hotReloadCoordinator.checkHotReloadSafety(request, this.semantic);
     }
 
     /**
@@ -2196,7 +2247,7 @@ export class RefactorEngine {
      * }
      */
     async computeRenameImpactGraph(symbolId: string): Promise<RenameImpactGraph> {
-        return await HotReload.computeRenameImpactGraph(symbolId, this.semantic);
+        return await this.hotReloadCoordinator.computeRenameImpactGraph(symbolId, this.semantic);
     }
 
     /**

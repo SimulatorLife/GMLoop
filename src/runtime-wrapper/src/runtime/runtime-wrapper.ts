@@ -2,8 +2,18 @@ import { Core } from "@gmloop/core";
 
 import { getHighResolutionTime } from "../timing/index.js";
 import {
+    computeErrorAnalytics,
+    computeErrorsForPatch,
+    computePatchDiagnostics,
+    computePatchStats,
+    computeRegistryHealthCheck,
+    computeRegistrySnapshot,
+    getRegistryEntry,
+    hasRegistryEntry
+} from "./diagnostics.js";
+import { resolveRuntimeErrorMessage } from "./error-normalization.js";
+import {
     applyPatchInternal,
-    calculateTimingMetrics,
     captureSnapshot,
     createRegistry,
     restoreSnapshot,
@@ -16,18 +26,10 @@ import type {
     ApplyPatchResult,
     BatchApplyResult,
     Patch,
-    PatchDiagnostics,
-    PatchErrorAnalytics,
     PatchErrorCategory,
-    PatchErrorSummary,
     PatchHistoryEntry,
     PatchKind,
-    PatchMetadata,
-    PatchStats,
-    RegistryHealthCheck,
-    RegistryHealthIssue,
     RuntimeFunction,
-    RuntimeRegistrySnapshot,
     RuntimeWrapper,
     RuntimeWrapperOptions,
     RuntimeWrapperState,
@@ -35,77 +37,8 @@ import type {
 } from "./types.js";
 import { trimArrayToMaxSize } from "./undo-stack-policy.js";
 
-const UNKNOWN_ERROR_MESSAGE = "Unknown error";
 const DEFAULT_MAX_UNDO_STACK_SIZE = 50;
 const DEFAULT_MAX_ERROR_HISTORY_SIZE = 100;
-const PATCH_KINDS: ReadonlyArray<PatchKind> = ["script", "event", "closure"];
-
-function getRegistryCollectionForPatchKind(
-    registry: RuntimeWrapperState["registry"],
-    kind: PatchKind
-): Record<string, RuntimeFunction> {
-    switch (kind) {
-        case "script": {
-            return registry.scripts;
-        }
-        case "event": {
-            return registry.events;
-        }
-        case "closure": {
-            return registry.closures;
-        }
-        default: {
-            throw new TypeError("Unsupported patch kind");
-        }
-    }
-}
-
-function getPatchKindDisplayName(kind: PatchKind): string {
-    switch (kind) {
-        case "script": {
-            return "Script";
-        }
-        case "event": {
-            return "Event";
-        }
-        case "closure": {
-            return "Closure";
-        }
-        default: {
-            throw new TypeError("Unsupported patch kind");
-        }
-    }
-}
-
-function hasRegistryEntry(registry: RuntimeWrapperState["registry"], kind: PatchKind, id: string): boolean {
-    const collection = getRegistryCollectionForPatchKind(registry, kind);
-    return id in collection;
-}
-
-function getRegistryEntry(
-    registry: RuntimeWrapperState["registry"],
-    kind: PatchKind,
-    id: string
-): RuntimeFunction | undefined {
-    const collection = getRegistryCollectionForPatchKind(registry, kind);
-    return collection[id];
-}
-
-function getRuntimeFallbackErrorMessage(error: unknown): string {
-    if (error === null || error === undefined) {
-        return UNKNOWN_ERROR_MESSAGE;
-    }
-
-    if (typeof error === "number" || typeof error === "boolean") {
-        return String(error);
-    }
-
-    return "Non-Error object thrown";
-}
-
-function getRuntimeErrorMessage(error: unknown): string {
-    return Core.getErrorMessageOrFallback(error, { fallback: UNKNOWN_ERROR_MESSAGE });
-}
 
 export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): RuntimeWrapper {
     const baseRegistry = createRegistry(options.registry);
@@ -126,7 +59,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
     const onChange = options.onChange;
 
     function recordError(patch: Patch, category: PatchErrorCategory, error: unknown): void {
-        const errorMessage = Core.getErrorMessage(error, { fallback: getRuntimeFallbackErrorMessage });
+        const errorMessage = resolveRuntimeErrorMessage(error);
         const stackTrace =
             Core.isErrorLike(error) && typeof (error as { stack?: unknown }).stack === "string"
                 ? (error as { stack: string }).stack
@@ -288,7 +221,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
             return result;
         } catch (error) {
             recordError(patch, "application", error);
-            const message = getRuntimeErrorMessage(error);
+            const message = resolveRuntimeErrorMessage(error);
             throw new Error(`Failed to apply patch ${patch.id}: ${message}`);
         }
     }
@@ -400,7 +333,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
 
             rollbackToBatchCheckpoint(batchCheckpoint);
 
-            const message = getRuntimeErrorMessage(error);
+            const message = resolveRuntimeErrorMessage(error);
             recordBatchRollbackHistoryEntry(appliedCount, validatedPatches.length, message);
 
             return {
@@ -473,7 +406,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
                 }
             } catch (error) {
                 recordError(patch, "validation", error);
-                const message = getRuntimeErrorMessage(error);
+                const message = resolveRuntimeErrorMessage(error);
                 return {
                     success: false,
                     error: message,
@@ -511,7 +444,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
                 state.undoStack.pop();
             }
 
-            const message = getRuntimeErrorMessage(error);
+            const message = resolveRuntimeErrorMessage(error);
 
             state.patchHistory.push({
                 patch: { kind: patch.kind, id: patch.id, metadata: patch.metadata },
@@ -555,84 +488,12 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
         return state.patchHistory.filter((entry) => entry.patch.kind === kind);
     }
 
-    function getRegistrySnapshot(): RuntimeRegistrySnapshot {
-        const scripts = Object.keys(getRegistryCollectionForPatchKind(state.registry, "script"));
-        const events = Object.keys(getRegistryCollectionForPatchKind(state.registry, "event"));
-        const closures = Object.keys(getRegistryCollectionForPatchKind(state.registry, "closure"));
-
-        return {
-            version: state.registry.version,
-            scriptCount: scripts.length,
-            eventCount: events.length,
-            closureCount: closures.length,
-            scripts,
-            events,
-            closures
-        };
+    function getRegistrySnapshot() {
+        return computeRegistrySnapshot(state.registry);
     }
 
-    function getPatchStats(): PatchStats {
-        const stats: Omit<PatchStats, "uniqueIds"> = {
-            totalPatches: state.patchHistory.length,
-            appliedPatches: 0,
-            undonePatches: 0,
-            rolledBackPatches: 0,
-            scriptPatches: 0,
-            eventPatches: 0,
-            closurePatches: 0
-        };
-
-        const uniqueIds = new Set<string>();
-        const durations: Array<number> = [];
-
-        for (const entry of state.patchHistory) {
-            switch (entry.action) {
-                case "apply": {
-                    stats.appliedPatches++;
-                    if (typeof entry.durationMs === "number") {
-                        durations.push(entry.durationMs);
-                    }
-                    break;
-                }
-                case "undo": {
-                    stats.undonePatches++;
-
-                    break;
-                }
-                case "rollback": {
-                    stats.rolledBackPatches++;
-
-                    break;
-                }
-                // No default
-            }
-
-            uniqueIds.add(entry.patch.id);
-
-            switch (entry.patch.kind) {
-                case "script": {
-                    stats.scriptPatches++;
-                    break;
-                }
-                case "event": {
-                    stats.eventPatches++;
-                    break;
-                }
-                case "closure": {
-                    stats.closurePatches++;
-                    break;
-                }
-                // No default
-            }
-        }
-
-        const timingMetrics = calculateTimingMetrics(durations);
-
-        if (timingMetrics) {
-            return { ...stats, ...timingMetrics, uniqueIds: uniqueIds.size };
-        }
-
-        return { ...stats, uniqueIds: uniqueIds.size };
+    function getPatchStats() {
+        return computePatchStats(state.patchHistory);
     }
 
     function getVersion(): number {
@@ -677,190 +538,20 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
         }
     }
 
-    function checkRegistryHealth(): RegistryHealthCheck {
-        const issues: Array<RegistryHealthIssue> = [];
-        for (const kind of PATCH_KINDS) {
-            const displayName = getPatchKindDisplayName(kind);
-            const collection = getRegistryCollectionForPatchKind(state.registry, kind);
-            for (const [id, fn] of Object.entries(collection)) {
-                if (typeof fn !== "function") {
-                    issues.push({
-                        severity: "error",
-                        category: "function-type",
-                        message: `${displayName} registry entry is not a function (type: ${typeof fn})`,
-                        affectedId: id
-                    });
-                }
-            }
-        }
-
-        return {
-            healthy: issues.length === 0,
-            version: state.registry.version,
-            issues
-        };
+    function checkRegistryHealth() {
+        return computeRegistryHealthCheck(state.registry);
     }
 
-    function getPatchDiagnostics(id: string): PatchDiagnostics | null {
-        const historyEntries: Array<PatchHistoryEntry> = [];
-        let kind: PatchKind | null = null;
-        let metadata: PatchMetadata | undefined;
-        let applicationCount = 0;
-        let undoCount = 0;
-        let rollbackCount = 0;
-        let firstAppliedAt: number | null = null;
-        let lastAppliedAt: number | null = null;
-        let durationSum = 0;
-        let durationCount = 0;
-
-        for (const entry of state.patchHistory) {
-            if (entry.patch.id !== id) {
-                continue;
-            }
-
-            historyEntries.push(entry);
-
-            if (!kind) {
-                kind = entry.patch.kind;
-            }
-
-            if (!metadata && entry.patch.metadata) {
-                metadata = entry.patch.metadata;
-            }
-
-            switch (entry.action) {
-                case "apply": {
-                    applicationCount++;
-                    if (firstAppliedAt === null) {
-                        firstAppliedAt = entry.timestamp;
-                    }
-                    lastAppliedAt = entry.timestamp;
-                    if (typeof entry.durationMs === "number") {
-                        durationSum += entry.durationMs;
-                        durationCount++;
-                    }
-                    break;
-                }
-                case "undo": {
-                    undoCount++;
-                    break;
-                }
-                case "rollback": {
-                    rollbackCount++;
-                    break;
-                }
-                // No default
-            }
-        }
-
-        if (historyEntries.length === 0 || !kind) {
-            return null;
-        }
-
-        const averageDurationMs = durationCount > 0 ? durationSum / durationCount : null;
-
-        const currentlyApplied = hasRegistryEntry(state.registry, kind, id);
-
-        return {
-            id,
-            kind,
-            applicationCount,
-            firstAppliedAt,
-            lastAppliedAt,
-            currentlyApplied,
-            undoCount,
-            rollbackCount,
-            averageDurationMs,
-            sourcePath: metadata?.sourcePath ?? null,
-            sourceHash: metadata?.sourceHash ?? null,
-            dependencies: metadata?.dependencies ?? [],
-            historyEntries: [...historyEntries]
-        };
+    function getPatchDiagnostics(id: string) {
+        return computePatchDiagnostics(id, state.patchHistory, state.registry);
     }
 
-    function getErrorAnalytics(): PatchErrorAnalytics {
-        const totalErrors = state.errorHistory.length;
-
-        const errorsByCategory: Record<PatchErrorCategory, number> = {
-            validation: 0,
-            shadow: 0,
-            application: 0,
-            rollback: 0
-        };
-
-        const errorsByKind: Record<PatchKind, number> = {
-            script: 0,
-            event: 0,
-            closure: 0
-        };
-
-        const patchErrorCounts = new Map<string, number>();
-
-        for (const errorEntry of state.errorHistory) {
-            errorsByCategory[errorEntry.category] = (errorsByCategory[errorEntry.category] ?? 0) + 1;
-            errorsByKind[errorEntry.patchKind] = (errorsByKind[errorEntry.patchKind] ?? 0) + 1;
-
-            const currentCount = patchErrorCounts.get(errorEntry.patchId) ?? 0;
-            patchErrorCounts.set(errorEntry.patchId, currentCount + 1);
-        }
-
-        const uniquePatchesWithErrors = patchErrorCounts.size;
-
-        const sortedEntries = Array.from(patchErrorCounts.entries())
-            .map(([patchId, errorCount]) => ({ patchId, errorCount }))
-            .toSorted((a, b) => b.errorCount - a.errorCount);
-
-        const mostProblematicPatches = sortedEntries.slice(0, 10);
-
-        const recentErrors = Core.cloneObjectEntries(state.errorHistory.slice(-20));
-
-        const totalPatches = state.patchHistory.filter((entry) => entry.action === "apply").length;
-        const errorRate = totalPatches > 0 ? totalErrors / totalPatches : 0;
-
-        return {
-            totalErrors,
-            errorsByCategory,
-            errorsByKind,
-            uniquePatchesWithErrors,
-            mostProblematicPatches,
-            recentErrors,
-            errorRate
-        };
+    function getErrorAnalytics() {
+        return computeErrorAnalytics(state.errorHistory, state.patchHistory);
     }
 
-    function getErrorsForPatch(patchId: string): PatchErrorSummary | null {
-        const errorsForPatch = state.errorHistory.filter((entry) => entry.patchId === patchId);
-
-        if (errorsForPatch.length === 0) {
-            return null;
-        }
-
-        const errorsByCategory: Record<PatchErrorCategory, number> = {
-            validation: 0,
-            shadow: 0,
-            application: 0,
-            rollback: 0
-        };
-
-        const uniqueErrors = new Set<string>();
-
-        for (const errorEntry of errorsForPatch) {
-            errorsByCategory[errorEntry.category] = (errorsByCategory[errorEntry.category] ?? 0) + 1;
-            uniqueErrors.add(errorEntry.error);
-        }
-
-        const firstError = errorsForPatch[0];
-        const lastError = errorsForPatch.at(-1);
-
-        return {
-            patchId,
-            totalErrors: errorsForPatch.length,
-            errorsByCategory,
-            firstErrorAt: firstError.timestamp,
-            lastErrorAt: lastError.timestamp,
-            mostRecentError: lastError.error,
-            uniqueErrorMessages: uniqueErrors.size
-        };
+    function getErrorsForPatch(patchId: string) {
+        return computeErrorsForPatch(patchId, state.errorHistory);
     }
 
     function clearErrorHistory(): void {

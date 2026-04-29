@@ -1,55 +1,74 @@
 import { createCommentBlockNode, createCommentLineNode, createWhitespaceNode } from "./comment-nodes.js";
 
-function createState() {
+type LexerTokenKinds = {
+    EOF: number;
+    SingleLineComment: number;
+    MultiLineComment: number;
+    WhiteSpaces: number;
+    LineTerminator: number;
+};
+
+type HiddenToken = {
+    type: number;
+    text?: string;
+    [key: string]: unknown;
+};
+
+type HiddenCommentNode = ReturnType<typeof createCommentLineNode>;
+
+type HiddenCommentMetadata = {
+    isTopComment?: boolean;
+    isBottomComment?: boolean;
+};
+
+type HiddenNodeState = {
+    reachedEndOfFile: boolean;
+    previousComment: HiddenCommentNode | null;
+    finalComment: HiddenCommentNode | null;
+    pendingWhitespace: string;
+    previousSignificantCharacter: string;
+    sawSignificantToken: boolean;
+};
+
+type HiddenNodeProcessorOptions = {
+    comments: unknown[];
+    whitespaces: unknown[];
+    lexerTokens: LexerTokenKinds;
+};
+
+function createInitialState(): HiddenNodeState {
     return {
-        reachedEOF: false,
-        prevComment: null,
+        reachedEndOfFile: false,
+        previousComment: null,
         finalComment: null,
-        prevWS: "",
-        prevSignificantChar: "",
-        foundFirstSignificantToken: false
+        pendingWhitespace: "",
+        previousSignificantCharacter: "",
+        sawSignificantToken: false
     };
 }
 
-function markTopCommentIfNeeded(state) {
-    if (!state.foundFirstSignificantToken && state.prevComment) {
-        state.prevComment.isTopComment = true;
-        state.foundFirstSignificantToken = true;
+function markTopComment(comment: HiddenCommentNode, state: HiddenNodeState): void {
+    if (!state.sawSignificantToken) {
+        (comment as HiddenCommentMetadata).isTopComment = true;
+        state.sawSignificantToken = true;
     }
 }
 
-function registerComment(state, list, comment) {
-    state.prevComment = comment;
+function appendComment(comment: HiddenCommentNode, state: HiddenNodeState, comments: unknown[]): void {
+    state.previousComment = comment;
     state.finalComment = comment;
-    state.prevWS = "";
-    list.push(comment);
-    markTopCommentIfNeeded(state);
+    state.pendingWhitespace = "";
+    comments.push(comment);
+    markTopComment(comment, state);
 }
 
-function processSingleLineCommentToken(token, tokenText, context) {
-    const { state, comments } = context;
-    const comment = createCommentLineNode({
-        token,
-        tokenText,
-        leadingWS: state.prevWS,
-        leadingChar: state.prevSignificantChar
-    });
-    registerComment(state, comments, comment);
-}
-
-function processMultiLineCommentToken(token, tokenText, context) {
-    const { state, comments } = context;
-    const comment = createCommentBlockNode({
-        token,
-        tokenText,
-        leadingWS: state.prevWS,
-        leadingChar: state.prevSignificantChar
-    });
-    registerComment(state, comments, comment);
-}
-
-function processWhitespaceToken(token, tokenText, isNewline, context) {
-    const { state, whitespaces } = context;
+function appendWhitespace(
+    token: HiddenToken,
+    tokenText: string,
+    isNewline: boolean,
+    state: HiddenNodeState,
+    whitespaces: unknown[]
+): void {
     const whitespace = createWhitespaceNode({
         token,
         tokenText,
@@ -57,64 +76,71 @@ function processWhitespaceToken(token, tokenText, isNewline, context) {
     });
     whitespaces.push(whitespace);
 
-    if (state.prevComment) {
-        state.prevComment.trailingWS += whitespace.value;
+    if (state.previousComment) {
+        state.previousComment.trailingWS += whitespace.value;
     }
 
-    state.prevComment = null;
-    state.prevWS += whitespace.value;
+    state.previousComment = null;
+    state.pendingWhitespace += whitespace.value;
 }
 
-function recordSignificantToken(tokenText, state) {
-    const text = typeof tokenText === "string" ? tokenText : "";
-    state.foundFirstSignificantToken = true;
+function recordSignificantToken(tokenText: string, state: HiddenNodeState): void {
+    state.sawSignificantToken = true;
 
-    if (state.prevComment) {
-        state.prevComment.trailingChar = text;
+    if (state.previousComment) {
+        state.previousComment.trailingChar = tokenText;
     }
 
-    state.prevComment = null;
-    state.prevWS = "";
-    state.prevSignificantChar = text.slice(-1);
+    state.previousComment = null;
+    state.pendingWhitespace = "";
+    state.previousSignificantCharacter = tokenText.slice(-1);
 }
 
-function markEndOfFile(state) {
-    state.reachedEOF = true;
+function markEndOfFile(state: HiddenNodeState): void {
+    state.reachedEndOfFile = true;
+
     if (state.finalComment) {
-        state.finalComment.isBottomComment = true;
+        (state.finalComment as HiddenCommentMetadata).isBottomComment = true;
     }
 }
 
-export function createHiddenNodeProcessor({ comments, whitespaces, lexerTokens }) {
-    const state = createState();
-    const tokens = lexerTokens;
+export function createHiddenNodeProcessor({ comments, whitespaces, lexerTokens }: HiddenNodeProcessorOptions) {
+    const state = createInitialState();
 
     return {
         hasReachedEnd() {
-            return state.reachedEOF;
+            return state.reachedEndOfFile;
         },
-        processToken(token) {
-            const tokenType = token?.type;
+        processToken(token: HiddenToken) {
+            const tokenText = token.text ?? "";
 
-            if (tokenType === tokens.EOF) {
+            if (token.type === lexerTokens.EOF) {
                 markEndOfFile(state);
                 return;
             }
 
-            const tokenText = token?.text ?? "";
-
-            if (tokenType === tokens.SingleLineComment) {
-                processSingleLineCommentToken(token, tokenText, { state, comments });
+            if (token.type === lexerTokens.WhiteSpaces || token.type === lexerTokens.LineTerminator) {
+                appendWhitespace(token, tokenText, token.type === lexerTokens.LineTerminator, state, whitespaces);
                 return;
             }
 
-            if (tokenType === tokens.MultiLineComment) {
-                processMultiLineCommentToken(token, tokenText, { state, comments });
-                return;
-            }
+            if (token.type === lexerTokens.SingleLineComment || token.type === lexerTokens.MultiLineComment) {
+                const comment =
+                    token.type === lexerTokens.SingleLineComment
+                        ? createCommentLineNode({
+                              token,
+                              tokenText,
+                              leadingWS: state.pendingWhitespace,
+                              leadingChar: state.previousSignificantCharacter
+                          })
+                        : createCommentBlockNode({
+                              token,
+                              tokenText,
+                              leadingWS: state.pendingWhitespace,
+                              leadingChar: state.previousSignificantCharacter
+                          });
 
-            if (tokenType === tokens.WhiteSpaces || tokenType === tokens.LineTerminator) {
-                processWhitespaceToken(token, tokenText, tokenType === tokens.LineTerminator, { state, whitespaces });
+                appendComment(comment, state, comments);
                 return;
             }
 

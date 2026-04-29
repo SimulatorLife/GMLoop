@@ -1,17 +1,15 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { printExpression } from "../print-expression.js";
+import { printExpression } from "../../../language/autofix-printing.js";
 import {
     type AstNodeRecord,
     createMeta,
-    getNodeEndIndex,
-    getNodeStartIndex,
     isAstNodeRecord,
-    isAstNodeWithType
+    isAstNodeWithType,
+    shouldReportUnsafe
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
-import { shouldReportUnsafe } from "../rule-helpers.js";
 
 const { unwrapParenthesizedExpression } = Core;
 type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
@@ -312,8 +310,8 @@ export function createPreferStringInterpolationRule(definition: GmlRuleDefinitio
                     return;
                 }
 
-                const start = getNodeStartIndex(node);
-                const end = getNodeEndIndex(node);
+                const start = Core.getNodeStartIndex(node);
+                const end = Core.getNodeEndIndex(node);
                 if (start < 0 || end <= start || rangeOverlapsHandledConcatenation(start, end)) {
                     return;
                 }

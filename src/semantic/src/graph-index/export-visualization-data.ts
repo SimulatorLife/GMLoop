@@ -1,12 +1,11 @@
-import { type DatabaseSync } from "node:sqlite";
-
+import type { GraphDatabase } from "./sqlite-adapter.js";
 import type { GraphEdgeType, GraphIndexScope, GraphNodeKind, GraphVisualizationData } from "./types.js";
 
 /**
  * Export all nodes and edges from the graph database into a visualization-ready JSON payload.
  * Excludes large fields like vectors to minimize the payload size.
  */
-export function exportGraphVisualizationData(database: DatabaseSync, projectRoot: string): GraphVisualizationData {
+export function exportGraphVisualizationData(database: GraphDatabase, projectRoot: string): GraphVisualizationData {
     // 1. Fetch graphs
     const graphsResult = database
         .prepare(

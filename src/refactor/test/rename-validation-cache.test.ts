@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, type TestContext } from "node:test";
 
 import { type CachedValidationResult, RenameValidationCache } from "../src/rename-validation-cache.js";
 
@@ -121,9 +121,10 @@ void describe("RenameValidationCache", () => {
             assert.equal(cache.getStats().evictions, 2);
         });
 
-        void it("respects TTL expiration", async () => {
+        void it("respects TTL expiration", async (context: TestContext) => {
             const cache = new RenameValidationCache({ ttlMs: 100 });
             let computeCount = 0;
+            context.mock.timers.enable({ apis: ["Date"], now: new Date("2020-01-01T00:00:00.000Z") });
 
             const compute = async (): Promise<CachedValidationResult> => {
                 computeCount++;
@@ -132,24 +133,20 @@ void describe("RenameValidationCache", () => {
 
             await cache.getOrCompute("gml/script/scr_test", "scr_new", compute);
 
-            // Wait for TTL to expire
-            await new Promise((resolve) => {
-                setTimeout(resolve, 150);
-            });
+            context.mock.timers.tick(150);
 
             await cache.getOrCompute("gml/script/scr_test", "scr_new", compute);
 
             assert.equal(computeCount, 2);
         });
 
-        void it("tracks evictions when entries expire", async () => {
+        void it("tracks evictions when entries expire", async (context: TestContext) => {
             const cache = new RenameValidationCache({ ttlMs: 50, maxSize: 5 });
+            context.mock.timers.enable({ apis: ["Date"], now: new Date("2020-01-01T00:00:00.000Z") });
 
             await cache.getOrCompute("gml/script/scr_test", "scr_new", createValidResult);
 
-            await new Promise((resolve) => {
-                setTimeout(resolve, 75);
-            });
+            context.mock.timers.tick(75);
 
             await cache.getOrCompute("gml/script/scr_test", "scr_new", createValidResult);
 
@@ -161,19 +158,23 @@ void describe("RenameValidationCache", () => {
         void it("deduplicates concurrent validation requests for the same key", async () => {
             const cache = new RenameValidationCache();
             let computeCount = 0;
+            let resolveCompute: (() => void) | null = null;
+            const computeCompletion = new Promise<void>((resolve) => {
+                resolveCompute = resolve;
+            });
 
             const compute = async (): Promise<CachedValidationResult> => {
                 computeCount += 1;
-                await new Promise((resolve) => {
-                    setTimeout(resolve, 20);
-                });
+                await computeCompletion;
                 return createValidResult();
             };
 
-            const [resultA, resultB] = await Promise.all([
-                cache.getOrCompute("gml/script/scr_test", "scr_new", compute),
-                cache.getOrCompute("gml/script/scr_test", "scr_new", compute)
-            ]);
+            const firstRequest = cache.getOrCompute("gml/script/scr_test", "scr_new", compute);
+            const secondRequest = cache.getOrCompute("gml/script/scr_test", "scr_new", compute);
+            assert.ok(resolveCompute !== null);
+            resolveCompute();
+
+            const [resultA, resultB] = await Promise.all([firstRequest, secondRequest]);
 
             assert.equal(computeCount, 1);
             assert.deepEqual(resultA, resultB);

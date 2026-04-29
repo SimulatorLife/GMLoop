@@ -11,69 +11,68 @@ import {
     assertProjectGmlFilesParse,
     createSyntheticRefactorProject as createSyntheticProject,
     registerProjectResource,
+    withSyntheticRefactorProject,
     writeObjectResource,
     writeProjectFile,
     writeScriptResource
 } from "./test-helpers/refactor-codemod-command-fixture.js";
 
 void test("refactor codemod --list discovers gmloop.json and tolerates unrelated top-level config", async () => {
-    const projectRoot = await createSyntheticProject({
-        printWidth: 95,
-        lintRules: {
-            "gml/no-globalvar": "error"
-        },
-        refactor: {
-            codemods: {
-                loopLengthHoisting: {}
+    await withSyntheticRefactorProject(
+        {
+            printWidth: 95,
+            lintRules: {
+                "gml/no-globalvar": "error"
+            },
+            refactor: {
+                codemods: {
+                    loopLengthHoisting: {}
+                }
             }
+        },
+        async (projectRoot) => {
+            const result = await runCliTestCommand({
+                argv: ["refactor", "codemod", "--list"],
+                cwd: projectRoot
+            });
+
+            assert.equal(result.exitCode, 0);
+            assert.match(result.stdout, /Project root:/);
+            assert.match(result.stdout, /Config path:/);
+            assert.match(result.stdout, /loopLengthHoisting: configured, selected/);
+            assert.match(result.stdout, /Effective config: \{\}/);
+            assert.match(result.stdout, /namingConvention: not configured, selected/);
         }
-    });
-
-    try {
-        const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--list"],
-            cwd: projectRoot
-        });
-
-        assert.equal(result.exitCode, 0);
-        assert.match(result.stdout, /Project root:/);
-        assert.match(result.stdout, /Config path:/);
-        assert.match(result.stdout, /loopLengthHoisting: configured, selected/);
-        assert.match(result.stdout, /Effective config: \{\}/);
-        assert.match(result.stdout, /namingConvention: not configured, selected/);
-    } finally {
-        await rm(projectRoot, { recursive: true, force: true });
-    }
+    );
 });
 
 void test("refactor codemod --only filters configured codemods during listing", async () => {
-    const projectRoot = await createSyntheticProject({
-        refactor: {
-            codemods: {
-                loopLengthHoisting: {},
-                namingConvention: {
-                    rules: {
-                        localVariable: {
-                            caseStyle: "camel"
+    await withSyntheticRefactorProject(
+        {
+            refactor: {
+                codemods: {
+                    loopLengthHoisting: {},
+                    namingConvention: {
+                        rules: {
+                            localVariable: {
+                                caseStyle: "camel"
+                            }
                         }
                     }
                 }
             }
+        },
+        async (projectRoot) => {
+            const result = await runCliTestCommand({
+                argv: ["refactor", "codemod", "--list", "--only", "loopLengthHoisting"],
+                cwd: projectRoot
+            });
+
+            assert.equal(result.exitCode, 0);
+            assert.match(result.stdout, /loopLengthHoisting: configured, selected/);
+            assert.match(result.stdout, /namingConvention: configured, filtered out/);
         }
-    });
-
-    try {
-        const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--list", "--only", "loopLengthHoisting"],
-            cwd: projectRoot
-        });
-
-        assert.equal(result.exitCode, 0);
-        assert.match(result.stdout, /loopLengthHoisting: configured, selected/);
-        assert.match(result.stdout, /namingConvention: configured, filtered out/);
-    } finally {
-        await rm(projectRoot, { recursive: true, force: true });
-    }
+    );
 });
 
 void test("refactor codemod --write applies configured namingConvention renames across project resources", async () => {
@@ -118,6 +117,52 @@ void test("refactor codemod --write applies configured namingConvention renames 
         assert.match(renamedMetadata, /"name"\s*:\s*"demoScript"/);
         await assert.rejects(access(path.join(projectRoot, "scripts/demo_script/demo_script.gml")));
         assert.match(result.stdout, /\[namingConvention\] changed/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write preserves valid bit-shift assignments and never emits unsupported <<= syntax", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "decode_colour",
+            [
+                "function decode_colour() {",
+                "    var _decoded_colour = 1;",
+                "    _decoded_colour = _decoded_colour << 4;",
+                "    return _decoded_colour;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        const source = await readFile(path.join(projectRoot, "scripts/decode_colour/decode_colour.gml"), "utf8");
+        assert.match(source, /= .* << 4;/);
+        assert.match(source, /_decodedColour = _decodedColour << 4;/);
+        assert.doesNotMatch(source, /<<=/);
+        await assertProjectGmlFilesParse(projectRoot);
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
@@ -846,6 +891,455 @@ void test("refactor codemod --write renames object resources together with objec
         assert.doesNotMatch(systemSource, /\boCamera\b/);
 
         await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write keeps sprite, sound, and font sidecars aligned when destination resource directories already exist", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        spriteResourceName: {
+                            caseStyle: "lower_snake"
+                        },
+                        audioResourceName: {
+                            caseStyle: "lower_snake"
+                        },
+                        fontResourceName: {
+                            caseStyle: "lower_snake",
+                            prefix: "fnt_"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await mkdir(path.join(projectRoot, "sprites/spr_player"), { recursive: true });
+        await mkdir(path.join(projectRoot, "sounds/snd_colmesh_demo2coin"), { recursive: true });
+        await mkdir(path.join(projectRoot, "fonts/fnt_scribble_fallback_font"), { recursive: true });
+
+        const spriteResourcePath = "sprites/sprPlayer/sprPlayer.yy";
+        await writeProjectFile(
+            projectRoot,
+            spriteResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMSprite: "v2",
+                    "%Name": "sprPlayer",
+                    name: "sprPlayer",
+                    resourceType: "GMSprite",
+                    resourceVersion: "2.0",
+                    resourcePath: spriteResourcePath,
+                    frames: [
+                        {
+                            name: "a777fc4d-ac59-4464-b4bd-e93704762166",
+                            resourceType: "GMSpriteFrame",
+                            resourceVersion: "2.0"
+                        }
+                    ],
+                    layers: [
+                        {
+                            name: "c7545ec4-2c29-4b5e-9814-c7ec66e59442",
+                            resourceType: "GMImageLayer",
+                            resourceVersion: "2.0"
+                        }
+                    ],
+                    sequence: {
+                        name: "sprPlayer",
+                        tracks: [
+                            {
+                                keyframes: {
+                                    Keyframes: [
+                                        {
+                                            Channels: {
+                                                0: {
+                                                    Id: {
+                                                        name: "a777fc4d-ac59-4464-b4bd-e93704762166",
+                                                        path: spriteResourcePath
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "sprites/sprPlayer/a777fc4d-ac59-4464-b4bd-e93704762166.png", "sprite");
+        await writeProjectFile(
+            projectRoot,
+            "sprites/sprPlayer/layers/a777fc4d-ac59-4464-b4bd-e93704762166/c7545ec4-2c29-4b5e-9814-c7ec66e59442.png",
+            "layer"
+        );
+        await registerProjectResource(projectRoot, "sprPlayer", spriteResourcePath);
+
+        const soundResourcePath = "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.yy";
+        await writeProjectFile(
+            projectRoot,
+            soundResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMSound: "v2",
+                    "%Name": "sndColmeshDemo2Coin",
+                    name: "sndColmeshDemo2Coin",
+                    resourceType: "GMSound",
+                    resourceVersion: "2.0",
+                    resourcePath: soundResourcePath,
+                    soundFile: "sndColmeshDemo2Coin.mp3"
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.mp3", "sound");
+        await registerProjectResource(projectRoot, "sndColmeshDemo2Coin", soundResourcePath);
+
+        const fontResourcePath = "fonts/scribbleFallbackFont/scribbleFallbackFont.yy";
+        await writeProjectFile(
+            projectRoot,
+            fontResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMFont: "",
+                    "%Name": "scribbleFallbackFont",
+                    name: "scribbleFallbackFont",
+                    resourceType: "GMFont",
+                    resourceVersion: "2.0",
+                    resourcePath: fontResourcePath,
+                    fontName: "Droid Sans Mono",
+                    glyphs: {},
+                    ranges: []
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png", "font");
+        await registerProjectResource(projectRoot, "scribbleFallbackFont", fontResourcePath);
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        await assert.doesNotReject(access(path.join(projectRoot, "sprites/spr_player/spr_player.yy")));
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "sprites/spr_player/a777fc4d-ac59-4464-b4bd-e93704762166.png"))
+        );
+        await assert.doesNotReject(
+            access(
+                path.join(
+                    projectRoot,
+                    "sprites/spr_player/layers/a777fc4d-ac59-4464-b4bd-e93704762166/c7545ec4-2c29-4b5e-9814-c7ec66e59442.png"
+                )
+            )
+        );
+        await assert.rejects(
+            access(path.join(projectRoot, "sprites/sprPlayer/a777fc4d-ac59-4464-b4bd-e93704762166.png"))
+        );
+
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"))
+        );
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.mp3"))
+        );
+        await assert.rejects(access(path.join(projectRoot, "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.mp3")));
+
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.yy"))
+        );
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.png"))
+        );
+        await assert.rejects(access(path.join(projectRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png")));
+
+        const spriteMetadata = await readFile(path.join(projectRoot, "sprites/spr_player/spr_player.yy"), "utf8");
+        const soundMetadata = await readFile(
+            path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"),
+            "utf8"
+        );
+        const fontMetadata = await readFile(
+            path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.yy"),
+            "utf8"
+        );
+
+        assert.match(spriteMetadata, /"resourcePath"\s*:\s*"sprites\/spr_player\/spr_player\.yy"/);
+        assert.match(soundMetadata, /"soundFile"\s*:\s*"snd_colmesh_demo2coin\.mp3"/);
+        assert.match(
+            fontMetadata,
+            /"resourcePath"\s*:\s*"fonts\/fnt_scribble_fallback_font\/fnt_scribble_fallback_font\.yy"/
+        );
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write keeps note, tileset, and extension sidecars aligned when destination resource directories already exist", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        noteResourceName: {
+                            caseStyle: "lower_snake"
+                        },
+                        tilesetResourceName: {
+                            caseStyle: "lower_snake"
+                        },
+                        extensionResourceName: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await mkdir(path.join(projectRoot, "notes/note_design"), { recursive: true });
+        await mkdir(path.join(projectRoot, "tilesets/tileset_wall"), { recursive: true });
+        await mkdir(path.join(projectRoot, "extensions/ext_physics/AndroidSource"), { recursive: true });
+
+        const noteResourcePath = "notes/noteDesign/noteDesign.yy";
+        await writeProjectFile(
+            projectRoot,
+            noteResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMNotes: "",
+                    "%Name": "noteDesign",
+                    name: "noteDesign",
+                    resourceType: "GMNotes",
+                    resourceVersion: "2.0",
+                    resourcePath: noteResourcePath
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "notes/noteDesign/noteDesign.txt", "note");
+        await registerProjectResource(projectRoot, "noteDesign", noteResourcePath);
+
+        const tilesetResourcePath = "tilesets/tilesetWall/tilesetWall.yy";
+        await writeProjectFile(
+            projectRoot,
+            tilesetResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMTileSet: "",
+                    "%Name": "tilesetWall",
+                    name: "tilesetWall",
+                    resourceType: "GMTileSet",
+                    resourceVersion: "2.0",
+                    resourcePath: tilesetResourcePath
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "tilesets/tilesetWall/output_tileset.png", "tileset");
+        await registerProjectResource(projectRoot, "tilesetWall", tilesetResourcePath);
+
+        const extensionResourcePath = "extensions/extPhysics/extPhysics.yy";
+        await writeProjectFile(
+            projectRoot,
+            extensionResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMExtension: "",
+                    "%Name": "extPhysics",
+                    name: "extPhysics",
+                    resourceType: "GMExtension",
+                    resourceVersion: "2.0",
+                    resourcePath: extensionResourcePath
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "extensions/extPhysics/extPhysics.gml", "extension");
+        await writeProjectFile(
+            projectRoot,
+            "extensions/extPhysics/AndroidSource/ProjectFiles/google-services.json",
+            "{}"
+        );
+        await registerProjectResource(projectRoot, "extPhysics", extensionResourcePath);
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        await assert.doesNotReject(access(path.join(projectRoot, "notes/note_design/note_design.yy")));
+        await assert.doesNotReject(access(path.join(projectRoot, "notes/note_design/note_design.txt")));
+        await assert.rejects(access(path.join(projectRoot, "notes/noteDesign/noteDesign.txt")));
+
+        await assert.doesNotReject(access(path.join(projectRoot, "tilesets/tileset_wall/tileset_wall.yy")));
+        await assert.doesNotReject(access(path.join(projectRoot, "tilesets/tileset_wall/output_tileset.png")));
+        await assert.rejects(access(path.join(projectRoot, "tilesets/tilesetWall/output_tileset.png")));
+
+        await assert.doesNotReject(access(path.join(projectRoot, "extensions/ext_physics/ext_physics.yy")));
+        await assert.doesNotReject(access(path.join(projectRoot, "extensions/ext_physics/extPhysics.gml")));
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "extensions/ext_physics/AndroidSource/ProjectFiles/google-services.json"))
+        );
+        await assert.rejects(access(path.join(projectRoot, "extensions/extPhysics/extPhysics.gml")));
+
+        const noteMetadata = await readFile(path.join(projectRoot, "notes/note_design/note_design.yy"), "utf8");
+        const tilesetMetadata = await readFile(path.join(projectRoot, "tilesets/tileset_wall/tileset_wall.yy"), "utf8");
+        const extensionMetadata = await readFile(
+            path.join(projectRoot, "extensions/ext_physics/ext_physics.yy"),
+            "utf8"
+        );
+
+        assert.match(noteMetadata, /"resourcePath"\s*:\s*"notes\/note_design\/note_design\.yy"/);
+        assert.match(tilesetMetadata, /"resourcePath"\s*:\s*"tilesets\/tileset_wall\/tileset_wall\.yy"/);
+        assert.match(extensionMetadata, /"resourcePath"\s*:\s*"extensions\/ext_physics\/ext_physics\.yy"/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write renames font bitmap files to the new resource name during normal font resource renames", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        fontResourceName: {
+                            caseStyle: "lower_snake",
+                            prefix: "fnt_"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        const fontResourcePath = "fonts/scribbleFallbackFont/scribbleFallbackFont.yy";
+        await writeProjectFile(
+            projectRoot,
+            fontResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMFont: "",
+                    "%Name": "scribbleFallbackFont",
+                    name: "scribbleFallbackFont",
+                    resourceType: "GMFont",
+                    resourceVersion: "2.0",
+                    resourcePath: fontResourcePath,
+                    fontName: "Droid Sans Mono",
+                    glyphs: {},
+                    ranges: []
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png", "font");
+        await registerProjectResource(projectRoot, "scribbleFallbackFont", fontResourcePath);
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.yy"))
+        );
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.png"))
+        );
+        await assert.rejects(access(path.join(projectRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png")));
+
+        const fontMetadata = await readFile(
+            path.join(projectRoot, "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.yy"),
+            "utf8"
+        );
+        assert.match(
+            fontMetadata,
+            /"resourcePath"\s*:\s*"fonts\/fnt_scribble_fallback_font\/fnt_scribble_fallback_font\.yy"/
+        );
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write renames sound payload files to the new resource name during normal audio resource renames", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        audioResourceName: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        const soundResourcePath = "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.yy";
+        await writeProjectFile(
+            projectRoot,
+            soundResourcePath,
+            `${JSON.stringify(
+                {
+                    $GMSound: "v2",
+                    "%Name": "sndColmeshDemo2Coin",
+                    name: "sndColmeshDemo2Coin",
+                    resourceType: "GMSound",
+                    resourceVersion: "2.0",
+                    resourcePath: soundResourcePath,
+                    soundFile: "coin_payload.mp3"
+                },
+                null,
+                4
+            )}\n`
+        );
+        await writeProjectFile(projectRoot, "sounds/sndColmeshDemo2Coin/coin_payload.mp3", "sound");
+        await registerProjectResource(projectRoot, "sndColmeshDemo2Coin", soundResourcePath);
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"))
+        );
+        await assert.doesNotReject(
+            access(path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.mp3"))
+        );
+        await assert.rejects(access(path.join(projectRoot, "sounds/sndColmeshDemo2Coin/coin_payload.mp3")));
+
+        const soundMetadata = await readFile(
+            path.join(projectRoot, "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"),
+            "utf8"
+        );
+        assert.match(soundMetadata, /"soundFile"\s*:\s*"snd_colmesh_demo2coin\.mp3"/);
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }

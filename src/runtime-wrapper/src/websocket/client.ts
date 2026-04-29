@@ -1,5 +1,6 @@
 import { Core } from "@gmloop/core";
 
+import { resolveRuntimeErrorMessage } from "../runtime/error-normalization.js";
 import type { Logger } from "../runtime/logger.js";
 import { validatePatch } from "../runtime/patch-utils.js";
 import type { Patch, PatchApplicator, RuntimePatchError, TrySafeApplyResult } from "../runtime/types.js";
@@ -29,8 +30,26 @@ const DEFAULT_MAX_QUEUE_SIZE = 100;
 const DEFAULT_FLUSH_INTERVAL_MS = 50;
 const READINESS_POLL_INTERVAL_MS = 50;
 const noopListenerTeardown = (): void => {};
+const MIN_PATCH_QUEUE_SIZE = 1;
+const MIN_PATCH_QUEUE_FLUSH_INTERVAL_MS = 1;
 
 const textDecoder = new TextDecoder();
+
+/**
+ * Resolve a positive integer option with a guaranteed lower bound.
+ *
+ * @param value Candidate numeric value supplied by callers.
+ * @param fallback Default value when the candidate is invalid.
+ * @param minimum Inclusive minimum accepted value.
+ * @returns A finite positive integer suitable for queue and timer configuration.
+ */
+function resolvePositiveIntegerOption(value: number | undefined, fallback: number, minimum: number): number {
+    if (!Number.isFinite(value)) {
+        return fallback;
+    }
+
+    return Math.max(minimum, Math.trunc(value));
+}
 
 function applyIncomingPatchInternal(
     incoming: unknown,
@@ -124,8 +143,16 @@ export function createWebSocketClient({
     if (requestedPatchQueueEnabled && wrapper === null && logger) {
         logger.warn("Patch queue is disabled because no runtime wrapper was provided.");
     }
-    const maxQueueSize = patchQueue?.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE;
-    const flushIntervalMs = patchQueue?.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
+    const maxQueueSize = resolvePositiveIntegerOption(
+        patchQueue?.maxQueueSize,
+        DEFAULT_MAX_QUEUE_SIZE,
+        MIN_PATCH_QUEUE_SIZE
+    );
+    const flushIntervalMs = resolvePositiveIntegerOption(
+        patchQueue?.flushIntervalMs,
+        DEFAULT_FLUSH_INTERVAL_MS,
+        MIN_PATCH_QUEUE_FLUSH_INTERVAL_MS
+    );
     const maxPendingPatches = maxQueueSize;
 
     const state: WebSocketClientState = {
@@ -170,7 +197,12 @@ export function createWebSocketClient({
             state.pendingPatchHead = 0;
 
             for (const patch of deduplicatedPending) {
-                applyIncomingPatch(patch);
+                if (state.patchQueue) {
+                    recordPatchReceived(state);
+                    enqueuePatch(patch);
+                } else {
+                    applyIncomingPatchInternal(patch, state, wrapper, onError, logger);
+                }
             }
         }
 
@@ -814,10 +846,6 @@ function createRuntimePatchError(message: string, patch?: Patch): RuntimePatchEr
     const runtimeError = new Error(message) as RuntimePatchError;
     runtimeError.patch = patch;
     return runtimeError;
-}
-
-function resolveRuntimeErrorMessage(error: unknown): string {
-    return Core.getErrorMessageOrFallback(error, { fallback: "Unknown error" });
 }
 
 function resolveMissingPatchFields(candidate: Record<string, unknown>): Array<"kind" | "id"> {

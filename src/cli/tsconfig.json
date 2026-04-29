@@ -16,10 +16,11 @@
       "@gmloop/refactor": ["../refactor/index.ts"],
       "@gmloop/runtime-wrapper": ["../runtime-wrapper/index.ts"],
       "@gmloop/semantic": ["../semantic/index.ts"],
-      "@gmloop/transpiler": ["../transpiler/index.ts"]
+      "@gmloop/transpiler": ["../transpiler/index.ts"],
+      "@gmloop/ui": ["../ui/index.ts"]
     }
   },
-  "references": [{ "path": "../core" }, { "path": "../lint" }, { "path": "../parser" }, { "path": "../format" }, { "path": "../refactor" }, { "path": "../semantic" }, { "path": "../transpiler" }],
+  "references": [{ "path": "../core" }, { "path": "../lint" }, { "path": "../parser" }, { "path": "../format" }, { "path": "../refactor" }, { "path": "../semantic" }, { "path": "../transpiler" }, { "path": "../ui" }],
   "include": ["*.ts", "src/**/*.ts", "src/**/*.d.ts", "test/**/*.ts"],
   "exclude": ["dist"]
 }

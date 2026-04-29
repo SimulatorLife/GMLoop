@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
 
-import { createExtensionMatcher } from "../src/commands/watch.js";
+import { createExtensionMatcher } from "../src/commands/watch/source-analysis.js";
 
 // Import the watch module to access collectScriptNames (note: this is a private function,
 // so we're testing indirectly through the watch command behavior)

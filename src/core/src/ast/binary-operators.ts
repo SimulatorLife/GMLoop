@@ -73,8 +73,10 @@ export const BINARY_OPERATORS: Record<string, BinaryOperatorInfo> = {
     "%=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
     "+=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
     "-=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
-    "<<=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
-    ">>=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
+    // Intentionally omit `<<=` / `>>=`. GML supports `<<` and `>>`, but not
+    // the shift-compound assignment forms. Keeping them out of the canonical
+    // operator table prevents formatter/lint/refactor code from advertising
+    // those invalid tokens as first-class GML operators.
     "&=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
     "^=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
     "|=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },

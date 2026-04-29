@@ -25,6 +25,7 @@ import * as ProjectConfig from "./project-config/index.js";
 import * as IdentifierMetadata from "./resources/gml-identifier-loading.js";
 import * as Resources from "./resources/index.js";
 import * as Text from "./text/index.js";
+import * as Transforms from "./transforms/index.js";
 import * as Utils from "./utils/index.js";
 
 // Define the Core namespace type from existing module types
@@ -35,7 +36,8 @@ type CoreNamespace = typeof AST &
     typeof ProjectConfig &
     typeof Resources &
     typeof IdentifierMetadata &
-    typeof Comments;
+    typeof Comments &
+    typeof Transforms;
 
 // Public namespace flattening mirrors the monorepo convention: expose each
 // helper directly flattened into the Core namespace so consumers always
@@ -48,18 +50,17 @@ export const Core: CoreNamespace = Object.freeze({
     ...ProjectConfig,
     ...Resources,
     ...IdentifierMetadata,
-    ...Comments
+    ...Comments,
+    ...Transforms
 });
 
 // Publicly export key AST types at the package root for other packages to
 // import without deep imports. This is the preferred path for type imports
 // across the monorepo.
-export type { EmptyTransformOptions, ParserTransform } from "./ast/parser-transform.js";
-export type { StripCommentsTransformOptions } from "./ast/strip-comments-transform.js";
 export type { GameMakerAstLocation, GameMakerAstNode, LiteralNode, MutableGameMakerAstNode } from "./ast/types.js";
 export type { DocCommentLines, MutableDocCommentLines } from "./comments/comment-utils.js";
 export type { DocCommentNodeMetadata } from "./comments/doc-comment/node-metadata.js";
-export type { StringCommentScanState } from "./comments/string-comment-scan.js";
+export type { StripCommentsTransformOptions } from "./comments/strip-comments-transform.js";
 export type { GmloopProjectConfig } from "./project-config/gmloop-project-config.js";
 export type { FeatherDiagnostic, FeatherMetadata } from "./resources/feather-metadata.js";
 export type {
@@ -68,5 +69,7 @@ export type {
     DeprecatedIdentifierMetadataEntry,
     DeprecatedIdentifierReplacementKind
 } from "./resources/gml-identifier-loading.js";
+export type { StringCommentScanState } from "./text/string-comment-scan.js";
+export type { EmptyTransformOptions, ParserTransform } from "./transforms/parser-transform.js";
 export type { AbortSignalLike } from "./utils/abort.js";
 export type { DebouncedFunction } from "./utils/function.js";

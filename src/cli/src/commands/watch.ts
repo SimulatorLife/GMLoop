@@ -11,7 +11,6 @@
  * wrapper to enable true hot-reloading without game restarts.
  */
 
-import { createHash } from "node:crypto";
 import {
     type Dirent,
     existsSync,
@@ -68,7 +67,6 @@ import {
 } from "../modules/transpilation/runtime-identifiers.js";
 import { extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
-import { normalizeExtensions } from "../workflow/extension-normalizer.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
@@ -76,9 +74,21 @@ import {
     DEFAULT_WATCH_MAX_CONCURRENT_DIRS,
     DEFAULT_WATCH_MAX_PATCH_HISTORY,
     DEFAULT_WATCH_POLLING_INTERVAL_MS
-} from "./watch-constants.js";
+} from "./watch/constants.js";
+import {
+    clearInitialFileDataCache,
+    computeHotReloadLatencyStats,
+    countSourceLines,
+    createExtensionMatcher,
+    type ExtensionMatcher,
+    hashSourceContent,
+    type InitialFileData,
+    readSourceFileWithTransientEmptyRetry,
+    resolveUnknownScanConcurrency,
+    takeInitialFileData
+} from "./watch/source-analysis.js";
 
-const { debounce, getErrorMessage, getLineBreakCount, isErrorWithCode } = Core;
+const { debounce, getErrorMessage, isErrorWithCode } = Core;
 
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
 
@@ -87,11 +97,6 @@ type WatchFactory = (
     options?: WatchOptions | BufferEncoding | "buffer",
     listener?: WatchListener<string>
 ) => FSWatcher;
-
-interface ExtensionMatcher {
-    extensions: ReadonlySet<string>;
-    matches: (fileName: string) => boolean;
-}
 
 const noopAbortListener = () => {};
 
@@ -241,6 +246,7 @@ interface WatchLifecycle {
     unknownScanPromise: Promise<void> | null;
     unknownScanQueued: boolean;
     unknownScanConcurrency: number;
+    dependentRetranspileConcurrency: number;
 }
 
 /**
@@ -316,67 +322,6 @@ interface FileChangeOptions extends LoggingConfig {
     fileChangeDetectedAt?: number;
 }
 
-/**
- * Waits before retrying a transient empty-file read and supports abort-driven teardown.
- *
- * @param durationMs - Delay duration in milliseconds.
- * @param abortSignal - Optional signal used to cancel the pending retry timer.
- * @returns Promise that resolves to true when delay elapsed, or false when aborted.
- */
-export function delayFileReadRetry(durationMs: number, abortSignal?: AbortSignal): Promise<boolean> {
-    if (abortSignal?.aborted) {
-        return Promise.resolve(false);
-    }
-
-    return new Promise((resolve) => {
-        const handleAbort = () => {
-            clearTimeout(timeoutId);
-            abortSignal?.removeEventListener("abort", handleAbort);
-            resolve(false);
-        };
-
-        const timeoutId = setTimeout(() => {
-            abortSignal?.removeEventListener("abort", handleAbort);
-            resolve(true);
-        }, durationMs);
-
-        abortSignal?.addEventListener("abort", handleAbort, { once: true });
-    });
-}
-
-/**
- * Filesystem watch events can fire while an editor is still writing.
- * Retry briefly when the file is observed as empty so we do not treat
- * transient truncation windows as a permanent transpilation failure.
- */
-async function readSourceFileWithTransientEmptyRetry(
-    filePath: string,
-    retryCount: number,
-    retryDelayMs: number,
-    abortSignal?: AbortSignal
-): Promise<string | null> {
-    const readAttempt = async (attempt: number): Promise<string> => {
-        const content = await readFile(filePath, "utf8");
-        const isFinalAttempt = attempt >= retryCount - 1;
-        if (content.length > 0 || isFinalAttempt) {
-            return content;
-        }
-
-        const shouldRetry = await delayFileReadRetry(retryDelayMs, abortSignal);
-        if (!shouldRetry) {
-            return content;
-        }
-
-        return readAttempt(attempt + 1);
-    };
-
-    if (abortSignal?.aborted) {
-        return null;
-    }
-
-    return await readAttempt(0);
-}
-
 async function runAutoInjectHotReload(
     quiet: boolean,
     verbose: boolean,
@@ -421,135 +366,6 @@ async function runAutoInjectHotReload(
 }
 
 /**
- * Creates a matcher for file extensions that normalizes case and ensures each
- * entry begins with a leading dot. The matcher exposes the normalized set for
- * logging while providing a case-insensitive predicate for incoming filenames.
- */
-export function createExtensionMatcher(extensions: ReadonlyArray<string>): ExtensionMatcher {
-    const normalized = normalizeExtensions(extensions);
-    const normalizedSet = new Set(normalized);
-
-    return {
-        extensions: normalizedSet,
-        matches: (fileName: string) => {
-            const extension = resolveLowercaseExtension(fileName);
-            return extension === "" ? false : normalizedSet.has(extension);
-        }
-    };
-}
-
-/**
- * Resolves the lowercase extension for a filename/path without allocating via
- * node:path. The behavior intentionally matches path.extname semantics:
- * dotfiles such as ".gml" are treated as extension-less.
- */
-function resolveLowercaseExtension(fileName: string): string {
-    const lastForwardSlashIndex = fileName.lastIndexOf("/");
-    const lastBackwardSlashIndex = fileName.lastIndexOf("\\");
-    const lastPathSeparatorIndex = Math.max(lastForwardSlashIndex, lastBackwardSlashIndex);
-    const lastDotIndex = fileName.lastIndexOf(".");
-
-    if (lastDotIndex <= lastPathSeparatorIndex + 1) {
-        return "";
-    }
-
-    return fileName.slice(lastDotIndex).toLowerCase();
-}
-
-/**
- * Counts the number of source lines in a string, honoring CRLF and Unicode line breaks.
- *
- * @param {string} source - Source text to inspect.
- * @returns {number} Number of lines represented by the source string.
- */
-export function countSourceLines(source: string): number {
-    if (source.length === 0) {
-        return 1;
-    }
-
-    return getLineBreakCount(source) + 1;
-}
-
-/**
- * Computes a compact digest of source text for change-detection purposes.
- *
- * MD5 is intentionally used here because this hash is not security-sensitive:
- * we only need a fast, deterministic fingerprint to skip redundant transpilation
- * when file bytes are unchanged. A 128-bit digest keeps memory overhead low while
- * reducing per-change CPU cost versus SHA-256 in the watch hot path.
- *
- * @param {string} source - Source text to hash.
- * @returns {string} 32-character hex digest.
- */
-export function hashSourceContent(source: string): string {
-    return createHash("md5").update(source, "utf8").digest("hex");
-}
-
-/**
- * Resolves concurrency for unknown watcher event scans.
- *
- * Unknown events require probing tracked files to find changes on platforms
- * that omit filenames. Keep probes bounded to avoid unbounded stat storms.
- *
- * @param {number} configuredMaximum - User-configured max concurrent directory reads.
- * @returns {number} Safe unknown scan concurrency value (minimum 1).
- */
-export function resolveUnknownScanConcurrency(configuredMaximum: number): number {
-    return Math.max(1, Math.trunc(configuredMaximum));
-}
-
-/**
- * Resolves concurrency for dependent script retranspilation.
- *
- * Dependent retranspilation happens on the hot-reload critical path and should
- * remain bounded so large dependency fans do not create unbounded I/O bursts
- * or event-loop pressure. Reuse the watch command's concurrency cap to keep
- * throughput high while controlling latency variance.
- *
- * @param {number} configuredMaximum - User-configured concurrency ceiling.
- * @returns {number} Safe retranspile concurrency value (minimum 1).
- */
-export function resolveDependentRetranspileConcurrency(configuredMaximum: number): number {
-    return resolveUnknownScanConcurrency(configuredMaximum);
-}
-
-/**
- * Computes average and 95th-percentile hot-reload latency from a metrics window.
- *
- * Only patches that have a recorded `hotReloadLatencyMs` value (i.e., those
- * triggered by a live file-change event rather than the initial scan) contribute
- * to the result. Returns `undefined` for both values when no latency data is available.
- *
- * @param metrics - The bounded metrics window from the runtime context.
- * @returns Object with `avg` and `p95` in milliseconds, or `undefined` when unavailable.
- */
-export function computeHotReloadLatencyStats(
-    metrics: ReadonlyArray<{ hotReloadLatencyMs?: number }>
-): { avg: number; p95: number } | undefined {
-    const latencies: Array<number> = [];
-
-    for (const metric of metrics) {
-        if (typeof metric.hotReloadLatencyMs === "number") {
-            latencies.push(metric.hotReloadLatencyMs);
-        }
-    }
-
-    if (latencies.length === 0) {
-        return undefined;
-    }
-
-    const sum = latencies.reduce((acc, val) => acc + val, 0);
-    const avg = sum / latencies.length;
-
-    // Sort a copy for p95 computation to avoid mutating the input array.
-    const sorted = latencies.slice().sort((a, b) => a - b);
-    const p95Index = Math.max(0, Math.ceil(sorted.length * 0.95) - 1);
-    const p95 = sorted.at(p95Index) ?? sorted.at(-1) ?? 0;
-
-    return { avg, p95 };
-}
-
-/**
  * Creates the watch command for monitoring GML source files.
  *
  * @returns {Command} Commander command instance
@@ -563,7 +379,10 @@ export function createWatchCommand(): Command {
         .description("Watch GML source files and coordinate hot-reload pipeline actions")
         .argument("[targetPath]", "Directory to watch for changes", process.cwd())
         .addOption(
-            new Option("--extensions <extensions...>", "File extensions to watch").default([".gml"], "Only .gml files")
+            new Option("--extensions <extensions...>", "File extensions to watch").default(
+                [".gml"],
+                "Defaults to .gml; custom extensions are allowed"
+            )
         )
         .addOption(new Option("--polling", "Use polling instead of native file watching").default(false))
         .addOption(
@@ -957,6 +776,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         unknownScanPromise: null,
         unknownScanQueued: false,
         unknownScanConcurrency: resolveUnknownScanConcurrency(maxConcurrentDirs),
+        dependentRetranspileConcurrency: resolveUnknownScanConcurrency(maxConcurrentDirs),
         fileSnapshots: new Map(),
         fileContentHashes: new Map(),
         fileContentLengths: new Map(),
@@ -1532,7 +1352,7 @@ async function handleFileChange(
                 fileChangeDetectedAt
             });
 
-            await processTranspileResult(runtimeContext, filePath, result, verbose, quiet);
+            await processTranspileResult(runtimeContext, filePath, result, fileChangeDetectedAt, verbose, quiet);
         } catch (error) {
             if (runtimeContext && isErrorWithCode(error, "ENOENT")) {
                 cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
@@ -1598,19 +1418,29 @@ async function handleUnknownFileChanges(
         runtimeContext.unknownScanConcurrency
     );
 
-    await Core.runSequentially(changedEntries, async (entry) => {
-        if (entry === null) {
-            return;
-        }
+    // Filter null entries (unchanged/removed files) before processing so the
+    // parallel callback receives only actionable work items.
+    const pendingChanges = changedEntries.filter(
+        (entry): entry is { filePath: string; stats: Stats; eventType: string } => entry !== null
+    );
 
-        await handleFileChange(entry.filePath, entry.eventType, {
-            verbose,
-            quiet,
-            runtimeContext,
-            fileStats: entry.stats,
-            abortSignal
-        });
-    });
+    // Process changed files with bounded concurrency. The stat scan above already
+    // limits I/O during discovery; processing concurrently overlaps file reads with
+    // CPU-bound transpilation of other files, reducing total wall-clock time versus
+    // sequential processing while staying within the configured concurrency ceiling.
+    await Core.runInParallelWithLimit(
+        pendingChanges,
+        async (entry) => {
+            await handleFileChange(entry.filePath, entry.eventType, {
+                verbose,
+                quiet,
+                runtimeContext,
+                fileStats: entry.stats,
+                abortSignal
+            });
+        },
+        runtimeContext.unknownScanConcurrency
+    );
 }
 
 function processQueuedUnknownFileChanges(
@@ -1668,6 +1498,7 @@ async function retranspileDependentFiles(
     runtimeContext: RuntimeContext,
     filePath: string,
     dependentFiles: ReadonlyArray<string>,
+    fileChangeDetectedAt: number | undefined,
     verbose: boolean,
     quiet: boolean
 ): Promise<void> {
@@ -1678,7 +1509,14 @@ async function retranspileDependentFiles(
         dependentFiles,
         async (dependentFile) => {
             try {
-                await retranspileDependentFile(runtimeContext, filePath, dependentFile, verbose, quiet);
+                await retranspileDependentFile(
+                    runtimeContext,
+                    filePath,
+                    dependentFile,
+                    fileChangeDetectedAt,
+                    verbose,
+                    quiet
+                );
             } catch (error) {
                 const message = getErrorMessage(error, {
                     fallback: "Unknown file read error"
@@ -1686,22 +1524,24 @@ async function retranspileDependentFiles(
                 console.error(`  ↳ Error retranspiling dependent file ${dependentFile}: ${message}`);
             }
         },
-        resolveDependentRetranspileConcurrency(runtimeContext.maxConcurrentDirs)
+        runtimeContext.dependentRetranspileConcurrency
     );
 }
 
 function areSymbolSetsEqual(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
-    if (left.length !== right.length) {
-        return false;
+    if (left.length === 0 || right.length === 0) {
+        return left.length === right.length;
     }
 
     const leftSet = new Set(left);
-    if (leftSet.size !== right.length) {
+    const rightSet = new Set(right);
+
+    if (leftSet.size !== rightSet.size) {
         return false;
     }
 
-    for (const symbol of right) {
-        if (!leftSet.has(symbol)) {
+    for (const symbol of leftSet) {
+        if (!rightSet.has(symbol)) {
             return false;
         }
     }
@@ -1713,6 +1553,7 @@ async function processTranspileResult(
     runtimeContext: RuntimeContext,
     filePath: string,
     result: TranspilationResult,
+    fileChangeDetectedAt: number | undefined,
     verbose: boolean,
     quiet: boolean
 ): Promise<void> {
@@ -1743,7 +1584,7 @@ async function processTranspileResult(
         console.log(`  ↳ Retranspiling ${dependentFiles.length} dependent file(s)...`);
     }
 
-    await retranspileDependentFiles(runtimeContext, filePath, dependentFiles, verbose, quiet);
+    await retranspileDependentFiles(runtimeContext, filePath, dependentFiles, fileChangeDetectedAt, verbose, quiet);
 }
 
 interface DependencyUpdateSummary {
@@ -1833,6 +1674,7 @@ async function retranspileDependentFile(
     runtimeContext: RuntimeContext & ScriptNameRegistrationContext,
     filePath: string,
     dependentFile: string,
+    fileChangeDetectedAt: number | undefined,
     verbose: boolean,
     quiet: boolean
 ): Promise<void> {
@@ -1847,7 +1689,8 @@ async function retranspileDependentFile(
 
     const dependentResult = transpileFile(runtimeContext, dependentFile, dependentContent, dependentLines, {
         verbose: false,
-        quiet
+        quiet,
+        fileChangeDetectedAt
     });
 
     registerDependencyTrackerUpdates(runtimeContext, dependentFile, dependentResult);
@@ -1966,60 +1809,6 @@ async function updateFileSnapshot(runtimeContext: FileSnapshotWriter, filePath: 
     } catch {
         runtimeContext.fileSnapshots.delete(filePath);
     }
-}
-
-/**
- * Cached data for a single GML file gathered during the initial script name collection pass.
- * Used to avoid re-reading and re-parsing files during the subsequent initial transpilation scan.
- */
-interface InitialFileData {
-    content: string;
-    ast: unknown;
-}
-
-/**
- * Returns and removes cached startup data for a file.
- *
- * The watch command only needs the pre-read source text and AST once during the
- * initial scan. Deleting the cache entry immediately after retrieval reduces the
- * peak memory footprint of large startup scans without changing the transpilation
- * work performed for each file.
- *
- * @param fileDataCache - Startup cache keyed by absolute file path.
- * @param filePath - File whose cached source text and AST should be consumed.
- * @returns Cached startup data when present.
- */
-export function takeInitialFileData(
-    fileDataCache: Map<string, InitialFileData> | undefined,
-    filePath: string
-): InitialFileData | undefined {
-    if (!fileDataCache) {
-        return undefined;
-    }
-
-    const cached = fileDataCache.get(filePath);
-    if (cached) {
-        fileDataCache.delete(filePath);
-    }
-
-    return cached;
-}
-
-/**
- * Clears any remaining startup file cache entries after the initial scan finishes.
- *
- * During startup, cached source text and AST objects are reused to avoid duplicate
- * reads/parses. Once the initial scan completes (or fails), retaining leftover entries
- * only increases steady-state memory usage.
- *
- * @param fileDataCache - Startup cache to clear.
- */
-export function clearInitialFileDataCache(fileDataCache: Map<string, InitialFileData> | undefined): void {
-    if (!fileDataCache) {
-        return;
-    }
-
-    fileDataCache.clear();
 }
 
 /**

@@ -24,6 +24,7 @@ import { type CliCatalogEntry, createCliCommandCatalog } from "./cli-core/comman
 import { createCliCommandManager } from "./cli-core/command-manager.js";
 import { applyStandardCommandOptions } from "./cli-core/command-standard-options.js";
 import { handleCliError } from "./cli-core/errors.js";
+import { createMcpToolCatalogEntries, type McpToolCatalogEntry } from "./cli-core/mcp-tool-catalog.js";
 import { resolveCliVersion } from "./cli-core/version.js";
 import { createCollectStatsCommand, runCollectStats } from "./commands/collect-stats.js";
 import { createFixCommand, runFixCommand } from "./commands/fix.js";
@@ -39,7 +40,7 @@ import { createPrepareHotReloadCommand, runPrepareHotReloadCommand } from "./com
 import { createRefactorCommand, runRefactorCommand } from "./commands/refactor.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
 import { createWatchCommand, runWatchCommand } from "./commands/watch.js";
-import { createWatchStatusCommand, runWatchStatusCommand } from "./commands/watch-status.js";
+import { createWatchStatusCommand, runWatchStatusCommand } from "./commands/watch/status.js";
 import { CLI_COMMAND_NAMES } from "./shared/command-names.js";
 import { isCliRunSkipped, SKIP_CLI_RUN_ENV_VAR } from "./shared/skip-cli-run.js";
 
@@ -190,13 +191,30 @@ export const { registry: cliCommandRegistry, runner: cliCommandRunner } = create
 
 export { normalizeCommandLineArguments };
 
+/** Well-known name used as the contract discriminant for {@link CliTestExit}. */
+const CLI_TEST_EXIT_NAME = "CliTestExit";
+
 class CliTestExit extends Error {
     public readonly exitCode: number;
 
     constructor(exitCode: number) {
         super(`Cli test exit (${exitCode})`);
+        this.name = CLI_TEST_EXIT_NAME;
         this.exitCode = exitCode;
     }
+}
+
+/**
+ * Determine whether a caught value is a {@link CliTestExit} sentinel using the
+ * well-known name string as the contract discriminant rather than `instanceof`.
+ */
+function isCliTestExit(value: unknown): value is CliTestExit {
+    if (value === null || value === undefined || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as { name?: unknown; exitCode?: unknown };
+    return candidate.name === CLI_TEST_EXIT_NAME && typeof candidate.exitCode === "number";
 }
 
 export interface RunCliTestCommandOptions {
@@ -336,7 +354,7 @@ export async function runCliCommandCapture({ argv = [], env = {}, cwd }: RunCliC
         await cliCommandRunner.run(normalizedArgs);
         exitCode = typeof process.exitCode === "number" && !Number.isNaN(process.exitCode) ? process.exitCode : 0;
     } catch (error) {
-        if (error instanceof CliTestExit) {
+        if (isCliTestExit(error)) {
             exitCode = error.exitCode;
         } else {
             throw error;
@@ -361,16 +379,21 @@ export async function runCliCommandCapture({ argv = [], env = {}, cwd }: RunCliC
     };
 }
 
-export async function runCliTestCommand(options: RunCliTestCommandOptions = {}) {
-    return await runCliCommandCapture(options);
+export function runCliTestCommand(options: RunCliTestCommandOptions = {}) {
+    return runCliCommandCapture(options);
 }
 
 export function getCliCommandCatalog(): ReadonlyArray<CliCatalogEntry> {
     return Object.freeze(createCliCommandCatalog(program));
 }
 
+export function getMcpToolCatalogEntries(): ReadonlyArray<McpToolCatalogEntry> {
+    return createMcpToolCatalogEntries(getCliCommandCatalog());
+}
+
 export const __test__ = Object.freeze({
     ...__formatTest__,
+    getMcpToolCatalogEntries,
     getCliCommandCatalog,
     isNodeTestRunnerProcess,
     normalizeCommandLineArguments,

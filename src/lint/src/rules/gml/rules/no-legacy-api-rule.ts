@@ -2,13 +2,7 @@ import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { gmlRuleDeprecatedIdentifierServices } from "../gml-rule-services.js";
-import {
-    createMeta,
-    getNodeEndIndex,
-    getNodeStartIndex,
-    isAstNodeWithType,
-    walkAstNodesWithParent
-} from "../rule-base-helpers.js";
+import { createMeta, isAstNodeWithType, walkAstNodesWithParent } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { getDeprecatedIdentifierCatalogEntry } = gmlRuleDeprecatedIdentifierServices;
@@ -101,8 +95,8 @@ function collectScopedDeclaredIdentifiers(
             }
 
             const nestedScope = {
-                start: getNodeStartIndex(node) ?? activeScope.start,
-                end: getNodeEndIndex(node) ?? activeScope.end,
+                start: Core.getNodeStartIndex(node) ?? activeScope.start,
+                end: Core.getNodeEndIndex(node) ?? activeScope.end,
                 names: new Set<string>()
             };
             scopes.push(nestedScope);
@@ -154,7 +148,7 @@ function isIdentifierShadowedByLocalScope(
     identifierName: string,
     node: unknown
 ): boolean {
-    const start = getNodeStartIndex(node);
+    const start = Core.getNodeStartIndex(node);
     if (typeof start !== "number") {
         return false;
     }
@@ -206,8 +200,8 @@ function reportIdentifierRange(
     identifierName: string,
     entry: DeprecatedCatalogEntry
 ): void {
-    const start = getNodeStartIndex(node);
-    const end = getNodeEndIndex(node);
+    const start = Core.getNodeStartIndex(node);
+    const end = Core.getNodeEndIndex(node);
     if (typeof start !== "number" || typeof end !== "number") {
         return;
     }

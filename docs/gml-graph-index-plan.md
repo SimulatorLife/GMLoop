@@ -35,11 +35,11 @@ Add a new `src/semantic/src/graph-index/` namespace and export it from [src/sema
 - local embedding generation and vector storage
 - query APIs for search, symbol lookup, context bundles, neighbors, usages, and doctor output
 
-Use `node:sqlite` as the SQLite runtime. Do not add a second parser/indexer layer.
+Use `node:sqlite` as the SQLite runtime behind a semantic-owned adapter seam. Do not add a second parser/indexer layer. Treat the runtime as experimental at the Node level: document that status clearly and surface the active runtime/integrity state through graph doctor output rather than leaving it implicit.
 
 ### 2. Define the graph model and persistent schema
 
-Implement the SQLite schema inside semantic with tables for:
+Implement the SQLite schema inside semantic with explicit versioned migration support and tables for:
 
 - graphs
 - files
@@ -57,7 +57,7 @@ Node IDs must be graph-qualified and stable, using current SCIP identifiers wher
 - `project::resource::<resource-path>`
 - `project::file::<relative-path>`
 
-Keep SCIP as the canonical symbol identity and use the graph-qualified ID as the retrieval key.
+Keep SCIP as the canonical symbol identity and use the graph-qualified ID as the retrieval key. Schema upgrades should prefer explicit in-place migrations where feasible and fall back to rebuilds only when a safe migration path is not available.
 
 ### 3. Build dual-root indexing on top of the existing semantic project index
 
@@ -68,6 +68,7 @@ Implement a graph build flow that:
 - runs the existing semantic project indexing for each root independently
 - projects both snapshots into one SQLite catalog
 - emits cross-graph `uses_toolset` edges only when a project symbol/resource reference resolves uniquely to the toolset and is not project-local
+- uses file/content hashes and graph-local persistence so unchanged graph slices can be preserved across rebuilds instead of resetting the whole database every time
 
 Do not change formatter/lint/refactor ownership. This is semantic analysis plus retrieval.
 
@@ -163,7 +164,8 @@ CLI flags override config values. Defaults should keep project-only mode working
 - embedding rerank changes candidate ordering for semantically related queries
 - summaries and snippets are deterministic and size-bounded
 - rebuilds update changed rows and remove stale deleted-file rows
-- schema migration or incompatible schema version triggers a clean rebuild path
+- schema migration upgrades supported historical schemas in place where defined and otherwise triggers a clean rebuild path
+- doctor reports runtime/integrity state, including SQLite runtime details, quick-check status, and foreign-key violations
 
 ### CLI tests
 

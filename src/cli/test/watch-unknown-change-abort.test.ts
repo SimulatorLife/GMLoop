@@ -58,7 +58,7 @@ import {
 
 /**
  * Retry delay constant from `delayFileReadRetry` (matches
- * `DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS` in watch-constants.ts).
+ * `DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS` in commands/watch/constants.ts).
  */
 const TRANSIENT_RETRY_DELAY_MS = 25;
 

@@ -4,14 +4,14 @@ import type { Rule } from "eslint";
 import {
     type AstNodeWithType,
     createMeta,
-    getNodeStartIndex,
     isAstNodeWithType,
+    readObjectOption,
     resolveLocFromIndex,
+    shouldReportUnsafe,
     walkAstNodes,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
-import { readObjectOption, shouldReportUnsafe } from "../rule-helpers.js";
 
 const DEFAULT_HOIST_ACCESSORS = Object.freeze({
     array_length: "len"
@@ -112,7 +112,7 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
 
                                 const forContext = forStatementContextByNode.get(loopNode);
                                 if (forContext && !forContext.canInsertHoistBeforeLoop) {
-                                    const forStart = getNodeStartIndex(loopNode);
+                                    const forStart = Core.getNodeStartIndex(loopNode);
                                     if (
                                         typeof forStart === "number" &&
                                         (firstUnsafeOffset === null || forStart < firstUnsafeOffset)

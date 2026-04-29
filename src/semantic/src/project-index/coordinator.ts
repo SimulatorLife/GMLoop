@@ -8,7 +8,7 @@ import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
 /** Descriptor passed to {@link ProjectIndexCoordinatorInstance.ensureReady}. */
 type EnsureReadyDescriptor = {
     projectRoot: string;
-    maxSizeBytes?: number | null;
+    cacheMaxSizeBytes?: number | null;
     buildOptions?: Record<string, unknown>;
     [key: string]: unknown;
 };
@@ -214,7 +214,8 @@ async function executeEnsureReadyOperation({
     });
     Core.throwIfAborted(signal, disposedMessage);
 
-    const descriptorMaxSizeBytes = descriptor.maxSizeBytes === undefined ? cacheMaxSizeBytes : descriptor.maxSizeBytes;
+    const descriptorCacheMaxSizeBytes =
+        descriptor.cacheMaxSizeBytes === undefined ? cacheMaxSizeBytes : descriptor.cacheMaxSizeBytes;
 
     const saveResult = await saveCache(
         {
@@ -222,7 +223,7 @@ async function executeEnsureReadyOperation({
             projectRoot: resolvedRoot,
             projectIndex,
             metricsSummary: projectIndex.metrics,
-            maxSizeBytes: descriptorMaxSizeBytes
+            maxSizeBytes: descriptorCacheMaxSizeBytes
         },
         fsFacade,
         { signal }

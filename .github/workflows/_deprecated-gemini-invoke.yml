@@ -1,0 +1,199 @@
+name: '▶️ Gemini Invoke'
+
+on:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: '${{ github.workflow }}-invoke-${{ github.event_name }}-${{ github.event.issue.number }}'
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: 'bash'
+
+jobs:
+  invoke:
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body || '', '@gemini') }}
+    uses: ./.github/workflows/agent-invoke.yml
+    secrets:
+      api_key: ${{ secrets.GEMINI_API_KEY }}
+      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+    with:
+      pr_number: ${{ github.event.issue.number }}
+      additional_context: ${{ github.event.comment.body }}
+      agent: gemini
+      agent_package: '@google/gemini-cli@latest'
+      validate_local_endpoint: false
+      agent_command: |
+        set -euo pipefail
+
+        #
+        # Resolve and split API keys
+        # secrets.GEMINI_API_KEY is expected to contain one key per line.
+        #
+        if [ -z "${API_KEY:-}" ]; then
+          echo "❌ Missing API_KEY!"
+          exit 1
+        fi
+
+        # Split into lines
+        mapfile -t api_keys <<< "${API_KEY}"
+
+        # Filter out empty / whitespace-only lines
+        keys=()
+        for k in "${api_keys[@]}"; do
+          k_trimmed="$(echo "$k" | xargs || true)"
+          if [ -n "$k_trimmed" ]; then
+            keys+=("$k_trimmed")
+          fi
+        done
+
+        if [ "${#keys[@]}" -eq 0 ]; then
+          echo "❌ No non-empty API keys found in API_KEY secret."
+          exit 1
+        fi
+
+        key_count=${#keys[@]}
+        # 0 = usable, 1 = exhausted (daily quota)
+        declare -a key_exhausted
+        for ((i=0; i<key_count; i++)); do
+          key_exhausted[$i]=0
+        done
+
+        current_key_index=0
+
+        use_current_key() {
+          export GEMINI_API_KEY="${keys[$current_key_index]}"
+          echo "[gemini] using API key index ${current_key_index} (length ${#GEMINI_API_KEY})"
+        }
+
+        rotate_key() {
+          local start=$current_key_index
+          local i
+
+          for ((offset=1; offset<=key_count; offset++)); do
+            i=$(((start + offset) % key_count))
+            if [ "${key_exhausted[$i]}" -eq 0 ]; then
+              current_key_index=$i
+              use_current_key
+              return 0
+            fi
+          done
+
+          echo "[gemini] all configured API keys appear exhausted; cannot rotate to a new key"
+          return 1
+        }
+
+        use_current_key
+
+        #
+        # Run the CLI with retries/backoff to handle transient rate limits or quota errors.
+        # - Try up to MAX_ATTEMPTS
+        # - Honor server-suggested retry delays if present
+        # - For DAILY QUOTA exhaustion, mark the current key as exhausted and rotate to a fresh one
+        # - Otherwise, use exponential backoff
+        #
+        MAX_ATTEMPTS=6
+        INITIAL_DELAY=30
+        BACKOFF_FACTOR=2
+        attempt=1
+        delay=${INITIAL_DELAY}
+
+        while [ $attempt -le $MAX_ATTEMPTS ]; do
+          echo "[gemini] attempt ${attempt}/${MAX_ATTEMPTS} with API key index ${current_key_index}"
+          errfile="$(mktemp /tmp/gemini-err.XXXXXX)"
+
+          # NOTE: Session/memory continuity:
+          # Gemini CLI auto-restores session context per project dir by default.
+          # Each retry (and key rotation) just starts a new CLI process that
+          # continues the same session as long as we stay in this repo directory.
+          #
+          # If you want explicit per-PR summaries, you can optionally add:
+          #   --session-summary ".gemini/session-${PR_NUMBER:-unknown}.md"
+          # to the gemini command below.
+
+          if gemini --debug --yolo --prompt "${ADDITIONAL_CONTEXT}" 2>"$errfile"; then
+            echo "[gemini] succeeded"
+            rm -f "$errfile"
+            exit 0
+          fi
+
+          rc=$?
+          echo "[gemini] exited $rc; inspecting error output..."
+          sed -n '1,200p' "$errfile" || true
+
+          #
+          # 1) Check for explicit "daily quota exhausted" -> rotate API key
+          #
+          if grep -qi 'exhausted your daily quota' "$errfile"; then
+            echo "[gemini] detected DAILY quota exhaustion on API key index ${current_key_index}"
+            key_exhausted[$current_key_index]=1
+
+            if rotate_key; then
+              echo "[gemini] retrying immediately with new API key"
+              attempt=$((attempt+1))
+              rm -f "$errfile"
+              continue
+            else
+              echo "[gemini] no additional API keys available; failing"
+              cat "$errfile" >&2 || true
+              rm -f "$errfile"
+              exit $rc
+            fi
+          fi
+
+          #
+          # 2) Server-suggested retry in seconds: "Suggested retry after 60s"
+          #
+          suggested_s=$(grep -Eo 'Suggested retry after [0-9]+s' "$errfile" | grep -Eo '[0-9]+' | head -n1 || true)
+          if [ -n "$suggested_s" ]; then
+            echo "[gemini] server suggested retry after ${suggested_s}s"
+            sleep "$suggested_s"
+            attempt=$((attempt+1))
+            rm -f "$errfile"
+            continue
+          fi
+
+          #
+          # 3) Server-suggested retry in ms: "Please retry in 449.409574ms."
+          #
+          suggested_ms=$(grep -Eo 'Please retry in [0-9]+(\.[0-9]+)?ms' "$errfile" | grep -Eo '[0-9]+(\.[0-9]+)?' | head -n1 || true)
+          if [ -n "$suggested_ms" ]; then
+            suggested_sec=$(awk "BEGIN{printf \"%.3f\", ${suggested_ms}/1000}")
+            echo "[gemini] server suggested retry after ${suggested_sec}s (from ${suggested_ms}ms)"
+            sleep "$suggested_sec"
+            attempt=$((attempt+1))
+            rm -f "$errfile"
+            continue
+          fi
+
+          #
+          # 4) Generic quota / rate-limit hints (non-daily) -> keep same key, backoff
+          #
+          if grep -qiE 'quota|rate limit|quota exceeded|rate limit exceeded' "$errfile"; then
+            echo "[gemini] detected quota/rate-limit error; sleeping ${delay}s before retry on same key"
+            sleep "$delay"
+            delay=$((delay * BACKOFF_FACTOR))
+            attempt=$((attempt+1))
+            rm -f "$errfile"
+            continue
+          fi
+
+          #
+          # 5) Default: exponential backoff for other transient failures
+          #
+          if [ $attempt -lt $MAX_ATTEMPTS ]; then
+            echo "[gemini] transient failure; sleeping ${delay}s before retry"
+            sleep "$delay"
+            delay=$((delay * BACKOFF_FACTOR))
+            attempt=$((attempt+1))
+            rm -f "$errfile"
+            continue
+          else
+            echo "[gemini] all ${MAX_ATTEMPTS} attempts failed; dumping error and exiting"
+            cat "$errfile" >&2 || true
+            rm -f "$errfile"
+            exit $rc
+          fi
+        done

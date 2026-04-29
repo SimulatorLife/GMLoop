@@ -16,7 +16,6 @@ import { Core } from "@gmloop/core";
 import { Command, InvalidArgumentError, Option } from "commander";
 import type { Options as PrettierOptions } from "prettier";
 
-import { tryAddSample } from "../cli-core/bounded-sample-collector.js";
 import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { CliUsageError, formatCliError } from "../cli-core/errors.js";
@@ -34,6 +33,7 @@ import {
     resetRegisteredIgnorePaths
 } from "../format-runtime/ignore-path-registry.js";
 import { importFormatModule, resolveFormatEntryPoint as resolveCliFormatEntryPoint } from "../format-runtime/index.js";
+import { tryAddSample } from "../modules/formatting/bounded-sample-collector.js";
 import {
     hasNegatedIgnoreRules,
     markNegatedIgnoreRulesDetected,
@@ -49,6 +49,14 @@ import {
     trimFormattingCache
 } from "../modules/formatting/index.js";
 import {
+    PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES,
+    PERIODIC_CLEANUP_INTERVAL
+} from "../runtime-options/format-memory-constants.js";
+import {
+    getDefaultMaxInMemorySnapshots,
+    setDefaultMaxInMemorySnapshots
+} from "../runtime-options/format-memory-snapshots.js";
+import {
     getDefaultIgnoredFileSampleLimit,
     getDefaultSkippedDirectorySampleLimit,
     getDefaultUnsupportedExtensionSampleLimit,
@@ -56,12 +64,12 @@ import {
     resolveSkippedDirectorySampleLimit,
     resolveUnsupportedExtensionSampleLimit
 } from "../runtime-options/sample-limits.js";
-import { isMissingModuleDependency, resolveModuleDefaultExport } from "../shared/module.js";
 import {
     calculateElapsedNanoseconds,
     formatElapsedNanosecondsAsMilliseconds,
     readMonotonicNanoseconds
 } from "../shared/timing/elapsed-time.js";
+import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
 import {
     isHelpRequest,
@@ -118,6 +126,58 @@ const FORMAT_COMMAND_FIX_EXAMPLE = `pnpm dlx prettier-plugin-gml format --write 
 const PRETTIER_MODULE_ID = process.env.PRETTIER_PLUGIN_GML_PRETTIER_MODULE ?? "prettier";
 const TARGET_EXTENSIONS = Object.freeze([GML_EXTENSION]);
 
+type ModuleWithDefault<TValue> = TValue & {
+    default?: unknown;
+};
+
+type ModuleDefaultExport<TValue> = TValue extends {
+    default?: infer TDefault;
+}
+    ? TValue | TDefault
+    : TValue;
+
+/**
+ * Normalize dynamically imported modules to their default export when available.
+ *
+ * @template TModule
+ * @param module Namespace object returned from a dynamic import.
+ * @returns The module's default export when populated, otherwise the original module reference.
+ */
+function resolveModuleDefaultExport<TModule>(module?: TModule): ModuleDefaultExport<TModule> {
+    if (module == null || !Core.isObjectOrFunction(module)) {
+        return module as ModuleDefaultExport<TModule>;
+    }
+
+    const { default: defaultExport } = module as ModuleWithDefault<TModule>;
+    return (defaultExport ?? module) as ModuleDefaultExport<TModule>;
+}
+
+/**
+ * Determine whether an error corresponds to a missing module dependency for a specific module id.
+ *
+ * @param error Value thrown from a dynamic import.
+ * @param moduleId Module identifier expected in the error message.
+ * @returns `true` when the error matches the missing module.
+ */
+function isMissingModuleDependency(error: unknown, moduleId: string): boolean {
+    if (!Core.isErrorWithCode(error, "ERR_MODULE_NOT_FOUND")) {
+        return false;
+    }
+
+    const normalizedModuleId = Core.assertNonEmptyString(moduleId, {
+        name: "moduleId",
+        trim: true
+    });
+    const message = Core.getErrorMessage(error, { fallback: "" });
+
+    if (message.length === 0) {
+        return false;
+    }
+
+    const quotedIdentifiers = [`'${normalizedModuleId}'`, `"${normalizedModuleId}"`];
+    return quotedIdentifiers.some((identifier) => message.includes(identifier));
+}
+
 function formatExtensionListForDisplay(extensions) {
     return extensions.map((extension) => `"${extension}"`).join(", ");
 }
@@ -164,22 +224,6 @@ function createSampleLimitState({ getDefaultLimit, resolveLimit }) {
             return currentValue;
         }
     };
-}
-
-function formatPathForDisplay(targetPath) {
-    const resolvedTarget = path.resolve(targetPath);
-    const resolvedCwd = process.cwd();
-    const relativePath = path.relative(resolvedCwd, resolvedTarget);
-
-    if (resolvedTarget === resolvedCwd) {
-        return ".";
-    }
-
-    if (relativePath.length > 0 && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
-        return relativePath;
-    }
-
-    return resolvedTarget;
 }
 
 function describeIgnoreSource(ignorePaths) {
@@ -594,15 +638,11 @@ let revertSnapshotDirectory = null;
 let revertSnapshotFileCount = 0;
 let encounteredFormattableFile = false;
 
-// Limit the number of in-memory snapshots to prevent unbounded memory growth
-// when disk writes fail. When this limit is reached, old snapshots are released.
-const MAX_IN_MEMORY_SNAPSHOTS = 50;
+// Track in-memory snapshots so memory limit enforcement can reclaim old entries.
 let inMemorySnapshotCount = 0;
 
-// Track processed files for periodic cache cleanup
+// Track processed files for periodic cache cleanup.
 let processedFileCount = 0;
-// Reduced from 50 to 10 to perform more frequent cleanups and prevent memory buildup
-const PERIODIC_CLEANUP_INTERVAL = 10;
 
 function ensureRevertSnapshotDirectory() {
     if (revertSnapshotDirectory) {
@@ -712,11 +752,13 @@ async function discardFormattedFileOriginalContents() {
  * must be kept in memory.
  */
 async function enforceSnapshotMemoryLimit() {
-    if (inMemorySnapshotCount <= MAX_IN_MEMORY_SNAPSHOTS) {
+    const maxInMemorySnapshots = getDefaultMaxInMemorySnapshots();
+
+    if (inMemorySnapshotCount <= maxInMemorySnapshots) {
         return;
     }
 
-    const snapshotsToRelease = inMemorySnapshotCount - MAX_IN_MEMORY_SNAPSHOTS;
+    const snapshotsToRelease = inMemorySnapshotCount - maxInMemorySnapshots;
     const snapshotsToDelete = collectInlineSnapshotsForEviction(snapshotsToRelease);
 
     // Release snapshots sequentially to maintain correct accounting
@@ -752,7 +794,7 @@ function collectInlineSnapshotsForEviction(snapshotsToRelease) {
 function performPeriodicMemoryCleanup() {
     // Trim the formatting cache more aggressively to limit memory usage.
     // Instead of clearing completely, we keep only a small number of recent entries.
-    trimFormattingCache(5);
+    trimFormattingCache(PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES);
 
     // Trigger garbage collection if exposed (e.g., when running with --expose-gc)
     if (typeof globalThis.gc === "function") {
@@ -2070,6 +2112,8 @@ export const __formatTest__ = Object.freeze({
     getPrettierOptionsForTests: () => options,
     validateTargetPathInputForTests: validateTargetPathInput,
     resolveTargetPathFromInputForTests: resolveTargetPathFromInput,
+    resolveModuleDefaultExportForTests: resolveModuleDefaultExport,
+    isMissingModuleDependencyForTests: isMissingModuleDependency,
     resolveProjectIgnorePathsForTests: resolveProjectIgnorePaths,
     clearFormattingCacheForTests: clearFormattingCache,
     getFormattingCacheStatsForTests: getFormattingCacheStats,
@@ -2080,7 +2124,7 @@ export const __formatTest__ = Object.freeze({
     // Memory management test helpers
     getMemoryManagementStatsForTests: () => ({
         inMemorySnapshotCount,
-        maxInMemorySnapshots: MAX_IN_MEMORY_SNAPSHOTS,
+        maxInMemorySnapshots: getDefaultMaxInMemorySnapshots(),
         processedFileCount,
         periodicCleanupInterval: PERIODIC_CLEANUP_INTERVAL,
         formattedFileOriginalContentsSize: formattedFileOriginalContents.size,
@@ -2092,6 +2136,9 @@ export const __formatTest__ = Object.freeze({
             return total + snapshot.inlineContents.length * 2;
         }, 0)
     }),
+    setDefaultMaxInMemorySnapshotsForTests: (count: number) => {
+        return setDefaultMaxInMemorySnapshots(count);
+    },
     setInMemorySnapshotCountForTests: (count: number) => {
         inMemorySnapshotCount = count;
     },

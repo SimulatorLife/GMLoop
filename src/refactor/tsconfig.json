@@ -20,9 +20,7 @@
   "references": [
     { "path": "../core" },
     { "path": "../fixture-runner" },
-    { "path": "../parser" },
-    { "path": "../semantic" },
-    { "path": "../format" }
+    { "path": "../parser" }
   ],
   "include": ["*.ts", "src/**/*.ts", "test/**/*.ts"],
   "exclude": ["dist"]

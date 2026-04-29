@@ -484,6 +484,68 @@ void test("WebSocket client bounds deferred patches before runtime readiness", a
     }
 });
 
+void test("WebSocket client routes deferred patches through patch queue after runtime readiness", async () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+    const runtimeGlobals = globalThis as unknown as { JSON_game: unknown };
+    const originalJsonGame = runtimeGlobals.JSON_game;
+
+    globalWithWebSocket.WebSocket = MockWebSocket;
+
+    Reflect.set(runtimeGlobals, "JSON_game", {
+        ScriptNames: ["gml_Script_bootstrap"],
+        Scripts: [null]
+    });
+
+    const client = RuntimeWrapper.createWebSocketClient({
+        wrapper,
+        autoConnect: true,
+        patchQueue: {
+            enabled: true,
+            flushIntervalMs: 10,
+            maxQueueSize: 10
+        }
+    });
+
+    try {
+        await wait(50);
+
+        const ws = client.getWebSocket();
+        assert.ok(ws, "WebSocket should be available");
+        const mockSocket = ws as MockWebSocket;
+
+        mockSocket.simulateMessage(
+            JSON.stringify({
+                kind: "script",
+                id: "script:deferred_with_queue",
+                js_body: "return 7;"
+            })
+        );
+
+        await wait(50);
+
+        assert.strictEqual(wrapper.hasScript("script:deferred_with_queue"), false);
+        assert.strictEqual(client.getPatchQueueMetrics()?.totalQueued ?? 0, 0);
+
+        Reflect.set(runtimeGlobals, "JSON_game", {
+            ScriptNames: ["gml_Script_bootstrap"],
+            Scripts: [() => void 0]
+        });
+
+        await wait(120);
+
+        assert.strictEqual(wrapper.hasScript("script:deferred_with_queue"), true);
+
+        const metrics = client.getPatchQueueMetrics();
+        assert.ok(metrics, "Patch queue metrics should be available");
+        assert.ok(metrics.totalQueued >= 1);
+        assert.ok(metrics.totalFlushed >= 1);
+    } finally {
+        client.disconnect();
+        Reflect.set(runtimeGlobals, "JSON_game", originalJsonGame);
+        delete globalWithWebSocket.WebSocket;
+    }
+});
+
 void test("WebSocket client reports hot reload error notifications", async () => {
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
     let reportedError: RuntimePatchError | null = null;

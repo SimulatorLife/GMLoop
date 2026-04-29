@@ -303,6 +303,54 @@ void test("patch queue reorders dependency-linked patches before batch apply", a
     }
 });
 
+void test("patch queue preserves input order when dependency graph contains a cycle", async () => {
+    const appliedPatchIds: Array<string> = [];
+
+    const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
+        wrapperMutator: (wrapper) => {
+            const originalApplyPatchBatch = wrapper.applyPatchBatch;
+            return {
+                ...wrapper,
+                applyPatchBatch: (patches) => {
+                    appliedPatchIds.push(
+                        ...patches.map((patch) => {
+                            if (typeof patch === "object" && patch !== null && "id" in patch) {
+                                const patchId = (patch as { id: unknown }).id;
+                                if (typeof patchId === "string") {
+                                    return patchId;
+                                }
+                            }
+                            return "<invalid>";
+                        })
+                    );
+                    return originalApplyPatchBatch(patches);
+                }
+            };
+        }
+    });
+
+    try {
+        sendScriptPatchWithDependencies(ws, "gml/script/cycle_a", ["gml/script/cycle_b"]);
+        sendScriptPatchWithDependencies(ws, "gml/script/cycle_b", ["gml/script/cycle_a"]);
+
+        const flushedCount = client.flushPatchQueue();
+        assert.strictEqual(flushedCount, 2);
+
+        await waitForQueueMetrics(
+            client,
+            "queue to flush cyclic dependency patch batch",
+            (snapshot) => snapshot.totalFlushed >= 2,
+            150
+        );
+
+        assert.deepStrictEqual(appliedPatchIds, ["gml/script/cycle_a", "gml/script/cycle_b"]);
+        assert.strictEqual(client.getConnectionMetrics().patchesFailed, 2);
+    } finally {
+        client.disconnect();
+        restoreRuntimeGlobals();
+    }
+});
+
 void test("patch queue keeps already ordered dependency batches intact", async () => {
     const { wrapper, client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
         patchQueue: {
@@ -359,6 +407,55 @@ void test("patch queue handles duplicate dependency entries when reordering batc
         const metrics = client.getConnectionMetrics();
         assert.strictEqual(metrics.patchesApplied, 2);
         assert.strictEqual(metrics.patchesFailed, 0);
+    } finally {
+        client.disconnect();
+        restoreRuntimeGlobals();
+    }
+});
+
+void test("patch queue preserves invalid payloads when dependency reordering is considered", async () => {
+    let receivedBatchLength = 0;
+
+    const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
+        patchQueue: {
+            flushIntervalMs: 1000
+        },
+        wrapperMutator: (wrapper) => ({
+            ...wrapper,
+            applyPatchBatch: (patches) => {
+                receivedBatchLength = patches.length;
+                return {
+                    success: true,
+                    version: wrapper.getVersion(),
+                    appliedCount: patches.length,
+                    rolledBack: false
+                };
+            }
+        })
+    });
+
+    try {
+        sendScriptPatchWithDependencies(ws, "gml/script/dependent_with_invalid_payload", [
+            "gml/script/provider_for_invalid"
+        ]);
+        sendScriptPatch(ws, "gml/script/provider_for_invalid", "return 42;");
+        ws.simulateMessage(JSON.stringify({ kind: "script", js_body: "return 0;" }));
+
+        const flushedCount = client.flushPatchQueue();
+        assert.strictEqual(flushedCount, 3);
+
+        await waitForQueueMetrics(
+            client,
+            "queue metrics to report all three flushed patches",
+            (snapshot) => snapshot.totalFlushed >= 3 && snapshot.flushCount >= 1,
+            150
+        );
+
+        assert.strictEqual(
+            receivedBatchLength,
+            3,
+            "Dependency reordering must not drop invalid payloads from the batch"
+        );
     } finally {
         client.disconnect();
         restoreRuntimeGlobals();
@@ -513,6 +610,32 @@ void test("patch queue flushes automatically when reaching max size", async () =
         assert.strictEqual(metrics.totalFlushed, 3);
         assert.strictEqual(metrics.flushCount, 1);
         assert.strictEqual(metrics.maxQueueDepth, 3);
+    } finally {
+        client.disconnect();
+        restoreRuntimeGlobals();
+    }
+});
+
+void test("patch queue normalizes non-positive queue options to safe minimums", async () => {
+    const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
+        patchQueue: {
+            flushIntervalMs: 0,
+            maxQueueSize: 0
+        }
+    });
+
+    try {
+        sendScriptPatch(ws, "script:normalized_queue_config");
+
+        const metrics = await waitForQueueMetrics(
+            client,
+            "queue to flush immediately when normalized max size is reached",
+            (snapshot) => snapshot.totalFlushed === 1 && snapshot.flushCount === 1
+        );
+
+        assert.strictEqual(metrics.totalQueued, 1);
+        assert.strictEqual(metrics.totalFlushed, 1);
+        assert.strictEqual(metrics.maxQueueDepth, 1);
     } finally {
         client.disconnect();
         restoreRuntimeGlobals();

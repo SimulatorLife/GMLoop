@@ -164,36 +164,22 @@ function ensureOffendingToken(
     const stream = getTokenStream(recognizer);
     const context = exception.ctx ?? exception.context ?? recognizer?._ctx ?? null;
 
-    let offendingToken: Token | number | null = exception.offendingToken ?? exception.offendingSymbol ?? null;
-
-    if (!offendingToken && typeof exception.getOffendingToken === "function") {
-        offendingToken = exception.getOffendingToken();
-    }
-
-    if (!offendingToken && context?.stop) {
-        offendingToken = context.stop;
-    }
-
-    if (!offendingToken && context?.start) {
-        offendingToken = context.start;
-    }
-
-    if (!offendingToken && typeof recognizer?.getCurrentToken === "function") {
-        offendingToken = recognizer.getCurrentToken();
-    }
-
-    if (!offendingToken && stream?.LT) {
-        offendingToken = stream.LT(1);
-    }
-
-    if (!offendingToken) {
-        offendingToken = {
+    const offendingTokenSources = [
+        () => exception.offendingToken ?? exception.offendingSymbol ?? null,
+        () => (typeof exception.getOffendingToken === "function" ? exception.getOffendingToken() : null),
+        () => context?.stop ?? null,
+        () => context?.start ?? null,
+        () => (typeof recognizer?.getCurrentToken === "function" ? recognizer.getCurrentToken() : null),
+        () => (stream?.LT ? stream.LT(1) : null),
+        () => ({
             type: antlr4.Token.INVALID_TYPE,
             tokenIndex: INVALID_INDEX_FALLBACK,
             line: INVALID_INDEX_FALLBACK,
             column: INVALID_INDEX_FALLBACK
-        };
-    }
+        })
+    ] as const;
+
+    const offendingToken = offendingTokenSources.map((resolveToken) => resolveToken()).find(Boolean) ?? null;
 
     exception.offendingToken = ensureTokenMetadata(offendingToken, {
         fallbackCandidates: [context?.stop, context?.start],
@@ -221,19 +207,18 @@ function ensureStartToken(
     const stream = getTokenStream(recognizer);
     const context = exception.ctx ?? exception.context ?? recognizer?._ctx ?? null;
 
-    let startToken = exception.startToken ?? context?.start ?? exception.offendingToken ?? context?.stop ?? null;
+    const startTokenSources = [
+        () => exception.startToken ?? context?.start ?? exception.offendingToken ?? context?.stop ?? null,
+        () => (typeof recognizer?.getCurrentToken === "function" ? recognizer.getCurrentToken() : null),
+        () => {
+            if (!stream?.LT) {
+                return null;
+            }
 
-    if (!startToken && typeof recognizer?.getCurrentToken === "function") {
-        startToken = recognizer.getCurrentToken();
-    }
-
-    if (!startToken && stream?.LT) {
-        const previous = stream.LT(-1);
-        startToken = previous ?? stream.LT(1);
-    }
-
-    if (!startToken) {
-        startToken = {
+            const previous = stream.LT(-1);
+            return previous ?? stream.LT(1);
+        },
+        () => ({
             type:
                 typeof exception.offendingToken?.type === "number"
                     ? exception.offendingToken.type
@@ -250,8 +235,10 @@ function ensureStartToken(
                 typeof exception.offendingToken?.column === "number"
                     ? exception.offendingToken.column
                     : INVALID_INDEX_FALLBACK
-        };
-    }
+        })
+    ] as const;
+
+    const startToken = startTokenSources.map((resolveToken) => resolveToken()).find(Boolean) ?? null;
 
     exception.startToken = ensureTokenMetadata(startToken, {
         fallbackCandidates: [context?.start, exception.offendingToken],

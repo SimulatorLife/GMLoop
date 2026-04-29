@@ -128,6 +128,37 @@ void describe("GmlToJsEmitter.getDependencies()", () => {
 
         assert.ok(emitter.getDependencies().has("gml/script/scr_on_hit"));
     });
+
+    void it("resets dependencies between top-level emit calls on a reused emitter", () => {
+        const sem = makeScriptOracle(new Set(["scr_first", "scr_second"]));
+        const emitter = new Transpiler.GmlToJsEmitter(sem);
+
+        emitter.emit(Parser.GMLParser.parse("scr_first();"));
+        assert.deepEqual([...emitter.getDependencies()], ["gml/script/scr_first"]);
+
+        emitter.emit(Parser.GMLParser.parse("scr_second();"));
+        assert.deepEqual([...emitter.getDependencies()], ["gml/script/scr_second"]);
+    });
+
+    void it("resets globalvar tracking between top-level emit calls on a reused emitter", () => {
+        const emitter = new Transpiler.GmlToJsEmitter(Transpiler.createSemanticOracle());
+
+        const firstOutput = emitter.emit(Parser.GMLParser.parse("globalvar score; score = 1;"));
+        assert.match(firstOutput, /global\.score = 1;/);
+
+        const secondOutput = emitter.emit(Parser.GMLParser.parse("score = 2;"));
+        assert.equal(secondOutput, "score = 2;");
+    });
+
+    void it("deduplicates repeated globalvar initializers within one top-level emission", () => {
+        const emitter = new Transpiler.GmlToJsEmitter(Transpiler.createSemanticOracle());
+
+        const output = emitter.emit(Parser.GMLParser.parse("globalvar score; globalvar score; score += 1;"));
+        const initializerMatches = output.match(/hasOwnProperty\.call\(global, "score"\)/g) ?? [];
+
+        assert.equal(initializerMatches.length, 1);
+        assert.match(output, /global\.score \+= 1;/);
+    });
 });
 
 void describe("GmlTranspiler.transpileScript — dependencies in metadata", () => {

@@ -24,6 +24,8 @@ pnpm run cli -- path/to/project
 pnpm run cli -- path/to/project --help
 ```
 
+Normal format runs now keep output focused on results and diagnostics. Use `--list` when you want a full dump of resolved command settings before execution.
+
 **Options:**
 
 - `--path <path>` - Target file or directory path (defaults to current working directory)
@@ -32,6 +34,7 @@ pnpm run cli -- path/to/project --help
 - `--log-level <level>` - Set Prettier log level (debug, info, warn, error, silent)
 - `--verbose` - Emit per-file timing and total run duration diagnostics
 - `--on-parse-error <action>` - How to handle parse errors (skip, revert, abort)
+- `--list` - Print the effective format command settings and exit without scanning files
 - `--ignored-file-sample-limit <n>` - Limit ignored file samples in output
 - `--unsupported-extension-sample-limit <n>` - Limit unsupported extension samples
 
@@ -145,7 +148,7 @@ pnpm run cli -- watch /path/to/project --auto-inject
 **Options:**
 
 - `[targetPath]` - Directory to watch (default: current directory)
-- `--extensions <ext...>` - File extensions to watch (default: `.gml`)
+- `--extensions <ext...>` - File extensions to watch (default: `.gml`; custom extensions are allowed)
 - `--polling` - Use polling instead of native file watching
 - `--polling-interval <ms>` - Polling interval in milliseconds (default: 1000)
 - `--verbose` - Enable verbose logging with detailed transpilation output

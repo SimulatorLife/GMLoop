@@ -5,6 +5,7 @@ import { Core } from "@gmloop/core";
 
 import { createProjectIndexAbortGuard } from "./abort-guard.js";
 import { type ProjectIndexFsFacade } from "./fs-facade.js";
+import { runWithMissingPathFallback } from "./missing-path-fallback.js";
 import {
     normalizeProjectFileCategory,
     ProjectFileCategory,
@@ -109,17 +110,16 @@ function isDirectoryStat(stats) {
 }
 
 async function resolveEntryStats({ absolutePath, fsFacade, ensureNotAborted, metrics }) {
-    try {
-        const stats = await fsFacade.stat(absolutePath);
-        ensureNotAborted();
-        return stats;
-    } catch (error) {
-        if (Core.isErrorWithCode(error, "ENOENT")) {
+    const stats = await runWithMissingPathFallback(
+        () => fsFacade.stat(absolutePath),
+        () => {
             metrics?.counters?.increment("io.skippedMissingEntries");
             return null;
         }
-        throw error;
-    }
+    );
+
+    ensureNotAborted();
+    return stats;
 }
 
 async function processDirectoryEntries({

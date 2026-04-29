@@ -21,11 +21,24 @@ on:
       agent_command:
         type: string
         required: false
+      agent_setup_command:
+        type: string
+        required: false
       agent_package:
         type: string
         required: false
+      validate_local_endpoint:
+        type: boolean
+        required: false
+        default: true
+      max_agent_retries:
+        type: number
+        required: false
+        default: 2
     secrets:
-      api_key: # may contain one key OR multiple newline-separated keys
+      api_key:
+        required: false
+      GH_USER_TOKEN:
         required: true
 
 concurrency:
@@ -35,6 +48,8 @@ concurrency:
 jobs:
   invoke:
     runs-on: ubuntu-latest
+    env:
+      OPENAI_API_TYPE: openai
     permissions:
       contents: write
       issues: write
@@ -90,7 +105,7 @@ jobs:
               echo "Comment does not mention ${mention}; aborting." >&2
               exit 1
             fi
-            ADDITIONAL_CTX=$(printf '%s' "${RAW_COMMENT}" | sed -E "s/^.*${mention}\s*//")
+            ADDITIONAL_CTX=$(printf '%s' "${RAW_COMMENT}" | sed -E "s/^.*${mention}[[:space:]]*//")
             echo "additional_context<<EOF" >> "$GITHUB_OUTPUT"
             printf '%s' "$ADDITIONAL_CTX" >> "$GITHUB_OUTPUT"
             echo >> "$GITHUB_OUTPUT"
@@ -196,6 +211,18 @@ jobs:
         id: read-node-version
         run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
 
+      - name: Read pnpm version from package.json
+        id: read-pnpm-version
+        run: |
+          version=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).packageManager.split('@')[1]")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.read-pnpm-version.outputs.version }}
+          run_install: false
+
       - name: Use Node from .nvmrc
         uses: actions/setup-node@v6
         with:
@@ -205,10 +232,78 @@ jobs:
             pnpm-lock.yaml
             **/pnpm-lock.yaml
 
-      - name: Enable pnpm via Corepack
+      - name: Start and validate local OpenAI-compatible endpoint
+        if: ${{ inputs.validate_local_endpoint }}
+        shell: bash
         run: |
-          corepack enable
-          corepack prepare $(node -p "require('./package.json').packageManager") --activate
+          set -euo pipefail
+
+          OLLAMA_NATIVE_URL='http://127.0.0.1:11434'
+          OPENAI_BASE_URL="${OLLAMA_NATIVE_URL}/v1"
+          OPENAI_API_KEY='ollama'
+
+          if [ -n "${NO_PROXY:-}" ]; then
+            NO_PROXY="${NO_PROXY},127.0.0.1,localhost"
+          else
+            NO_PROXY='127.0.0.1,localhost'
+          fi
+
+          if [ -n "${no_proxy:-}" ]; then
+            no_proxy="${no_proxy},127.0.0.1,localhost"
+          else
+            no_proxy='127.0.0.1,localhost'
+          fi
+
+          echo "OPENAI_BASE_URL=${OPENAI_BASE_URL}" >> "$GITHUB_ENV"
+          echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "$GITHUB_ENV"
+          echo "NO_PROXY=${NO_PROXY}" >> "$GITHUB_ENV"
+          echo "no_proxy=${no_proxy}" >> "$GITHUB_ENV"
+
+          curl_local() {
+            curl --noproxy '*' -fsS "$@"
+          }
+
+          if ! command -v ollama >/dev/null 2>&1; then
+            curl -fsSL https://ollama.com/install.sh | sh
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+
+          if ! curl_local "${OLLAMA_NATIVE_URL}/api/version" >/dev/null 2>&1; then
+            ollama serve > ollama.log 2>&1 &
+          fi
+
+          for attempt in {1..60}; do
+            if curl_local "${OLLAMA_NATIVE_URL}/api/version" >/dev/null 2>&1; then
+              break
+            fi
+
+            if [ "${attempt}" -eq 60 ]; then
+              echo "❌ Ollama native API did not become ready at ${OLLAMA_NATIVE_URL}."
+              cat ollama.log || true
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          models_response=''
+          for attempt in {1..30}; do
+            if models_response="$(curl_local "${OPENAI_BASE_URL%/}/models" 2>/dev/null)" \
+              && jq -e 'type == "object"' >/dev/null <<<"${models_response}"; then
+              exit 0
+            fi
+
+            if [ "${attempt}" -eq 30 ]; then
+              echo "❌ OpenAI-compatible /models endpoint did not return a valid JSON object at ${OPENAI_BASE_URL}."
+              if [ -n "${models_response}" ]; then
+                printf 'Last /models response:\n%s\n' "${models_response}"
+              fi
+              cat ollama.log || true
+              exit 1
+            fi
+
+            sleep 2
+          done
 
       - name: Install dependencies and build (root/workspaces)
         run: |
@@ -238,17 +333,50 @@ jobs:
 
       - name: Install agent CLI (from child)
         if: ${{ inputs.agent_package != '' }}
+        env:
+          AGENT_CLI: ${{ inputs.agent }}
+          AGENT_PACKAGE: ${{ inputs.agent_package }}
         run: |
-          echo "Checking for CLI: ${{ inputs.agent }} (from pnpm package: ${{ inputs.agent_package }})"
-          if ! command -v ${{ inputs.agent }} >/dev/null 2>&1; then
-            echo "Not found, installing ${{ inputs.agent_package }} via pnpm..."
-            pnpm add -g ${{ inputs.agent_package }}
-            echo "Installed ${{ inputs.agent_package }}. CLI location: $(command -v ${{ inputs.agent }})"
+          echo "Checking for CLI: ${AGENT_CLI} (from pnpm package: ${AGENT_PACKAGE})"
+          if ! command -v "${AGENT_CLI}" >/dev/null 2>&1; then
+            echo "Not found, installing ${AGENT_PACKAGE} via pnpm..."
+            pnpm add -g "${AGENT_PACKAGE}"
+            echo "Installed ${AGENT_PACKAGE}. CLI location: $(command -v "${AGENT_CLI}")"
           else
-            echo "${{ inputs.agent }} CLI already installed at: $(command -v ${{ inputs.agent }})"
+            echo "${AGENT_CLI} CLI already installed at: $(command -v "${AGENT_CLI}")"
           fi
 
-      - name: Run agent custom command
+      - name: Run agent setup command
+        if: ${{ inputs.agent_setup_command != '' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          API_KEY: ${{ secrets.api_key || '' }}
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}"
+          echo "Running one-time agent setup command"
+          echo "[agent] Setup working directory: $(pwd)"
+          echo "[agent] Setup git root: $(git rev-parse --show-toplevel)"
+
+          setup_script="$RUNNER_TEMP/agent_setup_cmd.sh"
+          # Write the command exactly as-is (no interpolation)
+          cat >"$setup_script" <<'SCRIPT'
+          ${{ inputs.agent_setup_command }}
+          SCRIPT
+
+          sed -i 's/\r$//' "$setup_script"
+          chmod 700 "$setup_script"
+
+          echo "---- agent_setup_cmd.sh ----"
+          nl -ba "$setup_script"
+          echo "----------------------------"
+
+          stdbuf -oL -eL bash "$setup_script" 2>&1 | tee "$RUNNER_TEMP/agent-setup.log"
+
+      - name: Run agent custom command with retries
         if: ${{ inputs.agent_command != '' }}
         shell: bash
         id: run_agent
@@ -261,10 +389,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           ADDITIONAL_CONTEXT: ${{ steps.validate_pr.outputs.additional_context || '' }}
-          API_KEY: ${{ secrets.api_key }}
+          API_KEY: ${{ secrets.api_key || '' }}
+          AGENT_NAME: ${{ inputs.agent }}
+          MAX_AGENT_RETRIES: ${{ inputs.max_agent_retries }}
+          WORKING_BRANCH: ${{ env.WORKING_BRANCH }}
         run: |
           set -euo pipefail
-          echo "Running agent command"
+          cd "${GITHUB_WORKSPACE}"
+          echo "Running agent command with retry support"
+          echo "[agent] Workflow working directory: $(pwd)"
+          echo "[agent] Workflow git root: $(git rev-parse --show-toplevel)"
+          echo "[agent] Workflow branch: $(git branch --show-current)"
 
           script="$RUNNER_TEMP/agent_cmd.sh"
           # Write the command exactly as-is (no interpolation)
@@ -282,86 +417,313 @@ jobs:
           nl -ba "$script"
           echo "----------------------"
 
-          bash "$script"
+          retry_prompt_file="$RUNNER_TEMP/agent_retry_prompt.txt"
+          cat > "$retry_prompt_file" <<'RETRY_PROMPT'
+          The previous attempt was invalid because it completed without producing any pushable repository changes.
 
-      - name: Auto-commit and push agent changes if needed
-        if: ${{ steps.run_agent.outcome == 'success' }}
-        shell: bash
-        env:
-          PR_NUMBER: ${{ inputs.pr_number }}
-          AGENT_NAME: ${{ inputs.agent }}
-          WORKING_BRANCH: ${{ env.WORKING_BRANCH }}
-        run: |
-          set -euo pipefail
+          Requirements for this retry:
+          - Work in the checked-out repository, not uploaded chat snippets.
+          - Run the requested inspection or validation command before selecting files.
+          - Do not claim there are no issues unless that claim is grounded in command output from this repository.
+          - If this is a lint/ESLint task, run `pnpm run lint` before code selection, quote the exact lint summary line, choose one real warning from the output, edit only the reported source file needed for that warning, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
+          - Leave a concrete diff in the worktree or push changes yourself.
+          - If no concrete diff is produced, this retry will fail.
+          RETRY_PROMPT
+
+          if ! [[ "${MAX_AGENT_RETRIES}" =~ ^[0-9]+$ ]]; then
+            echo "::error::max_agent_retries must be a non-negative integer; got '${MAX_AGENT_RETRIES}'."
+            exit 1
+          fi
+
+          total_attempts=$((MAX_AGENT_RETRIES + 1))
+          original_additional_context="${ADDITIONAL_CONTEXT:-}"
 
           SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_push_succeeded"
+          NO_CHANGE_SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_no_change_retries_exhausted"
+          RETRY_COMMENT_SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_retry_comment_posted"
+          rm -f "$NO_CHANGE_SENTINEL"
+          rm -f "$RETRY_COMMENT_SENTINEL"
 
-          # If the shim already saw a successful git push, don't do anything.
-          if [ -f "$SENTINEL" ]; then
-            echo "[agent] Push sentinel already present; skipping auto-commit/push."
-            exit 0
-          fi
+          redact_git_remote_credentials() {
+            sed -E 's#(https://)[^/@]+@#\1***@#g'
+          }
 
-          git fetch origin "${WORKING_BRANCH}" || true
+          is_stageable_untracked_path() {
+            local candidate="$1"
 
-          has_worktree_changes=false
-          if ! git diff --quiet || ! git diff --cached --quiet; then
-            has_worktree_changes=true
-          fi
+            if [ -z "${candidate}" ]; then
+              return 1
+            fi
 
-          if [ "${has_worktree_changes}" = true ]; then
-            echo "[agent] Changes detected; committing before push."
-            git status
-            git add -A
+            if [[ "${candidate}" =~ [[:cntrl:]] ]]; then
+              return 1
+            fi
 
-            commit_message="chore: apply @${AGENT_NAME} changes for PR #${PR_NUMBER}"
-            if git commit -m "$commit_message"; then
-              echo "[agent] Created commit: ${commit_message}"
+            if [[ "${candidate}" =~ [\<\>\{\}\`\$\|] ]]; then
+              return 1
+            fi
+
+            case "${candidate}" in
+              /*|../*|*/../*|*/..|..)
+                return 1
+                ;;
+            esac
+
+            return 0
+          }
+
+          cleanup_malformed_untracked_paths() {
+            local removed_any=0
+
+            while IFS= read -r path; do
+              [ -n "${path}" ] || continue
+
+              if is_stageable_untracked_path "${path}"; then
+                continue
+              fi
+
+              echo "[agent] Removing malformed untracked path left by agent output: ${path}"
+              rm -rf -- "${path}"
+              removed_any=1
+            done < <(git ls-files --others --exclude-standard)
+
+            if [ "${removed_any}" -eq 1 ]; then
+              echo "[agent] Removed malformed untracked paths before staging."
+            fi
+          }
+
+          stage_pushable_changes() {
+            git add -u
+
+            while IFS= read -r path; do
+              [ -n "${path}" ] || continue
+
+              if is_stageable_untracked_path "${path}"; then
+                git add -- "${path}"
+              else
+                echo "[agent] Skipping malformed untracked path during staging: ${path}"
+              fi
+            done < <(git ls-files --others --exclude-standard)
+          }
+
+          reset_branch_to_retry_baseline() {
+            local target_ref="${WORKING_BRANCH}"
+
+            cd "${GITHUB_WORKSPACE}"
+            echo "[agent] Resetting retry worktree to origin/${target_ref}."
+
+            git fetch origin "${target_ref}" || true
+
+            if git rev-parse --verify --quiet "origin/${target_ref}" >/dev/null; then
+              git reset --hard "origin/${target_ref}"
             else
-              echo "[agent] git commit failed; aborting auto-push."
+              git reset --hard HEAD
+            fi
+
+            git submodule update --init --recursive
+            cleanup_malformed_untracked_paths
+          }
+
+          build_attempt_context() {
+            local attempt="$1"
+
+            if [ "${attempt}" -eq 1 ]; then
+              printf '%s' "${original_additional_context}"
+            else
+              printf '%s\n\n%s\n' "${original_additional_context}" "$(cat "$retry_prompt_file")"
+            fi
+          }
+
+          run_agent_attempt() {
+            local attempt="$1"
+            local attempt_log="$RUNNER_TEMP/agent-live-attempt-${attempt}.log"
+
+            cd "${GITHUB_WORKSPACE}"
+            export ADDITIONAL_CONTEXT
+            ADDITIONAL_CONTEXT="$(build_attempt_context "${attempt}")"
+
+            echo "[agent] Starting agent attempt ${attempt}/${total_attempts}."
+            echo "[agent] Attempt working directory before agent command: $(pwd)"
+            echo "[agent] Attempt git root before agent command: $(git rev-parse --show-toplevel)"
+            echo "[agent] Attempt git remotes before agent command:"
+            git remote -v | redact_git_remote_credentials
+            echo "[agent] Attempt git branch before agent command: $(git branch --show-current)"
+            set -x
+            set +e
+            stdbuf -oL -eL bash "$script" 2>&1 | tee "${attempt_log}"
+            agent_status="${PIPESTATUS[0]}"
+            set -e
+            set +x
+
+            cp "${attempt_log}" "$RUNNER_TEMP/agent-live.log"
+            return "${agent_status}"
+          }
+
+          push_current_branch_if_needed() {
+            cd "${GITHUB_WORKSPACE}"
+            echo "[agent] Checking repository changes in: $(pwd)"
+            echo "[agent] Change-check git root: $(git rev-parse --show-toplevel)"
+
+            # If the shim already saw a successful git push, don't do anything.
+            if [ -f "$SENTINEL" ]; then
+              echo "[agent] Push sentinel already present; attempt produced a branch push."
+              return 0
+            fi
+
+            git fetch origin "${WORKING_BRANCH}" || true
+
+            echo "[agent] Worktree after agent attempt:"
+            worktree_status="$(git status --porcelain=v1 --untracked-files=normal)"
+            if [ -n "${worktree_status}" ]; then
+              printf '%s\n' "${worktree_status}"
+            else
+              echo "[agent] Worktree clean."
+            fi
+
+            if [ -n "${worktree_status}" ]; then
+              echo "[agent] Changes detected; committing before push."
+              echo "[agent] Worktree status before staging:"
+              git status --short
+              cleanup_malformed_untracked_paths
+              stage_pushable_changes
+              echo "[agent] Staged changes before commit:"
+              git diff --cached --stat
+              echo "[agent] Worktree status after staging:"
+              git status --short
+
+              if git diff --cached --quiet; then
+                echo "[agent] Only malformed untracked files were present; nothing pushable remains."
+                return 1
+              fi
+
+              commit_message="chore: apply @${AGENT_NAME} changes for PR #${PR_NUMBER}"
+              if git commit -m "$commit_message"; then
+                echo "[agent] Created commit: ${commit_message}"
+              else
+                echo "[agent] git commit failed; aborting auto-push."
+                echo "[agent] Staged diff after failed commit:"
+                git diff --cached --stat || true
+                echo "[agent] Worktree status after failed commit:"
+                git status --short || true
+                return 2
+              fi
+            fi
+
+            remote_ref="origin/${WORKING_BRANCH}"
+            has_remote_ref=false
+            if git show-ref --verify --quiet "refs/remotes/${remote_ref}"; then
+              has_remote_ref=true
+            fi
+
+            local_head="$(git rev-parse HEAD)"
+            remote_head=''
+            if [ "${has_remote_ref}" = true ]; then
+              remote_head="$(git rev-parse "${remote_ref}")"
+            fi
+
+            should_push=false
+            if [ "${has_remote_ref}" = false ]; then
+              should_push=true
+              echo "[agent] Remote ref ${remote_ref} not found; will push branch."
+            elif git merge-base --is-ancestor "${remote_ref}" HEAD; then
+              if [ "${remote_head}" != "${local_head}" ]; then
+                if ! git diff --quiet "${remote_ref}" HEAD; then
+                  should_push=true
+                  echo "[agent] Local branch has file changes ahead of ${remote_ref}; will push."
+                else
+                  echo "[agent] Local branch has commits ahead of ${remote_ref}, but the net file diff is empty."
+                fi
+              fi
+            elif git merge-base --is-ancestor HEAD "${remote_ref}"; then
+              echo "❌ Remote ref ${remote_ref} moved ahead of local HEAD; refusing to push stale changes."
+              return 2
+            else
+              echo "❌ Local branch diverged from ${remote_ref}; refusing to push without reconciling remote commits."
+              return 2
+            fi
+
+            if [ "${should_push}" = false ]; then
+              echo "❌ Agent completed without producing pushable local changes."
+              return 1
+            fi
+
+            echo "[agent] Pushing branch ${WORKING_BRANCH}..."
+
+            # Because of the git shim, a successful push returns 99, not 0.
+            if git push origin "${WORKING_BRANCH}"; then
+              echo "[agent] git push completed with exit 0 (no shim?)."
+            else
+              code=$?
+              if [ "$code" -eq 99 ]; then
+                echo "[agent] git push succeeded via shim (exit 99)."
+              else
+                echo "[agent] git push failed with code $code"
+                return 2
+              fi
+            fi
+
+            return 0
+          }
+
+          post_retry_comment_once() {
+            local failed_attempt="$1"
+            local next_attempt="$2"
+
+            if [ -f "$RETRY_COMMENT_SENTINEL" ]; then
+              echo "[agent] Retry comment already posted; skipping duplicate PR comment."
+              return 0
+            fi
+
+            retry_message="$(
+              cat <<MESSAGE
+          **[🤖 ${AGENT_NAME}]** The local agent did not produce pushable repository changes on attempt ${failed_attempt}/${total_attempts}, so I am starting retry attempt ${next_attempt}/${total_attempts} with stricter command-grounded instructions.
+          MESSAGE
+            )"
+
+            if gh issue comment "${PR_NUMBER}" --body "${retry_message}" --repo "${REPOSITORY}"; then
+              date +"%F %T" > "$RETRY_COMMENT_SENTINEL"
+            else
+              echo "::warning::Could not post local-agent retry comment."
+            fi
+          }
+
+          for ((attempt = 1; attempt <= total_attempts; attempt++)); do
+            set +e
+            run_agent_attempt "${attempt}"
+            agent_status="$?"
+            set -e
+
+            set +e
+            push_current_branch_if_needed
+            push_status="$?"
+            set -e
+
+            if [ "${push_status}" -eq 0 ]; then
+              echo "[agent] Attempt ${attempt}/${total_attempts} produced pushable changes."
+              exit 0
+            fi
+
+            if [ "${push_status}" -eq 2 ]; then
+              echo "::error::Attempt ${attempt}/${total_attempts} hit a non-retryable push or branch state failure."
               exit 1
             fi
-          fi
 
-          remote_ref="origin/${WORKING_BRANCH}"
-          has_remote_ref=false
-          if git show-ref --verify --quiet "refs/remotes/${remote_ref}"; then
-            has_remote_ref=true
-          fi
-
-          should_push=false
-          if [ "${has_remote_ref}" = false ]; then
-            should_push=true
-            echo "[agent] Remote ref ${remote_ref} not found; will push branch."
-          elif ! git merge-base --is-ancestor "${remote_ref}" HEAD; then
-            should_push=true
-            echo "[agent] Local branch diverged from ${remote_ref}; will push current HEAD."
-          elif [ "${has_worktree_changes}" = true ]; then
-            should_push=true
-            echo "[agent] New commit created; will push."
-          fi
-
-          if [ "${should_push}" = false ]; then
-            echo "[agent] No local commits ahead of ${remote_ref}; nothing to push."
-            exit 0
-          fi
-
-          echo "[agent] Pushing branch ${WORKING_BRANCH}..."
-
-          # Because of the git shim, a successful push returns 99, not 0.
-          if git push origin "${WORKING_BRANCH}"; then
-            echo "[agent] git push completed with exit 0 (no shim?)."
-          else
-            code=$?
-            if [ "$code" -eq 99 ]; then
-              echo "[agent] git push succeeded via shim (exit 99)."
+            if [ "${attempt}" -lt "${total_attempts}" ]; then
+              post_retry_comment_once "${attempt}" "$((attempt + 1))"
+              echo "[agent] Attempt ${attempt}/${total_attempts} produced no pushable changes; starting a fresh retry session."
+              reset_branch_to_retry_baseline
             else
-              echo "[agent] git push failed with code $code"
-              exit $code
+              echo "❌ Agent exhausted ${total_attempts} attempt(s) without producing pushable local changes."
+              date +"%F %T" > "$NO_CHANGE_SENTINEL"
+              if [ "${agent_status}" -ne 0 ]; then
+                echo "Last agent command exit code: ${agent_status}"
+              fi
+              exit 1
             fi
-          fi
+          done
 
       - name: Report outcome
+        id: report_outcome
         if: always()
         env:
           RUN_AGENT_OUTCOME: ${{ steps.run_agent.outcome || '' }}
@@ -375,10 +737,117 @@ jobs:
         run: |
           set -euo pipefail
           SENTINEL="${RUNNER_TEMP}/.agent_push_succeeded"
-          if [ -f "$SENTINEL" ]; then
-            echo "Push detected → SUCCESS."
+          NO_CHANGE_SENTINEL="${RUNNER_TEMP}/.agent_no_change_retries_exhausted"
+
+          write_report_outputs() {
+            {
+              echo "agent_failed=$1"
+              echo "cleanup_empty_pr=$2"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          if [ "${{ steps.run_agent.outcome }}" = "failure" ] || [ "${{ steps.run_agent.conclusion }}" = "failure" ]; then
+            echo "Run agent step failed → FAIL."
+            if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then
+              if [ -f "$NO_CHANGE_SENTINEL" ]; then
+                write_report_outputs true true
+              else
+                write_report_outputs true false
+              fi
+            else
+              echo "::warning::Could not post failure comment; skipping empty-agent cleanup."
+              write_report_outputs true false
+            fi
             exit 0
           fi
-          echo "No push sentinel found → FAIL."
-          gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}" || true
+
+          if [ -f "$SENTINEL" ]; then
+            echo "Push detected → SUCCESS."
+            write_report_outputs false false
+            exit 0
+          fi
+
+          echo "Agent command succeeded with no branch push → FAIL."
+          if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then
+            if [ -f "$NO_CHANGE_SENTINEL" ]; then
+              write_report_outputs true true
+            else
+              write_report_outputs true false
+            fi
+          else
+            echo "::warning::Could not post failure comment; skipping empty-agent cleanup."
+            write_report_outputs true false
+          fi
+
+      - name: Close empty failed agent PR
+        if: always() && steps.report_outcome.outputs.cleanup_empty_pr == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          pr_json="$(
+            gh api "repos/${REPOSITORY}/pulls/${ISSUE_NUMBER}" \
+              --jq '{
+                changedFiles: .changed_files,
+                headRefName: .head.ref,
+                headRepository: .head.repo.full_name,
+                baseRefName: .base.ref,
+                state: .state
+              }'
+          )"
+
+          changed_files="$(jq -r '.changedFiles // -1' <<<"${pr_json}")"
+          head_ref="$(jq -r '.headRefName // ""' <<<"${pr_json}")"
+          head_repo="$(jq -r '.headRepository // ""' <<<"${pr_json}")"
+          base_ref="$(jq -r '.baseRefName // ""' <<<"${pr_json}")"
+          pr_state="$(jq -r '.state // ""' <<<"${pr_json}")"
+
+          if [ "${pr_state}" != "open" ]; then
+            echo "[agent] PR state is '${pr_state}'; leaving PR and branch unchanged."
+            exit 0
+          fi
+
+          if [ "${changed_files}" != "0" ]; then
+            echo "[agent] PR has ${changed_files} changed file(s); leaving PR and branch open."
+            exit 0
+          fi
+
+          case "${head_ref}" in
+            codex/task-*|copilot/task-*|gemini/task-*|qwen/task-*|qwen-local/task-*|aider/task-*)
+              ;;
+            *)
+              echo "[agent] Branch '${head_ref}' is not an expected empty agent branch; leaving PR and branch open."
+              exit 0
+              ;;
+          esac
+
+          case "${head_ref}" in
+            ""|main|master|develop|development|trunk|production|release|feature/*|bugfix/*|hotfix/*)
+              echo "[agent] Branch '${head_ref}' is protected or human-owned; leaving PR and branch open."
+              exit 0
+              ;;
+          esac
+
+          if [ "${head_ref}" = "${base_ref}" ]; then
+            echo "[agent] Head branch matches base branch '${base_ref}'; leaving PR and branch open."
+            exit 0
+          fi
+
+          if [ "${head_repo}" != "${REPOSITORY}" ]; then
+            echo "[agent] Head repository '${head_repo}' is not '${REPOSITORY}'; leaving PR and branch open."
+            exit 0
+          fi
+
+          echo "[agent] Closing empty agent PR #${ISSUE_NUMBER} and deleting branch '${head_ref}'."
+          gh pr close "${ISSUE_NUMBER}" --repo "${REPOSITORY}"
+          gh api -X DELETE "repos/${REPOSITORY}/git/refs/heads/${head_ref}"
+
+      - name: Fail workflow after unsuccessful agent run
+        if: always() && steps.report_outcome.outputs.agent_failed == 'true'
+        run: |
+          echo "Agent workflow did not produce a successful branch push."
           exit 1

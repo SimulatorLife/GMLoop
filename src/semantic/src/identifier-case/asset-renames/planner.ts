@@ -109,6 +109,26 @@ type IdentifierCaseLogger = {
 
 type IdentifierCaseStyleValue = (typeof IdentifierCaseStyle)[keyof typeof IdentifierCaseStyle];
 
+const RENAMABLE_ASSET_DIRECTORIES = Object.freeze(
+    new Set([
+        "objects",
+        "sprites",
+        "sounds",
+        "rooms",
+        "paths",
+        "curves",
+        "sequences",
+        "scripts",
+        "shaders",
+        "fonts",
+        "timelines",
+        "tilesets",
+        "particlesystems",
+        "notes",
+        "extensions"
+    ])
+);
+
 type PlanAssetRenamesOptions = {
     projectIndex?: ProjectIndexWithAssets | null;
     assetStyle?: IdentifierCaseStyleValue | null;
@@ -249,7 +269,7 @@ function collectDirectoryEntries({
     const directories = new Map<string, Array<AssetDirectoryEntry>>();
 
     for (const [resourcePath, resourceRecord] of Object.entries(resources)) {
-        if (!resourceRecord || resourceRecord.resourceType !== "GMScript" || typeof resourceRecord.name !== "string") {
+        if (!resourceRecord || !isRenamableAssetResourcePath(resourcePath) || typeof resourceRecord.name !== "string") {
             continue;
         }
 
@@ -456,6 +476,33 @@ function collectGmlRenames(resourceRecord, originalName, convertedName) {
     return gmlRenames;
 }
 
+function isRenamableAssetResourcePath(resourcePath: string): boolean {
+    const normalizedPath = Core.getNonEmptyString(resourcePath);
+    if (!normalizedPath) {
+        return false;
+    }
+
+    const [topLevelDirectory] = Core.trimStringEntries(normalizedPath.split("/"));
+    return topLevelDirectory ? RENAMABLE_ASSET_DIRECTORIES.has(topLevelDirectory) : false;
+}
+
+function computeRenamedAssetResourcePath(
+    resourcePath: string,
+    resourceType: string | undefined,
+    originalName: string,
+    convertedName: string
+): string {
+    const currentDirectory = path.posix.dirname(resourcePath);
+    const currentDirectoryName = path.posix.basename(currentDirectory);
+
+    if (resourceType === "GMScript" || currentDirectoryName !== originalName) {
+        return path.posix.join(currentDirectory, `${convertedName}.yy`);
+    }
+
+    const parentDirectory = path.posix.dirname(currentDirectory);
+    return path.posix.join(parentDirectory, convertedName, `${convertedName}.yy`);
+}
+
 function planRenamesForResources({
     resources,
     assetStyle,
@@ -531,7 +578,7 @@ function planRenameForResource({
 
     metrics?.counters?.increment("assets.resourcesScanned");
 
-    if (resourceRecord.resourceType !== "GMScript") {
+    if (!isRenamableAssetResourcePath(resourcePath)) {
         return;
     }
 
@@ -599,7 +646,12 @@ function planRenameForResource({
     const inboundReferences = referencesByTargetPath.get(resourcePath) ?? [];
     const referenceMutations = collectReferenceMutations(inboundReferences, originalName);
 
-    const newResourcePath = path.posix.join(directory, `${convertedName}.yy`);
+    const newResourcePath = computeRenamedAssetResourcePath(
+        resourcePath,
+        resourceRecord.resourceType,
+        originalName,
+        convertedName
+    );
     const gmlRenames = collectGmlRenames(resourceRecord, originalName, convertedName);
 
     renames.push({

@@ -1,0 +1,48 @@
+name: "Agent 105 - Semantic Graph Fidelity"
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "Optional agent override."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  run:
+    uses: ./.github/workflows/_agent-open-pr-and-ping.yml
+    secrets: inherit
+    with:
+      agent: ${{ inputs.agent }}
+      pr_title: "Agent: Semantic Graph Fidelity"
+      prompt: >-
+        Audit the semantic graph and graph-viewer pipeline for one concrete gap in project representation fidelity.
+        Focus on both semantic graph correctness and graph viewer UX/readability: the graph should accurately represent
+        the project's real nodes, asset/resource kinds, variables, symbols, and relationships, and the viewer should
+        expose that truth clearly rather than hiding, collapsing, misclassifying, or rendering it ambiguously.
+
+        Choose exactly one cohesive gap such as:
+        - a valid project node kind, asset type, symbol kind, or variable category that is missing from graph export or viewer filters/legends;
+        - an edge/relationship that should exist but is absent, misdirected, under-classified, or hard to understand in the current viewer;
+        - graph labels, summaries, or metadata that prevent correctly indexed nodes/edges from being understandable in the visualization;
+        - a projection/export issue where semantic graph data is present internally but not faithfully surfaced to the viewer;
+        - a semantic indexing omission that leaves a real project connection, ownership boundary, or dependency unrepresented.
+
+        Requirements:
+        - Keep the work target-state oriented: improve the graph toward full project coverage and faithful relationship modeling for all project data,
+          not just a one-off cosmetic tweak.
+        - Do not hard-code special handling for one fixture/project when the underlying graph model, export, or viewer surface should own the fix.
+        - Prefer fixes that generalize to whole categories of nodes/edges/assets over patches for one literal example.
+        - Preserve workspace ownership boundaries: semantic owns graph/index/query truth, CLI owns graph visualization/export surfaces, and tests must
+          prove the corrected behavior.
+        - Add or extend focused tests that lock in the newly represented or clarified node/edge/category and verify it is exported and/or visualized
+          with the correct identity, connection semantics, and readable presentation.
+        - Keep scope narrow: one graph-fidelity improvement, one cohesive PR, no unrelated UI cleanup.
+
+        In the PR summary, identify the missing or incorrect graph representation, explain why it was a fidelity gap relative to the target state,
+        and describe the tests that now prove the affected project nodes, connections, and viewer presentation are represented correctly.

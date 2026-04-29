@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { delayFileReadRetry, runWatchCommand } from "../src/commands/watch.js";
-import { DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS } from "../src/commands/watch-constants.js";
+import { runWatchCommand } from "../src/commands/watch.js";
+import { DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS } from "../src/commands/watch/constants.js";
+import { delayFileReadRetry } from "../src/commands/watch/source-analysis.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 import { createMockWatchFactory } from "./test-helpers/watch-fixtures.js";
 

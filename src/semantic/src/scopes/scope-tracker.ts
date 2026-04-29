@@ -1,6 +1,6 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
-import { ROLE_DEF, ROLE_REF } from "../symbols/scip-types.js";
+import { ROLE_DEF, ROLE_REF } from "../symbols/scip.js";
 import { IdentifierCacheManager } from "./identifier-cache-manager.js";
 import { cloneDeclarationMetadata, cloneOccurrence, createOccurrence } from "./occurrence.js";
 import { GlobalIdentifierRegistry } from "./registry.js";
@@ -11,6 +11,14 @@ import {
     isScopeOverrideKeyword,
     ScopeOverrideKeyword
 } from "./scope-override-keywords.js";
+import {
+    collectFilePathsForSymbolSummaries,
+    collectUniqueSymbolNames,
+    getTrackedSymbolSummaries,
+    normalizeTrackedPath as normalizeScopeTrackerPath,
+    recomputePathLastModified,
+    updatePathLastModifiedForScope
+} from "./scope-tracker-index-helpers.js";
 import type {
     AllSymbolsSummaryItem,
     ExternalReference,
@@ -82,110 +90,6 @@ export class ScopeTracker {
     private lookupCacheDepth: number;
     private lookupCacheMaxEntries: number;
 
-    private collectUniqueSymbolNames(names: Iterable<string>): string[] {
-        const uniqueNames = new Set<string>();
-
-        for (const name of names) {
-            if (!name) {
-                continue;
-            }
-
-            uniqueNames.add(name);
-        }
-
-        return [...uniqueNames];
-    }
-
-    private normalizeTrackedPath(path: string): string {
-        // Most tracked paths are already POSIX-style, so avoid the replaceAll()
-        // scan and string allocation on that common case.
-        return path.includes("\\") ? path.replaceAll("\\", "/") : path;
-    }
-
-    private collectFilePathsForSymbolSummaries(
-        scopeSummaryMap: Map<string, ScopeSummary>,
-        occurrenceKind: "declaration" | "reference"
-    ): Set<string> {
-        const paths = new Set<string>();
-
-        for (const [scopeId, summary] of scopeSummaryMap) {
-            if (occurrenceKind === "declaration" && !summary.hasDeclaration) {
-                continue;
-            }
-
-            if (occurrenceKind === "reference" && !summary.hasReference) {
-                continue;
-            }
-
-            const scope = this.scopesById.get(scopeId);
-            const path = scope?.metadata.path;
-            if (path) {
-                paths.add(this.normalizeTrackedPath(path));
-            }
-        }
-
-        return paths;
-    }
-
-    private updatePathLastModifiedForScope(scope: Scope): void {
-        const path = scope.metadata.path;
-        if (!path) {
-            return;
-        }
-
-        const timestamp = scope.lastModifiedTimestamp;
-        if (timestamp < 0) {
-            return;
-        }
-
-        const trackedPath = this.normalizeTrackedPath(path);
-        const previousTimestamp = this.pathLastModifiedIndex.get(trackedPath);
-        if (previousTimestamp === undefined || timestamp > previousTimestamp) {
-            this.pathLastModifiedIndex.set(trackedPath, timestamp);
-        }
-    }
-
-    private recomputePathLastModified(path: string): void {
-        const trackedPath = this.normalizeTrackedPath(path);
-        const scopeIds = this.pathToScopesIndex.get(trackedPath);
-        if (!scopeIds || scopeIds.size === 0) {
-            this.pathLastModifiedIndex.delete(trackedPath);
-            return;
-        }
-
-        let latestTimestamp = -1;
-        for (const scopeId of scopeIds) {
-            const scope = this.scopesById.get(scopeId);
-            if (!scope) {
-                continue;
-            }
-
-            if (scope.lastModifiedTimestamp > latestTimestamp) {
-                latestTimestamp = scope.lastModifiedTimestamp;
-            }
-        }
-
-        if (latestTimestamp < 0) {
-            this.pathLastModifiedIndex.delete(trackedPath);
-            return;
-        }
-
-        this.pathLastModifiedIndex.set(trackedPath, latestTimestamp);
-    }
-
-    private getTrackedSymbolSummaries(name: string | null | undefined): Map<string, ScopeSummary> | null {
-        if (!name) {
-            return null;
-        }
-
-        const scopeSummaryMap = this.symbolToScopesIndex.get(name);
-        if (!scopeSummaryMap || scopeSummaryMap.size === 0) {
-            return null;
-        }
-
-        return scopeSummaryMap;
-    }
-
     private collectSymbolOccurrencesForName(
         name: string | null | undefined,
         {
@@ -200,7 +104,7 @@ export class ScopeTracker {
             referenceFilter: (occurrence: Occurrence) => boolean;
         }
     ): SymbolOccurrence[] {
-        const scopeSummaryMap = this.getTrackedSymbolSummaries(name);
+        const scopeSummaryMap = getTrackedSymbolSummaries(name, this.symbolToScopesIndex);
         if (!scopeSummaryMap) {
             return [];
         }
@@ -319,6 +223,10 @@ export class ScopeTracker {
 
             this.lookupCache.delete(oldestName);
         }
+    }
+
+    private normalizeTrackedPath(path: string): string {
+        return normalizeScopeTrackerPath(path);
     }
 
     /**
@@ -545,7 +453,7 @@ export class ScopeTracker {
         }
 
         scope.markModified();
-        this.updatePathLastModifiedForScope(scope);
+        updatePathLastModifiedForScope(scope, this.pathLastModifiedIndex);
 
         let scopeSummaryMap = this.symbolToScopesIndex.get(name);
         if (!scopeSummaryMap) {
@@ -817,7 +725,7 @@ export class ScopeTracker {
 
     public getBatchSymbolOccurrences(names: Iterable<string>): Map<string, SymbolOccurrence[]> {
         const results = new Map<string, SymbolOccurrence[]>();
-        const uniqueNames = this.collectUniqueSymbolNames(names);
+        const uniqueNames = collectUniqueSymbolNames(names);
 
         // Optimize by processing all symbols in one pass rather than calling getSymbolOccurrences repeatedly
         for (const name of uniqueNames) {
@@ -870,7 +778,7 @@ export class ScopeTracker {
      */
     public getBatchSymbolOccurrencesUnsafe(names: Iterable<string>): Map<string, SymbolOccurrence[]> {
         const results = new Map<string, SymbolOccurrence[]>();
-        const uniqueNames = this.collectUniqueSymbolNames(names);
+        const uniqueNames = collectUniqueSymbolNames(names);
 
         for (const name of uniqueNames) {
             const nameResults = this.collectSymbolOccurrencesForName(name, {
@@ -1726,7 +1634,9 @@ export class ScopeTracker {
             return new Set();
         }
 
-        return this.collectFilePathsForSymbolSummaries(scopeSummaryMap, "reference");
+        return collectFilePathsForSymbolSummaries(scopeSummaryMap, "reference", this.scopesById, {
+            normalizePath: (path) => this.normalizeTrackedPath(path)
+        });
     }
 
     /**
@@ -1747,14 +1657,18 @@ export class ScopeTracker {
             return results;
         }
 
-        const uniqueNames = this.collectUniqueSymbolNames(names);
+        const normalizedPathCache = new Map<string, string>();
+        const uniqueNames = collectUniqueSymbolNames(names);
         for (const name of uniqueNames) {
             const scopeSummaryMap = this.symbolToScopesIndex.get(name);
             if (!scopeSummaryMap || scopeSummaryMap.size === 0) {
                 continue;
             }
 
-            const paths = this.collectFilePathsForSymbolSummaries(scopeSummaryMap, "reference");
+            const paths = collectFilePathsForSymbolSummaries(scopeSummaryMap, "reference", this.scopesById, {
+                normalizedPathCache,
+                normalizePath: (path) => this.normalizeTrackedPath(path)
+            });
             if (paths.size > 0) {
                 results.set(name, paths);
             }
@@ -1789,7 +1703,9 @@ export class ScopeTracker {
             return new Set();
         }
 
-        return this.collectFilePathsForSymbolSummaries(scopeSummaryMap, "declaration");
+        return collectFilePathsForSymbolSummaries(scopeSummaryMap, "declaration", this.scopesById, {
+            normalizePath: (path) => this.normalizeTrackedPath(path)
+        });
     }
 
     /**
@@ -1809,14 +1725,18 @@ export class ScopeTracker {
             return results;
         }
 
-        const uniqueNames = this.collectUniqueSymbolNames(names);
+        const normalizedPathCache = new Map<string, string>();
+        const uniqueNames = collectUniqueSymbolNames(names);
         for (const name of uniqueNames) {
             const scopeSummaryMap = this.symbolToScopesIndex.get(name);
             if (!scopeSummaryMap || scopeSummaryMap.size === 0) {
                 continue;
             }
 
-            const paths = this.collectFilePathsForSymbolSummaries(scopeSummaryMap, "declaration");
+            const paths = collectFilePathsForSymbolSummaries(scopeSummaryMap, "declaration", this.scopesById, {
+                normalizedPathCache,
+                normalizePath: (path) => this.normalizeTrackedPath(path)
+            });
             if (paths.size > 0) {
                 results.set(name, paths);
             }
@@ -1934,11 +1854,16 @@ export class ScopeTracker {
             const nextTrackedPath = scope.metadata.path ? this.normalizeTrackedPath(scope.metadata.path) : null;
 
             if (previousTrackedPath && previousTrackedPath !== nextTrackedPath) {
-                this.recomputePathLastModified(previousTrackedPath);
+                recomputePathLastModified(
+                    previousTrackedPath,
+                    this.pathToScopesIndex,
+                    this.scopesById,
+                    this.pathLastModifiedIndex
+                );
             }
 
             if (nextTrackedPath) {
-                this.updatePathLastModifiedForScope(scope);
+                updatePathLastModifiedForScope(scope, this.pathLastModifiedIndex);
             }
         }
 
@@ -2637,7 +2562,12 @@ export class ScopeTracker {
         }
 
         for (const pathToRecompute of pathsToRecompute) {
-            this.recomputePathLastModified(pathToRecompute);
+            recomputePathLastModified(
+                pathToRecompute,
+                this.pathToScopesIndex,
+                this.scopesById,
+                this.pathLastModifiedIndex
+            );
         }
 
         // The lookup cache is keyed on identifier names resolved at a specific

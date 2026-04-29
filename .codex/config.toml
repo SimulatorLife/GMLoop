@@ -1,0 +1,27 @@
+# OpenAI Codex configuration file
+# See https://developers.openai.com/codex/config-basic
+
+model = "gpt-5.4"
+model_verbosity = "low"
+approval_policy = "never"
+model_supports_reasoning_summaries = true # Force reasoning
+personality = "pragmatic"
+sandbox_mode = "workspace-write"
+background_terminal_max_timeout = 600000
+
+[features]
+shell_snapshot = true           # Speed up repeated commands
+unified_exec = true
+steer = true
+
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[plugins."github@openai-curated"]
+enabled = true
+
+[projects."/Users/henrykirk/GMLoop"]
+trust_level = "trusted"

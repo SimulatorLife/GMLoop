@@ -1,6 +1,6 @@
 /**
  * This test suite verifies that the workspace ownership and dependency policies are correctly enforced across the monorepo workspaces.
- * The tests ensure that the format workspace remains decoupled from the semantic and refactor packages, while the refactor workspace 
+ * The tests ensure that the format workspace remains decoupled from the semantic and refactor packages, while the refactor workspace
  * owns the semantic-backed refactor behavior.
  */
 import assert from "node:assert/strict";
@@ -41,13 +41,14 @@ void describe("workspace ownership dependency policy", () => {
         assert.strictEqual(getDevDependencyVersion(formatPackage, "@gmloop/fixture-runner"), "workspace:*");
     });
 
-    void it("refactor workspace owns semantic-backed refactor behavior", () => {
+    void it("refactor workspace is decoupled from semantic via dependency injection", () => {
         const refactorPackage = readWorkspacePackage("@gmloop/refactor");
         const semanticPackage = readWorkspacePackage("@gmloop/semantic");
 
-        assert.ok(
+        assert.strictEqual(
             getDependencyVersion(refactorPackage, "@gmloop/semantic"),
-            "Refactor workspace should declare a semantic dependency."
+            null,
+            "Refactor workspace must not depend on semantic directly; it defines its own abstraction interfaces (PartialSemanticAnalyzer) and accepts implementations via dependency injection."
         );
         assert.strictEqual(
             getDependencyVersion(semanticPackage, "@gmloop/refactor"),

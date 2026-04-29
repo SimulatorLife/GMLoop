@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { defaultGmlFormatComponentImplementations } from "../src/components/default-component-instances.js";
-import { createDefaultGmlFormatComponents } from "../src/components/default-format-components.js";
+import {
+    createDefaultGmlFormatComponents,
+    defaultGmlFormatComponentImplementations
+} from "../src/components/default-format-components.js";
 
 const SAMPLE_SOURCE = "function example() { return 1; }";
 
@@ -38,4 +40,14 @@ void test("default component factory wires the dependency bundle", async () => {
     } as any);
 
     assert.deepStrictEqual(parserResult, dependencyResult, "parser results should match the canonical parser adapter");
+});
+
+void test("default component factory exposes only the canonical parser id", () => {
+    const components = createDefaultGmlFormatComponents();
+
+    assert.deepStrictEqual(
+        Object.keys(components.parsers),
+        ["gml-parse"],
+        "default parser map should avoid redundant aliases and expose only Prettier's canonical parser id"
+    );
 });

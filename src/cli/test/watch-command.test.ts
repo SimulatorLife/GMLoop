@@ -6,20 +6,18 @@ import { describe, it } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { runCliTestCommand } from "../src/cli.js";
-import {
-    countSourceLines,
-    createExtensionMatcher,
-    createWatchCommand,
-    hashSourceContent,
-    resolveDependentRetranspileConcurrency,
-    resolveUnknownScanConcurrency,
-    runWatchCommand
-} from "../src/commands/watch.js";
+import { createWatchCommand, runWatchCommand } from "../src/commands/watch.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
     DEFAULT_WATCH_POLLING_INTERVAL_MS
-} from "../src/commands/watch-constants.js";
+} from "../src/commands/watch/constants.js";
+import {
+    countSourceLines,
+    createExtensionMatcher,
+    hashSourceContent,
+    resolveUnknownScanConcurrency
+} from "../src/commands/watch/source-analysis.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 
 function createWatchCommandIntegrationOptions(abortSignal: AbortSignal): Parameters<typeof runWatchCommand>[1] {
@@ -65,6 +63,7 @@ void describe("watch command", () => {
 
         assert.ok(extensionsOption);
         assert.deepEqual(extensionsOption.defaultValue, [".gml"]);
+        assert.equal(extensionsOption.defaultValueDescription, "Defaults to .gml; custom extensions are allowed");
     });
 
     void it("should have default polling interval of 1000ms", () => {
@@ -147,12 +146,10 @@ void describe("watch command", () => {
         assert.equal(resolveUnknownScanConcurrency(8.7), 8);
     });
 
-    void it("resolveDependentRetranspileConcurrency clamps values to at least one", () => {
-        assert.equal(resolveDependentRetranspileConcurrency(12), 12);
-        assert.equal(resolveDependentRetranspileConcurrency(1), 1);
-        assert.equal(resolveDependentRetranspileConcurrency(0), 1);
-        assert.equal(resolveDependentRetranspileConcurrency(-3), 1);
-        assert.equal(resolveDependentRetranspileConcurrency(5.9), 5);
+    void it("resolveUnknownScanConcurrency preserves non-finite number behavior", () => {
+        assert.equal(resolveUnknownScanConcurrency(Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
+        assert.equal(resolveUnknownScanConcurrency(Number.NEGATIVE_INFINITY), 1);
+        assert.ok(Number.isNaN(resolveUnknownScanConcurrency(Number.NaN)));
     });
 });
 

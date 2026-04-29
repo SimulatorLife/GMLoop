@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { Core } from "@gmloop/core";
+
 import type { GraphEmbeddingsConfig } from "./types.js";
 
 export interface GraphEmbeddingProvider {
@@ -102,11 +104,13 @@ export function serializeEmbeddingVector(vector: Float32Array): Buffer {
  * Deserialize a stored SQLite blob into an embedding vector.
  */
 export function deserializeEmbeddingVector(blob: Buffer | Uint8Array | ArrayBuffer): Float32Array {
-    if (blob instanceof ArrayBuffer) {
+    if (Core.isArrayBufferLike(blob) && !Core.isArrayBufferViewLike(blob)) {
         return new Float32Array(blob.slice(0));
     }
 
-    const bytes = blob instanceof Buffer ? blob : Buffer.from(blob);
+    // At this point blob is Buffer or Uint8Array (both ArrayBufferView subtypes).
+    const view = blob as Uint8Array;
+    const bytes = Buffer.from(view.buffer, view.byteOffset, view.byteLength);
     return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
 }
 

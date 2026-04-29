@@ -1,5 +1,5 @@
 import type { ScopeTracker } from "../scopes/scope-tracker.js";
-import { sym } from "./scip-symbols.js";
+import { sym } from "./scip.js";
 
 /**
  * Type guard to check if a value is an identifier metadata object.

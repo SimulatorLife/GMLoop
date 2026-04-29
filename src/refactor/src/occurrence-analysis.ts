@@ -21,6 +21,30 @@ export interface OccurrenceClassification {
     byKind: Map<string, number>;
 }
 
+function countDefinitionsAndReferences(classification: OccurrenceClassification, kind: string): void {
+    if (kind === OccurrenceKind.DEFINITION) {
+        classification.definitions++;
+        return;
+    }
+
+    if (kind === OccurrenceKind.REFERENCE) {
+        classification.references++;
+    }
+}
+
+function classifySingleOccurrence(classification: OccurrenceClassification, occurrence: SymbolOccurrence): void {
+    const kind = occurrence.kind ?? "unknown";
+    countDefinitionsAndReferences(classification, kind);
+
+    Core.incrementMapValue(classification.byKind, kind);
+
+    if (!occurrence.path) {
+        return;
+    }
+
+    Core.incrementMapValue(classification.byFile, occurrence.path);
+}
+
 /**
  * Classify symbol occurrences into categories for analysis.
  * Useful for providing detailed breakdowns before applying renames
@@ -52,22 +76,7 @@ export function classifyOccurrences(occurrences: Array<SymbolOccurrence>): Occur
         if (occurrence == null || typeof occurrence !== "object") {
             continue;
         }
-
-        // Count definitions vs references
-        const kind = occurrence.kind ?? "unknown";
-        if (kind === OccurrenceKind.DEFINITION) {
-            classification.definitions++;
-        } else if (kind === OccurrenceKind.REFERENCE) {
-            classification.references++;
-        }
-
-        // Track occurrences by kind
-        Core.incrementMapValue(classification.byKind, kind);
-
-        // Track occurrences by file (skip occurrences without valid paths)
-        if (occurrence.path) {
-            Core.incrementMapValue(classification.byFile, occurrence.path);
-        }
+        classifySingleOccurrence(classification, occurrence);
     }
 
     return classification;

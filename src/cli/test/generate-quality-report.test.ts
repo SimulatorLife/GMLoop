@@ -870,7 +870,7 @@ void test("quality report does not count head-only performance report cases as n
 
     assert.strictEqual(exitCode, 0);
     const markdown = fs.readFileSync(reportFile, "utf8");
-    assert.match(markdown, /\| PR \(Head\) \| 2 \| 2 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
+    assert.match(markdown, /\| PR \(Head\) \| 2 \| 2 \| 0 \| 0 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
 });
 
 void test("quality report explains merged snapshot gate semantics when merge artifacts are present", () => {
@@ -1020,8 +1020,73 @@ void test("quality report can compare when base only has a synthetic build failu
 
     assert.strictEqual(exitCode, 0);
     const markdown = fs.readFileSync(reportFile, "utf8");
-    assert.match(markdown, /\| Base \| 1 \| 0 \| 1 \| 0 \| 0 \| 0 \| 0 \|/u);
+    assert.match(markdown, /\| Base \| 1 \| 0 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
     assert.match(markdown, /✅ No test regressions detected \(Base → Merged\)\./u);
+});
+
+void test("quality report separates pre-existing and new failures in target rows", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="sample">
+        <testcase name="existing failure" classname="suite" file="/repo/test/dist/example.test.js">
+          <failure message="already failing" />
+        </testcase>
+        <testcase name="stable pass" classname="suite" file="/repo/test/dist/stable.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        headDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="sample">
+        <testcase name="existing failure" classname="suite" file="/repo/test/dist/example.test.js">
+          <failure message="already failing" />
+        </testcase>
+        <testcase name="stable pass" classname="suite" file="/repo/test/dist/stable.test.js" />
+        <testcase name="new regression" classname="suite" file="/repo/test/dist/stable.test.js">
+          <failure message="regression" />
+        </testcase>
+      </testsuite>
+    </testsuites>`
+    );
+
+    writeXml(
+        mergeDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="sample">
+        <testcase name="existing failure" classname="suite" file="/repo/test/dist/example.test.js">
+          <failure message="already failing" />
+        </testcase>
+        <testcase name="stable pass" classname="suite" file="/repo/test/dist/stable.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: mergeDir,
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 0);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /\| Base \| 2 \| 1 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
+    assert.match(markdown, /\| PR \(Head\) \| 3 \| 1 \| 2 \| 1 \| 1 \| 0 \| 1 \| 0 \| 0 \|/u);
+    assert.match(markdown, /\| Merged \| 2 \| 1 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
 });
 
 void test("quality report detects a target synthetic build failure as a regression", () => {

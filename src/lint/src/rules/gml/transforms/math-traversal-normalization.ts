@@ -31,7 +31,6 @@ import {
     computeNumericTolerance,
     evaluateNumericExpression,
     evaluateOneMinusNumeric,
-    isBinaryOperator,
     isEulerLiteral,
     isHalfExponentLiteral,
     isLiteralNumber,
@@ -203,7 +202,7 @@ function traverse(node, seen, context, parent = null) {
 }
 
 function attemptSimplifyOneMinusFactor(node, context) {
-    if (!isBinaryOperator(node, "*")) {
+    if (!Core.isBinaryOperator(node, "*")) {
         return false;
     }
 
@@ -267,7 +266,7 @@ function simplifyOneMinusOperand(node, key, context) {
 }
 
 function attemptRemoveMultiplicativeIdentity(node, context) {
-    if (!isBinaryOperator(node, "*")) {
+    if (!Core.isBinaryOperator(node, "*")) {
         return false;
     }
 
@@ -282,7 +281,7 @@ function attemptRemoveMultiplicativeIdentity(node, context) {
 }
 
 function attemptReplaceMultiplicationWithZero(node, context) {
-    if (!isBinaryOperator(node, "*")) {
+    if (!Core.isBinaryOperator(node, "*")) {
         return false;
     }
 
@@ -634,7 +633,7 @@ function isIdentityReplacementSafeExpression(node) {
 }
 
 function attemptCondenseSimpleScalarProduct(node, context) {
-    if (!isBinaryOperator(node, "*")) {
+    if (!Core.isBinaryOperator(node, "*")) {
         return false;
     }
 
@@ -950,7 +949,7 @@ function replaceMultiplicationWithZeroOperand(node, key, otherKey, context) {
 }
 
 function isMultiplicationAnnihilatedByZero(node, context) {
-    if (!isBinaryOperator(node, "*")) {
+    if (!Core.isBinaryOperator(node, "*")) {
         return false;
     }
 
@@ -979,7 +978,7 @@ function isMultiplicationAnnihilatedByZero(node, context) {
 }
 
 function attemptRemoveAdditiveIdentity(node, context) {
-    if (!isBinaryOperator(node, "+")) {
+    if (!Core.isBinaryOperator(node, "+")) {
         return false;
     }
 
@@ -1108,7 +1107,7 @@ function attemptRemoveMultiplicativeIdentityAssignment(node, context) {
 }
 
 function attemptSimplifyDivisionByReciprocal(node, context) {
-    if (!isBinaryOperator(node, "/")) {
+    if (!Core.isBinaryOperator(node, "/")) {
         return false;
     }
 
@@ -1185,7 +1184,7 @@ function attemptCancelReciprocalRatios(node, context) {
         return false;
     }
 
-    if (!isBinaryOperator(node, "*") && !isBinaryOperator(node, "/")) {
+    if (!Core.isBinaryOperator(node, "*") && !Core.isBinaryOperator(node, "/")) {
         return false;
     }
 
@@ -1461,7 +1460,7 @@ function buildReciprocalRatioReplacement({ remainingTerms, node }: { remainingTe
 }
 
 function attemptSimplifyNegativeDivisionProduct(node, context) {
-    if (!isBinaryOperator(node, "*")) {
+    if (!Core.isBinaryOperator(node, "*")) {
         return false;
     }
 
@@ -1558,7 +1557,7 @@ function attemptCondenseScalarProduct(node, context) {
         return false;
     }
 
-    if (!isBinaryOperator(node, "*") && !isBinaryOperator(node, "/")) {
+    if (!Core.isBinaryOperator(node, "*") && !Core.isBinaryOperator(node, "/")) {
         return false;
     }
 
@@ -1783,7 +1782,7 @@ function attemptCondenseNumericChainWithMultipleBases(node, context) {
         return false;
     }
 
-    if (!isBinaryOperator(node, "*") && !isBinaryOperator(node, "/")) {
+    if (!Core.isBinaryOperator(node, "*") && !Core.isBinaryOperator(node, "/")) {
         return false;
     }
 
@@ -1891,7 +1890,7 @@ function attemptCondenseNumericChainWithMultipleBases(node, context) {
 }
 
 function attemptCollectDistributedScalars(node, context) {
-    if (!isBinaryOperator(node, "+") || Core.hasComment(node)) {
+    if (!Core.isBinaryOperator(node, "+") || Core.hasComment(node)) {
         return false;
     }
 
@@ -1985,7 +1984,7 @@ function attemptCollectDistributedScalars(node, context) {
 }
 
 function attemptConvertSquare(node, context) {
-    if (!isBinaryOperator(node, "*") || Core.hasComment(node)) {
+    if (!Core.isBinaryOperator(node, "*") || Core.hasComment(node)) {
         return false;
     }
 
@@ -2062,7 +2061,7 @@ function attemptConvertSquare(node, context) {
 }
 
 function attemptConvertRepeatedPower(node, context) {
-    if (!isBinaryOperator(node, "*") || Core.hasComment(node)) {
+    if (!Core.isBinaryOperator(node, "*") || Core.hasComment(node)) {
         return false;
     }
 
@@ -2154,7 +2153,7 @@ function attemptConvertMean(node, context) {
 }
 
 function attemptConvertLog2(node, context) {
-    if (!isBinaryOperator(node, "/") || Core.hasComment(node)) {
+    if (!Core.isBinaryOperator(node, "/") || Core.hasComment(node)) {
         return false;
     }
 
@@ -2182,7 +2181,7 @@ function attemptConvertLog2(node, context) {
 }
 
 function attemptConvertLengthDir(node, context) {
-    if (!isBinaryOperator(node, "*") || Core.hasComment(node)) {
+    if (!Core.isBinaryOperator(node, "*") || Core.hasComment(node)) {
         return false;
     }
 
@@ -2242,7 +2241,7 @@ function attemptConvertLengthDir(node, context) {
 }
 
 function attemptConvertDotProducts(node, context) {
-    if (!isBinaryOperator(node, "+") || Core.hasComment(node)) {
+    if (!Core.isBinaryOperator(node, "+") || Core.hasComment(node)) {
         return false;
     }
 
@@ -2259,7 +2258,7 @@ function attemptConvertDotProducts(node, context) {
     for (const term of terms) {
         const expr = Core.unwrapParenthesizedExpression(term);
 
-        if (!isBinaryOperator(expr, "*") || Core.hasComment(expr)) {
+        if (!Core.isBinaryOperator(expr, "*") || Core.hasComment(expr)) {
             return false;
         }
 
@@ -2447,7 +2446,7 @@ function matchSquaredDifferences(expression) {
 
     for (const term of terms) {
         const product = Core.unwrapParenthesizedExpression(term);
-        if (!isBinaryOperator(product, "*") || Core.hasComment(product)) {
+        if (!Core.isBinaryOperator(product, "*") || Core.hasComment(product)) {
             return null;
         }
 
@@ -2476,7 +2475,7 @@ function matchSquaredDifferences(expression) {
 function matchDifference(node) {
     const expression = Core.unwrapParenthesizedExpression(node);
 
-    if (!isBinaryOperator(expression, "-")) {
+    if (!Core.isBinaryOperator(expression, "-")) {
         return null;
     }
 
@@ -2724,7 +2723,7 @@ function extractScalarAdditionTerm(expression, context) {
 }
 
 function attemptSimplifyLengthdirHalfDifference(node, context) {
-    if (!isBinaryOperator(node, "-") || Core.hasComment(node)) {
+    if (!Core.isBinaryOperator(node, "-") || Core.hasComment(node)) {
         return false;
     }
 
@@ -2755,7 +2754,7 @@ function attemptSimplifyLengthdirHalfDifference(node, context) {
     }
 
     if (
-        !isBinaryOperator(leftExpression, "-") ||
+        !Core.isBinaryOperator(leftExpression, "-") ||
         Core.hasComment(leftExpression) ||
         Core.hasInlineCommentBetween(leftExpression.left, leftExpression.right, context)
     ) {

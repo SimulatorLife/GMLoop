@@ -1,5 +1,5 @@
 import type { MutableGameMakerAstNode } from "@gmloop/core";
-import type { Parser, ParserOptions, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
+import type { Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
 
 export type GmlAst = MutableGameMakerAstNode;
 
@@ -31,11 +31,18 @@ export type GmlFormatComponentBundle = Readonly<{
 
 export type GmlFormatDefaultOptions = Record<string, unknown>;
 
+export type ProjectFormatOptionCatalogEntry = Readonly<{
+    defaultValue: boolean | number | string;
+    description: string;
+    name: string;
+}>;
+
 export type GmlFormat = Omit<PrettierPlugin<GmlAst>, "defaultOptions"> & {
     defaultOptions?: GmlFormatDefaultOptions;
     formatOptions?: SupportOptions;
     format: (source: string, options?: Record<string, unknown>) => Promise<string>;
     extractProjectFormatOptions: (config: Record<string, unknown>) => Record<string, unknown>;
+    listProjectFormatOptionCatalogEntries: () => ReadonlyArray<ProjectFormatOptionCatalogEntry>;
     /**
      * Layout-only post-processing pass applied after Prettier formats the GML
      * source. Owned by the format workspace because all of its
@@ -45,5 +52,3 @@ export type GmlFormat = Omit<PrettierPlugin<GmlAst>, "defaultOptions"> & {
      */
     normalizeFormattedOutput: (formatted: string) => string;
 };
-
-export type GmlParserOptions = ParserOptions<GmlAst>;

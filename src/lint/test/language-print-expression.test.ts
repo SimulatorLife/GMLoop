@@ -1,6 +1,6 @@
 import test from "node:test";
 
-import { printExpression } from "../src/rules/gml/print-expression.js";
+import { printExpression } from "../src/language/autofix-printing.js";
 import { assertEquals } from "./assertions.js";
 
 void test("printExpression renders MemberIndexExpression using index nodes", () => {

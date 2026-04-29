@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { ConflictType, type SymbolOccurrence, type SymbolResolver } from "../src/types.js";
 import {
     batchValidateScopeConflicts,
     detectCircularRenames,
@@ -10,7 +9,8 @@ import {
     detectDuplicateTargetNames,
     detectRenameConflicts,
     validateRenameStructure
-} from "../src/validation.js";
+} from "../src/rename/rename-validation.js";
+import { ConflictType, type SymbolOccurrence, type SymbolResolver } from "../src/types.js";
 
 void describe("validateRenameStructure", () => {
     void test("returns error for missing symbolId", async () => {

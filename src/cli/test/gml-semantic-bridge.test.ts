@@ -1640,6 +1640,347 @@ void describe("GmlSemanticBridge tests", () => {
         assert.ok(!edits.metadataEdits.some((entry) => entry.path === spritePath));
     });
 
+    void it("getAdditionalSymbolEdits carries sprite, sound, font, note, tileset, and extension sidecars into an existing renamed resource directory", () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-sidecars-"));
+        const soundPath = "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.yy";
+        const spritePath = "sprites/sprPlayer/sprPlayer.yy";
+        const fontPath = "fonts/scribbleFallbackFont/scribbleFallbackFont.yy";
+        const notePath = "notes/noteDesign/noteDesign.yy";
+        const tilesetPath = "tilesets/tilesetWall/tilesetWall.yy";
+        const extensionPath = "extensions/extPhysics/extPhysics.yy";
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "sounds/sndColmeshDemo2Coin"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "sounds/snd_colmesh_demo2coin"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "sprites/sprPlayer/layers/a777fc4d-ac59-4464-b4bd-e93704762166"), {
+                recursive: true
+            });
+            fs.mkdirSync(path.join(tmpRoot, "sprites/spr_player"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "fonts/scribbleFallbackFont"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "fonts/fnt_scribble_fallback_font"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "notes/noteDesign"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "notes/note_design"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "tilesets/tilesetWall"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "tilesets/tileset_wall"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "extensions/extPhysics/AndroidSource/ProjectFiles"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "extensions/ext_physics/AndroidSource"), { recursive: true });
+
+            fs.writeFileSync(
+                path.join(tmpRoot, soundPath),
+                `{
+                  "$GMSound":"v2",
+                  "%Name":"sndColmeshDemo2Coin",
+                  "name":"sndColmeshDemo2Coin",
+                  "resourceType":"GMSound",
+                  "resourceVersion":"2.0",
+                  "resourcePath":"${soundPath}",
+                  "soundFile":"sndColmeshDemo2Coin.mp3",
+                }`,
+                "utf8"
+            );
+            fs.writeFileSync(path.join(tmpRoot, "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.mp3"), "sound", "utf8");
+
+            fs.writeFileSync(
+                path.join(tmpRoot, spritePath),
+                `${JSON.stringify(
+                    {
+                        $GMSprite: "v2",
+                        "%Name": "sprPlayer",
+                        name: "sprPlayer",
+                        resourceType: "GMSprite",
+                        resourceVersion: "2.0",
+                        resourcePath: spritePath,
+                        frames: [
+                            {
+                                name: "a777fc4d-ac59-4464-b4bd-e93704762166",
+                                resourceType: "GMSpriteFrame",
+                                resourceVersion: "2.0"
+                            }
+                        ],
+                        layers: [
+                            {
+                                name: "c7545ec4-2c29-4b5e-9814-c7ec66e59442",
+                                resourceType: "GMImageLayer",
+                                resourceVersion: "2.0"
+                            }
+                        ],
+                        sequence: {
+                            name: "sprPlayer",
+                            tracks: [
+                                {
+                                    keyframes: {
+                                        Keyframes: [
+                                            {
+                                                Channels: {
+                                                    0: {
+                                                        Id: {
+                                                            name: "a777fc4d-ac59-4464-b4bd-e93704762166",
+                                                            path: spritePath
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    null,
+                    4
+                )}\n`,
+                "utf8"
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "sprites/sprPlayer/a777fc4d-ac59-4464-b4bd-e93704762166.png"),
+                "sprite",
+                "utf8"
+            );
+            fs.writeFileSync(
+                path.join(
+                    tmpRoot,
+                    "sprites/sprPlayer/layers/a777fc4d-ac59-4464-b4bd-e93704762166/c7545ec4-2c29-4b5e-9814-c7ec66e59442.png"
+                ),
+                "layer",
+                "utf8"
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, fontPath),
+                `${JSON.stringify(
+                    {
+                        $GMFont: "",
+                        "%Name": "scribbleFallbackFont",
+                        name: "scribbleFallbackFont",
+                        resourceType: "GMFont",
+                        resourceVersion: "2.0"
+                    },
+                    null,
+                    4
+                )}\n`,
+                "utf8"
+            );
+            fs.writeFileSync(path.join(tmpRoot, "fonts/scribbleFallbackFont/scribbleFallbackFont.png"), "font", "utf8");
+            fs.writeFileSync(
+                path.join(tmpRoot, notePath),
+                `${JSON.stringify(
+                    {
+                        $GMNotes: "",
+                        "%Name": "noteDesign",
+                        name: "noteDesign",
+                        resourceType: "GMNotes",
+                        resourceVersion: "2.0"
+                    },
+                    null,
+                    4
+                )}\n`,
+                "utf8"
+            );
+            fs.writeFileSync(path.join(tmpRoot, "notes/noteDesign/noteDesign.txt"), "note", "utf8");
+            fs.writeFileSync(
+                path.join(tmpRoot, tilesetPath),
+                `${JSON.stringify(
+                    {
+                        $GMTileSet: "",
+                        "%Name": "tilesetWall",
+                        name: "tilesetWall",
+                        resourceType: "GMTileSet",
+                        resourceVersion: "2.0"
+                    },
+                    null,
+                    4
+                )}\n`,
+                "utf8"
+            );
+            fs.writeFileSync(path.join(tmpRoot, "tilesets/tilesetWall/output_tileset.png"), "tileset", "utf8");
+            fs.writeFileSync(
+                path.join(tmpRoot, extensionPath),
+                `${JSON.stringify(
+                    {
+                        $GMExtension: "",
+                        "%Name": "extPhysics",
+                        name: "extPhysics",
+                        resourceType: "GMExtension",
+                        resourceVersion: "2.0"
+                    },
+                    null,
+                    4
+                )}\n`,
+                "utf8"
+            );
+            fs.writeFileSync(path.join(tmpRoot, "extensions/extPhysics/extPhysics.gml"), "extension", "utf8");
+            fs.writeFileSync(
+                path.join(tmpRoot, "extensions/extPhysics/AndroidSource/ProjectFiles/google-services.json"),
+                "{}",
+                "utf8"
+            );
+
+            const mockProjectIndex = {
+                identifiers: {},
+                resources: {
+                    [soundPath]: {
+                        path: soundPath,
+                        name: "sndColmeshDemo2Coin",
+                        resourceType: "GMSound",
+                        assetReferences: []
+                    },
+                    [spritePath]: {
+                        path: spritePath,
+                        name: "sprPlayer",
+                        resourceType: "GMSprite",
+                        assetReferences: []
+                    },
+                    [fontPath]: {
+                        path: fontPath,
+                        name: "scribbleFallbackFont",
+                        resourceType: "GMFont",
+                        assetReferences: []
+                    },
+                    [notePath]: {
+                        path: notePath,
+                        name: "noteDesign",
+                        resourceType: "GMNotes",
+                        assetReferences: []
+                    },
+                    [tilesetPath]: {
+                        path: tilesetPath,
+                        name: "tilesetWall",
+                        resourceType: "GMTileSet",
+                        assetReferences: []
+                    },
+                    [extensionPath]: {
+                        path: extensionPath,
+                        name: "extPhysics",
+                        resourceType: "GMExtension",
+                        assetReferences: []
+                    }
+                }
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const soundEdits = bridge.getAdditionalSymbolEdits(
+                "gml/sounds/sndColmeshDemo2Coin",
+                "snd_colmesh_demo2coin"
+            );
+            const spriteEdits = bridge.getAdditionalSymbolEdits("gml/sprites/sprPlayer", "spr_player");
+            const fontEdits = bridge.getAdditionalSymbolEdits(
+                "gml/fonts/scribbleFallbackFont",
+                "fnt_scribble_fallback_font"
+            );
+            const noteEdits = bridge.getAdditionalSymbolEdits("gml/notes/noteDesign", "note_design");
+            const tilesetEdits = bridge.getAdditionalSymbolEdits("gml/tilesets/tilesetWall", "tileset_wall");
+            const extensionEdits = bridge.getAdditionalSymbolEdits("gml/extensions/extPhysics", "ext_physics");
+
+            assert.ok(soundEdits);
+            assert.ok(spriteEdits);
+            assert.ok(fontEdits);
+            assert.ok(noteEdits);
+            assert.ok(tilesetEdits);
+            assert.ok(extensionEdits);
+            assert.ok(
+                soundEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === soundPath &&
+                        entry.newPath === "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.yy"
+                )
+            );
+            assert.ok(
+                soundEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "sounds/sndColmeshDemo2Coin/sndColmeshDemo2Coin.mp3" &&
+                        entry.newPath === "sounds/snd_colmesh_demo2coin/snd_colmesh_demo2coin.mp3"
+                )
+            );
+            assert.ok(
+                soundEdits.metadataEdits.some(
+                    (entry) =>
+                        entry.path === soundPath && entry.content.includes('"soundFile":"snd_colmesh_demo2coin.mp3"')
+                )
+            );
+            assert.ok(
+                spriteEdits.fileRenames.some(
+                    (entry) => entry.oldPath === spritePath && entry.newPath === "sprites/spr_player/spr_player.yy"
+                )
+            );
+            assert.ok(
+                spriteEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "sprites/sprPlayer/a777fc4d-ac59-4464-b4bd-e93704762166.png" &&
+                        entry.newPath === "sprites/spr_player/a777fc4d-ac59-4464-b4bd-e93704762166.png"
+                )
+            );
+            assert.ok(
+                spriteEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "sprites/sprPlayer/layers" && entry.newPath === "sprites/spr_player/layers"
+                )
+            );
+            assert.ok(
+                fontEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === fontPath &&
+                        entry.newPath === "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.yy"
+                )
+            );
+            assert.ok(
+                fontEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "fonts/scribbleFallbackFont/scribbleFallbackFont.png" &&
+                        entry.newPath === "fonts/fnt_scribble_fallback_font/fnt_scribble_fallback_font.png"
+                )
+            );
+            assert.ok(
+                noteEdits.fileRenames.some(
+                    (entry) => entry.oldPath === notePath && entry.newPath === "notes/note_design/note_design.yy"
+                )
+            );
+            assert.ok(
+                noteEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "notes/noteDesign/noteDesign.txt" &&
+                        entry.newPath === "notes/note_design/note_design.txt"
+                )
+            );
+            assert.ok(
+                tilesetEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === tilesetPath && entry.newPath === "tilesets/tileset_wall/tileset_wall.yy"
+                )
+            );
+            assert.ok(
+                tilesetEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "tilesets/tilesetWall/output_tileset.png" &&
+                        entry.newPath === "tilesets/tileset_wall/output_tileset.png"
+                )
+            );
+            assert.ok(
+                extensionEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === extensionPath && entry.newPath === "extensions/ext_physics/ext_physics.yy"
+                )
+            );
+            assert.ok(
+                extensionEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "extensions/extPhysics/extPhysics.gml" &&
+                        entry.newPath === "extensions/ext_physics/extPhysics.gml"
+                )
+            );
+            assert.ok(
+                extensionEdits.fileRenames.some(
+                    (entry) =>
+                        entry.oldPath === "extensions/extPhysics/AndroidSource/ProjectFiles" &&
+                        entry.newPath === "extensions/ext_physics/AndroidSource/ProjectFiles"
+                )
+            );
+        } finally {
+            fs.rmSync(tmpRoot, {
+                recursive: true,
+                force: true
+            });
+        }
+    });
+
     void it("listNamingConventionTargets classifies resource, callable, macro, global, and local targets", async () => {
         const mockProjectIndex = {
             resources: {

@@ -267,6 +267,92 @@ function new_exported_func() {
         );
     });
 
+    void it("should not retranspile dependents when duplicate extracted symbols are unchanged", async () => {
+        const statusPort = await findAvailablePort();
+        const websocketPort = await findAvailablePort();
+        const duplicateSymbolsDir = path.join(testDir, "duplicate-symbols");
+        await mkdir(duplicateSymbolsDir, { recursive: true });
+
+        const defsFile = path.join(duplicateSymbolsDir, "defs.gml");
+        const consumerFile = path.join(duplicateSymbolsDir, "consumer.gml");
+
+        await writeFile(
+            defsFile,
+            `function shared_symbol() {
+    return 1;
+}
+
+shared_symbol = function () {
+    return 1;
+};`,
+            "utf8"
+        );
+
+        await writeFile(
+            consumerFile,
+            `function uses_shared_symbol() {
+    return shared_symbol();
+}`,
+            "utf8"
+        );
+
+        const abortController = new AbortController();
+        const statusUrl = `http://127.0.0.1:${statusPort}`;
+
+        const watchPromise = runWatchCommand(duplicateSymbolsDir, {
+            extensions: [".gml"],
+            verbose: false,
+            quiet: true,
+            websocketPort,
+            websocketHost: "127.0.0.1",
+            runtimeServer: false,
+            statusServer: true,
+            statusPort,
+            abortSignal: abortController.signal
+        });
+
+        let patchCountAfterChange: number;
+
+        try {
+            await waitForScanComplete(statusUrl, 10_000, 50);
+
+            const initialStatus = await fetchStatusPayload(statusUrl);
+            const initialPatchCount = initialStatus.patchCount ?? 0;
+            assert.ok(initialPatchCount >= 2, `Initial scan should transpile both files (got ${initialPatchCount})`);
+
+            await writeFile(
+                defsFile,
+                `function shared_symbol() {
+    return 2;
+}
+
+shared_symbol = function () {
+    return 2;
+};`,
+                "utf8"
+            );
+
+            await waitForStatus(statusUrl, (status) => (status.patchCount ?? 0) >= initialPatchCount + 1, 8000, 50);
+
+            const finalStatus = await fetchStatusPayload(statusUrl);
+            patchCountAfterChange = (finalStatus.patchCount ?? 0) - initialPatchCount;
+        } finally {
+            abortController.abort();
+
+            try {
+                await watchPromise;
+            } catch {
+                // Expected to be aborted
+            }
+        }
+
+        assert.strictEqual(
+            patchCountAfterChange,
+            1,
+            "Unchanged symbol set should retranspile only the changed definition file even when extraction includes duplicates"
+        );
+    });
+
     void it("should retranspile a dependent file when a newly added export satisfies its reference", async () => {
         const statusPort = await findAvailablePort();
         const websocketPort = await findAvailablePort();
@@ -308,6 +394,7 @@ function new_exported_func() {
         });
 
         let patchCountAfterChange: number;
+        let liveLatencyPatchCount: number;
 
         try {
             await waitForScanComplete(statusUrl, 10_000, 50);
@@ -332,6 +419,9 @@ function future_func() {
 
             const finalStatus = await fetchStatusPayload(statusUrl);
             patchCountAfterChange = (finalStatus.patchCount ?? 0) - initialPatchCount;
+            liveLatencyPatchCount = (finalStatus.recentPatches ?? []).filter(
+                (patch) => typeof patch.hotReloadLatencyMs === "number"
+            ).length;
         } finally {
             abortController.abort();
 
@@ -346,6 +436,10 @@ function future_func() {
             patchCountAfterChange,
             2,
             "Adding a newly referenced export should retranspile both the changed file and its waiting consumer"
+        );
+        assert.ok(
+            liveLatencyPatchCount >= 2,
+            "Changed file and dependent retranspile should both record end-to-end hot-reload latency"
         );
     });
 });

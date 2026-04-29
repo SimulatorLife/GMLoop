@@ -1,18 +1,9 @@
-import { Core, type GameMakerAstNode } from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "./rule-definition.js";
 
 const { clamp, isObjectLike } = Core;
-
-const getNodeStartIndex: (node: unknown) => number | null = Core.getNodeStartIndex;
-const getNodeEndIndex: (node: unknown) => number | null = Core.getNodeEndIndex;
-const getCallExpressionIdentifierName: (callExpression: GameMakerAstNode | null | undefined) => string | null =
-    Core.getCallExpressionIdentifierName;
-const getCallExpressionArguments: (callExpression: GameMakerAstNode | null | undefined) => readonly GameMakerAstNode[] =
-    Core.getCallExpressionArguments;
-
-export { getCallExpressionArguments, getCallExpressionIdentifierName, getNodeEndIndex, getNodeStartIndex };
 
 export function getLineStartOffset(sourceText: string, offset: number): number {
     return sourceText.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
@@ -26,6 +17,63 @@ export function getLineIndentationAtOffset(sourceText: string, offset: number): 
     }
 
     return sourceText.slice(lineStart, cursor);
+}
+
+/**
+ * Finds the nearest non-whitespace character before a source offset.
+ *
+ * This helper supports call sites that need to inspect prefix tokens (for
+ * example, detecting `else if` chains) while optionally treating line breaks as
+ * hard boundaries.
+ *
+ * @param sourceText Full source text to scan.
+ * @param startIndex Offset whose preceding text should be inspected.
+ * @param stopAtLineBreak Whether `\n`/`\r` should terminate scanning.
+ * @returns Index of the nearest non-whitespace character before `startIndex`.
+ */
+export function findPreviousNonWhitespaceIndex(
+    sourceText: string,
+    startIndex: number,
+    stopAtLineBreak: boolean
+): number | null {
+    let cursor = startIndex - 1;
+
+    while (cursor >= 0) {
+        const character = sourceText[cursor];
+        if (stopAtLineBreak && (character === "\n" || character === "\r")) {
+            return null;
+        }
+
+        if (/\s/u.test(character)) {
+            cursor -= 1;
+            continue;
+        }
+
+        return cursor;
+    }
+
+    return null;
+}
+
+/**
+ * Finds the nearest non-whitespace character before a source offset.
+ *
+ * @param sourceText Full source text to scan.
+ * @param startIndex Offset whose preceding text should be inspected.
+ * @param stopAtLineBreak Whether `\n`/`\r` should terminate scanning.
+ * @returns The nearest non-whitespace character before `startIndex`, or `null`.
+ */
+export function findPreviousNonWhitespaceCharacter(
+    sourceText: string,
+    startIndex: number,
+    stopAtLineBreak: boolean
+): string | null {
+    const previousIndex = findPreviousNonWhitespaceIndex(sourceText, startIndex, stopAtLineBreak);
+    if (previousIndex === null) {
+        return null;
+    }
+
+    return sourceText[previousIndex];
 }
 
 export type AstNodeRecord = Record<string, unknown>;
@@ -723,4 +771,30 @@ export function getVariableDeclarator(statement: unknown): AstNodeRecord | null 
     }
 
     return null;
+}
+
+/**
+ * Read the first element of `context.options` as a plain object, returning an
+ * empty frozen object when no valid object option is present.
+ */
+export function readObjectOption(context: Rule.RuleContext): Record<string, unknown> {
+    if (!Array.isArray(context.options)) {
+        return Object.freeze({});
+    }
+
+    const [rawOption] = context.options;
+    if (!rawOption || typeof rawOption !== "object") {
+        return Object.freeze({});
+    }
+
+    return rawOption as Record<string, unknown>;
+}
+
+/**
+ * Determine whether the rule should report "unsafe" diagnostics based on the
+ * `reportUnsafe` option (defaults to `true` when the option is absent).
+ */
+export function shouldReportUnsafe(context: Rule.RuleContext): boolean {
+    const option = readObjectOption(context).reportUnsafe;
+    return option === undefined ? true : option === true;
 }

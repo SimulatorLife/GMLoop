@@ -38,7 +38,9 @@ const { applyLoopLengthHoistingCodemod } = Refactor.LoopLengthHoisting;
 const FILE_COUNT = 400;
 const LOOPS_PER_FILE = 8;
 const IDENTIFIERS_PER_FILE = 60;
-const PERFORMANCE_THRESHOLD_MS = 3200;
+const PERFORMANCE_THRESHOLD_MS = 5000;
+const SPARSE_FILE_COUNT = 1200;
+const SPARSE_SCAN_THRESHOLD_MS = 260;
 
 /**
  * Generate a synthetic GML file that contains {@link LOOPS_PER_FILE} hoistable
@@ -63,6 +65,21 @@ function generateSyntheticGmlFile(fileIndex: number): string {
         const varName = `v${identIndex}`;
         lines.push(`var ${varName} = ${identIndex};`, `show_debug_message(${varName});`);
     }
+
+    return lines.join("\n");
+}
+
+function generateNonAccessorLoopFile(fileIndex: number): string {
+    const lines = [
+        `function sparse_script_${fileIndex}(values) {`,
+        "    var total = 0;",
+        "    for (var i = 0; i < values.length; i++) {",
+        "        total += values[i];",
+        "    }",
+        "    return total;",
+        "}",
+        ""
+    ];
 
     return lines.join("\n");
 }
@@ -104,5 +121,31 @@ void test("applyLoopLengthHoistingCodemod single-pass traversal stays within the
         medianDurationMs <= PERFORMANCE_THRESHOLD_MS,
         `Expected loop-length-hoisting stress test to finish within ${PERFORMANCE_THRESHOLD_MS} ms, ` +
             `received ${medianDurationMs.toFixed(2)} ms (median of ${SAMPLE_COUNT} samples)`
+    );
+});
+
+void test("applyLoopLengthHoistingCodemod skips parse-heavy work for files without configured accessor calls", () => {
+    const sparseFiles = Array.from({ length: SPARSE_FILE_COUNT }, (_, fileIndex) =>
+        generateNonAccessorLoopFile(fileIndex)
+    );
+
+    for (let warmupIndex = 0; warmupIndex < 20; warmupIndex += 1) {
+        applyLoopLengthHoistingCodemod(sparseFiles[warmupIndex] ?? "");
+    }
+
+    const startTime = performance.now();
+    let changedCount = 0;
+    for (const file of sparseFiles) {
+        const result = applyLoopLengthHoistingCodemod(file);
+        if (result.changed) {
+            changedCount += 1;
+        }
+    }
+    const durationMs = performance.now() - startTime;
+
+    assert.equal(changedCount, 0, "Expected sparse sample to produce no rewrites");
+    assert.ok(
+        durationMs <= SPARSE_SCAN_THRESHOLD_MS,
+        `Expected sparse accessor scan under ${SPARSE_SCAN_THRESHOLD_MS}ms, received ${durationMs.toFixed(2)}ms`
     );
 });

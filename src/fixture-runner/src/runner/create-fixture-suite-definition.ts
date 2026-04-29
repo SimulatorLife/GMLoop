@@ -1,5 +1,5 @@
-import { resolveFixtureDirectoryFromModuleUrl } from "../discovery/index.js";
 import type { FixtureAdapter, FixtureSuiteDefinition } from "../types.js";
+import { resolveFixtureDirectoryFromModuleUrl } from "./resolve-fixture-directory-from-module-url.js";
 
 export interface FixtureSuiteDefinitionParameters {
     workspaceName: string;

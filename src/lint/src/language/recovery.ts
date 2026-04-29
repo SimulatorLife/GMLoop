@@ -32,7 +32,10 @@ const ORPHAN_ASSIGNMENT_STATEMENT_PATTERN = /^\s*=\s*(?:\S.*)?;\s*$/u;
 const NUMERIC_ASSIGNMENT_STATEMENT_PATTERN = /^\s*\d+(?:\.\d+)?\s*=\s*/u;
 const THIS_MULTIPLICATION_STATEMENT_PATTERN = /^\s*_this\s*\*\s*[A-Za-z_][A-Za-z0-9_]*\s*;\s*$/u;
 const CONTROL_CONDITION_PATTERN = /(if|while|do\s+until)\s*\(([^)]*)\)/giu;
-const COMPOUND_ASSIGNMENT_PATTERN = /\?\?=|<<=|>>=|\+=|-=|\*=|\/=|%=|&=|\^=|\|=/gu;
+// GML supports the bit-shift operators `<<` and `>>`, but it does NOT support
+// the compound forms `<<=` or `>>=`. Keep them out of recovery heuristics so
+// lint/fix paths never normalize valid shift expressions toward invalid tokens.
+const COMPOUND_ASSIGNMENT_PATTERN = /\?\?=|\+=|-=|\*=|\/=|%=|&=|\^=|\|=/gu;
 const MALFORMED_DOC_TAG_LINE_PATTERN = /^(\s*)\/(\s+)(@.+)$/gmu;
 
 function isIdentifierCharacter(character: string): boolean {

@@ -30,6 +30,34 @@ function isFunctionScopeBoundary(node: AstRecord): boolean {
     return node.type === "FunctionDeclaration" || node.type === "ConstructorDeclaration";
 }
 
+function walkAstNodes(root: unknown, visitNode: (node: AstRecord) => boolean | void): void {
+    const traversalStack: unknown[] = [root];
+
+    while (traversalStack.length > 0) {
+        const currentNode = traversalStack.pop();
+
+        if (Array.isArray(currentNode)) {
+            for (let index = currentNode.length - 1; index >= 0; index -= 1) {
+                traversalStack.push(currentNode[index]);
+            }
+            continue;
+        }
+
+        if (!isAstRecord(currentNode)) {
+            continue;
+        }
+
+        const shouldDescend = visitNode(currentNode);
+        if (shouldDescend === false) {
+            continue;
+        }
+
+        for (const value of Object.values(currentNode)) {
+            traversalStack.push(value);
+        }
+    }
+}
+
 function collectVarDeclaratorNames(node: AstRecord, localNames: Set<string>): void {
     if (node.type !== "VariableDeclaration" || node.kind !== "var" || !Array.isArray(node.declarations)) {
         return;
@@ -48,31 +76,14 @@ function collectVarDeclaratorNames(node: AstRecord, localNames: Set<string>): vo
 }
 
 function collectVarDeclarationsFromTree(root: unknown, localNames: Set<string>): void {
-    const traversalStack: unknown[] = [root];
-
-    while (traversalStack.length > 0) {
-        const currentNode = traversalStack.pop();
-        if (currentNode === undefined) {
-            continue;
-        }
-
-        if (Array.isArray(currentNode)) {
-            for (let index = currentNode.length - 1; index >= 0; index -= 1) {
-                traversalStack.push(currentNode[index]);
-            }
-            continue;
-        }
-
-        if (!isAstRecord(currentNode) || isFunctionScopeBoundary(currentNode)) {
-            continue;
+    walkAstNodes(root, (currentNode) => {
+        if (isFunctionScopeBoundary(currentNode)) {
+            return false;
         }
 
         collectVarDeclaratorNames(currentNode, localNames);
-
-        for (const value of Object.values(currentNode)) {
-            traversalStack.push(value);
-        }
-    }
+        return true;
+    });
 }
 
 /**
@@ -151,30 +162,16 @@ function collectGlobalVarNamesFromDeclaration(declaration: unknown, globalNames:
     }
 }
 
-function collectGlobalVarNamesFromNode(node: AstRecord, globalNames: Set<string>, stack: unknown[]): void {
+function collectGlobalVarNamesFromNode(node: AstRecord, globalNames: Set<string>): void {
     if (node.type === "GlobalVarStatement" && Array.isArray(node.declarations)) {
         for (const declaration of node.declarations) {
             collectGlobalVarNamesFromDeclaration(declaration, globalNames);
         }
     }
-    // Push child values onto the traversal stack.
-    for (const value of Object.values(node)) {
-        stack.push(value);
-    }
 }
 
 function collectGlobalVarNamesFromTree(root: unknown, globalNames: Set<string>): void {
-    const traversalStack: unknown[] = [root];
-
-    while (traversalStack.length > 0) {
-        const currentNode = traversalStack.pop();
-
-        if (Array.isArray(currentNode)) {
-            for (let index = currentNode.length - 1; index >= 0; index -= 1) {
-                traversalStack.push(currentNode[index]);
-            }
-        } else if (isAstRecord(currentNode)) {
-            collectGlobalVarNamesFromNode(currentNode, globalNames, traversalStack);
-        }
-    }
+    walkAstNodes(root, (currentNode) => {
+        collectGlobalVarNamesFromNode(currentNode, globalNames);
+    });
 }

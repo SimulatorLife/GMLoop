@@ -1,7 +1,7 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { printExpression, readNodeText } from "../print-expression.js";
+import { printExpression, readNodeText } from "../../../language/autofix-printing.js";
 import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,

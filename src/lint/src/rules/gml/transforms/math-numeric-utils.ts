@@ -7,11 +7,6 @@ import { Core } from "@gmloop/core";
 
 const { BINARY_EXPRESSION, CALL_EXPRESSION, IDENTIFIER, LITERAL, UNARY_EXPRESSION, isObjectLike } = Core;
 
-/** Thin wrapper so callers can write `isBinaryOperator(node, "*")` uniformly. */
-export function isBinaryOperator(node: unknown, operator: string): boolean {
-    return Core.isBinaryOperator(node, operator);
-}
-
 /**
  * Return an epsilon-scaled tolerance for the given expected magnitude.
  * An optional explicit tolerance can be supplied to bypass auto-scaling.
@@ -120,7 +115,7 @@ export function isHalfExponentLiteral(node: unknown): boolean {
         return true;
     }
 
-    if (isBinaryOperator(node, "/")) {
+    if (Core.isBinaryOperator(node, "/")) {
         return isLiteralNumber((node as any).left, 1) && isLiteralNumber((node as any).right, 2);
     }
 
@@ -422,7 +417,7 @@ export function collectProductOperands(node: unknown, output: unknown[]): boolea
         return false;
     }
 
-    if (!isBinaryOperator(expression, "*")) {
+    if (!Core.isBinaryOperator(expression, "*")) {
         output.push(expression);
         return true;
     }

@@ -1,27 +1,116 @@
 {
+  "$version": 3,
   "model": {
+    "name": "qwen3:1.7b",
     "skipLoopDetection": true,
-    "chatCompression": {
-      "contextPercentageThreshold": 0.8
+    "skipStartupContext": true,
+    "maxSessionTurns": 12,
+    "generationConfig": {
+      "timeout": 900000,
+      "maxRetries": 2,
+      "samplingParams": {
+        "max_tokens": 1536
+      }
     },
-    "sessionTokenLimit": 128000
+    "chatCompression": {
+      "contextPercentageThreshold": 0.5
+    }
   },
   "tools": {
-    "approvalMode": "yolo",
-    "autoAccept": true,
-    "exclude": [
+    "approvalMode": "yolo"
+  },
+  "security": {
+    "auth": {
+      "selectedType": "openai"
+    }
+  },
+  "modelProviders": {
+    "openai": [
+      {
+        "id": "qwen3:1.7b",
+        "name": "Qwen3 1.7B via Ollama",
+        "envKey": "OPENAI_API_KEY",
+        "baseUrl": "http://127.0.0.1:11434/v1",
+        "generationConfig": {
+          "timeout": 900000,
+          "maxRetries": 2,
+          "contextWindowSize": 32768,
+          "samplingParams": {
+            "max_tokens": 1536
+          }
+        }
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Grep",
+      "ListFiles",
+      "Agent",
+      "Glob",
+
+      "Bash(pwd)",
+      "Bash(ls *)",
+      "Bash(rg *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(find *)",
+      "Bash(sed -n *)",
+      "Bash(jq *)",
+      "Bash(test *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git rev-parse *)",
+      "Bash(git ls-files *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(pnpm run *)"
+    ],
+    "deny": [
       "web_search",
-      "web_fetch"
+      "WebFetch",
+
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git fetch*)",
+      "Bash(git merge*)",
+      "Bash(git rebase*)",
+      "Bash(git cherry-pick*)",
+      "Bash(git am*)",
+      "Bash(git apply*)",
+      "Bash(git checkout*)",
+      "Bash(git switch*)",
+      "Bash(git restore*)",
+      "Bash(git reset*)",
+      "Bash(git clean*)",
+      "Bash(git branch*)",
+      "Bash(git tag*)",
+
+      "Bash(rm *)",
+      "Bash(chmod *)",
+      "Bash(chown *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(bash *)",
+      "Bash(sh *)",
+      "Bash(zsh *)",
+      "Bash(fish *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(perl *)",
+      "Bash(ruby *)"
     ]
   },
   "general": {
     "checkpointing": {
       "enabled": true
     }
-  },
-  "experimental": {
-    "vlmSwitchMode": "persist",
-    "visionModelPreview": false
   },
   "privacy": {
     "usageStatisticsEnabled": false
@@ -34,11 +123,13 @@
   },
   "ui": {
     "accessibility": {
-      "disableLoadingPhrases": true
+      "enableLoadingPhrases": false
     }
   },
-  "$version": 3,
   "advanced": {
-    "excludedEnvVars": []
+    "excludedEnvVars": [
+      "DEBUG",
+      "DEBUG_MODE"
+    ]
   }
 }

@@ -110,7 +110,6 @@ type OptionSpec<K extends CoreOverrideKey> = Readonly<{
     kind: OptionKind;
     defaultValue: CoreOptionOverrides[K];
     normalizeUserValue: (value: unknown) => CoreOptionOverrides[K] | undefined;
-    canBeRemoved: boolean;
     invalidMessage: string;
     ignoredMessage: string;
     removedMessage: string;
@@ -136,64 +135,71 @@ function normalizeTrailingCommaOverride(value: unknown): TrailingCommaOption | u
     return typeof value === "string" ? assertTrailingCommaValue(value) : undefined;
 }
 
+function createLockedCoreOptionSpec<K extends CoreOverrideKey>(params: {
+    key: K;
+    kind: OptionKind;
+    normalizeUserValue: OptionSpec<K>["normalizeUserValue"];
+    invalidMessage: string;
+    ignoredMessage: string;
+    removedMessage: string;
+}): OptionSpec<K> {
+    return Object.freeze({
+        key: params.key,
+        kind: params.kind,
+        defaultValue: DEFAULT_CORE_OPTION_OVERRIDES[params.key],
+        normalizeUserValue: params.normalizeUserValue,
+        invalidMessage: params.invalidMessage,
+        ignoredMessage: params.ignoredMessage,
+        removedMessage: params.removedMessage
+    });
+}
+
 const OPTION_SPECS: Readonly<Record<CoreOverrideKey, OptionSpec<CoreOverrideKey>>> = Object.freeze({
-    trailingComma: Object.freeze({
+    trailingComma: createLockedCoreOptionSpec({
         key: "trailingComma",
         kind: "forced",
-        defaultValue: DEFAULT_CORE_OPTION_OVERRIDES.trailingComma,
         normalizeUserValue: (value) => normalizeTrailingCommaOverride(value),
-        canBeRemoved: false,
         invalidMessage: 'Invalid "trailingComma" value for GML; only "none" is supported.',
         ignoredMessage:
             'Ignoring "trailingComma" override because GML does not support trailing commas and commas in calls are positional.',
         removedMessage: 'Ignoring removal of "trailingComma" because the key is required for GML safety.'
     }),
-    arrowParens: Object.freeze({
+    arrowParens: createLockedCoreOptionSpec({
         key: "arrowParens",
         kind: "noop",
-        defaultValue: DEFAULT_CORE_OPTION_OVERRIDES.arrowParens,
         normalizeUserValue: (value) => normalizeChoice(value, ARROW_PARENS_VALUES),
-        canBeRemoved: true,
         invalidMessage: 'Invalid "arrowParens" value.',
         ignoredMessage: 'Ignoring "arrowParens" override because it has no meaning for GML.',
         removedMessage: 'Removed "arrowParens" override entry.'
     }),
-    singleAttributePerLine: Object.freeze({
+    singleAttributePerLine: createLockedCoreOptionSpec({
         key: "singleAttributePerLine",
         kind: "irrelevant",
-        defaultValue: DEFAULT_CORE_OPTION_OVERRIDES.singleAttributePerLine,
         normalizeUserValue: (value) => normalizeBoolean(value),
-        canBeRemoved: true,
         invalidMessage: 'Invalid "singleAttributePerLine" value.',
         ignoredMessage: 'Ignoring "singleAttributePerLine" override because it is not applicable to GML.',
         removedMessage: 'Removed "singleAttributePerLine" override entry.'
     }),
-    jsxSingleQuote: Object.freeze({
+    jsxSingleQuote: createLockedCoreOptionSpec({
         key: "jsxSingleQuote",
         kind: "irrelevant",
-        defaultValue: DEFAULT_CORE_OPTION_OVERRIDES.jsxSingleQuote,
         normalizeUserValue: (value) => normalizeBoolean(value),
-        canBeRemoved: true,
         invalidMessage: 'Invalid "jsxSingleQuote" value.',
         ignoredMessage: 'Ignoring "jsxSingleQuote" override because it is not applicable to GML.',
         removedMessage: 'Removed "jsxSingleQuote" override entry.'
     }),
-    proseWrap: Object.freeze({
+    proseWrap: createLockedCoreOptionSpec({
         key: "proseWrap",
         kind: "irrelevant",
-        defaultValue: DEFAULT_CORE_OPTION_OVERRIDES.proseWrap,
         normalizeUserValue: (value) => normalizeChoice(value, PROSE_WRAP_VALUES),
-        canBeRemoved: true,
         invalidMessage: 'Invalid "proseWrap" value.',
         ignoredMessage: 'Ignoring "proseWrap" override because it is not applicable to GML.',
         removedMessage: 'Removed "proseWrap" override entry.'
     }),
-    htmlWhitespaceSensitivity: Object.freeze({
+    htmlWhitespaceSensitivity: createLockedCoreOptionSpec({
         key: "htmlWhitespaceSensitivity",
         kind: "irrelevant",
-        defaultValue: DEFAULT_CORE_OPTION_OVERRIDES.htmlWhitespaceSensitivity,
         normalizeUserValue: (value) => normalizeChoice(value, HTML_WHITESPACE_SENSITIVITY_VALUES),
-        canBeRemoved: true,
         invalidMessage: 'Invalid "htmlWhitespaceSensitivity" value.',
         ignoredMessage: 'Ignoring "htmlWhitespaceSensitivity" override because it is not applicable to GML.',
         removedMessage: 'Removed "htmlWhitespaceSensitivity" override entry.'

@@ -4,6 +4,11 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
 concurrency:
   group: '${{ github.workflow }}-invoke-${{ github.event_name }}-${{ github.event.issue.number }}'
   cancel-in-progress: false
@@ -14,32 +19,72 @@ defaults:
 
 jobs:
   invoke:
-    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body || '', '@qwen') }}
+    if: ${{ github.event.issue.pull_request && (github.event.comment.body == '@qwen' || startsWith(github.event.comment.body || '', '@qwen ')) }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
-      api_key: ${{ secrets.OPENROUTER_API_KEY }}
+      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
     with:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: qwen
-      agent_package: '@qwen-code/qwen-code@latest'
+      agent_package: ${{ vars.QWEN_CODE_PACKAGE || '@qwen-code/qwen-code@0.14.5' }}
+      max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
+      agent_setup_command: |
+        set -euo pipefail
+
+        pull_qwen_configured_model() {
+          local configured_model
+
+          if ! command -v ollama >/dev/null 2>&1; then
+            echo "❌ Ollama CLI is not available after local endpoint validation."
+            return 1
+          fi
+
+          configured_model="$(
+            jq -er '.model.name | select(type == "string" and length > 0)' .qwen/settings.json
+          )"
+
+          echo "Pulling local Qwen model '${configured_model}' from Ollama..."
+          ollama pull "${configured_model}"
+        }
+
+        pull_qwen_configured_model
       agent_command: |
         set -euo pipefail
-        # Resolve API key
-        if [ -z "${API_KEY:-}" ]; then
-          echo "❌ Missing API_KEY!"
+
+        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
+          echo "❌ Missing prompt context from PR comment."
           exit 1
         fi
 
-        export OPENAI_API_KEY="${API_KEY}"
-        
-        # Option 1: Alibaba Cloud ModelStudio
-        # export OPENAI_BASE_URL="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-        # export OPENAI_MODEL="qwen3-coder-plus"
+        QWEN_CI_SYSTEM_PROMPT="$(cat <<'PROMPT'
+        You are running in GitHub Actions as an autonomous coding agent.
+        Use real tool calls for shell commands and file edits.
+        For shell commands, call the native run_shell_command tool by name.
+        For file changes, call the native edit or write_file tools by name.
+        Do not print JSON objects that describe intended tool calls.
+        Do not respond with a plan-only answer, recommendations, standalone JSON, or instructions for another process.
+        Keep using tools until the task is complete and there actual changes to commit.
+        PROMPT
+        )"
+        export QWEN_CI_SYSTEM_PROMPT
 
-        # Option 2: OpenRouter
-        export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
-        export OPENROUTER_API_KEY="${API_KEY}"
-        export OPENAI_MODEL="qwen/qwen3-coder:free"
+        QWEN_TASK_PROMPT="$(cat <<'PROMPT'
+        If the task asks for lint fixes, run `pnpm run lint` first, choose one deterministic ESLint issue from the real output, edit the actual source file that produced it, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
+        Do not speculate about likely files, helper names, or rule failures before command output identifies them.
+        Do not finish with only analysis or a plan; leave a concrete repository diff in the worktree.
+        When using file tools, use absolute paths under the repository root if a relative path is not enough.
+        Do not output a JSON plan, a fake function call, or `startNewTask`
+        Do not ask the user for a file path: *find* the relevant file path to use/edit.
+        PROMPT
+        )"
+        export QWEN_TASK_PROMPT
 
-        qwen --yolo --openai-api-key "${OPENAI_API_KEY}" --openai-base-url="${OPENAI_BASE_URL}" --model="${OPENAI_MODEL}" --prompt "${ADDITIONAL_CONTEXT}" --debug
+        REPOSITORY_ROOT="$(pwd)"
+        QWEN_AGENT_PROMPT="$(printf 'Repository root: %s\n\n%s\n\nUser task from PR comment:\n%s\n' "${REPOSITORY_ROOT}" "${QWEN_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
+        export QWEN_AGENT_PROMPT
+
+        stdbuf -oL -eL qwen \
+          --yolo \
+          --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
+          --prompt "${QWEN_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"

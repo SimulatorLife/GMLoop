@@ -1,6 +1,7 @@
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { createMeta, getNodeEndIndex, getNodeStartIndex } from "../rule-base-helpers.js";
+import { createMeta, findPreviousNonWhitespaceIndex } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type ControlFlowStatementNode = Readonly<Record<string, unknown> & { type: string }>;
@@ -18,14 +19,14 @@ function isIfStatementNode(node: unknown): boolean {
 }
 
 function isElseIfBranchBySourceContext(sourceText: string, node: ControlFlowStatementNode): boolean {
-    const nodeStartIndex = getNodeStartIndex(node);
+    const nodeStartIndex = Core.getNodeStartIndex(node);
     if (nodeStartIndex === null || nodeStartIndex === 0) {
         return false;
     }
 
-    let cursor = nodeStartIndex - 1;
-    while (cursor >= 0 && (sourceText[cursor] === " " || sourceText[cursor] === "\t")) {
-        cursor -= 1;
+    const cursor = findPreviousNonWhitespaceIndex(sourceText, nodeStartIndex, true);
+    if (cursor === null) {
+        return false;
     }
 
     const elseText = "else";
@@ -62,12 +63,12 @@ function computeCanonicalIfHeaderReplacement(
     sourceText: string,
     ifNode: ControlFlowStatementNode
 ): Readonly<{ rangeStart: number; rangeEnd: number; replacementText: string }> | null {
-    const ifStartIndex = getNodeStartIndex(ifNode);
+    const ifStartIndex = Core.getNodeStartIndex(ifNode);
     const bodyNode = ifNode.consequent;
-    const bodyStartIndex = getNodeStartIndex(bodyNode);
+    const bodyStartIndex = Core.getNodeStartIndex(bodyNode);
     const testNode = ifNode.test;
-    const testStartIndex = getNodeStartIndex(testNode);
-    const testEndIndex = getNodeEndIndex(testNode);
+    const testStartIndex = Core.getNodeStartIndex(testNode);
+    const testEndIndex = Core.getNodeEndIndex(testNode);
     if (
         ifStartIndex === null ||
         bodyStartIndex === null ||
@@ -95,8 +96,8 @@ function computeWrappedControlFlowBodyReplacement(
     sourceText: string,
     bodyNode: ControlFlowStatementNode
 ): Readonly<{ rangeStart: number; rangeEnd: number; replacementText: string }> | null {
-    const bodyStartIndex = getNodeStartIndex(bodyNode);
-    const bodyEndIndex = getNodeEndIndex(bodyNode);
+    const bodyStartIndex = Core.getNodeStartIndex(bodyNode);
+    const bodyEndIndex = Core.getNodeEndIndex(bodyNode);
     if (bodyStartIndex === null || bodyEndIndex === null || bodyEndIndex <= bodyStartIndex) {
         return null;
     }

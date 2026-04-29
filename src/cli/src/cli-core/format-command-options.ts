@@ -101,7 +101,6 @@ export function collectFormatCommandOptions(
     { defaultParseErrorAction, defaultPrettierLogLevel }: CollectFormatCommandOptionsParameters = {}
 ): FormatCommandOptionsResult {
     const options = (command?.opts?.() ?? {}) as CommandOptionsRecord;
-    console.log("Format options:", options);
     const { targetPathInput, targetPathProvided, rawTargetPathInput } = resolveTargetPathInput(options);
 
     const { skippedDirectorySampleLimit, ignoredFileSampleLimit, unsupportedExtensionSampleLimit } =

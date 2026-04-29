@@ -1,0 +1,38 @@
+name: "Agent 104 - Test Deduplication"
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "Optional agent override."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  run:
+    uses: ./.github/workflows/_agent-open-pr-and-ping.yml
+    secrets: inherit
+    with:
+      agent: ${{ inputs.agent }}
+      pr_title: "Agent: Test Deduplication"
+      prompt: >-
+        Find exactly one small cluster of duplicate or near-duplicate unit tests and consolidate it carefully
+        without reducing behavior coverage. Focus on cases where multiple tests exercise the same behavior and one
+        stronger, clearer, or more thorough shape can fully subsume the weaker duplicates.
+
+        Requirements:
+        - Only touch tests. Do not change production code unless a test helper must be improved to support the consolidation cleanly.
+        - Preserve edge-case coverage. Do not remove tests that cover distinct boundary conditions, failure modes, or regression scenarios.
+        - Prefer replacing repeated test bodies with a shared helper, table-driven structure, or a single stronger assertion shape when that keeps intent obvious.
+        - If two tests differ only by a minor assertion and one version is strictly more robust, keep the better one and remove the redundant weaker case.
+        - If you are not confident the cases are truly redundant, do not combine them.
+        - Update/add tests as needed so the resulting suite still proves the same supported behavior or better.
+        - Keep the change narrow: one cohesive test cluster, no broad suite rewrites.
+
+        In the PR summary, identify the consolidated test cluster, explain why the removed cases were redundant rather than distinct edge cases,
+        and report the validation commands you ran to confirm coverage was preserved.

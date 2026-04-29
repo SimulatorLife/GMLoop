@@ -90,6 +90,8 @@ export class GmlToJsEmitter {
      * a separate analysis pass.
      */
     private readonly scriptRefs: Set<string>;
+    private readonly emittedGlobalVarInitializers: Set<string>;
+    private emitDepth: number;
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
     constructor(semantic: IdentifierAnalyzer & CallTargetAnalyzer, options: Partial<EmitOptions> = {}) {
@@ -98,6 +100,8 @@ export class GmlToJsEmitter {
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this.globalVars = new Set();
         this.scriptRefs = new Set();
+        this.emittedGlobalVarInitializers = new Set();
+        this.emitDepth = 0;
     }
 
     /**
@@ -121,15 +125,26 @@ export class GmlToJsEmitter {
         if (!ast) {
             return "";
         }
-        // Pre-collect all globalvar-declared names before walking the AST so that
-        // identifiers referenced before their `globalvar` declaration (a legal GML
-        // forward reference) are emitted as `global.<name>` rather than bare names.
-        if (ast.type === "Program") {
-            for (const name of collectGlobalVarNames(ast)) {
-                this.globalVars.add(name);
-            }
+        const isTopLevelEmit = this.emitDepth === 0;
+        if (isTopLevelEmit) {
+            this.globalVars.clear();
+            this.scriptRefs.clear();
+            this.emittedGlobalVarInitializers.clear();
         }
-        return this.visit(ast);
+        this.emitDepth += 1;
+        try {
+            // Pre-collect all globalvar-declared names before walking the AST so that
+            // identifiers referenced before their `globalvar` declaration (a legal GML
+            // forward reference) are emitted as `global.<name>` rather than bare names.
+            if (ast.type === "Program") {
+                for (const name of collectGlobalVarNames(ast)) {
+                    this.globalVars.add(name);
+                }
+            }
+            return this.visit(ast);
+        } finally {
+            this.emitDepth -= 1;
+        }
     }
 
     private visit(ast: GmlNode): string {
@@ -298,17 +313,13 @@ export class GmlToJsEmitter {
     }
 
     /**
-     * Handle AST nodes that don't have explicit visitor methods.
-     * This serves as a safety net for unimplemented or unexpected node types.
+     * Handle AST nodes that do not have explicit visitor methods.
      *
-     * Currently returns an empty string to maintain backward compatibility.
-     *
-     * @param ast - The unhandled AST node
-     * @returns Empty string (node is skipped in output)
+     * Unknown nodes are treated as hard failures so transpilation cannot silently
+     * drop source constructs and emit incomplete JavaScript.
      */
-    private handleUnknownNode(_ast: GmlNode): string {
-        void _ast;
-        return "";
+    private handleUnknownNode(ast: GmlNode): never {
+        throw new TypeError(`Unsupported AST node type in GML emitter: ${ast.type}`);
     }
 
     private visitDefaultParameter(ast: DefaultParameterNode): string {
@@ -539,13 +550,8 @@ export class GmlToJsEmitter {
     private visitWithStatement(ast: WithStatementNode): string {
         const testExpr = wrapConditional(ast.test, this.visitNode, true) || "undefined";
         const rawBody = wrapRawBody(ast.body, this.visitNode);
-        // Indent body by adding 8 spaces to the start of each non-empty line.
-        // The regex ^(?=.) matches start-of-line followed by any character (via lookahead),
-        // which means it matches non-empty lines including whitespace-only lines, matching
-        // the original split/map/join behavior but with a single allocation.
-        const indentedBody = rawBody.replaceAll(/^(?=.)/gm, "        ");
 
-        return lowerWithStatement(testExpr, indentedBody, this.options.resolveWithTargetsIdent);
+        return lowerWithStatement(testExpr, rawBody, this.options.resolveWithTargetsIdent);
     }
 
     private visitReturnStatement(ast: ReturnStatementNode): string {
@@ -642,6 +648,10 @@ export class GmlToJsEmitter {
                     return "";
                 }
                 this.globalVars.add(identifier);
+                if (this.emittedGlobalVarInitializers.has(identifier)) {
+                    return "";
+                }
+                this.emittedGlobalVarInitializers.add(identifier);
                 return `if (!Object.prototype.hasOwnProperty.call(${globalsIdent}, "${identifier}")) { ${globalsIdent}.${identifier} = undefined; }`;
             })
         );

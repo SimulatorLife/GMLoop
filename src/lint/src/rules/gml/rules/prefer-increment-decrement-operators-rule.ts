@@ -3,8 +3,6 @@ import type { Rule } from "eslint";
 
 import {
     createMeta,
-    getNodeEndIndex,
-    getNodeStartIndex,
     isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
     isStandaloneStatementParentKey,
@@ -49,8 +47,8 @@ function isNumericLiteralOne(node: unknown, sourceText: string): boolean {
         return false;
     }
 
-    const literalStart = getNodeStartIndex(unwrappedNode);
-    const literalEnd = getNodeEndIndex(unwrappedNode);
+    const literalStart = Core.getNodeStartIndex(unwrappedNode);
+    const literalEnd = Core.getNodeEndIndex(unwrappedNode);
     if (typeof literalStart !== "number" || typeof literalEnd !== "number") {
         return false;
     }
@@ -105,10 +103,10 @@ export function createPreferIncrementDecrementOperatorsRule(definition: GmlRuleD
                             return;
                         }
 
-                        const assignmentStart = getNodeStartIndex(candidate.assignmentExpression);
-                        const assignmentEnd = getNodeEndIndex(candidate.assignmentExpression);
-                        const leftStart = getNodeStartIndex(candidate.assignmentExpression.left);
-                        const leftEnd = getNodeEndIndex(candidate.assignmentExpression.left);
+                        const assignmentStart = Core.getNodeStartIndex(candidate.assignmentExpression);
+                        const assignmentEnd = Core.getNodeEndIndex(candidate.assignmentExpression);
+                        const leftStart = Core.getNodeStartIndex(candidate.assignmentExpression.left);
+                        const leftEnd = Core.getNodeEndIndex(candidate.assignmentExpression.left);
                         if (
                             typeof assignmentStart !== "number" ||
                             typeof assignmentEnd !== "number" ||

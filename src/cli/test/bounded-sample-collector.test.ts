@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { tryAddSample } from "../src/cli-core/bounded-sample-collector.js";
+import { tryAddSample } from "../src/modules/formatting/bounded-sample-collector.js";
 
 /**
  * Check object equality by comparing id property.

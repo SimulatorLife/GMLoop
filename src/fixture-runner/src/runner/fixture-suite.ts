@@ -134,11 +134,6 @@ async function readFixtureInputText(fixtureCase: FixtureCase): Promise<string | 
     return fixtureCase.inputFilePath ? await readFile(fixtureCase.inputFilePath, "utf8") : null;
 }
 
-function createRunProfiledStage(stageTimer: ReturnType<typeof createStageTimer>) {
-    return <T>(stageName: Exclude<FixtureStageName, "load" | "compare" | "total">, operation: () => Promise<T>) =>
-        stageTimer.runStage(stageName, operation);
-}
-
 function assertFixtureBudgetsWithinLimits(
     fixtureCase: FixtureCase,
     budgetFailures: ReturnType<typeof collectBudgetFailures>
@@ -162,7 +157,10 @@ async function executeFixtureCase(
     const stageTimer = createStageTimer();
     const budgets = fixtureCase.config.fixture.profile?.budgets ?? null;
     const inputText = await readFixtureInputText(fixtureCase);
-    const runProfiledStage = createRunProfiledStage(stageTimer);
+    const runProfiledStage = <T>(
+        stageName: Exclude<FixtureStageName, "load" | "compare" | "total">,
+        operation: () => Promise<T>
+    ) => stageTimer.runStage(stageName, operation);
     let workingProjectDirectoryPath: string | null = null;
     let caseResult: FixtureCaseResult | null = null;
 

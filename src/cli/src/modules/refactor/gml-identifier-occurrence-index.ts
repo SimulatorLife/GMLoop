@@ -166,4 +166,18 @@ export class GmlIdentifierOccurrenceIndex {
     getOccurrences(identifierName: string): ReadonlyArray<IdentifierOccurrenceRange> {
         return this.occurrencesByName.get(identifierName) ?? EMPTY_IDENTIFIER_OCCURRENCES;
     }
+
+    /**
+     * Iterate all identifier occurrence groups keyed by identifier name.
+     *
+     * This keeps callers on one pass over the prebuilt file index rather than
+     * performing one `getOccurrences()` lookup per candidate symbol.
+     */
+    forEachOccurrencesByIdentifierName(
+        visit: (identifierName: string, occurrences: ReadonlyArray<IdentifierOccurrenceRange>) => void
+    ): void {
+        for (const [identifierName, occurrences] of this.occurrencesByName.entries()) {
+            visit(identifierName, occurrences);
+        }
+    }
 }

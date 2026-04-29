@@ -20,7 +20,7 @@ export interface SampleLimitRuntimeOption {
     envVar?: string;
     getDefault: () => number | undefined;
     setDefault: (value?: unknown) => number | undefined;
-    resolve: (value?: unknown, options?: { defaultLimit?: number; defaultValue?: number }) => number | null | undefined;
+    resolve: (value?: unknown, options?: { defaultLimit?: number }) => number | null | undefined;
     applyEnvOverride: (env?: NodeJS.ProcessEnv) => number | undefined;
 }
 
@@ -71,12 +71,10 @@ export function createSampleLimitRuntimeOption(
         return currentDefault;
     };
 
-    const resolve = (value?: unknown, options: { defaultLimit?: number; defaultValue?: number } = {}) => {
-        const fallback = options.defaultLimit ?? options.defaultValue;
-        return resolveValue(value, {
-            defaultValue: fallback ?? currentDefault
+    const resolve = (value?: unknown, options: { defaultLimit?: number } = {}) =>
+        resolveValue(value, {
+            defaultValue: options.defaultLimit ?? currentDefault
         });
-    };
 
     applyEnvOverride();
 

@@ -8,7 +8,7 @@ import { Core } from "@gmloop/core";
 
 import { findRepoRootSync, safeStatOrNull } from "../../shared/index.js";
 
-const { getErrorMessageOrFallback, parseJsonWithContext, runSequentially } = Core;
+const { cloneObjectEntries, getErrorMessageOrFallback, parseJsonWithContext, runSequentially } = Core;
 
 const MODULE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = findRepoRootSync(MODULE_DIRECTORY);
@@ -310,7 +310,7 @@ function parseRuntimeWrapperAssetManifest(manifestContents: string): RuntimeWrap
         return null;
     }
 
-    return createRuntimeWrapperAssetManifest(entries.map((entry) => ({ ...entry })));
+    return createRuntimeWrapperAssetManifest(cloneObjectEntries(entries));
 }
 
 async function readRuntimeWrapperAssetManifest(manifestPath: string): Promise<RuntimeWrapperAssetManifest | null> {
@@ -508,5 +508,6 @@ export const __test__ = Object.freeze({
     buildInjectionSnippet,
     extractGmWebServerRoot,
     areRuntimeWrapperAssetManifestsEqual,
-    collectRuntimeWrapperAssetManifestEntries
+    collectRuntimeWrapperAssetManifestEntries,
+    parseRuntimeWrapperAssetManifest
 });

@@ -7,7 +7,6 @@ import {
     computeLineStartOffsets,
     createMeta,
     getLineIndexForOffset,
-    getNodeEndIndex,
     reportFullTextRewrite,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
@@ -1718,7 +1717,7 @@ function handleDeferredDocSynthesis(
         );
         if (!assignmentReturnSummary.hasReturnStatement) {
             const assignmentStartIndex = getNodeStartIndex(astFunctionCandidate.sourceNode);
-            const assignmentEndIndex = getNodeEndIndex(astFunctionCandidate.sourceNode);
+            const assignmentEndIndex = Core.getNodeEndIndex(astFunctionCandidate.sourceNode);
             if (
                 typeof assignmentStartIndex === "number" &&
                 typeof assignmentEndIndex === "number" &&

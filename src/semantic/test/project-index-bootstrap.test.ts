@@ -63,19 +63,19 @@ void test("Semantic.bootstrapProjectIndex normalizes cache max size overrides", 
         {
             const { options, descriptor } = await runCase("16");
             assert.equal(options.__identifierCaseProjectIndexCacheMaxBytes, 16);
-            assert.equal(descriptor.maxSizeBytes, 16);
+            assert.equal(descriptor.cacheMaxSizeBytes, 16);
         }
 
         {
             const { options, descriptor } = await runCase("0");
             assert.strictEqual(options.__identifierCaseProjectIndexCacheMaxBytes, null);
-            assert.strictEqual(descriptor.maxSizeBytes, null);
+            assert.strictEqual(descriptor.cacheMaxSizeBytes, null);
         }
 
         {
             const { options, descriptor } = await runCase(" ");
             assert.equal(Object.hasOwn(options, "__identifierCaseProjectIndexCacheMaxBytes"), false);
-            assert.equal("maxSizeBytes" in descriptor, false);
+            assert.equal("cacheMaxSizeBytes" in descriptor, false);
         }
     });
 });
