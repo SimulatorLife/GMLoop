@@ -1,4 +1,4 @@
-import { type ProjectResourceMutationResult,Refactor } from "@gmloop/refactor";
+import { type ProjectResourceMutationResult, Refactor } from "@gmloop/refactor";
 import { Argument, Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
