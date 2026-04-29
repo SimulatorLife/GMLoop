@@ -51,6 +51,17 @@ type MutableGraphEdgeRecord = Omit<GraphVisualizationEdgeRecord, "source" | "tar
         target: MutableGraphEdgeEndpoint;
     }>;
 
+function readErrorName(errorValue: unknown): string {
+    if (errorValue instanceof Error) {
+        return errorValue.name;
+    }
+    if (typeof errorValue === "object" && errorValue !== null && "name" in errorValue) {
+        const candidate = Reflect.get(errorValue, "name");
+        return typeof candidate === "string" ? candidate : "";
+    }
+    return "";
+}
+
 type GraphSelectionApi = Readonly<{
     append(name: string): GraphSelectionApi;
     attr(name: string, value: string | number | ((datum: never) => string | number | null) | null): GraphSelectionApi;
@@ -1702,14 +1713,4 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         });
     }
 
-    function readErrorName(errorValue: unknown): string {
-        if (errorValue instanceof Error) {
-            return errorValue.name;
-        }
-        if (typeof errorValue === "object" && errorValue !== null && "name" in errorValue) {
-            const candidate = Reflect.get(errorValue, "name");
-            return typeof candidate === "string" ? candidate : "";
-        }
-        return "";
-    }
 }
