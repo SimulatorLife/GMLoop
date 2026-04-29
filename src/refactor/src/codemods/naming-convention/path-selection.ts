@@ -64,26 +64,3 @@ export function createPathSelectionMatcher(
         return result;
     };
 }
-
-/**
- * Check whether a target path is selected by allow/deny path lists.
- *
- * Rules:
- * - Empty allow list means "allow everything".
- * - A path is allowed when it exactly matches an allow entry or is inside it.
- * - A denied path always wins over allow matches.
- *
- * @param projectRoot - Root path used to resolve relative entries.
- * @param targetPath - Path being checked.
- * @param allowedPaths - Optional allow list.
- * @param deniedPaths - Optional deny list.
- * @returns True when the path is selected by the allow/deny rules.
- */
-export function isPathSelectedByLists(
-    projectRoot: string,
-    targetPath: string,
-    allowedPaths: ReadonlyArray<string>,
-    deniedPaths: ReadonlyArray<string>
-): boolean {
-    return createPathSelectionMatcher(projectRoot, allowedPaths, deniedPaths)(targetPath);
-}
