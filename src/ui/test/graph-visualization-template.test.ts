@@ -403,6 +403,18 @@ void test("graph visualization template gives fallback, room, shader, and sprite
     assert.match(html, /nodeVisualStyleByKind\.get\(styleKind\)\?\.color/);
 });
 
+void test("graph visualization template preserves file nodes as first-class graph nodes with dedicated styling", () => {
+    const html = renderEmptyGraphVisualizationHtml("File Node Fidelity Test");
+    const embeddedStyles = extractEmbeddedNodeVisualStyles(html);
+    const defaultStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "default");
+    const fileStyle = findEmbeddedNodeVisualStyle(embeddedStyles, "file");
+
+    assert.notEqual(fileStyle.color, defaultStyle.color);
+    assert.match(extractCssRuleBody(html, ".node-file"), new RegExp(`fill: ${fileStyle.color};`));
+    assert.match(html, /const allNodes = dependencies\.data\.nodes;/);
+    assert.doesNotMatch(html, /nodeValue\.kind !== "file"/);
+});
+
 void test("graph visualization template relies on semantic project nodes instead of a synthetic center node", () => {
     const html = renderGraphVisualizationHtml(
         {
