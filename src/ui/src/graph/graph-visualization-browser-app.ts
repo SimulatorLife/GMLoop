@@ -103,17 +103,6 @@ type GraphSimulationApi = Readonly<{
 
 type GraphPathRenderer = () => string;
 
-function readErrorName(errorValue: unknown): string {
-    if (errorValue instanceof Error) {
-        return errorValue.name;
-    }
-    if (typeof errorValue === "object" && errorValue !== null && "name" in errorValue) {
-        const candidate = Reflect.get(errorValue, "name");
-        return typeof candidate === "string" ? candidate : "";
-    }
-    return "";
-}
-
 type GraphDragBehavior = ((selection: GraphSelectionApi) => void) &
     Readonly<{
         on(name: string, handler: (event: never, datum: never) => void): GraphDragBehavior;
