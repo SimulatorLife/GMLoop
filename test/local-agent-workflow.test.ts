@@ -77,6 +77,51 @@ function getRequiredChildWorkflowCommand(source: string, inputName: string): str
     return source.slice(start, end);
 }
 
+function getRequiredAiderCommand(source: string): string {
+    const commandStartIndex = source.indexOf("stdbuf -oL -eL aider \\");
+    assert.notEqual(commandStartIndex, -1, "Aider workflow must invoke aider with explicit CLI flags.");
+
+    const commandTail = source.slice(commandStartIndex);
+    const commandLines = commandTail.split("\n");
+    const capturedCommandLines: string[] = [];
+
+    for (const line of commandLines) {
+        if (capturedCommandLines.length > 0 && line.includes("| tee ")) {
+            capturedCommandLines.push(line);
+            break;
+        }
+        if (capturedCommandLines.length > 0 || line.includes("stdbuf -oL -eL aider")) {
+            capturedCommandLines.push(line);
+        }
+    }
+
+    assert.ok(capturedCommandLines.length > 0, "Aider workflow command block must not be empty.");
+
+    return capturedCommandLines.join("\n");
+}
+
+function assertAiderCommandIncludesRequiredFlags(commandSource: string): void {
+    const commandLines = commandSource
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    const requiredFlags = [
+        "--yes-always",
+        "--no-browser",
+        "--subtree-only",
+        "--no-auto-commits",
+        "--no-dirty-commits",
+        "--message-file"
+    ];
+
+    for (const requiredFlag of requiredFlags) {
+        assert.ok(
+            commandLines.some((line) => line.includes(requiredFlag)),
+            `Aider command must include ${requiredFlag}.`
+        );
+    }
+}
+
 function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
     assert.match(prompt, /pnpm run lint/u);
     assert.match(prompt, /pnpm run build:ts/u);
@@ -160,6 +205,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     const prompt = getRequiredAiderMessageTemplate(source);
     const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
+    const aiderCommand = getRequiredAiderCommand(source);
 
     assert.match(source, /name: '▶️ Aider Invoke'/u);
     assert.match(source, /github\.event\.comment\.body == '@aider'/u);
@@ -178,10 +224,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
         source.lastIndexOf("agent_setup_command") < source.indexOf("agent_command"),
         "Aider must pull the configured local model before invoking the CLI."
     );
-    assert.match(
-        source,
-        /aider[\s\S]*--yes-always[\s\S]*--no-browser[\s\S]*--subtree-only[\s\S]*--no-auto-commits[\s\S]*--no-dirty-commits[\s\S]*--message-file/u
-    );
+    assertAiderCommandIncludesRequiredFlags(aiderCommand);
     assert.match(source, /aider_status="\$\{PIPESTATUS\[0\]\}"/u);
     assert.doesNotMatch(source, /Aider completed without producing local file changes/u);
     assert.doesNotMatch(source, /OPENAI_API_TYPE/u);
@@ -252,7 +295,10 @@ void test("agent invoke streams custom command output while preserving exit stat
 void test("agent invoke workflow fails when a successful agent run produces no push", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
-    assert.match(source, /if \[ "\$\{\{ steps\.run_agent\.outcome \}\}" = "failure" \] \|\| \[ "\$\{\{ steps\.run_agent\.conclusion \}\}" = "failure" \]; then/u);
+    assert.match(
+        source,
+        /if \[ "\$\{\{ steps\.run_agent\.outcome \}\}" = "failure" \] \|\| \[ "\$\{\{ steps\.run_agent\.conclusion \}\}" = "failure" \]; then/u
+    );
     assert.match(source, /if \[ -f "\$SENTINEL" \]; then/u);
     assert.match(source, /Agent completed without producing pushable local changes/u);
     assert.match(source, /Agent exhausted \$\{total_attempts\} attempt\(s\) without producing pushable local changes/u);
@@ -270,7 +316,10 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
     assert.match(source, /MAX_AGENT_RETRIES: \$\{\{ inputs\.max_agent_retries \}\}/u);
     assert.match(source, /total_attempts=\$\(\(MAX_AGENT_RETRIES \+ 1\)\)/u);
     assert.match(source, /for \(\(attempt = 1; attempt <= total_attempts; attempt\+\+\)\); do/u);
-    assert.match(source, /The previous attempt was invalid because it completed without producing any pushable repository changes/u);
+    assert.match(
+        source,
+        /The previous attempt was invalid because it completed without producing any pushable repository changes/u
+    );
     assert.match(source, /Work in the checked-out repository, not uploaded chat snippets/u);
     assert.match(source, /run `pnpm run lint` before code selection/u);
     assert.match(source, /quote the exact lint summary line/u);
@@ -282,11 +331,17 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
     assert.match(source, /RETRY_COMMENT_SENTINEL="\$\{RUNNER_TEMP:-\/tmp\}\/\.agent_retry_comment_posted"/u);
     assert.match(source, /post_retry_comment_once\(\)/u);
     assert.match(source, /Retry comment already posted; skipping duplicate PR comment/u);
-    assert.match(source, /did not produce pushable repository changes on attempt \$\{failed_attempt\}\/\$\{total_attempts\}/u);
+    assert.match(
+        source,
+        /did not produce pushable repository changes on attempt \$\{failed_attempt\}\/\$\{total_attempts\}/u
+    );
     assert.match(source, /starting retry attempt \$\{next_attempt\}\/\$\{total_attempts\}/u);
     assert.match(source, /gh issue comment "\$\{PR_NUMBER\}" --body "\$\{retry_message\}" --repo "\$\{REPOSITORY\}"/u);
     assert.match(source, /post_retry_comment_once "\$\{attempt\}" "\$\(\(attempt \+ 1\)\)"/u);
-    assert.match(source, /Attempt \$\{attempt\}\/\$\{total_attempts\} produced no pushable changes; starting a fresh retry session/u);
+    assert.match(
+        source,
+        /Attempt \$\{attempt\}\/\$\{total_attempts\} produced no pushable changes; starting a fresh retry session/u
+    );
     assert.match(source, /reset_branch_to_retry_baseline\(\)/u);
     assert.match(source, /git reset --hard "origin\/\$\{target_ref\}"/u);
     assert.match(source, /git submodule update --init --recursive/u);
@@ -295,7 +350,9 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
 
 void test("agent invoke closes only empty PRs on expected agent branches after reporting failure", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
-    const failureCommentIndex = source.indexOf('if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then');
+    const failureCommentIndex = source.indexOf(
+        'if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then'
+    );
     const cleanupStepIndex = source.indexOf("- name: Close empty failed agent PR");
 
     assert.ok(failureCommentIndex > 0, "failure path must post the failure comment.");
@@ -312,8 +369,14 @@ void test("agent invoke closes only empty PRs on expected agent branches after r
     assert.match(source, /\.changed_files/u);
     assert.match(source, /if \[ "\$\{pr_state\}" != "open" \]; then/u);
     assert.match(source, /if \[ "\$\{changed_files\}" != "0" \]; then/u);
-    assert.match(source, /codex\/task-\*\|copilot\/task-\*\|gemini\/task-\*\|qwen\/task-\*\|qwen-local\/task-\*\|aider\/task-\*/u);
-    assert.match(source, /main\|master\|develop\|development\|trunk\|production\|release\|feature\/\*\|bugfix\/\*\|hotfix\/\*/u);
+    assert.match(
+        source,
+        /codex\/task-\*\|copilot\/task-\*\|gemini\/task-\*\|qwen\/task-\*\|qwen-local\/task-\*\|aider\/task-\*/u
+    );
+    assert.match(
+        source,
+        /main\|master\|develop\|development\|trunk\|production\|release\|feature\/\*\|bugfix\/\*\|hotfix\/\*/u
+    );
     assert.match(source, /if \[ "\$\{head_ref\}" = "\$\{base_ref\}" \]; then/u);
     assert.match(source, /if \[ "\$\{head_repo\}" != "\$\{REPOSITORY\}" \]; then/u);
     assert.match(source, /gh pr close "\$\{ISSUE_NUMBER\}" --repo "\$\{REPOSITORY\}"/u);
