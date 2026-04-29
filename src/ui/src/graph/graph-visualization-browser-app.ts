@@ -204,7 +204,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     const edgeLineVisualStyleByType = new Map(EDGE_LINE_VISUAL_STYLES.map((style) => [style.type, style]));
     const nodeVisualStyleByKind = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
     const edgeTypes = Array.from(new Set(dependencies.data.edges.map((edgeValue) => edgeValue.type)));
-    const allNodes = dependencies.data.nodes.filter((nodeValue) => nodeValue.kind !== "file");
+    const allNodes = dependencies.data.nodes;
     const allNodeKinds = Array.from(new Set(allNodes.map((nodeValue) => nodeValue.kind)));
     const defaultEnabledNodeKinds = allNodeKinds.filter((kindValue) => !defaultDisabledNodeKinds.has(kindValue));
     const resourceTypesPresent = allNodeKinds.filter((kindValue) => resourceKinds.has(kindValue));
