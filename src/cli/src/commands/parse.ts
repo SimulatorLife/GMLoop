@@ -176,32 +176,37 @@ function createDryRunPayload(parsedFiles: ReadonlyArray<ParsedFileAst>): DryRunP
     };
 }
 
+async function mapSequentially<Input, Output>(
+    values: ReadonlyArray<Input>,
+    mapper: (value: Input) => Promise<Output>
+): Promise<Array<Output>> {
+    const mappedValues: Array<Output> = [];
+
+    await Core.runSequentially(values, async (value) => {
+        mappedValues.push(await mapper(value));
+    });
+
+    return mappedValues;
+}
+
 function logVerboseParseSummary(filePath: string): void {
     console.error(`Parsed ${formatPathForDisplay(filePath)}`);
 }
 
-async function parseTargetFiles(filePaths: ReadonlyArray<string>, verbose: boolean): Promise<Array<ParsedFileAst>> {
-    const parsedFiles: Array<ParsedFileAst> = [];
-
-    await Core.runSequentially(filePaths, async (filePath) => {
-        const parsedFile = await parseFileToAst(filePath);
-        parsedFiles.push(parsedFile);
-        if (verbose) {
-            logVerboseParseSummary(filePath);
-        }
-    });
-
-    return parsedFiles;
+async function parseAndLogTargetFile(filePath: string, verbose: boolean): Promise<ParsedFileAst> {
+    const parsedFile = await parseFileToAst(filePath);
+    if (verbose) {
+        logVerboseParseSummary(filePath);
+    }
+    return parsedFile;
 }
 
-async function writeParsedAstJsonFiles(parsedFiles: ReadonlyArray<ParsedFileAst>): Promise<Array<string>> {
-    const outputPaths: Array<string> = [];
+function parseTargetFiles(filePaths: ReadonlyArray<string>, verbose: boolean): Promise<Array<ParsedFileAst>> {
+    return mapSequentially(filePaths, (filePath) => parseAndLogTargetFile(filePath, verbose));
+}
 
-    await Core.runSequentially(parsedFiles, async (parsedFile) => {
-        outputPaths.push(await writeParsedAstJsonFile(parsedFile));
-    });
-
-    return outputPaths;
+function writeParsedAstJsonFiles(parsedFiles: ReadonlyArray<ParsedFileAst>): Promise<Array<string>> {
+    return mapSequentially(parsedFiles, writeParsedAstJsonFile);
 }
 
 function printDryRunAstJson(parsedFiles: ReadonlyArray<ParsedFileAst>): void {
