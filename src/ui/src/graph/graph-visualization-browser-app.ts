@@ -1612,57 +1612,59 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         if (openProjectButton.empty()) {
             return;
         }
-        openProjectButton.on("click", async () => {
-            const button = graphRuntime.select("#open-project");
-            button.attr("disabled", "true").html(openingButtonLabel);
-            try {
-                let selectedFiles: ReadonlyArray<BrowserFileHandle> | null = null;
+        openProjectButton.on("click", () => {
+            void (async () => {
+                const button = graphRuntime.select("#open-project");
+                button.attr("disabled", "true").html(openingButtonLabel);
                 try {
-                    selectedFiles = await dependencies.directoryOpen({ recursive: true });
-                } catch (error) {
-                    if (readErrorName(error) === "AbortError") {
+                    let selectedFiles: ReadonlyArray<BrowserFileHandle> | null = null;
+                    try {
+                        selectedFiles = await dependencies.directoryOpen({ recursive: true });
+                    } catch (error) {
+                        if (readErrorName(error) === "AbortError") {
+                            button.attr("disabled", null).html(openButtonLabel);
+                            return;
+                        }
+                        console.warn("Directory picker failed, falling back to file picker:", error);
+                    }
+
+                    if (selectedFiles === null || selectedFiles.length === 0) {
+                        const fileSelection = await dependencies.fileOpen({
+                            description: "GameMaker project files and folders",
+                            extensions: [".gml", ".yyp", ".json"],
+                            multiple: true
+                        });
+                        selectedFiles = Array.isArray(fileSelection) ? fileSelection : [fileSelection];
+                    }
+
+                    if (selectedFiles.length === 0) {
                         button.attr("disabled", null).html(openButtonLabel);
                         return;
                     }
-                    console.warn("Directory picker failed, falling back to file picker:", error);
-                }
 
-                if (selectedFiles === null || selectedFiles.length === 0) {
-                    const fileSelection = await dependencies.fileOpen({
-                        description: "GameMaker project files and folders",
-                        extensions: [".gml", ".yyp", ".json"],
-                        multiple: true
+                    const selectedPaths = selectedFiles.map((file) =>
+                        typeof file.webkitRelativePath === "string" && file.webkitRelativePath.length > 0
+                            ? file.webkitRelativePath
+                            : file.name
+                    );
+                    const activePath = selectedPaths[0] ?? "selected items";
+                    currentLoadedTarget = Object.freeze({
+                        activePath,
+                        projectRoot: activePath,
+                        selectedPaths,
+                        source: "finder-open"
                     });
-                    selectedFiles = Array.isArray(fileSelection) ? fileSelection : [fileSelection];
-                }
-
-                if (selectedFiles.length === 0) {
+                    selectedProjectConfiguration = await loadProjectConfigurationFromFiles(selectedFiles);
+                    renderLoadedTargetSummary();
+                    renderProjectConfigurationCatalog();
                     button.attr("disabled", null).html(openButtonLabel);
-                    return;
+                } catch (error) {
+                    console.error("Open project failed:", error);
+                    button
+                        .attr("disabled", null)
+                        .html('<span class="button-content"><span class="button-label">Error</span></span>');
                 }
-
-                const selectedPaths = selectedFiles.map((file) =>
-                    typeof file.webkitRelativePath === "string" && file.webkitRelativePath.length > 0
-                        ? file.webkitRelativePath
-                        : file.name
-                );
-                const activePath = selectedPaths[0] ?? "selected items";
-                currentLoadedTarget = Object.freeze({
-                    activePath,
-                    projectRoot: activePath,
-                    selectedPaths,
-                    source: "finder-open"
-                });
-                selectedProjectConfiguration = await loadProjectConfigurationFromFiles(selectedFiles);
-                renderLoadedTargetSummary();
-                renderProjectConfigurationCatalog();
-                button.attr("disabled", null).html(openButtonLabel);
-            } catch (error) {
-                console.error("Open project failed:", error);
-                button
-                    .attr("disabled", null)
-                    .html('<span class="button-content"><span class="button-label">Error</span></span>');
-            }
+            })();
         });
     }
 
@@ -1670,31 +1672,33 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         if (!dependencies.isServerMode) {
             return;
         }
-        graphRuntime.select("#regenerate").on("click", async () => {
-            const button = graphRuntime.select("#regenerate");
-            button.attr("disabled", "true").html(regeneratingButtonLabel);
-            try {
-                const response = await fetch("/api/reindex", { method: "POST" });
-                if (response.ok) {
-                    const payload = (await response.json()) as Readonly<{ changed?: boolean }>;
-                    if (payload.changed === true) {
-                        globalThis.location.reload();
+        graphRuntime.select("#regenerate").on("click", () => {
+            void (async () => {
+                const button = graphRuntime.select("#regenerate");
+                button.attr("disabled", "true").html(regeneratingButtonLabel);
+                try {
+                    const response = await fetch("/api/reindex", { method: "POST" });
+                    if (response.ok) {
+                        const payload = (await response.json()) as Readonly<{ changed?: boolean }>;
+                        if (payload.changed === true) {
+                            globalThis.location.reload();
+                            return;
+                        }
+                        button.attr("disabled", null).html(regenerateButtonLabel);
                         return;
                     }
-                    button.attr("disabled", null).html(regenerateButtonLabel);
-                    return;
+                    const responseText = await response.text();
+                    console.error("Reindex failed", responseText);
+                    button
+                        .attr("disabled", null)
+                        .html('<span class="button-content"><span class="button-label">Failed</span></span>');
+                } catch (error) {
+                    console.error(error);
+                    button
+                        .attr("disabled", null)
+                        .html('<span class="button-content"><span class="button-label">Error</span></span>');
                 }
-                const responseText = await response.text();
-                console.error("Reindex failed", responseText);
-                button
-                    .attr("disabled", null)
-                    .html('<span class="button-content"><span class="button-label">Failed</span></span>');
-            } catch (error) {
-                console.error(error);
-                button
-                    .attr("disabled", null)
-                    .html('<span class="button-content"><span class="button-label">Error</span></span>');
-            }
+            })();
         });
     }
 
