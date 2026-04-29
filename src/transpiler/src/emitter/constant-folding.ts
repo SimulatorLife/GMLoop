@@ -1,4 +1,5 @@
 import type { BinaryExpressionNode, GmlNode, TernaryExpressionNode, UnaryExpressionNode } from "./ast.js";
+import { normalizeStructKeyText } from "./js-string-utils.js";
 
 const ZERO_COMPARISON_EPSILON = Number.EPSILON * 4;
 
@@ -37,32 +38,6 @@ function toBooleanLiteral(value: string | number | boolean): boolean | null {
 
 function isNullishValue(value: unknown): value is null | undefined {
     return value === null || value === undefined;
-}
-
-/**
- * Check whether a parser-produced string literal value includes surrounding
- * double quotes.
- *
- * The GML parser stores string literal values WITH their surrounding quotes
- * (e.g., the GML literal `"hello"` is stored as the 7-character JS string
- * `"hello"` whose first and last characters are `"`). Hand-crafted AST nodes
- * or non-string literal values do NOT include quotes.
- */
-function isParserQuotedString(value: string): boolean {
-    return value.length >= 2 && value[0] === '"' && value.at(-1) === '"';
-}
-
-/**
- * Strip surrounding double quotes from a parser-produced string literal value.
- *
- * If the value is not a parser-quoted string, it is returned unchanged so that
- * hand-crafted AST nodes (e.g., from tests) continue to work.
- */
-function stripParserQuotes(value: string): string {
-    if (isParserQuotedString(value)) {
-        return value.slice(1, -1);
-    }
-    return value;
 }
 
 function evaluatePrimitiveEqualityOperator(
@@ -196,11 +171,11 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
     // `JSON.stringify` re-wraps the result correctly.
     if (typeof left === "string" && typeof right === "string") {
         if (op === "+") {
-            return stripParserQuotes(left) + stripParserQuotes(right);
+            return normalizeStructKeyText(left) + normalizeStructKeyText(right);
         }
 
-        const strippedLeft = stripParserQuotes(left);
-        const strippedRight = stripParserQuotes(right);
+        const strippedLeft = normalizeStructKeyText(left);
+        const strippedRight = normalizeStructKeyText(right);
         const equalityResult = evaluatePrimitiveEqualityOperator(op, strippedLeft, strippedRight);
         if (equalityResult !== null) {
             return equalityResult;
