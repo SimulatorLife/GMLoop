@@ -11,25 +11,29 @@ export function renderGraphVisualizationClientScript(
     serializedProjectConfigurationCatalog: string,
     isServerMode: boolean
 ): string {
-    return `const graphVisualizationData = ${serializedData};
-const graphVisualizationDocumentationCatalogs = ${serializedDocumentationCatalogs};
-const graphVisualizationLoadedTarget = ${serializedLoadedTarget};
-const graphVisualizationProjectConfigurationCatalog = ${serializedProjectConfigurationCatalog};
-const graphVisualizationServerMode = ${isServerMode ? "true" : "false"};
-const EDGE_LINE_VISUAL_STYLES = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};
-const NODE_VISUAL_STYLES = ${JSON.stringify(NODE_VISUAL_STYLES)};
+    const scriptLines = [
+        `const graphVisualizationData = ${serializedData};`,
+        `const graphVisualizationDocumentationCatalogs = ${serializedDocumentationCatalogs};`,
+        `const graphVisualizationLoadedTarget = ${serializedLoadedTarget};`,
+        `const graphVisualizationProjectConfigurationCatalog = ${serializedProjectConfigurationCatalog};`,
+        `const graphVisualizationServerMode = ${isServerMode ? "true" : "false"};`,
+        `const EDGE_LINE_VISUAL_STYLES = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};`,
+        `const NODE_VISUAL_STYLES = ${JSON.stringify(NODE_VISUAL_STYLES)};`,
+        "",
+        "window.__GMLOOP_DOCUMENTATION_CATALOGS__ = graphVisualizationDocumentationCatalogs;",
+        "window.__GMLOOP_LOADED_TARGET__ = graphVisualizationLoadedTarget;",
+        "window.__GMLOOP_PROJECT_CONFIGURATION__ = graphVisualizationProjectConfigurationCatalog;",
+        "",
+        `(${bootstrapGraphVisualizationApp.toString()})({`,
+        "    data: graphVisualizationData,",
+        "    directoryOpen,",
+        "    documentationCatalogs: graphVisualizationDocumentationCatalogs,",
+        "    fileOpen,",
+        "    isServerMode: graphVisualizationServerMode,",
+        "    loadedTarget: graphVisualizationLoadedTarget,",
+        "    projectConfigurationCatalog: graphVisualizationProjectConfigurationCatalog",
+        "});"
+    ];
 
-window.__GMLOOP_DOCUMENTATION_CATALOGS__ = graphVisualizationDocumentationCatalogs;
-window.__GMLOOP_LOADED_TARGET__ = graphVisualizationLoadedTarget;
-window.__GMLOOP_PROJECT_CONFIGURATION__ = graphVisualizationProjectConfigurationCatalog;
-
-(${bootstrapGraphVisualizationApp.toString()})({
-    data: graphVisualizationData,
-    directoryOpen,
-    documentationCatalogs: graphVisualizationDocumentationCatalogs,
-    fileOpen,
-    isServerMode: graphVisualizationServerMode,
-    loadedTarget: graphVisualizationLoadedTarget,
-    projectConfigurationCatalog: graphVisualizationProjectConfigurationCatalog
-});`;
+    return scriptLines.join("\n");
 }
