@@ -405,21 +405,30 @@ void describe("debounce", () => {
     });
 
     void describe("real-world scenarios", () => {
-        void it("should handle file save debouncing scenario", async () => {
+        void it("should handle file save debouncing scenario", () => {
             const savedFiles: Array<string> = [];
             const debouncedSave = debounce((filePath: string) => {
                 savedFiles.push(filePath);
             }, 200);
 
-            debouncedSave("/path/file.gml");
-            await sleep(50);
-            debouncedSave("/path/file.gml");
-            await sleep(50);
-            debouncedSave("/path/file.gml");
+            // This scenario previously relied on 50/50/210 ms wall-clock sleeps.
+            // On slow CI workers, scheduler jitter can delay timer callbacks past
+            // the final assertion and cause intermittent misses. Fake timers keep
+            // the debounce window deterministic while preserving behavior coverage.
+            mock.timers.enable({ apis: ["setTimeout"] });
+            try {
+                debouncedSave("/path/file.gml");
+                mock.timers.tick(50);
+                debouncedSave("/path/file.gml");
+                mock.timers.tick(50);
+                debouncedSave("/path/file.gml");
 
-            await sleep(210);
+                mock.timers.tick(200);
 
-            assert.deepEqual(savedFiles, ["/path/file.gml"], "Should save file only once");
+                assert.deepEqual(savedFiles, ["/path/file.gml"], "Should save file only once");
+            } finally {
+                mock.timers.reset();
+            }
         });
 
         void it("should handle shutdown with flush", () => {
