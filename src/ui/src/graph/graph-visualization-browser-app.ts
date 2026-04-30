@@ -159,6 +159,11 @@ type TooltipMouseEvent = MouseEvent &
         pageY: number;
     }>;
 
+type GraphTransform = Readonly<{
+    k: number;
+    transformText: string;
+}>;
+
 const NODE_GROUP_FILTER_CATEGORY = "node-group";
 const RESOURCE_GROUP_FILTER_TYPE = "resource-group";
 type FilterCategory = "edge" | "node" | typeof NODE_GROUP_FILTER_CATEGORY;
@@ -167,6 +172,470 @@ type FilterType =
     | "enum-group"
     | typeof RESOURCE_GROUP_FILTER_TYPE
     | GraphVisualizationEdgeRecord["type"];
+
+function readGraphRuntime(): GraphRuntimeApi {
+    const runtimeValue = Reflect.get(globalThis, "d3");
+    if (runtimeValue === undefined || runtimeValue === null) {
+        throw new Error("The graph visualization requires the D3 runtime.");
+    }
+    return runtimeValue as GraphRuntimeApi;
+}
+
+function readGraphTransform(eventValue: never): GraphTransform {
+    const transformValue = Reflect.get(eventValue as object, "transform");
+    const zoomFactor = Number(Reflect.get(transformValue as object, "k"));
+    return {
+        k: Number.isFinite(zoomFactor) ? zoomFactor : 1,
+        transformText: String(transformValue ?? "")
+    };
+}
+
+function cloneGraphNodes(nodeValues: ReadonlyArray<GraphVisualizationNodeRecord>): Array<MutableGraphNodeRecord> {
+    return nodeValues.map((nodeValue) => ({
+        ...nodeValue,
+        fx: null,
+        fy: null,
+        x: 0,
+        y: 0
+    }));
+}
+
+function cloneGraphEdges(edgeValues: ReadonlyArray<GraphVisualizationEdgeRecord>): Array<MutableGraphEdgeRecord> {
+    return edgeValues.map((edgeValue) => ({ ...edgeValue }));
+}
+
+function readEdgeEndpointId(endpoint: MutableGraphEdgeEndpoint): string {
+    return typeof endpoint === "string" ? endpoint : endpoint.id;
+}
+
+function readGraphNode(nodeValue: never): MutableGraphNodeRecord {
+    return nodeValue as MutableGraphNodeRecord;
+}
+
+function readNodeIdentifier(nodeValue: never): string {
+    return String(Reflect.get(nodeValue as object, "id"));
+}
+
+function rebuildGraphIndexes(
+    edgeValues: ReadonlyArray<MutableGraphEdgeRecord>,
+    incomingCounts: Map<string, number>,
+    outgoingCounts: Map<string, number>,
+    neighbors: Map<string, Set<string>>
+): void {
+    incomingCounts.clear();
+    outgoingCounts.clear();
+    neighbors.clear();
+    edgeValues.forEach((edgeValue) => {
+        const sourceId = readEdgeEndpointId(edgeValue.source);
+        const targetId = readEdgeEndpointId(edgeValue.target);
+        incomingCounts.set(targetId, (incomingCounts.get(targetId) ?? 0) + 1);
+        outgoingCounts.set(sourceId, (outgoingCounts.get(sourceId) ?? 0) + 1);
+        if (!neighbors.has(sourceId)) {
+            neighbors.set(sourceId, new Set());
+        }
+        if (!neighbors.has(targetId)) {
+            neighbors.set(targetId, new Set());
+        }
+        neighbors.get(sourceId)?.add(targetId);
+        neighbors.get(targetId)?.add(sourceId);
+    });
+}
+
+function getRadius(
+    nodeValue: MutableGraphNodeRecord,
+    incomingCount: Map<string, number>,
+    outgoingCount: Map<string, number>
+): number {
+    const degree = (incomingCount.get(nodeValue.id) ?? 0) + (outgoingCount.get(nodeValue.id) ?? 0);
+    return Math.max(5, Math.min(25, 4 + Math.log2(degree + 1) * 3));
+}
+
+function createCatalogItemRow(labelText: string, valueText: string): HTMLLIElement {
+    const row = document.createElement("li");
+    row.className = "catalog-item";
+    row.innerHTML = `<code>${labelText}</code> ${valueText}`;
+    return row;
+}
+
+function createCatalogCard(
+    title: string,
+    descriptionText: string,
+    usageText: string,
+    rows: ReadonlyArray<HTMLLIElement>
+): HTMLElement {
+    const card = document.createElement("section");
+    card.className = "catalog-card";
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    card.append(heading);
+
+    if (usageText.length > 0) {
+        const usage = document.createElement("code");
+        usage.className = "catalog-usage";
+        usage.textContent = usageText;
+        card.append(usage);
+    }
+
+    if (descriptionText.length > 0) {
+        const description = document.createElement("p");
+        description.textContent = descriptionText;
+        card.append(description);
+    }
+
+    if (rows.length > 0) {
+        const list = document.createElement("ul");
+        list.className = "catalog-list";
+        rows.forEach((row) => list.append(row));
+        card.append(list);
+    }
+
+    return card;
+}
+
+function createConfigItem(
+    title: string,
+    descriptionText: string,
+    valueText: string,
+    badges: ReadonlyArray<string>
+): HTMLLIElement {
+    const item = document.createElement("li");
+    item.className = "config-item";
+    const heading = document.createElement("strong");
+    heading.textContent = title;
+    item.append(heading);
+    if (descriptionText.length > 0) {
+        const description = document.createElement("span");
+        description.textContent = descriptionText;
+        item.append(description);
+    }
+    if (badges.length > 0) {
+        const badgeRow = document.createElement("div");
+        badgeRow.className = "config-badge-row";
+        badges.forEach((badgeText) => badgeRow.append(createBadge(badgeText)));
+        item.append(badgeRow);
+    }
+    if (valueText.length > 0) {
+        const value = document.createElement("div");
+        value.className = "config-value";
+        value.textContent = valueText;
+        item.append(value);
+    }
+    return item;
+}
+
+function createConfigCard(title: string, descriptionText: string, children: ReadonlyArray<HTMLElement>): HTMLElement {
+    const card = document.createElement("section");
+    card.className = "config-card";
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    card.append(heading);
+    if (descriptionText.length > 0) {
+        const description = document.createElement("p");
+        description.textContent = descriptionText;
+        card.append(description);
+    }
+    children.forEach((child) => card.append(child));
+    return card;
+}
+
+function createBadge(labelText: string): HTMLSpanElement {
+    const badge = document.createElement("span");
+    badge.className = "config-badge";
+    badge.textContent = labelText;
+    return badge;
+}
+
+function formatLabel(textValue: string): string {
+    return textValue.charAt(0).toUpperCase() + textValue.slice(1).replaceAll("_", " ");
+}
+
+function dragMoved(eventValue: never, datumValue: never): void {
+    const nodeValue = datumValue as MutableGraphNodeRecord;
+    nodeValue.fx = Number(Reflect.get(eventValue as object, "x"));
+    nodeValue.fy = Number(Reflect.get(eventValue as object, "y"));
+}
+
+function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoadedTarget | null): void {
+    const loadedTargetElement = document.getElementById("loaded-target");
+    const loadedSourceElement = document.getElementById("loaded-source");
+    const loadedSelectedElement = document.getElementById("loaded-selected");
+    if (
+        !(loadedTargetElement instanceof HTMLElement) ||
+        !(loadedSourceElement instanceof HTMLElement) ||
+        !(loadedSelectedElement instanceof HTMLElement)
+    ) {
+        return;
+    }
+
+    if (currentLoadedTarget === null) {
+        loadedTargetElement.textContent = "No active target";
+        loadedSourceElement.textContent = "";
+        loadedSelectedElement.textContent = "";
+        return;
+    }
+
+    loadedTargetElement.textContent = `Active: ${currentLoadedTarget.activePath}`;
+    loadedSourceElement.textContent = `Source: ${currentLoadedTarget.source} | Project: ${currentLoadedTarget.projectRoot}`;
+    if (currentLoadedTarget.selectedPaths.length > 1) {
+        const selectedPaths = currentLoadedTarget.selectedPaths;
+        loadedSelectedElement.textContent =
+            selectedPaths.length > 3
+                ? `Selected paths: ${selectedPaths.slice(0, 3).join(", ")} (+${String(
+                      selectedPaths.length - 3
+                  )} more files)`
+                : `Selected paths: ${selectedPaths.join(", ")}`;
+        return;
+    }
+
+    loadedSelectedElement.textContent = "";
+}
+
+function updateDocsViewState(
+    state: Readonly<{
+        activeDocsView: "cli" | "mcp";
+        cliMetaText: string;
+        mcpMetaText: string;
+    }>
+): void {
+    const cliPage = document.getElementById("cli-page");
+    const mcpPage = document.getElementById("mcp-page");
+    const cliButton = document.getElementById("docs-view-cli");
+    const mcpButton = document.getElementById("docs-view-mcp");
+    const docsMetaElement = document.getElementById("docs-meta");
+    if (
+        !(cliPage instanceof HTMLElement) ||
+        !(mcpPage instanceof HTMLElement) ||
+        !(cliButton instanceof HTMLButtonElement) ||
+        !(mcpButton instanceof HTMLButtonElement) ||
+        !(docsMetaElement instanceof HTMLElement)
+    ) {
+        return;
+    }
+
+    cliPage.classList.toggle("hidden", state.activeDocsView !== "cli");
+    mcpPage.classList.toggle("hidden", state.activeDocsView !== "mcp");
+    cliButton.classList.toggle("active", state.activeDocsView === "cli");
+    mcpButton.classList.toggle("active", state.activeDocsView === "mcp");
+    docsMetaElement.textContent = state.activeDocsView === "cli" ? state.cliMetaText : state.mcpMetaText;
+}
+
+function wirePageNavigation(
+    state: {
+        activeDocsView: "cli" | "mcp";
+        activePage: "config" | "docs" | "graph";
+        cliMetaText: string;
+        mcpMetaText: string;
+    },
+    applyPageState: () => void,
+    updateDocsViewStateFn: () => void
+): void {
+    ["graph", "docs", "config"].forEach((pageValue) => {
+        const button = document.getElementById(`tab-${pageValue}`);
+        if (button instanceof HTMLButtonElement) {
+            button.addEventListener("click", () => {
+                state.activePage = pageValue as "config" | "docs" | "graph";
+                applyPageState();
+            });
+        }
+    });
+
+    const docsCliButton = document.getElementById("docs-view-cli");
+    const docsMcpButton = document.getElementById("docs-view-mcp");
+    if (docsCliButton instanceof HTMLButtonElement) {
+        docsCliButton.addEventListener("click", () => {
+            state.activeDocsView = "cli";
+            updateDocsViewStateFn();
+        });
+    }
+    if (docsMcpButton instanceof HTMLButtonElement) {
+        docsMcpButton.addEventListener("click", () => {
+            state.activeDocsView = "mcp";
+            updateDocsViewStateFn();
+        });
+    }
+}
+
+function renderDocumentationCatalog(
+    dependencies: BrowserAppDependencies,
+    updateDocsViewStateFn: () => void,
+    metaState: {
+        cliMetaText: string;
+        mcpMetaText: string;
+    }
+): void {
+    const docsMetaElement = document.getElementById("docs-meta");
+    const cliContentElement = document.getElementById("cli-content");
+    const mcpContentElement = document.getElementById("mcp-content");
+    if (
+        !(docsMetaElement instanceof HTMLElement) ||
+        !(cliContentElement instanceof HTMLElement) ||
+        !(mcpContentElement instanceof HTMLElement)
+    ) {
+        return;
+    }
+
+    cliContentElement.innerHTML = "";
+    mcpContentElement.innerHTML = "";
+
+    if (dependencies.documentationCatalogs === null) {
+        metaState.cliMetaText = "No CLI catalog metadata is available for this view.";
+        metaState.mcpMetaText = "No MCP catalog metadata is available for this view.";
+        const emptyState = document.createElement("div");
+        emptyState.className = "catalog-empty";
+        emptyState.textContent = "Documentation catalogs are not available.";
+        cliContentElement.append(emptyState.cloneNode(true));
+        mcpContentElement.append(emptyState);
+        updateDocsViewStateFn();
+        return;
+    }
+
+    metaState.cliMetaText = `${String(
+        dependencies.documentationCatalogs.cliCommands.length
+    )} CLI command entries sourced directly from the Commander command catalog.`;
+    dependencies.documentationCatalogs.cliCommands.forEach((entry) => {
+        const rows: Array<HTMLLIElement> = [];
+        entry.arguments.forEach((argument) => {
+            const detailParts = [argument.required ? "required" : "optional"];
+            if (argument.variadic) {
+                detailParts.push("variadic");
+            }
+            if (argument.choices.length > 0) {
+                detailParts.push(`choices: ${argument.choices.join(", ")}`);
+            }
+            const suffix = detailParts.length > 0 ? ` (${detailParts.join(", ")})` : "";
+            rows.push(createCatalogItemRow(`<${argument.name}>`, (argument.description || "No description.") + suffix));
+        });
+        entry.options.forEach((option) => {
+            const optionName = option.long ?? option.flags;
+            const detailParts: Array<string> = [];
+            if (option.boolean) {
+                detailParts.push("boolean");
+            }
+            if (option.variadic) {
+                detailParts.push("variadic");
+            }
+            if (option.choices.length > 0) {
+                detailParts.push(`choices: ${option.choices.join(", ")}`);
+            }
+            const suffix = detailParts.length > 0 ? ` (${detailParts.join(", ")})` : "";
+            rows.push(createCatalogItemRow(optionName, (option.description || "No description.") + suffix));
+        });
+        cliContentElement.append(createCatalogCard(entry.displayName, entry.description, entry.usage, rows));
+    });
+
+    const mcpServer = dependencies.documentationCatalogs.mcpServer;
+    metaState.mcpMetaText = `${mcpServer.name} v${mcpServer.version} | ${String(
+        dependencies.documentationCatalogs.mcpTools.length
+    )} MCP tools derived from the CLI catalog.`;
+    dependencies.documentationCatalogs.mcpTools.forEach((entry) => {
+        const rows = entry.fields.map((field) => {
+            const detailParts = [field.kind, field.required ? "required" : "optional"];
+            if (field.multiple) {
+                detailParts.push("multiple");
+            }
+            if (field.choices.length > 0) {
+                detailParts.push(`choices: ${field.choices.join(", ")}`);
+            }
+            return createCatalogItemRow(
+                field.name,
+                `${field.description || "No description."} (${detailParts.join(", ")})`
+            );
+        });
+        mcpContentElement.append(createCatalogCard(entry.toolName, entry.description, entry.commandDisplayName, rows));
+    });
+
+    updateDocsViewStateFn();
+}
+
+function updateGraphViewMode(
+    state: Readonly<{
+        activeGraphView: "json" | "visual";
+        graphRuntime: GraphRuntimeApi;
+        jsonView: GraphSelectionApi;
+        linksRaw: Array<MutableGraphEdgeRecord>;
+        nodesRaw: Array<MutableGraphNodeRecord>;
+        activeFilters: Set<string>;
+        activeNodeFilters: Set<GraphVisualizationNodeKind>;
+        svg: GraphSelectionApi;
+    }>
+): void {
+    const isVisualView = state.activeGraphView === "visual";
+    state.svg.classed("hidden", !isVisualView);
+    state.graphRuntime.select("#legend").classed("hidden", !isVisualView);
+    state.graphRuntime.select("#tooltip").classed("hidden", !isVisualView);
+    state.jsonView.classed("hidden", isVisualView).style("display", isVisualView ? "none" : "block");
+    state.graphRuntime.select("#toggle-view").text(isVisualView ? "JSON" : "Visual");
+    if (!isVisualView) {
+        state.jsonView.text(
+            JSON.stringify(
+                {
+                    edges: state.linksRaw.filter((edgeValue) => state.activeFilters.has(edgeValue.type)),
+                    graphs: state.graphRuntime.select("#graph") ? undefined : undefined,
+                    nodes: state.nodesRaw.filter((nodeValue) => state.activeNodeFilters.has(nodeValue.kind))
+                },
+                null,
+                2
+            )
+        );
+    }
+}
+
+function updatePageState(
+    state: Readonly<{
+        activePage: "config" | "docs" | "graph";
+        graphRuntime: GraphRuntimeApi;
+        jsonView: GraphSelectionApi;
+        svg: GraphSelectionApi;
+    }>,
+    updateGraphViewModeFn: () => void
+): void {
+    [
+        { buttonId: "tab-graph", pageId: "graph-page", pageValue: "graph" },
+        { buttonId: "tab-docs", pageId: "docs-page", pageValue: "docs" },
+        { buttonId: "tab-config", pageId: "config-page", pageValue: "config" }
+    ].forEach((entry) => {
+        const button = document.getElementById(entry.buttonId);
+        const page = document.getElementById(entry.pageId);
+        if (button instanceof HTMLButtonElement) {
+            button.classList.toggle("active", state.activePage === entry.pageValue);
+        }
+        if (page instanceof HTMLElement) {
+            page.classList.toggle("active", state.activePage === entry.pageValue);
+        }
+    });
+
+    const toolbarHeading = document.getElementById("toolbar-heading");
+    const toolbarSubheading = document.getElementById("toolbar-subheading");
+    const graphControls = document.getElementById("graph-controls");
+    if (
+        !(toolbarHeading instanceof HTMLElement) ||
+        !(toolbarSubheading instanceof HTMLElement) ||
+        !(graphControls instanceof HTMLElement)
+    ) {
+        return;
+    }
+
+    graphControls.classList.toggle("hidden", state.activePage !== "graph");
+    if (state.activePage === "graph") {
+        toolbarHeading.textContent = "Graph Index";
+        toolbarSubheading.textContent = "Interactive graph exploration controls for the current graph index.";
+        updateGraphViewModeFn();
+        return;
+    }
+    if (state.activePage === "docs") {
+        toolbarHeading.textContent = "Docs";
+        toolbarSubheading.textContent = "Live CLI and MCP workspace catalogs are combined in a single Docs view.";
+    } else {
+        toolbarHeading.textContent = "Config";
+        toolbarSubheading.textContent =
+            "Loaded project configuration rendered from lint, format, refactor, and gmloop workspace data.";
+    }
+
+    state.svg.classed("hidden", true);
+    state.graphRuntime.select("#legend").classed("hidden", true);
+    state.graphRuntime.select("#tooltip").classed("hidden", true);
+    state.jsonView.classed("hidden", true).style("display", "none");
+}
 
 /**
  * Bootstrap the graph visualization browser application.
@@ -233,10 +702,17 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let selectedProjectConfiguration: LoadedProjectConfiguration | null = null;
     let labelMode: "auto" | "off" | "on" = "auto";
     let activeGraphView: "json" | "visual" = "visual";
-    let activePage: "config" | "docs" | "graph" = "graph";
-    let activeDocsView: "cli" | "mcp" = "cli";
-    let cliMetaText = "";
-    let mcpMetaText = "";
+    const navigationState: {
+        activeDocsView: "cli" | "mcp";
+        activePage: "config" | "docs" | "graph";
+        cliMetaText: string;
+        mcpMetaText: string;
+    } = {
+        activeDocsView: "cli",
+        activePage: "graph",
+        cliMetaText: "",
+        mcpMetaText: ""
+    };
     let activeFilters = new Set(edgeTypes);
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
     let nodesRaw = cloneGraphNodes(allNodes);
@@ -289,7 +765,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             "collide",
             graphRuntime
                 .forceCollide()
-                .radius((datum) => getRadius(readGraphNode(datum)))
+                .radius((datum) => getRadius(readGraphNode(datum), incomingCount, outgoingCount))
                 .iterations(2)
         )
         .alphaDecay(0.02)
@@ -299,15 +775,39 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         console.warn("Large graph detected:", dependencies.data.nodes.length, "nodes. Adjusting rendering parameters.");
     }
 
-    renderLoadedTargetSummary();
-    renderDocumentationCatalog();
+    const applyGraphViewMode = (): void => {
+        updateGraphViewMode({
+            activeFilters,
+            activeGraphView,
+            activeNodeFilters,
+            graphRuntime,
+            jsonView,
+            linksRaw,
+            nodesRaw,
+            svg
+        });
+    };
+    const applyPageState = (): void => {
+        updatePageState(
+            {
+                activePage: navigationState.activePage,
+                graphRuntime,
+                jsonView,
+                svg
+            },
+            applyGraphViewMode
+        );
+    };
+
+    renderLoadedTargetSummary(currentLoadedTarget);
+    renderDocumentationCatalog(dependencies, () => updateDocsViewState(navigationState), navigationState);
     renderProjectConfigurationCatalog();
     renderLegend();
-    wirePageNavigation();
+    wirePageNavigation(navigationState, applyPageState, () => updateDocsViewState(navigationState));
     wireViewControls();
     wireOpenProjectButton();
     wireRegenerateButton();
-    updatePageState();
+    applyPageState();
     updateGraph();
 
     tooltip.on("mouseenter", () => tooltip.classed("visible", true));
@@ -318,85 +818,12 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     });
     svg.on("click", clearFocus);
 
-    function readGraphRuntime(): GraphRuntimeApi {
-        const runtimeValue = Reflect.get(globalThis, "d3");
-        if (runtimeValue === undefined || runtimeValue === null) {
-            throw new Error("The graph visualization requires the D3 runtime.");
-        }
-        return runtimeValue as GraphRuntimeApi;
-    }
-
-    function readGraphTransform(eventValue: never): Readonly<{ k: number; transformText: string }> {
-        const transformValue = Reflect.get(eventValue as object, "transform");
-        const zoomFactor = Number(Reflect.get(transformValue as object, "k"));
-        return {
-            k: Number.isFinite(zoomFactor) ? zoomFactor : 1,
-            transformText: String(transformValue ?? "")
-        };
-    }
-
-    function readNodeIdentifier(nodeValue: never): string {
-        return String(Reflect.get(nodeValue as object, "id"));
-    }
-
-    function readGraphNode(nodeValue: never): MutableGraphNodeRecord {
-        return nodeValue as MutableGraphNodeRecord;
-    }
-
-    function cloneGraphNodes(nodeValues: ReadonlyArray<GraphVisualizationNodeRecord>): Array<MutableGraphNodeRecord> {
-        return nodeValues.map((nodeValue) => ({
-            ...nodeValue,
-            fx: null,
-            fy: null,
-            x: 0,
-            y: 0
-        }));
-    }
-
-    function cloneGraphEdges(edgeValues: ReadonlyArray<GraphVisualizationEdgeRecord>): Array<MutableGraphEdgeRecord> {
-        return edgeValues.map((edgeValue) => ({ ...edgeValue }));
-    }
-
-    function rebuildGraphIndexes(
-        edgeValues: ReadonlyArray<MutableGraphEdgeRecord>,
-        incomingCounts: Map<string, number>,
-        outgoingCounts: Map<string, number>,
-        neighbors: Map<string, Set<string>>
-    ): void {
-        incomingCounts.clear();
-        outgoingCounts.clear();
-        neighbors.clear();
-        edgeValues.forEach((edgeValue) => {
-            const sourceId = readEdgeEndpointId(edgeValue.source);
-            const targetId = readEdgeEndpointId(edgeValue.target);
-            incomingCounts.set(targetId, (incomingCounts.get(targetId) ?? 0) + 1);
-            outgoingCounts.set(sourceId, (outgoingCounts.get(sourceId) ?? 0) + 1);
-            if (!neighbors.has(sourceId)) {
-                neighbors.set(sourceId, new Set());
-            }
-            if (!neighbors.has(targetId)) {
-                neighbors.set(targetId, new Set());
-            }
-            neighbors.get(sourceId)?.add(targetId);
-            neighbors.get(targetId)?.add(sourceId);
-        });
-    }
-
-    function readEdgeEndpointId(endpoint: MutableGraphEdgeEndpoint): string {
-        return typeof endpoint === "string" ? endpoint : endpoint.id;
-    }
-
-    function getRadius(nodeValue: MutableGraphNodeRecord): number {
-        const degree = (incomingCount.get(nodeValue.id) ?? 0) + (outgoingCount.get(nodeValue.id) ?? 0);
-        return Math.max(5, Math.min(25, 4 + Math.log2(degree + 1) * 3));
-    }
-
     function wireViewControls(): void {
         const toggleViewButton = document.getElementById("toggle-view");
         if (toggleViewButton instanceof HTMLButtonElement) {
             toggleViewButton.addEventListener("click", () => {
                 activeGraphView = activeGraphView === "visual" ? "json" : "visual";
-                updateGraphViewMode();
+                applyGraphViewMode();
             });
         }
 
@@ -452,41 +879,6 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
             applyHighlights();
         });
-    }
-
-    function renderLoadedTargetSummary(): void {
-        const loadedTargetElement = document.getElementById("loaded-target");
-        const loadedSourceElement = document.getElementById("loaded-source");
-        const loadedSelectedElement = document.getElementById("loaded-selected");
-        if (
-            !(loadedTargetElement instanceof HTMLElement) ||
-            !(loadedSourceElement instanceof HTMLElement) ||
-            !(loadedSelectedElement instanceof HTMLElement)
-        ) {
-            return;
-        }
-
-        if (currentLoadedTarget === null) {
-            loadedTargetElement.textContent = "No active target";
-            loadedSourceElement.textContent = "";
-            loadedSelectedElement.textContent = "";
-            return;
-        }
-
-        loadedTargetElement.textContent = `Active: ${currentLoadedTarget.activePath}`;
-        loadedSourceElement.textContent = `Source: ${currentLoadedTarget.source} | Project: ${currentLoadedTarget.projectRoot}`;
-        if (currentLoadedTarget.selectedPaths.length > 1) {
-            const selectedPaths = currentLoadedTarget.selectedPaths;
-            loadedSelectedElement.textContent =
-                selectedPaths.length > 3
-                    ? `Selected paths: ${selectedPaths.slice(0, 3).join(", ")} (+${String(
-                          selectedPaths.length - 3
-                      )} more files)`
-                    : `Selected paths: ${selectedPaths.join(", ")}`;
-            return;
-        }
-
-        loadedSelectedElement.textContent = "";
     }
 
     async function loadProjectConfigurationFromFiles(
@@ -564,217 +956,6 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 prettierEntries.map(async (entry) => ({ content: await readFileContent(entry), path: entry.path }))
             )
         };
-    }
-
-    function createCatalogItemRow(labelText: string, valueText: string): HTMLLIElement {
-        const row = document.createElement("li");
-        row.className = "catalog-item";
-        row.innerHTML = `<code>${labelText}</code> ${valueText}`;
-        return row;
-    }
-
-    function createCatalogCard(
-        title: string,
-        descriptionText: string,
-        usageText: string,
-        rows: ReadonlyArray<HTMLLIElement>
-    ): HTMLElement {
-        const card = document.createElement("section");
-        card.className = "catalog-card";
-        const heading = document.createElement("h3");
-        heading.textContent = title;
-        card.append(heading);
-
-        if (usageText.length > 0) {
-            const usage = document.createElement("code");
-            usage.className = "catalog-usage";
-            usage.textContent = usageText;
-            card.append(usage);
-        }
-
-        if (descriptionText.length > 0) {
-            const description = document.createElement("p");
-            description.textContent = descriptionText;
-            card.append(description);
-        }
-
-        if (rows.length > 0) {
-            const list = document.createElement("ul");
-            list.className = "catalog-list";
-            rows.forEach((row) => list.append(row));
-            card.append(list);
-        }
-
-        return card;
-    }
-
-    function renderDocumentationCatalog(): void {
-        const docsMetaElement = document.getElementById("docs-meta");
-        const cliContentElement = document.getElementById("cli-content");
-        const mcpContentElement = document.getElementById("mcp-content");
-        if (
-            !(docsMetaElement instanceof HTMLElement) ||
-            !(cliContentElement instanceof HTMLElement) ||
-            !(mcpContentElement instanceof HTMLElement)
-        ) {
-            return;
-        }
-
-        cliContentElement.innerHTML = "";
-        mcpContentElement.innerHTML = "";
-
-        if (dependencies.documentationCatalogs === null) {
-            cliMetaText = "No CLI catalog metadata is available for this view.";
-            mcpMetaText = "No MCP catalog metadata is available for this view.";
-            const emptyState = document.createElement("div");
-            emptyState.className = "catalog-empty";
-            emptyState.textContent = "Documentation catalogs are not available.";
-            cliContentElement.append(emptyState.cloneNode(true));
-            mcpContentElement.append(emptyState);
-            updateDocsViewState();
-            return;
-        }
-
-        cliMetaText = `${String(
-            dependencies.documentationCatalogs.cliCommands.length
-        )} CLI command entries sourced directly from the Commander command catalog.`;
-        dependencies.documentationCatalogs.cliCommands.forEach((entry) => {
-            const rows: Array<HTMLLIElement> = [];
-            entry.arguments.forEach((argument) => {
-                const detailParts = [argument.required ? "required" : "optional"];
-                if (argument.variadic) {
-                    detailParts.push("variadic");
-                }
-                if (argument.choices.length > 0) {
-                    detailParts.push(`choices: ${argument.choices.join(", ")}`);
-                }
-                const suffix = detailParts.length > 0 ? ` (${detailParts.join(", ")})` : "";
-                rows.push(
-                    createCatalogItemRow(`<${argument.name}>`, (argument.description || "No description.") + suffix)
-                );
-            });
-            entry.options.forEach((option) => {
-                const optionName = option.long ?? option.flags;
-                const detailParts: Array<string> = [];
-                if (option.boolean) {
-                    detailParts.push("boolean");
-                }
-                if (option.variadic) {
-                    detailParts.push("variadic");
-                }
-                if (option.choices.length > 0) {
-                    detailParts.push(`choices: ${option.choices.join(", ")}`);
-                }
-                const suffix = detailParts.length > 0 ? ` (${detailParts.join(", ")})` : "";
-                rows.push(createCatalogItemRow(optionName, (option.description || "No description.") + suffix));
-            });
-            cliContentElement.append(createCatalogCard(entry.displayName, entry.description, entry.usage, rows));
-        });
-
-        const mcpServer = dependencies.documentationCatalogs.mcpServer;
-        mcpMetaText = `${mcpServer.name} v${mcpServer.version} | ${String(
-            dependencies.documentationCatalogs.mcpTools.length
-        )} MCP tools derived from the CLI catalog.`;
-        dependencies.documentationCatalogs.mcpTools.forEach((entry) => {
-            const rows = entry.fields.map((field) => {
-                const detailParts = [field.kind, field.required ? "required" : "optional"];
-                if (field.multiple) {
-                    detailParts.push("multiple");
-                }
-                if (field.choices.length > 0) {
-                    detailParts.push(`choices: ${field.choices.join(", ")}`);
-                }
-                return createCatalogItemRow(
-                    field.name,
-                    `${field.description || "No description."} (${detailParts.join(", ")})`
-                );
-            });
-            mcpContentElement.append(
-                createCatalogCard(entry.toolName, entry.description, entry.commandDisplayName, rows)
-            );
-        });
-
-        updateDocsViewState();
-    }
-
-    function updateDocsViewState(): void {
-        const cliPage = document.getElementById("cli-page");
-        const mcpPage = document.getElementById("mcp-page");
-        const cliButton = document.getElementById("docs-view-cli");
-        const mcpButton = document.getElementById("docs-view-mcp");
-        const docsMetaElement = document.getElementById("docs-meta");
-        if (
-            !(cliPage instanceof HTMLElement) ||
-            !(mcpPage instanceof HTMLElement) ||
-            !(cliButton instanceof HTMLButtonElement) ||
-            !(mcpButton instanceof HTMLButtonElement) ||
-            !(docsMetaElement instanceof HTMLElement)
-        ) {
-            return;
-        }
-
-        cliPage.classList.toggle("hidden", activeDocsView !== "cli");
-        mcpPage.classList.toggle("hidden", activeDocsView !== "mcp");
-        cliButton.classList.toggle("active", activeDocsView === "cli");
-        mcpButton.classList.toggle("active", activeDocsView === "mcp");
-        docsMetaElement.textContent = activeDocsView === "cli" ? cliMetaText : mcpMetaText;
-    }
-
-    function createBadge(labelText: string): HTMLSpanElement {
-        const badge = document.createElement("span");
-        badge.className = "config-badge";
-        badge.textContent = labelText;
-        return badge;
-    }
-
-    function createConfigItem(
-        title: string,
-        descriptionText: string,
-        valueText: string,
-        badges: ReadonlyArray<string>
-    ): HTMLLIElement {
-        const item = document.createElement("li");
-        item.className = "config-item";
-        const heading = document.createElement("strong");
-        heading.textContent = title;
-        item.append(heading);
-        if (descriptionText.length > 0) {
-            const description = document.createElement("span");
-            description.textContent = descriptionText;
-            item.append(description);
-        }
-        if (badges.length > 0) {
-            const badgeRow = document.createElement("div");
-            badgeRow.className = "config-badge-row";
-            badges.forEach((badgeText) => badgeRow.append(createBadge(badgeText)));
-            item.append(badgeRow);
-        }
-        if (valueText.length > 0) {
-            const value = document.createElement("div");
-            value.className = "config-value";
-            value.textContent = valueText;
-            item.append(value);
-        }
-        return item;
-    }
-
-    function createConfigCard(
-        title: string,
-        descriptionText: string,
-        children: ReadonlyArray<HTMLElement>
-    ): HTMLElement {
-        const card = document.createElement("section");
-        card.className = "config-card";
-        const heading = document.createElement("h3");
-        heading.textContent = title;
-        card.append(heading);
-        if (descriptionText.length > 0) {
-            const description = document.createElement("p");
-            description.textContent = descriptionText;
-            card.append(description);
-        }
-        children.forEach((child) => card.append(child));
-        return card;
     }
 
     function renderProjectConfigurationCatalog(): void {
@@ -944,104 +1125,6 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 refactorList
             ])
         );
-    }
-
-    function wirePageNavigation(): void {
-        ["graph", "docs", "config"].forEach((pageValue) => {
-            const button = document.getElementById(`tab-${pageValue}`);
-            if (button instanceof HTMLButtonElement) {
-                button.addEventListener("click", () => {
-                    activePage = pageValue as "config" | "docs" | "graph";
-                    updatePageState();
-                });
-            }
-        });
-
-        const docsCliButton = document.getElementById("docs-view-cli");
-        const docsMcpButton = document.getElementById("docs-view-mcp");
-        if (docsCliButton instanceof HTMLButtonElement) {
-            docsCliButton.addEventListener("click", () => {
-                activeDocsView = "cli";
-                updateDocsViewState();
-            });
-        }
-        if (docsMcpButton instanceof HTMLButtonElement) {
-            docsMcpButton.addEventListener("click", () => {
-                activeDocsView = "mcp";
-                updateDocsViewState();
-            });
-        }
-    }
-
-    function updatePageState(): void {
-        [
-            { buttonId: "tab-graph", pageId: "graph-page", pageValue: "graph" },
-            { buttonId: "tab-docs", pageId: "docs-page", pageValue: "docs" },
-            { buttonId: "tab-config", pageId: "config-page", pageValue: "config" }
-        ].forEach((entry) => {
-            const button = document.getElementById(entry.buttonId);
-            const page = document.getElementById(entry.pageId);
-            if (button instanceof HTMLButtonElement) {
-                button.classList.toggle("active", activePage === entry.pageValue);
-            }
-            if (page instanceof HTMLElement) {
-                page.classList.toggle("active", activePage === entry.pageValue);
-            }
-        });
-
-        const toolbarHeading = document.getElementById("toolbar-heading");
-        const toolbarSubheading = document.getElementById("toolbar-subheading");
-        const graphControls = document.getElementById("graph-controls");
-        if (
-            !(toolbarHeading instanceof HTMLElement) ||
-            !(toolbarSubheading instanceof HTMLElement) ||
-            !(graphControls instanceof HTMLElement)
-        ) {
-            return;
-        }
-
-        graphControls.classList.toggle("hidden", activePage !== "graph");
-        if (activePage === "graph") {
-            toolbarHeading.textContent = "Graph Index";
-            toolbarSubheading.textContent = "Interactive graph exploration controls for the current graph index.";
-            updateGraphViewMode();
-            return;
-        }
-        if (activePage === "docs") {
-            toolbarHeading.textContent = "Docs";
-            toolbarSubheading.textContent = "Live CLI and MCP workspace catalogs are combined in a single Docs view.";
-        } else {
-            toolbarHeading.textContent = "Config";
-            toolbarSubheading.textContent =
-                "Loaded project configuration rendered from lint, format, refactor, and gmloop workspace data.";
-        }
-
-        svg.classed("hidden", true);
-        graphRuntime.select("#legend").classed("hidden", true);
-        graphRuntime.select("#tooltip").classed("hidden", true);
-        jsonView.classed("hidden", true).style("display", "none");
-    }
-
-    function updateGraphViewMode(): void {
-        const isVisualView = activeGraphView === "visual";
-        svg.classed("hidden", !isVisualView);
-        graphRuntime.select("#legend").classed("hidden", !isVisualView);
-        graphRuntime.select("#tooltip").classed("hidden", !isVisualView);
-        jsonView.classed("hidden", isVisualView).style("display", isVisualView ? "none" : "block");
-        graphRuntime.select("#toggle-view").text(isVisualView ? "JSON" : "Visual");
-        if (!isVisualView) {
-            jsonView.text(
-                JSON.stringify(
-                    {
-                        edges: linksRaw.filter((edgeValue) => activeFilters.has(edgeValue.type)),
-                        graphs: dependencies.data.graphs,
-                        nodes: nodesRaw.filter((nodeValue) => activeNodeFilters.has(nodeValue.kind))
-                    },
-                    null,
-                    2
-                )
-            );
-        }
     }
 
     function renderLegend(): void {
@@ -1277,10 +1360,6 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         checkbox.property("indeterminate", enabledChildCount > 0 && enabledChildCount < childKinds.length);
     }
 
-    function formatLabel(textValue: string): string {
-        return textValue.charAt(0).toUpperCase() + textValue.slice(1).replaceAll("_", " ");
-    }
-
     function resetGraphStateToDefaults(): void {
         nodesRaw = cloneGraphNodes(allNodes);
         linksRaw = cloneGraphEdges(dependencies.data.edges);
@@ -1419,7 +1498,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     }
 
     function renderNodeShape(nodeValue: MutableGraphNodeRecord): string {
-        const symbolArea = Math.pow(getRadius(nodeValue), 2) * Math.PI;
+        const symbolArea = Math.pow(getRadius(nodeValue, incomingCount, outgoingCount), 2) * Math.PI;
         let symbolType = graphRuntime.symbolCircle;
         if (nodeValue.kind.endsWith("_variable")) {
             symbolType = graphRuntime.symbolDiamond;
@@ -1456,12 +1535,6 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         }
         nodeValue.fx = nodeValue.x;
         nodeValue.fy = nodeValue.y;
-    }
-
-    function dragMoved(eventValue: never, datumValue: never): void {
-        const nodeValue = datumValue as MutableGraphNodeRecord;
-        nodeValue.fx = Number(Reflect.get(eventValue as object, "x"));
-        nodeValue.fy = Number(Reflect.get(eventValue as object, "y"));
     }
 
     function dragEnded(eventValue: never, _datumValue: never): void {
@@ -1666,7 +1739,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                         source: "finder-open"
                     });
                     selectedProjectConfiguration = await loadProjectConfigurationFromFiles(selectedFiles);
-                    renderLoadedTargetSummary();
+                    renderLoadedTargetSummary(currentLoadedTarget);
                     renderProjectConfigurationCatalog();
                     button.attr("disabled", null).html(openButtonLabel);
                 } catch (error) {

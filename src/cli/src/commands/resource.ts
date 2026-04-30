@@ -32,7 +32,7 @@ function printMutationResult(result: ProjectResourceMutationResult): void {
     }
 }
 
-async function resolveResourceProjectRoot(options: ResourceCommandSharedOptions): Promise<string> {
+function resolveResourceProjectRoot(options: ResourceCommandSharedOptions): Promise<string> {
     return discoverProjectRoot({
         explicitProjectPath: options.path
     });
