@@ -39,7 +39,10 @@ import { createParseCommand, runParseCommand } from "./commands/parse.js";
 import { createPrepareHotReloadCommand, runPrepareHotReloadCommand } from "./commands/prepare-hot-reload.js";
 import { createRefactorCommand, runRefactorCommand } from "./commands/refactor.js";
 import { createResourceCommand } from "./commands/resource.js";
+import { createRunnerCommand } from "./commands/runner.js";
+import { createSymbolCommand } from "./commands/symbol.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
+import { createValidateCommand } from "./commands/validate.js";
 import { createWatchCommand, runWatchCommand } from "./commands/watch.js";
 import { createWatchStatusCommand, runWatchStatusCommand } from "./commands/watch/status.js";
 import { CLI_COMMAND_NAMES } from "./shared/command-names.js";
@@ -527,6 +530,33 @@ cliCommandRegistry.registerCommand({
     onError: (error) =>
         handleCliError(error, {
             prefix: "Failed to perform resource operation.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createSymbolCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Symbol command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createRunnerCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Runner command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createValidateCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Validate command failed.",
             exitCode: 1
         })
 });

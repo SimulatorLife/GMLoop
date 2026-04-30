@@ -1,4 +1,6 @@
+import { Core } from "@gmloop/core";
 import { type ProjectResourceMutationResult, Refactor } from "@gmloop/refactor";
+import { Semantic } from "@gmloop/semantic";
 import { Argument, Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
@@ -7,10 +9,62 @@ import { createPathOption, createVerboseOption, createWriteOption } from "../cli
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type ResourceCommandSharedOptions = Readonly<{
+    config?: string;
+    databasePath?: string;
+    json?: boolean;
     path?: string;
+    toolsetRoot?: string;
     verbose?: boolean;
     write?: boolean;
 }>;
+
+const RESOURCE_COMMAND_FAILURE_PREFIX = "Resource command failed.";
+const RESOURCE_KIND_ARGUMENT_DESCRIPTION = "Resource kind";
+
+function failUnimplementedMutation(mutationName: string): never {
+    throw new Error(
+        `resource ${mutationName} is not implemented in @gmloop/refactor yet. ` +
+            "Add the corresponding project-resource mutation primitive first, then wire this command."
+    );
+}
+
+async function resolveResourceContext(options: ResourceCommandSharedOptions): Promise<{
+    projectConfig: Record<string, unknown>;
+    projectRoot: string;
+}> {
+    const projectRoot = await discoverProjectRoot({
+        configPath: options.config,
+        explicitProjectPath: options.path
+    });
+    const configPath = options.config ?? `${projectRoot}/gmloop.json`;
+    const loadedConfig = await Core.loadGmloopProjectConfig(configPath).catch(() => ({}));
+    return {
+        projectConfig: Core.isObjectLike(loadedConfig) ? (loadedConfig as Record<string, unknown>) : {},
+        projectRoot
+    };
+}
+
+async function ensureResourceGraphIndex(options: ResourceCommandSharedOptions): Promise<{
+    projectConfig: Record<string, unknown>;
+    projectRoot: string;
+}> {
+    const context = await resolveResourceContext(options);
+    await Semantic.buildGraphIndex({
+        databasePath: options.databasePath,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+    return context;
+}
+
+function printResourcePayload(payload: unknown, asJson: boolean): void {
+    if (asJson) {
+        console.log(JSON.stringify(payload, null, 2));
+        return;
+    }
+    console.log(JSON.stringify(payload, null, 2));
+}
 
 function printMutationResult(result: ProjectResourceMutationResult): void {
     console.log(`Action: ${result.action}`);
@@ -44,13 +98,20 @@ async function runResourceCommandAction(action: () => Promise<void>): Promise<vo
     } catch (error) {
         handleCliError(error, {
             exitCode: 1,
-            prefix: "Resource command failed."
+            prefix: RESOURCE_COMMAND_FAILURE_PREFIX
         });
     }
 }
 
 function addSharedOptions(command: Command): Command {
-    return command.addOption(createPathOption()).addOption(createWriteOption()).addOption(createVerboseOption());
+    return command
+        .addOption(createPathOption())
+        .addOption(createWriteOption())
+        .addOption(createVerboseOption())
+        .option("--config <path>", "Path to gmloop config file.")
+        .option("--database-path <path>", "Graph index database path override.")
+        .option("--toolset-root <path>", "Toolset project root path override.")
+        .option("--json", "Emit JSON output.");
 }
 
 async function runAddResourceAction(resourceKind: string, resourceName: string, options: ResourceCommandSharedOptions) {
@@ -104,7 +165,7 @@ export function createResourceCommand(): Command {
     const addCommand = addSharedOptions(
         applyStandardCommandOptions(new Command("add"))
             .description("Create a new resource skeleton and register it in the project manifest.")
-            .addArgument(new Argument("<kind>", "Resource kind").choices(kinds))
+            .addArgument(new Argument("<kind>", RESOURCE_KIND_ARGUMENT_DESCRIPTION).choices(kinds))
             .argument("<name>", "Resource name")
     );
     addCommand.action(async function resourceAddCommandAction(resourceKind: string, resourceName: string) {
@@ -116,12 +177,215 @@ export function createResourceCommand(): Command {
     const removeCommand = addSharedOptions(
         applyStandardCommandOptions(new Command("remove"))
             .description("Remove an existing resource from the project manifest and delete its files.")
-            .addArgument(new Argument("<kind>", "Resource kind").choices(kinds))
+            .addArgument(new Argument("<kind>", RESOURCE_KIND_ARGUMENT_DESCRIPTION).choices(kinds))
             .argument("<name>", "Resource name")
     );
     removeCommand.action(async function resourceRemoveCommandAction(resourceKind: string, resourceName: string) {
         await runResourceCommandAction(async () => {
             await runRemoveResourceAction(resourceKind, resourceName, this.opts<ResourceCommandSharedOptions>());
+        });
+    });
+
+    const listCommand = addSharedOptions(
+        applyStandardCommandOptions(new Command("list")).description("List indexed resources.")
+    );
+    listCommand.action(async function resourceListCommandAction() {
+        await runResourceCommandAction(async () => {
+            const options = this.opts<ResourceCommandSharedOptions>();
+            const context = await ensureResourceGraphIndex(options);
+            const result = Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            });
+            printResourcePayload({ ok: true, payload: result.results }, options.json === true);
+        });
+    });
+
+    const findCommand = addSharedOptions(
+        applyStandardCommandOptions(new Command("find"))
+            .description("Search resources by query text.")
+            .argument("<query>", "Resource query text.")
+    );
+    findCommand.action(async function resourceFindCommandAction(query: string) {
+        await runResourceCommandAction(async () => {
+            const options = this.opts<ResourceCommandSharedOptions>();
+            const context = await ensureResourceGraphIndex(options);
+            const result = Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query,
+                toolsetRoot: options.toolsetRoot
+            });
+            printResourcePayload({ ok: true, payload: result }, options.json === true);
+        });
+    });
+
+    const inspectCommand = addSharedOptions(
+        applyStandardCommandOptions(new Command("inspect"))
+            .description("Inspect one resource by id or query.")
+            .argument("<nameOrId>", "Resource name or graph node id.")
+    );
+    inspectCommand.action(async function resourceInspectCommandAction(nameOrId: string) {
+        await runResourceCommandAction(async () => {
+            const options = this.opts<ResourceCommandSharedOptions>();
+            const context = await ensureResourceGraphIndex(options);
+            const resolvedId = nameOrId.includes("::")
+                ? nameOrId
+                : (Semantic.searchGraphIndex({
+                      databasePath: options.databasePath,
+                      limit: 1,
+                      projectConfig: context.projectConfig,
+                      projectRoot: context.projectRoot,
+                      query: nameOrId,
+                      toolsetRoot: options.toolsetRoot
+                  }).results[0]?.id ?? null);
+            if (!resolvedId) {
+                throw new Error(`Could not resolve resource '${nameOrId}'.`);
+            }
+            const payload = Semantic.getGraphNode({
+                databasePath: options.databasePath,
+                nodeId: resolvedId,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                toolsetRoot: options.toolsetRoot
+            });
+            printResourcePayload({ ok: payload !== null, payload }, options.json === true);
+        });
+    });
+
+    const depsCommand = addSharedOptions(
+        applyStandardCommandOptions(new Command("deps"))
+            .description("List outgoing dependencies for a resource.")
+            .argument("<nameOrId>", "Resource name or graph node id.")
+    );
+    depsCommand.action(async function resourceDepsCommandAction(nameOrId: string) {
+        await runResourceCommandAction(async () => {
+            const options = this.opts<ResourceCommandSharedOptions>();
+            const context = await ensureResourceGraphIndex(options);
+            const search = Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                limit: 1,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: nameOrId,
+                toolsetRoot: options.toolsetRoot
+            });
+            const nodeId = search.results[0]?.id;
+            if (!nodeId) {
+                throw new Error(`Could not resolve resource '${nameOrId}'.`);
+            }
+            const neighbors = Semantic.getGraphNeighbors({
+                databasePath: options.databasePath,
+                nodeId,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                toolsetRoot: options.toolsetRoot
+            });
+            printResourcePayload(
+                { ok: true, payload: neighbors.filter((entry) => entry.direction === "outgoing") },
+                options.json === true
+            );
+        });
+    });
+
+    const dependentsCommand = addSharedOptions(
+        applyStandardCommandOptions(new Command("dependents"))
+            .description("List incoming usages for a resource.")
+            .argument("<nameOrId>", "Resource name or graph node id.")
+    );
+    dependentsCommand.action(async function resourceDependentsCommandAction(nameOrId: string) {
+        await runResourceCommandAction(async () => {
+            const options = this.opts<ResourceCommandSharedOptions>();
+            const context = await ensureResourceGraphIndex(options);
+            const search = Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                limit: 1,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: nameOrId,
+                toolsetRoot: options.toolsetRoot
+            });
+            const nodeId = search.results[0]?.id;
+            if (!nodeId) {
+                throw new Error(`Could not resolve resource '${nameOrId}'.`);
+            }
+            const usages = Semantic.getGraphUsages({
+                databasePath: options.databasePath,
+                nodeId,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                toolsetRoot: options.toolsetRoot
+            });
+            printResourcePayload({ ok: true, payload: usages }, options.json === true);
+        });
+    });
+
+    const auditCommand = addSharedOptions(
+        applyStandardCommandOptions(new Command("audit")).description("Run graph-backed resource audit summary.")
+    );
+    auditCommand.action(async function resourceAuditCommandAction() {
+        await runResourceCommandAction(async () => {
+            const options = this.opts<ResourceCommandSharedOptions>();
+            const context = await ensureResourceGraphIndex(options);
+            const everything = Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                limit: 2000,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            });
+            const kindCounts = everything.results.reduce<Record<string, number>>((acc, entry) => {
+                acc[entry.kind] = (acc[entry.kind] ?? 0) + 1;
+                return acc;
+            }, {});
+            printResourcePayload(
+                { ok: true, payload: { kindCounts, total: everything.results.length } },
+                options.json === true
+            );
+        });
+    });
+
+    const renameCommand = addSharedOptions(
+        applyStandardCommandOptions(new Command("rename"))
+            .description("Rename an existing resource.")
+            .addArgument(new Argument("<kind>", RESOURCE_KIND_ARGUMENT_DESCRIPTION).choices(kinds))
+            .argument("<name>", "Current resource name")
+            .requiredOption("--new-name <name>", "New resource name")
+    );
+    renameCommand.action(async function resourceRenameCommandAction() {
+        await runResourceCommandAction(() => {
+            failUnimplementedMutation("rename");
+        });
+    });
+
+    const duplicateCommand = addSharedOptions(
+        applyStandardCommandOptions(new Command("duplicate"))
+            .description("Duplicate an existing resource.")
+            .addArgument(new Argument("<kind>", RESOURCE_KIND_ARGUMENT_DESCRIPTION).choices(kinds))
+            .argument("<name>", "Source resource name")
+            .requiredOption("--new-name <name>", "New duplicated resource name")
+    );
+    duplicateCommand.action(async function resourceDuplicateCommandAction() {
+        await runResourceCommandAction(() => {
+            failUnimplementedMutation("duplicate");
+        });
+    });
+
+    const moveCommand = addSharedOptions(
+        applyStandardCommandOptions(new Command("move"))
+            .description("Move a resource to a new destination folder.")
+            .addArgument(new Argument("<kind>", RESOURCE_KIND_ARGUMENT_DESCRIPTION).choices(kinds))
+            .argument("<name>", "Resource name")
+            .requiredOption("--destination-folder <path>", "Destination folder path")
+    );
+    moveCommand.action(async function resourceMoveCommandAction() {
+        await runResourceCommandAction(() => {
+            failUnimplementedMutation("move");
         });
     });
 
@@ -137,6 +401,15 @@ export function createResourceCommand(): Command {
 
     command.addCommand(addCommand);
     command.addCommand(removeCommand);
+    command.addCommand(listCommand);
+    command.addCommand(findCommand);
+    command.addCommand(inspectCommand);
+    command.addCommand(depsCommand);
+    command.addCommand(dependentsCommand);
+    command.addCommand(auditCommand);
+    command.addCommand(renameCommand);
+    command.addCommand(duplicateCommand);
+    command.addCommand(moveCommand);
 
     return command;
 }

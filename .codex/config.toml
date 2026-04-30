@@ -1,7 +1,7 @@
 # OpenAI Codex configuration file
 # See https://developers.openai.com/codex/config-basic
 
-model = "gpt-5.4"
+model = "gpt-5.3-codex"
 model_verbosity = "low"
 approval_policy = "never"
 model_supports_reasoning_summaries = true # Force reasoning
@@ -25,3 +25,6 @@ enabled = true
 
 [projects."/Users/henrykirk/GMLoop"]
 trust_level = "trusted"
+
+[sandbox_workspace_write]
+network_access = true

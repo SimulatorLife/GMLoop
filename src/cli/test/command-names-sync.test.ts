@@ -26,7 +26,10 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
         "prepare-hot-reload",
         "refactor",
         "resource",
+        "runner",
+        "symbol",
         "transpile",
+        "validate",
         "watch",
         "watch-status",
         "help"
