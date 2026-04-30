@@ -59,14 +59,15 @@ function validateOptionalEnumValue<ValueType extends string>(
     context: string,
     propertyName: string
 ): ValueType | undefined {
-    if (value !== undefined) {
-        if (typeof value !== "string" || !validValues.has(value as ValueType)) {
-            throw new TypeError(`${context}.${propertyName} must be one of ${[...validValues].join(", ")}.`);
-        }
-
-        return value as ValueType;
+    if (value === undefined) {
+        return undefined;
     }
-    return undefined;
+
+    if (typeof value !== "string" || !validValues.has(value as ValueType)) {
+        throw new TypeError(`${context}.${propertyName} must be one of ${[...validValues].join(", ")}.`);
+    }
+
+    return value as ValueType;
 }
 
 function validateFixtureProfile(value: unknown, context: string): NonNullable<FixtureProjectConfigMetadata["profile"]> {
