@@ -14,6 +14,7 @@ The intended target is the GameMaker HTML5 runtime used with GMLoop's live/hot-r
 | MCP architecture | `@gmloop/mcp` should remain a thin wrapper over the CLI catalog. No MCP-only business logic, no standalone/static/predefined MCP tool definitions, and no MCP-only command surfaces. |
 | Runtime target | Design these tools for the HTML5 runtime and GMLoop hot-reload workflow rather than as a general desktop/IDE automation surface. |
 | Browser automation boundary | Do not recreate browser automation capabilities already covered by Playwright/browser MCP servers, such as screenshots, keyboard input, mouse input, browser navigation, DOM inspection, or viewport emulation. |
+| Reuse over reinvention | Prefer building on existing GameMaker tooling such as Stitch, `@bscotch/yy`, launcher/build helpers, and related automation references wherever practical instead of reimplementing the same capability from scratch. |
 | Standalone vs options | Prefer one command per domain action and move “getter/setter explosion” into `inspect`, `update`, `validate`, `query`, `state`, `logs`, `capture`, and `report` subcommands with explicit options. |
 | Graph commands | Keep `graph index`, `graph search`, `graph doctor`, `graph visualize`. Place symbol-centric graph queries under a separate `symbol` suite for AI ergonomics. |
 | Symbol inspection | Use `symbol inspect` as the unified symbol entrypoint instead of a builtin-only special-case command. |
@@ -31,6 +32,34 @@ The intended target is the GameMaker HTML5 runtime used with GMLoop's live/hot-r
 | Change workflow | To add, remove, or rename an MCP tool, change the CLI command definition; the MCP surface should update automatically from that. |
 | Resources exception | MCP resources may still exist where appropriate, but command-like behavior must come from the CLI-derived tool catalog rather than a separate MCP-only command registry. |
 | Browser-tool exception | Browser automation primitives should be delegated to Playwright/browser MCP tooling rather than reimplemented in `@gmloop/mcp`. |
+| Dependency strategy | When a third-party package already solves the underlying GameMaker project, launcher, or build concern well, prefer adding it as a dependency and wrapping it cleanly in `@gmloop/cli` rather than reimplementing the same logic internally. |
+
+## External Tooling Strategy
+
+| Source | How to use it in this plan |
+| --- | --- |
+| [bscotch/stitch](https://github.com/bscotch/stitch) | Primary upstream reference for GameMaker project automation patterns. Reuse concepts, data modeling, and package-level capabilities where they fit GMLoop's architecture. |
+| [bscotch/stitch `packages/yy`](https://github.com/bscotch/stitch/tree/develop/packages/yy) | Preferred source for `.yy`/`.yyp` schema handling and project metadata I/O where it avoids reimplementing GameMaker resource metadata logic. |
+| [bscotch/stitch `packages/launcher`](https://github.com/bscotch/stitch/tree/develop/packages/launcher) | Preferred source for launching projects, managing runtimes, and build/run orchestration where it fits the HTML5/hot-reload workflow. |
+| [GameMaker manual: Building via Command Line (LTS)](https://manual.gamemaker.io/lts/en/Settings/Building_via_Command_Line.htm) | Reference for official GameMaker CLI/build invocation behavior and supported flags. |
+| [GameMaker manual: Building via Command Line (monthly)](https://manual.gamemaker.io/monthly/en/#t=Settings%2FBuilding_via_Command_Line.htm) | Reference for the newer monthly-channel command-line build behavior and flag surface. |
+| [YoYo Games blog: Automate builds](https://gamemaker.io/en/blog/bs-tech-automate-builds) | Reference for supported GameMaker build automation workflows and CI-oriented patterns. |
+| [Atennebris/GMSync](https://github.com/Atennebris/GMSync) | Reference for GameMaker synchronization/automation ideas and implementation patterns that may inform runtime or project tooling. |
+| [GitHub Actions overview](https://docs.github.com/en/actions/learn-github-actions/understanding-github-actions#workflows) | Reference for CI/workflow terminology and workflow-model expectations when designing build/test automation integrations. |
+| [bscotch/igor-setup](https://github.com/bscotch/igor-setup) | Reference and possible dependency for setting up Igor/GameMaker build prerequisites in automation contexts. |
+| [bscotch/igor-build](https://github.com/bscotch/igor-build) | Reference and possible dependency for Igor/GameMaker build invocation in automation contexts. |
+| [actions/upload-artifact](https://github.com/actions/upload-artifact) | Reference for CI artifact publication patterns when GMLoop build commands are wired into GitHub Actions. |
+| [darkw3bb/GameMaker-MCP-Server](https://github.com/darkw3bb/GameMaker-MCP-Server) | Reference for adjacent MCP server design ideas and scope decisions. Use as a comparison point, not as the source of truth. |
+
+## Reuse Policy
+
+| Rule | Requirement |
+| --- | --- |
+| Prefer upstream packages | Before implementing new GameMaker project/build/launcher functionality, check whether Stitch or related Bscotch packages already provide a usable foundation. |
+| Wrap in CLI, do not bypass CLI | Even when third-party packages are used under the hood, expose their capabilities through GMLoop CLI commands rather than creating direct MCP-only integrations. |
+| Preserve workspace boundaries | Third-party integrations should sit behind the appropriate GMLoop workspace or CLI command layer and must not blur parser/core/plugin ownership boundaries. |
+| Reuse for implementation and reference | External sources may be used both as runtime dependencies and as references/examples for shaping GMLoop's own implementation. |
+| Avoid duplicate ownership | If Stitch or an adjacent dependency already handles `.yy` metadata, launcher management, or build invocation well, do not create a second competing implementation unless GMLoop has a clear architectural reason. |
 
 ## Recommended Top-Level CLI Taxonomy
 
