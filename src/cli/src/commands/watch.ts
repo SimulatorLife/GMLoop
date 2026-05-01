@@ -1112,6 +1112,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                             let debouncedHandler = runtimeContext.debouncedHandlers.get(unknownKey);
                             if (!debouncedHandler) {
                                 debouncedHandler = debounce(() => {
+                                    runtimeContext.debouncedHandlers.delete(unknownKey);
                                     void triggerUnknown();
                                 }, debounceDelay);
                                 runtimeContext.debouncedHandlers.set(unknownKey, debouncedHandler);
@@ -1157,6 +1158,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
                         if (!debouncedHandler) {
                             debouncedHandler = debounce((filePath: string, evt: string, opts: FileChangeOptions) => {
+                                runtimeContext.debouncedHandlers.delete(filePath);
                                 handleFileChange(filePath, evt, opts).catch((error) => {
                                     const message = getErrorMessage(error, {
                                         fallback: "Unknown file processing error"
