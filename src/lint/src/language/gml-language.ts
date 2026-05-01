@@ -189,28 +189,32 @@ function readSourceText(context: GMLLanguageContext): string {
         return decodeFileBody(context.body);
     }
 
-    if (typeof context.text === "string") {
-        return context.text;
-    }
-
-    if (typeof context.source === "string") {
-        return context.source;
+    const sourceText = readFirstPresentStringValue(context, ["text", "source"]);
+    if (sourceText !== null) {
+        return sourceText;
     }
 
     return "";
 }
 
+function readFirstPresentStringValue(
+    context: GMLLanguageContext,
+    keys: ReadonlyArray<keyof GMLLanguageContext>
+): string | null {
+    for (const key of keys) {
+        const candidate = context[key];
+        if (typeof candidate === "string") {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
 function readFilename(context: GMLLanguageContext): string {
-    if (typeof context.path === "string" && context.path.length > 0) {
-        return context.path;
-    }
-
-    if (typeof context.filePath === "string" && context.filePath.length > 0) {
-        return context.filePath;
-    }
-
-    if (typeof context.filename === "string" && context.filename.length > 0) {
-        return context.filename;
+    const filename = readFirstPresentStringValue(context, ["path", "filePath", "filename"]);
+    if (filename !== null && filename.length > 0) {
+        return filename;
     }
 
     return "<text>";
