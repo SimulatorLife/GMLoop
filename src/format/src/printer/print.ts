@@ -27,17 +27,8 @@ import {
     resolveObjectWrapOption,
     TRAILING_COMMA
 } from "../options/index.js";
-import {
-    DEFAULT_PRINT_WIDTH,
-    INLINEABLE_SINGLE_STATEMENT_TYPES,
-    MULTIPLICATIVE_BINARY_OPERATORS,
-    NUMBER_TYPE,
-    OBJECT_TYPE,
-    STRING_TYPE,
-    UNDEFINED_TYPE
-} from "./constants.js";
+import { MULTIPLICATIVE_BINARY_OPERATORS, NUMBER_TYPE, OBJECT_TYPE, STRING_TYPE, UNDEFINED_TYPE } from "./constants.js";
 import { getEnumNameAlignmentPadding, prepareEnumMembersForPrinting } from "./enum-alignment.js";
-import { isLogicalComparisonClause } from "./logical-expression-predicates.js";
 import { safeGetParentNode, safeGetPathName, safeGetPathValue } from "./path-utils.js";
 import {
     breakParent,
@@ -61,6 +52,7 @@ import {
     isSkippableSemicolonWhitespace,
     optionalSemicolon
 } from "./semicolons.js";
+import { buildClauseGroup, printSingleClauseStatement } from "./single-clause-statement.js";
 import {
     getOriginalTextFromOptions,
     hasBlankLineBetweenLastCommentAndClosingBrace,
@@ -175,13 +167,31 @@ function tryPrintControlStructureNode(node, path, options, print) {
             ]);
         }
         case "WhileStatement": {
-            return concat(printSingleClauseStatement(path, options, print, "while", "test", "body"));
+            return concat(
+                printSingleClauseStatement(path, options, print, "while", "test", "body", {
+                    printInBlock,
+                    printWithoutExtraParens,
+                    getSourceTextForNode
+                })
+            );
         }
         case "RepeatStatement": {
-            return concat(printSingleClauseStatement(path, options, print, "repeat", "test", "body"));
+            return concat(
+                printSingleClauseStatement(path, options, print, "repeat", "test", "body", {
+                    printInBlock,
+                    printWithoutExtraParens,
+                    getSourceTextForNode
+                })
+            );
         }
         case "WithStatement": {
-            return concat(printSingleClauseStatement(path, options, print, "with", "test", "body"));
+            return concat(
+                printSingleClauseStatement(path, options, print, "with", "test", "body", {
+                    printInBlock,
+                    printWithoutExtraParens,
+                    getSourceTextForNode
+                })
+            );
         }
     }
 }
@@ -2629,7 +2639,13 @@ function consumeBlockComment(source, startIndex) {
  * alternate handling to a single abstraction layer.
  */
 function buildIfStatementDoc(path, options, print, node) {
-    const parts: any[] = [printSingleClauseStatement(path, options, print, "if", "test", "consequent")];
+    const parts: any[] = [
+        printSingleClauseStatement(path, options, print, "if", "test", "consequent", {
+            printInBlock,
+            printWithoutExtraParens,
+            getSourceTextForNode
+        })
+    ];
 
     const elseDoc = buildIfAlternateDoc(path, options, print, node);
     if (elseDoc) {
@@ -3039,178 +3055,6 @@ function unwrapParenthesizedExpression(childPath, print) {
     }
 
     return print();
-}
-
-function getInnermostClauseExpression(node) {
-    return unwrapParensForInitializer(node);
-}
-
-function buildClauseGroup(doc) {
-    return group([indent([ifBreak(line), doc]), ifBreak(line)]);
-}
-
-function wrapInClauseParens(path, print, clauseKey) {
-    const clauseNode = path.getValue()?.[clauseKey];
-    const clauseDoc = printWithoutExtraParens(path, print, clauseKey);
-
-    const clauseExpressionNode = getInnermostClauseExpression(clauseNode);
-
-    if (clauseExpressionNode?.type === "CallExpression" && clauseExpressionNode.preserveOriginalCallText) {
-        return concat(["(", clauseDoc, ")"]);
-    }
-
-    return concat(["(", buildClauseGroup(clauseDoc), ")"]);
-}
-
-function resolveInlineClauseBodySourceText(bodyNode, options): string | null {
-    const bodySource = getSourceTextForNode(bodyNode, options);
-    if (typeof bodySource !== STRING_TYPE) {
-        return null;
-    }
-
-    const trimmedBodySource = bodySource.trim();
-    if (trimmedBodySource.length === 0) {
-        return null;
-    }
-
-    if (bodyNode?.type !== "BlockStatement") {
-        return trimmedBodySource;
-    }
-
-    if (!trimmedBodySource.startsWith("{") || !trimmedBodySource.endsWith("}")) {
-        return trimmedBodySource;
-    }
-
-    const inlineBodySource = trimmedBodySource.slice(1, -1).trim();
-    return inlineBodySource.length > 0 ? inlineBodySource : null;
-}
-
-function shouldInlineClauseByPrintWidth(keyword, clauseNode, bodyNode, options): boolean {
-    if (!bodyNode) {
-        return false;
-    }
-
-    const clauseSource = getSourceTextForNode(clauseNode, options);
-    if (typeof clauseSource !== STRING_TYPE || clauseSource.trim().length === 0) {
-        return true;
-    }
-
-    if (clauseSource.includes("\n") || clauseSource.includes("\r")) {
-        return false;
-    }
-
-    const inlineBodySource = resolveInlineClauseBodySourceText(bodyNode, options);
-    if (inlineBodySource === null || inlineBodySource.includes("\n") || inlineBodySource.includes("\r")) {
-        return false;
-    }
-
-    const configuredPrintWidth =
-        typeof options?.printWidth === NUMBER_TYPE && Number.isFinite(options.printWidth) && options.printWidth > 0
-            ? options.printWidth
-            : DEFAULT_PRINT_WIDTH;
-
-    // `if (` + clause + `) { ` + body + ` }`
-    const estimatedInlineLength = keyword.length + 2 + clauseSource.trim().length + 4 + inlineBodySource.length + 2;
-
-    return estimatedInlineLength <= configuredPrintWidth;
-}
-
-// prints any statement that matches the structure [keyword, clause, statement]
-function printSingleClauseStatement(path, options, print, keyword, clauseKey, bodyKey) {
-    const node = path.getValue();
-    const clauseNode = node?.[clauseKey];
-    const clauseExpressionNode = getInnermostClauseExpression(clauseNode);
-    const clauseDoc = wrapInClauseParens(path, print, clauseKey);
-    const bodyNode = node?.[bodyKey];
-    const allowInlineControlFlowBlocks = options?.allowInlineControlFlowBlocks ?? false;
-    const clauseIsPreservedCall =
-        clauseExpressionNode?.type === "CallExpression" && clauseExpressionNode.preserveOriginalCallText === true;
-
-    const allowCollapsedGuard =
-        bodyNode &&
-        !clauseIsPreservedCall &&
-        allowInlineControlFlowBlocks &&
-        shouldInlineClauseByPrintWidth(keyword, clauseNode, bodyNode, options);
-
-    if (allowCollapsedGuard) {
-        let inlineReturnDoc = null;
-        let inlineStatementType = null;
-
-        if (INLINEABLE_SINGLE_STATEMENT_TYPES.has(bodyNode.type) && !Core.hasComment(bodyNode)) {
-            inlineReturnDoc = print(bodyKey);
-            inlineStatementType = bodyNode.type;
-        } else if (
-            bodyNode.type === "BlockStatement" &&
-            !Core.hasComment(bodyNode) &&
-            Array.isArray(bodyNode.body) &&
-            bodyNode.body.length === 1
-        ) {
-            const [onlyStatement] = bodyNode.body;
-            if (
-                onlyStatement &&
-                INLINEABLE_SINGLE_STATEMENT_TYPES.has(onlyStatement.type) &&
-                !Core.hasComment(onlyStatement)
-            ) {
-                const startLine = bodyNode.start?.line;
-                const endLine = bodyNode.end?.line;
-                const blockSource = getSourceTextForNode(bodyNode, options);
-                const blockContainsSemicolon = typeof blockSource === STRING_TYPE && blockSource.includes(";");
-                const canInlineBlock =
-                    onlyStatement.type === "ExitStatement" ||
-                    (startLine !== undefined && endLine !== undefined && startLine === endLine);
-
-                if (blockContainsSemicolon && canInlineBlock) {
-                    inlineReturnDoc = path.call((childPath) => childPath.call(print, "body", 0), bodyKey);
-                    inlineStatementType = onlyStatement.type;
-                }
-            }
-        }
-
-        if (inlineReturnDoc) {
-            return group([
-                keyword,
-                " ",
-                clauseDoc,
-                " { ",
-                inlineReturnDoc,
-                optionalSemicolon(inlineStatementType ?? "ReturnStatement"),
-                " }"
-            ]);
-        }
-    }
-
-    const preserveBraceAdjacency = shouldPreserveClauseBlockAdjacency(clauseNode, bodyNode);
-
-    return concat([
-        keyword,
-        " ",
-        clauseDoc,
-        preserveBraceAdjacency ? "" : " ",
-        printInBlock(path, options, print, bodyKey)
-    ]);
-}
-
-function shouldPreserveClauseBlockAdjacency(clauseNode, bodyNode) {
-    if (!clauseNode || !bodyNode || bodyNode.type !== "BlockStatement") {
-        return false;
-    }
-
-    const clauseEndIndex = Core.getNodeEndIndex(clauseNode);
-    const bodyStartIndex = Core.getNodeStartIndex(bodyNode);
-
-    if (
-        typeof clauseEndIndex !== NUMBER_TYPE ||
-        typeof bodyStartIndex !== NUMBER_TYPE ||
-        bodyStartIndex < clauseEndIndex
-    ) {
-        return false;
-    }
-
-    if (bodyStartIndex !== clauseEndIndex) {
-        return false;
-    }
-
-    return isLogicalComparisonClause(clauseNode);
 }
 
 function printSimpleDeclaration(leftDoc, rightDoc) {
