@@ -43,22 +43,24 @@ export function createRuntimeCommand(): Command {
     const command = applyStandardCommandOptions(new Command("runtime")).description(
         "Inspect and interact with runtime state."
     );
+    const runtimeInstanceIdOptionName = "--instance-id <id>";
+    const runtimeInstanceIdOptionDescription = "Runtime instance id.";
 
     const shared = (nested: Command): Command => nested.option("--json", "Emit JSON output.");
 
     const instances = shared(
         applyStandardCommandOptions(new Command("instances")).description("List runtime instances.")
     );
-    instances.action(async function runtimeInstancesAction() {
+    instances.action(function runtimeInstancesAction() {
         runRuntimeReadAction("runtime instances", this.opts<RuntimeOptions>());
     });
 
     const inspect = shared(
         applyStandardCommandOptions(new Command("inspect"))
             .description("Inspect one runtime instance.")
-            .option("--instance-id <id>", "Runtime instance id.")
+            .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
     );
-    inspect.action(async function runtimeInspectAction() {
+    inspect.action(function runtimeInspectAction() {
         runRuntimeReadAction("runtime inspect", this.opts<RuntimeOptions>());
     });
 
@@ -67,9 +69,9 @@ export function createRuntimeCommand(): Command {
             .description("Read a runtime value.")
             .option("--path <path>", "Property path.")
             .option("--scope <scope>", "Scope: instance or global.", "instance")
-            .option("--instance-id <id>", "Runtime instance id.")
+            .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
     );
-    get.action(async function runtimeGetAction() {
+    get.action(function runtimeGetAction() {
         runRuntimeReadAction("runtime get", this.opts<RuntimeOptions>());
     });
 
@@ -79,9 +81,9 @@ export function createRuntimeCommand(): Command {
             .requiredOption("--path <path>", "Property path.")
             .requiredOption("--value <value>", "New value.")
             .option("--scope <scope>", "Scope: instance or global.", "instance")
-            .option("--instance-id <id>", "Runtime instance id.")
+            .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
     );
-    set.action(async function runtimeSetAction() {
+    set.action(function runtimeSetAction() {
         failRuntimeMutation("set");
     });
 
@@ -90,9 +92,9 @@ export function createRuntimeCommand(): Command {
             .description("Call a runtime method/function.")
             .requiredOption("--method <name>", "Method/function name.")
             .option("--args <json>", "JSON encoded arguments.")
-            .option("--instance-id <id>", "Runtime instance id.")
+            .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
     );
-    call.action(async function runtimeCallAction() {
+    call.action(function runtimeCallAction() {
         failRuntimeMutation("call");
     });
 
@@ -101,7 +103,7 @@ export function createRuntimeCommand(): Command {
             .description("Watch runtime expression changes.")
             .requiredOption("--expression <expr>", "Expression to watch.")
     );
-    watch.action(async function runtimeWatchAction() {
+    watch.action(function runtimeWatchAction() {
         runRuntimeReadAction("runtime watch", this.opts<RuntimeOptions>());
     });
 
@@ -110,12 +112,12 @@ export function createRuntimeCommand(): Command {
             .description("Read coarse runtime state domain.")
             .option("--kind <kind>", "State kind.", "room")
     );
-    state.action(async function runtimeStateAction() {
+    state.action(function runtimeStateAction() {
         runRuntimeReadAction("runtime state", this.opts<RuntimeOptions>());
     });
 
     const logs = shared(applyStandardCommandOptions(new Command("logs")).description("Read runtime logs."));
-    logs.action(async function runtimeLogsAction() {
+    logs.action(function runtimeLogsAction() {
         runRuntimeReadAction("runtime logs", this.opts<RuntimeOptions>());
     });
 
