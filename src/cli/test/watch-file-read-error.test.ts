@@ -14,7 +14,8 @@ import { createMockWatchFactory } from "./test-helpers/watch-fixtures.js";
 async function waitForWatchListenerRegistration(listenerCapture: {
     listener: WatchListener<string> | undefined;
 }): Promise<void> {
-    for (let attempt = 0; attempt < 25; attempt += 1) {
+    const deadlineMs = Date.now() + 5000;
+    while (Date.now() < deadlineMs) {
         if (listenerCapture.listener) {
             return;
         }
