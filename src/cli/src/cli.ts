@@ -40,6 +40,7 @@ import { createPrepareHotReloadCommand, runPrepareHotReloadCommand } from "./com
 import { createRefactorCommand, runRefactorCommand } from "./commands/refactor.js";
 import { createResourceCommand } from "./commands/resource.js";
 import { createRunnerCommand } from "./commands/runner.js";
+import { createRuntimeCommand } from "./commands/runtime.js";
 import { createSymbolCommand } from "./commands/symbol.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
 import { createValidateCommand } from "./commands/validate.js";
@@ -548,6 +549,15 @@ cliCommandRegistry.registerCommand({
     onError: (error) =>
         handleCliError(error, {
             prefix: "Runner command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createRuntimeCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Runtime command failed.",
             exitCode: 1
         })
 });
