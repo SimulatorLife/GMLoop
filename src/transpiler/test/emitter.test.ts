@@ -138,9 +138,10 @@ void test("GmlToJsEmitter emits escaped literals for folded strings with control
     assert.equal(result, String.raw`value = "line\nnext\t\"quoted\"";`);
 });
 
-void test("GmlToJsEmitter passes through GML div operator unchanged (div is special-cased in the emitter)", () => {
-    assert.equal(Transpiler.mapBinaryOperator("div"), "div");
-});
+// Individual operator-mapping assertions (mapBinaryOperator / mapUnaryOperator) are
+// exhaustively covered by operator-mapping.test.ts, which tests every GML→JS mapping
+// including edge cases, unknown operators, and all unary operators. Only the integration
+// test below — which exercises the full emitter pipeline — is kept here.
 
 void test("GmlToJsEmitter lowers GML div operator to Math.trunc integer division", () => {
     // `div` must lower to Math.trunc(a / b), not plain `/`.
@@ -150,57 +151,6 @@ void test("GmlToJsEmitter lowers GML div operator to Math.trunc integer division
     const ast = parser.parse();
     const result = Transpiler.emitJavaScript(ast);
     assert.match(result, /Math\.trunc\(a \/ b\)/, "Should emit Math.trunc(a / b) for the div operator");
-});
-
-void test("GmlToJsEmitter maps GML mod operator to JavaScript modulo", () => {
-    assert.equal(Transpiler.mapBinaryOperator("mod"), "%");
-});
-
-void test("GmlToJsEmitter maps GML and operator to JavaScript &&", () => {
-    assert.equal(Transpiler.mapBinaryOperator("and"), "&&");
-});
-
-void test("GmlToJsEmitter maps GML or operator to JavaScript ||", () => {
-    assert.equal(Transpiler.mapBinaryOperator("or"), "||");
-});
-
-void test("GmlToJsEmitter maps GML not operator to JavaScript !", () => {
-    assert.equal(Transpiler.mapUnaryOperator("not"), "!"); // GML does not support the operator 'not'; this is included to automatic fixing
-});
-
-void test("GmlToJsEmitter maps == to === for strict equality", () => {
-    assert.equal(Transpiler.mapBinaryOperator("=="), "===");
-});
-
-void test("GmlToJsEmitter maps != to !== for strict inequality", () => {
-    assert.equal(Transpiler.mapBinaryOperator("!="), "!==");
-});
-
-void test("GmlToJsEmitter maps bitwise AND operator", () => {
-    assert.equal(Transpiler.mapBinaryOperator("&"), "&");
-});
-
-void test("GmlToJsEmitter maps bitwise OR operator", () => {
-    assert.equal(Transpiler.mapBinaryOperator("|"), "|");
-});
-
-void test("GmlToJsEmitter maps bitwise XOR operator", () => {
-    assert.equal(Transpiler.mapBinaryOperator("xor"), "^");
-});
-
-void test("GmlToJsEmitter maps left shift operator", () => {
-    assert.equal(Transpiler.mapBinaryOperator("<<"), "<<");
-});
-
-void test("GmlToJsEmitter maps right shift operator", () => {
-    assert.equal(Transpiler.mapBinaryOperator(">>"), ">>");
-});
-
-void test("GmlToJsEmitter preserves standard JavaScript operators", () => {
-    assert.equal(Transpiler.mapBinaryOperator("+"), "+");
-    assert.equal(Transpiler.mapBinaryOperator("-"), "-");
-    assert.equal(Transpiler.mapBinaryOperator("*"), "*");
-    assert.equal(Transpiler.mapBinaryOperator("/"), "/");
 });
 
 void test("Transpiler.emitJavaScript exports a function", () => {
