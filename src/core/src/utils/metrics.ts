@@ -150,13 +150,6 @@ function normalizeIncrementAmount(amount, fallback = 1) {
     return Number.isFinite(numeric) ? numeric : fallback;
 }
 
-function createMapIncrementer(store) {
-    return (label, amount = 1) => {
-        const normalized = normalizeLabel(label);
-        incrementMapValue(store, normalized, amount);
-    };
-}
-
 function ensureCacheStats(caches, cacheKeys, cacheName) {
     const normalized = normalizeLabel(cacheName);
     return getOrCreateMapEntry(caches, normalized, () => new Map(cacheKeys.map((key) => [key, 0])));
@@ -260,8 +253,14 @@ export function createMetricsTracker({
     const metadata = Object.create(null);
     const cacheKeys = normalizeCacheKeys(cacheKeyOption);
 
-    const incrementTiming = createMapIncrementer(timings);
-    const incrementCounterBy = createMapIncrementer(counters);
+    const incrementTiming = (label, amount = 1) => {
+        const normalized = normalizeLabel(label);
+        incrementMapValue(timings, normalized, amount);
+    };
+    const incrementCounterBy = (label, amount = 1) => {
+        const normalized = normalizeLabel(label);
+        incrementMapValue(counters, normalized, amount);
+    };
     const snapshot = (extra = {}) => {
         const timingsSnapshot = Object.fromEntries(timings) as Record<string, number>;
         const countersSnapshot = Object.fromEntries(counters) as Record<string, number>;
