@@ -4,11 +4,13 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { createGraphCommand } from "../src/commands/graph.js";
 
 const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
 const SKIP_CLI_ENV_VALUE = "1";
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 let cliModulePromise: Promise<typeof import("../src/cli.js")> | undefined;
 
@@ -82,8 +84,26 @@ void test("CLI command catalog includes graph leaf commands", async () => {
 
     assert.ok(catalog.some((entry) => entry.displayName === "graph index"));
     assert.ok(catalog.some((entry) => entry.displayName === "graph search"));
-    assert.ok(catalog.some((entry) => entry.displayName === "graph context"));
+    assert.ok(catalog.some((entry) => entry.displayName === "graph doctor"));
+    assert.ok(catalog.some((entry) => entry.displayName === "graph visualize"));
+    assert.ok(!catalog.some((entry) => entry.displayName === "graph symbol"));
+    assert.ok(!catalog.some((entry) => entry.displayName === "graph context"));
+    assert.ok(!catalog.some((entry) => entry.displayName === "graph neighbors"));
+    assert.ok(!catalog.some((entry) => entry.displayName === "graph usages"));
+    assert.ok(catalog.some((entry) => entry.displayName === "symbol inspect"));
+    assert.ok(catalog.some((entry) => entry.displayName === "symbol context"));
+    assert.ok(catalog.some((entry) => entry.displayName === "symbol neighbors"));
+    assert.ok(catalog.some((entry) => entry.displayName === "symbol usages"));
     assert.ok(!catalog.some((entry) => entry.displayName === "performance"));
+});
+
+void test("graph command rejects removed symbol-centric subcommands", async () => {
+    const cliModule = await loadCliModule();
+    const result = await cliModule.runCliTestCommand({
+        argv: ["graph", "symbol", "shared_toolset_fn", "--json"]
+    });
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, /unknown command 'symbol'/iu);
 });
 
 void test("graph index and graph search return stable JSON envelopes", async () => {
@@ -251,7 +271,6 @@ void test("graph visualize builds a missing database before exporting HTML", asy
         assert.match(html, /gmloop_format/u);
         assert.match(html, /Format GameMaker Language files using the prettier plugin\./u);
         assert.doesNotMatch(html, /id="regenerate"/u);
-        assert.doesNotMatch(html, /id="open-project"/u);
     } finally {
         await fixture.cleanup();
     }
@@ -306,14 +325,7 @@ void test("graph visualize --serve boots without a project path and waits for UI
     try {
         serveProcess = spawn(
             process.execPath,
-            [
-                path.resolve(process.cwd(), "src/cli/dist/index.js"),
-                "graph",
-                "visualize",
-                "--serve",
-                "--json",
-                "--no-open"
-            ],
+            [path.resolve(REPO_ROOT, "src/cli/dist/index.js"), "graph", "visualize", "--serve", "--json", "--no-open"],
             {
                 cwd: emptyWorkingDirectory,
                 stdio: ["ignore", "pipe", "pipe"]
@@ -405,22 +417,16 @@ void test("graph command options validate minimum values for depth and limit", a
         const invalidDepthResult = await cliModule.runCliTestCommand({
             argv: [
                 "graph",
-                "neighbors",
+                "search",
                 "project::gml/script/player_update",
                 "--path",
                 fixture.projectRoot,
-                "--depth",
+                "--limit",
                 "0"
             ]
         });
         assert.equal(invalidDepthResult.exitCode, 1);
-        assert.match(invalidDepthResult.stderr, /Depth must be at least 1/);
-
-        const invalidLimitResult = await cliModule.runCliTestCommand({
-            argv: ["graph", "search", "shared_toolset_fn", "--path", fixture.projectRoot, "--limit", "0"]
-        });
-        assert.equal(invalidLimitResult.exitCode, 1);
-        assert.match(invalidLimitResult.stderr, /Limit must be at least 1/);
+        assert.match(invalidDepthResult.stderr, /Limit must be at least 1/);
     } finally {
         await fixture.cleanup();
     }
@@ -428,7 +434,7 @@ void test("graph command options validate minimum values for depth and limit", a
 
 void test("graph subcommands expose the force flag consistently", async () => {
     const command = createGraphCommand();
-    const subcommandNames = ["index", "search", "symbol", "context", "neighbors", "usages", "visualize"] as const;
+    const subcommandNames = ["index", "search", "visualize"] as const;
 
     for (const subcommandName of subcommandNames) {
         const subcommand = command.commands.find((entry) => entry.name() === subcommandName);

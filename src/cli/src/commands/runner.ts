@@ -1,9 +1,13 @@
+import path from "node:path";
+
+import { Core } from "@gmloop/core";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createPathOption } from "../cli-core/shared-command-options.js";
 import { getRunnerController, getRunnerStateStore } from "../modules/runtime/index.js";
+import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type RunnerOptions = Readonly<{
     debug?: boolean;
@@ -17,52 +21,151 @@ type RunnerOptions = Readonly<{
     runner?: string;
 }>;
 
-function printRunnerPayload(payload: unknown, asJson: boolean): void {
-    if (asJson) {
-        console.log(JSON.stringify(payload, null, 2));
-        return;
-    }
+type RunnerLaunchConfiguration = Readonly<{
+    args: Array<string>;
+    command: string;
+    projectRoot: string;
+}>;
+
+function printRunnerPayload(payload: unknown): void {
     console.log(JSON.stringify(payload, null, 2));
 }
 
-function runRunnerStatusAction(options: RunnerOptions): void {
-    const snapshot = getRunnerStateStore().readSnapshot();
-    const processStatus = getRunnerController().status();
-    printRunnerPayload(
-        {
-            command: "runner status",
-            payload: {
-                ...snapshot,
-                process: processStatus
-            }
-        },
-        options.json === true
-    );
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function runRunnerLogsAction(options: RunnerOptions): void {
-    const logs = getRunnerStateStore().readLogs({
+function parseRunnerArgsInput(value: string): Array<string> {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+        return [];
+    }
+
+    if (trimmed.startsWith("[")) {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
+            throw new TypeError("GMLOOP_RUNNER_ARGS JSON must be an array of strings.");
+        }
+        return parsed;
+    }
+
+    return trimmed.split(/\s+/u).filter((entry) => entry.length > 0);
+}
+
+function resolveRunnerArgsFromConfig(config: unknown): Array<string> {
+    if (!isRecord(config) || !Array.isArray(config.args)) {
+        return [];
+    }
+
+    const parsedArgs: Array<string> = [];
+    for (const candidate of config.args) {
+        if (typeof candidate !== "string") {
+            throw new TypeError("gmloop runtime runner args must be an array of strings.");
+        }
+        parsedArgs.push(candidate);
+    }
+
+    return parsedArgs;
+}
+
+function resolveRunnerConfigFromLoadedProjectConfig(config: unknown): { args: Array<string>; command: string | null } {
+    if (!isRecord(config)) {
+        return { args: [], command: null };
+    }
+
+    const runtimeValue = config.runtime;
+    if (!isRecord(runtimeValue)) {
+        return { args: [], command: null };
+    }
+
+    const runnerValue = runtimeValue.runner;
+    if (!isRecord(runnerValue)) {
+        return { args: [], command: null };
+    }
+
+    const command = typeof runnerValue.command === "string" ? runnerValue.command.trim() : "";
+    return {
+        args: resolveRunnerArgsFromConfig(runnerValue),
+        command: command.length > 0 ? command : null
+    };
+}
+
+async function resolveRunnerLaunchConfiguration(options: RunnerOptions): Promise<RunnerLaunchConfiguration> {
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
+
+    const configPath = path.join(projectRoot, "gmloop.json");
+    const loadedConfig = await Core.loadGmloopProjectConfig(configPath).catch(() => ({}));
+    const configRunner = resolveRunnerConfigFromLoadedProjectConfig(loadedConfig);
+
+    const envCommand =
+        typeof process.env.GMLOOP_RUNNER_COMMAND === "string" ? process.env.GMLOOP_RUNNER_COMMAND.trim() : "";
+    const envArgsRaw = typeof process.env.GMLOOP_RUNNER_ARGS === "string" ? process.env.GMLOOP_RUNNER_ARGS : "";
+    const envArgs = envArgsRaw.trim().length > 0 ? parseRunnerArgsInput(envArgsRaw) : [];
+
+    const command = options.runner?.trim() || envCommand || configRunner.command;
+    if (!command) {
+        throw new TypeError(
+            "Runner command is not configured. Provide --runner <command>, set GMLOOP_RUNNER_COMMAND, or define runtime.runner.command in gmloop.json."
+        );
+    }
+
+    const args = envArgs.length > 0 ? envArgs : configRunner.args;
+    return {
+        args,
+        command,
+        projectRoot
+    };
+}
+
+async function runRunnerStatusAction(options: RunnerOptions): Promise<void> {
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
+    const runnerStateStore = getRunnerStateStore();
+    runnerStateStore.bindProjectRoot(projectRoot);
+    const snapshot = runnerStateStore.readSnapshot();
+    const processStatus = getRunnerController().status(projectRoot);
+    printRunnerPayload({
+        command: "runner status",
+        payload: {
+            ...snapshot,
+            process: processStatus
+        }
+    });
+}
+
+async function runRunnerLogsAction(options: RunnerOptions): Promise<void> {
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
+    const runnerStateStore = getRunnerStateStore();
+    runnerStateStore.bindProjectRoot(projectRoot);
+    const logs = runnerStateStore.readLogs({
         errorsOnly: options.errorsOnly === true,
         filter: options.filter,
         kind: options.kind ?? "all"
     });
-    printRunnerPayload(
-        {
-            command: "runner logs",
-            payload: logs
-        },
-        options.json === true
-    );
+    printRunnerPayload({
+        command: "runner logs",
+        payload: logs
+    });
 }
 
 async function runRunnerLogsFollowAction(options: RunnerOptions): Promise<void> {
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
     const runnerStateStore = getRunnerStateStore();
+    runnerStateStore.bindProjectRoot(projectRoot);
     const startTimestamp = Date.now();
     const followWindowMs = 750;
     let lastTimestamp = startTimestamp - 1;
 
     await new Promise<void>((resolve) => {
         const interval = setInterval(() => {
+            runnerStateStore.bindProjectRoot(projectRoot);
             const entries = runnerStateStore
                 .readLogs({
                     errorsOnly: options.errorsOnly === true,
@@ -76,14 +179,11 @@ async function runRunnerLogsFollowAction(options: RunnerOptions): Promise<void> 
                 if (nextLast) {
                     lastTimestamp = nextLast.timestamp;
                 }
-                printRunnerPayload(
-                    {
-                        command: "runner logs",
-                        follow: true,
-                        payload: entries
-                    },
-                    options.json === true
-                );
+                printRunnerPayload({
+                    command: "runner logs",
+                    follow: true,
+                    payload: entries
+                });
             }
 
             if (Date.now() - startTimestamp >= followWindowMs) {
@@ -94,98 +194,108 @@ async function runRunnerLogsFollowAction(options: RunnerOptions): Promise<void> 
     });
 }
 
-function runRunnerClearLogsAction(options: RunnerOptions): void {
-    getRunnerStateStore().clearLogs();
-    printRunnerPayload(
-        {
-            command: "runner clear-logs",
-            payload: { ok: true }
-        },
-        options.json === true
-    );
+async function runRunnerClearLogsAction(options: RunnerOptions): Promise<void> {
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
+    const runnerStateStore = getRunnerStateStore();
+    runnerStateStore.bindProjectRoot(projectRoot);
+    runnerStateStore.clearLogs();
+    printRunnerPayload({
+        command: "runner clear-logs",
+        payload: { ok: true }
+    });
 }
 
-function runRunnerPauseAction(options: RunnerOptions): void {
-    getRunnerStateStore().setState("paused");
-    printRunnerPayload(
-        {
-            command: "runner pause",
-            payload: { ok: true }
-        },
-        options.json === true
-    );
+async function runRunnerPauseAction(options: RunnerOptions): Promise<void> {
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
+    const runnerStateStore = getRunnerStateStore();
+    runnerStateStore.bindProjectRoot(projectRoot);
+    runnerStateStore.setState("paused");
+    printRunnerPayload({
+        command: "runner pause",
+        payload: { ok: true }
+    });
 }
 
-function runRunnerResumeAction(options: RunnerOptions): void {
-    getRunnerStateStore().setState("running");
-    printRunnerPayload(
-        {
-            command: "runner resume",
-            payload: { ok: true }
-        },
-        options.json === true
-    );
+async function runRunnerResumeAction(options: RunnerOptions): Promise<void> {
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
+    const runnerStateStore = getRunnerStateStore();
+    runnerStateStore.bindProjectRoot(projectRoot);
+    runnerStateStore.setState("running");
+    printRunnerPayload({
+        command: "runner resume",
+        payload: { ok: true }
+    });
 }
 
-function runRunnerRoomSetAction(roomName: string, options: RunnerOptions): void {
-    getRunnerStateStore().setRoom(roomName);
-    printRunnerPayload(
-        {
-            command: "runner room set",
-            payload: { room: roomName }
-        },
-        options.json === true
-    );
+async function runRunnerRoomSetAction(roomName: string, options: RunnerOptions): Promise<void> {
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
+    const runnerStateStore = getRunnerStateStore();
+    runnerStateStore.bindProjectRoot(projectRoot);
+    runnerStateStore.setRoom(roomName);
+    printRunnerPayload({
+        command: "runner room set",
+        payload: { room: roomName }
+    });
 }
 
-function runRunnerRoomCurrentAction(options: RunnerOptions): void {
-    const snapshot = getRunnerStateStore().readSnapshot();
-    printRunnerPayload(
-        {
-            command: "runner room current",
-            payload: { room: snapshot.room }
-        },
-        options.json === true
-    );
+async function runRunnerRoomCurrentAction(options: RunnerOptions): Promise<void> {
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
+    const runnerStateStore = getRunnerStateStore();
+    runnerStateStore.bindProjectRoot(projectRoot);
+    const snapshot = runnerStateStore.readSnapshot();
+    printRunnerPayload({
+        command: "runner room current",
+        payload: { room: snapshot.room }
+    });
 }
 
-function runRunnerStartAction(options: RunnerOptions): void {
+async function runRunnerStartAction(options: RunnerOptions): Promise<void> {
+    const launch = await resolveRunnerLaunchConfiguration(options);
     const payload = getRunnerController().start({
+        args: launch.args,
+        command: launch.command,
         debug: options.debug,
-        runner: options.runner
+        projectRoot: launch.projectRoot
     });
-    printRunnerPayload(
-        {
-            command: "runner start",
-            payload
-        },
-        options.json === true
-    );
+    printRunnerPayload({
+        command: "runner start",
+        payload
+    });
 }
 
-function runRunnerStopAction(options: RunnerOptions): void {
-    const payload = getRunnerController().stop();
-    printRunnerPayload(
-        {
-            command: "runner stop",
-            payload
-        },
-        options.json === true
-    );
+async function runRunnerStopAction(options: RunnerOptions): Promise<void> {
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
+    const payload = getRunnerController().stop(projectRoot);
+    printRunnerPayload({
+        command: "runner stop",
+        payload
+    });
 }
 
-function runRunnerRestartAction(options: RunnerOptions): void {
+async function runRunnerRestartAction(options: RunnerOptions): Promise<void> {
+    const launch = await resolveRunnerLaunchConfiguration(options);
     const payload = getRunnerController().restart({
+        args: launch.args,
+        command: launch.command,
         debug: options.debug,
-        runner: options.runner
+        projectRoot: launch.projectRoot
     });
-    printRunnerPayload(
-        {
-            command: "runner restart",
-            payload
-        },
-        options.json === true
-    );
+    printRunnerPayload({
+        command: "runner restart",
+        payload
+    });
 }
 
 function addRunnerSharedOptions(command: Command): Command {
@@ -254,7 +364,7 @@ export function createRunnerCommand(): Command {
     );
     pause.action(async function runnerPauseAction() {
         await runRunnerCommandAction(() => {
-            runRunnerPauseAction(this.opts<RunnerOptions>());
+            return runRunnerPauseAction(this.opts<RunnerOptions>());
         });
     });
 
@@ -263,7 +373,7 @@ export function createRunnerCommand(): Command {
     );
     resume.action(async function runnerResumeAction() {
         await runRunnerCommandAction(() => {
-            runRunnerResumeAction(this.opts<RunnerOptions>());
+            return runRunnerResumeAction(this.opts<RunnerOptions>());
         });
     });
 
@@ -272,18 +382,19 @@ export function createRunnerCommand(): Command {
     );
     status.action(async function runnerStatusAction() {
         await runRunnerCommandAction(() => {
-            runRunnerStatusAction(this.opts<RunnerOptions>());
+            return runRunnerStatusAction(this.opts<RunnerOptions>());
         });
     });
 
     const logs = addRunnerLogOptions(applyStandardCommandOptions(new Command("logs")).description("Read runner logs."));
     logs.action(async function runnerLogsAction() {
-        await runRunnerCommandAction(() => {
+        await runRunnerCommandAction(async () => {
             const options = this.opts<RunnerOptions>();
             if (options.follow === true) {
-                return runRunnerLogsFollowAction(options);
+                await runRunnerLogsFollowAction(options);
+                return;
             }
-            runRunnerLogsAction(options);
+            await runRunnerLogsAction(options);
         });
     });
 
@@ -292,29 +403,27 @@ export function createRunnerCommand(): Command {
     );
     clearLogs.action(async function runnerClearLogsAction() {
         await runRunnerCommandAction(() => {
-            runRunnerClearLogsAction(this.opts<RunnerOptions>());
+            return runRunnerClearLogsAction(this.opts<RunnerOptions>());
         });
     });
 
-    const room = applyStandardCommandOptions(new Command("room")).description("Runner room controls.");
-    const roomSet = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("set"))
-            .description("Set current room.")
-            .argument("<room>", "Room name or id.")
+    const room = addRunnerSharedOptions(
+        applyStandardCommandOptions(new Command("room")).description("Runner room controls.")
     );
+    const roomSet = applyStandardCommandOptions(new Command("set")).description("Set active room.").argument("<room>");
     roomSet.action(async function runnerRoomSetAction(roomName: string) {
         await runRunnerCommandAction(() => {
-            runRunnerRoomSetAction(roomName, this.opts<RunnerOptions>());
+            return runRunnerRoomSetAction(roomName, this.optsWithGlobals<RunnerOptions>());
         });
     });
-    const roomCurrent = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("current")).description("Show current room.")
-    );
+
+    const roomCurrent = applyStandardCommandOptions(new Command("current")).description("Show active room.");
     roomCurrent.action(async function runnerRoomCurrentAction() {
         await runRunnerCommandAction(() => {
-            runRunnerRoomCurrentAction(this.opts<RunnerOptions>());
+            return runRunnerRoomCurrentAction(this.optsWithGlobals<RunnerOptions>());
         });
     });
+
     room.addCommand(roomSet);
     room.addCommand(roomCurrent);
 
@@ -327,5 +436,6 @@ export function createRunnerCommand(): Command {
     command.addCommand(logs);
     command.addCommand(clearLogs);
     command.addCommand(room);
+
     return command;
 }

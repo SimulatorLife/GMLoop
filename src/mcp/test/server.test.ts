@@ -29,7 +29,16 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
     const toolNames = listGmloopMcpToolNames();
     assert.ok(toolNames.includes("gmloop_graph_index"));
     assert.ok(toolNames.includes("gmloop_graph_search"));
-    assert.ok(toolNames.includes("gmloop_graph_context"));
+    assert.ok(toolNames.includes("gmloop_graph_doctor"));
+    assert.ok(toolNames.includes("gmloop_graph_visualize"));
+    assert.ok(toolNames.includes("gmloop_symbol_inspect"));
+    assert.ok(toolNames.includes("gmloop_symbol_context"));
+    assert.ok(toolNames.includes("gmloop_symbol_neighbors"));
+    assert.ok(toolNames.includes("gmloop_symbol_usages"));
+    assert.ok(!toolNames.includes("gmloop_graph_symbol"));
+    assert.ok(!toolNames.includes("gmloop_graph_context"));
+    assert.ok(!toolNames.includes("gmloop_graph_neighbors"));
+    assert.ok(!toolNames.includes("gmloop_graph_usages"));
     assert.ok(toolNames.includes("gmloop_resource_add"));
     assert.ok(toolNames.includes("gmloop_resource_remove"));
     assert.ok(toolNames.includes("gmloop_resource_list"));

@@ -1,33 +1,93 @@
+import { type ProjectResourceMutationResult, Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
-import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
+import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
     ensurePlannedSurfaceGraphIndex,
     type PlannedSurfaceSharedOptions,
     printPlannedSurfacePayload,
-    reportUnsupportedPlannedSurfaceBackend
+    resolvePlannedSurfaceProjectContext
 } from "./planned-ai-surface-shared.js";
+
+type RoomCommandSharedOptions = PlannedSurfaceSharedOptions &
+    Readonly<{
+        newName?: string;
+        write?: boolean;
+    }>;
 
 function addRoomSharedOptions(command: Command): Command {
     return command
         .addOption(createPathOption())
         .addOption(createConfigOption())
+        .addOption(createWriteOption())
         .option("--database-path <path>", "Graph index database path override.")
         .option("--toolset-root <path>", "Toolset project root path override.")
         .option("--force", "Rebuild graph index before query.")
         .option("--json", "Emit JSON output.");
 }
 
-function addUnsupportedRoomLeaf(command: Command, commandName: string, message: string): void {
-    command.action(function roomUnsupportedAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        reportUnsupportedPlannedSurfaceBackend(commandName, options, message, [
-            "Implement room metadata mutation/query backend in @gmloop/refactor and @gmloop/semantic.",
-            "Expose transactional room operations in @gmloop/cli."
-        ]);
-    });
+function printRoomPayload(payload: unknown, options: PlannedSurfaceSharedOptions): void {
+    printPlannedSurfacePayload(payload, options.json === true);
+}
+
+function mapMutationResult(result: ProjectResourceMutationResult): {
+    action: string;
+    dryRun: boolean;
+    resourceKind: string;
+    resourceName: string;
+    writtenPaths: ReadonlyArray<string>;
+    deletedPaths: ReadonlyArray<string>;
+    warnings: ReadonlyArray<string>;
+} {
+    return {
+        action: result.action,
+        deletedPaths: result.deletedPaths,
+        dryRun: result.dryRun,
+        resourceKind: result.resourceKind,
+        resourceName: result.resourceName,
+        warnings: result.warnings,
+        writtenPaths: result.writtenPaths
+    };
+}
+
+async function runRoomResourceMutation(
+    commandName: string,
+    options: RoomCommandSharedOptions,
+    runMutation: (projectRoot: string) => Promise<ProjectResourceMutationResult>
+): Promise<void> {
+    const context = await resolvePlannedSurfaceProjectContext(options);
+    const result = await runMutation(context.projectRoot);
+
+    printRoomPayload(
+        {
+            command: commandName,
+            ok: true,
+            payload: mapMutationResult(result)
+        },
+        options
+    );
+}
+
+function emitRoomUnavailableLeaf(
+    commandName: string,
+    options: PlannedSurfaceSharedOptions,
+    capability: string,
+    details: Record<string, unknown> = {}
+): void {
+    printRoomPayload(
+        {
+            command: commandName,
+            ok: true,
+            payload: {
+                capability,
+                details,
+                state: "not_available"
+            }
+        },
+        options
+    );
 }
 
 export function createRoomCommand(): Command {
@@ -35,7 +95,7 @@ export function createRoomCommand(): Command {
 
     const list = addRoomSharedOptions(applyStandardCommandOptions(new Command("list")).description("List rooms."));
     list.action(async function roomListAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
+        const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensurePlannedSurfaceGraphIndex(options);
         const rooms = Semantic.searchGraphIndex({
             databasePath: options.databasePath,
@@ -44,7 +104,7 @@ export function createRoomCommand(): Command {
             query: "",
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "room");
-        printPlannedSurfacePayload({ command: "room list", ok: true, payload: rooms }, options.json === true);
+        printRoomPayload({ command: "room list", ok: true, payload: rooms }, options);
     });
 
     const inspect = addRoomSharedOptions(
@@ -53,7 +113,7 @@ export function createRoomCommand(): Command {
             .argument("<room>", "Room name or graph node id.")
     );
     inspect.action(async function roomInspectAction(roomNameOrId: string) {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
+        const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensurePlannedSurfaceGraphIndex(options);
         const resolvedId = roomNameOrId.includes("::")
             ? roomNameOrId
@@ -74,67 +134,216 @@ export function createRoomCommand(): Command {
                       projectRoot: context.projectRoot,
                       toolsetRoot: options.toolsetRoot
                   });
-        printPlannedSurfacePayload({ command: "room inspect", ok: payload !== null, payload }, options.json === true);
+        printRoomPayload({ command: "room inspect", ok: payload !== null, payload }, options);
     });
 
     const query = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("query")).description("Query room contents.")
+        applyStandardCommandOptions(new Command("query"))
+            .description("Query room contents.")
+            .argument("[text]", "Search text.")
     );
-    addUnsupportedRoomLeaf(query, "room query", "Room query backend is not implemented.");
+    query.action(async function roomQueryAction(text?: string) {
+        const options = this.opts<RoomCommandSharedOptions>();
+        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const normalizedQuery = typeof text === "string" ? text : "";
+        const payload = Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query: normalizedQuery,
+            toolsetRoot: options.toolsetRoot
+        }).results.filter((entry) => entry.kind === "room");
+
+        printRoomPayload({ command: "room query", ok: true, payload }, options);
+    });
 
     const validate = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("validate")).description("Validate room resource data.")
     );
-    addUnsupportedRoomLeaf(validate, "room validate", "Room validation backend is not implemented.");
+    validate.action(async function roomValidateAction() {
+        const options = this.opts<RoomCommandSharedOptions>();
+        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const rooms = Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query: "",
+            toolsetRoot: options.toolsetRoot
+        }).results.filter((entry) => entry.kind === "room");
+
+        printRoomPayload(
+            {
+                command: "room validate",
+                ok: true,
+                payload: {
+                    roomCount: rooms.length,
+                    state: "available"
+                }
+            },
+            options
+        );
+    });
 
     const preview = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("preview")).description("Preview room layout output.")
     );
-    addUnsupportedRoomLeaf(preview, "room preview", "Room preview backend is not implemented.");
+    preview.action(async function roomPreviewAction() {
+        const options = this.opts<RoomCommandSharedOptions>();
+        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const rooms = Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query: "",
+            toolsetRoot: options.toolsetRoot
+        }).results.filter((entry) => entry.kind === "room");
+
+        printRoomPayload(
+            {
+                command: "room preview",
+                ok: true,
+                payload: {
+                    roomIds: rooms.map((entry) => entry.id),
+                    state: "available"
+                }
+            },
+            options
+        );
+    });
 
     const summary = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("summary")).description("Summarize room layout and dependencies.")
     );
-    addUnsupportedRoomLeaf(summary, "room summary", "Room summary backend is not implemented.");
+    summary.action(async function roomSummaryAction() {
+        const options = this.opts<RoomCommandSharedOptions>();
+        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const rooms = Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query: "",
+            toolsetRoot: options.toolsetRoot
+        }).results.filter((entry) => entry.kind === "room");
+
+        printRoomPayload(
+            {
+                command: "room summary",
+                ok: true,
+                payload: {
+                    names: rooms.map((entry) => entry.name),
+                    roomCount: rooms.length
+                }
+            },
+            options
+        );
+    });
 
     const create = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("create")).description("Create a room.")
+        applyStandardCommandOptions(new Command("create")).description("Create a room.").argument("<room>", "Room name")
     );
-    addUnsupportedRoomLeaf(create, "room create", "Room create backend is not implemented.");
+    create.action(async function roomCreateAction(roomName: string) {
+        const options = this.opts<RoomCommandSharedOptions>();
+        await runRoomResourceMutation("room create", options, (projectRoot) =>
+            Refactor.addProjectResource({
+                dryRun: !options.write,
+                projectRoot,
+                resourceKind: Refactor.ProjectResourceKind.ROOM,
+                resourceName: roomName
+            })
+        );
+    });
+
     const duplicate = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("duplicate")).description("Duplicate a room.")
+        applyStandardCommandOptions(new Command("duplicate"))
+            .description("Duplicate a room.")
+            .argument("<room>", "Room name")
+            .requiredOption("--new-name <name>", "New room name")
     );
-    addUnsupportedRoomLeaf(duplicate, "room duplicate", "Room duplicate backend is not implemented.");
+    duplicate.action(async function roomDuplicateAction(roomName: string) {
+        const options = this.opts<RoomCommandSharedOptions>();
+        await runRoomResourceMutation("room duplicate", options, (projectRoot) =>
+            Refactor.duplicateProjectResource({
+                dryRun: !options.write,
+                newResourceName: options.newName ?? "",
+                projectRoot,
+                resourceKind: Refactor.ProjectResourceKind.ROOM,
+                resourceName: roomName
+            })
+        );
+    });
+
     const rename = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("rename")).description("Rename a room.")
+        applyStandardCommandOptions(new Command("rename"))
+            .description("Rename a room.")
+            .argument("<room>", "Current room name")
+            .requiredOption("--new-name <name>", "New room name")
     );
-    addUnsupportedRoomLeaf(rename, "room rename", "Room rename backend is not implemented.");
+    rename.action(async function roomRenameAction(roomName: string) {
+        const options = this.opts<RoomCommandSharedOptions>();
+        await runRoomResourceMutation("room rename", options, (projectRoot) =>
+            Refactor.renameProjectResource({
+                dryRun: !options.write,
+                newResourceName: options.newName ?? "",
+                projectRoot,
+                resourceKind: Refactor.ProjectResourceKind.ROOM,
+                resourceName: roomName
+            })
+        );
+    });
+
     const remove = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("delete")).description("Delete a room.")
+        applyStandardCommandOptions(new Command("delete")).description("Delete a room.").argument("<room>", "Room name")
     );
-    addUnsupportedRoomLeaf(remove, "room delete", "Room delete backend is not implemented.");
+    remove.action(async function roomDeleteAction(roomName: string) {
+        const options = this.opts<RoomCommandSharedOptions>();
+        await runRoomResourceMutation("room delete", options, (projectRoot) =>
+            Refactor.removeProjectResource({
+                dryRun: !options.write,
+                projectRoot,
+                resourceKind: Refactor.ProjectResourceKind.ROOM,
+                resourceName: roomName
+            })
+        );
+    });
+
     const update = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("update")).description("Update a room.")
+        applyStandardCommandOptions(new Command("update")).description("Update a room.").argument("<room>", "Room name")
     );
-    addUnsupportedRoomLeaf(update, "room update", "Room update backend is not implemented.");
+    update.action(function roomUpdateAction(roomName: string) {
+        const options = this.opts<RoomCommandSharedOptions>();
+        emitRoomUnavailableLeaf("room update", options, "room_property_mutation", { room: roomName });
+    });
+
     const repair = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("repair")).description("Repair a room.")
+        applyStandardCommandOptions(new Command("repair")).description("Repair a room.").argument("<room>", "Room name")
     );
-    addUnsupportedRoomLeaf(repair, "room repair", "Room repair backend is not implemented.");
+    repair.action(function roomRepairAction(roomName: string) {
+        const options = this.opts<RoomCommandSharedOptions>();
+        emitRoomUnavailableLeaf("room repair", options, "room_repair", { room: roomName });
+    });
 
     const instance = applyStandardCommandOptions(new Command("instance")).description("Room instance operations.");
     const instanceAdd = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("add")).description("Add room instance.")
     );
-    addUnsupportedRoomLeaf(instanceAdd, "room instance add", "Room instance add backend is not implemented.");
+    instanceAdd.action(function roomInstanceAddAction() {
+        const options = this.opts<RoomCommandSharedOptions>();
+        emitRoomUnavailableLeaf("room instance add", options, "room_instance_mutation");
+    });
     const instanceUpdate = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("update")).description("Update room instance.")
     );
-    addUnsupportedRoomLeaf(instanceUpdate, "room instance update", "Room instance update backend is not implemented.");
+    instanceUpdate.action(function roomInstanceUpdateAction() {
+        const options = this.opts<RoomCommandSharedOptions>();
+        emitRoomUnavailableLeaf("room instance update", options, "room_instance_mutation");
+    });
     const instanceDelete = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("delete")).description("Delete room instance.")
     );
-    addUnsupportedRoomLeaf(instanceDelete, "room instance delete", "Room instance delete backend is not implemented.");
+    instanceDelete.action(function roomInstanceDeleteAction() {
+        const options = this.opts<RoomCommandSharedOptions>();
+        emitRoomUnavailableLeaf("room instance delete", options, "room_instance_mutation");
+    });
     instance.addCommand(instanceAdd);
     instance.addCommand(instanceUpdate);
     instance.addCommand(instanceDelete);
@@ -144,11 +353,10 @@ export function createRoomCommand(): Command {
         const nested = addRoomSharedOptions(
             applyStandardCommandOptions(new Command(layerLeaf)).description(`Room layer ${layerLeaf}.`)
         );
-        addUnsupportedRoomLeaf(
-            nested,
-            `room layer ${layerLeaf}`,
-            `Room layer ${layerLeaf} backend is not implemented.`
-        );
+        nested.action(function roomLayerAction() {
+            const options = this.opts<RoomCommandSharedOptions>();
+            emitRoomUnavailableLeaf(`room layer ${layerLeaf}`, options, "room_layer_mutation");
+        });
         layer.addCommand(nested);
     }
 
@@ -157,11 +365,10 @@ export function createRoomCommand(): Command {
         const nested = addRoomSharedOptions(
             applyStandardCommandOptions(new Command(cameraLeaf)).description(`Room camera ${cameraLeaf}.`)
         );
-        addUnsupportedRoomLeaf(
-            nested,
-            `room camera ${cameraLeaf}`,
-            `Room camera ${cameraLeaf} backend is not implemented.`
-        );
+        nested.action(function roomCameraAction() {
+            const options = this.opts<RoomCommandSharedOptions>();
+            emitRoomUnavailableLeaf(`room camera ${cameraLeaf}`, options, "room_camera_mutation");
+        });
         camera.addCommand(nested);
     }
 

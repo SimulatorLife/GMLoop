@@ -3,11 +3,21 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { getRunnerStateStore } from "./runner-state.js";
 
 type RunnerController = {
-    restart(options: { debug?: boolean; runner?: string }): { pid: number | null };
-    start(options: { debug?: boolean; runner?: string }): { pid: number | null };
-    status(): { pid: number | null; running: boolean };
-    stop(): { stopped: boolean };
+    restart(options: RunnerStartOptions): { pid: number | null };
+    start(options: RunnerStartOptions): { pid: number | null };
+    status(projectRoot: string): { pid: number | null; running: boolean };
+    stop(projectRoot: string): { stopped: boolean };
 };
+
+/**
+ * Resolved runner launch options for starting or restarting the runner process.
+ */
+export type RunnerStartOptions = Readonly<{
+    args: ReadonlyArray<string>;
+    command: string;
+    debug?: boolean;
+    projectRoot: string;
+}>;
 
 function createRunnerController(): RunnerController {
     let activeProcess: ChildProcessWithoutNullStreams | null = null;
@@ -43,7 +53,7 @@ function createRunnerController(): RunnerController {
 
     return {
         restart(options) {
-            this.stop();
+            this.stop(options.projectRoot);
             return this.start(options);
         },
         start(options) {
@@ -51,34 +61,36 @@ function createRunnerController(): RunnerController {
                 throw new Error("Runner process is already running.");
             }
 
-            const runnerBinary = options.runner ?? "node";
-            const runnerArgs = options.runner ? [] : ["-e", "setInterval(() => {}, 1000)"];
-            const childProcess = spawn(runnerBinary, runnerArgs, {
+            const childProcess = spawn(options.command, [...options.args], {
                 stdio: ["ignore", "pipe", "pipe"]
             });
 
             activeProcess = childProcess;
             activePid = childProcess.pid ?? null;
             const runnerState = getRunnerStateStore();
+            runnerState.bindProjectRoot(options.projectRoot);
             runnerState.setState("running");
             runnerState.appendLog({
                 kind: "runtime",
                 level: "info",
-                message: `Runner started (${runnerBinary})${options.debug ? " [debug]" : ""}`
+                message: `Runner started (${options.command})${options.debug ? " [debug]" : ""}`
             });
             attachProcessLogs(childProcess);
 
             return { pid: activePid };
         },
-        status() {
+        status(projectRoot) {
+            getRunnerStateStore().bindProjectRoot(projectRoot);
             return {
                 pid: activePid,
                 running: activeProcess !== null && !activeProcess.killed
             };
         },
-        stop() {
+        stop(projectRoot) {
+            const runnerStateStore = getRunnerStateStore();
+            runnerStateStore.bindProjectRoot(projectRoot);
             if (!activeProcess || activeProcess.killed) {
-                getRunnerStateStore().setState("stopped");
+                runnerStateStore.setState("stopped");
                 return { stopped: false };
             }
 
@@ -86,8 +98,8 @@ function createRunnerController(): RunnerController {
             current.kill("SIGTERM");
             activeProcess = null;
             activePid = null;
-            getRunnerStateStore().setState("stopped");
-            getRunnerStateStore().appendLog({
+            runnerStateStore.setState("stopped");
+            runnerStateStore.appendLog({
                 kind: "runtime",
                 level: "info",
                 message: "Runner stop requested."

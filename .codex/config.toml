@@ -30,5 +30,5 @@ trust_level = "trusted"
 network_access = true
 
 [agents]
-max_threads = 4
+max_threads = 5
 max_depth = 1

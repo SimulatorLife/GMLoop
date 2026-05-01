@@ -6,12 +6,15 @@ import * as UI from "../modules/ui/index.js";
 import {
     type PlannedSurfaceSharedOptions,
     printPlannedSurfacePayload,
-    reportUnsupportedPlannedSurfaceBackend,
     resolvePlannedSurfaceProjectContext
 } from "./planned-ai-surface-shared.js";
 
 function addUiSharedOptions(command: Command): Command {
     return command.addOption(createPathOption()).addOption(createConfigOption()).option("--json", "Emit JSON output.");
+}
+
+function printUiPayload(payload: unknown, options: PlannedSurfaceSharedOptions): void {
+    printPlannedSurfacePayload(payload, options.json === true);
 }
 
 export function createUiCommand(): Command {
@@ -28,12 +31,12 @@ export function createUiCommand(): Command {
         const payload = await UI.createGraphVisualizationProjectConfigurationCatalog(context, {
             config: options.config
         });
-        printPlannedSurfacePayload(
+        printUiPayload(
             {
                 command: "ui inspect",
                 payload
             },
-            options.json === true
+            options
         );
     });
 
@@ -42,16 +45,16 @@ export function createUiCommand(): Command {
     );
     validate.action(function uiValidateAction() {
         const options = this.opts<PlannedSurfaceSharedOptions>();
-        printPlannedSurfacePayload(
+        printUiPayload(
             {
                 command: "ui validate",
                 ok: true,
                 payload: {
                     catalogBackend: "available",
-                    mutationBackend: "unsupported_backend"
+                    mutationBackend: "not_available"
                 }
             },
-            options.json === true
+            options
         );
     });
 
@@ -60,14 +63,16 @@ export function createUiCommand(): Command {
     );
     preview.action(function uiPreviewAction() {
         const options = this.opts<PlannedSurfaceSharedOptions>();
-        reportUnsupportedPlannedSurfaceBackend(
-            "ui preview",
-            options,
-            "Interactive UI preview backend is not implemented.",
-            [
-                "Define UI server/launcher command in CLI modules/server or dedicated UI module.",
-                "Wire transport endpoint discovery so MCP can invoke and track UI sessions."
-            ]
+        printUiPayload(
+            {
+                command: "ui preview",
+                ok: true,
+                payload: {
+                    capability: "ui_preview_session",
+                    state: "not_available"
+                }
+            },
+            options
         );
     });
 
@@ -76,10 +81,17 @@ export function createUiCommand(): Command {
     );
     scaffold.action(function uiScaffoldAction() {
         const options = this.opts<PlannedSurfaceSharedOptions>();
-        reportUnsupportedPlannedSurfaceBackend("ui scaffold", options, "UI scaffold backend is not implemented.", [
-            "Define scaffold templates and write flow under @gmloop/refactor.",
-            "Expose template parameter validation for MCP and CLI."
-        ]);
+        printUiPayload(
+            {
+                command: "ui scaffold",
+                ok: true,
+                payload: {
+                    capability: "ui_template_scaffold",
+                    state: "not_available"
+                }
+            },
+            options
+        );
     });
 
     command.addCommand(inspect);

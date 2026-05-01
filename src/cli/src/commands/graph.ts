@@ -173,114 +173,6 @@ async function runGraphSearchAction(queryText: string, options: GraphCommandShar
     );
 }
 
-function resolveGraphNodeId(
-    queryOrNodeId: string,
-    options: GraphCommandSharedOptions,
-    context: GraphResolutionContext
-): string | null {
-    if (queryOrNodeId.includes("::")) {
-        return queryOrNodeId;
-    }
-
-    const result = Semantic.searchGraphIndex({
-        databasePath: options.databasePath,
-        limit: 1,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        query: queryOrNodeId,
-        toolsetRoot: options.toolsetRoot
-    });
-
-    return result.results[0]?.id ?? null;
-}
-
-async function runGraphSymbolAction(queryOrNodeId: string, options: GraphCommandSharedOptions): Promise<void> {
-    const context = await resolveGraphContext(options);
-    await ensureGraphIndexForQuery(options, context);
-    const nodeId = resolveGraphNodeId(queryOrNodeId, options, context);
-
-    if (!nodeId) {
-        throw new Error(`Could not resolve symbol '${queryOrNodeId}'.`);
-    }
-
-    const node = Semantic.getGraphNode({
-        databasePath: options.databasePath,
-        nodeId,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-
-    if (!node) {
-        throw new Error(`Graph node '${nodeId}' was not found.`);
-    }
-
-    printGraphOutput(
-        createGraphEnvelope("graph symbol", context, options, node),
-        options.json === true,
-        `${node.id} (${node.kind}) ${node.summary}`
-    );
-}
-
-async function runGraphContextAction(nodeId: string, options: GraphCommandSharedOptions): Promise<void> {
-    const context = await resolveGraphContext(options);
-    await ensureGraphIndexForQuery(options, context);
-    const bundle = Semantic.getGraphContext({
-        databasePath: options.databasePath,
-        depth: options.depth,
-        nodeId,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-
-    if (!bundle) {
-        throw new Error(`Graph node '${nodeId}' was not found.`);
-    }
-
-    printGraphOutput(
-        createGraphEnvelope("graph context", context, options, bundle),
-        options.json === true,
-        `Context for ${bundle.target.id}: ${bundle.summary}`
-    );
-}
-
-async function runGraphNeighborsAction(nodeId: string, options: GraphCommandSharedOptions): Promise<void> {
-    const context = await resolveGraphContext(options);
-    await ensureGraphIndexForQuery(options, context);
-    const neighbors = Semantic.getGraphNeighbors({
-        databasePath: options.databasePath,
-        depth: options.depth,
-        nodeId,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-    printGraphOutput(
-        createGraphEnvelope("graph neighbors", context, options, neighbors),
-        options.json === true,
-        `Found ${String(neighbors.length)} neighbor(s) for ${nodeId}.`
-    );
-}
-
-async function runGraphUsagesAction(nodeId: string, options: GraphCommandSharedOptions): Promise<void> {
-    const context = await resolveGraphContext(options);
-    await ensureGraphIndexForQuery(options, context);
-    const usages = Semantic.getGraphUsages({
-        databasePath: options.databasePath,
-        depth: options.depth,
-        nodeId,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-    printGraphOutput(
-        createGraphEnvelope("graph usages", context, options, usages),
-        options.json === true,
-        `Found ${String(usages.length)} usage(s) for ${nodeId}.`
-    );
-}
-
 async function runGraphDoctorAction(options: GraphCommandSharedOptions): Promise<void> {
     const context = await resolveGraphContext(options);
     const report = Semantic.doctorGraphIndex({
@@ -545,54 +437,6 @@ export function createGraphCommand(): Command {
         });
     });
 
-    const symbolCommand = addGraphSharedOptions(
-        applyStandardCommandOptions(new Command("symbol"))
-            .description("Resolve and print a single symbol from a name, SCIP id, or graph node id.")
-            .argument("<nameOrId>", "Name, SCIP symbol, or graph-qualified node id"),
-        { includeForce: true }
-    );
-    symbolCommand.action(async function graphSymbolCommandAction(nameOrId: string) {
-        await runGraphCommandAction(async () => {
-            await runGraphSymbolAction(nameOrId, this.opts<GraphCommandSharedOptions>());
-        });
-    });
-
-    const contextCommand = addGraphSharedOptions(
-        applyStandardCommandOptions(new Command("context"))
-            .description("Retrieve a structured context bundle for a graph node.")
-            .argument("<nodeId>", "Graph-qualified node id"),
-        { includeDepth: true, includeForce: true }
-    );
-    contextCommand.action(async function graphContextCommandAction(nodeId: string) {
-        await runGraphCommandAction(async () => {
-            await runGraphContextAction(nodeId, this.opts<GraphCommandSharedOptions>());
-        });
-    });
-
-    const neighborsCommand = addGraphSharedOptions(
-        applyStandardCommandOptions(new Command("neighbors"))
-            .description("List neighboring graph nodes around a target node.")
-            .argument("<nodeId>", "Graph-qualified node id"),
-        { includeDepth: true, includeForce: true }
-    );
-    neighborsCommand.action(async function graphNeighborsCommandAction(nodeId: string) {
-        await runGraphCommandAction(async () => {
-            await runGraphNeighborsAction(nodeId, this.opts<GraphCommandSharedOptions>());
-        });
-    });
-
-    const usagesCommand = addGraphSharedOptions(
-        applyStandardCommandOptions(new Command("usages"))
-            .description("List incoming usage relationships for a target graph node.")
-            .argument("<nodeId>", "Graph-qualified node id"),
-        { includeDepth: true, includeForce: true }
-    );
-    usagesCommand.action(async function graphUsagesCommandAction(nodeId: string) {
-        await runGraphCommandAction(async () => {
-            await runGraphUsagesAction(nodeId, this.opts<GraphCommandSharedOptions>());
-        });
-    });
-
     const doctorCommand = addGraphSharedOptions(
         applyStandardCommandOptions(new Command("doctor")).description("Inspect graph-index health and configuration."),
         {}
@@ -622,10 +466,6 @@ export function createGraphCommand(): Command {
 
     graphCommand.addCommand(indexCommand);
     graphCommand.addCommand(searchCommand);
-    graphCommand.addCommand(symbolCommand);
-    graphCommand.addCommand(contextCommand);
-    graphCommand.addCommand(neighborsCommand);
-    graphCommand.addCommand(usagesCommand);
     graphCommand.addCommand(doctorCommand);
     graphCommand.addCommand(visualizeCommand);
 

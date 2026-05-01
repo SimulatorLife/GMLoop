@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
 import { getCliCommandCatalog, runCliTestCommand } from "../src/cli.js";
@@ -64,22 +67,23 @@ void test("ui validate command executes successfully with structured payload", a
     assert.equal(payload.payload.catalogBackend, "available");
 });
 
-void test("planned mutation command returns non-throwing unsupported backend payload", async () => {
+void test("replay run returns machine-readable payload", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-ai-surface-replay-"));
+    await writeFile(path.join(projectRoot, "stub.yyp"), "{}\n", "utf8");
     const result = await runCliTestCommand({
-        argv: ["replay", "run", "--json"]
+        argv: ["replay", "run", "--json", "--path", projectRoot]
     });
 
     assert.equal(result.exitCode, 0);
 
     const payload = JSON.parse(result.stdout) as {
         command: string;
-        message: string;
-        nextSteps: ReadonlyArray<string>;
-        state: string;
+        payload: {
+            ok: boolean;
+            reason?: string;
+        };
     };
 
     assert.equal(payload.command, "replay run");
-    assert.equal(payload.state, "unsupported_backend");
-    assert.ok(payload.message.length > 0);
-    assert.ok(payload.nextSteps.length > 0);
+    assert.equal(typeof payload.payload.ok, "boolean");
 });

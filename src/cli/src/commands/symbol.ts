@@ -5,17 +5,14 @@ import { Command } from "commander";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
-import { runLookupGmlIdentifierCommand } from "./lookup-gml-identifier.js";
 
 type SymbolCommandSharedOptions = Readonly<{
     config?: string;
     databasePath?: string;
     depth?: number;
     force?: boolean;
-    identifiersPath?: string;
     json?: boolean;
     path?: string;
-    source?: "auto" | "builtin" | "project";
     toolsetRoot?: string;
 }>;
 
@@ -57,18 +54,6 @@ function printSymbolResult(result: unknown, asJson: boolean): void {
 }
 
 async function runSymbolInspectAction(identifierOrNodeId: string, options: SymbolCommandSharedOptions): Promise<void> {
-    const source = options.source ?? "auto";
-    if (source !== "project") {
-        const command = {
-            args: [identifierOrNodeId],
-            opts: () => ({ identifiersPath: options.identifiersPath, json: true })
-        };
-        const exitCode = await runLookupGmlIdentifierCommand(command);
-        if (exitCode === 0 || source === "builtin") {
-            return;
-        }
-    }
-
     const context = await ensureGraphIndex(options);
     const query = identifierOrNodeId;
     const nodeId = query.includes("::")
@@ -109,9 +94,7 @@ export function createSymbolCommand(): Command {
             .option("--toolset-root <path>", "Toolset project root path override.")
             .option("--force", "Rebuild graph index before query.")
             .option("--json", "Emit JSON output.")
-            .option("--depth <n>", "Traversal depth.", Number.parseInt)
-            .option("--source <source>", "Lookup source: auto, builtin, or project.", "auto")
-            .option("--identifiers-path <path>", "Path to gml-identifiers JSON payload.");
+            .option("--depth <n>", "Traversal depth.", Number.parseInt);
 
     const inspect = addShared(
         applyStandardCommandOptions(new Command("inspect"))

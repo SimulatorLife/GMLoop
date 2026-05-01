@@ -6,8 +6,7 @@ import { createConfigOption, createPathOption } from "../cli-core/shared-command
 import {
     ensurePlannedSurfaceGraphIndex,
     type PlannedSurfaceSharedOptions,
-    printPlannedSurfacePayload,
-    reportUnsupportedPlannedSurfaceBackend
+    printPlannedSurfacePayload
 } from "./planned-ai-surface-shared.js";
 
 function addObjectSharedOptions(command: Command): Command {
@@ -20,14 +19,28 @@ function addObjectSharedOptions(command: Command): Command {
         .option("--json", "Emit JSON output.");
 }
 
-function addUnsupportedObjectLeaf(command: Command, commandName: string, message: string): void {
-    command.action(function objectUnsupportedAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        reportUnsupportedPlannedSurfaceBackend(commandName, options, message, [
-            "Implement object metadata and event mutation backend in @gmloop/refactor.",
-            "Expose object transaction execution in @gmloop/cli."
-        ]);
-    });
+function printObjectPayload(payload: unknown, options: PlannedSurfaceSharedOptions): void {
+    printPlannedSurfacePayload(payload, options.json === true);
+}
+
+function emitObjectUnavailableLeaf(
+    commandName: string,
+    options: PlannedSurfaceSharedOptions,
+    capability: string,
+    details: Record<string, unknown> = {}
+): void {
+    printObjectPayload(
+        {
+            command: commandName,
+            ok: true,
+            payload: {
+                capability,
+                details,
+                state: "not_available"
+            }
+        },
+        options
+    );
 }
 
 export function createObjectCommand(): Command {
@@ -48,7 +61,7 @@ export function createObjectCommand(): Command {
             query: "",
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "object");
-        printPlannedSurfacePayload({ command: "object list", ok: true, payload }, options.json === true);
+        printObjectPayload({ command: "object list", ok: true, payload }, options);
     });
 
     const inspect = addObjectSharedOptions(
@@ -78,28 +91,54 @@ export function createObjectCommand(): Command {
                       projectRoot: context.projectRoot,
                       toolsetRoot: options.toolsetRoot
                   });
-        printPlannedSurfacePayload({ command: "object inspect", ok: payload !== null, payload }, options.json === true);
+        printObjectPayload({ command: "object inspect", ok: payload !== null, payload }, options);
     });
 
     const update = addObjectSharedOptions(
-        applyStandardCommandOptions(new Command("update")).description("Update object.")
+        applyStandardCommandOptions(new Command("update"))
+            .description("Update object.")
+            .argument("<object>", "Object name")
     );
-    addUnsupportedObjectLeaf(update, "object update", "Object update backend is not implemented.");
+    update.action(function objectUpdateAction(objectName: string) {
+        const options = this.opts<PlannedSurfaceSharedOptions>();
+        emitObjectUnavailableLeaf("object update", options, "object_property_mutation", { object: objectName });
+    });
+
     const validate = addObjectSharedOptions(
         applyStandardCommandOptions(new Command("validate")).description("Validate object metadata.")
     );
-    addUnsupportedObjectLeaf(validate, "object validate", "Object validation backend is not implemented.");
+    validate.action(async function objectValidateAction() {
+        const options = this.opts<PlannedSurfaceSharedOptions>();
+        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const objects = Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query: "",
+            toolsetRoot: options.toolsetRoot
+        }).results.filter((entry) => entry.kind === "object");
+        printObjectPayload(
+            {
+                command: "object validate",
+                ok: true,
+                payload: {
+                    objectCount: objects.length,
+                    state: "available"
+                }
+            },
+            options
+        );
+    });
 
     const event = applyStandardCommandOptions(new Command("event")).description("Object event operations.");
     for (const eventLeaf of ["list", "inspect", "add", "update", "delete"]) {
         const nested = addObjectSharedOptions(
             applyStandardCommandOptions(new Command(eventLeaf)).description(`Object event ${eventLeaf}.`)
         );
-        addUnsupportedObjectLeaf(
-            nested,
-            `object event ${eventLeaf}`,
-            `Object event ${eventLeaf} backend is not implemented.`
-        );
+        nested.action(function objectEventLeafAction() {
+            const options = this.opts<PlannedSurfaceSharedOptions>();
+            emitObjectUnavailableLeaf(`object event ${eventLeaf}`, options, "object_event_mutation");
+        });
         event.addCommand(nested);
     }
 
