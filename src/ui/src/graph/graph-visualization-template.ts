@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { renderGraphVisualizationClientScript } from "./graph-visualization-client-script.js";
 import {
     renderGraphVisualizationDocumentTitle,
@@ -11,11 +15,27 @@ import {
     renderEdgeLineCssRules,
     renderNodeFillCssRules
 } from "./graph-visualization-style-metadata.js";
-import {
-    readGraphVisualizationTemplateCss,
-    readGraphVisualizationTemplateHtml
-} from "./graph-visualization-template-assets.js";
 import type { GraphVisualizationData, GraphVisualizationRenderOptions } from "./types.js";
+
+const GRAPH_VISUALIZATION_TEMPLATE_ASSET_FILE_NAMES = Object.freeze({
+    css: "graph-visualization-template.css",
+    html: "graph-visualization-template.html"
+});
+
+function resolveGraphVisualizationTemplateAssetPath(fileName: string): string {
+    const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+    const primaryPath = path.resolve(moduleDirectory, "assets", fileName);
+    try {
+        readFileSync(primaryPath, "utf8");
+        return primaryPath;
+    } catch {
+        return path.resolve(moduleDirectory, "../../../src/graph/assets", fileName);
+    }
+}
+
+function readGraphVisualizationTemplateAsset(fileName: string): string {
+    return readFileSync(resolveGraphVisualizationTemplateAssetPath(fileName), "utf8");
+}
 
 /**
  * Render the self-contained graph visualization HTML document for a graph-index payload.
@@ -41,10 +61,10 @@ export function renderGraphVisualizationHtml(
         serializedProjectConfigurationCatalog,
         isServerMode
     );
-    const stylesheet = readGraphVisualizationTemplateCss()
+    const stylesheet = readGraphVisualizationTemplateAsset(GRAPH_VISUALIZATION_TEMPLATE_ASSET_FILE_NAMES.css)
         .replace("{{EDGE_LINE_CSS_RULES}}", renderEdgeLineCssRules())
         .replace("{{NODE_FILL_CSS_RULES}}", renderNodeFillCssRules());
-    const documentMarkup = readGraphVisualizationTemplateHtml()
+    const documentMarkup = readGraphVisualizationTemplateAsset(GRAPH_VISUALIZATION_TEMPLATE_ASSET_FILE_NAMES.html)
         .replaceAll("{{DOCUMENT_TITLE}}", documentTitle)
         .replace(
             "{{REGENERATE_BUTTON}}",

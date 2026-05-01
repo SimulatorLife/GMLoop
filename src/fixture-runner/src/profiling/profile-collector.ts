@@ -290,12 +290,30 @@ export function createProfileCollector(): FixtureProfileCollector {
     });
 }
 
+/**
+ * Create a per-fixture timer that enforces canonical stage ordering.
+ *
+ * The timer records metrics even when a stage operation throws, so callers can
+ * still inspect partial timing data for failed fixture cases.
+ *
+ * @returns Stage timer with guarded stage execution and immutable snapshots.
+ */
 export function createStageTimer() {
     const stages: Array<FixtureStageMetrics> = [];
     const completedStages = new Set<FixtureStageName>();
     let lastCompletedStageIndex = -1;
 
     return Object.freeze({
+        /**
+         * Execute one fixture stage and record its metrics.
+         *
+         * @param stageName Canonical stage name to run (must run at most once and
+         * in non-decreasing canonical order).
+         * @param operation Async work for the stage.
+         * @returns Resolved value from {@link operation}.
+         * @throws If the stage runs more than once, if the stage name is unknown,
+         * or if stages execute out of canonical order.
+         */
         async runStage<T>(stageName: FixtureStageName, operation: () => Promise<T>): Promise<T> {
             if (completedStages.has(stageName)) {
                 throw new Error(`Fixture stage ${stageName} must not run more than once for a single fixture case.`);
