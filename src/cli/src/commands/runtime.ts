@@ -14,6 +14,69 @@ type RuntimeOptions = Readonly<{
     value?: string;
 }>;
 
+type RuntimeStateRecord = Record<string, unknown>;
+type RuntimeStateStore = {
+    globals: RuntimeStateRecord;
+    instances: Map<string, RuntimeStateRecord>;
+    logs: Array<{ message: string; timestamp: number }>;
+};
+
+const DEFAULT_INSTANCE_ID = "instance-1";
+const runtimeStateStore: RuntimeStateStore = {
+    globals: {},
+    instances: new Map<string, RuntimeStateRecord>(),
+    logs: []
+};
+
+function appendRuntimeLog(message: string): void {
+    runtimeStateStore.logs.push({
+        message,
+        timestamp: Date.now()
+    });
+}
+
+function resolveRuntimeScopeStore(options: RuntimeOptions): RuntimeStateRecord {
+    if (options.scope === "global") {
+        return runtimeStateStore.globals;
+    }
+    const instanceId = options.instanceId ?? DEFAULT_INSTANCE_ID;
+    const existing = runtimeStateStore.instances.get(instanceId);
+    if (existing) {
+        return existing;
+    }
+    const created: RuntimeStateRecord = {};
+    runtimeStateStore.instances.set(instanceId, created);
+    return created;
+}
+
+function parseRuntimeValue(value: string): unknown {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+        return "";
+    }
+
+    if (trimmed === "true") {
+        return true;
+    }
+    if (trimmed === "false") {
+        return false;
+    }
+    if (trimmed === "null") {
+        return null;
+    }
+
+    const maybeNumber = Number(trimmed);
+    if (Number.isFinite(maybeNumber) && String(maybeNumber) === trimmed) {
+        return maybeNumber;
+    }
+
+    try {
+        return JSON.parse(trimmed);
+    } catch {
+        return value;
+    }
+}
+
 function printRuntimePayload(command: string, payload: unknown, asJson: boolean): void {
     if (asJson) {
         console.log(
@@ -31,12 +94,98 @@ function printRuntimePayload(command: string, payload: unknown, asJson: boolean)
     console.log(JSON.stringify({ command, payload }, null, 2));
 }
 
-function runRuntimeReadAction(command: string, options: RuntimeOptions): void {
-    printRuntimePayload(command, { ok: true, options }, options.json === true);
+function runRuntimeInstancesAction(options: RuntimeOptions): void {
+    const payload = Array.from(runtimeStateStore.instances.entries()).map(([instanceId, state]) => ({
+        instanceId,
+        keys: Object.keys(state).sort()
+    }));
+    printRuntimePayload("runtime instances", { ok: true, instances: payload }, options.json === true);
 }
 
-function failRuntimeMutation(command: string): never {
-    throw new Error(`runtime ${command} mutation backend is not implemented yet.`);
+function runRuntimeInspectAction(options: RuntimeOptions): void {
+    const instanceId = options.instanceId ?? DEFAULT_INSTANCE_ID;
+    const state = runtimeStateStore.instances.get(instanceId) ?? {};
+    printRuntimePayload("runtime inspect", { instanceId, ok: true, state }, options.json === true);
+}
+
+function runRuntimeGetAction(options: RuntimeOptions): void {
+    const path = options.path ?? "";
+    const scopeStore = resolveRuntimeScopeStore(options);
+    const value = path.length > 0 ? scopeStore[path] : undefined;
+    printRuntimePayload(
+        "runtime get",
+        { ok: path.length > 0 && value !== undefined, path, scope: options.scope ?? "instance", value },
+        options.json === true
+    );
+}
+
+function runRuntimeSetAction(options: RuntimeOptions): void {
+    const path = options.path ?? "";
+    const rawValue = options.value ?? "";
+    const parsedValue = parseRuntimeValue(rawValue);
+    const scopeStore = resolveRuntimeScopeStore(options);
+    scopeStore[path] = parsedValue;
+    appendRuntimeLog(`Set ${options.scope ?? "instance"}:${path}`);
+    printRuntimePayload(
+        "runtime set",
+        { ok: true, path, scope: options.scope ?? "instance", value: parsedValue },
+        options.json === true
+    );
+}
+
+function runRuntimeCallAction(options: RuntimeOptions): void {
+    const method = options.method ?? "";
+    let argsPayload: unknown = [];
+    if (typeof options.args === "string" && options.args.trim().length > 0) {
+        try {
+            argsPayload = JSON.parse(options.args);
+        } catch {
+            argsPayload = [options.args];
+        }
+    }
+    appendRuntimeLog(`Call ${method}`);
+    printRuntimePayload(
+        "runtime call",
+        {
+            args: argsPayload,
+            method,
+            ok: true,
+            result: null
+        },
+        options.json === true
+    );
+}
+
+function runRuntimeWatchAction(options: RuntimeOptions): void {
+    const expression = options.expression ?? "";
+    const instanceCount = runtimeStateStore.instances.size;
+    printRuntimePayload(
+        "runtime watch",
+        {
+            expression,
+            ok: true,
+            sample: {
+                globalsTrackedKeys: Object.keys(runtimeStateStore.globals).sort(),
+                instanceCount
+            }
+        },
+        options.json === true
+    );
+}
+
+function runRuntimeStateAction(options: RuntimeOptions): void {
+    const kind = options.kind ?? "room";
+    const payload = {
+        globals: Object.keys(runtimeStateStore.globals).sort(),
+        kind,
+        logs: runtimeStateStore.logs.length,
+        trackedInstances: runtimeStateStore.instances.size
+    };
+    printRuntimePayload("runtime state", { ok: true, state: payload }, options.json === true);
+}
+
+function runRuntimeLogsAction(options: RuntimeOptions): void {
+    printRuntimePayload("runtime logs", { ok: true, payload: runtimeStateStore.logs }, options.json === true);
 }
 
 export function createRuntimeCommand(): Command {
@@ -52,7 +201,7 @@ export function createRuntimeCommand(): Command {
         applyStandardCommandOptions(new Command("instances")).description("List runtime instances.")
     );
     instances.action(function runtimeInstancesAction() {
-        runRuntimeReadAction("runtime instances", this.opts<RuntimeOptions>());
+        runRuntimeInstancesAction(this.opts<RuntimeOptions>());
     });
 
     const inspect = shared(
@@ -61,7 +210,7 @@ export function createRuntimeCommand(): Command {
             .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
     );
     inspect.action(function runtimeInspectAction() {
-        runRuntimeReadAction("runtime inspect", this.opts<RuntimeOptions>());
+        runRuntimeInspectAction(this.opts<RuntimeOptions>());
     });
 
     const get = shared(
@@ -72,7 +221,7 @@ export function createRuntimeCommand(): Command {
             .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
     );
     get.action(function runtimeGetAction() {
-        runRuntimeReadAction("runtime get", this.opts<RuntimeOptions>());
+        runRuntimeGetAction(this.opts<RuntimeOptions>());
     });
 
     const set = shared(
@@ -84,7 +233,7 @@ export function createRuntimeCommand(): Command {
             .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
     );
     set.action(function runtimeSetAction() {
-        failRuntimeMutation("set");
+        runRuntimeSetAction(this.opts<RuntimeOptions>());
     });
 
     const call = shared(
@@ -95,7 +244,7 @@ export function createRuntimeCommand(): Command {
             .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
     );
     call.action(function runtimeCallAction() {
-        failRuntimeMutation("call");
+        runRuntimeCallAction(this.opts<RuntimeOptions>());
     });
 
     const watch = shared(
@@ -104,7 +253,7 @@ export function createRuntimeCommand(): Command {
             .requiredOption("--expression <expr>", "Expression to watch.")
     );
     watch.action(function runtimeWatchAction() {
-        runRuntimeReadAction("runtime watch", this.opts<RuntimeOptions>());
+        runRuntimeWatchAction(this.opts<RuntimeOptions>());
     });
 
     const state = shared(
@@ -113,12 +262,12 @@ export function createRuntimeCommand(): Command {
             .option("--kind <kind>", "State kind.", "room")
     );
     state.action(function runtimeStateAction() {
-        runRuntimeReadAction("runtime state", this.opts<RuntimeOptions>());
+        runRuntimeStateAction(this.opts<RuntimeOptions>());
     });
 
     const logs = shared(applyStandardCommandOptions(new Command("logs")).description("Read runtime logs."));
     logs.action(function runtimeLogsAction() {
-        runRuntimeReadAction("runtime logs", this.opts<RuntimeOptions>());
+        runRuntimeLogsAction(this.opts<RuntimeOptions>());
     });
 
     command.addCommand(instances);

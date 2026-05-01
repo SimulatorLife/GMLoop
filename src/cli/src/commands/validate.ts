@@ -13,8 +13,11 @@ import { discoverProjectRoot } from "../workflow/project-root.js";
 type ValidateSharedOptions = Readonly<{
     config?: string;
     databasePath?: string;
+    fix?: boolean;
+    kind?: "auto" | "gml" | "shader" | "yy" | "yyp";
     json?: boolean;
     path?: string;
+    scope?: "all" | "references" | "syntax";
     toolsetRoot?: string;
 }>;
 
@@ -45,11 +48,16 @@ async function resolveProjectContext(options: ValidateSharedOptions): Promise<{
 async function runValidateFileAction(targetPath: string, options: ValidateSharedOptions): Promise<void> {
     const sourceText = await Core.readTextFile(targetPath);
     const ast = ParserWorkspace.Parser.GMLParser.parse(sourceText);
+    const effectiveKind = options.kind ?? "auto";
+    const effectiveScope = options.scope ?? "all";
     printValidatePayload(
         {
             ok: true,
             payload: {
                 astNodeType: Core.isObjectLike(ast) && typeof ast.type === "string" ? ast.type : "unknown",
+                fixApplied: false,
+                kind: effectiveKind,
+                scope: effectiveScope,
                 targetPath
             },
             scope: "file"
@@ -142,6 +150,9 @@ function addValidateSharedOptions(command: Command): Command {
         .addOption(createPathOption())
         .addOption(createConfigOption())
         .option("--database-path <path>", "Graph index database path override.")
+        .option("--kind <kind>", "Target kind: auto, gml, yy, yyp, or shader.", "auto")
+        .option("--scope <scope>", "Validation scope: syntax, references, or all.", "all")
+        .option("--fix", "Apply safe automatic fixes when available.")
         .option("--toolset-root <path>", "Toolset project root path override.")
         .option("--json", "Emit JSON output.");
 }

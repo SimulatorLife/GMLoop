@@ -6,7 +6,14 @@ import { test } from "node:test";
 
 import { Semantic } from "@gmloop/semantic";
 
-import { addProjectResource, ProjectResourceKind, removeProjectResource } from "../src/project-resources/index.js";
+import {
+    addProjectResource,
+    duplicateProjectResource,
+    moveProjectResource,
+    ProjectResourceKind,
+    removeProjectResource,
+    renameProjectResource
+} from "../src/project-resources/index.js";
 
 async function createTemporaryProjectRoot(): Promise<string> {
     const projectRoot = await fsMkdtemp("gmloop-project-resource-");
@@ -152,6 +159,89 @@ void test("addProjectResource rejects duplicate resources in the same manifest",
             }),
             /already exists/
         );
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("renameProjectResource updates manifest and filesystem in write mode", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.SCRIPT,
+            resourceName: "scr_before"
+        });
+
+        const result = await renameProjectResource({
+            dryRun: false,
+            newResourceName: "scr_after",
+            projectRoot,
+            resourceKind: ProjectResourceKind.SCRIPT,
+            resourceName: "scr_before"
+        });
+
+        assert.equal(result.action, "rename");
+        assert.equal(result.resourcePath, "scripts/scr_after/scr_after.yy");
+        await assert.doesNotReject(access(path.join(projectRoot, "scripts/scr_after/scr_after.gml")));
+        await assert.rejects(access(path.join(projectRoot, "scripts/scr_before")));
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("duplicateProjectResource and moveProjectResource support dry-run semantics", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.SCRIPT,
+            resourceName: "scr_source"
+        });
+
+        const duplicateDryRun = await duplicateProjectResource({
+            dryRun: true,
+            newResourceName: "scr_copy",
+            projectRoot,
+            resourceKind: ProjectResourceKind.SCRIPT,
+            resourceName: "scr_source"
+        });
+        assert.equal(duplicateDryRun.action, "duplicate");
+        await assert.rejects(access(path.join(projectRoot, "scripts/scr_copy/scr_copy.yy")));
+
+        const duplicateWrite = await duplicateProjectResource({
+            dryRun: false,
+            newResourceName: "scr_copy",
+            projectRoot,
+            resourceKind: ProjectResourceKind.SCRIPT,
+            resourceName: "scr_source"
+        });
+        assert.equal(duplicateWrite.action, "duplicate");
+        await assert.doesNotReject(access(path.join(projectRoot, "scripts/scr_copy/scr_copy.gml")));
+
+        const moveDryRun = await moveProjectResource({
+            destinationFolder: "scripts/moved",
+            dryRun: true,
+            projectRoot,
+            resourceKind: ProjectResourceKind.SCRIPT,
+            resourceName: "scr_copy"
+        });
+        assert.equal(moveDryRun.action, "move");
+        await assert.rejects(access(path.join(projectRoot, "scripts/moved/scr_copy.yy")));
+
+        const moveWrite = await moveProjectResource({
+            destinationFolder: "scripts/moved",
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.SCRIPT,
+            resourceName: "scr_copy"
+        });
+        assert.equal(moveWrite.resourcePath, "scripts/moved/scr_copy.yy");
+        await assert.doesNotReject(access(path.join(projectRoot, "scripts/moved/scr_copy.gml")));
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

@@ -35,14 +35,21 @@ import { createGenerateQualityReportCommand, runGenerateQualityReport } from "./
 import { createGraphCommand } from "./commands/graph.js";
 import { createLintCommand, runLintCommand } from "./commands/lint.js";
 import { createLookupGmlIdentifierCommand, runLookupGmlIdentifierCommand } from "./commands/lookup-gml-identifier.js";
+import { createObjectCommand } from "./commands/object.js";
 import { createParseCommand, runParseCommand } from "./commands/parse.js";
 import { createPrepareHotReloadCommand, runPrepareHotReloadCommand } from "./commands/prepare-hot-reload.js";
+import { createProfileCommand } from "./commands/profile.js";
+import { createProjectCommand } from "./commands/project.js";
 import { createRefactorCommand, runRefactorCommand } from "./commands/refactor.js";
+import { createReplayCommand } from "./commands/replay.js";
 import { createResourceCommand } from "./commands/resource.js";
+import { createRoomCommand } from "./commands/room.js";
 import { createRunnerCommand } from "./commands/runner.js";
 import { createRuntimeCommand } from "./commands/runtime.js";
 import { createSymbolCommand } from "./commands/symbol.js";
+import { createTestCommand } from "./commands/test.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
+import { createUiCommand } from "./commands/ui.js";
 import { createValidateCommand } from "./commands/validate.js";
 import { createWatchCommand, runWatchCommand } from "./commands/watch.js";
 import { createWatchStatusCommand, runWatchStatusCommand } from "./commands/watch/status.js";
@@ -531,6 +538,69 @@ cliCommandRegistry.registerCommand({
     onError: (error) =>
         handleCliError(error, {
             prefix: "Failed to perform resource operation.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createRoomCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Room command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createObjectCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Object command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createProjectCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Project command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createUiCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "UI command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createProfileCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Profile command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createTestCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Test command failed.",
+            exitCode: 1
+        })
+});
+
+cliCommandRegistry.registerCommand({
+    command: createReplayCommand(),
+    onError: (error) =>
+        handleCliError(error, {
+            prefix: "Replay command failed.",
             exitCode: 1
         })
 });

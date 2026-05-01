@@ -7,7 +7,16 @@ export {
 } from "./project-resource-kinds.js";
 export type {
     AddProjectResourceRequest,
+    DuplicateProjectResourceRequest,
+    MoveProjectResourceRequest,
     ProjectResourceMutationResult,
-    RemoveProjectResourceRequest
+    RemoveProjectResourceRequest,
+    RenameProjectResourceRequest
 } from "./project-resource-operations.js";
-export { addProjectResource, removeProjectResource } from "./project-resource-operations.js";
+export {
+    addProjectResource,
+    duplicateProjectResource,
+    moveProjectResource,
+    removeProjectResource,
+    renameProjectResource
+} from "./project-resource-operations.js";

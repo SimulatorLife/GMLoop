@@ -21,13 +21,6 @@ type ResourceCommandSharedOptions = Readonly<{
 const RESOURCE_COMMAND_FAILURE_PREFIX = "Resource command failed.";
 const RESOURCE_KIND_ARGUMENT_DESCRIPTION = "Resource kind";
 
-function failUnimplementedMutation(mutationName: string): never {
-    throw new Error(
-        `resource ${mutationName} is not implemented in @gmloop/refactor yet. ` +
-            "Add the corresponding project-resource mutation primitive first, then wire this command."
-    );
-}
-
 async function resolveResourceContext(options: ResourceCommandSharedOptions): Promise<{
     projectConfig: Record<string, unknown>;
     projectRoot: string;
@@ -139,6 +132,75 @@ async function runRemoveResourceAction(
     const projectRoot = await resolveResourceProjectRoot(options);
     const normalizedResourceKind = Refactor.requireProjectResourceKind(resourceKind, resourceKind);
     const result = await Refactor.removeProjectResource({
+        dryRun: !options.write,
+        projectRoot,
+        resourceKind: normalizedResourceKind,
+        resourceName
+    });
+
+    if (options.verbose) {
+        console.log(`Project root: ${projectRoot}`);
+    }
+
+    printMutationResult(result);
+}
+
+async function runRenameResourceAction(
+    resourceKind: string,
+    resourceName: string,
+    newResourceName: string,
+    options: ResourceCommandSharedOptions
+) {
+    const projectRoot = await resolveResourceProjectRoot(options);
+    const normalizedResourceKind = Refactor.requireProjectResourceKind(resourceKind, resourceKind);
+    const result = await Refactor.renameProjectResource({
+        dryRun: !options.write,
+        newResourceName,
+        projectRoot,
+        resourceKind: normalizedResourceKind,
+        resourceName
+    });
+
+    if (options.verbose) {
+        console.log(`Project root: ${projectRoot}`);
+    }
+
+    printMutationResult(result);
+}
+
+async function runDuplicateResourceAction(
+    resourceKind: string,
+    resourceName: string,
+    newResourceName: string,
+    options: ResourceCommandSharedOptions
+) {
+    const projectRoot = await resolveResourceProjectRoot(options);
+    const normalizedResourceKind = Refactor.requireProjectResourceKind(resourceKind, resourceKind);
+    const result = await Refactor.duplicateProjectResource({
+        dryRun: !options.write,
+        newResourceName,
+        projectRoot,
+        resourceKind: normalizedResourceKind,
+        resourceName
+    });
+
+    if (options.verbose) {
+        console.log(`Project root: ${projectRoot}`);
+    }
+
+    printMutationResult(result);
+}
+
+async function runMoveResourceAction(
+    resourceKind: string,
+    resourceName: string,
+    destinationFolder: string,
+    options: ResourceCommandSharedOptions
+) {
+    const projectRoot = await resolveResourceProjectRoot(options);
+    const normalizedResourceKind = Refactor.requireProjectResourceKind(resourceKind, resourceKind);
+    const result = await Refactor.moveProjectResource({
+        destinationFolder,
         dryRun: !options.write,
         projectRoot,
         resourceKind: normalizedResourceKind,
@@ -357,9 +419,10 @@ export function createResourceCommand(): Command {
             .argument("<name>", "Current resource name")
             .requiredOption("--new-name <name>", "New resource name")
     );
-    renameCommand.action(async function resourceRenameCommandAction() {
-        await runResourceCommandAction(() => {
-            failUnimplementedMutation("rename");
+    renameCommand.action(async function resourceRenameCommandAction(resourceKind: string, resourceName: string) {
+        await runResourceCommandAction(async () => {
+            const options = this.opts<ResourceCommandSharedOptions & { newName: string }>();
+            await runRenameResourceAction(resourceKind, resourceName, options.newName, options);
         });
     });
 
@@ -370,9 +433,10 @@ export function createResourceCommand(): Command {
             .argument("<name>", "Source resource name")
             .requiredOption("--new-name <name>", "New duplicated resource name")
     );
-    duplicateCommand.action(async function resourceDuplicateCommandAction() {
-        await runResourceCommandAction(() => {
-            failUnimplementedMutation("duplicate");
+    duplicateCommand.action(async function resourceDuplicateCommandAction(resourceKind: string, resourceName: string) {
+        await runResourceCommandAction(async () => {
+            const options = this.opts<ResourceCommandSharedOptions & { newName: string }>();
+            await runDuplicateResourceAction(resourceKind, resourceName, options.newName, options);
         });
     });
 
@@ -383,9 +447,10 @@ export function createResourceCommand(): Command {
             .argument("<name>", "Resource name")
             .requiredOption("--destination-folder <path>", "Destination folder path")
     );
-    moveCommand.action(async function resourceMoveCommandAction() {
-        await runResourceCommandAction(() => {
-            failUnimplementedMutation("move");
+    moveCommand.action(async function resourceMoveCommandAction(resourceKind: string, resourceName: string) {
+        await runResourceCommandAction(async () => {
+            const options = this.opts<ResourceCommandSharedOptions & { destinationFolder: string }>();
+            await runMoveResourceAction(resourceKind, resourceName, options.destinationFolder, options);
         });
     });
 

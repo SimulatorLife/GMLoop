@@ -74,22 +74,39 @@ void test("resource rename/duplicate/move require their contract options", async
     assert.match(moveHelp.stdout, /--destination-folder <path>/);
 });
 
-void test("resource rename/duplicate/move fail fast with clear backend requirement", async () => {
-    const rename = await runCliTestCommand({
-        argv: ["resource", "rename", "script", "old_name", "--new-name", "new_name"]
-    });
-    assert.equal(rename.exitCode, 1);
-    assert.match(rename.stderr, /not implemented in @gmloop\/refactor yet/u);
+void test("resource rename/duplicate/move resolve to implemented backend mutations", async () => {
+    await withTempDir(async (projectRoot) => {
+        await writeFile(
+            path.join(projectRoot, "Project.yyp"),
+            JSON.stringify({ name: "Project", resources: [] }),
+            "utf8"
+        );
 
-    const duplicate = await runCliTestCommand({
-        argv: ["resource", "duplicate", "script", "old_name", "--new-name", "copy_name"]
-    });
-    assert.equal(duplicate.exitCode, 1);
-    assert.match(duplicate.stderr, /not implemented in @gmloop\/refactor yet/u);
+        const rename = await runCliTestCommand({
+            argv: ["resource", "rename", "script", "old_name", "--new-name", "new_name", "--path", projectRoot]
+        });
+        assert.equal(rename.exitCode, 1);
+        assert.match(rename.stderr, /Could not find a script resource named 'old_name'/u);
 
-    const move = await runCliTestCommand({
-        argv: ["resource", "move", "script", "old_name", "--destination-folder", "scripts/new_folder"]
+        const duplicate = await runCliTestCommand({
+            argv: ["resource", "duplicate", "script", "old_name", "--new-name", "copy_name", "--path", projectRoot]
+        });
+        assert.equal(duplicate.exitCode, 1);
+        assert.match(duplicate.stderr, /Could not find a script resource named 'old_name'/u);
+
+        const move = await runCliTestCommand({
+            argv: [
+                "resource",
+                "move",
+                "script",
+                "old_name",
+                "--destination-folder",
+                "scripts/new_folder",
+                "--path",
+                projectRoot
+            ]
+        });
+        assert.equal(move.exitCode, 1);
+        assert.match(move.stderr, /Could not find a script resource named 'old_name'/u);
     });
-    assert.equal(move.exitCode, 1);
-    assert.match(move.stderr, /not implemented in @gmloop\/refactor yet/u);
 });

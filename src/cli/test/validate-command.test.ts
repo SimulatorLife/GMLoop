@@ -37,3 +37,24 @@ void test("validate file parses a valid GML file", async () => {
         assert.equal(payload.scope, "file");
     });
 });
+
+void test("validate file accepts kind/scope/fix options", async () => {
+    await withTempDir(async (dir) => {
+        const filePath = path.join(dir, "example.gml");
+        await writeFile(filePath, "var score = 1;\n", "utf8");
+        const result = await runCliTestCommand({
+            argv: ["validate", "file", filePath, "--kind", "gml", "--scope", "syntax", "--fix", "--json"]
+        });
+        assert.equal(result.exitCode, 0);
+        const payload = JSON.parse(result.stdout) as {
+            ok: boolean;
+            payload: { fixApplied: boolean; kind: string; scope: string };
+            scope: string;
+        };
+        assert.equal(payload.ok, true);
+        assert.equal(payload.scope, "file");
+        assert.equal(payload.payload.kind, "gml");
+        assert.equal(payload.payload.scope, "syntax");
+        assert.equal(payload.payload.fixApplied, false);
+    });
+});

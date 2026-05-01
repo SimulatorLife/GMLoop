@@ -28,3 +28,7 @@ trust_level = "trusted"
 
 [sandbox_workspace_write]
 network_access = true
+
+[agents]
+max_threads = 4
+max_depth = 1
