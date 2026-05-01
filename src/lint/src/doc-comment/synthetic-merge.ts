@@ -51,7 +51,7 @@ function hasMultiLineDocCommentSummary(docLines: DocCommentLines | string[]): bo
         return false;
     }
 
-    let summaryCount = 0;
+    let summaryLineCount = 0;
 
     for (const line of docLines) {
         if (typeof line !== STRING_TYPE) {
@@ -63,24 +63,14 @@ function hasMultiLineDocCommentSummary(docLines: DocCommentLines | string[]): bo
             continue;
         }
 
-        const isDocLikeSummary = trimmed.startsWith("///") || /^\s*\/\/\s*\/\s*/.test(trimmed);
-        if (!isDocLikeSummary) {
-            break;
-        }
-
-        const isTaggedLine = /^\/\/\/\s*@/i.test(trimmed) || /^\/\/\s*\/\s*@/i.test(trimmed);
-        if (isTaggedLine) {
-            break;
-        }
-
         const suffix = getDocCommentSuffix(trimmed);
-        if (!suffix) {
-            continue;
+        if (!suffix || /^\s*@/i.test(suffix)) {
+            break;
         }
 
         if (isNonEmptyTrimmedString(suffix)) {
-            summaryCount += 1;
-            if (summaryCount >= 2) {
+            summaryLineCount += 1;
+            if (summaryLineCount >= 2) {
                 return true;
             }
         }
