@@ -28,8 +28,8 @@ function addRoomSharedOptions(command: Command): Command {
         .option("--json", "Emit JSON output.");
 }
 
-function printRoomPayload(payload: unknown, options: PlannedSurfaceSharedOptions): void {
-    printPlannedSurfacePayload(payload, options.json === true);
+function printRoomPayload(payload: unknown): void {
+    printPlannedSurfacePayload(payload);
 }
 
 function mapMutationResult(result: ProjectResourceMutationResult): {
@@ -65,8 +65,7 @@ async function runRoomResourceMutation(
             command: commandName,
             ok: true,
             payload: mapMutationResult(result)
-        },
-        options
+        }
     );
 }
 
@@ -85,8 +84,7 @@ function emitRoomUnavailableLeaf(
                 details,
                 state: "not_available"
             }
-        },
-        options
+        }
     );
 }
 
@@ -104,7 +102,7 @@ export function createRoomCommand(): Command {
             query: "",
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "room");
-        printRoomPayload({ command: "room list", ok: true, payload: rooms }, options);
+        printRoomPayload({ command: "room list", ok: true, payload: rooms });
     });
 
     const inspect = addRoomSharedOptions(
@@ -134,7 +132,7 @@ export function createRoomCommand(): Command {
                       projectRoot: context.projectRoot,
                       toolsetRoot: options.toolsetRoot
                   });
-        printRoomPayload({ command: "room inspect", ok: payload !== null, payload }, options);
+        printRoomPayload({ command: "room inspect", ok: payload !== null, payload });
     });
 
     const query = addRoomSharedOptions(
@@ -154,7 +152,7 @@ export function createRoomCommand(): Command {
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "room");
 
-        printRoomPayload({ command: "room query", ok: true, payload }, options);
+        printRoomPayload({ command: "room query", ok: true, payload });
     });
 
     const validate = addRoomSharedOptions(
@@ -179,8 +177,7 @@ export function createRoomCommand(): Command {
                     roomCount: rooms.length,
                     state: "available"
                 }
-            },
-            options
+            }
         );
     });
 
@@ -206,8 +203,7 @@ export function createRoomCommand(): Command {
                     roomIds: rooms.map((entry) => entry.id),
                     state: "available"
                 }
-            },
-            options
+            }
         );
     });
 
@@ -233,8 +229,7 @@ export function createRoomCommand(): Command {
                     names: rooms.map((entry) => entry.name),
                     roomCount: rooms.length
                 }
-            },
-            options
+            }
         );
     });
 

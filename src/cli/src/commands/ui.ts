@@ -13,8 +13,8 @@ function addUiSharedOptions(command: Command): Command {
     return command.addOption(createPathOption()).addOption(createConfigOption()).option("--json", "Emit JSON output.");
 }
 
-function printUiPayload(payload: unknown, options: PlannedSurfaceSharedOptions): void {
-    printPlannedSurfacePayload(payload, options.json === true);
+function printUiPayload(payload: unknown): void {
+    printPlannedSurfacePayload(payload);
 }
 
 export function createUiCommand(): Command {

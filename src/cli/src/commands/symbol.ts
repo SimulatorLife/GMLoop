@@ -1,10 +1,9 @@
-import { Core } from "@gmloop/core";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
-import { discoverProjectRoot } from "../workflow/project-root.js";
+import { ensureProjectGraphIndex } from "../workflow/project-context.js";
 
 type SymbolCommandSharedOptions = Readonly<{
     config?: string;
@@ -16,35 +15,6 @@ type SymbolCommandSharedOptions = Readonly<{
     toolsetRoot?: string;
 }>;
 
-async function resolveProjectContext(options: SymbolCommandSharedOptions): Promise<{
-    projectConfig: Record<string, unknown>;
-    projectRoot: string;
-}> {
-    const projectRoot = await discoverProjectRoot({
-        configPath: options.config,
-        explicitProjectPath: options.path
-    });
-    const candidateConfigPath = options.config ?? `${projectRoot}/gmloop.json`;
-    const loadedConfig = await Core.loadGmloopProjectConfig(candidateConfigPath).catch(() => ({}));
-    const projectConfig = Core.isObjectLike(loadedConfig) ? (loadedConfig as Record<string, unknown>) : {};
-    return { projectConfig, projectRoot };
-}
-
-async function ensureGraphIndex(options: SymbolCommandSharedOptions): Promise<{
-    projectConfig: Record<string, unknown>;
-    projectRoot: string;
-}> {
-    const context = await resolveProjectContext(options);
-    await Semantic.buildGraphIndex({
-        databasePath: options.databasePath,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        rebuild: options.force === true,
-        toolsetRoot: options.toolsetRoot
-    });
-    return context;
-}
-
 function printSymbolResult(result: unknown, asJson: boolean): void {
     if (asJson) {
         console.log(JSON.stringify(result, null, 2));
@@ -54,7 +24,7 @@ function printSymbolResult(result: unknown, asJson: boolean): void {
 }
 
 async function runSymbolInspectAction(identifierOrNodeId: string, options: SymbolCommandSharedOptions): Promise<void> {
-    const context = await ensureGraphIndex(options);
+    const context = await ensureProjectGraphIndex(options);
     const query = identifierOrNodeId;
     const nodeId = query.includes("::")
         ? query
@@ -112,7 +82,7 @@ export function createSymbolCommand(): Command {
     );
     context.action(async function symbolContextAction(nodeId: string) {
         const options = this.opts<SymbolCommandSharedOptions>();
-        const resolved = await ensureGraphIndex(options);
+        const resolved = await ensureProjectGraphIndex(options);
         const payload = Semantic.getGraphContext({
             databasePath: options.databasePath,
             depth: options.depth,
@@ -131,7 +101,7 @@ export function createSymbolCommand(): Command {
     );
     neighbors.action(async function symbolNeighborsAction(nodeId: string) {
         const options = this.opts<SymbolCommandSharedOptions>();
-        const resolved = await ensureGraphIndex(options);
+        const resolved = await ensureProjectGraphIndex(options);
         const payload = Semantic.getGraphNeighbors({
             databasePath: options.databasePath,
             depth: options.depth,
@@ -150,7 +120,7 @@ export function createSymbolCommand(): Command {
     );
     usages.action(async function symbolUsagesAction(nodeId: string) {
         const options = this.opts<SymbolCommandSharedOptions>();
-        const resolved = await ensureGraphIndex(options);
+        const resolved = await ensureProjectGraphIndex(options);
         const payload = Semantic.getGraphUsages({
             databasePath: options.databasePath,
             nodeId,

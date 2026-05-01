@@ -1,5 +1,4 @@
 import { lstat } from "node:fs/promises";
-import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import * as ParserWorkspace from "@gmloop/parser";
@@ -8,7 +7,7 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
-import { discoverProjectRoot } from "../workflow/project-root.js";
+import { printProjectPayload, resolveProjectContext } from "../workflow/project-context.js";
 
 type ValidateSharedOptions = Readonly<{
     config?: string;
@@ -21,49 +20,22 @@ type ValidateSharedOptions = Readonly<{
     toolsetRoot?: string;
 }>;
 
-function printValidatePayload(payload: unknown, asJson: boolean): void {
-    if (asJson) {
-        console.log(JSON.stringify(payload, null, 2));
-        return;
-    }
-    console.log(JSON.stringify(payload, null, 2));
-}
-
-async function resolveProjectContext(options: ValidateSharedOptions): Promise<{
-    projectConfig: Record<string, unknown>;
-    projectRoot: string;
-}> {
-    const projectRoot = await discoverProjectRoot({
-        configPath: options.config,
-        explicitProjectPath: options.path
-    });
-    const configPath = options.config ?? path.join(projectRoot, "gmloop.json");
-    const loadedConfig = await Core.loadGmloopProjectConfig(configPath).catch(() => ({}));
-    return {
-        projectConfig: Core.isObjectLike(loadedConfig) ? (loadedConfig as Record<string, unknown>) : {},
-        projectRoot
-    };
-}
-
 async function runValidateFileAction(targetPath: string, options: ValidateSharedOptions): Promise<void> {
     const sourceText = await Core.readTextFile(targetPath);
     const ast = ParserWorkspace.Parser.GMLParser.parse(sourceText);
     const effectiveKind = options.kind ?? "auto";
     const effectiveScope = options.scope ?? "all";
-    printValidatePayload(
-        {
-            ok: true,
-            payload: {
-                astNodeType: Core.isObjectLike(ast) && typeof ast.type === "string" ? ast.type : "unknown",
-                fixApplied: false,
-                kind: effectiveKind,
-                scope: effectiveScope,
-                targetPath
-            },
-            scope: "file"
+    printProjectPayload({
+        ok: true,
+        payload: {
+            astNodeType: Core.isObjectLike(ast) && typeof ast.type === "string" ? ast.type : "unknown",
+            fixApplied: false,
+            kind: effectiveKind,
+            scope: effectiveScope,
+            targetPath
         },
-        options.json === true
-    );
+        scope: "file"
+    });
 }
 
 async function runValidateProjectAction(options: ValidateSharedOptions): Promise<void> {
@@ -74,18 +46,15 @@ async function runValidateProjectAction(options: ValidateSharedOptions): Promise
         projectRoot: context.projectRoot,
         toolsetRoot: options.toolsetRoot
     });
-    printValidatePayload(
-        {
-            ok: true,
-            payload: {
-                databasePath: graphIndex.databasePath,
-                graphIds: graphIndex.graphIds,
-                projectRoot: context.projectRoot
-            },
-            scope: "project"
+    printProjectPayload({
+        ok: true,
+        payload: {
+            databasePath: graphIndex.databasePath,
+            graphIds: graphIndex.graphIds,
+            projectRoot: context.projectRoot
         },
-        options.json === true
-    );
+        scope: "project"
+    });
 }
 
 async function runValidateRoomAction(roomNameOrId: string, options: ValidateSharedOptions): Promise<void> {
@@ -104,17 +73,14 @@ async function runValidateRoomAction(roomNameOrId: string, options: ValidateShar
         toolsetRoot: options.toolsetRoot
     });
     const hasRoomMatch = search.results.some((entry) => entry.kind === "room");
-    printValidatePayload(
-        {
-            ok: hasRoomMatch,
-            payload: {
-                query: roomNameOrId,
-                resultCount: search.results.length
-            },
-            scope: "room"
+    printProjectPayload({
+        ok: hasRoomMatch,
+        payload: {
+            query: roomNameOrId,
+            resultCount: search.results.length
         },
-        options.json === true
-    );
+        scope: "room"
+    });
 }
 
 async function runValidateResourceAction(resourceNameOrId: string, options: ValidateSharedOptions): Promise<void> {
@@ -132,17 +98,14 @@ async function runValidateResourceAction(resourceNameOrId: string, options: Vali
         query: resourceNameOrId,
         toolsetRoot: options.toolsetRoot
     });
-    printValidatePayload(
-        {
-            ok: search.results.length > 0,
-            payload: {
-                query: resourceNameOrId,
-                resultCount: search.results.length
-            },
-            scope: "resource"
+    printProjectPayload({
+        ok: search.results.length > 0,
+        payload: {
+            query: resourceNameOrId,
+            resultCount: search.results.length
         },
-        options.json === true
-    );
+        scope: "resource"
+    });
 }
 
 function addValidateSharedOptions(command: Command): Command {
