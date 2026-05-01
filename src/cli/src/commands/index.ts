@@ -11,6 +11,7 @@ export * from "./prepare-hot-reload.js";
 export * from "./refactor.js";
 export * from "./resource.js";
 export * from "./runner.js";
+export * from "./runtime.js";
 export * from "./symbol.js";
 export * from "./transpile.js";
 export * from "./validate.js";

@@ -60,6 +60,25 @@ void test("loadFixtureProjectConfig rejects invalid fixture comparison values", 
     }
 });
 
+void test("loadFixtureProjectConfig rejects invalid fixture assertion values", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-config-invalid-assertion-"));
+    const configPath = path.join(rootPath, "gmloop.json");
+    await writeFile(
+        configPath,
+        `${JSON.stringify({ fixture: { kind: "format", assertion: "unsupported" } }, null, 2)}\n`,
+        "utf8"
+    );
+
+    try {
+        await assert.rejects(
+            FixtureRunner.loadFixtureProjectConfig(configPath),
+            /gmloop\.json fixture config\.assertion must be one of transform/u
+        );
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
 void test("discoverFixtureCases normalizes directory-per-case fixtures", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-discovery-"));
     await createTextFixtureCase(

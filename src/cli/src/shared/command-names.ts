@@ -26,6 +26,7 @@ export const CLI_COMMAND_NAMES = Object.freeze(
         "prepare-hot-reload",
         "refactor",
         "resource",
+        "runtime",
         "runner",
         "symbol",
         "transpile",

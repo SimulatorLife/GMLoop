@@ -165,8 +165,15 @@ jobs:
 
       # Runs tests once, generating both JUnit XML and LCOV coverage
       - name: Run tests & coverage (${{ matrix.target }})
+        id: run-tests
         run: pnpm run test:ci
         continue-on-error: true
+
+      - name: Ensure valid JUnit XML (${{ matrix.target }})
+        if: ${{ always() }}
+        run: |
+          mkdir -p reports
+          TEST_STATUS="${{ steps.run-tests.outcome }}" pnpm -s test:ensure-junit
 
       - name: Run performance regression tests (${{ matrix.target }})
         if: ${{ matrix.target == 'head' }}
