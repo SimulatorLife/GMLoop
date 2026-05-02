@@ -34,7 +34,7 @@ on:
       max_agent_retries:
         type: number
         required: false
-        default: 2
+        default: 1
     secrets:
       api_key:
         required: false

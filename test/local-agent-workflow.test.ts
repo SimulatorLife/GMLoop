@@ -304,7 +304,6 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(setupCommand, /Missing GEMINI_API_KEY secret/u);
     assert.match(setupCommand, /\.gemini\/settings\.json/u);
     assert.match(setupCommand, /command -v gemini/u);
-    assert.match(setupCommand, /default_ci_model="\$\{GEMINI_CI_MODEL:-gemini-2\.5-flash-lite\}"/u);
     assert.match(setupCommand, /preview\/experimental/u);
     assert.match(setupCommand, /echo "GEMINI_MODEL=\$\{effective_model\}" >> "\$GITHUB_ENV"/u);
     assert.match(setupCommand, /export GEMINI_API_KEY="\$\{API_KEY\}"/u);

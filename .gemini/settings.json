@@ -5,7 +5,7 @@
     "compressionThreshold": 0.6
   },
   "policyPaths": [
-    ".gemini/policy/tools.toml"
+    ".gemini/policy"
   ],
   "context": {
     "fileName": "AGENTS.md",
@@ -30,6 +30,9 @@
     "loadingPhrases": "off"
   },
   "general": {
+    "plan": {
+      "enabled": false
+    },
     "previewFeatures": false,
     "checkpointing": {
       "enabled": false
@@ -37,8 +40,8 @@
     "retryFetchErrors": true,
     "sessionRetention": {
       "enabled": true,
-      "maxAge": "7d",
-      "maxCount": 10
+      "maxAge": "1d",
+      "maxCount": 2
     }
   },
   "billing": {
@@ -50,7 +53,10 @@
   "tools": {
     "autoAccept": true,
     "truncateToolOutputThreshold": 16000,
-    "disableLLMCorrection": true
+    "disableLLMCorrection": true,
+    "allow": [
+      "run_shell_command"
+    ]
   },
   "useWriteTodos": false,
   "experimental": {

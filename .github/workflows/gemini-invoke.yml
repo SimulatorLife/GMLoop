@@ -29,7 +29,6 @@ jobs:
       additional_context: ${{ github.event.comment.body }}
       agent: gemini
       agent_package: ${{ vars.GEMINI_CLI_PACKAGE || '@google/gemini-cli@latest' }}
-      max_agent_retries: ${{ fromJSON(vars.GEMINI_AGENT_MAX_RETRIES || '1') }}
       validate_local_endpoint: false
       agent_setup_command: |
         set -euo pipefail
@@ -45,28 +44,17 @@ jobs:
         fi
 
         export GEMINI_API_KEY="${API_KEY}"
-        default_ci_model="${GEMINI_CI_MODEL:-gemini-2.5-flash-lite}"
 
-        configured_model=""
+        selected_model="auto"
         if [ -f .gemini/settings.json ] && command -v jq >/dev/null 2>&1; then
-          configured_model="$({
+          selected_model="$({
             jq -er '.model.name | select(type == "string" and length > 0)' .gemini/settings.json
-          } 2>/dev/null || true)"
+          } 2>/dev/null || echo "auto")"
         fi
 
-        effective_model="${default_ci_model}"
-        if [ -n "${configured_model}" ]; then
-          if [[ "${configured_model}" =~ (preview|experimental|latest) ]]; then
-            echo "Configured model '${configured_model}' is preview/experimental. Using stable CI model: ${default_ci_model}"
-          else
-            effective_model="${configured_model}"
-          fi
-        else
-          echo "No explicit .gemini/settings.json model.name found; using stable CI model: ${default_ci_model}"
-        fi
-
-        echo "GEMINI_MODEL=${effective_model}" >> "$GITHUB_ENV"
-        echo "Using Gemini model for CI: ${effective_model}"
+        export GEMINI_MODEL="${selected_model}"
+        echo "GEMINI_MODEL=${GEMINI_MODEL}" >> "$GITHUB_ENV"
+        echo "Using Gemini model: ${selected_model}"
       agent_command: |
         set -euo pipefail
 
@@ -82,7 +70,6 @@ jobs:
 
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
-        export GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash-lite}"
 
         if [ -z "${AGENT_TASK_PROMPT:-}" ]; then
           echo "❌ Missing shared AGENT_TASK_PROMPT from parent workflow."
@@ -91,19 +78,6 @@ jobs:
 
         REPOSITORY_ROOT="$(pwd)"
         GEMINI_AGENT_PROMPT="$(printf 'Repository root: %s\n\n%s\n\nUser task from PR comment:\n%s\n' "${REPOSITORY_ROOT}" "${AGENT_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
-        export 
-        
-        echo "=== Gemini policies ==="
-        find ~/.gemini/policies -maxdepth 1 -type f -name '*.toml' -print -exec sed -n '1,220p' {} \; 2>/dev/null || true
-
-        echo "=== Linux admin policies ==="
-        find /etc/gemini-cli/policies -maxdepth 1 -type f -name '*.toml' -print -exec sed -n '1,220p' {} \; 2>/dev/null || true
-
-        max_api_attempts="${GEMINI_API_MAX_ATTEMPTS:-4}"
-        if ! [[ "${max_api_attempts}" =~ ^[0-9]+$ ]] || [ "${max_api_attempts}" -lt 1 ]; then
-          echo "❌ GEMINI_API_MAX_ATTEMPTS must be a positive integer."
-          exit 1
-        fi
 
         attempt=1
         while [ "${attempt}" -le "${max_api_attempts}" ]; do
@@ -112,7 +86,7 @@ jobs:
             --approval-mode=yolo \
             --policy=.gemini/policy \
             --skip-trust \
-            --model "auto" \
+            --model "${GEMINI_MODEL}" \
             --prompt "${GEMINI_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
           gemini_status="${PIPESTATUS[0]}"
           set -e
@@ -122,10 +96,6 @@ jobs:
           fi
 
           if ! grep -Eiq '(RESOURCE_EXHAUSTED|429|quota exceeded|rate.?limit)' "$RUNNER_TEMP/gemini.log"; then
-            exit "${gemini_status}"
-          fi
-
-          if [ "${attempt}" -eq "${max_api_attempts}" ]; then
             exit "${gemini_status}"
           fi
 
