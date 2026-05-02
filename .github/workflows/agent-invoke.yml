@@ -536,7 +536,9 @@ jobs:
           Repository root: $(pwd)
 
           Make one focused, minimal code change set for the user request.
+          Do not survey the entire repository exhaustively. Narrow to one candidate area first using targeted searches, then read only the files needed for that area.
           Start from real command output and repository files you read; do not speculate.
+          Keep command and tool output small. Prefer targeted `rg -n` or limited file reads over broad scans, recursive dumps, or commands that print large result sets.
           If lint is requested: run `pnpm run lint`, fix exactly one deterministic issue, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
           Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree.
           When executing user-requested tasks, do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless explicitly requested.

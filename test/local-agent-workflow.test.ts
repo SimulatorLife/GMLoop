@@ -24,9 +24,18 @@ async function readQwenSettings(): Promise<QwenSettings> {
 }
 
 interface GeminiSettings {
+    model: {
+        maxSessionTurns: number;
+    };
+    general: {
+        sessionRetention: {
+            enabled: boolean;
+        };
+    };
     tools: {
         core: string[];
         useRipgrep: boolean;
+        truncateToolOutputThreshold: number;
     };
 }
 
@@ -299,6 +308,8 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.doesNotMatch(source, /agent_cli:/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
     assert.match(sharedPrompt, /one focused, minimal code change set/u);
+    assert.match(sharedPrompt, /Do not survey the entire repository exhaustively/u);
+    assert.match(sharedPrompt, /Keep command and tool output small/u);
     assert.match(sharedPrompt, /Do not finish with only analysis or a plan/u);
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
     assert.doesNotMatch(agentCommand, /NODE_OPTIONS/u);
@@ -335,6 +346,9 @@ void test("gemini settings allow the git commands required for merge-conflict re
     const allowedTools = settings.tools.core;
 
     assert.equal(settings.tools.useRipgrep, true);
+    assert.equal(settings.model.maxSessionTurns, 8);
+    assert.equal(settings.general.sessionRetention.enabled, false);
+    assert.equal(settings.tools.truncateToolOutputThreshold, 4000);
     assert.ok(!allowedTools.includes("GrepTool"));
     assert.ok(allowedTools.includes("RipGrepTool"));
     assert.ok(allowedTools.includes("LSTool"));

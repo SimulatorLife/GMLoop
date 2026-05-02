@@ -1,7 +1,7 @@
 {
   "model": {
     "name": "gemini-2.5-flash",
-    "maxSessionTurns": 24,
+    "maxSessionTurns": 8,
     "compressionThreshold": 0.6
   },
   "policyPaths": [
@@ -39,7 +39,7 @@
     },
     "retryFetchErrors": true,
     "sessionRetention": {
-      "enabled": true,
+      "enabled": false,
       "maxAge": "1d",
       "maxCount": 2
     }
@@ -63,7 +63,7 @@
     ],
     "useRipgrep": true,
     "autoAccept": true,
-    "truncateToolOutputThreshold": 16000,
+    "truncateToolOutputThreshold": 4000,
     "disableLLMCorrection": true,
     "allow": [
       "run_shell_command"
