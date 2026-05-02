@@ -59,3 +59,11 @@ export const STRING_TYPE = "string";
 export const OBJECT_TYPE = "object";
 export const NUMBER_TYPE = "number";
 export const UNDEFINED_TYPE = "undefined";
+
+/**
+ * Property key used to track whether a node's doc comment block has already
+ * been emitted. Set to `true` on the AST node after doc comments are printed
+ * so downstream logic (e.g. trailing-spacing decisions) can query it without
+ * re-examining the doc comment array.
+ */
+export const DOC_COMMENT_OUTPUT_FLAG = "_gmlHasDocCommentOutput";
