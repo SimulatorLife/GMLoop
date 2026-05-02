@@ -8,6 +8,7 @@ export {
     computeRegistrySnapshot
 } from "./diagnostics.js";
 export type {
+    ConsoleOutput,
     GeneralLogger,
     Logger,
     LoggerConfiguration,
