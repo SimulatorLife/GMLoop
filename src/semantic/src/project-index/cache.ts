@@ -5,6 +5,7 @@ import { Core } from "@gmloop/core";
 
 import { evaluateProjectIndexCacheSizePolicy, normalizeProjectIndexCacheMaxSizeBytes } from "./cache-write-policy.js";
 import { isProjectManifestPath } from "./constants.js";
+import { PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE } from "./defaults.js";
 import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
 import { runWithMissingPathFallback } from "./missing-path-fallback.js";
 
@@ -17,7 +18,6 @@ export const PROJECT_INDEX_CACHE_MAX_SIZE_ENV_VAR = "GML_PROJECT_INDEX_CACHE_MAX
 // Exceeding that limit risks unbounded cache growth on large projects, while
 // Keep this baseline in sync with the published guidance so operational
 // runbooks stay trustworthy.
-export const PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE = 8 * 1024 * 1024; // 8 MiB
 
 const projectIndexCacheSizeConfig = Core.createEnvConfiguredValueWithFallback({
     defaultValue: PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE,
@@ -46,7 +46,7 @@ const projectIndexCacheSizeConfig = Core.createEnvConfiguredValueWithFallback({
     computeFallback: ({ defaultValue }) => defaultValue
 });
 
-export const DEFAULT_MAX_PROJECT_INDEX_CACHE_SIZE = PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE;
+export { PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE as DEFAULT_MAX_PROJECT_INDEX_CACHE_SIZE } from "./defaults.js";
 
 export const ProjectIndexCacheMissReason = Object.freeze({
     NOT_FOUND: "not-found",
