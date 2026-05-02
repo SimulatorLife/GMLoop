@@ -95,7 +95,6 @@ jobs:
         set +e
         stdbuf -oL -eL gemini \
           --approval-mode yolo \
-          --skip-trust \
           --prompt "${GEMINI_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
         gemini_status="${PIPESTATUS[0]}"
         set -e
