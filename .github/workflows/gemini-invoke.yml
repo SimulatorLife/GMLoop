@@ -28,7 +28,7 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: gemini
-      agent_package: ${{ vars.GEMINI_CLI_PACKAGE || '@google/gemini-cli@latest' }}
+      agent_package: ${{ vars.GEMINI_CLI_PACKAGE || '@google/gemini-cli@0.38.2' }}
       max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
       validate_local_endpoint: false
       agent_setup_command: |
@@ -44,6 +44,7 @@ jobs:
           exit 1
         fi
 
+        export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
 
         configured_model=""
@@ -71,6 +72,7 @@ jobs:
           exit 1
         fi
 
+        export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
 
         GEMINI_TASK_PROMPT="$(cat <<'PROMPT'
@@ -93,6 +95,7 @@ jobs:
         set +e
         stdbuf -oL -eL gemini \
           --approval-mode yolo \
+          --skip-trust \
           -p "${GEMINI_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
         gemini_status="${PIPESTATUS[0]}"
         set -e

@@ -290,8 +290,10 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(setupCommand, /Missing GEMINI_API_KEY secret/u);
     assert.match(setupCommand, /\.gemini\/settings\.json/u);
     assert.match(setupCommand, /command -v gemini/u);
+    assert.match(setupCommand, /export GEMINI_CLI_TRUST_WORKSPACE=true/u);
     assert.match(setupCommand, /export GEMINI_API_KEY="\$\{API_KEY\}"/u);
     assert.match(geminiCommand, /--approval-mode yolo/u);
+    assert.match(geminiCommand, /--skip-trust/u);
     assert.match(geminiCommand, /-p "\$\{GEMINI_AGENT_PROMPT\}"/u);
     assert.match(source, /gemini_status="\$\{PIPESTATUS\[0\]\}"/u);
     assert.doesNotMatch(source, /ollama pull/u);
