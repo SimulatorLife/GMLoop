@@ -168,3 +168,15 @@ New top-level UI additions should:
 2. Add a dedicated `src/<surface>/` domain directory.
 3. Consume data only from the owning functional workspace or orchestration layer.
 4. Avoid recreating parser, semantic, lint, refactor, CLI, or MCP logic inside `@gmloop/ui`.
+
+----
+
+## References
+
+- [Lit Documentation](https://lit.dev/docs/)
+- [artmsilva/lit-best-practices rules](https://github.com/artmsilva/lit-best-practices/tree/main/rules)
+- [web.dev Custom Elements Best Practices](https://web.dev/articles/custom-elements-best-practices)
+- [WAI-ARIA Authoring Practices Guide](https://www.w3.org/WAI/ARIA/apg/patterns/)
+- [MDN: `inert`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/inert)
+- [MDN: Safe area env()](https://developer.mozilla.org/en-US/docs/Web/CSS/env)
+- [APCA Contrast](https://apcacontrast.com/)
