@@ -313,7 +313,7 @@ jobs:
             const agent = (process.env.AGENT || '').trim() || 'copilot';
             const mention = `@${agent}`;
 
-            const preInstruction = "Start a new task: survey the entire codebase before narrowing to this task.";
+            const preInstruction = "Start a new task: briefly survey the codebase before narrowing to this task.";
             const postInstruction = "Ensure changes are self-contained, tested, and documented as needed, with no reduction in test coverage or test regressions. For tests, ensure any newly added tests pass and that tests or suites already passing at the start of the task remain passing; unrelated pre-existing failures may remain if your changes do not cause them. Run `pnpm run build:ts` and `pnpm run lint:quiet`, fix any issues properly, and finish with both passing. Do not modify golden `.gml` fixtures or add compatibility shims. All changes must align with and not violate the architectural guidelines defined in `docs/target-state.md`. Ensure the diff is minimal, readable, and well-commented; never sacrifice clarity for cleverness. There is no time constraint or specific allotted time for this task; prioritize quality and correctness over speed and take as much time as needed. You may **NOT** respond with \"no issues found\", \"didn't find any major issues\", or similar—if no obvious implementation exists, choose the most plausible area and apply a singular, safe improvement.";
             const lines = [
               `${mention} ${preInstruction} ${process.env.PROMPT} ${postInstruction}`,

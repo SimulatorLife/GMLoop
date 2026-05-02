@@ -176,11 +176,11 @@ function assertQwenUsesLocalAgentLoop(source: string, sharedPrompt: string): voi
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
     assert.doesNotMatch(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
     assert.doesNotMatch(source, /^\s*QWEN_TASK_PROMPT=/mu);
-    assert.match(source, /Missing shared AGENT_PROMPT_FILE from parent workflow/u);
-    assert.match(source, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
+    assert.match(source, /cat "\$\{AGENT_PROMPT_FILE\}" \| stdbuf -oL -eL qwen/u);
     assert.doesNotMatch(source, /local-qwen-smoke/u);
     assert.match(source, /stdbuf -oL -eL qwen \\/u);
-    assert.match(source, /--prompt "\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)"/u);
+    assert.match(source, /--prompt ""/u);
+    assert.doesNotMatch(source, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
     assert.doesNotMatch(source, /QWEN_AGENT_PROMPT/u);
     assert.match(setupCommand, /pull_qwen_configured_model\(\)/u);
     assert.match(setupCommand, /\.qwen\/settings\.json/u);
@@ -262,10 +262,9 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.doesNotMatch(agentCommand, /HOME\/\.local\/bin/u);
     assert.doesNotMatch(agentCommand, /Could not install Aider CLI/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
-    assert.match(agentCommand, /Missing shared AGENT_PROMPT_FILE from parent workflow/u);
-    assert.match(agentCommand, /--message "\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)"/u);
+    assert.match(agentCommand, /--message-file "\$\{AGENT_PROMPT_FILE\}"/u);
     assert.doesNotMatch(source, /AIDER_TASK_MESSAGE_FILE/u);
-    assert.doesNotMatch(source, /--message-file/u);
+    assert.doesNotMatch(source, /--message "\$\(cat/u);
     assert.ok(
         source.lastIndexOf("agent_setup_command") < source.indexOf("agent_command"),
         "Aider must pull the configured local model before invoking the CLI."
@@ -284,6 +283,7 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
     const sharedPrompt = getRequiredSharedAgentPrompt(parentSource);
+    const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
     const geminiCommand = getRequiredGeminiCommand(source);
 
@@ -300,9 +300,11 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(sharedPrompt, /one focused, minimal code change set/u);
     assert.match(sharedPrompt, /Do not finish with only analysis or a plan/u);
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
-    assert.match(source, /Missing shared AGENT_PROMPT_FILE from parent workflow/u);
     assert.match(source, /cat "\$\{AGENT_PROMPT_FILE\}" \| stdbuf -oL -eL gemini/u);
-    assert.doesNotMatch(source, /agent_setup_command:/u);
+    assert.match(setupCommand, /command -v rg/u);
+    assert.match(setupCommand, /sudo apt-get update/u);
+    assert.match(setupCommand, /sudo apt-get install -y ripgrep/u);
+    assert.match(setupCommand, /rg is still unavailable/u);
     assert.match(geminiCommand, /--approval-mode yolo/u);
     assert.match(geminiCommand, /--skip-trust/u);
     assert.doesNotMatch(geminiCommand, /--model/u);
@@ -430,6 +432,8 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
     assert.match(source, /total_attempts=\$\(\(MAX_AGENT_RETRIES \+ 1\)\)/u);
     assert.match(source, /for \(\(attempt = 1; attempt <= total_attempts; attempt\+\+\)\); do/u);
     assert.match(source, /write_agent_prompt_file "\$\{ADDITIONAL_CONTEXT:-\}"/u);
+    assert.match(source, /if \[ ! -f "\$\{AGENT_PROMPT_FILE\}" \]; then/u);
+    assert.match(source, /Parent workflow failed to materialize AGENT_PROMPT_FILE/u);
     assert.doesNotMatch(source, /retry_prompt_file/u);
     assert.doesNotMatch(source, /build_attempt_context/u);
     assert.match(source, /push_current_branch_if_needed/u);
