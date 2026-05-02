@@ -52,10 +52,10 @@ async function readAllWorkflowSources(): Promise<string> {
     return workflowSources.join("\n");
 }
 
-function getRequiredSharedAgentTaskPrompt(source: string): string {
-    const match = /AGENT_TASK_PROMPT="\$\(cat <<'PROMPT'\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*\)"/u.exec(source);
+function getRequiredSharedAgentPrompt(source: string): string {
+    const match = /AGENT_PROMPT="\$\(cat <<PROMPT\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*\)"/u.exec(source);
 
-    assert.ok(match?.groups?.prompt, "Parent workflow must define a shared AGENT_TASK_PROMPT heredoc.");
+    assert.ok(match?.groups?.prompt, "Parent workflow must define a shared AGENT_PROMPT heredoc.");
 
     return match.groups.prompt;
 }
@@ -158,6 +158,8 @@ function assertAiderCommandIncludesRequiredFlags(commandSource: string): void {
 }
 
 function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
+    assert.match(prompt, /Repository root:/u);
+    assert.match(prompt, /User task from PR comment:/u);
     assert.match(prompt, /pnpm run lint/u);
     assert.match(prompt, /pnpm run build:ts/u);
     assert.match(prompt, /pnpm run lint:quiet/u);
@@ -177,25 +179,21 @@ function assertQwenUsesLocalAgentLoop(source: string, sharedPrompt: string): voi
     assert.match(source, /agent: qwen/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
-    assert.match(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
+    assert.doesNotMatch(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
     assert.doesNotMatch(source, /^\s*QWEN_TASK_PROMPT=/mu);
-    assert.match(source, /Missing shared AGENT_TASK_PROMPT from parent workflow/u);
-    assert.match(source, /"\$\{AGENT_TASK_PROMPT\}"/u);
-    assert.match(source, /REPOSITORY_ROOT="\$\(pwd\)"/u);
-    assert.match(source, /Repository root: %s/u);
+    assert.match(source, /Missing shared AGENT_PROMPT from parent workflow/u);
+    assert.match(source, /"\$\{AGENT_PROMPT\}"/u);
     assert.doesNotMatch(source, /local-qwen-smoke/u);
     assert.match(source, /stdbuf -oL -eL qwen \\/u);
-    assert.match(source, /--prompt "\$\{QWEN_AGENT_PROMPT\}"/u);
-    assert.doesNotMatch(source, /printf '%s\\n' "\$\{QWEN_AGENT_PROMPT\}" \| stdbuf -oL -eL qwen/u);
+    assert.match(source, /--prompt "\$\{AGENT_PROMPT\}"/u);
+    assert.doesNotMatch(source, /QWEN_AGENT_PROMPT/u);
     assert.match(setupCommand, /pull_qwen_configured_model\(\)/u);
     assert.match(setupCommand, /\.qwen\/settings\.json/u);
     assert.match(setupCommand, /ollama pull "\$\{configured_model\}"/u);
     assert.doesNotMatch(agentCommand, /ollama pull/u);
     assert.match(source, /(--approval-mode yolo|--yolo)/u);
-    assert.match(source, /--append-system-prompt "\$\{QWEN_CI_SYSTEM_PROMPT\}"/u);
+    assert.doesNotMatch(source, /--append-system-prompt/u);
     assert.doesNotMatch(source, /--prompt-interactive/u);
-    assert.match(source, /Use the native tools actually available in this environment/u);
-    assert.match(source, /Do not invent tool names or request tools that are not provided\./u);
     assert.doesNotMatch(source, /run_shell_command/u);
     assert.doesNotMatch(source, /edit or write_file tools/u);
 }
@@ -204,7 +202,7 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
     const source = await readWorkflowSource("qwen-invoke.yml");
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
-    const sharedPrompt = getRequiredSharedAgentTaskPrompt(parentSource);
+    const sharedPrompt = getRequiredSharedAgentPrompt(parentSource);
 
     assertQwenUsesLocalAgentLoop(source, sharedPrompt);
     assert.ok(
@@ -212,7 +210,7 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
         "Qwen must pull the configured local model before invoking the real task."
     );
     assert.match(source, /agent_package: \$\{\{ vars\.QWEN_CODE_PACKAGE \|\| '@qwen-code\/qwen-code@0\.14\.5' \}\}/u);
-    assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
+    assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /verify_qwen_/u);
     assert.doesNotMatch(source, /openai-tool-registry/u);
     assert.doesNotMatch(source, /OPENROUTER_API_KEY/u);
@@ -243,7 +241,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
     const promptTemplate = getRequiredAiderMessageTemplate(source);
-    const sharedPrompt = getRequiredSharedAgentTaskPrompt(parentSource);
+    const sharedPrompt = getRequiredSharedAgentPrompt(parentSource);
     const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
     const aiderCommand = getRequiredAiderCommand(source);
@@ -252,7 +250,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.match(source, /contains\(github\.event\.comment\.body \|\| '', '@aider'\)/u);
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: aider/u);
-    assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
+    assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assert.match(setupCommand, /pull_aider_configured_model\(\)/u);
     assert.match(setupCommand, /\.aider\.conf\.yml/u);
@@ -260,8 +258,8 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.match(setupCommand, /ollama pull "\$\{ollama_model\}"/u);
     assert.doesNotMatch(agentCommand, /ollama pull/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
-    assert.match(agentCommand, /Missing shared AGENT_TASK_PROMPT from parent workflow/u);
-    assert.match(promptTemplate, /\$\{AGENT_TASK_PROMPT\}/u);
+    assert.match(agentCommand, /Missing shared AGENT_PROMPT from parent workflow/u);
+    assert.match(promptTemplate, /^\s*\$\{AGENT_PROMPT\}$/mu);
     assert.ok(
         source.lastIndexOf("agent_setup_command") < source.indexOf("agent_command"),
         "Aider must pull the configured local model before invoking the CLI."
@@ -279,7 +277,7 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     const source = await readWorkflowSource("gemini-invoke.yml");
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
-    const sharedPrompt = getRequiredSharedAgentTaskPrompt(parentSource);
+    const sharedPrompt = getRequiredSharedAgentPrompt(parentSource);
     const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
     const geminiCommand = getRequiredGeminiCommand(source);
@@ -290,17 +288,15 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(source, /agent: gemini/u);
     assert.match(source, /validate_local_endpoint: false/u);
     assert.match(source, /agent_package: \$\{\{ vars\.GEMINI_CLI_PACKAGE \|\| '@google\/gemini-cli@latest' \}\}/u);
-    assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.GEMINI_AGENT_MAX_RETRIES \|\| '1'\) \}\}/u);
+    assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.match(source, /api_key: \$\{\{ secrets\.GEMINI_API_KEY \}\}/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
     assert.match(sharedPrompt, /one focused, minimal code change set/u);
     assert.match(sharedPrompt, /Do not finish with only analysis or a plan/u);
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
-    assert.match(source, /Missing shared AGENT_TASK_PROMPT from parent workflow/u);
-    assert.match(source, /"\$\{AGENT_TASK_PROMPT\}"/u);
-    assert.match(source, /REPOSITORY_ROOT="\$\(pwd\)"/u);
-    assert.match(source, /Repository root: %s/u);
+    assert.match(source, /Missing shared AGENT_PROMPT from parent workflow/u);
+    assert.match(source, /"\$\{AGENT_PROMPT\}"/u);
     assert.match(setupCommand, /Missing GEMINI_API_KEY secret/u);
     assert.match(setupCommand, /\.gemini\/settings\.json/u);
     assert.match(setupCommand, /command -v gemini/u);
@@ -310,12 +306,13 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(geminiCommand, /--approval-mode yolo/u);
     assert.match(geminiCommand, /--skip-trust/u);
     assert.match(geminiCommand, /--model "\$\{GEMINI_MODEL\}"/u);
-    assert.match(geminiCommand, /--prompt "\$\{GEMINI_AGENT_PROMPT\}"/u);
-    assert.match(agentCommand, /max_api_attempts="\$\{GEMINI_API_MAX_ATTEMPTS:-4\}"/u);
-    assert.match(agentCommand, /RESOURCE_EXHAUSTED\|429\|quota exceeded\|rate\.\?limit/u);
-    assert.match(agentCommand, /Please retry in/u);
-    assert.match(agentCommand, /jitter_ms=\$\(\(RANDOM % 1000\)\)/u);
-    assert.match(agentCommand, /sleep "\$\{sleep_seconds\}"/u);
+    assert.match(geminiCommand, /--prompt "\$\{AGENT_PROMPT\}"/u);
+    assert.doesNotMatch(agentCommand, /max_api_attempts="\$\{GEMINI_API_MAX_ATTEMPTS:-4\}"/u);
+    assert.doesNotMatch(agentCommand, /RESOURCE_EXHAUSTED\|429\|quota exceeded\|rate\.\?limit/u);
+    assert.doesNotMatch(agentCommand, /Please retry in/u);
+    assert.doesNotMatch(agentCommand, /jitter_ms=\$\(\(RANDOM % 1000\)\)/u);
+    assert.doesNotMatch(agentCommand, /sleep "\$\{sleep_seconds\}"/u);
+    assert.doesNotMatch(source, /GEMINI_AGENT_PROMPT/u);
     assert.match(source, /gemini_status="\$\{PIPESTATUS\[0\]\}"/u);
     assert.doesNotMatch(source, /ollama pull/u);
     assert.doesNotMatch(source, /validate_local_endpoint: true/u);
@@ -428,7 +425,7 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
     const retryStepIndex = source.indexOf("- name: Run agent custom command with retries");
     const cleanupStepIndex = source.indexOf("- name: Close empty failed agent PR");
 
-    assert.match(source, /max_agent_retries:\n\s+type: number\n\s+required: false\n\s+default: 2/u);
+    assert.match(source, /max_agent_retries:\n\s+type: number\n\s+required: false\n\s+default: 1/u);
     assert.ok(retryStepIndex > 0, "agent command must run from a retry-aware step.");
     assert.ok(cleanupStepIndex > retryStepIndex, "empty PR cleanup must run only after retry-aware execution.");
     assert.match(source, /MAX_AGENT_RETRIES: \$\{\{ inputs\.max_agent_retries \}\}/u);

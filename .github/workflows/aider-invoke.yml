@@ -27,7 +27,6 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: aider
-      max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
       agent_setup_command: |
         set -euo pipefail
 
@@ -67,11 +66,6 @@ jobs:
       agent_command: |
         set -euo pipefail
 
-        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
-          echo "❌ Missing prompt context from PR comment."
-          exit 1
-        fi
-
         export NO_PROXY="${NO_PROXY:+${NO_PROXY},}127.0.0.1,localhost"
         export no_proxy="${no_proxy:+${no_proxy},}127.0.0.1,localhost"
 
@@ -85,18 +79,14 @@ jobs:
           exit 1
         fi
 
-        if [ -z "${AGENT_TASK_PROMPT:-}" ]; then
-          echo "❌ Missing shared AGENT_TASK_PROMPT from parent workflow."
+        if [ -z "${AGENT_PROMPT:-}" ]; then
+          echo "❌ Missing shared AGENT_PROMPT from parent workflow."
           exit 1
         fi
 
         AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
         cat > "${AIDER_TASK_MESSAGE_FILE}" <<PROMPT
-        You are aider, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint.
-        ${AGENT_TASK_PROMPT}
-
-        User task from PR comment:
-        ${ADDITIONAL_CONTEXT}
+        ${AGENT_PROMPT}
         PROMPT
 
         set +e

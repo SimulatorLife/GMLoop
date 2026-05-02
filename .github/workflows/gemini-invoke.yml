@@ -58,11 +58,6 @@ jobs:
       agent_command: |
         set -euo pipefail
 
-        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
-          echo "❌ Missing prompt context from PR comment."
-          exit 1
-        fi
-
         if ! command -v gemini >/dev/null 2>&1; then
           echo "❌ Gemini CLI is not installed."
           exit 1
@@ -71,41 +66,21 @@ jobs:
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
 
-        if [ -z "${AGENT_TASK_PROMPT:-}" ]; then
-          echo "❌ Missing shared AGENT_TASK_PROMPT from parent workflow."
+        if [ -z "${AGENT_PROMPT:-}" ]; then
+          echo "❌ Missing shared AGENT_PROMPT from parent workflow."
           exit 1
         fi
 
-        REPOSITORY_ROOT="$(pwd)"
-        GEMINI_AGENT_PROMPT="$(printf 'Repository root: %s\n\n%s\n\nUser task from PR comment:\n%s\n' "${REPOSITORY_ROOT}" "${AGENT_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
+        set +e
+        stdbuf -oL -eL gemini \
+          --approval-mode=yolo \
+          --policy=.gemini/policy \
+          --skip-trust \
+          --model "${GEMINI_MODEL}" \
+          --prompt "${AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
+        gemini_status="${PIPESTATUS[0]}"
+        set -e
 
-        attempt=1
-        while [ "${attempt}" -le "${max_api_attempts}" ]; do
-          set +e
-          stdbuf -oL -eL gemini \
-            --approval-mode=yolo \
-            --policy=.gemini/policy \
-            --skip-trust \
-            --model "${GEMINI_MODEL}" \
-            --prompt "${GEMINI_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
-          gemini_status="${PIPESTATUS[0]}"
-          set -e
-
-          if [ "${gemini_status}" -eq 0 ]; then
-            break
-          fi
-
-          if ! grep -Eiq '(RESOURCE_EXHAUSTED|429|quota exceeded|rate.?limit)' "$RUNNER_TEMP/gemini.log"; then
-            exit "${gemini_status}"
-          fi
-
-          retry_delay="$(grep -Eo 'Please retry in [0-9]+(\.[0-9]+)?s' "$RUNNER_TEMP/gemini.log" | tail -n 1 | awk '{print $4}' | sed 's/s$//' || true)"
-          if [ -z "${retry_delay}" ]; then
-            retry_delay="$((2 ** (attempt - 1)))"
-          fi
-          jitter_ms=$((RANDOM % 1000))
-          sleep_seconds="$(awk -v base="${retry_delay}" -v jitter_ms="${jitter_ms}" 'BEGIN { printf "%.3f", base + (jitter_ms / 1000) }')"
-          echo "Gemini API quota/rate-limited (attempt ${attempt}/${max_api_attempts}). Retrying in ${sleep_seconds}s..."
-          sleep "${sleep_seconds}"
-          attempt=$((attempt + 1))
-        done
+        if [ "${gemini_status}" -ne 0 ]; then
+          exit "${gemini_status}"
+        fi

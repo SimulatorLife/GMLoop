@@ -28,7 +28,6 @@ jobs:
       additional_context: ${{ github.event.comment.body }}
       agent: qwen
       agent_package: ${{ vars.QWEN_CODE_PACKAGE || '@qwen-code/qwen-code@0.14.5' }}
-      max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
       agent_setup_command: |
         set -euo pipefail
 
@@ -52,17 +51,11 @@ jobs:
       agent_command: |
         set -euo pipefail
 
-        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
-          echo "❌ Missing prompt context from PR comment."
-          exit 1
-        fi
-
-        if [ -z "${AGENT_TASK_PROMPT:-}" ]; then
-          echo "❌ Missing shared AGENT_TASK_PROMPT from parent workflow."
+        if [ -z "${AGENT_PROMPT:-}" ]; then
+          echo "❌ Missing shared AGENT_PROMPT from parent workflow."
           exit 1
         fi
 
         stdbuf -oL -eL qwen \
           --yolo \
-          --append-system-prompt "${QWEN_AGENT_PROMPT}" \
-          --prompt "${AGENT_TASK_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"
+          --prompt "${AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"

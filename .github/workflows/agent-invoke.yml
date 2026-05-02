@@ -410,7 +410,6 @@ jobs:
           AGENT_NAME: ${{ inputs.agent }}
           MAX_AGENT_RETRIES: ${{ inputs.max_agent_retries }}
           WORKING_BRANCH: ${{ env.WORKING_BRANCH }}
-          GEMINI_CLI_TRUST_WORKSPACE: 'true'
         run: |
           set -euo pipefail
           cd "${GITHUB_WORKSPACE}"
@@ -419,15 +418,20 @@ jobs:
           echo "[agent] Workflow git root: $(git rev-parse --show-toplevel)"
           echo "[agent] Workflow branch: $(git branch --show-current)"
 
-          AGENT_TASK_PROMPT="$(cat <<'PROMPT'
+          AGENT_PROMPT="$(cat <<PROMPT
+          Repository root: $(pwd)
+
           Make one focused, minimal code change set for the user request.
           Start from real command output and repository files you read; do not speculate.
           If lint is requested: run `pnpm run lint`, fix exactly one deterministic issue, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
           Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree.
           When executing user-requested tasks, do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless explicitly requested.
+          
+          User task from PR comment:
+          ${ADDITIONAL_CONTEXT:-}
           PROMPT
           )"
-          export AGENT_TASK_PROMPT
+          export AGENT_PROMPT
 
           script="$RUNNER_TEMP/agent_cmd.sh"
           # Write the command exactly as-is (no interpolation)
