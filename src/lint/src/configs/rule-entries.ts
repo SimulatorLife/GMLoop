@@ -9,29 +9,31 @@ function extractRuleOptionCandidates(config: Record<string, unknown>): Record<st
     );
 }
 
+function isRuleOptionsSchemaEntry(
+    schemaEntry: unknown
+): schemaEntry is Readonly<{ properties: Readonly<Record<string, unknown>> }> {
+    if (!schemaEntry || typeof schemaEntry !== "object" || Array.isArray(schemaEntry)) {
+        return false;
+    }
+
+    if (!("properties" in schemaEntry)) {
+        return false;
+    }
+
+    const properties = schemaEntry.properties;
+    return Boolean(properties) && typeof properties === "object" && !Array.isArray(properties);
+}
+
 function resolveRuleSchemaPropertyNames(ruleId: string): ReadonlySet<string> {
     const [pluginId, ruleName] = ruleId.split("/", 2);
     const pluginRules = pluginId === "gml" ? gmlLintRules : pluginId === "feather" ? featherLintRules : {};
-    const ruleDefinition = pluginRules[ruleName];
-    const schema = ruleDefinition?.meta?.schema;
-    if (!Array.isArray(schema) || schema.length === 0) {
+    const schemaEntry = pluginRules[ruleName]?.meta?.schema?.[0];
+
+    if (!isRuleOptionsSchemaEntry(schemaEntry)) {
         return new Set();
     }
 
-    const firstSchemaEntry = schema[0];
-    if (
-        !firstSchemaEntry ||
-        typeof firstSchemaEntry !== "object" ||
-        Array.isArray(firstSchemaEntry) ||
-        !("properties" in firstSchemaEntry) ||
-        !firstSchemaEntry.properties ||
-        typeof firstSchemaEntry.properties !== "object" ||
-        Array.isArray(firstSchemaEntry.properties)
-    ) {
-        return new Set();
-    }
-
-    return new Set(Object.keys(firstSchemaEntry.properties as Record<string, unknown>));
+    return new Set(Object.keys(schemaEntry.properties));
 }
 
 function extractRuleOptions(config: Record<string, unknown>, ruleId: string): Record<string, unknown> {
