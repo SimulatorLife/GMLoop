@@ -19,7 +19,7 @@ Deliver working code that is:
 - Responsive across screen sizes
 - Accessible and keyboard-usable
 - Refined enough to avoid generic, template-like output
-- Idiomatic for the framework being used, especially Lit when custom elements are involved
+- Idiomatic for the framework being used, especially Lit with light-DOM rendering
 
 ## 2. Working Approach
 
@@ -235,7 +235,7 @@ Empty states should explain what is missing and what the user should do next.
 - Use `cache()` for conditional subtrees when preserving DOM state or avoiding expensive subtree recreation matters.
 - Keep expensive computation out of templates.
 - Compute derived state before render rather than rebuilding it repeatedly inside template expressions.
-- Use shadow DOM or light DOM intentionally. If a component uses shadow DOM, keep implementation-owned children internal and use `<slot>` only for author-provided composition.
+- Use light DOM for Lit components in this codebase. Do not introduce shadow DOM. Compose children directly in the rendered DOM structure instead of relying on shadow-root slotting patterns.
 
 ### 9.3 Lit Lifecycle Rules
 
@@ -251,7 +251,7 @@ Empty states should explain what is missing and what the user should do next.
 
 ### 9.4 Lit Events and Cleanup
 
-- Custom events emitted from Lit components should usually use `bubbles: true`. Add `composed: true` when the event must cross a shadow boundary.
+- Custom events emitted from Lit components should usually use `bubbles: true`. Do not add `composed: true` unless a concrete integration requirement outside this light-DOM architecture demands it.
 - Name custom events in lowercase kebab-case.
 - Use past tense for state-change notifications such as `value-changed` or `item-selected`.
 - Avoid names that collide with native events unless you intentionally mirror native semantics.
@@ -265,7 +265,7 @@ Empty states should explain what is missing and what the user should do next.
 
 - Use `static styles` for component styles.
 - Do not place `<style>` tags inside Lit templates.
-- When using shadow DOM, style the custom element itself with `:host` and related host selectors.
+- In this codebase's light-DOM architecture, style rendered elements and component-owned classes directly instead of introducing shadow-DOM-only selectors such as `:host`.
 - Give the rendered root element an explicit default display unless inline behavior is intentionally desired.
 - Ensure display rules respect the `hidden` attribute.
 - Represent component-owned states consistently through attributes, classes, or host selectors as appropriate for the chosen rendering mode.
