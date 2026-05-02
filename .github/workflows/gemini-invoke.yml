@@ -91,7 +91,7 @@ jobs:
         Start from real command output and repository files you read; do not speculate.
         If lint is requested: run `pnpm run lint`, fix exactly one deterministic issue, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
         Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree.
-        Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless explicitly requested.
+        When executing user-requested tasks, do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless explicitly requested.
         PROMPT
         )"
         export GEMINI_TASK_PROMPT
