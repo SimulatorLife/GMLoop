@@ -30,9 +30,6 @@
   },
   "tools": {
     "autoAccept": true,
-    "shell": {
-      "enableInteractiveShell": true
-    },
     "core": [
       "run_shell_command(cat)",
       "run_shell_command(cd)",

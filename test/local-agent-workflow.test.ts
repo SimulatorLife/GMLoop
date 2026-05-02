@@ -278,7 +278,7 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: gemini/u);
     assert.match(source, /validate_local_endpoint: false/u);
-    assert.match(source, /agent_package: \$\{\{ vars\.GEMINI_CLI_PACKAGE \|\| '@google\/gemini-cli@0\.38\.2' \}\}/u);
+    assert.match(source, /agent_package: \$\{\{ vars\.GEMINI_CLI_PACKAGE \|\| '@google\/gemini-cli@latest' \}\}/u);
     assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
     assert.match(source, /api_key: \$\{\{ secrets\.GEMINI_API_KEY \}\}/u);
     assert.doesNotMatch(source, /agent_cli:/u);
