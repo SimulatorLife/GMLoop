@@ -18,6 +18,7 @@ denyMessage = "WebSearchTool is disabled by user policy."
 toolName = "run_shell_command"
 decision = "allow"
 priority = 998
+allowRedirection = true
 
 # Auto-allow everything else.
 # Lower priority than the explicit deny rules above.
