@@ -18,7 +18,7 @@
 import { Core } from "@gmloop/core";
 import { util } from "prettier";
 
-import { printComment, printDanglingComments, printDanglingCommentsAsGroup } from "../comments/comment-printer.js";
+import { printDanglingComments, printDanglingCommentsAsGroup } from "../comments/comment-printer.js";
 import {
     LogicalOperatorsStyle,
     normalizeLogicalOperatorsStyle,
@@ -27,7 +27,7 @@ import {
     TRAILING_COMMA
 } from "../options/index.js";
 import { DOC_COMMENT_OUTPUT_FLAG, NUMBER_TYPE, OBJECT_TYPE, STRING_TYPE, UNDEFINED_TYPE } from "./constants.js";
-import { markDocCommentsAsPrinted, printNodeDocComments } from "./doc-comment-output.js";
+import { printNodeDocComments } from "./doc-comment-output.js";
 import { getEnumNameAlignmentPadding, prepareEnumMembersForPrinting } from "./enum-alignment.js";
 import {
     docHasTrailingComment,
@@ -72,12 +72,7 @@ import {
     stripTrailingLineTerminators
 } from "./source-text.js";
 import { shouldAddNewlinesAroundStatement, shouldSuppressEmptyLineBetween } from "./statement-spacing-policy.js";
-import {
-    isCallbackArgument,
-    isComplexArgumentNode,
-    isInLValueChain,
-    isSimpleCallArgument
-} from "./type-guards.js";
+import { isCallbackArgument, isComplexArgumentNode, isInLValueChain, isSimpleCallArgument } from "./type-guards.js";
 import { joinDeclaratorPartsWithCommas } from "./variable-declarator-layout.js";
 
 const forcedStructArgumentBreaks = new WeakMap();
@@ -2462,4 +2457,3 @@ function buildIfAlternateDoc(path, options, print, node) {
 
     return printInBlock(path, options, print, "alternate");
 }
-

@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { access, constants, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -63,6 +64,73 @@ type GraphVisualizationBundleArtifact = Readonly<{
     entryHtmlPath: string;
     files: ReadonlyArray<GraphVisualizationBundleFile>;
 }>;
+
+type OsaScriptExecutionResult = Readonly<{
+    stderr: string;
+    stdout: string;
+}>;
+
+function isMacOsDialogCancellationError(error: unknown, stderr: string): boolean {
+    if (!(error instanceof Error)) {
+        return false;
+    }
+
+    return error.message.includes("User canceled") || stderr.includes("User canceled");
+}
+
+function readOsaScriptErrorStderr(error: unknown): string {
+    if (typeof error !== "object" || error === null || !("stderr" in error)) {
+        return "";
+    }
+
+    const stderrCandidate = Reflect.get(error, "stderr");
+    return typeof stderrCandidate === "string" ? stderrCandidate : "";
+}
+
+async function runOsaScript(lines: ReadonlyArray<string>): Promise<OsaScriptExecutionResult> {
+    return await new Promise<OsaScriptExecutionResult>((resolve, reject) => {
+        const args = lines.flatMap((line) => ["-e", line] as const);
+        execFile("osascript", args, { encoding: "utf8" }, (error, stdout, stderr) => {
+            if (error) {
+                reject(error instanceof Error ? error : new Error("osascript execution failed."));
+                return;
+            }
+            resolve(
+                Object.freeze({
+                    stderr,
+                    stdout
+                })
+            );
+        });
+    });
+}
+
+async function pickProjectPathUsingNativeDialog(): Promise<string | null> {
+    if (process.platform !== "darwin") {
+        return null;
+    }
+
+    const scriptLines = [
+        'set selectionMode to button returned of (display dialog "Open GameMaker project from:" buttons {"Cancel", "Folder", "YYP File"} default button "Folder" cancel button "Cancel")',
+        'if selectionMode is "YYP File" then',
+        '    return POSIX path of (choose file with prompt "Choose a .yyp project file:" of type {"yyp"})',
+        "end if",
+        'return POSIX path of (choose folder with prompt "Choose a GameMaker project folder:")'
+    ];
+
+    try {
+        const result = await runOsaScript(scriptLines);
+        return result.stdout.trim();
+    } catch (error: unknown) {
+        if (error instanceof Error) {
+            const stderr = readOsaScriptErrorStderr(error);
+            if (isMacOsDialogCancellationError(error, stderr)) {
+                return null;
+            }
+        }
+        throw error;
+    }
+}
 
 async function loadOptionalProjectConfig(
     projectRoot: string,
@@ -314,14 +382,21 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             },
             openProjectTargets: async ({ path: selectedPath }) => {
                 const previousPayloadString = safeStringifyVisualizationPayload();
+                const nextPathFromPicker =
+                    selectedPath === null ? await pickProjectPathUsingNativeDialog() : selectedPath;
+                if (!nextPathFromPicker) {
+                    return Object.freeze({ changed: false });
+                }
+                const resolvedPathFromPicker =
+                    resolveExplicitWorkflowTargetPath(nextPathFromPicker) ?? nextPathFromPicker;
                 const nextOptions = {
                     ...options,
-                    path: selectedPath ?? options.path
+                    path: resolvedPathFromPicker
                 };
                 const nextContext = await resolveGraphContext(nextOptions);
                 await ensureGraphIndexForQuery(nextOptions, nextContext);
                 activeContext = nextContext;
-                activeSelectedPaths = [selectedPath ?? nextContext.projectRoot];
+                activeSelectedPaths = [resolvedPathFromPicker];
                 activeSource = "finder-open";
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });

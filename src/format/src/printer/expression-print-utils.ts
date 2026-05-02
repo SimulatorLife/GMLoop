@@ -20,18 +20,9 @@
 import { Core } from "@gmloop/core";
 
 import { printComment, printDanglingComments, printDanglingCommentsAsGroup } from "../comments/comment-printer.js";
-import { MULTIPLICATIVE_BINARY_OPERATORS, NUMBER_TYPE, STRING_TYPE } from "./constants.js";
+import { MULTIPLICATIVE_BINARY_OPERATORS, STRING_TYPE } from "./constants.js";
 import { safeGetParentNode, safeGetPathName, safeGetPathValue } from "./path-utils.js";
-import {
-    concat,
-    group,
-    hardline,
-    ifBreak,
-    indent,
-    line,
-    lineSuffixBoundary,
-    softline
-} from "./prettier-doc-builders.js";
+import { concat, group, hardline, ifBreak, indent, line, lineSuffixBoundary } from "./prettier-doc-builders.js";
 import { hasBlankLineBetweenLastCommentAndClosingBrace, resolvePrinterSourceMetadata } from "./source-text.js";
 import {
     expressionIsStringLike,
@@ -336,11 +327,7 @@ export function printEmptyBlock(path: any, options: any): any {
         }
 
         const inlineDangling = printDanglingComments(path, options, (comment: any) => comment.attachToBrace);
-        const groupedDangling = printDanglingCommentsAsGroup(
-            path,
-            options,
-            (comment: any) => !comment.attachToBrace
-        );
+        const groupedDangling = printDanglingCommentsAsGroup(path, options, (comment: any) => !comment.attachToBrace);
         if (groupedDangling) {
             return ["{", inlineDangling, indent([groupedDangling]), ...trailingDocs];
         }

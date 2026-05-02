@@ -1715,32 +1715,19 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 button.attr("disabled", "true").html(openingButtonLabel);
                 try {
                     if (dependencies.isServerMode) {
-                        const selectedPathInput = globalThis.prompt(
-                            "Enter a project directory or .yyp path to load:",
-                            currentLoadedTarget?.projectRoot ?? ""
-                        );
-                        if (selectedPathInput === null) {
-                            button.attr("disabled", null).html(openButtonLabel);
-                            return;
-                        }
-                        const selectedPath = selectedPathInput.trim();
-                        if (selectedPath.length === 0) {
-                            button.attr("disabled", null).html(openButtonLabel);
-                            return;
-                        }
-
                         const openResponse = await fetch("/api/open", {
-                            body: JSON.stringify({ path: selectedPath }),
-                            headers: {
-                                "Content-Type": "application/json"
-                            },
                             method: "POST"
                         });
                         if (!openResponse.ok) {
                             const responseText = await openResponse.text();
                             throw new Error(responseText || "Server rejected project load request.");
                         }
-                        globalThis.location.reload();
+                        const responsePayload = (await openResponse.json()) as Readonly<{ changed?: boolean }>;
+                        if (responsePayload.changed === true) {
+                            globalThis.location.reload();
+                            return;
+                        }
+                        button.attr("disabled", null).html(openButtonLabel);
                         return;
                     }
 

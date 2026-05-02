@@ -167,11 +167,7 @@ function joinDocCommentsPreservingSourceSpacing(
     return concat(parts);
 }
 
-function hasBlankLineBetweenDocCommentEntries(
-    leftEntry: unknown,
-    rightEntry: unknown,
-    originalText: string
-): boolean {
+function hasBlankLineBetweenDocCommentEntries(leftEntry: unknown, rightEntry: unknown, originalText: string): boolean {
     const leftEndIndex = resolveDocCommentEndIndex(leftEntry);
     const rightStartIndex = resolveDocCommentStartIndex(rightEntry);
     if (leftEndIndex === null || rightStartIndex === null || rightStartIndex <= leftEndIndex) {

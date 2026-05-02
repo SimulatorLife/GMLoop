@@ -64,6 +64,14 @@ function getRequiredAiderMessageTemplate(source: string): string {
     return match.groups.prompt;
 }
 
+function getRequiredGeminiTaskPrompt(source: string): string {
+    const match = /GEMINI_TASK_PROMPT="\$\(cat <<'PROMPT'\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*\)"/u.exec(source);
+
+    assert.ok(match?.groups?.prompt, "Gemini workflow must define a task prompt heredoc.");
+
+    return match.groups.prompt;
+}
+
 function getRequiredChildWorkflowCommand(source: string, inputName: string): string {
     const start = source.indexOf(`      ${inputName}: |`);
 
@@ -96,6 +104,29 @@ function getRequiredAiderCommand(source: string): string {
     }
 
     assert.ok(capturedCommandLines.length > 0, "Aider workflow command block must not be empty.");
+
+    return capturedCommandLines.join("\n");
+}
+
+function getRequiredGeminiCommand(source: string): string {
+    const commandStartIndex = source.indexOf("stdbuf -oL -eL gemini \\");
+    assert.notEqual(commandStartIndex, -1, "Gemini workflow must invoke gemini with explicit CLI flags.");
+
+    const commandTail = source.slice(commandStartIndex);
+    const commandLines = commandTail.split("\n");
+    const capturedCommandLines: string[] = [];
+
+    for (const line of commandLines) {
+        if (capturedCommandLines.length > 0 && line.includes("| tee ")) {
+            capturedCommandLines.push(line);
+            break;
+        }
+        if (capturedCommandLines.length > 0 || line.includes("stdbuf -oL -eL gemini")) {
+            capturedCommandLines.push(line);
+        }
+    }
+
+    assert.ok(capturedCommandLines.length > 0, "Gemini workflow command block must not be empty.");
 
     return capturedCommandLines.join("\n");
 }
@@ -231,6 +262,47 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.doesNotMatch(source, /@aider-local/u);
     assert.doesNotMatch(source, /--model/u);
     assert.ok(!workflowFileNames.includes("aider-local-code-tasks.yml"));
+});
+
+void test("gemini invoke is the maintained manual-only workflow for @gemini", async () => {
+    const source = await readWorkflowSource("gemini-invoke.yml");
+    const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
+    const prompt = getRequiredGeminiTaskPrompt(source);
+    const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
+    const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
+    const geminiCommand = getRequiredGeminiCommand(source);
+
+    assert.match(source, /name: '▶️ Gemini Invoke'/u);
+    assert.match(source, /github\.event\.comment\.body == '@gemini'/u);
+    assert.match(source, /startsWith\(github\.event\.comment\.body \|\| '', '@gemini '\)/u);
+    assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
+    assert.match(source, /agent: gemini/u);
+    assert.match(source, /validate_local_endpoint: false/u);
+    assert.match(source, /agent_package: \$\{\{ vars\.GEMINI_CLI_PACKAGE \|\| '@google\/gemini-cli@0\.38\.2' \}\}/u);
+    assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
+    assert.match(source, /api_key: \$\{\{ secrets\.GEMINI_API_KEY \}\}/u);
+    assert.doesNotMatch(source, /agent_cli:/u);
+    assertPromptEnforcesCommandGroundedEditLoop(prompt);
+    assert.match(prompt, /Gemini CLI running in GitHub Actions/u);
+    assert.match(prompt, /Do not finish with only analysis or a plan/u);
+    assert.match(source, /REPOSITORY_ROOT="\$\(pwd\)"/u);
+    assert.match(source, /Repository root: %s/u);
+    assert.match(setupCommand, /Missing GEMINI_API_KEY secret/u);
+    assert.match(setupCommand, /\.gemini\/settings\.json/u);
+    assert.match(setupCommand, /command -v gemini/u);
+    assert.match(setupCommand, /export GEMINI_API_KEY="\$\{API_KEY\}"/u);
+    assert.match(geminiCommand, /--approval-mode yolo/u);
+    assert.match(geminiCommand, /-p "\$\{GEMINI_AGENT_PROMPT\}"/u);
+    assert.match(source, /gemini_status="\$\{PIPESTATUS\[0\]\}"/u);
+    assert.doesNotMatch(source, /ollama pull/u);
+    assert.doesNotMatch(source, /validate_local_endpoint: true/u);
+    assert.doesNotMatch(source, /_deprecated-gemini-invoke/u);
+    assert.ok(!workflowFileNames.includes("_deprecated-gemini-invoke.yml"));
+    assert.ok(
+        source.lastIndexOf("agent_setup_command") < source.lastIndexOf("agent_command"),
+        "Gemini setup should execute before the Gemini task command."
+    );
+    assert.doesNotMatch(agentCommand, /ollama pull/u);
 });
 
 void test("aider invoke uses a repo-local .aider.conf.yml for local Ollama settings", async () => {

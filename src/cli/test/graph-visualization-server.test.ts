@@ -103,6 +103,12 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         const reindexPayload = (await reindexResponse.json()) as { changed: boolean; ok: boolean };
         assert.deepEqual(reindexPayload, { changed: true, ok: true });
 
+        const openWithoutBodyResponse = await fetch(`${handle.url}/api/open`, { method: "POST" });
+        assert.equal(openWithoutBodyResponse.status, 200);
+        const openWithoutBodyPayload = (await openWithoutBodyResponse.json()) as { changed: boolean; ok: boolean };
+        assert.deepEqual(openWithoutBodyPayload, { changed: true, ok: true });
+        assert.equal(openedPath, null);
+
         const openPath = "/tmp/project/Project.yyp";
         const openResponse = await fetch(`${handle.url}/api/open`, {
             body: JSON.stringify({ path: openPath }),
