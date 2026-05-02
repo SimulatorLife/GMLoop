@@ -68,14 +68,6 @@ function getRequiredWorkflowInputBlock(source: string, inputName: string): strin
     return match.groups.block;
 }
 
-function getRequiredAiderMessageTemplate(source: string): string {
-    const match = /cat > "\$\{AIDER_TASK_MESSAGE_FILE\}" <<PROMPT\n(?<prompt>[\s\S]*?)\n\s*PROMPT/u.exec(source);
-
-    assert.ok(match?.groups?.prompt, "Aider workflow must write a task message heredoc.");
-
-    return match.groups.prompt;
-}
-
 function getRequiredChildWorkflowCommand(source: string, inputName: string): string {
     const start = source.indexOf(`      ${inputName}: |`);
 
@@ -146,7 +138,7 @@ function assertAiderCommandIncludesRequiredFlags(commandSource: string): void {
         "--subtree-only",
         "--no-auto-commits",
         "--no-dirty-commits",
-        "--message-file"
+        "--message"
     ];
 
     for (const requiredFlag of requiredFlags) {
@@ -209,7 +201,7 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
         source.lastIndexOf("agent_setup_command") < source.lastIndexOf("agent_command"),
         "Qwen must pull the configured local model before invoking the real task."
     );
-    assert.match(source, /agent_package: \$\{\{ vars\.QWEN_CODE_PACKAGE \|\| '@qwen-code\/qwen-code@0\.14\.5' \}\}/u);
+    assert.match(source, /agent_package: '@qwen-code\/qwen-code@0\.14\.5'/u);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /verify_qwen_/u);
     assert.doesNotMatch(source, /openai-tool-registry/u);
@@ -240,7 +232,6 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     const source = await readWorkflowSource("aider-invoke.yml");
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
-    const promptTemplate = getRequiredAiderMessageTemplate(source);
     const sharedPrompt = getRequiredSharedAgentPrompt(parentSource);
     const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
@@ -250,6 +241,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.match(source, /contains\(github\.event\.comment\.body \|\| '', '@aider'\)/u);
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: aider/u);
+    assert.match(source, /agent_package: aider-chat/u);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assert.match(setupCommand, /pull_aider_configured_model\(\)/u);
@@ -257,9 +249,15 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.match(setupCommand, /ollama_model="\$\{configured_model#openai\/\}"/u);
     assert.match(setupCommand, /ollama pull "\$\{ollama_model\}"/u);
     assert.doesNotMatch(agentCommand, /ollama pull/u);
+    assert.doesNotMatch(agentCommand, /command -v aider/u);
+    assert.doesNotMatch(agentCommand, /pip install --user aider-chat/u);
+    assert.doesNotMatch(agentCommand, /HOME\/\.local\/bin/u);
+    assert.doesNotMatch(agentCommand, /Could not install Aider CLI/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
     assert.match(agentCommand, /Missing shared AGENT_PROMPT from parent workflow/u);
-    assert.match(promptTemplate, /^\s*\$\{AGENT_PROMPT\}$/mu);
+    assert.match(agentCommand, /--message "\$\{AGENT_PROMPT\}"/u);
+    assert.doesNotMatch(source, /AIDER_TASK_MESSAGE_FILE/u);
+    assert.doesNotMatch(source, /--message-file/u);
     assert.ok(
         source.lastIndexOf("agent_setup_command") < source.indexOf("agent_command"),
         "Aider must pull the configured local model before invoking the CLI."
@@ -278,7 +276,6 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
     const sharedPrompt = getRequiredSharedAgentPrompt(parentSource);
-    const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
     const geminiCommand = getRequiredGeminiCommand(source);
 
@@ -287,7 +284,7 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: gemini/u);
     assert.match(source, /validate_local_endpoint: false/u);
-    assert.match(source, /agent_package: \$\{\{ vars\.GEMINI_CLI_PACKAGE \|\| '@google\/gemini-cli@latest' \}\}/u);
+    assert.match(source, /agent_package: '@google\/gemini-cli@latest'/u);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.match(source, /api_key: \$\{\{ secrets\.GEMINI_API_KEY \}\}/u);
     assert.doesNotMatch(source, /agent_cli:/u);
@@ -297,15 +294,10 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
     assert.match(source, /Missing shared AGENT_PROMPT from parent workflow/u);
     assert.match(source, /"\$\{AGENT_PROMPT\}"/u);
-    assert.match(setupCommand, /Missing GEMINI_API_KEY secret/u);
-    assert.match(setupCommand, /\.gemini\/settings\.json/u);
-    assert.match(setupCommand, /command -v gemini/u);
-    assert.match(setupCommand, /preview\/experimental/u);
-    assert.match(setupCommand, /echo "GEMINI_MODEL=\$\{effective_model\}" >> "\$GITHUB_ENV"/u);
-    assert.match(setupCommand, /export GEMINI_API_KEY="\$\{API_KEY\}"/u);
+    assert.doesNotMatch(source, /agent_setup_command:/u);
     assert.match(geminiCommand, /--approval-mode yolo/u);
     assert.match(geminiCommand, /--skip-trust/u);
-    assert.match(geminiCommand, /--model "\$\{GEMINI_MODEL\}"/u);
+    assert.doesNotMatch(geminiCommand, /--model/u);
     assert.match(geminiCommand, /--prompt "\$\{AGENT_PROMPT\}"/u);
     assert.doesNotMatch(agentCommand, /max_api_attempts="\$\{GEMINI_API_MAX_ATTEMPTS:-4\}"/u);
     assert.doesNotMatch(agentCommand, /RESOURCE_EXHAUSTED\|429\|quota exceeded\|rate\.\?limit/u);
@@ -318,11 +310,8 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.doesNotMatch(source, /validate_local_endpoint: true/u);
     assert.doesNotMatch(source, /_deprecated-gemini-invoke/u);
     assert.ok(!workflowFileNames.includes("_deprecated-gemini-invoke.yml"));
-    assert.ok(
-        source.lastIndexOf("agent_setup_command") < source.lastIndexOf("agent_command"),
-        "Gemini setup should execute before the Gemini task command."
-    );
     assert.doesNotMatch(agentCommand, /ollama pull/u);
+    assert.doesNotMatch(agentCommand, /GEMINI_MODEL/u);
 });
 
 void test("gemini settings allow the git commands required for merge-conflict resolution workflows", async () => {

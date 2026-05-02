@@ -27,6 +27,7 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: aider
+      agent_package: aider-chat
       agent_setup_command: |
         set -euo pipefail
 
@@ -69,25 +70,10 @@ jobs:
         export NO_PROXY="${NO_PROXY:+${NO_PROXY},}127.0.0.1,localhost"
         export no_proxy="${no_proxy:+${no_proxy},}127.0.0.1,localhost"
 
-        if ! command -v aider >/dev/null 2>&1; then
-          python3 -m pip install --user aider-chat
-          export PATH="$HOME/.local/bin:$PATH"
-        fi
-
-        if ! command -v aider >/dev/null 2>&1; then
-          echo "❌ Could not install Aider CLI."
-          exit 1
-        fi
-
         if [ -z "${AGENT_PROMPT:-}" ]; then
           echo "❌ Missing shared AGENT_PROMPT from parent workflow."
           exit 1
         fi
-
-        AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
-        cat > "${AIDER_TASK_MESSAGE_FILE}" <<PROMPT
-        ${AGENT_PROMPT}
-        PROMPT
 
         set +e
         stdbuf -oL -eL aider \
@@ -96,7 +82,7 @@ jobs:
           --subtree-only \
           --no-auto-commits \
           --no-dirty-commits \
-          --message-file "${AIDER_TASK_MESSAGE_FILE}" 2>&1 | tee "$RUNNER_TEMP/aider.log"
+          --message "${AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/aider.log"
         aider_status="${PIPESTATUS[0]}"
         set -e
 

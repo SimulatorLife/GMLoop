@@ -27,7 +27,7 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: qwen
-      agent_package: ${{ vars.QWEN_CODE_PACKAGE || '@qwen-code/qwen-code@0.14.5' }}
+      agent_package: '@qwen-code/qwen-code@latest'
       agent_setup_command: |
         set -euo pipefail
 
