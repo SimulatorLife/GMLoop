@@ -64,8 +64,6 @@ jobs:
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GH_USER_TOKEN }}
-        env:
-          TARGET_PR_NUMBER_INPUT: ${{ inputs.target_pr_number || github.event.inputs.target_pr_number || '' }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
@@ -206,6 +204,8 @@ jobs:
               headSha: candidate.head.sha,
               mergeableState: candidate.mergeable_state || "unknown",
             });
+        env:
+          TARGET_PR_NUMBER_INPUT: ${{ inputs.target_pr_number || github.event.inputs.target_pr_number || '' }}
 
       - name: Checkout repository
         if: ${{ steps.select_pr.outputs.found == 'true' }}

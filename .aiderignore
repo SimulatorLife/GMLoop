@@ -11,6 +11,12 @@ dist
 .aider.conf.yml
 .aiderignore
 .qwenignore
+AGENTS.md
+GEMINI.md
+.github/copilot-instructions.md
+.gemini/settings.json
+.qwen/settings.json
+.codex/config.toml
 
 .qwen/
 .gemini/

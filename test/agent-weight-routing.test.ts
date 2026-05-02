@@ -159,6 +159,8 @@ void test("merge conflict workflow supports reusable invocations with explicit P
     assert.match(conflictWorkflow, /TARGET_PR_NUMBER_INPUT: \$\{\{ inputs\.target_pr_number \|\| github\.event\.inputs\.target_pr_number \|\| '' \}\}/u);
     assert.match(conflictWorkflow, /const manualRun = context\.eventName === "workflow_dispatch" && manualInput\.length > 0;/u);
     assert.match(conflictWorkflow, /AGENT: \$\{\{ inputs\.agent \|\| github\.event\.inputs\.agent \|\| '' \}\}/u);
+    assert.match(conflictWorkflow, /with:\n\s+github-token: \$\{\{ secrets\.GH_USER_TOKEN \}\}\n\s+script: \|/u);
+    assert.doesNotMatch(conflictWorkflow, /env:\n\s+TARGET_PR_NUMBER_INPUT:[\s\S]*?\n\s+script: \|/u);
 });
 
 void test("workflow selectors use deterministic run-number weighted selection", async () => {

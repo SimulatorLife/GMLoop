@@ -32,6 +32,8 @@ then return here for deeper context.
 - [Contributor onboarding checklist](contributor-onboarding.md) — Environment
   setup, validation commands, and supporting documentation for new
   contributors.
+- [UI skill](UI-SKILL.md) — Entry point for the repository's UI guidance, with
+  the canonical agent-facing skill located at `skills/ui/SKILL.md`.
 - [ANTLR regeneration guide](antlr-regeneration.md) — Canonical steps for
   rebuilding the generated parser artifacts with the vendored toolchain plus
   pointers to the extension hooks that keep custom behaviour outside the

@@ -1,9 +1,27 @@
 ---
 name: frontend-design
-description: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications such as websites, landing pages, dashboards, React components, or HTML/CSS layouts. Generate polished, working UI that avoids generic AI aesthetics.
+description: Legacy UI guidance document. The canonical agent-facing UI skill now lives at skills/ui/SKILL.md.
 ---
 
-This skill guides creation of distinctive, production-grade frontend interfaces. The goal is not just functional UI, but intentional UI with a clear point of view, strong hierarchy, and professional interaction quality.
+This document now serves as a human-readable companion to the canonical agent-facing skill at [skills/ui/SKILL.md](../skills/ui/SKILL.md).
+
+Agents should inspect the available skills under `skills/**` and choose the relevant one or ones for the task. For GMLoop UI work, that skill is currently [skills/ui/SKILL.md](../skills/ui/SKILL.md). This file provides supporting rationale and broader UI guidance.
+
+## Canonical Skill
+
+- Canonical agent skill: [skills/ui/SKILL.md](../skills/ui/SKILL.md)
+- Copilot bridge: [.github/copilot-instructions.md](../.github/copilot-instructions.md)
+- Gemini bridge: [GEMINI.md](../GEMINI.md)
+
+## GMLoop UI Contract
+
+The GMLoop UI uses:
+
+- Lit
+- TypeScript
+- light-DOM rendering only
+
+All component work in `src/ui/**` should follow the repository light-DOM base class at [light-dom-lit-element.ts](/Users/henrykirk/GMLoop/src/ui/src/app/components/light-dom-lit-element.ts:1).
 
 ## 1. Purpose
 
