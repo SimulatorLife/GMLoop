@@ -139,5 +139,41 @@ void describe("BinaryExpressionDelegate", () => {
                 assert.equal(result.right.name, "b");
             });
         });
+
+        void it("should tolerate unknown operators in precedence checks", () => {
+            const delegate = new BinaryExpressionDelegate({
+                operators: {
+                    "&&": { prec: 4, assoc: "left" }
+                }
+            });
+
+            const nestedCtx = {
+                expression: () => [
+                    {
+                        expression: () => [
+                            { name: "leftInner", getText: () => "a" },
+                            { name: "rightInner", getText: () => "b" }
+                        ],
+                        children: [{ getText: () => "a" }, { getText: () => "??" }, { getText: () => "b" }]
+                    },
+                    { name: "right", getText: () => "c" }
+                ],
+                children: [{ getText: () => "a" }, { getText: () => "&&" }, { getText: () => "c" }]
+            };
+
+            assert.doesNotThrow(() => {
+                const result = delegate.handle(nestedCtx, {
+                    visit: (node: any) => {
+                        if (node.name === "leftInner") return { type: "Identifier", name: "a" };
+                        if (node.name === "rightInner") return { type: "Identifier", name: "b" };
+                        return { type: "Identifier", name: "c" };
+                    },
+                    astNode: mockAstNode
+                });
+
+                assert.equal(result.type, "BinaryExpression");
+                assert.equal(result.operator, "&&");
+            });
+        });
     });
 });
