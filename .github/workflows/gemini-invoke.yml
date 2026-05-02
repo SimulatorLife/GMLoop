@@ -66,7 +66,45 @@ jobs:
           --approval-mode=yolo \
           --policy=.gemini/policy \
           --skip-trust \
-          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
+          --output-format stream-json \
+          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 \
+          | tee "$RUNNER_TEMP/gemini-stream.jsonl" \
+          | jq -Rr '
+              def flatten_text:
+                if . == null then ""
+                elif type == "string" then .
+                elif type == "array" then map(if type == "string" then . else tostring end) | join("")
+                else tostring
+                end;
+
+              (fromjson? // {"type":"raw","text": .}) as $event
+              | if $event.type == "message" then
+                  ($event.role // $event.message.role // "assistant") as $role
+                  | ($event.text // $event.message.text // $event.message.content // $event.content // "") as $content
+                  | ($content | flatten_text) as $text
+                  | if ($text | length) > 0 then "[message/\($role)] \($text)" else empty end
+                elif $event.type == "tool_use" then
+                  "[tool_use] \($event.name // $event.tool_name // $event.toolUse.name // "unknown")"
+                elif $event.type == "tool_result" then
+                  ($event.name // $event.tool_name // $event.toolResult.name // "unknown") as $name
+                  | ($event.output // $event.result // $event.toolResult.result // $event.text // "") as $output
+                  | ($output | flatten_text) as $text
+                  | if ($text | length) > 0 then "[tool_result/\($name)] \($text)" else "[tool_result/\($name)]" end
+                elif $event.type == "error" then
+                  "[error] \($event.message // $event.error.message // $event.text // ($event | tostring))"
+                elif $event.type == "result" then
+                  ($event.response // $event.result.response // $event.text // "") as $response
+                  | ($response | flatten_text) as $text
+                  | if ($text | length) > 0 then "[result] \($text)" else "[result] completed" end
+                elif $event.type == "init" then
+                  "[init] session started"
+                elif $event.type == "raw" then
+                  $event.text
+                else
+                  ($event | tostring)
+                end
+            ' \
+          | tee "$RUNNER_TEMP/gemini.log"
         gemini_status="${PIPESTATUS[0]}"
         set -e
 
