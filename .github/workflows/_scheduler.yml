@@ -32,11 +32,50 @@ jobs:
           CFG_JSON: ${{ steps.cfg.outputs.cfg }}
         with:
           script: |
-            const crypto = require('crypto');
-
             const cfgRaw = process.env.CFG_JSON;
             const cfg = cfgRaw ? JSON.parse(cfgRaw) : {};
             const workflows = Array.isArray(cfg.workflows) ? cfg.workflows : [];
+            const WEIGHT_SCALE = 1000;
+
+            const getRunNumber = () => {
+              const raw = (process.env.GITHUB_RUN_NUMBER || '').trim();
+              const parsed = Number.parseInt(raw, 10);
+              return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+            };
+
+            const toSlots = (weight) => Math.max(1, Math.round(weight * WEIGHT_SCALE));
+
+            const buildInterleavedCycle = (items) => {
+              const maxSlots = Math.max(...items.map((item) => item.slots));
+              const cycle = [];
+              for (let slot = 1; slot <= maxSlots; slot += 1) {
+                for (const item of items) {
+                  if (item.slots >= slot) {
+                    cycle.push(item);
+                  }
+                }
+              }
+              return cycle;
+            };
+
+            const chooseDeterministicWeighted = (items, runNumber) => {
+              if (items.length === 0) {
+                return null;
+              }
+
+              const sortedItems = [...items].sort((left, right) => left.sortKey.localeCompare(right.sortKey));
+              const cycle = buildInterleavedCycle(sortedItems);
+              if (cycle.length === 0) {
+                return null;
+              }
+
+              const cycleIndex = (runNumber - 1) % cycle.length;
+              return {
+                selected: cycle[cycleIndex],
+                cycleIndex,
+                cycleLength: cycle.length,
+              };
+            };
 
             const candidates = [];
 
@@ -61,6 +100,8 @@ jobs:
                 path: workflowPath,
                 weight: weightValue,
                 topic: workflow.topic ?? null,
+                slots: toSlots(weightValue),
+                sortKey: workflowName.toLowerCase(),
               });
             }
 
@@ -75,35 +116,31 @@ jobs:
               return null;
             }
 
-            const randomBytes = crypto.randomBytes(6);
-            const random = parseInt(randomBytes.toString('hex'), 16) / 0xFFFFFFFFFFFF;
-            let threshold = random * totalWeight;
-            let cumulative = 0;
-            let selected = null;
-            for (const workflow of candidates) {
-              cumulative += workflow.weight;
-              if (threshold <= cumulative) {
-                selected = workflow;
-                break;
-              }
+            const runNumber = getRunNumber();
+            const selection = chooseDeterministicWeighted(candidates, runNumber);
+            if (!selection) {
+              core.info('No deterministic weighted workflow could be selected.');
+              return null;
             }
-
-            if (!selected) {
-              selected = candidates[candidates.length - 1];
-            }
+            const selected = selection.selected;
+            const cyclePosition = selection.cycleIndex + 1;
 
             const baseDir = '.github/workflows/';
             const workflowId = selected.path.startsWith(baseDir)
               ? selected.path.slice(baseDir.length)
               : selected.path;
 
-            core.info(`Selected workflow ${selected.path} (weight=${selected.weight}) from total weight ${totalWeight.toFixed(6)} with draw ${random.toFixed(6)}.`);
+            core.info(
+              `Deterministic weighted selection picked workflow ${selected.path} (weight=${selected.weight}, slots=${selected.slots}) ` +
+              `for run #${runNumber} at cycle position ${cyclePosition}/${selection.cycleLength} from total weight ${totalWeight.toFixed(6)}.`
+            );
 
             return {
               workflow_name: selected.name,
               workflow_path: selected.path,
               workflow_id: workflowId,
-              random_draw: random.toFixed(6),
+              run_number: String(runNumber),
+              cycle_position: `${cyclePosition}/${selection.cycleLength}`,
               total_weight: totalWeight.toFixed(6),
             };
 

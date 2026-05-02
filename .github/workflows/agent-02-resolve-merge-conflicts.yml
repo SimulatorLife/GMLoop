@@ -213,7 +213,6 @@ jobs:
           script: |
             const fs = require("fs");
             const path = require("path");
-            const crypto = require("crypto");
 
             if (process.env.FOUND !== "true") {
               core.info("No eligible PR selected; skipping comment.");
@@ -233,6 +232,7 @@ jobs:
             const marker = "<!-- agent-resolve-merge-conflicts -->";
             const FOLLOW_UP_AGENT_POOL = "followUps";
             const DEFAULT_FOLLOW_UP_AGENT = "codex";
+            const WEIGHT_SCALE = 1000;
 
             const normalize = (value) => {
               const trimmed = (value || "").trim();
@@ -244,19 +244,39 @@ jobs:
                 || "";
             };
 
-            const chooseWeighted = (items) => {
-              const total = items.reduce((sum, item) => sum + item.weight, 0);
-              if (!Number.isFinite(total) || total <= 0) return null;
+            const getRunNumber = () => {
+              const raw = (process.env.GITHUB_RUN_NUMBER || "").trim();
+              const parsed = Number.parseInt(raw, 10);
+              return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+            };
 
-              const random = parseInt(crypto.randomBytes(6).toString("hex"), 16) / 0xFFFFFFFFFFFF;
-              let threshold = random * total;
-              for (const item of items) {
-                threshold -= item.weight;
-                if (threshold <= 0) {
-                  return { ...item, random, total };
+            const toSlots = (weight) => Math.max(1, Math.round(weight * WEIGHT_SCALE));
+
+            const buildInterleavedCycle = (items) => {
+              const maxSlots = Math.max(...items.map((item) => item.slots));
+              const cycle = [];
+              for (let slot = 1; slot <= maxSlots; slot += 1) {
+                for (const item of items) {
+                  if (item.slots >= slot) {
+                    cycle.push(item);
+                  }
                 }
               }
-              return { ...items[items.length - 1], random, total };
+              return cycle;
+            };
+
+            const chooseDeterministicWeighted = (items, runNumber) => {
+              if (items.length === 0) return null;
+              const sortedItems = [...items].sort((left, right) => left.slug.localeCompare(right.slug));
+              const cycle = buildInterleavedCycle(sortedItems);
+              if (cycle.length === 0) return null;
+              const cycleIndex = (runNumber - 1) % cycle.length;
+              return {
+                selected: cycle[cycleIndex],
+                cycleIndex,
+                cycleLength: cycle.length,
+                totalWeight: sortedItems.reduce((sum, item) => sum + item.weight, 0),
+              };
             };
 
             const parseAgentCandidates = (pool) => {
@@ -274,6 +294,7 @@ jobs:
                   name: agent.name,
                   weight: agent.weight,
                   slug: normalize(agent.name),
+                  slots: toSlots(agent.weight),
                 }))
                 .filter((agent) => agent.slug);
             };
@@ -313,19 +334,25 @@ jobs:
                 };
               }
 
-              const chosen = chooseWeighted(candidates);
-              if (!chosen) {
+              const runNumber = getRunNumber();
+              const chosen = chooseDeterministicWeighted(candidates, runNumber);
+              if (!chosen || !chosen.selected) {
                 return {
                   agent: poolDefault,
-                  reason: `${poolName} weighted selection fallback`,
+                  reason: `${poolName} deterministic weighted selection fallback`,
                 };
               }
 
-              const { slug, name, weight, random, total } = chosen;
-              core.info(`Random draw ${random.toFixed(6)} selected agent "${name}" from ${poolName} pool (slug=${slug}, weight=${weight}) from total weight ${total.toFixed(6)}.`);
+              const { slug, name, weight, slots } = chosen.selected;
+              const cyclePosition = chosen.cycleIndex + 1;
+              core.info(
+                `Deterministic weighted selection picked agent "${name}" from ${poolName} pool ` +
+                `(slug=${slug}, weight=${weight}, slots=${slots}) for run #${runNumber} ` +
+                `at cycle position ${cyclePosition}/${chosen.cycleLength} from total weight ${chosen.totalWeight.toFixed(6)}.`
+              );
               return {
                 agent: slug,
-                reason: `${poolName} weighted selection`,
+                reason: `${poolName} deterministic weighted selection`,
               };
             };
 
