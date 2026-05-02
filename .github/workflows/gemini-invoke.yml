@@ -80,6 +80,7 @@ jobs:
           exit 1
         fi
 
+        export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
         export GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash-lite}"
 

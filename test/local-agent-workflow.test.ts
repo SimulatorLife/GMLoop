@@ -23,6 +23,18 @@ async function readQwenSettings(): Promise<QwenSettings> {
     return JSON.parse(source) as QwenSettings;
 }
 
+interface GeminiSettings {
+    tools: {
+        core: string[];
+    };
+}
+
+async function readGeminiSettings(): Promise<GeminiSettings> {
+    const source = await readFile(path.resolve(process.cwd(), ".gemini/settings.json"), "utf8");
+
+    return JSON.parse(source) as GeminiSettings;
+}
+
 async function readAllWorkflowSources(): Promise<string> {
     const workflowDirectory = path.resolve(process.cwd(), ".github/workflows");
     const directoryEntries = await readdir(workflowDirectory);
@@ -182,6 +194,10 @@ function assertQwenUsesLocalAgentLoop(source: string, sharedPrompt: string): voi
     assert.match(source, /(--approval-mode yolo|--yolo)/u);
     assert.match(source, /--append-system-prompt "\$\{QWEN_CI_SYSTEM_PROMPT\}"/u);
     assert.doesNotMatch(source, /--prompt-interactive/u);
+    assert.match(source, /Use the native tools actually available in this environment/u);
+    assert.match(source, /Do not invent tool names or request tools that are not provided\./u);
+    assert.doesNotMatch(source, /run_shell_command/u);
+    assert.doesNotMatch(source, /edit or write_file tools/u);
 }
 
 void test("qwen invoke is the single local-only Qwen workflow", async () => {
@@ -311,6 +327,18 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
         "Gemini setup should execute before the Gemini task command."
     );
     assert.doesNotMatch(agentCommand, /ollama pull/u);
+});
+
+void test("gemini settings allow the git commands required for merge-conflict resolution workflows", async () => {
+    const settings = await readGeminiSettings();
+    const allowedTools = settings.tools.core;
+
+    assert.ok(allowedTools.includes("run_shell_command(git fetch)"));
+    assert.ok(allowedTools.includes("run_shell_command(git merge)"));
+    assert.ok(allowedTools.includes("run_shell_command(git rebase)"));
+    assert.ok(allowedTools.includes("run_shell_command(git worktree)"));
+    assert.ok(allowedTools.includes("run_shell_command(git status)"));
+    assert.ok(allowedTools.includes("run_shell_command(git diff)"));
 });
 
 void test("aider invoke uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
