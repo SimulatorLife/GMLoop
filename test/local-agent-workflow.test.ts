@@ -301,7 +301,8 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(sharedPrompt, /one focused, minimal code change set/u);
     assert.match(sharedPrompt, /Do not finish with only analysis or a plan/u);
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
-    assert.match(source, /cat "\$\{AGENT_PROMPT_FILE\}" \| stdbuf -oL -eL gemini/u);
+    assert.doesNotMatch(agentCommand, /NODE_OPTIONS/u);
+    assert.match(source, /stdbuf -oL -eL gemini \\/u);
     assert.match(setupCommand, /command -v rg/u);
     assert.match(setupCommand, /sudo apt-get install -y ripgrep/u);
     assert.match(setupCommand, /pnpm root -g/u);
@@ -312,6 +313,7 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(geminiCommand, /--skip-trust/u);
     assert.doesNotMatch(geminiCommand, /--model/u);
     assert.match(geminiCommand, /--prompt ""/u);
+    assert.match(geminiCommand, /< "\$\{AGENT_PROMPT_FILE\}"/u);
     assert.doesNotMatch(geminiCommand, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
     assert.doesNotMatch(agentCommand, /max_api_attempts="\$\{GEMINI_API_MAX_ATTEMPTS:-4\}"/u);
     assert.doesNotMatch(agentCommand, /RESOURCE_EXHAUSTED\|429\|quota exceeded\|rate\.\?limit/u);
@@ -380,7 +382,7 @@ void test("agent invoke exports OpenAI API type for every child agent", async ()
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const aiderSource = await readWorkflowSource("aider-invoke.yml");
 
-    assert.match(parentSource, /env:\n\s+OPENAI_API_TYPE: openai/u);
+    assert.match(parentSource, /env:\n\s+OPENAI_API_TYPE: openai\n\s+NODE_OPTIONS: --max-old-space-size=12288/u);
     assert.doesNotMatch(aiderSource, /export OPENAI_API_TYPE=/u);
     assert.doesNotMatch(aiderSource, /--set-env OPENAI_API_TYPE=openai/u);
 });
