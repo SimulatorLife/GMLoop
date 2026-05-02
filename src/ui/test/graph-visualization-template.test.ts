@@ -177,9 +177,28 @@ void test("graph visualization template exposes view and label toggles", () => {
     assert.match(html, /id="json-view"/);
     assert.match(html, /labelMode = "auto"/);
     assert.match(html, /activeGraphView = "visual"/);
-    assert.match(html, /activePage = "graph"/);
-    assert.match(html, /function updatePageState\(\)/);
-    assert.match(html, /graphControls\.classList\.toggle\("hidden", activePage !== "graph"\)/);
+    assert.match(html, /activePage:\s*"graph"/);
+    assert.match(html, /function updatePageState\(/);
+    assert.match(html, /graphControls\.classList\.toggle\("hidden", state\.activePage !== "graph"\)/);
+});
+
+void test("graph visualization template embeds browser bootstrap helpers before application startup", () => {
+    const html = renderEmptyGraphVisualizationHtml("Bootstrap Runtime Test");
+    const runtimeDefinitionIndex = html.indexOf("function readGraphRuntime()");
+    const bootstrapInvocationIndex = html.indexOf("bootstrapGraphVisualizationApp({");
+
+    assert.notEqual(runtimeDefinitionIndex, -1, "Expected graph runtime helper to be embedded in the browser module.");
+    assert.notEqual(
+        bootstrapInvocationIndex,
+        -1,
+        "Expected graph bootstrap function call to be present in the inline browser module."
+    );
+    assert.ok(
+        runtimeDefinitionIndex < bootstrapInvocationIndex,
+        "Expected graph runtime helper definitions to appear before bootstrap execution."
+    );
+    assert.match(html, /function cloneGraphNodes\(nodeValues\)/);
+    assert.match(html, /function readGraphRuntime\(\)/);
 });
 
 void test("graph visualization template omits unstable layout controls and alternate forces", () => {
@@ -198,16 +217,15 @@ void test("graph visualization template omits unstable layout controls and alter
     assert.doesNotMatch(html, /buildSemanticSimilarityLinks/u);
     assert.doesNotMatch(html, /tokenizeSemanticDescriptor/u);
     assert.doesNotMatch(html, /measureSemanticSimilarity/u);
-    assert.match(
-        html,
-        /\.force\("link", graphRuntime\.forceLink\(\)\.id\(\(datum\) => readNodeIdentifier\(datum\)\)\.distance\(50\)\)/
-    );
+    assert.match(html, /\.force\("link", graphRuntime/u);
+    assert.match(html, /\.forceLink\(\)/u);
+    assert.match(html, /\.id\(\(datum\) => readNodeIdentifier\(datum\)\)/u);
+    assert.match(html, /\.distance\(50\)\)/u);
     assert.match(html, /\.force\("charge", graphRuntime\.forceManyBody\(\)\.strength\(-100\)\)/);
     assert.match(html, /\.force\("center", graphRuntime\.forceCenter\(width \/ 2, height \/ 2\)\)/);
-    assert.match(
-        html,
-        /\.force\("collide", graphRuntime\.forceCollide\(\)\.radius\(\(datum\) => getRadius\(readGraphNode\(datum\)\)\)\.iterations\(2\)\)/
-    );
+    assert.match(html, /\.force\("collide", graphRuntime/u);
+    assert.match(html, /\.radius\(\(datum\) => getRadius\(readGraphNode\(datum\), incomingCount, outgoingCount\)\)/u);
+    assert.match(html, /\.iterations\(2\)\)/u);
     assert.match(html, /\.alphaDecay\(0\.02\)/);
     assert.match(html, /\.velocityDecay\(0\.3\)/);
     assert.match(html, /simulation\.force\("link"\)\.links\(filteredLinks\)/);
@@ -254,7 +272,7 @@ void test("graph visualization server mode keeps the current view live while reg
     assert.match(html, /id="regenerate"/);
     assert.match(html, /id="open-project"/);
     assert.match(html, /window\.__GMLOOP_LOADED_TARGET__/);
-    assert.match(html, /function renderLoadedTargetSummary\(\)/);
+    assert.match(html, /function renderLoadedTargetSummary\(/);
     assert.match(html, /<script type="module">/);
     assert.match(
         html,
@@ -270,8 +288,8 @@ void test("graph visualization server mode keeps the current view live while reg
     assert.match(html, /id="cli-content"/);
     assert.match(html, /id="mcp-content"/);
     assert.match(html, /id="config-content"/);
-    assert.match(html, /function renderDocumentationCatalog\(\)/);
-    assert.match(html, /function renderProjectConfigurationCatalog\(\)/);
+    assert.match(html, /function renderDocumentationCatalog\(/);
+    assert.match(html, /function renderProjectConfigurationCatalog\(/);
     assert.match(html, /gmloop_graph_context/u);
     assert.match(html, /graph context/u);
     assert.match(html, /Workspace UI driven directly from live CLI and MCP catalogs\./);
@@ -291,7 +309,7 @@ void test("graph visualization server mode keeps the current view live while reg
     assert.match(html, /Regenerating…/u);
     assert.match(html, /const payload = \(await response\.json\(\)\)/);
     assert.match(html, /if \(payload\.changed === true\) \{/);
-    assert.match(html, /location\.reload\(\);/);
+    assert.match(html, /globalThis\.location\.reload\(\);/);
     assert.match(html, /button\.attr\("disabled", null\)\.html\(regenerateButtonLabel\);/);
     assert.match(html, /console\.error\("Reindex failed", responseText\);/);
 });
@@ -362,7 +380,7 @@ void test("graph visualization template pins selected node tooltip until selecti
     assert.match(html, /pinnedTooltipNodeId !== null && pinnedTooltipNodeId !== nodeValue\.id/);
     assert.match(
         html,
-        /pinnedTooltipNodeId === null && tooltipElement instanceof Element && !tooltipElement\.matches\(":hover"\)/
+        /pinnedTooltipNodeId === null\s+&&\s+tooltipElement instanceof Element\s+&&\s+!tooltipElement\.matches\(":hover"\)/
     );
     assert.doesNotMatch(html, /focusNodeId = focusNodeId === d\.id \? null : d\.id/);
 });
