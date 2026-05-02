@@ -110,7 +110,7 @@ jobs:
           set +e
           stdbuf -oL -eL gemini \
             --approval-mode=yolo \
-            --policy=.gemini/policies \
+            --policy=.gemini/policy \
             --skip-trust \
             --model "${GEMINI_MODEL}" \
             --prompt "${GEMINI_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
