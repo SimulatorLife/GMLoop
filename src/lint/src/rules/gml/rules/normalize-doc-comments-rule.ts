@@ -8,9 +8,9 @@ import {
     createMeta,
     getLineIndexForOffset,
     reportFullTextRewrite,
-    walkAstNodesWithParent
+    walkAstNodesWithParent,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const {
     convertLegacyReturnsDescriptionLinesToMetadata,

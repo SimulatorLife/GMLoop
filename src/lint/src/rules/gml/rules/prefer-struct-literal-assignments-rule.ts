@@ -6,9 +6,9 @@ import {
     createMeta,
     findFirstChangedCharacterOffset,
     isCommentOnlyLine,
-    shouldReportUnsafe
+    shouldReportUnsafe,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type StructAssignmentRecord = Readonly<{
     indentation: string;

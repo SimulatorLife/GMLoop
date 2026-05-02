@@ -10,9 +10,9 @@ import {
     isAstNodeRecord,
     isAstNodeWithType,
     isIdentifierNode,
-    walkAstNodesWithParent
+    walkAstNodesWithParent,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type VariableDeclaratorNode = AstNodeRecord &
     Readonly<{

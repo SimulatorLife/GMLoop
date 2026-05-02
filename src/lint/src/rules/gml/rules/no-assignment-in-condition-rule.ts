@@ -1,8 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { createMeta, reportFullTextRewrite } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
+import { createMeta, reportFullTextRewrite, type GmlRuleDefinition } from "../rule-base-helpers.js";
 
 function normalizeConditionAssignments(conditionText: string): string {
     return conditionText.replaceAll(/(?<![=!<>+\-*/%])=(?![=])/g, "==");

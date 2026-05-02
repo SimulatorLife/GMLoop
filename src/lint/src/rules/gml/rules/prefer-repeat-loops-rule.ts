@@ -1,8 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { createMeta, findMatchingBraceEndIndex } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
+import { createMeta, findMatchingBraceEndIndex, type GmlRuleDefinition } from "../rule-base-helpers.js";
 
 type RepeatLoopCandidate = Readonly<{
     limitExpression: string;

@@ -6,9 +6,9 @@ import {
     createMeta,
     findPreviousNonWhitespaceCharacter,
     reportProgramTextRewrite,
-    type SourceTextEdit
+    type SourceTextEdit,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const LOGICAL_NOT_ALIAS = "not";
 const LOGICAL_NOT_OPERATOR = "!";

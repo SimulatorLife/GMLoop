@@ -1,8 +1,7 @@
 import type { Rule } from "eslint";
 
 import { gmlRuleMalformedServices } from "../gml-rule-services.js";
-import { createMeta } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
+import { createMeta, type GmlRuleDefinition } from "../rule-base-helpers.js";
 
 const { forEachScientificNotationToken } = gmlRuleMalformedServices;
 

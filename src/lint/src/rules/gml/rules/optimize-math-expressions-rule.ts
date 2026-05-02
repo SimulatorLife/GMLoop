@@ -11,9 +11,9 @@ import {
     rangeContainsCommentToken,
     reportFullTextRewrite,
     type SourceTextEdit,
-    walkAstNodesWithParent
+    walkAstNodesWithParent,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 import { applyDivisionToMultiplication } from "../transforms/math-division-to-multiplication.js";
 import { cleanupMultiplicativeIdentityParentheses } from "../transforms/math-parentheses-cleanup.js";
 // manual-transforms provide a comprehensive suite of normalization helpers that

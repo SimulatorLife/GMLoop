@@ -1,8 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { createMeta, findPreviousNonWhitespaceIndex } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
+import { createMeta, findPreviousNonWhitespaceIndex, type GmlRuleDefinition } from "../rule-base-helpers.js";
 
 type ControlFlowStatementNode = Readonly<Record<string, unknown> & { type: string }>;
 

@@ -12,9 +12,9 @@ import {
     type MemberIndexExpressionNode,
     reportFullTextRewrite,
     type VariableDeclaratorNode,
-    walkAstNodes
+    walkAstNodes,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type ProvenAccessorToken = "[#" | "[?" | "[|";
 

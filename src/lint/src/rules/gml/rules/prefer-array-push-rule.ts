@@ -8,9 +8,9 @@ import {
     isMemberIndexExpressionNode,
     isStandaloneStatementParentKey,
     sourceRangeContainsCommentToken,
-    walkAstNodesWithParent
+    walkAstNodesWithParent,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type AssignmentExpressionNode = Readonly<{
     type: "AssignmentExpression";

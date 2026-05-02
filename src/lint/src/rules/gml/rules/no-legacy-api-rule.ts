@@ -2,8 +2,7 @@ import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { gmlRuleDeprecatedIdentifierServices } from "../gml-rule-services.js";
-import { createMeta, isAstNodeWithType, walkAstNodesWithParent } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
+import { createMeta, isAstNodeWithType, walkAstNodesWithParent, type GmlRuleDefinition } from "../rule-base-helpers.js";
 
 const { getDeprecatedIdentifierCatalogEntry } = gmlRuleDeprecatedIdentifierServices;
 

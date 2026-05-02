@@ -1,6 +1,5 @@
 import type { ParserRuleContext, Token, TokenStream } from "antlr4";
 
-import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "../config/parser-constants.js";
 import type { ScopeTrackerOptions } from "./scope-tracker.js";
 
 export type ParserContext =
