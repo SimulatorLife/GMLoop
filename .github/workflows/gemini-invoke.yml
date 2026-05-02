@@ -29,7 +29,7 @@ jobs:
       additional_context: ${{ github.event.comment.body }}
       agent: gemini
       agent_package: ${{ vars.GEMINI_CLI_PACKAGE || '@google/gemini-cli@latest' }}
-      max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
+      max_agent_retries: ${{ fromJSON(vars.GEMINI_AGENT_MAX_RETRIES || '1') }}
       validate_local_endpoint: false
       agent_setup_command: |
         set -euo pipefail
@@ -46,6 +46,7 @@ jobs:
 
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
+        default_ci_model="${GEMINI_CI_MODEL:-gemini-2.5-flash-lite}"
 
         configured_model=""
         if [ -f .gemini/settings.json ] && command -v jq >/dev/null 2>&1; then
@@ -54,11 +55,19 @@ jobs:
           } 2>/dev/null || true)"
         fi
 
+        effective_model="${default_ci_model}"
         if [ -n "${configured_model}" ]; then
-          echo "Using configured Gemini model from .gemini/settings.json: ${configured_model}"
+          if [[ "${configured_model}" =~ (preview|experimental|latest) ]]; then
+            echo "Configured model '${configured_model}' is preview/experimental. Using stable CI model: ${default_ci_model}"
+          else
+            effective_model="${configured_model}"
+          fi
         else
-          echo "No explicit .gemini/settings.json model.name found; Gemini CLI default routing/model selection will be used."
+          echo "No explicit .gemini/settings.json model.name found; using stable CI model: ${default_ci_model}"
         fi
+
+        echo "GEMINI_MODEL=${effective_model}" >> "$GITHUB_ENV"
+        echo "Using Gemini model for CI: ${effective_model}"
       agent_command: |
         set -euo pipefail
 
@@ -74,16 +83,15 @@ jobs:
 
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
+        export GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash-lite}"
 
         GEMINI_TASK_PROMPT="$(cat <<'PROMPT'
         You are Gemini CLI running in GitHub Actions as an autonomous coding agent.
-        Inspect the repository and make the requested code changes.
-        Start with the first validation or inspection command requested by the user, then base file selection only on command output or repository files you actually read.
-        If the task asks for lint fixes, run `pnpm run lint` first, choose one deterministic ESLint issue from the real output, edit the actual source file that produced it, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
-        Do not speculate about likely files, helper names, or rule failures before command output identifies them.
-        Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree unless a real command or file-access blocker prevents edits.
-        Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless the user explicitly asks for those files.
-        For non-documentation code changes, run `pnpm run build:ts` and `pnpm run lint:quiet` after edits unless a real blocker prevents validation.
+        Make one focused, minimal code change set for the user request.
+        Start from real command output and repository files you read; do not speculate.
+        If lint is requested: run `pnpm run lint`, fix exactly one deterministic issue, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
+        Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree.
+        Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless explicitly requested.
         PROMPT
         )"
         export GEMINI_TASK_PROMPT
@@ -92,13 +100,42 @@ jobs:
         GEMINI_AGENT_PROMPT="$(printf 'Repository root: %s\n\n%s\n\nUser task from PR comment:\n%s\n' "${REPOSITORY_ROOT}" "${GEMINI_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
         export GEMINI_AGENT_PROMPT
 
-        set +e
-        stdbuf -oL -eL gemini \
-          --approval-mode yolo \
-          --prompt "${GEMINI_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
-        gemini_status="${PIPESTATUS[0]}"
-        set -e
-
-        if [ "${gemini_status}" -ne 0 ]; then
-          exit "${gemini_status}"
+        max_api_attempts="${GEMINI_API_MAX_ATTEMPTS:-4}"
+        if ! [[ "${max_api_attempts}" =~ ^[0-9]+$ ]] || [ "${max_api_attempts}" -lt 1 ]; then
+          echo "❌ GEMINI_API_MAX_ATTEMPTS must be a positive integer."
+          exit 1
         fi
+
+        attempt=1
+        while [ "${attempt}" -le "${max_api_attempts}" ]; do
+          set +e
+          stdbuf -oL -eL gemini \
+            --approval-mode yolo \
+            --skip-trust \
+            --model "${GEMINI_MODEL}" \
+            --prompt "${GEMINI_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
+          gemini_status="${PIPESTATUS[0]}"
+          set -e
+
+          if [ "${gemini_status}" -eq 0 ]; then
+            break
+          fi
+
+          if ! grep -Eiq '(RESOURCE_EXHAUSTED|429|quota exceeded|rate.?limit)' "$RUNNER_TEMP/gemini.log"; then
+            exit "${gemini_status}"
+          fi
+
+          if [ "${attempt}" -eq "${max_api_attempts}" ]; then
+            exit "${gemini_status}"
+          fi
+
+          retry_delay="$(grep -Eo 'Please retry in [0-9]+(\.[0-9]+)?s' "$RUNNER_TEMP/gemini.log" | tail -n 1 | awk '{print $4}' | sed 's/s$//' || true)"
+          if [ -z "${retry_delay}" ]; then
+            retry_delay="$((2 ** (attempt - 1)))"
+          fi
+          jitter_ms=$((RANDOM % 1000))
+          sleep_seconds="$(awk -v base="${retry_delay}" -v jitter_ms="${jitter_ms}" 'BEGIN { printf "%.3f", base + (jitter_ms / 1000) }')"
+          echo "Gemini API quota/rate-limited (attempt ${attempt}/${max_api_attempts}). Retrying in ${sleep_seconds}s..."
+          sleep "${sleep_seconds}"
+          attempt=$((attempt + 1))
+        done
