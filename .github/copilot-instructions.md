@@ -1,6 +1,6 @@
 # Copilot Instructions
 
-Before implementing a task, check the repository's available skills under `skills/**` and use the skill or skills that best match the work.
+Before implementing a task, check the repository's available skills under `.agents/skills/**` and use the skill or skills that best match the work.
 
 When multiple skills could apply, prefer the most specific relevant one.
 

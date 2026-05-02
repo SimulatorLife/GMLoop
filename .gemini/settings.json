@@ -23,7 +23,8 @@
     },
     "showCitations": true,
     "showMemoryUsage": true,
-    "hideContextSummary": false
+    "hideContextSummary": false,
+    "loadingPhrases": "off"
   },
   "general": {
     "previewFeatures": false,
