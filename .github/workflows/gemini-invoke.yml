@@ -41,12 +41,17 @@ jobs:
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
 
+        if [ -z "${AGENT_PROMPT_FILE:-}" ]; then
+          echo "❌ Missing shared AGENT_PROMPT_FILE from parent workflow."
+          exit 1
+        fi
+
         set +e
         stdbuf -oL -eL gemini \
           --approval-mode=yolo \
           --policy=.gemini/policy \
           --skip-trust \
-          --prompt "${AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
+          --prompt "$(cat "${AGENT_PROMPT_FILE}")" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
         gemini_status="${PIPESTATUS[0]}"
         set -e
 

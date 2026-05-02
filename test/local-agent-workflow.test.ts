@@ -53,9 +53,12 @@ async function readAllWorkflowSources(): Promise<string> {
 }
 
 function getRequiredSharedAgentPrompt(source: string): string {
-    const match = /AGENT_PROMPT="\$\(cat <<PROMPT\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*\)"/u.exec(source);
+    const match =
+        /cat > "\$\{AGENT_PROMPT_FILE\}" <<PROMPT\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*export AGENT_PROMPT_FILE/u.exec(
+            source
+        );
 
-    assert.ok(match?.groups?.prompt, "Parent workflow must define a shared AGENT_PROMPT heredoc.");
+    assert.ok(match?.groups?.prompt, "Parent workflow must define a shared AGENT_PROMPT_FILE heredoc.");
 
     return match.groups.prompt;
 }
@@ -173,11 +176,11 @@ function assertQwenUsesLocalAgentLoop(source: string, sharedPrompt: string): voi
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
     assert.doesNotMatch(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
     assert.doesNotMatch(source, /^\s*QWEN_TASK_PROMPT=/mu);
-    assert.match(source, /Missing shared AGENT_PROMPT from parent workflow/u);
-    assert.match(source, /"\$\{AGENT_PROMPT\}"/u);
+    assert.match(source, /Missing shared AGENT_PROMPT_FILE from parent workflow/u);
+    assert.match(source, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
     assert.doesNotMatch(source, /local-qwen-smoke/u);
     assert.match(source, /stdbuf -oL -eL qwen \\/u);
-    assert.match(source, /--prompt "\$\{AGENT_PROMPT\}"/u);
+    assert.match(source, /--prompt "\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)"/u);
     assert.doesNotMatch(source, /QWEN_AGENT_PROMPT/u);
     assert.match(setupCommand, /pull_qwen_configured_model\(\)/u);
     assert.match(setupCommand, /\.qwen\/settings\.json/u);
@@ -254,8 +257,8 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.doesNotMatch(agentCommand, /HOME\/\.local\/bin/u);
     assert.doesNotMatch(agentCommand, /Could not install Aider CLI/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
-    assert.match(agentCommand, /Missing shared AGENT_PROMPT from parent workflow/u);
-    assert.match(agentCommand, /--message "\$\{AGENT_PROMPT\}"/u);
+    assert.match(agentCommand, /Missing shared AGENT_PROMPT_FILE from parent workflow/u);
+    assert.match(agentCommand, /--message "\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)"/u);
     assert.doesNotMatch(source, /AIDER_TASK_MESSAGE_FILE/u);
     assert.doesNotMatch(source, /--message-file/u);
     assert.ok(
@@ -292,13 +295,13 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(sharedPrompt, /one focused, minimal code change set/u);
     assert.match(sharedPrompt, /Do not finish with only analysis or a plan/u);
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
-    assert.match(source, /Missing shared AGENT_PROMPT from parent workflow/u);
-    assert.match(source, /"\$\{AGENT_PROMPT\}"/u);
+    assert.match(source, /Missing shared AGENT_PROMPT_FILE from parent workflow/u);
+    assert.match(source, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
     assert.doesNotMatch(source, /agent_setup_command:/u);
     assert.match(geminiCommand, /--approval-mode yolo/u);
     assert.match(geminiCommand, /--skip-trust/u);
     assert.doesNotMatch(geminiCommand, /--model/u);
-    assert.match(geminiCommand, /--prompt "\$\{AGENT_PROMPT\}"/u);
+    assert.match(geminiCommand, /--prompt "\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)"/u);
     assert.doesNotMatch(agentCommand, /max_api_attempts="\$\{GEMINI_API_MAX_ATTEMPTS:-4\}"/u);
     assert.doesNotMatch(agentCommand, /RESOURCE_EXHAUSTED\|429\|quota exceeded\|rate\.\?limit/u);
     assert.doesNotMatch(agentCommand, /Please retry in/u);
@@ -420,15 +423,9 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
     assert.match(source, /MAX_AGENT_RETRIES: \$\{\{ inputs\.max_agent_retries \}\}/u);
     assert.match(source, /total_attempts=\$\(\(MAX_AGENT_RETRIES \+ 1\)\)/u);
     assert.match(source, /for \(\(attempt = 1; attempt <= total_attempts; attempt\+\+\)\); do/u);
-    assert.match(
-        source,
-        /The previous attempt was invalid because it completed without producing any pushable repository changes/u
-    );
-    assert.match(source, /Work in the checked-out repository, not uploaded chat snippets/u);
-    assert.match(source, /run `pnpm run lint` before code selection/u);
-    assert.match(source, /quote the exact lint summary line/u);
-    assert.match(source, /If no concrete diff is produced, this retry will fail/u);
-    assert.match(source, /ADDITIONAL_CONTEXT="\$\(build_attempt_context "\$\{attempt\}"\)"/u);
+    assert.match(source, /write_agent_prompt_file "\$\{ADDITIONAL_CONTEXT:-\}"/u);
+    assert.doesNotMatch(source, /retry_prompt_file/u);
+    assert.doesNotMatch(source, /build_attempt_context/u);
     assert.match(source, /push_current_branch_if_needed/u);
     assert.match(source, /NO_CHANGE_SENTINEL="\$\{RUNNER_TEMP:-\/tmp\}\/\.agent_no_change_retries_exhausted"/u);
     assert.match(source, /date \+"%F %T" > "\$NO_CHANGE_SENTINEL"/u);
@@ -440,6 +437,7 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
         /did not produce pushable repository changes on attempt \$\{failed_attempt\}\/\$\{total_attempts\}/u
     );
     assert.match(source, /starting retry attempt \$\{next_attempt\}\/\$\{total_attempts\}/u);
+    assert.doesNotMatch(source, /stricter command-grounded instructions/u);
     assert.match(source, /gh issue comment "\$\{PR_NUMBER\}" --body "\$\{retry_message\}" --repo "\$\{REPOSITORY\}"/u);
     assert.match(source, /post_retry_comment_once "\$\{attempt\}" "\$\(\(attempt \+ 1\)\)"/u);
     assert.match(

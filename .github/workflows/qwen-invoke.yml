@@ -51,11 +51,11 @@ jobs:
       agent_command: |
         set -euo pipefail
 
-        if [ -z "${AGENT_PROMPT:-}" ]; then
-          echo "❌ Missing shared AGENT_PROMPT from parent workflow."
+        if [ -z "${AGENT_PROMPT_FILE:-}" ]; then
+          echo "❌ Missing shared AGENT_PROMPT_FILE from parent workflow."
           exit 1
         fi
 
         stdbuf -oL -eL qwen \
           --yolo \
-          --prompt "${AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"
+          --prompt "$(cat "${AGENT_PROMPT_FILE}")" 2>&1 | tee "$RUNNER_TEMP/qwen.log"
