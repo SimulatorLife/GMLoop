@@ -1,0 +1,21 @@
+# Deny Gemini web fetch/search tools.
+
+[[rule]]
+toolName = "WebFetchTool"
+decision = "deny"
+priority = 999
+denyMessage = "WebFetchTool is disabled by user policy."
+
+[[rule]]
+toolName = "WebSearchTool"
+decision = "deny"
+priority = 999
+denyMessage = "WebSearchTool is disabled by user policy."
+
+# Auto-allow everything else.
+# Lower priority than the explicit deny rules above.
+
+[[rule]]
+toolName = "*"
+decision = "allow"
+priority = 900

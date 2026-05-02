@@ -47,11 +47,7 @@
   "tools": {
     "autoAccept": true,
     "truncateToolOutputThreshold": 16000,
-    "disableLLMCorrection": true,
-    "exclude": [
-      "WebFetchTool",
-      "WebSearchTool"
-    ]
+    "disableLLMCorrection": true
   },
   "useWriteTodos": false,
   "experimental": {

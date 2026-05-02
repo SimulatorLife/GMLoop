@@ -103,7 +103,8 @@ jobs:
         while [ "${attempt}" -le "${max_api_attempts}" ]; do
           set +e
           stdbuf -oL -eL gemini \
-            --approval-mode yolo \
+            --approval-mode=yolo \
+            --policy=.gemini/policies \
             --skip-trust \
             --model "${GEMINI_MODEL}" \
             --prompt "${GEMINI_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"

@@ -38,12 +38,19 @@ src/**/*.js
 !/eslint.config.js
 
 # AI / agents
-.gemini/*
+.gemini/**
+!.gemini/
+!.gemini/**/
 !.gemini/settings.json
+!.gemini/policies/tools.toml
 .qwen/*
 !.qwen/settings.json
 .codex/*
 !.codex/config.toml
+.agents/**
+!.agents/
+!.agents/**/
+!.agents/skills/**/SKILL.md
 
 # GitHub App credentials
 gha-creds-*.json
