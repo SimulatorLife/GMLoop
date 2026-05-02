@@ -91,7 +91,13 @@ jobs:
 
         REPOSITORY_ROOT="$(pwd)"
         GEMINI_AGENT_PROMPT="$(printf 'Repository root: %s\n\n%s\n\nUser task from PR comment:\n%s\n' "${REPOSITORY_ROOT}" "${AGENT_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
-        export GEMINI_AGENT_PROMPT
+        export 
+        
+        echo "=== Gemini policies ==="
+        find ~/.gemini/policies -maxdepth 1 -type f -name '*.toml' -print -exec sed -n '1,220p' {} \; 2>/dev/null || true
+
+        echo "=== Linux admin policies ==="
+        find /etc/gemini-cli/policies -maxdepth 1 -type f -name '*.toml' -print -exec sed -n '1,220p' {} \; 2>/dev/null || true
 
         max_api_attempts="${GEMINI_API_MAX_ATTEMPTS:-4}"
         if ! [[ "${max_api_attempts}" =~ ^[0-9]+$ ]] || [ "${max_api_attempts}" -lt 1 ]; then
