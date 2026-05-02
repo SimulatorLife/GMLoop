@@ -30,16 +30,25 @@ jobs:
       agent: gemini
       agent_package: '@google/gemini-cli@latest'
       validate_local_endpoint: false
+      agent_setup_command: |
+        set -euo pipefail
+
+        if command -v rg >/dev/null 2>&1; then
+          exit 0
+        fi
+
+        sudo apt-get update
+        sudo apt-get install -y ripgrep
+
+        if ! command -v rg >/dev/null 2>&1; then
+          echo "❌ ripgrep install succeeded but rg is still unavailable."
+          exit 1
+        fi
       agent_command: |
         set -euo pipefail
 
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
-
-        if [ -z "${AGENT_PROMPT_FILE:-}" ]; then
-          echo "❌ Missing shared AGENT_PROMPT_FILE from parent workflow."
-          exit 1
-        fi
 
         set +e
         cat "${AGENT_PROMPT_FILE}" | stdbuf -oL -eL gemini \

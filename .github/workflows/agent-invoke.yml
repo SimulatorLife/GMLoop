@@ -54,6 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OPENAI_API_TYPE: openai
+      NODE_OPTIONS: --max-old-space-size=4096
     permissions:
       contents: write
       issues: write
@@ -547,6 +548,11 @@ jobs:
           }
 
           write_agent_prompt_file "${ADDITIONAL_CONTEXT:-}"
+
+          if [ ! -f "${AGENT_PROMPT_FILE}" ]; then
+            echo "❌ Parent workflow failed to materialize AGENT_PROMPT_FILE."
+            exit 1
+          fi
 
           run_agent_attempt() {
             local attempt="$1"

@@ -70,11 +70,6 @@ jobs:
         export NO_PROXY="${NO_PROXY:+${NO_PROXY},}127.0.0.1,localhost"
         export no_proxy="${no_proxy:+${no_proxy},}127.0.0.1,localhost"
 
-        if [ -z "${AGENT_PROMPT_FILE:-}" ]; then
-          echo "❌ Missing shared AGENT_PROMPT_FILE from parent workflow."
-          exit 1
-        fi
-
         set +e
         stdbuf -oL -eL aider \
           --yes-always \
@@ -82,7 +77,7 @@ jobs:
           --subtree-only \
           --no-auto-commits \
           --no-dirty-commits \
-          --message "$(cat "${AGENT_PROMPT_FILE}")" 2>&1 | tee "$RUNNER_TEMP/aider.log"
+          --message-file "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/aider.log"
         aider_status="${PIPESTATUS[0]}"
         set -e
 
