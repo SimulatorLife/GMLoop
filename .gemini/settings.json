@@ -4,6 +4,9 @@
     "maxSessionTurns": 24,
     "compressionThreshold": 0.6
   },
+  "policyPaths": [
+    ".gemini/policy/tools.toml"
+  ],
   "context": {
     "fileName": "AGENTS.md",
     "fileFiltering": {
@@ -51,7 +54,7 @@
   },
   "useWriteTodos": false,
   "experimental": {
-    "useModelRouter": false
+    "useModelRouter": true
   },
   "agents": {
     "overrides": {

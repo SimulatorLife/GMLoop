@@ -112,7 +112,7 @@ jobs:
             --approval-mode=yolo \
             --policy=.gemini/policy \
             --skip-trust \
-            --model "${GEMINI_MODEL}" \
+            --model "auto" \
             --prompt "${GEMINI_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
           gemini_status="${PIPESTATUS[0]}"
           set -e
