@@ -5,7 +5,6 @@ import * as LintWorkspace from "@gmloop/lint";
 
 import { assertEquals } from "../assertions.js";
 import { lintWithRule } from "./lint-rule-test-harness.js";
-import { createLocResolver, type ReplaceTextRangeFixOperation } from "./rule-test-harness.js";
 
 const { Lint } = LintWorkspace;
 
@@ -1508,76 +1507,19 @@ void test("normalize-operator-aliases does not rewrite escaped quote string cont
     assertEquals(result.output, input);
 });
 
-void test("normalize-operator-aliases rewrites logical aliases without mutating identifiers that contain operator substrings", () => {
+void test("normalize-operator-aliases keeps logical aliases unchanged to preserve formatter ownership", () => {
     const input = "var show_mode0_origin = flat_dbg_draw_mode0_origin or flat_dbg_compare_mode0_overlay;\n";
-    const expected = "var show_mode0_origin = flat_dbg_draw_mode0_origin || flat_dbg_compare_mode0_overlay;\n";
     const result = lintWithRule("normalize-operator-aliases", input, {});
-    assertEquals(result.output, expected);
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
 });
 
-void test("normalize-operator-aliases keeps member identifiers intact while rewriting logical aliases", () => {
+void test("normalize-operator-aliases keeps member identifiers intact while leaving logical aliases unchanged", () => {
     const input =
         "player_intent.move_active = abs(player_intent.world.Magnitude2D()) > eps or abs(spd_hor.Magnitude2D()) > 2;\n";
-    const expected =
-        "player_intent.move_active = abs(player_intent.world.Magnitude2D()) > eps || abs(spd_hor.Magnitude2D()) > 2;\n";
     const result = lintWithRule("normalize-operator-aliases", input, {});
-    assertEquals(result.output, expected);
-});
-
-void test("normalize-operator-aliases reports from explicit locations when node loc metadata is absent", () => {
-    const source = "if (left and right) {\n    value = 1;\n}\n";
-    const operatorStart = source.indexOf("and");
-    const operatorEnd = operatorStart + "and".length;
-    const expressionStart = source.indexOf("left");
-    const expressionEnd = source.indexOf("right") + "right".length;
-    const getLocFromIndex = createLocResolver(source);
-    const reports: Array<{ loc?: { line: number; column: number } }> = [];
-    const rule = Lint.plugin.rules["normalize-operator-aliases"];
-    const context = {
-        sourceCode: {
-            text: source,
-            getLocFromIndex
-        },
-        report(payload: {
-            loc?: { line: number; column: number };
-            fix?: (fixer: {
-                replaceTextRange(range: [number, number], text: string): ReplaceTextRangeFixOperation;
-            }) => ReplaceTextRangeFixOperation | null;
-        }) {
-            reports.push({ loc: payload.loc });
-            if (payload.fix) {
-                payload.fix({
-                    replaceTextRange(range: [number, number], text: string): ReplaceTextRangeFixOperation {
-                        return { kind: "replace", range, text };
-                    }
-                });
-            }
-        }
-    } as never;
-    const listeners = rule.create(context) as Record<string, (node: unknown) => void>;
-    listeners.BinaryExpression?.({
-        type: "BinaryExpression",
-        operator: "and",
-        start: { index: expressionStart },
-        end: { index: expressionEnd },
-        left: {
-            type: "Identifier",
-            name: "left",
-            start: { index: expressionStart },
-            end: { index: expressionStart + "left".length }
-        },
-        right: {
-            type: "Identifier",
-            name: "right",
-            start: { index: source.indexOf("right") },
-            end: { index: source.indexOf("right") + "right".length }
-        }
-    });
-
-    assertEquals(reports.length, 1);
-    assert.deepEqual(reports[0]?.loc, getLocFromIndex(operatorStart));
-    assert.notDeepEqual(reports[0]?.loc, getLocFromIndex(expressionStart));
-    assertEquals(operatorEnd > operatorStart, true);
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
 });
 
 void test("require-control-flow-braces skips macro continuation blocks", () => {
