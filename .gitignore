@@ -42,7 +42,7 @@ src/**/*.js
 !.gemini/
 !.gemini/**/
 !.gemini/settings.json
-!.gemini/policies/tools.toml
+!.gemini/policy/tools.toml
 .qwen/*
 !.qwen/settings.json
 .codex/*
