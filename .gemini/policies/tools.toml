@@ -12,6 +12,13 @@ decision = "deny"
 priority = 999
 denyMessage = "WebSearchTool is disabled by user policy."
 
+# Explicit shell allow.
+
+[[rule]]
+toolName = "run_shell_command"
+decision = "allow"
+priority = 998
+
 # Auto-allow everything else.
 # Lower priority than the explicit deny rules above.
 
