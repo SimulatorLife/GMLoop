@@ -371,10 +371,6 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
                 requiresReorder = true;
             }
         });
-
-        if (requiresReorder) {
-            break;
-        }
     }
 
     if (!requiresReorder) {
