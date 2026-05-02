@@ -101,15 +101,28 @@ jobs:
           set -euo pipefail
 
           # If a raw comment body was provided, validate it mentions the agent and extract
-          # the additional context. We expect callers to pass the raw comment body; the
-          # mention token is simply @<agent> (e.g. @gemini, @qwen).
+          # the additional context. We allow leading HTML comment markers or blank lines
+          # before the first meaningful line, but that first meaningful line must begin
+          # with the target agent mention token (e.g. @gemini, @qwen).
           if [ -n "${RAW_COMMENT}" ]; then
             mention="@${AGENT_NAME}"
-            if ! printf '%s' "${RAW_COMMENT}" | grep -qF "${mention}"; then
-              echo "Comment does not mention ${mention}; aborting." >&2
+            normalized_comment="$(
+              printf '%s\n' "${RAW_COMMENT}" | awk '
+                BEGIN { skipping = 1 }
+                {
+                  line = $0
+                  if (skipping && line ~ /^[[:space:]]*$/) next
+                  if (skipping && line ~ /^[[:space:]]*<!--.*-->[[:space:]]*$/) next
+                  skipping = 0
+                  print
+                }
+              '
+            )"
+            if ! printf '%s' "${normalized_comment}" | grep -qE "^${mention}([[:space:]]|$)"; then
+              echo "Comment does not start with ${mention} after optional marker lines; aborting." >&2
               exit 1
             fi
-            ADDITIONAL_CTX=$(printf '%s' "${RAW_COMMENT}" | sed -E "s/^.*${mention}[[:space:]]*//")
+            ADDITIONAL_CTX="$(printf '%s' "${normalized_comment}" | sed -E "1s/^${mention}[[:space:]]*//")"
             echo "additional_context<<EOF" >> "$GITHUB_OUTPUT"
             printf '%s' "$ADDITIONAL_CTX" >> "$GITHUB_OUTPUT"
             echo >> "$GITHUB_OUTPUT"

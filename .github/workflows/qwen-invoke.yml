@@ -19,7 +19,7 @@ defaults:
 
 jobs:
   invoke:
-    if: ${{ github.event.issue.pull_request && (github.event.comment.body == '@qwen' || startsWith(github.event.comment.body || '', '@qwen ')) }}
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body || '', '@qwen') }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}

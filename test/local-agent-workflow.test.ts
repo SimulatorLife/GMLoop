@@ -160,8 +160,7 @@ function assertQwenUsesLocalAgentLoop(source: string, sharedPrompt: string): voi
     const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
 
-    assert.match(source, /github\.event\.comment\.body == '@qwen'/u);
-    assert.match(source, /startsWith\(github\.event\.comment\.body \|\| '', '@qwen '\)/u);
+    assert.match(source, /contains\(github\.event\.comment\.body \|\| '', '@qwen'\)/u);
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: qwen/u);
     assert.doesNotMatch(source, /agent_cli:/u);
@@ -234,8 +233,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     const aiderCommand = getRequiredAiderCommand(source);
 
     assert.match(source, /name: '▶️ Aider Invoke'/u);
-    assert.match(source, /github\.event\.comment\.body == '@aider'/u);
-    assert.match(source, /startsWith\(github\.event\.comment\.body \|\| '', '@aider '\)/u);
+    assert.match(source, /contains\(github\.event\.comment\.body \|\| '', '@aider'\)/u);
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: aider/u);
     assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
@@ -271,8 +269,7 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     const geminiCommand = getRequiredGeminiCommand(source);
 
     assert.match(source, /name: '▶️ Gemini Invoke'/u);
-    assert.match(source, /github\.event\.comment\.body == '@gemini'/u);
-    assert.match(source, /startsWith\(github\.event\.comment\.body \|\| '', '@gemini '\)/u);
+    assert.match(source, /contains\(github\.event\.comment\.body \|\| '', '@gemini'\)/u);
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: gemini/u);
     assert.match(source, /validate_local_endpoint: false/u);
@@ -374,6 +371,16 @@ void test("agent invoke streams custom command output while preserving exit stat
     assert.match(source, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
     assert.match(source, /return "\$\{agent_status\}"/u);
     assert.match(source, /cp "\$\{attempt_log\}" "\$RUNNER_TEMP\/agent-live\.log"/u);
+});
+
+void test("agent invoke accepts marker-prefixed agent comments but still requires the first meaningful line to target the agent", async () => {
+    const source = await readWorkflowSource("agent-invoke.yml");
+
+    assert.match(source, /leading HTML comment markers or blank lines/u);
+    assert.match(source, /line ~ \/\^\[\[:space:\]\]\*<!--\.\*-->\[\[:space:\]\]\*\$\/\) next/u);
+    assert.match(source, /grep -qE "\^\$\{mention\}\(\[\[:space:\]\]\|\$\)"/u);
+    assert.match(source, /Comment does not start with \$\{mention\} after optional marker lines; aborting\./u);
+    assert.match(source, /sed -E "1s\/\^\$\{mention\}\[\[:space:\]\]\*\/\/"/u);
 });
 
 void test("agent invoke workflow fails when a successful agent run produces no push", async () => {

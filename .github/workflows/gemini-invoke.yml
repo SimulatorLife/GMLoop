@@ -19,7 +19,7 @@ defaults:
 
 jobs:
   invoke:
-    if: ${{ github.event.issue.pull_request && (github.event.comment.body == '@gemini' || startsWith(github.event.comment.body || '', '@gemini ')) }}
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body || '', '@gemini') }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
       api_key: ${{ secrets.GEMINI_API_KEY }}

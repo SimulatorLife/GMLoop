@@ -160,7 +160,8 @@ void test("merge conflict workflow supports reusable invocations with explicit P
     assert.match(conflictWorkflow, /const manualRun = context\.eventName === "workflow_dispatch" && manualInput\.length > 0;/u);
     assert.match(conflictWorkflow, /AGENT: \$\{\{ inputs\.agent \|\| github\.event\.inputs\.agent \|\| '' \}\}/u);
     assert.match(conflictWorkflow, /with:\n\s+github-token: \$\{\{ secrets\.GH_USER_TOKEN \}\}\n\s+script: \|/u);
-    assert.doesNotMatch(conflictWorkflow, /env:\n\s+TARGET_PR_NUMBER_INPUT:[\s\S]*?\n\s+script: \|/u);
+    assert.match(conflictWorkflow, /const lines = \[\n\s+marker,/u);
+    assert.match(conflictWorkflow, /const lines = \[[\s\S]*?\n\s+`\$\{mention\} This PR currently has merge conflicts/u);
 });
 
 void test("workflow selectors use deterministic run-number weighted selection", async () => {
