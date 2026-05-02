@@ -12,6 +12,7 @@ export const RuntimeWrapper = Object.freeze({
 export type {
     ApplyPatchResult,
     BatchApplyResult,
+    ConsoleOutput,
     ErrorAnalytics,
     GeneralLogger,
     Logger,

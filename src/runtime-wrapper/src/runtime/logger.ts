@@ -33,6 +33,21 @@ export function parseLogLevel(level: string): LogLevel {
 }
 
 /**
+ * Minimal console-like output interface required by the logger.
+ *
+ * Using a narrow interface here (rather than the full `Console` type) keeps
+ * the logger decoupled from the global console API surface and makes it easy
+ * to inject lightweight objects — especially in tests — without implementing
+ * the full `Console` contract.
+ */
+export interface ConsoleOutput {
+    log(...data: Array<unknown>): void;
+    error(...data: Array<unknown>): void;
+    warn(...data: Array<unknown>): void;
+    debug(...data: Array<unknown>): void;
+}
+
+/**
  * Options for configuring the diagnostic logger.
  */
 export interface LoggerOptions {
@@ -66,7 +81,7 @@ export interface LoggerOptions {
      * Useful for testing or custom log routing.
      * @default globalThis.console
      */
-    console?: Console;
+    console?: ConsoleOutput;
 }
 
 /**
