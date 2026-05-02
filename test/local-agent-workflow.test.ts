@@ -330,8 +330,13 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(source, /jq -Rr '/u);
     assert.match(source, /fromjson\? \/\/ \{"type":"raw","text": \.\}/u);
     assert.match(source, /\[message\/\\\(\$role\\\)\]/u);
+    assert.match(source, /\(\$event\.name \/\/ \$event\.tool_name \/\/ \$event\.toolUse\.name \/\/ "unknown"\) as \$name/u);
     assert.match(source, /\[tool_use\]/u);
     assert.match(source, /\[tool_result\/\\\(\$name\\\)\]/u);
+    assert.match(
+        source,
+        /\(\$event\.message \/\/ \$event\.error\.message \/\/ \$event\.text \/\/ \(\$event \| tostring\)\) as \$message/u
+    );
     assert.match(source, /\[result\]/u);
     assert.doesNotMatch(geminiCommand, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
     assert.doesNotMatch(agentCommand, /max_api_attempts="\$\{GEMINI_API_MAX_ATTEMPTS:-4\}"/u);

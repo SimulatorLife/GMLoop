@@ -84,14 +84,16 @@ jobs:
                   | ($content | flatten_text) as $text
                   | if ($text | length) > 0 then "[message/\($role)] \($text)" else empty end
                 elif $event.type == "tool_use" then
-                  "[tool_use] \($event.name // $event.tool_name // $event.toolUse.name // "unknown")"
+                  ($event.name // $event.tool_name // $event.toolUse.name // "unknown") as $name
+                  | "[tool_use] \($name)"
                 elif $event.type == "tool_result" then
                   ($event.name // $event.tool_name // $event.toolResult.name // "unknown") as $name
                   | ($event.output // $event.result // $event.toolResult.result // $event.text // "") as $output
                   | ($output | flatten_text) as $text
                   | if ($text | length) > 0 then "[tool_result/\($name)] \($text)" else "[tool_result/\($name)]" end
                 elif $event.type == "error" then
-                  "[error] \($event.message // $event.error.message // $event.text // ($event | tostring))"
+                  ($event.message // $event.error.message // $event.text // ($event | tostring)) as $message
+                  | "[error] \($message)"
                 elif $event.type == "result" then
                   ($event.response // $event.result.response // $event.text // "") as $response
                   | ($response | flatten_text) as $text
