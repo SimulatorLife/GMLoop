@@ -401,6 +401,16 @@ jobs:
           echo "[agent] Workflow git root: $(git rev-parse --show-toplevel)"
           echo "[agent] Workflow branch: $(git branch --show-current)"
 
+          AGENT_TASK_PROMPT="$(cat <<'PROMPT'
+          Make one focused, minimal code change set for the user request.
+          Start from real command output and repository files you read; do not speculate.
+          If lint is requested: run `pnpm run lint`, fix exactly one deterministic issue, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
+          Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree.
+          When executing user-requested tasks, do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless explicitly requested.
+          PROMPT
+          )"
+          export AGENT_TASK_PROMPT
+
           script="$RUNNER_TEMP/agent_cmd.sh"
           # Write the command exactly as-is (no interpolation)
           cat >"$script" <<'SCRIPT'

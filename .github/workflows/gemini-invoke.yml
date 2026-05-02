@@ -85,19 +85,13 @@ jobs:
         export GEMINI_API_KEY="${API_KEY}"
         export GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash-lite}"
 
-        GEMINI_TASK_PROMPT="$(cat <<'PROMPT'
-        You are Gemini CLI running in GitHub Actions as an autonomous coding agent.
-        Make one focused, minimal code change set for the user request.
-        Start from real command output and repository files you read; do not speculate.
-        If lint is requested: run `pnpm run lint`, fix exactly one deterministic issue, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
-        Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree.
-        When executing user-requested tasks, do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless explicitly requested.
-        PROMPT
-        )"
-        export GEMINI_TASK_PROMPT
+        if [ -z "${AGENT_TASK_PROMPT:-}" ]; then
+          echo "❌ Missing shared AGENT_TASK_PROMPT from parent workflow."
+          exit 1
+        fi
 
         REPOSITORY_ROOT="$(pwd)"
-        GEMINI_AGENT_PROMPT="$(printf 'Repository root: %s\n\n%s\n\nUser task from PR comment:\n%s\n' "${REPOSITORY_ROOT}" "${GEMINI_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
+        GEMINI_AGENT_PROMPT="$(printf 'Repository root: %s\n\n%s\n\nUser task from PR comment:\n%s\n' "${REPOSITORY_ROOT}" "${AGENT_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
         export GEMINI_AGENT_PROMPT
 
         max_api_attempts="${GEMINI_API_MAX_ATTEMPTS:-4}"

@@ -85,16 +85,15 @@ jobs:
           exit 1
         fi
 
+        if [ -z "${AGENT_TASK_PROMPT:-}" ]; then
+          echo "❌ Missing shared AGENT_TASK_PROMPT from parent workflow."
+          exit 1
+        fi
+
         AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
         cat > "${AIDER_TASK_MESSAGE_FILE}" <<PROMPT
         You are aider, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint.
-        Inspect the repository and make the requested code changes.
-        Start with the first validation or inspection command requested by the user, then base file selection only on command output or repository files you actually read.
-        If the task asks for lint fixes, run \`pnpm run lint\` first, choose one deterministic ESLint issue from the real output, edit the actual source file that produced it, then re-run \`pnpm run lint\`, \`pnpm run build:ts\`, and \`pnpm run lint:quiet\`.
-        Do not speculate about likely files, helper names, or rule failures before command output identifies them.
-        Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree unless a real command or file-access blocker prevents edits.
-        Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless the user explicitly asks for those files.
-        For non-documentation code changes, run \`pnpm run build:ts\` and \`pnpm run lint:quiet\` after edits unless a real blocker prevents validation.
+        ${AGENT_TASK_PROMPT}
 
         User task from PR comment:
         ${ADDITIONAL_CONTEXT}

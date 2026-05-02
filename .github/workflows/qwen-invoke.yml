@@ -69,19 +69,13 @@ jobs:
         )"
         export QWEN_CI_SYSTEM_PROMPT
 
-        QWEN_TASK_PROMPT="$(cat <<'PROMPT'
-        If the task asks for lint fixes, run `pnpm run lint` first, choose one deterministic ESLint issue from the real output, edit the actual source file that produced it, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
-        Do not speculate about likely files, helper names, or rule failures before command output identifies them.
-        Do not finish with only analysis or a plan; leave a concrete repository diff in the worktree.
-        When using file tools, use absolute paths under the repository root if a relative path is not enough.
-        Do not output a JSON plan, a fake function call, or `startNewTask`
-        Do not ask the user for a file path: *find* the relevant file path to use/edit.
-        PROMPT
-        )"
-        export QWEN_TASK_PROMPT
+        if [ -z "${AGENT_TASK_PROMPT:-}" ]; then
+          echo "❌ Missing shared AGENT_TASK_PROMPT from parent workflow."
+          exit 1
+        fi
 
         REPOSITORY_ROOT="$(pwd)"
-        QWEN_AGENT_PROMPT="$(printf 'Repository root: %s\n\n%s\n\nUser task from PR comment:\n%s\n' "${REPOSITORY_ROOT}" "${QWEN_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
+        QWEN_AGENT_PROMPT="$(printf 'Repository root: %s\n\n%s\n\nUser task from PR comment:\n%s\n' "${REPOSITORY_ROOT}" "${AGENT_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
         export QWEN_AGENT_PROMPT
 
         stdbuf -oL -eL qwen \
