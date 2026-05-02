@@ -354,6 +354,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           API_KEY: ${{ secrets.api_key || '' }}
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
         run: |
           set -euo pipefail
           cd "${GITHUB_WORKSPACE}"
@@ -393,6 +394,7 @@ jobs:
           AGENT_NAME: ${{ inputs.agent }}
           MAX_AGENT_RETRIES: ${{ inputs.max_agent_retries }}
           WORKING_BRANCH: ${{ env.WORKING_BRANCH }}
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
         run: |
           set -euo pipefail
           cd "${GITHUB_WORKSPACE}"

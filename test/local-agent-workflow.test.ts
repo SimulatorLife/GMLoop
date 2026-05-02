@@ -294,7 +294,6 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(setupCommand, /default_ci_model="\$\{GEMINI_CI_MODEL:-gemini-2\.5-flash-lite\}"/u);
     assert.match(setupCommand, /preview\/experimental/u);
     assert.match(setupCommand, /echo "GEMINI_MODEL=\$\{effective_model\}" >> "\$GITHUB_ENV"/u);
-    assert.match(setupCommand, /export GEMINI_CLI_TRUST_WORKSPACE=true/u);
     assert.match(setupCommand, /export GEMINI_API_KEY="\$\{API_KEY\}"/u);
     assert.match(geminiCommand, /--approval-mode yolo/u);
     assert.match(geminiCommand, /--skip-trust/u);
@@ -369,6 +368,7 @@ void test("agent invoke streams custom command output while preserving exit stat
     assert.match(source, /cat >"\$setup_script" <<'SCRIPT'/u);
     assert.match(source, /\$\{\{ inputs\.agent_setup_command \}\}/u);
     assert.match(source, /stdbuf -oL -eL bash "\$setup_script" 2>&1 \| tee "\$RUNNER_TEMP\/agent-setup\.log"/u);
+    assert.match(source, /GEMINI_CLI_TRUST_WORKSPACE: 'true'/u);
     assert.match(source, /- name: Run agent custom command with retries/u);
     assert.match(source, /stdbuf -oL -eL bash "\$script" 2>&1 \| tee "\$\{attempt_log\}"/u);
     assert.match(source, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
