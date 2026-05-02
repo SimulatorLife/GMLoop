@@ -57,11 +57,15 @@ function isListenPermissionError(error: unknown): boolean {
 }
 
 void test("graph visualization server serves UI-rendered HTML and exposes regeneration JSON", async (testContext) => {
+    let openedPath: string | null = null;
     let handle;
     try {
         handle = await startGraphVisualizationServer({
             regenerate: async () => ({ changed: true }),
-            openProjectTargets: async () => ({ changed: true }),
+            openProjectTargets: async (input) => {
+                openedPath = input.path;
+                return { changed: true };
+            },
             renderBundle: (isServerMode) =>
                 UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
                     isServerMode,
@@ -99,10 +103,18 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         const reindexPayload = (await reindexResponse.json()) as { changed: boolean; ok: boolean };
         assert.deepEqual(reindexPayload, { changed: true, ok: true });
 
-        const openResponse = await fetch(`${handle.url}/api/open`, { method: "POST" });
+        const openPath = "/tmp/project/Project.yyp";
+        const openResponse = await fetch(`${handle.url}/api/open`, {
+            body: JSON.stringify({ path: openPath }),
+            headers: {
+                "Content-Type": "application/json"
+            },
+            method: "POST"
+        });
         assert.equal(openResponse.status, 200);
         const openPayload = (await openResponse.json()) as { changed: boolean; ok: boolean };
         assert.deepEqual(openPayload, { changed: true, ok: true });
+        assert.equal(openedPath, openPath);
     } finally {
         await handle.stop();
     }

@@ -2,6 +2,9 @@ import { access, constants, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
+import { Format } from "@gmloop/format";
+import { Lint } from "@gmloop/lint";
+import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { UI } from "@gmloop/ui";
 import { Command, Option } from "commander";
@@ -218,7 +221,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     const initialSelectedPath = resolveExplicitWorkflowTargetPath(options.path);
     let activeContext: GraphResolutionContext | null = null;
     let activeSelectedPaths = initialSelectedPath ? [initialSelectedPath] : [];
-    const activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
+    let activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
 
     if (options.serve === true) {
         if (initialSelectedPath) {
@@ -306,6 +309,20 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     return Object.freeze({ changed: false });
                 }
                 await ensureGraphIndex({ ...options, force: true }, activeContext);
+                const nextPayloadString = JSON.stringify(exportVisualizationPayload());
+                return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
+            },
+            openProjectTargets: async ({ path: selectedPath }) => {
+                const previousPayloadString = safeStringifyVisualizationPayload();
+                const nextOptions = {
+                    ...options,
+                    path: selectedPath ?? options.path
+                };
+                const nextContext = await resolveGraphContext(nextOptions);
+                await ensureGraphIndexForQuery(nextOptions, nextContext);
+                activeContext = nextContext;
+                activeSelectedPaths = [selectedPath ?? nextContext.projectRoot];
+                activeSource = "finder-open";
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
@@ -488,13 +505,41 @@ export function createGraphCommand(): Command {
 }
 function createDocumentationCatalogs() {
     const cliCommands = getCliCommandCatalog();
+    const lintCatalogEntryById = new Map(
+        Lint.listLintRuleCatalogEntries().map((entry) => [entry.ruleId, entry] as const)
+    );
+    const semanticIndexCodemodIdSet = new Set(Refactor.listSemanticProjectIndexDependentCodemodIds());
+
     return Object.freeze({
         cliCommands,
         mcpServer: Object.freeze({
             name: "gmloop-mcp",
             version: "0.0.1"
         }),
-        mcpTools: getMcpToolCatalogEntries()
+        mcpTools: getMcpToolCatalogEntries(),
+        workspaceRules: Object.freeze({
+            formatOptions: Format.listProjectFormatOptionCatalogEntries().map((entry) =>
+                Object.freeze({
+                    defaultValue: entry.defaultValue,
+                    description: entry.description,
+                    name: entry.name
+                })
+            ),
+            lintRules: Lint.listLintRuleCatalogEntries().map((entry) =>
+                Object.freeze({
+                    description: lintCatalogEntryById.get(entry.ruleId)?.description ?? entry.description,
+                    fixable: entry.fixable,
+                    ruleId: entry.ruleId
+                })
+            ),
+            refactorCodemods: Refactor.listRegisteredCodemods().map((entry) =>
+                Object.freeze({
+                    description: entry.description,
+                    id: entry.id,
+                    requiresSemanticProjectIndex: semanticIndexCodemodIdSet.has(entry.id)
+                })
+            )
+        })
     });
 }
 

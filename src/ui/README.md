@@ -79,6 +79,8 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - bundle assets include local runtime scripts and vendor files (no CDN dependencies)
 - `renderGraphVisualizationHtml(data, options)` remains as a thin convenience wrapper that reads the bundle entry HTML
 - CLI host code is responsible for obtaining payloads and writing/serving the emitted bundle artifact
+- graph/docs/config tabs are rendered from live workspace-fed catalogs, including a Docs `Rules` subview for format options, lint rules, and refactor codemods
+- loaded project state is shown in one canonical header location and reflects the active graph/config context
 
 ## Design Rules
 
@@ -147,7 +149,7 @@ That separation is intentional and should be preserved as more UI surfaces are a
 Current graph serve-mode host actions are:
 
 - `POST /api/reindex`: force-regenerate the current graph index
-- `POST /api/open`: open the native project picker and switch the active UI project globally
+- `POST /api/open`: switch the active UI project globally, optionally using a caller-supplied `path`
 
 The host serves the bundle entry document and static asset files, while `@gmloop/ui` remains responsible for typed rendering contracts and client presentation behavior.
 

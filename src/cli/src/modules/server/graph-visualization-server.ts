@@ -11,13 +11,16 @@ type GraphVisualizationServerRegenerationResult = Readonly<{
 }>;
 
 type GraphVisualizationServerRegenerate = () => Promise<GraphVisualizationServerRegenerationResult>;
+type GraphVisualizationServerOpenProjectTargets = (
+    input: Readonly<{ path: string | null }>
+) => Promise<GraphVisualizationServerRegenerationResult>;
 
 export type GraphVisualizationServerOptions = Readonly<{
     host?: string;
     port?: number;
     regenerate: GraphVisualizationServerRegenerate;
     renderBundle: GraphVisualizationServerRenderBundle;
-    openProjectTargets?: GraphVisualizationServerRegenerate;
+    openProjectTargets?: GraphVisualizationServerOpenProjectTargets;
 }>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
@@ -80,7 +83,15 @@ export async function startGraphVisualizationServer(
 
             if (request.method === "POST" && request.url === "/api/open" && options.openProjectTargets) {
                 try {
-                    const selectionResult = await options.openProjectTargets();
+                    const requestBody = await readRequestBody(request);
+                    const parsedBody = requestBody.length > 0 ? JSON.parse(requestBody) : {};
+                    const selectedPath =
+                        typeof Reflect.get(parsedBody as object, "path") === "string"
+                            ? String(Reflect.get(parsedBody as object, "path")).trim()
+                            : "";
+                    const selectionResult = await options.openProjectTargets({
+                        path: selectedPath.length > 0 ? selectedPath : null
+                    });
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ changed: selectionResult.changed, ok: true }));
                 } catch (error: unknown) {
@@ -168,4 +179,16 @@ function findGraphVisualizationBundleFile(
 
 function resolveErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : "Unknown error";
+}
+
+async function readRequestBody(request: http.IncomingMessage): Promise<string> {
+    const chunks: Array<Buffer> = [];
+    for await (const chunk of request) {
+        if (typeof chunk === "string") {
+            chunks.push(Buffer.from(chunk));
+        } else {
+            chunks.push(chunk);
+        }
+    }
+    return Buffer.concat(chunks).toString("utf8");
 }

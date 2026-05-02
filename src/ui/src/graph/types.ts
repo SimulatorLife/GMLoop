@@ -185,6 +185,29 @@ export type GraphVisualizationDocumentationCatalogs = Readonly<{
         version: string;
     }>;
     mcpTools: ReadonlyArray<GraphVisualizationMcpToolCatalogEntry>;
+    workspaceRules: Readonly<{
+        formatOptions: ReadonlyArray<
+            Readonly<{
+                defaultValue: boolean | number | string;
+                description: string;
+                name: string;
+            }>
+        >;
+        lintRules: ReadonlyArray<
+            Readonly<{
+                description: string;
+                fixable: "code" | "whitespace" | null;
+                ruleId: string;
+            }>
+        >;
+        refactorCodemods: ReadonlyArray<
+            Readonly<{
+                description: string;
+                id: string;
+                requiresSemanticProjectIndex: boolean;
+            }>
+        >;
+    }>;
 }>;
 
 export type GraphVisualizationProjectConfigurationEntry = Readonly<{

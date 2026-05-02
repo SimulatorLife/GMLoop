@@ -19,7 +19,10 @@
     .github-link:hover { background: rgba(255,255,255,0.08); color: #fff; }
     .open-button { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 999px; border: 1px solid rgba(89,195,195,0.35); background: linear-gradient(135deg, rgba(89,195,195,0.22), rgba(139,92,246,0.22)); color: #f8fbff; font-size: 13px; font-weight: 800; text-decoration: none; }
     .open-button:hover { background: linear-gradient(135deg, rgba(89,195,195,0.3), rgba(139,92,246,0.3)); color: #fff; }
-    .loaded-target-stack { display: flex; flex-direction: column; gap: 4px; min-width: 320px; max-width: 720px; }
+    .loaded-target-stack { display: flex; flex-direction: column; gap: 6px; min-width: 320px; max-width: 760px; }
+    .loaded-target-card { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(143,181,255,0.16); background: rgba(5,11,20,0.55); }
+    .loaded-target-card strong { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #9ab3cc; }
+    .loaded-target-card span { font-size: 13px; color: #f4f8fc; overflow-wrap: anywhere; }
     .loaded-path { font-size: 12px; line-height: 1.35; color: var(--gm-muted); overflow-wrap: anywhere; word-break: break-word; }
     .loaded-path strong { color: #f4f8fc; }
     #page-toolbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 14px 18px; margin: 0 22px; border: 1px solid var(--gm-border); border-radius: 20px; background: linear-gradient(180deg, rgba(16, 28, 46, 0.92), rgba(12, 22, 36, 0.92)); box-shadow: var(--gm-shadow); }
@@ -75,7 +78,9 @@
     .config-card p { margin: 0 0 10px 0; font-size: 12px; line-height: 1.5; color: #c8d5e5; }
     .config-list { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
     .config-item { padding: 12px; border-radius: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(143,181,255,0.1); }
+    .config-item-title { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 4px; }
     .config-item strong { display: block; margin-bottom: 4px; font-size: 13px; color: #f8fbff; }
+    .config-help { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 999px; border: 1px solid rgba(143,181,255,0.25); color: #9bc9ff; font-size: 10px; font-weight: 700; cursor: help; }
     .config-item span { display: block; font-size: 11px; line-height: 1.5; color: #c8d5e5; }
     .config-value { margin-top: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #8ed1fc; white-space: pre-wrap; overflow-wrap: anywhere; }
     .config-badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }

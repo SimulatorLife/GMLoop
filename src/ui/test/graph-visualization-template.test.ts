@@ -46,6 +46,8 @@ void test("graph visualization entry html references local assets and avoids CDN
     assert.doesNotMatch(html, /cdn\./u);
     assert.doesNotMatch(html, /<script[^>]+src="https?:\/\//u);
     assert.doesNotMatch(html, /<link[^>]+href="https?:\/\//u);
+    assert.match(html, /id="docs-view-rules"/u);
+    assert.match(html, /id="loaded-target-details"/u);
 });
 
 void test("graph visualization module script embeds serialized graph payload and boot logic", () => {
@@ -82,6 +84,48 @@ void test("graph visualization module script embeds serialized graph payload and
     assert.match(script, /InterplanetaryFootball/u);
     assert.match(script, /bootstrapGraphVisualizationApp\(\{/u);
     assert.match(script, /import \{ fileOpen, directoryOpen \} from "\.\/vendor\/browser-fs-access\.js";/u);
+});
+
+void test("graph visualization module script embeds workspace rule catalogs when provided", () => {
+    const bundle = renderGraphVisualizationBundle(createBaseData(), {
+        documentationCatalogs: {
+            cliCommands: [],
+            mcpServer: {
+                name: "gmloop-mcp",
+                version: "0.0.1"
+            },
+            mcpTools: [],
+            workspaceRules: {
+                formatOptions: [
+                    {
+                        defaultValue: true,
+                        description: "Format option description",
+                        name: "gmloop_format"
+                    }
+                ],
+                lintRules: [
+                    {
+                        description: "Lint rule description",
+                        fixable: "code",
+                        ruleId: "gml/test-rule"
+                    }
+                ],
+                refactorCodemods: [
+                    {
+                        description: "Codemod description",
+                        id: "refactor/test-codemod",
+                        requiresSemanticProjectIndex: false
+                    }
+                ]
+            }
+        },
+        title: "Rules Catalog"
+    });
+
+    const script = readBundleFileText(bundle, "assets/graph-visualization.js");
+    assert.match(script, /workspaceRules/u);
+    assert.match(script, /gml\/test-rule/u);
+    assert.match(script, /refactor\/test-codemod/u);
 });
 
 void test("graph visualization css asset preserves core visual affordances", () => {

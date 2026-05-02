@@ -230,9 +230,19 @@ function createConfigItem(
 ): HTMLLIElement {
     const item = document.createElement("li");
     item.className = "config-item";
+    const titleRow = document.createElement("div");
+    titleRow.className = "config-item-title";
     const heading = document.createElement("strong");
     heading.textContent = title;
-    item.append(heading);
+    titleRow.append(heading);
+    if (descriptionText.length > 0) {
+        const help = document.createElement("span");
+        help.className = "config-help";
+        help.title = descriptionText;
+        help.textContent = "?";
+        titleRow.append(help);
+    }
+    item.append(titleRow);
     if (descriptionText.length > 0) {
         const description = document.createElement("span");
         description.textContent = descriptionText;
@@ -287,56 +297,55 @@ function dragMoved(eventValue: D3DragEvent<SVGGElement, MutableGraphNodeRecord, 
 
 function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoadedTarget | null): void {
     const loadedTargetElement = document.getElementById("loaded-target");
-    const loadedSourceElement = document.getElementById("loaded-source");
-    const loadedSelectedElement = document.getElementById("loaded-selected");
-    if (
-        !(loadedTargetElement instanceof HTMLElement) ||
-        !(loadedSourceElement instanceof HTMLElement) ||
-        !(loadedSelectedElement instanceof HTMLElement)
-    ) {
+    const loadedTargetDetailsElement = document.getElementById("loaded-target-details");
+    if (!(loadedTargetElement instanceof HTMLElement) || !(loadedTargetDetailsElement instanceof HTMLElement)) {
+        return;
+    }
+    const loadedTargetLabel = loadedTargetElement.querySelector("span");
+    if (!(loadedTargetLabel instanceof HTMLElement)) {
         return;
     }
 
     if (currentLoadedTarget === null) {
-        loadedTargetElement.textContent = "No active target";
-        loadedSourceElement.textContent = "";
-        loadedSelectedElement.textContent = "";
+        loadedTargetLabel.textContent = "No project loaded";
+        loadedTargetDetailsElement.textContent = "Use Open... to load a GameMaker project.";
         return;
     }
 
-    loadedTargetElement.textContent = `Active: ${currentLoadedTarget.activePath}`;
-    loadedSourceElement.textContent = `Source: ${currentLoadedTarget.source} | Project: ${currentLoadedTarget.projectRoot}`;
-    if (currentLoadedTarget.selectedPaths.length > 1) {
-        const selectedPaths = currentLoadedTarget.selectedPaths;
-        loadedSelectedElement.textContent =
-            selectedPaths.length > 3
-                ? `Selected paths: ${selectedPaths.slice(0, 3).join(", ")} (+${String(
-                      selectedPaths.length - 3
-                  )} more files)`
-                : `Selected paths: ${selectedPaths.join(", ")}`;
-        return;
-    }
-
-    loadedSelectedElement.textContent = "";
+    loadedTargetLabel.textContent = currentLoadedTarget.projectRoot || currentLoadedTarget.activePath;
+    loadedTargetDetailsElement.innerHTML = "";
+    const source = document.createElement("strong");
+    source.textContent = `Source: ${currentLoadedTarget.source}`;
+    loadedTargetDetailsElement.append(source);
+    const detailText = document.createElement("span");
+    detailText.textContent = ` | Active path: ${currentLoadedTarget.activePath} | Selected: ${String(
+        currentLoadedTarget.selectedPaths.length
+    )} item(s)`;
+    loadedTargetDetailsElement.append(detailText);
 }
 
 function updateDocsViewState(
     state: Readonly<{
-        activeDocsView: "cli" | "mcp";
+        activeDocsView: "cli" | "mcp" | "rules";
         cliMetaText: string;
         mcpMetaText: string;
+        rulesMetaText: string;
     }>
 ): void {
     const cliPage = document.getElementById("cli-page");
     const mcpPage = document.getElementById("mcp-page");
+    const rulesPage = document.getElementById("rules-page");
     const cliButton = document.getElementById("docs-view-cli");
     const mcpButton = document.getElementById("docs-view-mcp");
+    const rulesButton = document.getElementById("docs-view-rules");
     const docsMetaElement = document.getElementById("docs-meta");
     if (
         !(cliPage instanceof HTMLElement) ||
         !(mcpPage instanceof HTMLElement) ||
+        !(rulesPage instanceof HTMLElement) ||
         !(cliButton instanceof HTMLButtonElement) ||
         !(mcpButton instanceof HTMLButtonElement) ||
+        !(rulesButton instanceof HTMLButtonElement) ||
         !(docsMetaElement instanceof HTMLElement)
     ) {
         return;
@@ -344,17 +353,28 @@ function updateDocsViewState(
 
     cliPage.classList.toggle("hidden", state.activeDocsView !== "cli");
     mcpPage.classList.toggle("hidden", state.activeDocsView !== "mcp");
+    rulesPage.classList.toggle("hidden", state.activeDocsView !== "rules");
     cliButton.classList.toggle("active", state.activeDocsView === "cli");
     mcpButton.classList.toggle("active", state.activeDocsView === "mcp");
-    docsMetaElement.textContent = state.activeDocsView === "cli" ? state.cliMetaText : state.mcpMetaText;
+    rulesButton.classList.toggle("active", state.activeDocsView === "rules");
+    if (state.activeDocsView === "cli") {
+        docsMetaElement.textContent = state.cliMetaText;
+        return;
+    }
+    if (state.activeDocsView === "mcp") {
+        docsMetaElement.textContent = state.mcpMetaText;
+        return;
+    }
+    docsMetaElement.textContent = state.rulesMetaText;
 }
 
 function wirePageNavigation(
     state: {
-        activeDocsView: "cli" | "mcp";
+        activeDocsView: "cli" | "mcp" | "rules";
         activePage: "config" | "docs" | "graph";
         cliMetaText: string;
         mcpMetaText: string;
+        rulesMetaText: string;
     },
     applyPageState: () => void,
     updateDocsViewStateFn: () => void
@@ -371,6 +391,7 @@ function wirePageNavigation(
 
     const docsCliButton = document.getElementById("docs-view-cli");
     const docsMcpButton = document.getElementById("docs-view-mcp");
+    const docsRulesButton = document.getElementById("docs-view-rules");
     if (docsCliButton instanceof HTMLButtonElement) {
         docsCliButton.addEventListener("click", () => {
             state.activeDocsView = "cli";
@@ -383,6 +404,12 @@ function wirePageNavigation(
             updateDocsViewStateFn();
         });
     }
+    if (docsRulesButton instanceof HTMLButtonElement) {
+        docsRulesButton.addEventListener("click", () => {
+            state.activeDocsView = "rules";
+            updateDocsViewStateFn();
+        });
+    }
 }
 
 function renderDocumentationCatalog(
@@ -391,30 +418,36 @@ function renderDocumentationCatalog(
     metaState: {
         cliMetaText: string;
         mcpMetaText: string;
+        rulesMetaText: string;
     }
 ): void {
     const docsMetaElement = document.getElementById("docs-meta");
     const cliContentElement = document.getElementById("cli-content");
     const mcpContentElement = document.getElementById("mcp-content");
+    const rulesContentElement = document.getElementById("rules-content");
     if (
         !(docsMetaElement instanceof HTMLElement) ||
         !(cliContentElement instanceof HTMLElement) ||
-        !(mcpContentElement instanceof HTMLElement)
+        !(mcpContentElement instanceof HTMLElement) ||
+        !(rulesContentElement instanceof HTMLElement)
     ) {
         return;
     }
 
     cliContentElement.innerHTML = "";
     mcpContentElement.innerHTML = "";
+    rulesContentElement.innerHTML = "";
 
     if (dependencies.documentationCatalogs === null) {
         metaState.cliMetaText = "No CLI catalog metadata is available for this view.";
         metaState.mcpMetaText = "No MCP catalog metadata is available for this view.";
+        metaState.rulesMetaText = "No workspace rules metadata is available for this view.";
         const emptyState = document.createElement("div");
         emptyState.className = "catalog-empty";
         emptyState.textContent = "Documentation catalogs are not available.";
         cliContentElement.append(emptyState.cloneNode(true));
-        mcpContentElement.append(emptyState);
+        mcpContentElement.append(emptyState.cloneNode(true));
+        rulesContentElement.append(emptyState);
         updateDocsViewStateFn();
         return;
     }
@@ -473,6 +506,57 @@ function renderDocumentationCatalog(
         });
         mcpContentElement.append(createCatalogCard(entry.toolName, entry.description, entry.commandDisplayName, rows));
     });
+
+    const workspaceRules = dependencies.documentationCatalogs.workspaceRules;
+    metaState.rulesMetaText = `${String(workspaceRules.formatOptions.length)} format options, ${String(
+        workspaceRules.lintRules.length
+    )} lint rules, ${String(workspaceRules.refactorCodemods.length)} refactor codemods loaded directly from workspace registries.`;
+
+    const formatRows = workspaceRules.formatOptions.map((entry) =>
+        createCatalogItemRow(entry.name, `${entry.description} (default: ${JSON.stringify(entry.defaultValue)})`)
+    );
+    rulesContentElement.append(
+        createCatalogCard(
+            "Prettier / Format Options",
+            "Live formatter option catalog sourced from @gmloop/format.",
+            "Format.listProjectFormatOptionCatalogEntries()",
+            formatRows
+        )
+    );
+
+    const lintRows = workspaceRules.lintRules.map((entry) =>
+        createCatalogItemRow(
+            entry.ruleId,
+            `${entry.description} (${entry.fixable === null ? "not auto-fixable" : `fixable: ${entry.fixable}`})`
+        )
+    );
+    rulesContentElement.append(
+        createCatalogCard(
+            "Lint Rules",
+            "Live lint rule catalog sourced from @gmloop/lint.",
+            "Lint.listLintRuleCatalogEntries()",
+            lintRows
+        )
+    );
+
+    const refactorRows = workspaceRules.refactorCodemods.map((entry) =>
+        createCatalogItemRow(
+            entry.id,
+            `${entry.description} (${
+                entry.requiresSemanticProjectIndex
+                    ? "requires semantic project index"
+                    : "does not require semantic project index"
+            })`
+        )
+    );
+    rulesContentElement.append(
+        createCatalogCard(
+            "Refactor Codemods",
+            "Live codemod catalog sourced from @gmloop/refactor.",
+            "Refactor.listRegisteredCodemods()",
+            refactorRows
+        )
+    );
 
     updateDocsViewStateFn();
 }
@@ -554,7 +638,8 @@ function updatePageState(
     }
     if (state.activePage === "docs") {
         toolbarHeading.textContent = "Docs";
-        toolbarSubheading.textContent = "Live CLI and MCP workspace catalogs are combined in a single Docs view.";
+        toolbarSubheading.textContent =
+            "Live CLI, MCP, and workspace rule catalogs are combined in a single Docs view.";
     } else {
         toolbarHeading.textContent = "Config";
         toolbarSubheading.textContent =
@@ -633,15 +718,17 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let labelMode: "auto" | "off" | "on" = "auto";
     let activeGraphView: "json" | "visual" = "visual";
     const navigationState: {
-        activeDocsView: "cli" | "mcp";
+        activeDocsView: "cli" | "mcp" | "rules";
         activePage: "config" | "docs" | "graph";
         cliMetaText: string;
         mcpMetaText: string;
+        rulesMetaText: string;
     } = {
         activeDocsView: "cli",
         activePage: "graph",
         cliMetaText: "",
-        mcpMetaText: ""
+        mcpMetaText: "",
+        rulesMetaText: ""
     };
     let activeFilters = new Set(edgeTypes);
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
@@ -1627,6 +1714,36 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 const button = graphRuntime.select("#open-project");
                 button.attr("disabled", "true").html(openingButtonLabel);
                 try {
+                    if (dependencies.isServerMode) {
+                        const selectedPathInput = globalThis.prompt(
+                            "Enter a project directory or .yyp path to load:",
+                            currentLoadedTarget?.projectRoot ?? ""
+                        );
+                        if (selectedPathInput === null) {
+                            button.attr("disabled", null).html(openButtonLabel);
+                            return;
+                        }
+                        const selectedPath = selectedPathInput.trim();
+                        if (selectedPath.length === 0) {
+                            button.attr("disabled", null).html(openButtonLabel);
+                            return;
+                        }
+
+                        const openResponse = await fetch("/api/open", {
+                            body: JSON.stringify({ path: selectedPath }),
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            method: "POST"
+                        });
+                        if (!openResponse.ok) {
+                            const responseText = await openResponse.text();
+                            throw new Error(responseText || "Server rejected project load request.");
+                        }
+                        globalThis.location.reload();
+                        return;
+                    }
+
                     let selectedFiles: ReadonlyArray<BrowserFileHandle> | null = null;
                     try {
                         selectedFiles = await dependencies.directoryOpen({ recursive: true });
