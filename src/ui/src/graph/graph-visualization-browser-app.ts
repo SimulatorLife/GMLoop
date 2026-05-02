@@ -1,3 +1,16 @@
+import type {
+    D3DragEvent,
+    D3ZoomEvent,
+    DragBehavior,
+    ForceLink,
+    Simulation,
+    SimulationLinkDatum,
+    SimulationNodeDatum,
+    ZoomBehavior,
+    ZoomTransform
+} from "d3";
+import * as d3 from "d3";
+
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "./graph-visualization-style-metadata.js";
 import type {
     GraphVisualizationData,
@@ -9,13 +22,13 @@ import type {
     GraphVisualizationProjectConfigurationCatalog
 } from "./types.js";
 
-type BrowserFileHandle = Readonly<{
+export type BrowserFileHandle = Readonly<{
     name: string;
     text(): Promise<string>;
     webkitRelativePath?: string;
 }>;
 
-type BrowserAppDependencies = Readonly<{
+export type BrowserAppDependencies = Readonly<{
     data: GraphVisualizationData;
     directoryOpen: (options: Readonly<Record<string, unknown>>) => Promise<ReadonlyArray<BrowserFileHandle>>;
     documentationCatalogs: GraphVisualizationDocumentationCatalogs | null;
@@ -36,16 +49,19 @@ type LoadedProjectConfiguration = Readonly<{
     prettier: ReadonlyArray<Readonly<{ content: string; path: string }>>;
 }>;
 
-type MutableGraphNodeRecord = Omit<GraphVisualizationNodeRecord, "fx" | "fy" | "x" | "y"> & {
-    fx: number | null;
-    fy: number | null;
-    x: number;
-    y: number;
-};
+type MutableGraphNodeRecord = Omit<GraphVisualizationNodeRecord, "fx" | "fy" | "x" | "y"> &
+    SimulationNodeDatum &
+    Readonly<{
+        fx: number | null;
+        fy: number | null;
+        x: number;
+        y: number;
+    }>;
 
 type MutableGraphEdgeEndpoint = string | MutableGraphNodeRecord;
 
 type MutableGraphEdgeRecord = Omit<GraphVisualizationEdgeRecord, "source" | "target"> &
+    SimulationLinkDatum<MutableGraphNodeRecord> &
     Readonly<{
         source: MutableGraphEdgeEndpoint;
         target: MutableGraphEdgeEndpoint;
@@ -62,96 +78,18 @@ function readErrorName(errorValue: unknown): string {
     return "";
 }
 
-type GraphSelectionApi = Readonly<{
-    append(name: string): GraphSelectionApi;
-    attr(name: string, value: string | number | ((datum: never) => string | number | null) | null): GraphSelectionApi;
-    call(
-        callback: (selection: GraphSelectionApi, ...arguments_: Array<unknown>) => void,
-        ...arguments_: Array<unknown>
-    ): GraphSelectionApi;
-    classed(name: string, value: boolean | ((datum: never) => boolean)): GraphSelectionApi;
-    data(dataValues: ReadonlyArray<unknown>, key?: (datum: never) => string): GraphSelectionApi;
-    empty(): boolean;
-    enter(): GraphSelectionApi;
-    exit(): GraphSelectionApi;
-    html(value: string): GraphSelectionApi;
-    merge(other: GraphSelectionApi): GraphSelectionApi;
-    node(): Element | null;
-    on(name: string, handler: (event: never, datum: never) => void): GraphSelectionApi;
-    property(name: string, value: boolean): GraphSelectionApi;
-    remove(): GraphSelectionApi;
-    select(selector: string): GraphSelectionApi;
-    selectAll(selector: string): GraphSelectionApi;
-    style(name: string, value: string | ((datum: never) => string | null) | null): GraphSelectionApi;
-    text(value: string | ((datum: never) => string)): GraphSelectionApi;
-    transition(): GraphSelectionApi;
-}>;
+type GraphSelectionApi<ElementType extends d3.BaseType = d3.BaseType, Datum = unknown> = d3.Selection<
+    ElementType,
+    Datum,
+    d3.BaseType,
+    unknown
+>;
 
-type GraphSimulationApi = Readonly<{
-    alpha(value: number): GraphSimulationApi;
-    alphaDecay(value: number): GraphSimulationApi;
-    alphaTarget(value: number): GraphSimulationApi;
-    force(
-        name: string,
-        forceValue?: unknown
-    ): GraphSimulationApi & Readonly<{ links(dataValues: ReadonlyArray<unknown>): void }>;
-    nodes(dataValues: ReadonlyArray<unknown>): GraphSimulationApi;
-    on(name: string, handler: () => void): GraphSimulationApi;
-    restart(): GraphSimulationApi;
-    velocityDecay(value: number): GraphSimulationApi;
-}>;
+type GraphSimulationApi = Simulation<MutableGraphNodeRecord, MutableGraphEdgeRecord>;
 
-type GraphPathRenderer = () => string;
+type GraphDragBehavior = DragBehavior<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>;
 
-type GraphDragBehavior = ((selection: GraphSelectionApi) => void) &
-    Readonly<{
-        on(name: string, handler: (event: never, datum: never) => void): GraphDragBehavior;
-    }>;
-
-type GraphZoomBehavior = ((selection: GraphSelectionApi, argument?: unknown) => void) &
-    Readonly<{
-        on(name: string, handler: (event: never) => void): GraphZoomBehavior;
-        scaleExtent(values: ReadonlyArray<number>): GraphZoomBehavior;
-    }>;
-
-type GraphRuntimeApi = Readonly<{
-    drag(): GraphDragBehavior;
-    forceCenter(x: number, y: number): unknown;
-    forceCollide(): Readonly<{
-        iterations(value: number): unknown;
-        radius(value: (datum: never) => number): Readonly<{
-            iterations(value: number): unknown;
-        }>;
-    }>;
-    forceLink(): Readonly<{
-        distance(value: number): unknown;
-        id(value: (datum: never) => string): Readonly<{
-            distance(distanceValue: number): unknown;
-        }>;
-    }>;
-    forceManyBody(): Readonly<{
-        strength(value: number): unknown;
-    }>;
-    forceSimulation(): GraphSimulationApi;
-    select(target: string | Element | null): GraphSelectionApi;
-    selectAll(selector: string): GraphSelectionApi;
-    symbol(): Readonly<{
-        size(value: number): Readonly<{
-            type(symbolType: unknown): GraphPathRenderer;
-        }>;
-        type(symbolType: unknown): Readonly<{
-            size(value: number): GraphPathRenderer;
-        }>;
-    }>;
-    symbolCircle: unknown;
-    symbolDiamond: unknown;
-    symbolSquare: unknown;
-    zoom(): GraphZoomBehavior;
-    zoomIdentity: unknown;
-    zoomTransform(element: Element | null): Readonly<{
-        k: number;
-    }>;
-}>;
+type GraphZoomBehavior = ZoomBehavior<SVGSVGElement, unknown>;
 
 type TooltipMouseEvent = MouseEvent &
     Readonly<{
@@ -173,17 +111,9 @@ type FilterType =
     | typeof RESOURCE_GROUP_FILTER_TYPE
     | GraphVisualizationEdgeRecord["type"];
 
-function readGraphRuntime(): GraphRuntimeApi {
-    const runtimeValue = Reflect.get(globalThis, "d3");
-    if (runtimeValue === undefined || runtimeValue === null) {
-        throw new Error("The graph visualization requires the D3 runtime.");
-    }
-    return runtimeValue as GraphRuntimeApi;
-}
-
-function readGraphTransform(eventValue: never): GraphTransform {
-    const transformValue = Reflect.get(eventValue as object, "transform");
-    const zoomFactor = Number(Reflect.get(transformValue as object, "k"));
+function readGraphTransform(eventValue: D3ZoomEvent<SVGSVGElement, unknown>): GraphTransform {
+    const transformValue: ZoomTransform = eventValue.transform;
+    const zoomFactor = transformValue.k;
     return {
         k: Number.isFinite(zoomFactor) ? zoomFactor : 1,
         transformText: String(transformValue ?? "")
@@ -208,12 +138,12 @@ function readEdgeEndpointId(endpoint: MutableGraphEdgeEndpoint): string {
     return typeof endpoint === "string" ? endpoint : endpoint.id;
 }
 
-function readGraphNode(nodeValue: never): MutableGraphNodeRecord {
-    return nodeValue as MutableGraphNodeRecord;
+function readGraphNode(nodeValue: MutableGraphNodeRecord): MutableGraphNodeRecord {
+    return nodeValue;
 }
 
-function readNodeIdentifier(nodeValue: never): string {
-    return String(Reflect.get(nodeValue as object, "id"));
+function readNodeIdentifier(nodeValue: MutableGraphNodeRecord): string {
+    return nodeValue.id;
 }
 
 function rebuildGraphIndexes(
@@ -349,10 +279,10 @@ function formatLabel(textValue: string): string {
     return textValue.charAt(0).toUpperCase() + textValue.slice(1).replaceAll("_", " ");
 }
 
-function dragMoved(eventValue: never, datumValue: never): void {
-    const nodeValue = datumValue as MutableGraphNodeRecord;
-    nodeValue.fx = Number(Reflect.get(eventValue as object, "x"));
-    nodeValue.fy = Number(Reflect.get(eventValue as object, "y"));
+function dragMoved(eventValue: D3DragEvent<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>): void {
+    const nodeValue = eventValue.subject;
+    nodeValue.fx = eventValue.x;
+    nodeValue.fy = eventValue.y;
 }
 
 function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoadedTarget | null): void {
@@ -550,7 +480,7 @@ function renderDocumentationCatalog(
 function updateGraphViewMode(
     state: Readonly<{
         activeGraphView: "json" | "visual";
-        graphRuntime: GraphRuntimeApi;
+        graphRuntime: typeof d3;
         jsonView: GraphSelectionApi;
         linksRaw: Array<MutableGraphEdgeRecord>;
         nodesRaw: Array<MutableGraphNodeRecord>;
@@ -583,7 +513,7 @@ function updateGraphViewMode(
 function updatePageState(
     state: Readonly<{
         activePage: "config" | "docs" | "graph";
-        graphRuntime: GraphRuntimeApi;
+        graphRuntime: typeof d3;
         jsonView: GraphSelectionApi;
         svg: GraphSelectionApi;
     }>,
@@ -674,13 +604,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     const regenerateButtonLabel = '<span class="button-content"><span class="button-label">Regenerate</span></span>';
     const regeneratingButtonLabel =
         '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Regenerating…</span></span>';
-    const graphRuntime = readGraphRuntime();
+    const graphRuntime = d3;
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const svg = graphRuntime.select("#graph");
-    const jsonView = graphRuntime.select("#json-view");
-    const container = graphRuntime.select("#container");
-    const tooltip = graphRuntime.select("#tooltip");
+    const svg = graphRuntime.select<SVGSVGElement, unknown>("#graph");
+    const jsonView = graphRuntime.select<HTMLElement, unknown>("#json-view");
+    const container = graphRuntime.select<SVGGElement, unknown>("#container");
+    const tooltip = graphRuntime.select<HTMLElement, unknown>("#tooltip");
     const edgeLineVisualStyleByType = new Map(EDGE_LINE_VISUAL_STYLES.map((style) => [style.type, style]));
     const nodeVisualStyleByKind = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
     const edgeTypes = Array.from(new Set(dependencies.data.edges.map((edgeValue) => edgeValue.type)));
@@ -717,10 +647,16 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
     let nodesRaw = cloneGraphNodes(allNodes);
     let linksRaw = cloneGraphEdges(dependencies.data.edges);
-    let link = container.append("g").selectAll(".link");
-    let nodeGroup = container.append("g").selectAll(".node-group");
-    let node = nodeGroup.select("path.node");
-    let nodeLabels = nodeGroup.select("text");
+    let link: d3.Selection<SVGPathElement, MutableGraphEdgeRecord, SVGGElement, unknown> = container
+        .append("g")
+        .selectAll<SVGPathElement, MutableGraphEdgeRecord>(".link");
+    let nodeGroup: d3.Selection<SVGGElement, MutableGraphNodeRecord, SVGGElement, unknown> = container
+        .append("g")
+        .selectAll<SVGGElement, MutableGraphNodeRecord>(".node-group");
+    let node: d3.Selection<SVGPathElement, MutableGraphNodeRecord, SVGGElement, unknown> =
+        nodeGroup.select<SVGPathElement>("path.node");
+    let nodeLabels: d3.Selection<SVGTextElement, MutableGraphNodeRecord, SVGGElement, unknown> =
+        nodeGroup.select<SVGTextElement>("text");
     const searchHighlightNodeIds = new Set<string>();
     let focusNodeId: string | null = null;
     let pinnedTooltipNodeId: string | null = null;
@@ -732,8 +668,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     const neighborMap = new Map<string, Set<string>>();
     rebuildGraphIndexes(linksRaw, incomingCount, outgoingCount, neighborMap);
 
-    const zoomBehavior = graphRuntime
-        .zoom()
+    const zoomBehavior: GraphZoomBehavior = graphRuntime
+        .zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.1, 4])
         .on("zoom", (eventValue) => {
             const transform = readGraphTransform(eventValue);
@@ -746,16 +682,14 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 nodeLabels.style("display", transform.k > 0.8 ? "block" : "none");
             }
         });
-    svg.call((selection) => {
-        selection.call(zoomBehavior as (selection: GraphSelectionApi) => void);
-    });
+    svg.call(zoomBehavior);
 
-    const simulation = graphRuntime
-        .forceSimulation()
+    const simulation: GraphSimulationApi = graphRuntime
+        .forceSimulation<MutableGraphNodeRecord>()
         .force(
             "link",
             graphRuntime
-                .forceLink()
+                .forceLink<MutableGraphNodeRecord, MutableGraphEdgeRecord>()
                 .id((datum) => readNodeIdentifier(datum))
                 .distance(50)
         )
@@ -764,7 +698,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         .force(
             "collide",
             graphRuntime
-                .forceCollide()
+                .forceCollide<MutableGraphNodeRecord>()
                 .radius((datum) => getRadius(readGraphNode(datum), incomingCount, outgoingCount))
                 .iterations(2)
         )
@@ -846,10 +780,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
         graphRuntime.select("#reset-default").on("click", () => {
             svg.transition().call((selection) => {
-                selection.call(
-                    zoomBehavior as (selection: GraphSelectionApi) => void,
-                    graphRuntime.zoomIdentity as never
-                );
+                zoomBehavior.transform(selection, graphRuntime.zoomIdentity);
             });
             resetGraphStateToDefaults();
             updateGraph();
@@ -1414,7 +1345,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             (nodeValue) => activeNodeIds.has(nodeValue.id) && activeNodeFilters.has(nodeValue.kind)
         );
         link = link.data(filteredLinks, (datumValue) => {
-            const edgeValue = datumValue as MutableGraphEdgeRecord;
+            const edgeValue = datumValue;
             return `${readEdgeEndpointId(edgeValue.source)}-${readEdgeEndpointId(edgeValue.target)}-${edgeValue.type}`;
         });
         link.exit().remove();
@@ -1439,41 +1370,33 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
         nodeGroup = nodeGroup.data(filteredNodes, (datumValue) => String(Reflect.get(datumValue as object, "id")));
         nodeGroup.exit().remove();
+        const nodeDragBehavior: GraphDragBehavior = graphRuntime
+            .drag<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>()
+            .on("start", (eventValue) => dragStarted(eventValue))
+            .on("drag", (eventValue) => dragMoved(eventValue))
+            .on("end", (eventValue) => dragEnded(eventValue));
+
         const nodeEnter = nodeGroup
             .enter()
             .append("g")
             .attr("class", "node-group")
             .call((selection) => {
-                selection.call(
-                    graphRuntime
-                        .drag()
-                        .on("start", (eventValue, datumValue) => dragStarted(eventValue, datumValue))
-                        .on("drag", (eventValue, datumValue) => dragMoved(eventValue, datumValue))
-                        .on("end", (eventValue, datumValue) => dragEnded(eventValue, datumValue)) as (
-                        selection: GraphSelectionApi
-                    ) => void
-                );
+                selection.call(nodeDragBehavior);
             });
 
         nodeEnter
             .append("path")
             .attr("class", (datumValue) => {
-                const nodeValue = datumValue as MutableGraphNodeRecord;
+                const nodeValue = datumValue;
                 return `node node-${nodeValue.kind}${nodeValue.graphId === "toolset" ? " toolset" : ""}`;
             })
-            .attr("d", (datumValue) => renderNodeShape(datumValue as MutableGraphNodeRecord))
+            .attr("d", (datumValue) => renderNodeShape(datumValue))
             .classed("node", true)
             .classed("toolset", (datumValue) => String(Reflect.get(datumValue as object, "graphId")) === "toolset")
-            .on("mouseover", (eventValue, datumValue) =>
-                showTooltip(eventValue as TooltipMouseEvent, datumValue as MutableGraphNodeRecord)
-            )
+            .on("mouseover", (eventValue, datumValue) => showTooltip(eventValue as TooltipMouseEvent, datumValue))
             .on("mouseout", () => hideTooltipWithDelay())
-            .on("click", (eventValue, datumValue) =>
-                handleNodeClick(eventValue as MouseEvent, datumValue as MutableGraphNodeRecord)
-            )
-            .on("dblclick", (eventValue, datumValue) =>
-                handleNodeDoubleClick(eventValue as MouseEvent, datumValue as MutableGraphNodeRecord)
-            );
+            .on("click", (eventValue, datumValue) => handleNodeClick(eventValue as MouseEvent, datumValue))
+            .on("dblclick", (eventValue, datumValue) => handleNodeDoubleClick(eventValue as MouseEvent, datumValue));
 
         nodeEnter
             .append("text")
@@ -1483,16 +1406,19 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             .style("display", "none");
 
         nodeGroup = nodeEnter.merge(nodeGroup);
-        node = nodeGroup.select("path.node");
-        nodeLabels = nodeGroup.select("text");
+        node = nodeGroup.select<SVGPathElement>("path.node");
+        nodeLabels = nodeGroup.select<SVGTextElement>("text");
         node.attr("class", (datumValue) => {
-            const nodeValue = datumValue as MutableGraphNodeRecord;
+            const nodeValue = datumValue;
             const styleKind = nodeVisualStyleByKind.has(nodeValue.kind) ? nodeValue.kind : "default";
             return `node node-${styleKind}${nodeValue.graphId === "toolset" ? " toolset" : ""}`;
         });
 
         simulation.nodes(filteredNodes).on("tick", ticked);
-        simulation.force("link").links(filteredLinks);
+        const linkForce = simulation.force("link");
+        if (linkForce !== undefined && "links" in linkForce) {
+            (linkForce as ForceLink<MutableGraphNodeRecord, MutableGraphEdgeRecord>).links(filteredLinks);
+        }
         simulation.alpha(0.3).restart();
         applyHighlights();
     }
@@ -1505,12 +1431,12 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         } else if (resourceKinds.has(nodeValue.kind)) {
             symbolType = graphRuntime.symbolSquare;
         }
-        return graphRuntime.symbol().type(symbolType).size(symbolArea)();
+        return graphRuntime.symbol().type(symbolType).size(symbolArea)() ?? "";
     }
 
     function ticked(): void {
         link.attr("d", (datumValue) => {
-            const edgeValue = datumValue as MutableGraphEdgeRecord;
+            const edgeValue = datumValue;
             const sourceNode = edgeValue.source as MutableGraphNodeRecord;
             const targetNode = edgeValue.target as MutableGraphNodeRecord;
             const dx = targetNode.x - sourceNode.x;
@@ -1522,14 +1448,14 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             return `M${sourceNode.x},${sourceNode.y}L${targetNode.x},${targetNode.y}`;
         });
         nodeGroup.attr("transform", (datumValue) => {
-            const nodeValue = datumValue as MutableGraphNodeRecord;
+            const nodeValue = datumValue;
             return `translate(${nodeValue.x},${nodeValue.y})`;
         });
     }
 
-    function dragStarted(eventValue: never, datumValue: never): void {
-        const nodeValue = datumValue as MutableGraphNodeRecord;
-        const isActive = Boolean(Reflect.get(eventValue as object, "active"));
+    function dragStarted(eventValue: D3DragEvent<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>): void {
+        const nodeValue = eventValue.subject;
+        const isActive = eventValue.active;
         if (!isActive) {
             simulation.alphaTarget(0.3).restart();
         }
@@ -1537,8 +1463,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         nodeValue.fy = nodeValue.y;
     }
 
-    function dragEnded(eventValue: never, _datumValue: never): void {
-        const isActive = Boolean(Reflect.get(eventValue as object, "active"));
+    function dragEnded(eventValue: D3DragEvent<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>): void {
+        const isActive = eventValue.active;
         if (!isActive) {
             simulation.alphaTarget(0);
         }
@@ -1681,7 +1607,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             return (isFocusActive && nodeId === focusNodeId) || (isSearchActive && searchHighlightNodeIds.has(nodeId));
         });
         link.classed("dimmed", (datumValue) => {
-            const edgeValue = datumValue as MutableGraphEdgeRecord;
+            const edgeValue = datumValue;
             const sourceId = readEdgeEndpointId(edgeValue.source);
             const targetId = readEdgeEndpointId(edgeValue.target);
             if (focusNodeId !== null) {

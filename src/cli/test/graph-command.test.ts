@@ -238,12 +238,12 @@ void test("graph search --force regenerates an existing database before querying
     }
 });
 
-void test("graph visualize builds a missing database before exporting HTML", async () => {
+void test("graph visualize builds a missing database before exporting an HTML+assets bundle", async () => {
     const cliModule = await loadCliModule();
     const fixture = await createDualRootFixture();
 
     try {
-        const outputPath = path.join(fixture.projectRoot, ".gmloop", "graph-test.html");
+        const outputDirectory = path.join(fixture.projectRoot, ".gmloop", "graph-test");
         const databasePath = path.join(fixture.projectRoot, ".gmloop", "graph-index.sqlite");
 
         const visualizeResult = await cliModule.runCliTestCommand({
@@ -255,7 +255,7 @@ void test("graph visualize builds a missing database before exporting HTML", asy
                 "--toolset-root",
                 fixture.toolsetRoot,
                 "--output",
-                outputPath,
+                outputDirectory,
                 "--no-open",
                 "--json"
             ]
@@ -264,13 +264,23 @@ void test("graph visualize builds a missing database before exporting HTML", asy
         assert.equal(visualizeResult.exitCode, 0);
         const payload = JSON.parse(visualizeResult.stdout);
         assert.equal(payload.command, "graph visualize");
-        assert.equal(payload.payload.outputPath, outputPath);
+        assert.equal(payload.payload.outputDirectory, outputDirectory);
+        assert.equal(payload.payload.entryHtmlPath, "index.html");
         await fs.access(databasePath);
-        const html = await fs.readFile(outputPath, "utf8");
-        assert.match(html, /shared_toolset_fn/u);
-        assert.match(html, /gmloop_format/u);
-        assert.match(html, /Format GameMaker Language files using the prettier plugin\./u);
+        await fs.access(path.join(outputDirectory, "assets", "graph-visualization.css"));
+        await fs.access(path.join(outputDirectory, "assets", "graph-visualization.js"));
+        await fs.access(path.join(outputDirectory, "assets", "vendor", "d3.min.js"));
+        await fs.access(path.join(outputDirectory, "assets", "vendor", "browser-fs-access.js"));
+        const html = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
+        const script = await fs.readFile(path.join(outputDirectory, "assets", "graph-visualization.js"), "utf8");
+        assert.match(script, /shared_toolset_fn/u);
+        assert.match(script, /gmloop_format/u);
+        assert.match(script, /Format GameMaker Language files using the prettier plugin\./u);
         assert.doesNotMatch(html, /id="regenerate"/u);
+        assert.match(html, /assets\/graph-visualization\.js/u);
+        assert.match(html, /assets\/graph-visualization\.css/u);
+        assert.match(html, /assets\/vendor\/d3\.min\.js/u);
+        assert.doesNotMatch(html, /cdn\./u);
     } finally {
         await fixture.cleanup();
     }
@@ -281,7 +291,7 @@ void test("graph visualize reuses an existing graph index instead of rebuilding 
     const fixture = await createDualRootFixture();
 
     try {
-        const outputPath = path.join(fixture.projectRoot, ".gmloop", "graph-existing-index.html");
+        const outputDirectory = path.join(fixture.projectRoot, ".gmloop", "graph-existing-index");
 
         const initialIndexResult = await cliModule.runCliTestCommand({
             argv: ["graph", "index", "--path", fixture.projectRoot, "--toolset-root", fixture.toolsetRoot, "--json"]
@@ -303,16 +313,16 @@ void test("graph visualize reuses an existing graph index instead of rebuilding 
                 "--toolset-root",
                 fixture.toolsetRoot,
                 "--output",
-                outputPath,
+                outputDirectory,
                 "--no-open",
                 "--json"
             ]
         });
 
         assert.equal(visualizeResult.exitCode, 0);
-        const html = await fs.readFile(outputPath, "utf8");
-        assert.match(html, /return 42;/u);
-        assert.doesNotMatch(html, /return 999;/u);
+        const script = await fs.readFile(path.join(outputDirectory, "assets", "graph-visualization.js"), "utf8");
+        assert.match(script, /return 42;/u);
+        assert.doesNotMatch(script, /return 999;/u);
     } finally {
         await fixture.cleanup();
     }

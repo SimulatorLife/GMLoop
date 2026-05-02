@@ -1,4 +1,4 @@
-import { access, constants, writeFile } from "node:fs/promises";
+import { access, constants, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -43,6 +43,22 @@ type GraphJsonEnvelope<TPayload> = Readonly<{
     payload: TPayload;
     projectRoot: string;
     toolsetRoot: string | null;
+}>;
+
+type GraphVisualizationExportResult = Readonly<{
+    entryHtmlPath: string;
+    outputDirectory: string;
+}>;
+
+type GraphVisualizationBundleFile = Readonly<{
+    bytes: Uint8Array;
+    contentType: string;
+    relativePath: string;
+}>;
+
+type GraphVisualizationBundleArtifact = Readonly<{
+    entryHtmlPath: string;
+    files: ReadonlyArray<GraphVisualizationBundleFile>;
 }>;
 
 async function loadOptionalProjectConfig(
@@ -293,7 +309,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
-            renderHtml: async (isServerMode) => {
+            renderBundle: async (isServerMode) => {
                 const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(
                     activeContext,
                     {
@@ -301,7 +317,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     }
                 );
 
-                return UI.renderGraphVisualizationHtml(exportVisualizationPayload(), {
+                return UI.renderGraphVisualizationBundle(exportVisualizationPayload(), {
                     documentationCatalogs,
                     isServerMode,
                     loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
@@ -340,24 +356,23 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     });
     const dbPath = activeConfig.databasePath;
     const payload = exportVisualizationPayload();
-    const htmlContent = UI.renderGraphVisualizationHtml(payload, {
+    const bundleArtifact = UI.renderGraphVisualizationBundle(payload, {
         documentationCatalogs,
         loadedTarget: createLoadedTarget(),
         projectConfigurationCatalog,
         title: activeConfig.projectRoot
     });
-    const outputPath = options.output ?? path.join(path.dirname(dbPath), "graph.html");
-
-    await writeFile(outputPath, htmlContent, "utf8");
+    const outputDirectory = options.output ?? path.join(path.dirname(dbPath), "graph-visualization");
+    const exportResult = await writeGraphVisualizationBundleArtifact(bundleArtifact, outputDirectory);
 
     printGraphOutput(
-        createGraphEnvelope("graph visualize", activeContext, options, { outputPath }),
+        createGraphEnvelope("graph visualize", activeContext, options, exportResult),
         options.json === true,
-        `Exported graph visualization to ${outputPath}`
+        `Exported graph visualization bundle to ${path.join(outputDirectory, exportResult.entryHtmlPath)}`
     );
 
     if (options.open) {
-        openUrlInDefaultBrowser(outputPath);
+        openUrlInDefaultBrowser(path.join(outputDirectory, exportResult.entryHtmlPath));
     }
 }
 
@@ -449,12 +464,12 @@ export function createGraphCommand(): Command {
 
     const visualizeCommand = addGraphSharedOptions(
         applyStandardCommandOptions(new Command("visualize")).description(
-            "Render an interactive graph index visualization HTML file."
+            "Render an interactive graph index visualization HTML+assets bundle."
         ),
         { includeForce: true }
     );
     visualizeCommand
-        .addOption(new Option("--output <path>", "Output HTML file path"))
+        .addOption(new Option("--output <path>", "Output visualization directory path"))
         .addOption(new Option("--open", "Open the generated file in your default browser").default(true))
         .addOption(new Option("--no-open", "Do not open the generated file").default(false))
         .addOption(new Option("--serve", "Serve dynamically rather than writing an output file").default(false))
@@ -480,5 +495,34 @@ function createDocumentationCatalogs() {
             version: "0.0.1"
         }),
         mcpTools: getMcpToolCatalogEntries()
+    });
+}
+
+async function writeGraphVisualizationBundleArtifact(
+    bundleArtifact: GraphVisualizationBundleArtifact,
+    outputDirectory: string
+): Promise<GraphVisualizationExportResult> {
+    await mkdir(outputDirectory, { recursive: true });
+
+    await Promise.all(
+        bundleArtifact.files.map(async (bundleFile) => {
+            const absoluteBundlePath = path.resolve(outputDirectory, bundleFile.relativePath);
+            const absoluteOutputRoot = path.resolve(outputDirectory) + path.sep;
+            if (
+                !absoluteBundlePath.startsWith(absoluteOutputRoot) &&
+                absoluteBundlePath !== path.resolve(outputDirectory)
+            ) {
+                throw new Error(
+                    `Refusing to write graph visualization bundle file outside the output directory: ${bundleFile.relativePath}`
+                );
+            }
+            await mkdir(path.dirname(absoluteBundlePath), { recursive: true });
+            await writeFile(absoluteBundlePath, bundleFile.bytes);
+        })
+    );
+
+    return Object.freeze({
+        entryHtmlPath: bundleArtifact.entryHtmlPath,
+        outputDirectory
     });
 }

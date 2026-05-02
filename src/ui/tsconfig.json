@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
+    "types": ["node"],
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
@@ -21,6 +22,6 @@
       "@gmloop/ui": ["./index.ts"]
     }
   },
-  "include": ["*.ts", "src/**/*.ts", "test/**/*.ts"],
+  "include": ["index.ts", "src/**/*.ts", "test/**/*.ts"],
   "exclude": ["dist", "tmp", "node_modules"]
 }

@@ -106,6 +106,23 @@ export type GraphVisualizationRenderOptions = Readonly<{
 }>;
 
 /**
+ * A single file emitted by the graph visualization renderer bundle.
+ */
+export type GraphVisualizationBundleFile = Readonly<{
+    bytes: Uint8Array;
+    contentType: string;
+    relativePath: string;
+}>;
+
+/**
+ * Filesystem-ready artifact returned by the graph visualization bundle renderer.
+ */
+export type GraphVisualizationBundleArtifact = Readonly<{
+    entryHtmlPath: string;
+    files: ReadonlyArray<GraphVisualizationBundleFile>;
+}>;
+
+/**
  * Summary of the current path input selection loaded by the UI host.
  */
 export type GraphVisualizationLoadedTarget = Readonly<{

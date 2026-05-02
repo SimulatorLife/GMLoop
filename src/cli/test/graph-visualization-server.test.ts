@@ -62,8 +62,8 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         handle = await startGraphVisualizationServer({
             regenerate: async () => ({ changed: true }),
             openProjectTargets: async () => ({ changed: true }),
-            renderHtml: (isServerMode) =>
-                UI.renderGraphVisualizationHtml(createSampleGraphVisualizationData(), {
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
                     isServerMode,
                     title: "/tmp/project"
                 })
@@ -80,8 +80,19 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         const htmlResponse = await fetch(handle.url);
         assert.equal(htmlResponse.status, 200);
         const htmlText = await htmlResponse.text();
-        assert.match(htmlText, /player_update/u);
         assert.match(htmlText, /id="regenerate"/u);
+        assert.match(htmlText, /assets\/graph-visualization\.js/u);
+        assert.match(htmlText, /assets\/vendor\/d3\.min\.js/u);
+        assert.doesNotMatch(htmlText, /cdn\./u);
+
+        const scriptResponse = await fetch(`${handle.url}/assets/graph-visualization.js`);
+        assert.equal(scriptResponse.status, 200);
+        const scriptText = await scriptResponse.text();
+        assert.match(scriptText, /player_update/u);
+        assert.match(scriptText, /bootstrapGraphVisualizationApp/u);
+
+        const d3Response = await fetch(`${handle.url}/assets/vendor/d3.min.js`);
+        assert.equal(d3Response.status, 200);
 
         const reindexResponse = await fetch(`${handle.url}/api/reindex`, { method: "POST" });
         assert.equal(reindexResponse.status, 200);
@@ -110,8 +121,8 @@ void test("graph visualization server keeps the current view accessible while re
                 await regenerationComplete;
                 return { changed: false };
             },
-            renderHtml: (isServerMode) =>
-                UI.renderGraphVisualizationHtml(createSampleGraphVisualizationData(), {
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
                     isServerMode,
                     title: "/tmp/project"
                 })

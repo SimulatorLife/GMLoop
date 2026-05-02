@@ -72,14 +72,13 @@ This pattern should remain the template for future UI surfaces:
 
 ## Implemented Contract
 
-The current graph UI now uses a typed render boundary instead of a raw JSON-string API.
+The current graph UI uses a typed bundle-render boundary and a Lit component shell.
 
-- `renderGraphVisualizationHtml(data, options)` is the renderer entrypoint
-- the renderer accepts typed graph payload objects
-- JSON serialization for inline browser execution happens inside `@gmloop/ui`, not in CLI call sites
-- CLI host code is responsible only for obtaining payloads and invoking the renderer
-
-This keeps UI rendering typed while still keeping serialization at the browser-document edge.
+- `renderGraphVisualizationBundle(data, options)` is the primary renderer entrypoint
+- renderer output is a filesystem-ready artifact: `index.html` + local `assets/*` files
+- bundle assets include local runtime scripts and vendor files (no CDN dependencies)
+- `renderGraphVisualizationHtml(data, options)` remains as a thin convenience wrapper that reads the bundle entry HTML
+- CLI host code is responsible for obtaining payloads and writing/serving the emitted bundle artifact
 
 ## Design Rules
 
@@ -91,9 +90,9 @@ This keeps UI rendering typed while still keeping serialization at the browser-d
 - Keep UI feature code organized by surface or domain, for example `graph/`, `ast/`, `cli-docs/`, `mcp/`, `rules/`.
 - Maintain a canonical top-level surface catalog in code so future UI tabs are discoverable and consistently named.
 
-## Initial Structure
+## Workspace Structure
 
-The initial workspace structure is:
+The current workspace structure is:
 
 ```text
 src/ui/
@@ -103,15 +102,27 @@ src/ui/
   tsconfig.json
   src/
     index.ts
+    app/
+      index.ts
+      bootstrap.ts
+      components/
+      state/
     surfaces/
       index.ts
+    web/
+      index.html
+      main.ts
+      register-components.ts
+      styles/
     graph/
       index.ts
       graph-visualization-client-script.ts
+      graph-visualization-engine-adapter.ts
       graph-visualization-inline-data.ts
       graph-visualization-style-metadata.ts
       graph-visualization-template.ts
       types.ts
+  vite.config.ts
   test/
     graph-visualization-template.test.ts
     ui-surfaces.test.ts
@@ -119,15 +130,13 @@ src/ui/
 
 This keeps the public API explicit while leaving room for additional UI domains.
 
-## First Iteration: Graph Visualization
+## Graph Visualization Split
 
-The first `@gmloop/ui` feature is the graph-index visualization template that was previously embedded in `@gmloop/cli`.
-
-The split is now:
+The graph visualization surface is split as:
 
 - `@gmloop/semantic`: exports the graph visualization payload
-- `@gmloop/ui`: renders the graph visualization HTML, owns typed graph UI contracts, and owns client behavior
-- `@gmloop/cli`: chooses whether to write or serve the UI, owns the HTTP host server, owns regeneration endpoints, and owns native file-picker integration
+- `@gmloop/ui`: owns Lit components, graph browser runtime integration, CSS assets, and bundle rendering contracts
+- `@gmloop/cli`: chooses whether to write or serve the UI bundle, owns the HTTP host server, owns regeneration endpoints, and owns native file-picker integration
 
 That separation is intentional and should be preserved as more UI surfaces are added.
 
@@ -140,7 +149,7 @@ Current graph serve-mode host actions are:
 - `POST /api/reindex`: force-regenerate the current graph index
 - `POST /api/open`: open the native project picker and switch the active UI project globally
 
-The renderer receives a typed `loadedTarget` object and only displays it. Target-path resolution remains in CLI using the same path handling contract as `--path` (`.yyp` normalization, `.gml` file path handling, project-root discovery).
+The host serves the bundle entry document and static asset files, while `@gmloop/ui` remains responsible for typed rendering contracts and client presentation behavior.
 
 ## Surface Convention
 
@@ -148,8 +157,7 @@ The canonical current and planned top-level UI surfaces are tracked in code thro
 
 - `graph`: implemented
 - `ast`: planned
-- `cli-docs`: planned
-- `mcp`: planned
+- `docs`: implemented
 - `rules`: planned
 
 New top-level UI additions should:
