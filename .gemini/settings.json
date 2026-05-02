@@ -4,15 +4,19 @@
     "compressionThreshold": 0.7
   },
   "context": {
-    "fileName": ["AGENTS.md", "docs/README.md"]
+    "fileName": [
+      "AGENTS.md",
+      "docs/README.md"
+    ]
   },
   "ui": {
     "accessibility": {
-      "disableLoadingPhrases": true
+      "enableLoadingPhrases": false
     },
     "showCitations": true,
     "showMemoryUsage": true,
-    "hideContextSummary": false
+    "hideContextSummary": false,
+    "loadingPhrases": "off"
   },
   "general": {
     "checkpointing": {
@@ -73,12 +77,24 @@
       "search_file_content"
     ]
   },
-  "experimental":{
-    "useModelRouter": false,
-    "codebaseInvestigatorSettings": {
-      "enabled": true,
-      "maxTimeMinutes": 10,
-      "thinkingBudget": 12288
+  "experimental": {
+    "useModelRouter": false
+  },
+  "agents": {
+    "overrides": {
+      "codebase_investigator": {
+        "enabled": true,
+        "runConfig": {
+          "maxTimeMinutes": 10
+        },
+        "modelConfig": {
+          "generateContentConfig": {
+            "thinkingConfig": {
+              "thinkingBudget": 12288
+            }
+          }
+        }
+      }
     }
   }
 }

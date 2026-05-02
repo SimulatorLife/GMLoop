@@ -195,8 +195,7 @@ export class GMLParser {
         this.text = Core.normalizeSimpleEscapeCase(validatedText);
         this.whitespaces = [];
         this.comments = [];
-        const parserConstructor = (this.constructor as typeof GMLParser | undefined) ?? GMLParser;
-        this.options = mergeParserOptions(parserConstructor.optionDefaults, options);
+        this.options = mergeParserOptions((this.constructor as typeof GMLParser).optionDefaults, options);
     }
 
     /**
