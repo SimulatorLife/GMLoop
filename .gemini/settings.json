@@ -4,6 +4,13 @@
     "maxSessionTurns": 24,
     "compressionThreshold": 0.6
   },
+  "context": {
+    "fileFiltering": {
+      "customIgnoreFilePaths": [
+        ".aiexclude"
+      ]
+    }
+  },
   "ui": {
     "accessibility": {
       "disableLoadingPhrases": true
@@ -13,6 +20,7 @@
     "hideContextSummary": false
   },
   "general": {
+    "enableAutoUpdate": true,
     "previewFeatures": false,
     "checkpointing": {
       "enabled": true
@@ -23,6 +31,9 @@
       "maxAge": "7d",
       "maxCount": 10
     }
+  },
+  "billing": {
+    "overageStrategy": "never"
   },
   "privacy": {
     "usageStatisticsEnabled": false
