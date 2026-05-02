@@ -186,6 +186,11 @@ function assertQwenUsesLocalAgentLoop(source: string, sharedPrompt: string): voi
     assert.match(setupCommand, /\.qwen\/settings\.json/u);
     assert.match(setupCommand, /ollama pull "\$\{configured_model\}"/u);
     assert.doesNotMatch(agentCommand, /ollama pull/u);
+    assert.match(agentCommand, /set \+e/u);
+    assert.match(agentCommand, /qwen_status="\$\{PIPESTATUS\[0\]\}"/u);
+    assert.match(agentCommand, /set -e/u);
+    assert.match(agentCommand, /if \[ "\$\{qwen_status\}" -ne 0 \]; then/u);
+    assert.match(agentCommand, /exit "\$\{qwen_status\}"/u);
     assert.match(source, /(--approval-mode yolo|--yolo)/u);
     assert.doesNotMatch(source, /--append-system-prompt/u);
     assert.doesNotMatch(source, /--prompt-interactive/u);
@@ -296,12 +301,13 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(sharedPrompt, /Do not finish with only analysis or a plan/u);
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
     assert.match(source, /Missing shared AGENT_PROMPT_FILE from parent workflow/u);
-    assert.match(source, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
+    assert.match(source, /cat "\$\{AGENT_PROMPT_FILE\}" \| stdbuf -oL -eL gemini/u);
     assert.doesNotMatch(source, /agent_setup_command:/u);
     assert.match(geminiCommand, /--approval-mode yolo/u);
     assert.match(geminiCommand, /--skip-trust/u);
     assert.doesNotMatch(geminiCommand, /--model/u);
-    assert.match(geminiCommand, /--prompt "\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)"/u);
+    assert.match(geminiCommand, /--prompt ""/u);
+    assert.doesNotMatch(geminiCommand, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
     assert.doesNotMatch(agentCommand, /max_api_attempts="\$\{GEMINI_API_MAX_ATTEMPTS:-4\}"/u);
     assert.doesNotMatch(agentCommand, /RESOURCE_EXHAUSTED\|429\|quota exceeded\|rate\.\?limit/u);
     assert.doesNotMatch(agentCommand, /Please retry in/u);
