@@ -62,11 +62,11 @@ jobs:
         export GEMINI_API_KEY="${API_KEY}"
 
         set +e
-        cat "${AGENT_PROMPT_FILE}" | stdbuf -oL -eL gemini \
+        stdbuf -oL -eL gemini \
           --approval-mode=yolo \
           --policy=.gemini/policy \
           --skip-trust \
-          --prompt "" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
+          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/gemini.log"
         gemini_status="${PIPESTATUS[0]}"
         set -e
 
