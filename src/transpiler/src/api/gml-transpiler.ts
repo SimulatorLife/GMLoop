@@ -89,7 +89,7 @@ export interface EventPatch {
  * unwrapping pattern used by `ScriptPatch`) so that callers can invoke the
  * function by passing positional arguments.
  *
- * The runtime-wrapper's `ClosurePatch` interface is intentionally compatible:
+ * The runtime wrapper `ClosurePatch` interface is intentionally compatible:
  * this type carries additional transpiler metadata (`sourceText`, `version`)
  * but remains structurally assignable to the runtime type.
  */
