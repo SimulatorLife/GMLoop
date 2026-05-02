@@ -47,6 +47,10 @@ concurrency:
 
 jobs:
   invoke:
+    outputs:
+      should_request_merge_conflict_resolution: ${{ steps.evaluate_merge_conflicts.outputs.should_request_merge_conflict_resolution || 'false' }}
+      target_pr_number: ${{ steps.evaluate_merge_conflicts.outputs.target_pr_number || '' }}
+      follow_up_agent: ${{ steps.evaluate_merge_conflicts.outputs.follow_up_agent || '' }}
     runs-on: ubuntu-latest
     env:
       OPENAI_API_TYPE: openai
@@ -858,8 +862,93 @@ jobs:
           gh pr close "${ISSUE_NUMBER}" --repo "${REPOSITORY}"
           gh api -X DELETE "repos/${REPOSITORY}/git/refs/heads/${head_ref}"
 
+      - name: Evaluate merge conflicts after successful push
+        id: evaluate_merge_conflicts
+        if: always() && steps.report_outcome.outputs.agent_failed != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+          FOLLOW_UP_AGENT: ${{ inputs.agent }}
+        run: |
+          set -euo pipefail
+
+          write_outputs() {
+            {
+              echo "should_request_merge_conflict_resolution=$1"
+              echo "target_pr_number=$2"
+              echo "follow_up_agent=$3"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          wait_for_mergeable_state() {
+            local attempt
+            local pr_json=''
+
+            for attempt in {1..12}; do
+              pr_json="$(
+                gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" \
+                  --jq '{
+                    state: .state,
+                    mergeable: .mergeable,
+                    mergeableState: (.mergeable_state // "unknown"),
+                    headRefName: .head.ref,
+                    baseRefName: .base.ref
+                  }'
+              )"
+
+              mergeable_value="$(jq -r '.mergeable' <<<"${pr_json}")"
+              mergeable_state="$(jq -r '.mergeableState' <<<"${pr_json}")"
+
+              if [ "${mergeable_value}" != "null" ] || [ "${mergeable_state}" != "unknown" ]; then
+                printf '%s' "${pr_json}"
+                return 0
+              fi
+
+              echo "[agent] Mergeability still pending for PR #${PR_NUMBER} (attempt ${attempt}/12). Retrying in 5s..." >&2
+              sleep 5
+            done
+
+            printf '%s' "${pr_json}"
+            return 0
+          }
+
+          pr_json="$(wait_for_mergeable_state)"
+          pr_state="$(jq -r '.state // ""' <<<"${pr_json}")"
+          mergeable_state="$(jq -r '.mergeableState // "unknown"' <<<"${pr_json}")"
+          head_ref="$(jq -r '.headRefName // ""' <<<"${pr_json}")"
+          base_ref="$(jq -r '.baseRefName // ""' <<<"${pr_json}")"
+
+          echo "[agent] Post-push PR state: state='${pr_state}', mergeable_state='${mergeable_state}', head='${head_ref}', base='${base_ref}'."
+
+          if [ "${pr_state}" != "open" ]; then
+            echo "[agent] PR #${PR_NUMBER} is not open; skipping merge-conflict follow-up."
+            write_outputs false "" ""
+            exit 0
+          fi
+
+          if [ "${mergeable_state}" != "dirty" ]; then
+            echo "[agent] PR #${PR_NUMBER} does not have merge conflicts; skipping merge-conflict follow-up."
+            write_outputs false "" ""
+            exit 0
+          fi
+
+          echo "[agent] PR #${PR_NUMBER} is conflict-dirty after the agent push; requesting merge-conflict resolution with @${FOLLOW_UP_AGENT}."
+          write_outputs true "${PR_NUMBER}" "${FOLLOW_UP_AGENT}"
+
       - name: Fail workflow after unsuccessful agent run
         if: always() && steps.report_outcome.outputs.agent_failed == 'true'
         run: |
           echo "Agent workflow did not produce a successful branch push."
           exit 1
+
+  request_merge_conflict_resolution:
+    needs: invoke
+    if: ${{ needs.invoke.outputs.should_request_merge_conflict_resolution == 'true' }}
+    uses: ./.github/workflows/agent-02-resolve-merge-conflicts.yml
+    secrets:
+      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+    with:
+      target_pr_number: ${{ needs.invoke.outputs.target_pr_number }}
+      agent: ${{ needs.invoke.outputs.follow_up_agent }}

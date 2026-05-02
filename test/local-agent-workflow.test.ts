@@ -517,6 +517,26 @@ void test("agent invoke workflow checks and pushes changes after every agent att
     assert.doesNotMatch(source, /No local commits ahead of \$\{remote_ref\}; nothing to push/u);
 });
 
+void test("agent invoke requests merge-conflict resolution with the same agent after a successful dirty push", async () => {
+    const source = await readWorkflowSource("agent-invoke.yml");
+
+    assert.match(source, /outputs:\n\s+should_request_merge_conflict_resolution: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.should_request_merge_conflict_resolution \|\| 'false' \}\}/u);
+    assert.match(source, /follow_up_agent: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.follow_up_agent \|\| '' \}\}/u);
+    assert.match(source, /- name: Evaluate merge conflicts after successful push/u);
+    assert.match(source, /if: always\(\) && steps\.report_outcome\.outputs\.agent_failed != 'true'/u);
+    assert.match(source, /FOLLOW_UP_AGENT: \$\{\{ inputs\.agent \}\}/u);
+    assert.match(source, /gh api "repos\/\$\{REPOSITORY\}\/pulls\/\$\{PR_NUMBER\}"/u);
+    assert.match(source, /mergeableState: \(\.mergeable_state \/\/ "unknown"\)/u);
+    assert.match(source, /if \[ "\$\{mergeable_state\}" != "dirty" \]; then/u);
+    assert.match(source, /requesting merge-conflict resolution with @\$\{FOLLOW_UP_AGENT\}/u);
+    assert.match(source, /request_merge_conflict_resolution:/u);
+    assert.match(source, /needs: invoke/u);
+    assert.match(source, /if: \$\{\{ needs\.invoke\.outputs\.should_request_merge_conflict_resolution == 'true' \}\}/u);
+    assert.match(source, /uses: \.\/\.github\/workflows\/agent-02-resolve-merge-conflicts\.yml/u);
+    assert.match(source, /target_pr_number: \$\{\{ needs\.invoke\.outputs\.target_pr_number \}\}/u);
+    assert.match(source, /agent: \$\{\{ needs\.invoke\.outputs\.follow_up_agent \}\}/u);
+});
+
 void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 

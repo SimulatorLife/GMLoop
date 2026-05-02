@@ -1,6 +1,21 @@
 name: "Agent 02 - Resolve Merge Conflicts"
 
 on:
+  workflow_call:
+    inputs:
+      target_pr_number:
+        description: "Optional PR number to target for conflict resolution."
+        required: false
+        default: ""
+        type: string
+      agent:
+        description: "Optional agent override."
+        required: false
+        default: ""
+        type: string
+    secrets:
+      GH_USER_TOKEN:
+        required: true
   workflow_dispatch:
     inputs:
       target_pr_number:
@@ -49,13 +64,15 @@ jobs:
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GH_USER_TOKEN }}
+        env:
+          TARGET_PR_NUMBER_INPUT: ${{ inputs.target_pr_number || github.event.inputs.target_pr_number || '' }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const marker = "<!-- agent-resolve-merge-conflicts -->";
-            const manualInputRaw = context.payload?.inputs?.target_pr_number ?? "";
+            const manualInputRaw = process.env.TARGET_PR_NUMBER_INPUT ?? "";
             const manualInput = typeof manualInputRaw === "string" ? manualInputRaw.trim() : "";
-            const manualRun = manualInput.length > 0;
+            const manualRun = context.eventName === "workflow_dispatch" && manualInput.length > 0;
 
             function setOutputs({
               found,
@@ -206,7 +223,7 @@ jobs:
           MERGEABLE_STATE: ${{ steps.select_pr.outputs.mergeable_state }}
           MANUAL_RUN: ${{ steps.select_pr.outputs.manual_run }}
           ALLOW_REPEAT: ${{ steps.select_pr.outputs.allow_repeat }}
-          AGENT: ${{ github.event.inputs.agent }}
+          AGENT: ${{ inputs.agent || github.event.inputs.agent || '' }}
           WEIGHTS_PATH: .github/workflows/weights.json
         with:
           github-token: ${{ secrets.GH_USER_TOKEN }}

@@ -146,6 +146,21 @@ void test("workflows use task-specific agent pools", async () => {
     assert.doesNotMatch(automergeWorkflow, /No agent prefix found on branch name/u);
 });
 
+void test("merge conflict workflow supports reusable invocations with explicit PR and agent inputs", async () => {
+    const conflictWorkflow = await readFile(
+        path.resolve(process.cwd(), ".github/workflows/agent-02-resolve-merge-conflicts.yml"),
+        "utf8"
+    );
+
+    assert.match(conflictWorkflow, /workflow_call:/u);
+    assert.match(conflictWorkflow, /target_pr_number:\n\s+description: "Optional PR number to target for conflict resolution\."\n\s+required: false/u);
+    assert.match(conflictWorkflow, /agent:\n\s+description: "Optional agent override\."\n\s+required: false/u);
+    assert.match(conflictWorkflow, /GH_USER_TOKEN:\n\s+required: true/u);
+    assert.match(conflictWorkflow, /TARGET_PR_NUMBER_INPUT: \$\{\{ inputs\.target_pr_number \|\| github\.event\.inputs\.target_pr_number \|\| '' \}\}/u);
+    assert.match(conflictWorkflow, /const manualRun = context\.eventName === "workflow_dispatch" && manualInput\.length > 0;/u);
+    assert.match(conflictWorkflow, /AGENT: \$\{\{ inputs\.agent \|\| github\.event\.inputs\.agent \|\| '' \}\}/u);
+});
+
 void test("workflow selectors use deterministic run-number weighted selection", async () => {
     const schedulerWorkflow = await readFile(path.resolve(process.cwd(), ".github/workflows/_scheduler.yml"), "utf8");
     const openPrWorkflow = await readFile(
