@@ -51,6 +51,17 @@
     "usageStatisticsEnabled": false
   },
   "tools": {
+    "core": [
+      "LSTool",
+      "ReadFileTool",
+      "RipGrepTool",
+      "GlobTool",
+      "EditTool",
+      "WriteFileTool",
+      "ActivateSkillTool",
+      "run_shell_command"
+    ],
+    "useRipgrep": true,
     "autoAccept": true,
     "truncateToolOutputThreshold": 16000,
     "disableLLMCorrection": true,

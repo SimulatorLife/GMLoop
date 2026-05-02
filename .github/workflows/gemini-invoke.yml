@@ -33,17 +33,28 @@ jobs:
       agent_setup_command: |
         set -euo pipefail
 
-        if command -v rg >/dev/null 2>&1; then
-          exit 0
+        if ! command -v rg >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
         fi
-
-        sudo apt-get update
-        sudo apt-get install -y ripgrep
 
         if ! command -v rg >/dev/null 2>&1; then
-          echo "❌ ripgrep install succeeded but rg is still unavailable."
+          echo "❌ ripgrep is unavailable after install attempt."
           exit 1
         fi
+
+        gemini_package_root="$(pnpm root -g)/@google/gemini-cli"
+        if [ ! -d "${gemini_package_root}" ]; then
+          echo "❌ Could not locate globally installed @google/gemini-cli package."
+          exit 1
+        fi
+
+        ripgrep_binary_name="$(
+          node --input-type=module -e 'import os from "node:os"; const platform = os.platform(); const arch = os.arch(); process.stdout.write(`rg-${platform}-${arch}${platform === "win32" ? ".exe" : ""}`);'
+        )"
+        gemini_vendor_directory="${gemini_package_root}/bundle/vendor/ripgrep"
+        mkdir -p "${gemini_vendor_directory}"
+        ln -sf "$(command -v rg)" "${gemini_vendor_directory}/${ripgrep_binary_name}"
       agent_command: |
         set -euo pipefail
 

@@ -26,6 +26,7 @@ async function readQwenSettings(): Promise<QwenSettings> {
 interface GeminiSettings {
     tools: {
         core: string[];
+        useRipgrep: boolean;
     };
 }
 
@@ -302,9 +303,11 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
     assert.match(source, /cat "\$\{AGENT_PROMPT_FILE\}" \| stdbuf -oL -eL gemini/u);
     assert.match(setupCommand, /command -v rg/u);
-    assert.match(setupCommand, /sudo apt-get update/u);
     assert.match(setupCommand, /sudo apt-get install -y ripgrep/u);
-    assert.match(setupCommand, /rg is still unavailable/u);
+    assert.match(setupCommand, /pnpm root -g/u);
+    assert.match(setupCommand, /bundle\/vendor\/ripgrep/u);
+    assert.match(setupCommand, /ln -sf "\$\(command -v rg\)"/u);
+    assert.match(setupCommand, /ripgrep is unavailable after install attempt/u);
     assert.match(geminiCommand, /--approval-mode yolo/u);
     assert.match(geminiCommand, /--skip-trust/u);
     assert.doesNotMatch(geminiCommand, /--model/u);
@@ -329,12 +332,16 @@ void test("gemini settings allow the git commands required for merge-conflict re
     const settings = await readGeminiSettings();
     const allowedTools = settings.tools.core;
 
-    assert.ok(allowedTools.includes("run_shell_command(git fetch)"));
-    assert.ok(allowedTools.includes("run_shell_command(git merge)"));
-    assert.ok(allowedTools.includes("run_shell_command(git rebase)"));
-    assert.ok(allowedTools.includes("run_shell_command(git worktree)"));
-    assert.ok(allowedTools.includes("run_shell_command(git status)"));
-    assert.ok(allowedTools.includes("run_shell_command(git diff)"));
+    assert.equal(settings.tools.useRipgrep, true);
+    assert.ok(!allowedTools.includes("GrepTool"));
+    assert.ok(allowedTools.includes("RipGrepTool"));
+    assert.ok(allowedTools.includes("LSTool"));
+    assert.ok(allowedTools.includes("ReadFileTool"));
+    assert.ok(allowedTools.includes("GlobTool"));
+    assert.ok(allowedTools.includes("EditTool"));
+    assert.ok(allowedTools.includes("WriteFileTool"));
+    assert.ok(allowedTools.includes("ActivateSkillTool"));
+    assert.ok(allowedTools.includes("run_shell_command"));
 });
 
 void test("aider invoke uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
