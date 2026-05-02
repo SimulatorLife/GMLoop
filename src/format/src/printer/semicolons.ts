@@ -114,14 +114,14 @@ export function getNextNonWhitespaceCharacter(text: string | null | undefined, s
     }
 
     const { length } = text;
-    for (let index = startIndex; index < length; index += 1) {
-        const characterCode = text.charCodeAt(index);
+    let index = startIndex;
 
-        if (isWhitespaceCharacterCode(characterCode)) {
-            continue;
+    while (index < length) {
+        if (!isWhitespaceCharacterCode(text.charCodeAt(index))) {
+            return text[index] ?? null;
         }
 
-        return text.charAt(index);
+        index += 1;
     }
 
     return null;
