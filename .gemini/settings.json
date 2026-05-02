@@ -1,6 +1,6 @@
 {
   "model": {
-    "name": "gemini-2.5-flash",
+    "name": "gemini-2.5-flash-lite",
     "maxSessionTurns": 8,
     "compressionThreshold": 0.6
   },
@@ -8,7 +8,6 @@
     ".gemini/policy"
   ],
   "context": {
-    "fileName": "AGENTS.md",
     "fileFiltering": {
       "customIgnoreFilePaths": [
         ".aiexclude"
@@ -39,9 +38,7 @@
     },
     "retryFetchErrors": true,
     "sessionRetention": {
-      "enabled": false,
-      "maxAge": "1d",
-      "maxCount": 2
+      "enabled": false
     }
   },
   "billing": {

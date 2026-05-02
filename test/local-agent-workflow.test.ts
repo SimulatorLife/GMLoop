@@ -118,8 +118,8 @@ function getRequiredAiderCommand(source: string): string {
 }
 
 function getRequiredGeminiCommand(source: string): string {
-    const commandStartIndex = source.indexOf("stdbuf -oL -eL gemini \\");
-    assert.notEqual(commandStartIndex, -1, "Gemini workflow must invoke gemini with explicit CLI flags.");
+    const commandStartIndex = source.indexOf('stdbuf -oL -eL node --max-old-space-size=12288 "${GEMINI_CLI_ENTRYPOINT}" \\');
+    assert.notEqual(commandStartIndex, -1, "Gemini workflow must invoke the Gemini CLI entrypoint through node.");
 
     const commandTail = source.slice(commandStartIndex);
     const commandLines = commandTail.split("\n");
@@ -130,7 +130,7 @@ function getRequiredGeminiCommand(source: string): string {
             capturedCommandLines.push(line);
             break;
         }
-        if (capturedCommandLines.length > 0 || line.includes("stdbuf -oL -eL gemini")) {
+        if (capturedCommandLines.length > 0 || line.includes('stdbuf -oL -eL node --max-old-space-size=12288 "${GEMINI_CLI_ENTRYPOINT}"')) {
             capturedCommandLines.push(line);
         }
     }
@@ -313,7 +313,12 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(sharedPrompt, /Do not finish with only analysis or a plan/u);
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
     assert.doesNotMatch(agentCommand, /NODE_OPTIONS/u);
-    assert.match(source, /stdbuf -oL -eL gemini \\/u);
+    assert.match(source, /GEMINI_CLI_ENTRYPOINT=/u);
+    assert.match(setupCommand, /gemini_cli_entrypoint="\$\{gemini_package_root\}\/bundle\/gemini\.js"/u);
+    assert.match(setupCommand, /Could not locate Gemini CLI entrypoint/u);
+    assert.match(setupCommand, /echo "GEMINI_CLI_ENTRYPOINT=\$\{gemini_cli_entrypoint\}" >> "\$GITHUB_ENV"/u);
+    assert.match(source, /stdbuf -oL -eL node --max-old-space-size=12288 "\$\{GEMINI_CLI_ENTRYPOINT\}" \\/u);
+    assert.match(agentCommand, /Missing Gemini CLI entrypoint from setup step/u);
     assert.match(setupCommand, /command -v rg/u);
     assert.match(setupCommand, /sudo apt-get install -y ripgrep/u);
     assert.match(setupCommand, /pnpm root -g/u);
