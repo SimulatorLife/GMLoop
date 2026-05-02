@@ -48,7 +48,7 @@ export function createGraphVisualizationUiModel(
  */
 export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiCallbacks {
     return {
-        onOpenProject: () => undefined,
-        onRegenerate: () => undefined
+        onOpenProject: () => {},
+        onRegenerate: () => {}
     };
 }
