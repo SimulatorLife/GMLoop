@@ -11,18 +11,33 @@
 .vscode/
 .husky/
 .github/
+.gmloop/
 
 scripts/
 vendor/
 resources/
 docs/
 node_modules/
+**/node_modules/
 dist/
+**/dist/
+build/
+coverage/
+.cache/
 
 .gitignore
 .gitattributes
 .editorconfig
+.gitmodules
+.pnpm-store
+.gitmodules
+.eslintcache
+.prettierignore
+.prettierrc
+.nvmrc
 LICENSE
+pnpm-lock.yaml
+pnpm-workspace.yaml
 
 .env
 .env.*
