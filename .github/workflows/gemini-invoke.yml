@@ -38,13 +38,40 @@ jobs:
           sudo apt-get install -y ripgrep
         fi
 
+        if ! command -v rg >/dev/null 2>&1; then
+          echo "❌ ripgrep is unavailable after install attempt."
+          exit 1
+        fi
+
+        rg_path="$(command -v rg)"
+        rg_dir="$(dirname "${rg_path}")"
+
+        echo "rg path: ${rg_path}"
+        rg --version
+
+        # Persist rg's directory for later GitHub Actions steps.
+        echo "${rg_dir}" >> "$GITHUB_PATH"
+
+        # Some Gemini CLI builds look here for rg, so mirror it explicitly.
+        mkdir -p "$HOME/.gemini/tmp/bin"
+        ln -sf "${rg_path}" "$HOME/.gemini/tmp/bin/rg"
+
+        # Persist Gemini's tmp bin for later steps too.
+        echo "$HOME/.gemini/tmp/bin" >> "$GITHUB_PATH"
       agent_command: |
         set -euo pipefail
 
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
-
         export NODE_OPTIONS="--max-old-space-size=4096"
+
+        echo "PATH=${PATH}"
+        echo "rg path: $(command -v rg || true)"
+
+        rg --version || {
+          echo "❌ rg is unavailable in agent_command."
+          exit 1
+        }
 
         set +e
         stdbuf -oL -eL gemini \
