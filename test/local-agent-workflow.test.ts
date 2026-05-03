@@ -310,6 +310,8 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(sharedPrompt, /one focused, minimal code change set/u);
     assert.match(sharedPrompt, /Do not survey the entire repository exhaustively/u);
     assert.match(sharedPrompt, /Keep command and tool output small/u);
+    assert.match(sharedPrompt, /Prefer targeted `rg -n "<pattern>" <path>`/u);
+    assert.match(sharedPrompt, /Never invoke `rg` without at least one explicit search pattern/u);
     assert.match(sharedPrompt, /Do not finish with only analysis or a plan/u);
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
     assert.doesNotMatch(agentCommand, /NODE_OPTIONS/u);
@@ -322,9 +324,9 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(setupCommand, /command -v rg/u);
     assert.match(setupCommand, /sudo apt-get install -y ripgrep/u);
     assert.match(setupCommand, /pnpm root -g/u);
-    assert.match(setupCommand, /bundle\/vendor\/ripgrep/u);
-    assert.match(setupCommand, /ln -sf "\$\(command -v rg\)"/u);
     assert.match(setupCommand, /ripgrep is unavailable after install attempt/u);
+    assert.doesNotMatch(setupCommand, /bundle\/vendor\/ripgrep/u);
+    assert.doesNotMatch(setupCommand, /ln -sf "\$\(command -v rg\)"/u);
     assert.match(geminiCommand, /--approval-mode(?:=| )yolo/u);
     assert.match(geminiCommand, /--skip-trust/u);
     assert.match(geminiCommand, /--output-format stream-json/u);
@@ -363,12 +365,12 @@ void test("gemini settings allow the git commands required for merge-conflict re
     const settings = await readGeminiSettings();
     const allowedTools = settings.tools.core;
 
-    assert.equal(settings.tools.useRipgrep, true);
+    assert.equal(settings.tools.useRipgrep, false);
     assert.equal(settings.model.maxSessionTurns, 8);
     assert.equal(settings.general.sessionRetention.enabled, false);
     assert.equal(settings.tools.truncateToolOutputThreshold, 4000);
     assert.ok(!allowedTools.includes("GrepTool"));
-    assert.ok(allowedTools.includes("RipGrepTool"));
+    assert.ok(!allowedTools.includes("RipGrepTool"));
     assert.ok(allowedTools.includes("LSTool"));
     assert.ok(allowedTools.includes("ReadFileTool"));
     assert.ok(allowedTools.includes("GlobTool"));

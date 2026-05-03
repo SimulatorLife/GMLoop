@@ -56,13 +56,6 @@ jobs:
         fi
 
         echo "GEMINI_CLI_ENTRYPOINT=${gemini_cli_entrypoint}" >> "$GITHUB_ENV"
-
-        ripgrep_binary_name="$(
-          node --input-type=module -e 'import os from "node:os"; const platform = os.platform(); const arch = os.arch(); process.stdout.write(`rg-${platform}-${arch}${platform === "win32" ? ".exe" : ""}`);'
-        )"
-        gemini_vendor_directory="${gemini_package_root}/bundle/vendor/ripgrep"
-        mkdir -p "${gemini_vendor_directory}"
-        ln -sf "$(command -v rg)" "${gemini_vendor_directory}/${ripgrep_binary_name}"
       agent_command: |
         set -euo pipefail
 
@@ -74,8 +67,10 @@ jobs:
           exit 1
         fi
 
+        export NODE_OPTIONS="--max-old-space-size=4096"
+
         set +e
-        stdbuf -oL -eL node --max-old-space-size=12288 "${GEMINI_CLI_ENTRYPOINT}" \
+        stdbuf -oL -eL "${GEMINI_CLI_ENTRYPOINT}" \
           --approval-mode=yolo \
           --policy=.gemini/policy \
           --skip-trust \

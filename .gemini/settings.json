@@ -2,6 +2,10 @@
   "policyPaths": [
     ".gemini/policy"
   ],
+  "model": {
+    "maxSessionTurns": 8,
+    "compressionThreshold": 0.4
+  },
   "context": {
     "fileFiltering": {
       "customIgnoreFilePaths": [
@@ -33,7 +37,7 @@
     },
     "retryFetchErrors": true,
     "sessionRetention": {
-      "enabled": false
+      "enabled": true
     }
   },
   "billing": {
@@ -46,7 +50,6 @@
     "core": [
       "LSTool",
       "ReadFileTool",
-      "RipGrepTool",
       "GlobTool",
       "EditTool",
       "WriteFileTool",
