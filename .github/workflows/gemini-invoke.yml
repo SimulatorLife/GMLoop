@@ -55,6 +55,7 @@ jobs:
         stdbuf -oL -eL gemini \
           --approval-mode=yolo \
           --policy="$HOME/.gemini/policies" \
+          --output-format=stream-json \
           --skip-trust \
           --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/gemini-stream.jsonl"
         gemini_status="${PIPESTATUS[0]}"
