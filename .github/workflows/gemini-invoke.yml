@@ -44,6 +44,100 @@ jobs:
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
         export NODE_OPTIONS="--max-old-space-size=4096"
+        export AGENT_STREAM_LOG="${RUNNER_TEMP}/agent-stream.jsonl"
+
+        post_agent_summary_comment() {
+          local stream_log="$1"
+          local summary_file="${RUNNER_TEMP}/agent-final-summary.md"
+          local comment_file="${RUNNER_TEMP}/agent-final-summary-comment.md"
+          local marker="<!-- agent-final-summary:${AGENT_NAME} -->"
+          local existing_comment_id
+
+          if [ ! -s "${stream_log}" ]; then
+            echo "::warning::Agent stream log not found or empty: ${stream_log}"
+            return 0
+          fi
+
+          python3 <<'PY' "${stream_log}" "${summary_file}" "json"
+        import json
+        import re
+        import sys
+
+        log_file = sys.argv[1]
+        summary_file = sys.argv[2]
+        mode = sys.argv[3]
+
+        ansi = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+        final_output = ""
+        final_message = ""
+
+        if mode == "json":
+            with open(log_file, "r", encoding="utf-8", errors="replace") as file:
+                for raw_line in file:
+                    line = raw_line.strip()
+                    if not line.startswith("{"):
+                        continue
+
+                    try:
+                        payload = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    output = payload.get("output")
+                    if payload.get("type") == "tool_result" and payload.get("status") == "success" and isinstance(output, str) and output.strip():
+                        final_output = output.strip()
+
+                    content = payload.get("content")
+                    if payload.get("role") == "assistant" and isinstance(content, str) and content.strip():
+                        final_message = content.strip()
+        else:
+            with open(log_file, "r", encoding="utf-8", errors="replace") as file:
+                lines = [ansi.sub("", line.rstrip()) for line in file]
+            non_empty = [line for line in lines if line.strip()]
+            final_output = "\n".join(non_empty[-80:]).strip()
+
+        summary = final_output or final_message
+        if len(summary) > 12000:
+            summary = summary[-12000:].lstrip()
+
+        if summary:
+            with open(summary_file, "w", encoding="utf-8") as file:
+                file.write(summary)
+        PY
+
+          if [ ! -s "${summary_file}" ]; then
+            echo "::warning::No agent final summary found in ${stream_log}"
+            return 0
+          fi
+
+          {
+            printf '%s\n' "${marker}"
+            printf '**[🤖 %s]** Completed the request.\n\n' "${AGENT_NAME}"
+            cat "${summary_file}"
+            printf '\n\n'
+            printf '<sub>Updated from [workflow run](%s/%s/actions/runs/%s).</sub>\n' \
+              "${GITHUB_SERVER_URL}" \
+              "${REPOSITORY}" \
+              "${GITHUB_RUN_ID}"
+          } > "${comment_file}"
+
+          existing_comment_id="$(
+            gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              --jq ".[] | select(.body | contains(\"${marker}\")) | .id" \
+              | tail -n 1
+          )"
+
+          if [ -n "${existing_comment_id}" ]; then
+            gh api \
+              --method PATCH \
+              "repos/${REPOSITORY}/issues/comments/${existing_comment_id}" \
+              --field body@"${comment_file}" >/dev/null
+          else
+            gh issue comment "${PR_NUMBER}" \
+              --repo "${REPOSITORY}" \
+              --body-file "${comment_file}" >/dev/null
+          fi
+        }
 
         set +e
         stdbuf -oL -eL gemini \
@@ -51,10 +145,12 @@ jobs:
           --policy="$HOME/.gemini/policies" \
           --output-format=stream-json \
           --skip-trust \
-          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/gemini-stream.jsonl"
+          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "${AGENT_STREAM_LOG}"
         gemini_status="${PIPESTATUS[0]}"
         set -e
 
         if [ "${gemini_status}" -ne 0 ]; then
           exit "${gemini_status}"
         fi
+
+        post_agent_summary_comment "${AGENT_STREAM_LOG}" || echo "::warning::Could not post agent summary comment."
