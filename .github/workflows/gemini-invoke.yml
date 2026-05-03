@@ -38,84 +38,22 @@ jobs:
           sudo apt-get install -y ripgrep
         fi
 
-        if ! command -v rg >/dev/null 2>&1; then
-          echo "❌ ripgrep is unavailable after install attempt."
-          exit 1
-        fi
-
-        gemini_package_root="$(pnpm root -g)/@google/gemini-cli"
-        if [ ! -d "${gemini_package_root}" ]; then
-          echo "❌ Could not locate globally installed @google/gemini-cli package."
-          exit 1
-        fi
-
-        gemini_cli_entrypoint="${gemini_package_root}/bundle/gemini.js"
-        if [ ! -f "${gemini_cli_entrypoint}" ]; then
-          echo "❌ Could not locate Gemini CLI entrypoint at ${gemini_cli_entrypoint}."
-          exit 1
-        fi
-
-        echo "GEMINI_CLI_ENTRYPOINT=${gemini_cli_entrypoint}" >> "$GITHUB_ENV"
       agent_command: |
         set -euo pipefail
 
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
 
-        if [ -z "${GEMINI_CLI_ENTRYPOINT:-}" ] || [ ! -f "${GEMINI_CLI_ENTRYPOINT}" ]; then
-          echo "❌ Missing Gemini CLI entrypoint from setup step."
-          exit 1
-        fi
-
         export NODE_OPTIONS="--max-old-space-size=4096"
 
         set +e
-        stdbuf -oL -eL "${GEMINI_CLI_ENTRYPOINT}" \
+        stdbuf -oL -eL gemini \
           --approval-mode=yolo \
           --policy=.gemini/policy \
           --skip-trust \
           --output-format stream-json \
           --debug \
-          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 \
-          | tee "$RUNNER_TEMP/gemini-stream.jsonl" \
-          | jq -Rr '
-              def flatten_text:
-                if . == null then ""
-                elif type == "string" then .
-                elif type == "array" then map(if type == "string" then . else tostring end) | join("")
-                else tostring
-                end;
-
-              (fromjson? // {"type":"raw","text": .}) as $event
-              | if $event.type == "message" then
-                  ($event.role // $event.message.role // "assistant") as $role
-                  | ($event.text // $event.message.text // $event.message.content // $event.content // "") as $content
-                  | ($content | flatten_text) as $text
-                  | if ($text | length) > 0 then "[message/\($role)] \($text)" else empty end
-                elif $event.type == "tool_use" then
-                  ($event.name // $event.tool_name // $event.toolUse.name // "unknown") as $name
-                  | "[tool_use] \($name)"
-                elif $event.type == "tool_result" then
-                  ($event.name // $event.tool_name // $event.toolResult.name // "unknown") as $name
-                  | ($event.output // $event.result // $event.toolResult.result // $event.text // "") as $output
-                  | ($output | flatten_text) as $text
-                  | if ($text | length) > 0 then "[tool_result/\($name)] \($text)" else "[tool_result/\($name)]" end
-                elif $event.type == "error" then
-                  (($event.message // $event.error.message // $event.text // ($event | tostring)) as $message
-                  | "[error] \($message)")
-                elif $event.type == "result" then
-                  ($event.response // $event.result.response // $event.text // "") as $response
-                  | ($response | flatten_text) as $text
-                  | if ($text | length) > 0 then "[result] \($text)" else "[result] completed" end
-                elif $event.type == "init" then
-                  "[init] session started"
-                elif $event.type == "raw" then
-                  $event.text
-                else
-                  ($event | tostring)
-                end
-            ' \
-          | tee "$RUNNER_TEMP/gemini.log"
+          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/gemini-stream.jsonl"
         gemini_status="${PIPESTATUS[0]}"
         set -e
 
