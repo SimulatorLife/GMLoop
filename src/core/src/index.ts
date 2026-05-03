@@ -44,14 +44,14 @@ type CoreNamespace = typeof AST &
 // import from a single entry point without deep paths or re-export shims.
 export const Core: CoreNamespace = Object.freeze({
     ...AST,
+    ...Comments,
     ...FS,
-    ...Text,
-    ...Utils,
+    ...IdentifierMetadata,
     ...ProjectConfig,
     ...Resources,
-    ...IdentifierMetadata,
-    ...Comments,
-    ...Transforms
+    ...Text,
+    ...Transforms,
+    ...Utils
 });
 
 // Publicly export key AST types at the package root for other packages to
