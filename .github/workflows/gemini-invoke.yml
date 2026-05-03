@@ -67,12 +67,14 @@ jobs:
           exit 1
         fi
 
+        # < "${AGENT_PROMPT_FILE}"
+
         set +e
         stdbuf -oL -eL gemini \
           --approval-mode=yolo \
           --policy=.gemini/policy \
           --skip-trust \
-          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/gemini-stream.jsonl"
+          --prompt "Say exactly: Gemini smoke test OK" 2>&1 | tee "$RUNNER_TEMP/gemini-stream.jsonl"
         gemini_status="${PIPESTATUS[0]}"
         set -e
 
