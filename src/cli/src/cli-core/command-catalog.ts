@@ -37,7 +37,7 @@ export type CliCatalogEntry = Readonly<{
 function normalizeArgument(argument: Argument): CliCatalogArgument {
     return Object.freeze({
         choices: Object.freeze([...(argument.argChoices ?? [])]),
-        defaultValue: argument.defaultValue,
+        defaultValue: argument.defaultValue as unknown,
         description: argument.description ?? "",
         name: argument.name(),
         required: argument.required,
