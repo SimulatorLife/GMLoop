@@ -11,6 +11,9 @@
       ]
     }
   },
+  "experimental": {
+    "useModelRouter": true
+  },
   "security": {
     "folderTrust": {
       "enabled": false
@@ -45,7 +48,7 @@
     "usageStatisticsEnabled": false
   },
   "tools": {
-    "useRipgrep": true,
+    "useRipgrep": false,
     "autoAccept": true,
     "truncateToolOutputThreshold": 4000,
     "disableLLMCorrection": true

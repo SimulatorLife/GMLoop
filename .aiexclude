@@ -17,6 +17,7 @@ scripts/
 vendor/
 resources/
 docs/
+!docs/target-state.md
 node_modules/
 **/node_modules/
 dist/

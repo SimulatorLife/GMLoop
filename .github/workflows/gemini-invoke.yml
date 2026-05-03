@@ -33,34 +33,9 @@ jobs:
       agent_command: |
         set -euo pipefail
 
-        if ! command -v rg >/dev/null 2>&1; then
-          sudo apt-get update
-          sudo apt-get install -y ripgrep
-        fi
-
-        if ! command -v rg >/dev/null 2>&1; then
-          echo "❌ ripgrep is unavailable after install attempt."
-          exit 1
-        fi
-
-        rg_path="$(command -v rg)"
-        rg_dir="$(dirname "${rg_path}")"
-
-        # Some Gemini CLI builds look here for rg, so mirror it explicitly.
-        mkdir -p "$HOME/.gemini/tmp/bin"
-        ln -sf "${rg_path}" "$HOME/.gemini/tmp/bin/rg"
-
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
         export NODE_OPTIONS="--max-old-space-size=4096"
-        export PATH="$HOME/.gemini/tmp/bin:${rg_dir}:$PATH"
-        
-        echo "rg path: $(command -v rg || true)"
-
-        rg --version || {
-          echo "❌ rg is unavailable in agent_command."
-          exit 1
-        }
 
         if [ -z "${AGENT_PROMPT_FILE:-}" ] || [ ! -f "${AGENT_PROMPT_FILE}" ]; then
           echo "❌ Missing AGENT_PROMPT_FILE."
