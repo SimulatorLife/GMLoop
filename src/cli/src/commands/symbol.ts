@@ -1,10 +1,9 @@
-import { Core } from "@gmloop/core";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
-import { discoverProjectRoot } from "../workflow/project-root.js";
+import { resolveCommandProjectContext } from "../workflow/project-root.js";
 
 type SymbolCommandSharedOptions = Readonly<{
     config?: string;
@@ -16,25 +15,11 @@ type SymbolCommandSharedOptions = Readonly<{
     toolsetRoot?: string;
 }>;
 
-async function resolveProjectContext(options: SymbolCommandSharedOptions): Promise<{
-    projectConfig: Record<string, unknown>;
-    projectRoot: string;
-}> {
-    const projectRoot = await discoverProjectRoot({
-        configPath: options.config,
-        explicitProjectPath: options.path
-    });
-    const candidateConfigPath = options.config ?? `${projectRoot}/gmloop.json`;
-    const loadedConfig = await Core.loadGmloopProjectConfig(candidateConfigPath).catch(() => ({}));
-    const projectConfig = Core.isObjectLike(loadedConfig) ? (loadedConfig as Record<string, unknown>) : {};
-    return { projectConfig, projectRoot };
-}
-
 async function ensureGraphIndex(options: SymbolCommandSharedOptions): Promise<{
     projectConfig: Record<string, unknown>;
     projectRoot: string;
 }> {
-    const context = await resolveProjectContext(options);
+    const context = await resolveCommandProjectContext(options);
     await Semantic.buildGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,

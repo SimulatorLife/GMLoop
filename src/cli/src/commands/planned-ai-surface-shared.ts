@@ -1,9 +1,6 @@
-import path from "node:path";
-
-import { Core } from "@gmloop/core";
 import { Semantic } from "@gmloop/semantic";
 
-import { discoverProjectRoot } from "../workflow/project-root.js";
+import { resolveCommandProjectContext } from "../workflow/project-root.js";
 
 export type PlannedSurfaceSharedOptions = Readonly<{
     config?: string;
@@ -35,22 +32,14 @@ export function printPlannedSurfacePayload(payload: unknown, asJson: boolean): v
 
 /**
  * Resolve project root and configuration for graph-backed command suites.
+ *
+ * Delegates to {@link resolveCommandProjectContext} from the shared workflow helpers.
  */
-export async function resolvePlannedSurfaceProjectContext(options: PlannedSurfaceSharedOptions): Promise<{
+export function resolvePlannedSurfaceProjectContext(options: PlannedSurfaceSharedOptions): Promise<{
     projectConfig: Record<string, unknown>;
     projectRoot: string;
 }> {
-    const projectRoot = await discoverProjectRoot({
-        configPath: options.config,
-        explicitProjectPath: options.path
-    });
-    const configPath = options.config ?? path.join(projectRoot, "gmloop.json");
-    const loadedConfig = await Core.loadGmloopProjectConfig(configPath).catch(() => ({}));
-
-    return {
-        projectConfig: Core.isObjectLike(loadedConfig) ? (loadedConfig as Record<string, unknown>) : {},
-        projectRoot
-    };
+    return resolveCommandProjectContext(options);
 }
 
 /**
