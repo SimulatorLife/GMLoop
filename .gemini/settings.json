@@ -1,7 +1,4 @@
 {
-  "policyPaths": [
-    ".gemini/policy"
-  ],
   "model": {
     "maxSessionTurns": 8,
     "compressionThreshold": 0.4
@@ -48,50 +45,10 @@
     "usageStatisticsEnabled": false
   },
   "tools": {
-    "core": [
-      "LSTool",
-      "Ripgrep",
-      "ReadFileTool",
-      "GlobTool",
-      "EditTool",
-      "WriteFileTool",
-      "ActivateSkillTool",
-      "run_shell_command"
-    ],
     "useRipgrep": true,
     "autoAccept": true,
     "truncateToolOutputThreshold": 4000,
-    "disableLLMCorrection": true,
-    "allow": [
-      "LSTool",
-      "Ripgrep",
-      "ReadFileTool",
-      "GlobTool",
-      "EditTool",
-      "WriteFileTool",
-      "ActivateSkillTool",
-      "run_shell_command"
-    ]
+    "disableLLMCorrection": true
   },
-  "useWriteTodos": false,
-  "experimental": {
-    "useModelRouter": true
-  },
-  "agents": {
-    "overrides": {
-      "codebase_investigator": {
-        "enabled": false,
-        "runConfig": {
-          "maxTimeMinutes": 4
-        },
-        "modelConfig": {
-          "generateContentConfig": {
-            "thinkingConfig": {
-              "thinkingBudget": 2048
-            }
-          }
-        }
-      }
-    }
-  }
+  "useWriteTodos": false
 }
