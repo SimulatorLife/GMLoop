@@ -1,4 +1,3 @@
-import { Core } from "@gmloop/core";
 import { type ProjectResourceMutationResult, Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Argument, Command } from "commander";
@@ -6,7 +5,7 @@ import { Argument, Command } from "commander";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createPathOption, createVerboseOption, createWriteOption } from "../cli-core/shared-command-options.js";
-import { discoverProjectRoot } from "../workflow/project-root.js";
+import { discoverProjectRoot, resolveCommandProjectContext } from "../workflow/project-root.js";
 
 type ResourceCommandSharedOptions = Readonly<{
     config?: string;
@@ -21,27 +20,11 @@ type ResourceCommandSharedOptions = Readonly<{
 const RESOURCE_COMMAND_FAILURE_PREFIX = "Resource command failed.";
 const RESOURCE_KIND_ARGUMENT_DESCRIPTION = "Resource kind";
 
-async function resolveResourceContext(options: ResourceCommandSharedOptions): Promise<{
-    projectConfig: Record<string, unknown>;
-    projectRoot: string;
-}> {
-    const projectRoot = await discoverProjectRoot({
-        configPath: options.config,
-        explicitProjectPath: options.path
-    });
-    const configPath = options.config ?? `${projectRoot}/gmloop.json`;
-    const loadedConfig = await Core.loadGmloopProjectConfig(configPath).catch(() => ({}));
-    return {
-        projectConfig: Core.isObjectLike(loadedConfig) ? (loadedConfig as Record<string, unknown>) : {},
-        projectRoot
-    };
-}
-
 async function ensureResourceGraphIndex(options: ResourceCommandSharedOptions): Promise<{
     projectConfig: Record<string, unknown>;
     projectRoot: string;
 }> {
-    const context = await resolveResourceContext(options);
+    const context = await resolveCommandProjectContext(options);
     await Semantic.buildGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,

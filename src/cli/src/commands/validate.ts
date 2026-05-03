@@ -1,5 +1,4 @@
 import { lstat } from "node:fs/promises";
-import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import * as ParserWorkspace from "@gmloop/parser";
@@ -8,7 +7,7 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
-import { discoverProjectRoot } from "../workflow/project-root.js";
+import { resolveCommandProjectContext } from "../workflow/project-root.js";
 
 type ValidateSharedOptions = Readonly<{
     config?: string;
@@ -27,22 +26,6 @@ function printValidatePayload(payload: unknown, asJson: boolean): void {
         return;
     }
     console.log(JSON.stringify(payload, null, 2));
-}
-
-async function resolveProjectContext(options: ValidateSharedOptions): Promise<{
-    projectConfig: Record<string, unknown>;
-    projectRoot: string;
-}> {
-    const projectRoot = await discoverProjectRoot({
-        configPath: options.config,
-        explicitProjectPath: options.path
-    });
-    const configPath = options.config ?? path.join(projectRoot, "gmloop.json");
-    const loadedConfig = await Core.loadGmloopProjectConfig(configPath).catch(() => ({}));
-    return {
-        projectConfig: Core.isObjectLike(loadedConfig) ? (loadedConfig as Record<string, unknown>) : {},
-        projectRoot
-    };
 }
 
 async function runValidateFileAction(targetPath: string, options: ValidateSharedOptions): Promise<void> {
@@ -67,7 +50,7 @@ async function runValidateFileAction(targetPath: string, options: ValidateShared
 }
 
 async function runValidateProjectAction(options: ValidateSharedOptions): Promise<void> {
-    const context = await resolveProjectContext(options);
+    const context = await resolveCommandProjectContext(options);
     const graphIndex = await Semantic.buildGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,
@@ -89,7 +72,7 @@ async function runValidateProjectAction(options: ValidateSharedOptions): Promise
 }
 
 async function runValidateRoomAction(roomNameOrId: string, options: ValidateSharedOptions): Promise<void> {
-    const context = await resolveProjectContext(options);
+    const context = await resolveCommandProjectContext(options);
     await Semantic.buildGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,
@@ -118,7 +101,7 @@ async function runValidateRoomAction(roomNameOrId: string, options: ValidateShar
 }
 
 async function runValidateResourceAction(resourceNameOrId: string, options: ValidateSharedOptions): Promise<void> {
-    const context = await resolveProjectContext(options);
+    const context = await resolveCommandProjectContext(options);
     await Semantic.buildGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,
