@@ -42,6 +42,13 @@ export interface WorkflowPathFilter {
     allowsDirectory: (candidate: string) => boolean;
 }
 
+interface WorkflowTargetAllowanceOptions {
+    candidate: string;
+    allowList: ReadonlyArray<string>;
+    denyList: ReadonlyArray<string>;
+    treatAsDirectory?: boolean;
+}
+
 /**
  * Canonical fixture directories used by workflow-based fixture discovery.
  */
@@ -115,29 +122,19 @@ export function createWorkflowPathFilter(
 
     const allowList = normalizeWorkflowPathList(filters?.allowPaths);
     const denyList = normalizeWorkflowPathList(filters?.denyPaths);
-    const allows = (candidate, { treatAsDirectory = false } = {}) => {
-        if (typeof candidate !== "string") {
-            return false;
-        }
-
-        const normalized = resolveWorkflowPathCandidate(candidate);
-
-        if (denyList.some((deny) => isPathWithinBoundary(normalized, deny))) {
-            return false;
-        }
-
-        if (allowList.length === 0) {
-            return true;
-        }
-
-        return allowList.some(
-            (allow) =>
-                isPathWithinBoundary(normalized, allow) || (treatAsDirectory && isPathWithinBoundary(allow, normalized))
-        );
-    };
-
-    const allowsPath = (candidate) => allows(candidate);
-    const allowsDirectory = (candidate) => allows(candidate, { treatAsDirectory: true });
+    const allowsPath = (candidate) =>
+        isWorkflowTargetAllowed({
+            candidate,
+            allowList,
+            denyList
+        });
+    const allowsDirectory = (candidate) =>
+        isWorkflowTargetAllowed({
+            candidate,
+            allowList,
+            denyList,
+            treatAsDirectory: true
+        });
 
     return {
         allowList,
@@ -274,4 +271,26 @@ function collectManualWorkflowArtifactEntries({
     }
 
     return entries;
+}
+
+function isWorkflowTargetAllowed({
+    candidate,
+    allowList,
+    denyList,
+    treatAsDirectory = false
+}: WorkflowTargetAllowanceOptions): boolean {
+    const normalized = resolveWorkflowPathCandidate(candidate);
+
+    if (denyList.some((deny) => isPathWithinBoundary(normalized, deny))) {
+        return false;
+    }
+
+    if (allowList.length === 0) {
+        return true;
+    }
+
+    return allowList.some(
+        (allow) =>
+            isPathWithinBoundary(normalized, allow) || (treatAsDirectory && isPathWithinBoundary(allow, normalized))
+    );
 }
