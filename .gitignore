@@ -16,6 +16,7 @@ tools/
 
 # We only want extra markdown files in docs/ and README.md files for each workspace
 *.md
+!docs/*.md
 !docs/**/*.md
 !**/*/README.md
 !.github/copilot-instructions.md
@@ -42,7 +43,7 @@ src/**/*.js
 !.gemini/
 !.gemini/**/
 !.gemini/settings.json
-!.gemini/policy/tools.toml
+!.gemini/policies/tools.toml
 .qwen/*
 !.qwen/settings.json
 .codex/*
