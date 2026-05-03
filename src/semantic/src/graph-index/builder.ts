@@ -1486,41 +1486,50 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
     }
 
     const database = openGraphIndexDatabase(config.databasePath);
-    if (config.embeddings.enabled) {
-        ensureGraphEmbeddingModelAssets(config.embeddings);
+
+    // Guard the database handle with a finally block so it is always closed,
+    // even when an async indexing step (e.g. buildProjectIndex) throws, or when
+    // a synchronous step such as ensureGraphEmbeddingModelAssets throws.  Without
+    // this, any error thrown between the openGraphIndexDatabase call above and the
+    // database.close() call silently leaks the SQLite file descriptor and leaves
+    // the WAL/SHM journal files in an inconsistent state.
+    try {
+        if (config.embeddings.enabled) {
+            ensureGraphEmbeddingModelAssets(config.embeddings);
+        }
+        const buildStart = performance.now();
+        const projectIndex = (await buildProjectIndex(config.projectRoot)) as ProjectIndexSnapshot;
+        const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
+        projectFiles(projectContext);
+        projectResources(projectContext);
+        projectIdentifierCollections(projectContext);
+        projectRelationshipEdges(projectContext);
+        removeDanglingEdges(projectContext);
+
+        let toolsetContext: ProjectionContext | null = null;
+        if (config.toolsetRoot) {
+            const toolsetIndex = (await buildProjectIndex(config.toolsetRoot)) as ProjectIndexSnapshot;
+            toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
+            projectFiles(toolsetContext);
+            projectResources(toolsetContext);
+            projectIdentifierCollections(toolsetContext);
+            projectRelationshipEdges(toolsetContext);
+            removeDanglingEdges(toolsetContext);
+        }
+
+        const buildDurationMs = performance.now() - buildStart;
+        rebuildGraphProjectionIfNeeded(database, projectContext, config.embeddings, buildDurationMs);
+        if (toolsetContext) {
+            rebuildGraphProjectionIfNeeded(database, toolsetContext, config.embeddings, buildDurationMs);
+        }
+
+        database.prepare("DELETE FROM edges WHERE type = 'uses_toolset'").run();
+        addCrossGraphEdges(database, projectContext, toolsetContext);
+        refreshIndexStateEdgeCounts(database);
+        optimizeGraphDatabase(database);
+    } finally {
+        database.close();
     }
-    const buildStart = performance.now();
-
-    const projectIndex = (await buildProjectIndex(config.projectRoot)) as ProjectIndexSnapshot;
-    const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
-    projectFiles(projectContext);
-    projectResources(projectContext);
-    projectIdentifierCollections(projectContext);
-    projectRelationshipEdges(projectContext);
-    removeDanglingEdges(projectContext);
-
-    let toolsetContext: ProjectionContext | null = null;
-    if (config.toolsetRoot) {
-        const toolsetIndex = (await buildProjectIndex(config.toolsetRoot)) as ProjectIndexSnapshot;
-        toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
-        projectFiles(toolsetContext);
-        projectResources(toolsetContext);
-        projectIdentifierCollections(toolsetContext);
-        projectRelationshipEdges(toolsetContext);
-        removeDanglingEdges(toolsetContext);
-    }
-
-    const buildDurationMs = performance.now() - buildStart;
-    rebuildGraphProjectionIfNeeded(database, projectContext, config.embeddings, buildDurationMs);
-    if (toolsetContext) {
-        rebuildGraphProjectionIfNeeded(database, toolsetContext, config.embeddings, buildDurationMs);
-    }
-
-    database.prepare("DELETE FROM edges WHERE type = 'uses_toolset'").run();
-    addCrossGraphEdges(database, projectContext, toolsetContext);
-    refreshIndexStateEdgeCounts(database);
-    optimizeGraphDatabase(database);
-    database.close();
 
     const graphIds: Array<GraphIndexScope> = config.toolsetRoot ? ["project", "toolset"] : ["project"];
     return Object.freeze({
