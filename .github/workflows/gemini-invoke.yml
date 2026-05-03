@@ -30,7 +30,7 @@ jobs:
       agent: gemini
       agent_package: '@google/gemini-cli@latest'
       validate_local_endpoint: false
-      agent_setup_command: |
+      agent_command: |
         set -euo pipefail
 
         if ! command -v rg >/dev/null 2>&1; then
@@ -58,8 +58,6 @@ jobs:
 
         # Persist Gemini's tmp bin for later steps too.
         echo "$HOME/.gemini/tmp/bin" >> "$GITHUB_PATH"
-      agent_command: |
-        set -euo pipefail
 
         export GEMINI_CLI_TRUST_WORKSPACE=true
         export GEMINI_API_KEY="${API_KEY}"
