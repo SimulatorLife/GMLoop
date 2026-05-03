@@ -2,7 +2,7 @@ name: "scheduler"
 
 on:
   schedule:
-    - cron: "0 */1 * * *" # Every 1 hour
+    - cron: "0 */1 * * *"
   workflow_dispatch:
 
 permissions:
