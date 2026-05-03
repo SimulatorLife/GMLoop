@@ -107,7 +107,7 @@ function createLintConfigurationEntries(projectConfig: Readonly<Record<string, u
     const lintRuleCatalogById = new Map(
         Lint.listLintRuleCatalogEntries().map((entry) => [entry.ruleId, entry] as const)
     );
-    const lintRuleEntries = Lint.createLintRuleEntriesFromProjectConfig(projectConfig);
+    const lintRuleEntries = Lint.configs.projectConfig.createLintRuleEntriesFromProjectConfig(projectConfig);
     const rules = Object.entries(lintRuleEntries)
         .map(([ruleId, value]) => {
             const catalogEntry = lintRuleCatalogById.get(ruleId);
