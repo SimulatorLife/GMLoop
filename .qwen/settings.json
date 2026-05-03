@@ -51,9 +51,10 @@
       "ListFiles",
       "Agent",
       "Glob",
-
       "Bash(pwd)",
       "Bash(ls *)",
+      "Bash(mv *)",
+      "Bash(cp *)",
       "Bash(rg *)",
       "Bash(cat *)",
       "Bash(head *)",
@@ -70,20 +71,13 @@
       "Bash(git ls-files *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(pnpm run *)"
+      "Bash(git push *)",
+      "Bash(pnpm *)"
     ],
     "deny": [
       "web_search",
       "WebFetch",
 
-      "Bash(git add*)",
-      "Bash(git commit*)",
-      "Bash(git fetch*)",
-      "Bash(git merge*)",
-      "Bash(git rebase*)",
-      "Bash(git cherry-pick*)",
-      "Bash(git am*)",
-      "Bash(git apply*)",
       "Bash(git checkout*)",
       "Bash(git switch*)",
       "Bash(git restore*)",
@@ -92,7 +86,6 @@
       "Bash(git branch*)",
       "Bash(git tag*)",
 
-      "Bash(rm *)",
       "Bash(chmod *)",
       "Bash(chown *)",
       "Bash(curl *)",
@@ -108,8 +101,9 @@
     ]
   },
   "general": {
+    "enableAutoUpdate": true,
     "checkpointing": {
-      "enabled": true
+      "enabled": false
     }
   },
   "privacy": {
