@@ -16,8 +16,6 @@
 scripts/
 vendor/
 resources/
-docs/
-!docs/target-state.md
 node_modules/
 **/node_modules/
 dist/
@@ -25,6 +23,10 @@ dist/
 build/
 coverage/
 .cache/
+
+docs/**
+!docs/
+!docs/target-state.md
 
 .gitignore
 .gitattributes
