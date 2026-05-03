@@ -30,26 +30,20 @@ jobs:
       agent: gemini
       agent_package: '@google/gemini-cli@latest'
       validate_local_endpoint: false
-      agent_command: |
-        set -euo pipefail
-
-        export GEMINI_CLI_TRUST_WORKSPACE=true
-        export GEMINI_API_KEY="${API_KEY}"
-        export NODE_OPTIONS="--max-old-space-size=4096"
-
-        if [ -z "${AGENT_PROMPT_FILE:-}" ] || [ ! -f "${AGENT_PROMPT_FILE}" ]; then
-          echo "❌ Missing AGENT_PROMPT_FILE."
-          exit 1
-        fi
-
+      agent_setup_command: |
         mkdir -p "$HOME/.gemini/policies"
-
         if [ -f ".gemini/policies/tools.toml" ]; then
           cp ".gemini/policies/tools.toml" "$HOME/.gemini/policies/tools.toml"
         else
           echo "❌ Missing .gemini/policies/tools.toml"
           exit 1
         fi
+      agent_command: |
+        set -euo pipefail
+
+        export GEMINI_CLI_TRUST_WORKSPACE=true
+        export GEMINI_API_KEY="${API_KEY}"
+        export NODE_OPTIONS="--max-old-space-size=4096"
 
         set +e
         stdbuf -oL -eL gemini \
