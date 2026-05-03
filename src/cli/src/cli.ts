@@ -184,7 +184,7 @@ Provides formatting, benchmarking, and manual data generation commands.
 ${
     resolveDefaultAction() === FORMAT_ACTION
         ? `Defaults to running the ${FORMAT_ACTION} command when no command is provided.`
-        : `Run with a command name to get started (e.g., '${FORMAT_ACTION} --help' for formatting options). Tip: passing only a file or directory path runs '${FORMAT_ACTION}' for that target.`
+        : `Run with a command name to get started (e.g., '${FORMAT_ACTION} --help' for formatting options). Tip: passing only a file or directory path runs '${FORMAT_ACTION}' for that target. Use 'help <command>' to open command-specific usage quickly (for example, 'help lint').`
 }`
     )
     .version(resolveCliVersion(), "-V, --version", "Show CLI version information.");
