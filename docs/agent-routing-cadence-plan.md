@@ -63,34 +63,17 @@ Sample `.github/workflows/weights.json`:
     },
     {
       "name": "agent-04-style",
-      "weight": 0.2,
-      "complexity": 1
+      "weight": 0.2
     },
-    {
-      "name": "agent-10-documentation",
-      "weight": 0.02,
-      "complexity": 1
-    },
+    {"name": "agent-10-documentation", "weight": 0.02},
     {
       "name": "agent-18-clarity",
       "weight": 0.25,
       "complexity": 2
     },
-    {
-      "name": "agent-23-lint",
-      "weight": 0.33,
-      "complexity": 1
-    },
-    {
-      "name": "agent-36-docstrings",
-      "weight": 0.05,
-      "complexity": 1
-    },
-    {
-      "name": "agent-84-document-intent",
-      "weight": 0.02,
-      "complexity": 1
-    }
+    {"name": "agent-23-lint", "weight": 0.33},
+    {"name": "agent-36-docstrings", "weight": 0.05},
+    {"name": "agent-84-document-intent", "weight": 0.02}
   ]
 }
 ```
