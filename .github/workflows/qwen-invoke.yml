@@ -52,9 +52,11 @@ jobs:
         set -euo pipefail
 
         set +e
-        cat "${AGENT_PROMPT_FILE}" | stdbuf -oL -eL qwen \
+        stdbuf -oL -eL qwen \
           --yolo \
-          --prompt "" 2>&1 | tee "$RUNNER_TEMP/qwen.log"
+          --debug \
+          --output-format=stream-json \
+          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"
         qwen_status="${PIPESTATUS[0]}"
         set -e
 
