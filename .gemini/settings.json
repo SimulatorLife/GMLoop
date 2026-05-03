@@ -1,5 +1,6 @@
 {
   "model": {
+    "name": "gemini-2.5-flash",
     "maxSessionTurns": 8,
     "compressionThreshold": 0.4
   },
