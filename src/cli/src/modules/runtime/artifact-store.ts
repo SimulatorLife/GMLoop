@@ -2,41 +2,18 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { Core } from "@gmloop/core";
+
+const { sortObjectKeys } = Core;
+
 type JsonPrimitive = boolean | null | number | string;
 type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue };
 
 const GMLOOP_DIRECTORY_NAME = ".gmloop";
 
-type SortableObject = Record<string, unknown>;
-
-function isSortableObject(value: unknown): value is SortableObject {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function sortJsonValue(value: unknown): JsonValue {
-    if (value === null) {
-        return null;
-    }
-    if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
-        return value;
-    }
-    if (Array.isArray(value)) {
-        return value.map((entry) => sortJsonValue(entry));
-    }
-    if (isSortableObject(value)) {
-        const keys = Object.keys(value).sort((left, right) => left.localeCompare(right));
-        const sorted: JsonObject = {};
-        for (const key of keys) {
-            sorted[key] = sortJsonValue(value[key]);
-        }
-        return sorted;
-    }
-    return null;
-}
-
 function stableStringify(payload: unknown): string {
-    return JSON.stringify(sortJsonValue(payload), null, 2);
+    return JSON.stringify(sortObjectKeys(payload), null, 2);
 }
 
 export function resolveGmloopRoot(projectRoot: string): string {
