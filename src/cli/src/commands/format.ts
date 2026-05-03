@@ -1762,7 +1762,13 @@ export async function runFormatCommand(command) {
     }
 }
 
-function logNoMatchingFiles({ targetPath, targetIsDirectory, targetPathProvided, extensions }) {
+function buildNoMatchingFilesMessage({
+    targetPath,
+    targetIsDirectory,
+    targetPathProvided,
+    extensions,
+    ignoredFilesSkipped
+}) {
     const formattedExtensions = formatExtensionListForDisplay(extensions);
     const formattedTarget = formatPathForDisplay(targetPath);
     const locationDescription = targetIsDirectory
@@ -1783,47 +1789,49 @@ function logNoMatchingFiles({ targetPath, targetIsDirectory, targetPathProvided,
               `Pass a ${GML_EXTENSION} file or a directory containing ${GML_EXTENSION} files, or adjust your .prettierignore files if this is unexpected.`,
               exampleGuidance
           ].join(" ");
-    const ignoredFilesSkipped = skippedFileSummary.ignored > 0;
     const ignoredMessageSuffix = "Adjust your .prettierignore files or refine the target path if this is unexpected.";
 
     if (targetIsDirectory) {
         if (ignoredFilesSkipped) {
-            console.log(
-                [
-                    `All files matching ${formattedExtensions} were skipped ${locationDescription} by ignore rules.`,
-                    nothingToFormatMessage,
-                    ignoredMessageSuffix
-                ].join(" ")
-            );
+            return [
+                `All files matching ${formattedExtensions} were skipped ${locationDescription} by ignore rules.`,
+                nothingToFormatMessage,
+                ignoredMessageSuffix
+            ].join(" ");
         } else {
-            console.log(
-                [
-                    `No files matching ${formattedExtensions} were found ${locationDescription}.`,
-                    nothingToFormatMessage,
-                    guidance
-                ].join(" ")
-            );
+            return [
+                `No files matching ${formattedExtensions} were found ${locationDescription}.`,
+                nothingToFormatMessage,
+                guidance
+            ].join(" ");
         }
     } else {
         if (ignoredFilesSkipped) {
-            console.log(
-                [
-                    `${locationDescription} was skipped by ignore rules and not formatted.`,
-                    nothingToFormatMessage,
-                    ignoredMessageSuffix
-                ].join(" ")
-            );
+            return [
+                `${locationDescription} was skipped by ignore rules and not formatted.`,
+                nothingToFormatMessage,
+                ignoredMessageSuffix
+            ].join(" ");
         } else {
-            console.log(
-                [
-                    `${locationDescription} does not match the supported extension ${formattedExtensions}.`,
-                    nothingToFormatMessage,
-                    guidance
-                ].join(" ")
-            );
+            return [
+                `${locationDescription} does not match the supported extension ${formattedExtensions}.`,
+                nothingToFormatMessage,
+                guidance
+            ].join(" ");
         }
     }
+}
 
+function logNoMatchingFiles({ targetPath, targetIsDirectory, targetPathProvided, extensions }) {
+    const ignoredFilesSkipped = skippedFileSummary.ignored > 0;
+    const message = buildNoMatchingFilesMessage({
+        targetPath,
+        targetIsDirectory,
+        targetPathProvided,
+        extensions,
+        ignoredFilesSkipped
+    });
+    console.log(message);
     logSkippedFileSummary();
 }
 
