@@ -243,6 +243,26 @@ void describe("ScopeTracker batch invalidation", () => {
         );
     });
 
+    void it("reuses the canonical empty invalidation set for missing normalized paths", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        const windowsPath = String.raw`\project\missing.gml`;
+        const posixPath = "/project/missing.gml";
+        const results = tracker.getBatchInvalidationSets([windowsPath, posixPath]);
+
+        const windowsResults = results.get(windowsPath);
+        const posixResults = results.get(posixPath);
+
+        assert.ok(windowsResults, "Windows path result should exist");
+        assert.ok(posixResults, "POSIX path result should exist");
+        assert.strictEqual(
+            windowsResults,
+            posixResults,
+            "Missing normalized paths should share one empty result array"
+        );
+        assert.strictEqual(windowsResults.length, 0, "Missing normalized path result should be empty");
+    });
+
     void it("handles empty input gracefully", () => {
         const tracker = new ScopeTracker({ enabled: true });
 
