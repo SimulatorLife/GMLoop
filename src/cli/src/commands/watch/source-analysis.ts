@@ -13,6 +13,7 @@
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 
 import { Core } from "@gmloop/core";
 
@@ -115,7 +116,10 @@ export function hashSourceContent(source: string): string {
  * @returns {number} Safe unknown scan concurrency value (minimum 1).
  */
 export function resolveUnknownScanConcurrency(configuredMaximum: number): number {
-    return clamp(Math.trunc(configuredMaximum), 1, Number.POSITIVE_INFINITY);
+    const detectedParallelism = Math.max(1, availableParallelism());
+    const normalizedMaximum = Number.isFinite(configuredMaximum) ? Math.trunc(configuredMaximum) : detectedParallelism;
+
+    return clamp(normalizedMaximum, 1, detectedParallelism);
 }
 
 // ---------------------------------------------------------------------------
