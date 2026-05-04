@@ -69,6 +69,7 @@ function resolveStringScopeOverride(
 const DEFAULT_DECLARATION_ROLE: ScopeRole = Object.freeze({ type: "declaration" });
 const DEFAULT_REFERENCE_ROLE: ScopeRole = Object.freeze({ type: "reference" });
 const DEFAULT_LOOKUP_CACHE_MAX_ENTRIES = 2048;
+const EMPTY_INVALIDATION_SET: Array<{ scopeId: string; scopeKind: string; reason: string }> = [];
 
 /**
  * Manages lexical and structural scopes, symbol declarations, and references.
@@ -1402,15 +1403,17 @@ export class ScopeTracker {
         { includeDescendants = false }: { includeDescendants?: boolean } = {}
     ): Map<string, Array<{ scopeId: string; scopeKind: string; reason: string }>> {
         const results = new Map<string, Array<{ scopeId: string; scopeKind: string; reason: string }>>();
-        const normalizedPathResultsCache = new Map<
-            string,
-            Array<{ scopeId: string; scopeKind: string; reason: string }>
-        >();
         const transitiveDependentsCache = new Map<
             string,
             Array<{ dependentScopeId: string; dependentScopeKind: string; depth: number }>
         >();
-        const descendantScopesCache = new Map<string, Array<{ scopeId: string; scopeKind: string; depth: number }>>();
+        const normalizedPathResultsCache = new Map<
+            string,
+            Array<{ scopeId: string; scopeKind: string; reason: string }>
+        >();
+        const descendantScopesCache = includeDescendants
+            ? new Map<string, Array<{ scopeId: string; scopeKind: string; depth: number }>>()
+            : null;
 
         for (const path of paths) {
             if (!path || typeof path !== "string" || path.length === 0) {
@@ -1430,8 +1433,8 @@ export class ScopeTracker {
 
             const scopeIds = this.pathToScopesIndex.get(trackedPath);
             if (!scopeIds || scopeIds.size === 0) {
-                normalizedPathResultsCache.set(trackedPath, []);
-                results.set(path, []);
+                normalizedPathResultsCache.set(trackedPath, EMPTY_INVALIDATION_SET);
+                results.set(path, EMPTY_INVALIDATION_SET);
                 continue;
             }
 
@@ -1476,10 +1479,10 @@ export class ScopeTracker {
                 }
 
                 if (includeDescendants) {
-                    let descendants = descendantScopesCache.get(scopeId);
+                    let descendants = descendantScopesCache?.get(scopeId);
                     if (!descendants) {
                         descendants = this.getDescendantScopes(scopeId);
-                        descendantScopesCache.set(scopeId, descendants);
+                        descendantScopesCache?.set(scopeId, descendants);
                     }
 
                     for (const desc of descendants) {
