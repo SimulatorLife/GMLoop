@@ -200,8 +200,8 @@ export function flushQueuedPatches(
 
     if (wrapper.applyPatchBatch) {
         const result = wrapper.applyPatchBatch(patchesToApply);
-        const applied = result.success && !result.rolledBack ? result.appliedCount : 0;
-        const failed = result.success ? 0 : patchesToApply.length;
+        const applied = result.rolledBack ? 0 : result.appliedCount;
+        const failed = Math.max(0, patchesToApply.length - applied);
 
         connectionMetrics.patchesApplied += applied;
         connectionMetrics.patchesFailed += failed;
