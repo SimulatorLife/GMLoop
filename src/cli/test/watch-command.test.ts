@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -139,17 +140,19 @@ void describe("watch command", () => {
     });
 
     void it("resolveUnknownScanConcurrency clamps values to at least one", () => {
-        assert.equal(resolveUnknownScanConcurrency(16), 16);
+        const cpuBound = Math.max(1, availableParallelism());
+        assert.equal(resolveUnknownScanConcurrency(cpuBound + 50), cpuBound);
         assert.equal(resolveUnknownScanConcurrency(1), 1);
         assert.equal(resolveUnknownScanConcurrency(0), 1);
         assert.equal(resolveUnknownScanConcurrency(-5), 1);
-        assert.equal(resolveUnknownScanConcurrency(8.7), 8);
+        assert.equal(resolveUnknownScanConcurrency(8.7), Math.min(8, cpuBound));
     });
 
-    void it("resolveUnknownScanConcurrency preserves non-finite number behavior", () => {
-        assert.equal(resolveUnknownScanConcurrency(Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
-        assert.equal(resolveUnknownScanConcurrency(Number.NEGATIVE_INFINITY), 1);
-        assert.ok(Number.isNaN(resolveUnknownScanConcurrency(Number.NaN)));
+    void it("resolveUnknownScanConcurrency normalizes non-finite values to CPU-bound defaults", () => {
+        const cpuBound = Math.max(1, availableParallelism());
+        assert.equal(resolveUnknownScanConcurrency(Number.POSITIVE_INFINITY), cpuBound);
+        assert.equal(resolveUnknownScanConcurrency(Number.NEGATIVE_INFINITY), cpuBound);
+        assert.equal(resolveUnknownScanConcurrency(Number.NaN), cpuBound);
     });
 });
 

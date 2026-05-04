@@ -31,67 +31,52 @@ export function createUiCommand(): Command {
         const payload = await UI.createGraphVisualizationProjectConfigurationCatalog(context, {
             config: options.config
         });
-        printUiPayload(
-            {
-                command: "ui inspect",
-                payload
-            },
-            options
-        );
+        printUiPayload({
+            command: "ui inspect",
+            payload
+        });
     });
 
     const validate = addUiSharedOptions(
         applyStandardCommandOptions(new Command("validate")).description("Validate UI checks.")
     );
     validate.action(function uiValidateAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        printUiPayload(
-            {
-                command: "ui validate",
-                ok: true,
-                payload: {
-                    catalogBackend: "available",
-                    mutationBackend: "not_available"
-                }
-            },
-            options
-        );
+        printUiPayload({
+            command: "ui validate",
+            ok: true,
+            payload: {
+                catalogBackend: "available",
+                mutationBackend: "not_available"
+            }
+        });
     });
 
     const preview = addUiSharedOptions(
         applyStandardCommandOptions(new Command("preview")).description("Preview UI workflow.")
     );
     preview.action(function uiPreviewAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        printUiPayload(
-            {
-                command: "ui preview",
-                ok: true,
-                payload: {
-                    capability: "ui_preview_session",
-                    state: "not_available"
-                }
-            },
-            options
-        );
+        printUiPayload({
+            command: "ui preview",
+            ok: true,
+            payload: {
+                capability: "ui_preview_session",
+                state: "not_available"
+            }
+        });
     });
 
     const scaffold = addUiSharedOptions(
         applyStandardCommandOptions(new Command("scaffold")).description("Scaffold UI templates.")
     );
     scaffold.action(function uiScaffoldAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        printUiPayload(
-            {
-                command: "ui scaffold",
-                ok: true,
-                payload: {
-                    capability: "ui_template_scaffold",
-                    state: "not_available"
-                }
-            },
-            options
-        );
+        printUiPayload({
+            command: "ui scaffold",
+            ok: true,
+            payload: {
+                capability: "ui_template_scaffold",
+                state: "not_available"
+            }
+        });
     });
 
     command.addCommand(inspect);

@@ -1,0 +1,27 @@
+@media (max-width: 920px) {
+  .app-header {
+    padding: 16px 14px 12px;
+  }
+
+  .page-toolbar {
+    margin: 0 14px;
+    border-radius: 18px;
+  }
+
+  main {
+    padding: 14px;
+  }
+
+  .loaded-target-stack {
+    min-width: 0;
+  }
+
+  #search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .toolbar-controls {
+    width: 100%;
+  }
+}

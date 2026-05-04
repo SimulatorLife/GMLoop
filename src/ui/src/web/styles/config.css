@@ -1,0 +1,82 @@
+.config-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+.config-card h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: #f3f8ff;
+}
+
+.config-card p {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #c8d5e5;
+}
+
+.config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.config-item {
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(143, 181, 255, 0.1);
+}
+
+.config-item strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: #f8fbff;
+}
+
+.config-item span {
+  display: block;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #c8d5e5;
+}
+
+.config-value {
+  margin-top: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: #8ed1fc;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.config-badge-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.config-raw {
+  margin: 0;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(143, 181, 255, 0.1);
+  background: rgba(5, 10, 19, 0.9);
+  color: #dce8f5;
+  font-size: 11px;
+  line-height: 1.55;
+  overflow: auto;
+}

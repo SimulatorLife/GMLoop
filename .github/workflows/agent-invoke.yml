@@ -21,7 +21,13 @@ on:
       agent_command:
         type: string
         required: false
+      agent_command_file:
+        type: string
+        required: false
       agent_setup_command:
+        type: string
+        required: false
+      agent_setup_command_file:
         type: string
         required: false
       agent_package:
@@ -34,7 +40,7 @@ on:
       max_agent_retries:
         type: number
         required: false
-        default: 2
+        default: 1
     secrets:
       api_key:
         required: false
@@ -47,6 +53,10 @@ concurrency:
 
 jobs:
   invoke:
+    outputs:
+      should_request_merge_conflict_resolution: ${{ steps.evaluate_merge_conflicts.outputs.should_request_merge_conflict_resolution || 'false' }}
+      target_pr_number: ${{ steps.evaluate_merge_conflicts.outputs.target_pr_number || '' }}
+      follow_up_agent: ${{ steps.evaluate_merge_conflicts.outputs.follow_up_agent || '' }}
     runs-on: ubuntu-latest
     env:
       OPENAI_API_TYPE: openai
@@ -54,6 +64,7 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+
     steps:
       - name: Verify gh CLI available
         run: gh --version
@@ -68,13 +79,13 @@ jobs:
 
           test -n "${GH_USER_TOKEN}" || { echo "GH_USER_TOKEN is empty"; exit 1; }
 
-          token_user=$(curl -sS -H "Authorization: token ${GH_USER_TOKEN}" https://api.github.com/user | jq -r '.login // empty')
+          token_user="$(curl -sS -H "Authorization: token ${GH_USER_TOKEN}" https://api.github.com/user | jq -r '.login // empty')"
           if [ -z "${token_user}" ]; then
             echo "Unable to resolve GH_USER_TOKEN user identity via /user." >&2
             exit 1
           fi
 
-          can_push=$(curl -sS -H "Authorization: token ${GH_USER_TOKEN}" "https://api.github.com/repos/${REPOSITORY}" | jq -r '.permissions.push // false')
+          can_push="$(curl -sS -H "Authorization: token ${GH_USER_TOKEN}" "https://api.github.com/repos/${REPOSITORY}" | jq -r '.permissions.push // false')"
           if [ "${can_push}" != "true" ]; then
             echo "GH_USER_TOKEN user '${token_user}' does not have push permission to ${REPOSITORY}." >&2
             echo "Grant that account write access or replace GH_USER_TOKEN with a PAT/app token that has contents:write." >&2
@@ -96,31 +107,43 @@ jobs:
         run: |
           set -euo pipefail
 
-          # If a raw comment body was provided, validate it mentions the agent and extract
-          # the additional context. We expect callers to pass the raw comment body; the
-          # mention token is simply @<agent> (e.g. @gemini, @qwen).
           if [ -n "${RAW_COMMENT}" ]; then
             mention="@${AGENT_NAME}"
-            if ! printf '%s' "${RAW_COMMENT}" | grep -qF "${mention}"; then
-              echo "Comment does not mention ${mention}; aborting." >&2
+            normalized_comment="$(
+              printf '%s\n' "${RAW_COMMENT}" | awk '
+                BEGIN { skipping = 1 }
+                {
+                  line = $0
+                  if (skipping && line ~ /^[[:space:]]*$/) next
+                  if (skipping && line ~ /^[[:space:]]*<!--.*-->[[:space:]]*$/) next
+                  skipping = 0
+                  print
+                }
+              '
+            )"
+
+            if ! printf '%s' "${normalized_comment}" | grep -qE "^${mention}([[:space:]]|$)"; then
+              echo "Comment does not start with ${mention} after optional marker lines; aborting." >&2
               exit 1
             fi
-            ADDITIONAL_CTX=$(printf '%s' "${RAW_COMMENT}" | sed -E "s/^.*${mention}[[:space:]]*//")
+
+            ADDITIONAL_CTX="$(printf '%s' "${normalized_comment}" | sed -E "1s/^${mention}[[:space:]]*//")"
             echo "additional_context<<EOF" >> "$GITHUB_OUTPUT"
             printf '%s' "$ADDITIONAL_CTX" >> "$GITHUB_OUTPUT"
             echo >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
           fi
 
-          # Fetch PR metadata directly and emit outputs (avoid temporary files)
-          PR_JSON=$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" --json headRefName,headRefOid,title -q '.')
-          PR_HEAD_REF=$(jq -r '.headRefName // empty' <<<"$PR_JSON")
-          PR_HEAD_SHA=$(jq -r '.headRefOid // empty' <<<"$PR_JSON")
-          PR_TITLE=$(jq -r '.title // empty' <<<"$PR_JSON")
+          PR_JSON="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" --json headRefName,headRefOid,title -q '.')"
+          PR_HEAD_REF="$(jq -r '.headRefName // empty' <<<"$PR_JSON")"
+          PR_HEAD_SHA="$(jq -r '.headRefOid // empty' <<<"$PR_JSON")"
+          PR_TITLE="$(jq -r '.title // empty' <<<"$PR_JSON")"
+
           if [ -z "$PR_HEAD_REF" ] || [ -z "$PR_HEAD_SHA" ]; then
             echo "Failed to determine PR head ref/sha for PR #${PR_NUMBER}" >&2
             exit 1
           fi
+
           echo "pr_title<<EOF" >> "$GITHUB_OUTPUT"
           printf '%s' "$PR_TITLE" >> "$GITHUB_OUTPUT"
           echo >> "$GITHUB_OUTPUT"
@@ -141,13 +164,13 @@ jobs:
             **[🤖 ${{ inputs.agent }}]** Hi, I've received your request and will begin working on it now. See the [logs for progress](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
         run: |
           set -euo pipefail
+
           gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"
 
       - name: Checkout target commit
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          # Use the SHA fetched by the validate_pr step (prefer step output to inputs)
           ref: ${{ steps.validate_pr.outputs.head_sha }}
           submodules: recursive
           persist-credentials: false
@@ -159,18 +182,22 @@ jobs:
           TARGET_SHA: ${{ steps.validate_pr.outputs.head_sha }}
         run: |
           set -euo pipefail
+
           raw="${WORKING_BRANCH}"
           branch="${raw#refs/heads/}"
           branch="${branch#origin/}"
+
           git checkout -B "${branch}" "${TARGET_SHA}"
           echo "WORKING_BRANCH=${branch}" >> "$GITHUB_ENV"
 
       - name: Configure git identity
+        shell: bash
         env:
           GH_USER_NAME: ${{ vars.GH_USER_NAME }}
           GH_USER_EMAIL: ${{ vars.GH_USER_EMAIL }}
         run: |
           set -euo pipefail
+
           git config user.name "${GH_USER_NAME}"
           git config user.email "${GH_USER_EMAIL}"
           git config --global user.name "${GH_USER_NAME}"
@@ -180,10 +207,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           shim_dir="$RUNNER_TEMP/cmd_shims"
           mkdir -p "$shim_dir"
+
           real_git="$(command -v git)"
-          if [ -z "$real_git" ]; then echo "Could not locate real git"; exit 1; fi
+          if [ -z "$real_git" ]; then
+            echo "Could not locate real git"
+            exit 1
+          fi
+
           {
             echo '#!/usr/bin/env bash'
             echo "REAL_GIT=\"$real_git\""
@@ -196,25 +229,35 @@ jobs:
             echo 'fi'
             echo 'exit $code'
           } > "$shim_dir/git"
+
           chmod +x "$shim_dir/git"
           echo "PATH=$shim_dir:$PATH" >> "$GITHUB_ENV"
 
       - name: Use PAT for pushes
+        shell: bash
         env:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
         run: |
           set -euo pipefail
+
           git config --local --unset-all http.https://github.com/.extraheader || true
           git remote set-url origin "https://x-access-token:${GH_USER_TOKEN}@github.com/${{ github.repository }}.git"
 
       - name: Read Node version from .nvmrc
         id: read-node-version
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
 
       - name: Read pnpm version from package.json
         id: read-pnpm-version
+        shell: bash
         run: |
-          version=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).packageManager.split('@')[1]")
+          set -euo pipefail
+
+          version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).packageManager.split('@')[1]")"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
@@ -306,6 +349,7 @@ jobs:
           done
 
       - name: Install dependencies and build (root/workspaces)
+        shell: bash
         run: |
           set -o pipefail
 
@@ -316,6 +360,7 @@ jobs:
           }
 
           install_log="$(mktemp)"
+
           if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
             run_typescript_build_best_effort
             exit 0
@@ -333,11 +378,15 @@ jobs:
 
       - name: Install agent CLI (from child)
         if: ${{ inputs.agent_package != '' }}
+        shell: bash
         env:
           AGENT_CLI: ${{ inputs.agent }}
           AGENT_PACKAGE: ${{ inputs.agent_package }}
         run: |
+          set -euo pipefail
+
           echo "Checking for CLI: ${AGENT_CLI} (from pnpm package: ${AGENT_PACKAGE})"
+
           if ! command -v "${AGENT_CLI}" >/dev/null 2>&1; then
             echo "Not found, installing ${AGENT_PACKAGE} via pnpm..."
             pnpm add -g "${AGENT_PACKAGE}"
@@ -347,25 +396,45 @@ jobs:
           fi
 
       - name: Run agent setup command
-        if: ${{ inputs.agent_setup_command != '' }}
+        if: ${{ inputs.agent_setup_command != '' || inputs.agent_setup_command_file != '' }}
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           API_KEY: ${{ secrets.api_key || '' }}
+          AGENT_SETUP_COMMAND: ${{ inputs.agent_setup_command }}
+          AGENT_SETUP_COMMAND_FILE: ${{ inputs.agent_setup_command_file }}
         run: |
           set -euo pipefail
+
           cd "${GITHUB_WORKSPACE}"
+
           echo "Running one-time agent setup command"
           echo "[agent] Setup working directory: $(pwd)"
           echo "[agent] Setup git root: $(git rev-parse --show-toplevel)"
 
           setup_script="$RUNNER_TEMP/agent_setup_cmd.sh"
-          # Write the command exactly as-is (no interpolation)
-          cat >"$setup_script" <<'SCRIPT'
-          ${{ inputs.agent_setup_command }}
-          SCRIPT
+
+          if [ -n "${AGENT_SETUP_COMMAND_FILE:-}" ]; then
+            case "${AGENT_SETUP_COMMAND_FILE}" in
+              /*|../*|*/../*|*/..|..)
+                echo "❌ agent_setup_command_file must be a safe repository-relative path."
+                exit 1
+                ;;
+            esac
+
+            source_setup_script="${GITHUB_WORKSPACE}/${AGENT_SETUP_COMMAND_FILE}"
+
+            if [ ! -f "${source_setup_script}" ]; then
+              echo "❌ agent_setup_command_file does not exist: ${AGENT_SETUP_COMMAND_FILE}"
+              exit 1
+            fi
+
+            cp "${source_setup_script}" "$setup_script"
+          else
+            printf '%s\n' "${AGENT_SETUP_COMMAND}" > "$setup_script"
+          fi
 
           sed -i 's/\r$//' "$setup_script"
           chmod 700 "$setup_script"
@@ -377,7 +446,7 @@ jobs:
           stdbuf -oL -eL bash "$setup_script" 2>&1 | tee "$RUNNER_TEMP/agent-setup.log"
 
       - name: Run agent custom command with retries
-        if: ${{ inputs.agent_command != '' }}
+        if: ${{ inputs.agent_command != '' || inputs.agent_command_file != '' }}
         shell: bash
         id: run_agent
         continue-on-error: true
@@ -393,42 +462,46 @@ jobs:
           AGENT_NAME: ${{ inputs.agent }}
           MAX_AGENT_RETRIES: ${{ inputs.max_agent_retries }}
           WORKING_BRANCH: ${{ env.WORKING_BRANCH }}
+          AGENT_COMMAND: ${{ inputs.agent_command }}
+          AGENT_COMMAND_FILE: ${{ inputs.agent_command_file }}
         run: |
           set -euo pipefail
+
           cd "${GITHUB_WORKSPACE}"
+
           echo "Running agent command with retry support"
           echo "[agent] Workflow working directory: $(pwd)"
           echo "[agent] Workflow git root: $(git rev-parse --show-toplevel)"
           echo "[agent] Workflow branch: $(git branch --show-current)"
 
           script="$RUNNER_TEMP/agent_cmd.sh"
-          # Write the command exactly as-is (no interpolation)
-          cat >"$script" <<'SCRIPT'
-          ${{ inputs.agent_command }}
-          SCRIPT
 
-          # Normalize CRLF if someone pasted Windows newlines (harmless otherwise)
+          if [ -n "${AGENT_COMMAND_FILE:-}" ]; then
+            case "${AGENT_COMMAND_FILE}" in
+              /*|../*|*/../*|*/..|..)
+                echo "❌ agent_command_file must be a safe repository-relative path."
+                exit 1
+                ;;
+            esac
+
+            source_script="${GITHUB_WORKSPACE}/${AGENT_COMMAND_FILE}"
+
+            if [ ! -f "${source_script}" ]; then
+              echo "❌ agent_command_file does not exist: ${AGENT_COMMAND_FILE}"
+              exit 1
+            fi
+
+            cp "${source_script}" "$script"
+          else
+            printf '%s\n' "${AGENT_COMMAND}" > "$script"
+          fi
+
           sed -i 's/\r$//' "$script"
-
           chmod 700 "$script"
 
-          # Optional: show the script in debug logs
           echo "---- agent_cmd.sh ----"
           nl -ba "$script"
           echo "----------------------"
-
-          retry_prompt_file="$RUNNER_TEMP/agent_retry_prompt.txt"
-          cat > "$retry_prompt_file" <<'RETRY_PROMPT'
-          The previous attempt was invalid because it completed without producing any pushable repository changes.
-
-          Requirements for this retry:
-          - Work in the checked-out repository, not uploaded chat snippets.
-          - Run the requested inspection or validation command before selecting files.
-          - Do not claim there are no issues unless that claim is grounded in command output from this repository.
-          - If this is a lint/ESLint task, run `pnpm run lint` before code selection, quote the exact lint summary line, choose one real warning from the output, edit only the reported source file needed for that warning, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
-          - Leave a concrete diff in the worktree or push changes yourself.
-          - If no concrete diff is produced, this retry will fail.
-          RETRY_PROMPT
 
           if ! [[ "${MAX_AGENT_RETRIES}" =~ ^[0-9]+$ ]]; then
             echo "::error::max_agent_retries must be a non-negative integer; got '${MAX_AGENT_RETRIES}'."
@@ -436,11 +509,11 @@ jobs:
           fi
 
           total_attempts=$((MAX_AGENT_RETRIES + 1))
-          original_additional_context="${ADDITIONAL_CONTEXT:-}"
 
           SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_push_succeeded"
           NO_CHANGE_SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_no_change_retries_exhausted"
           RETRY_COMMENT_SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_retry_comment_posted"
+
           rm -f "$NO_CHANGE_SENTINEL"
           rm -f "$RETRY_COMMENT_SENTINEL"
 
@@ -510,6 +583,7 @@ jobs:
             local target_ref="${WORKING_BRANCH}"
 
             cd "${GITHUB_WORKSPACE}"
+
             echo "[agent] Resetting retry worktree to origin/${target_ref}."
 
             git fetch origin "${target_ref}" || true
@@ -524,23 +598,39 @@ jobs:
             cleanup_malformed_untracked_paths
           }
 
-          build_attempt_context() {
-            local attempt="$1"
+          write_agent_prompt_file() {
+            local additional_context="$1"
 
-            if [ "${attempt}" -eq 1 ]; then
-              printf '%s' "${original_additional_context}"
-            else
-              printf '%s\n\n%s\n' "${original_additional_context}" "$(cat "$retry_prompt_file")"
-            fi
+            AGENT_PROMPT_FILE="${RUNNER_TEMP:-/tmp}/agent-prompt.txt"
+
+            {
+              printf 'Repository root: %s\n\n' "$(pwd)"
+              printf '%s\n' 'Make one focused, minimal code change set for the user request.'
+              printf '%s\n' 'Do not survey the entire repository exhaustively. Narrow to one candidate area first using targeted searches, then read only the files needed for that area.'
+              printf '%s\n' 'Start from real command output and repository files you read; do not speculate.'
+              printf '%s\n' 'Keep command and tool output small. If lint is requested: run pnpm run lint, fix exactly one deterministic issue, then re-run pnpm run lint, pnpm run build:ts, and pnpm run lint:quiet.'
+              printf '%s\n' 'Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree.'
+              printf '%s\n' 'When executing user-requested tasks, do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless explicitly requested.'
+              printf '\n'
+              printf '%s\n' 'User task from PR comment:'
+              printf '%s\n' "${additional_context}"
+            } > "${AGENT_PROMPT_FILE}"
+
+            export AGENT_PROMPT_FILE
           }
+
+          write_agent_prompt_file "${ADDITIONAL_CONTEXT:-}"
+
+          if [ ! -f "${AGENT_PROMPT_FILE}" ]; then
+            echo "❌ Parent workflow failed to materialize AGENT_PROMPT_FILE."
+            exit 1
+          fi
 
           run_agent_attempt() {
             local attempt="$1"
             local attempt_log="$RUNNER_TEMP/agent-live-attempt-${attempt}.log"
 
             cd "${GITHUB_WORKSPACE}"
-            export ADDITIONAL_CONTEXT
-            ADDITIONAL_CONTEXT="$(build_attempt_context "${attempt}")"
 
             echo "[agent] Starting agent attempt ${attempt}/${total_attempts}."
             echo "[agent] Attempt working directory before agent command: $(pwd)"
@@ -548,6 +638,7 @@ jobs:
             echo "[agent] Attempt git remotes before agent command:"
             git remote -v | redact_git_remote_credentials
             echo "[agent] Attempt git branch before agent command: $(git branch --show-current)"
+
             set -x
             set +e
             stdbuf -oL -eL bash "$script" 2>&1 | tee "${attempt_log}"
@@ -561,10 +652,10 @@ jobs:
 
           push_current_branch_if_needed() {
             cd "${GITHUB_WORKSPACE}"
+
             echo "[agent] Checking repository changes in: $(pwd)"
             echo "[agent] Change-check git root: $(git rev-parse --show-toplevel)"
 
-            # If the shim already saw a successful git push, don't do anything.
             if [ -f "$SENTINEL" ]; then
               echo "[agent] Push sentinel already present; attempt produced a branch push."
               return 0
@@ -584,10 +675,13 @@ jobs:
               echo "[agent] Changes detected; committing before push."
               echo "[agent] Worktree status before staging:"
               git status --short
+
               cleanup_malformed_untracked_paths
               stage_pushable_changes
+
               echo "[agent] Staged changes before commit:"
               git diff --cached --stat
+
               echo "[agent] Worktree status after staging:"
               git status --short
 
@@ -597,6 +691,7 @@ jobs:
               fi
 
               commit_message="chore: apply @${AGENT_NAME} changes for PR #${PR_NUMBER}"
+
               if git commit -m "$commit_message"; then
                 echo "[agent] Created commit: ${commit_message}"
               else
@@ -611,17 +706,20 @@ jobs:
 
             remote_ref="origin/${WORKING_BRANCH}"
             has_remote_ref=false
+
             if git show-ref --verify --quiet "refs/remotes/${remote_ref}"; then
               has_remote_ref=true
             fi
 
             local_head="$(git rev-parse HEAD)"
             remote_head=''
+
             if [ "${has_remote_ref}" = true ]; then
               remote_head="$(git rev-parse "${remote_ref}")"
             fi
 
             should_push=false
+
             if [ "${has_remote_ref}" = false ]; then
               should_push=true
               echo "[agent] Remote ref ${remote_ref} not found; will push branch."
@@ -649,7 +747,6 @@ jobs:
 
             echo "[agent] Pushing branch ${WORKING_BRANCH}..."
 
-            # Because of the git shim, a successful push returns 99, not 0.
             if git push origin "${WORKING_BRANCH}"; then
               echo "[agent] git push completed with exit 0 (no shim?)."
             else
@@ -674,11 +771,12 @@ jobs:
               return 0
             fi
 
-            retry_message="$(
-              cat <<MESSAGE
-          **[🤖 ${AGENT_NAME}]** The local agent did not produce pushable repository changes on attempt ${failed_attempt}/${total_attempts}, so I am starting retry attempt ${next_attempt}/${total_attempts} with stricter command-grounded instructions.
-          MESSAGE
-            )"
+          retry_message="$(printf '**[🤖 %s]** The local agent did not produce pushable repository changes on attempt %s/%s, so I am starting retry attempt %s/%s.\n' \
+            "${AGENT_NAME}" \
+            "${failed_attempt}" \
+            "${total_attempts}" \
+            "${next_attempt}" \
+            "${total_attempts}")"
 
             if gh issue comment "${PR_NUMBER}" --body "${retry_message}" --repo "${REPOSITORY}"; then
               date +"%F %T" > "$RETRY_COMMENT_SENTINEL"
@@ -715,9 +813,11 @@ jobs:
             else
               echo "❌ Agent exhausted ${total_attempts} attempt(s) without producing pushable local changes."
               date +"%F %T" > "$NO_CHANGE_SENTINEL"
+
               if [ "${agent_status}" -ne 0 ]; then
                 echo "Last agent command exit code: ${agent_status}"
               fi
+
               exit 1
             fi
           done
@@ -736,6 +836,7 @@ jobs:
             **[🤖 ${{ inputs.agent }}]** I'm sorry, but I was unable to complete the requested action. See [the logs for details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
         run: |
           set -euo pipefail
+
           SENTINEL="${RUNNER_TEMP}/.agent_push_succeeded"
           NO_CHANGE_SENTINEL="${RUNNER_TEMP}/.agent_no_change_retries_exhausted"
 
@@ -746,8 +847,9 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           }
 
-          if [ "${{ steps.run_agent.outcome }}" = "failure" ] || [ "${{ steps.run_agent.conclusion }}" = "failure" ]; then
+          if [ "${RUN_AGENT_OUTCOME}" = "failure" ] || [ "${RUN_AGENT_CONCLUSION}" = "failure" ]; then
             echo "Run agent step failed → FAIL."
+
             if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then
               if [ -f "$NO_CHANGE_SENTINEL" ]; then
                 write_report_outputs true true
@@ -758,6 +860,7 @@ jobs:
               echo "::warning::Could not post failure comment; skipping empty-agent cleanup."
               write_report_outputs true false
             fi
+
             exit 0
           fi
 
@@ -768,6 +871,7 @@ jobs:
           fi
 
           echo "Agent command succeeded with no branch push → FAIL."
+
           if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then
             if [ -f "$NO_CHANGE_SENTINEL" ]; then
               write_report_outputs true true
@@ -781,6 +885,7 @@ jobs:
 
       - name: Close empty failed agent PR
         if: always() && steps.report_outcome.outputs.cleanup_empty_pr == 'true'
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
@@ -846,8 +951,95 @@ jobs:
           gh pr close "${ISSUE_NUMBER}" --repo "${REPOSITORY}"
           gh api -X DELETE "repos/${REPOSITORY}/git/refs/heads/${head_ref}"
 
+      - name: Evaluate merge conflicts after successful push
+        id: evaluate_merge_conflicts
+        if: always() && steps.report_outcome.outputs.agent_failed != 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+          FOLLOW_UP_AGENT: ${{ inputs.agent }}
+        run: |
+          set -euo pipefail
+
+          write_outputs() {
+            {
+              echo "should_request_merge_conflict_resolution=$1"
+              echo "target_pr_number=$2"
+              echo "follow_up_agent=$3"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          wait_for_mergeable_state() {
+            local attempt
+            local pr_json=''
+
+            for attempt in {1..12}; do
+              pr_json="$(
+                gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" \
+                  --jq '{
+                    state: .state,
+                    mergeable: .mergeable,
+                    mergeableState: (.mergeable_state // "unknown"),
+                    headRefName: .head.ref,
+                    baseRefName: .base.ref
+                  }'
+              )"
+
+              mergeable_value="$(jq -r '.mergeable' <<<"${pr_json}")"
+              mergeable_state="$(jq -r '.mergeableState' <<<"${pr_json}")"
+
+              if [ "${mergeable_value}" != "null" ] || [ "${mergeable_state}" != "unknown" ]; then
+                printf '%s' "${pr_json}"
+                return 0
+              fi
+
+              echo "[agent] Mergeability still pending for PR #${PR_NUMBER} (attempt ${attempt}/12). Retrying in 5s..." >&2
+              sleep 5
+            done
+
+            printf '%s' "${pr_json}"
+            return 0
+          }
+
+          pr_json="$(wait_for_mergeable_state)"
+          pr_state="$(jq -r '.state // ""' <<<"${pr_json}")"
+          mergeable_state="$(jq -r '.mergeableState // "unknown"' <<<"${pr_json}")"
+          head_ref="$(jq -r '.headRefName // ""' <<<"${pr_json}")"
+          base_ref="$(jq -r '.baseRefName // ""' <<<"${pr_json}")"
+
+          echo "[agent] Post-push PR state: state='${pr_state}', mergeable_state='${mergeable_state}', head='${head_ref}', base='${base_ref}'."
+
+          if [ "${pr_state}" != "open" ]; then
+            echo "[agent] PR #${PR_NUMBER} is not open; skipping merge-conflict follow-up."
+            write_outputs false "" ""
+            exit 0
+          fi
+
+          if [ "${mergeable_state}" != "dirty" ]; then
+            echo "[agent] PR #${PR_NUMBER} does not have merge conflicts; skipping merge-conflict follow-up."
+            write_outputs false "" ""
+            exit 0
+          fi
+
+          echo "[agent] PR #${PR_NUMBER} is conflict-dirty after the agent push; requesting merge-conflict resolution with @${FOLLOW_UP_AGENT}."
+          write_outputs true "${PR_NUMBER}" "${FOLLOW_UP_AGENT}"
+
       - name: Fail workflow after unsuccessful agent run
         if: always() && steps.report_outcome.outputs.agent_failed == 'true'
+        shell: bash
         run: |
           echo "Agent workflow did not produce a successful branch push."
           exit 1
+
+  request_merge_conflict_resolution:
+    needs: invoke
+    if: ${{ needs.invoke.outputs.should_request_merge_conflict_resolution == 'true' }}
+    uses: ./.github/workflows/agent-02-resolve-merge-conflicts.yml
+    secrets:
+      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+    with:
+      target_pr_number: ${{ needs.invoke.outputs.target_pr_number }}
+      agent: ${{ needs.invoke.outputs.follow_up_agent }}

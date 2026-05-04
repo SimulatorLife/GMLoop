@@ -6,6 +6,7 @@ import { afterEach, describe, it } from "node:test";
 
 import {
     discoverProjectRoot,
+    resolveCommandProjectContext,
     resolveExistingGmloopConfigPath,
     resolveExplicitWorkflowTargetPath
 } from "../src/workflow/project-root.js";
@@ -74,5 +75,63 @@ void describe("discoverProjectRoot", () => {
         });
 
         assert.equal(discoveredProjectRoot, projectRoot);
+    });
+});
+
+void describe("resolveCommandProjectContext", () => {
+    afterEach(async () => {
+        await Promise.all(
+            temporaryDirectories.splice(0).map(async (directoryPath) => {
+                await rm(directoryPath, { recursive: true, force: true });
+            })
+        );
+    });
+
+    void it("returns the resolved projectRoot and an empty projectConfig when no gmloop.json exists", async () => {
+        const projectRoot = await createTemporaryDirectory();
+        // Write a .yyp so discoverProjectRoot can locate the project root from the path option.
+        await writeFile(path.join(projectRoot, "MyGame.yyp"), JSON.stringify({ name: "MyGame" }), "utf8");
+
+        const context = await resolveCommandProjectContext({ path: projectRoot });
+
+        assert.equal(context.projectRoot, projectRoot);
+        assert.deepEqual(context.projectConfig, {});
+    });
+
+    void it("loads projectConfig from gmloop.json in the project root", async () => {
+        const projectRoot = await createTemporaryDirectory();
+        await writeFile(path.join(projectRoot, "MyGame.yyp"), JSON.stringify({ name: "MyGame" }), "utf8");
+        const configData = { lint: { enabled: true }, outputDir: "build" };
+        await writeFile(path.join(projectRoot, "gmloop.json"), JSON.stringify(configData), "utf8");
+
+        const context = await resolveCommandProjectContext({ path: projectRoot });
+
+        assert.equal(context.projectRoot, projectRoot);
+        assert.deepEqual(context.projectConfig, configData);
+    });
+
+    void it("uses an explicit --config path instead of the default gmloop.json location", async () => {
+        const projectRoot = await createTemporaryDirectory();
+        await writeFile(path.join(projectRoot, "MyGame.yyp"), JSON.stringify({ name: "MyGame" }), "utf8");
+        const customConfigPath = path.join(projectRoot, "custom-config.json");
+        const customConfigData = { custom: true };
+        await writeFile(customConfigPath, JSON.stringify(customConfigData), "utf8");
+        // Write a different gmloop.json to confirm the explicit path wins.
+        await writeFile(path.join(projectRoot, "gmloop.json"), JSON.stringify({ custom: false }), "utf8");
+
+        const context = await resolveCommandProjectContext({ path: projectRoot, config: customConfigPath });
+
+        assert.deepEqual(context.projectConfig, customConfigData);
+    });
+
+    void it("returns an empty projectConfig when gmloop.json exists but is not a plain object", async () => {
+        const projectRoot = await createTemporaryDirectory();
+        await writeFile(path.join(projectRoot, "MyGame.yyp"), JSON.stringify({ name: "MyGame" }), "utf8");
+        // Write a JSON array at the config path — not a plain object.
+        await writeFile(path.join(projectRoot, "gmloop.json"), JSON.stringify([1, 2, 3]), "utf8");
+
+        const context = await resolveCommandProjectContext({ path: projectRoot });
+
+        assert.deepEqual(context.projectConfig, {});
     });
 });

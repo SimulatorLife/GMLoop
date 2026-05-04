@@ -107,3 +107,16 @@ void test("createLintRuleEntriesFromProjectConfig passes matching top-level rule
         ]
     });
 });
+
+void test("createLintRuleEntriesFromProjectConfig ignores top-level options for unknown plugin rules", () => {
+    const unknownRuleEntries = createLintRuleEntriesFromProjectConfig({
+        lintRules: {
+            "unknown/some-rule": "warn"
+        },
+        minOccurrences: 4
+    });
+
+    assert.deepEqual(unknownRuleEntries, {
+        "unknown/some-rule": "warn"
+    });
+});

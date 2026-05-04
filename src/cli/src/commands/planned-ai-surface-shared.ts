@@ -2,9 +2,9 @@ import { printProjectPayload, type SharedProjectContextOptions } from "../workfl
 
 export {
     ensureProjectGraphIndex as ensurePlannedSurfaceGraphIndex,
-    printProjectPayload as printPlannedSurfacePayload,
-    resolveProjectContext as resolvePlannedSurfaceProjectContext
+    printProjectPayload as printPlannedSurfacePayload
 } from "../workflow/project-context.js";
+export { resolveCommandProjectContext as resolvePlannedSurfaceProjectContext } from "../workflow/project-root.js";
 
 /** @deprecated Use {@link SharedProjectContextOptions} from `workflow/project-context`. */
 export type PlannedSurfaceSharedOptions = SharedProjectContextOptions &

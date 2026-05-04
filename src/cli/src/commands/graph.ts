@@ -1,7 +1,11 @@
-import { access, constants, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { access, constants, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
+import { Format } from "@gmloop/format";
+import { Lint } from "@gmloop/lint";
+import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { UI } from "@gmloop/ui";
 import { Command, Option } from "commander";
@@ -44,6 +48,89 @@ type GraphJsonEnvelope<TPayload> = Readonly<{
     projectRoot: string;
     toolsetRoot: string | null;
 }>;
+
+type GraphVisualizationExportResult = Readonly<{
+    entryHtmlPath: string;
+    outputDirectory: string;
+}>;
+
+type GraphVisualizationBundleFile = Readonly<{
+    bytes: Uint8Array;
+    contentType: string;
+    relativePath: string;
+}>;
+
+type GraphVisualizationBundleArtifact = Readonly<{
+    entryHtmlPath: string;
+    files: ReadonlyArray<GraphVisualizationBundleFile>;
+}>;
+
+type OsaScriptExecutionResult = Readonly<{
+    stderr: string;
+    stdout: string;
+}>;
+
+function isMacOsDialogCancellationError(error: unknown, stderr: string): boolean {
+    if (!(error instanceof Error)) {
+        return false;
+    }
+
+    return error.message.includes("User canceled") || stderr.includes("User canceled");
+}
+
+function readOsaScriptErrorStderr(error: unknown): string {
+    if (typeof error !== "object" || error === null || !("stderr" in error)) {
+        return "";
+    }
+
+    const stderrCandidate = Reflect.get(error, "stderr");
+    return typeof stderrCandidate === "string" ? stderrCandidate : "";
+}
+
+async function runOsaScript(lines: ReadonlyArray<string>): Promise<OsaScriptExecutionResult> {
+    return await new Promise<OsaScriptExecutionResult>((resolve, reject) => {
+        const args = lines.flatMap((line) => ["-e", line] as const);
+        execFile("osascript", args, { encoding: "utf8" }, (error, stdout, stderr) => {
+            if (error) {
+                reject(error instanceof Error ? error : new Error("osascript execution failed."));
+                return;
+            }
+            resolve(
+                Object.freeze({
+                    stderr,
+                    stdout
+                })
+            );
+        });
+    });
+}
+
+async function pickProjectPathUsingNativeDialog(): Promise<string | null> {
+    if (process.platform !== "darwin") {
+        return null;
+    }
+
+    const scriptLines = [
+        'set selectionMode to button returned of (display dialog "Open GameMaker project from:" buttons {"Cancel", "Folder", "YYP File"} default button "Folder" cancel button "Cancel")',
+        'if selectionMode is "YYP File" then',
+        '    return POSIX path of (choose file with prompt "Choose a .yyp project file:" of type {"yyp"})',
+        "end if",
+        'return POSIX path of (choose folder with prompt "Choose a GameMaker project folder:")'
+    ];
+
+    try {
+        const result = await runOsaScript(scriptLines);
+        return result.stdout.trim();
+    } catch (error: unknown) {
+        if (error instanceof Error) {
+            const stderr = readOsaScriptErrorStderr(error);
+            if (isMacOsDialogCancellationError(error, stderr)) {
+                return null;
+            }
+        }
+        throw error;
+    }
+}
 
 async function loadOptionalProjectConfig(
     projectRoot: string,
@@ -202,7 +289,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     const initialSelectedPath = resolveExplicitWorkflowTargetPath(options.path);
     let activeContext: GraphResolutionContext | null = null;
     let activeSelectedPaths = initialSelectedPath ? [initialSelectedPath] : [];
-    const activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
+    let activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
 
     if (options.serve === true) {
         if (initialSelectedPath) {
@@ -293,7 +380,28 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
-            renderHtml: async (isServerMode) => {
+            openProjectTargets: async ({ path: selectedPath }) => {
+                const previousPayloadString = safeStringifyVisualizationPayload();
+                const nextPathFromPicker =
+                    selectedPath === null ? await pickProjectPathUsingNativeDialog() : selectedPath;
+                if (!nextPathFromPicker) {
+                    return Object.freeze({ changed: false });
+                }
+                const resolvedPathFromPicker =
+                    resolveExplicitWorkflowTargetPath(nextPathFromPicker) ?? nextPathFromPicker;
+                const nextOptions = {
+                    ...options,
+                    path: resolvedPathFromPicker
+                };
+                const nextContext = await resolveGraphContext(nextOptions);
+                await ensureGraphIndexForQuery(nextOptions, nextContext);
+                activeContext = nextContext;
+                activeSelectedPaths = [resolvedPathFromPicker];
+                activeSource = "finder-open";
+                const nextPayloadString = JSON.stringify(exportVisualizationPayload());
+                return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
+            },
+            renderBundle: async (isServerMode) => {
                 const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(
                     activeContext,
                     {
@@ -301,7 +409,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     }
                 );
 
-                return UI.renderGraphVisualizationHtml(exportVisualizationPayload(), {
+                return UI.renderGraphVisualizationBundle(exportVisualizationPayload(), {
                     documentationCatalogs,
                     isServerMode,
                     loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
@@ -340,24 +448,23 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     });
     const dbPath = activeConfig.databasePath;
     const payload = exportVisualizationPayload();
-    const htmlContent = UI.renderGraphVisualizationHtml(payload, {
+    const bundleArtifact = UI.renderGraphVisualizationBundle(payload, {
         documentationCatalogs,
         loadedTarget: createLoadedTarget(),
         projectConfigurationCatalog,
         title: activeConfig.projectRoot
     });
-    const outputPath = options.output ?? path.join(path.dirname(dbPath), "graph.html");
-
-    await writeFile(outputPath, htmlContent, "utf8");
+    const outputDirectory = options.output ?? path.join(path.dirname(dbPath), "graph-visualization");
+    const exportResult = await writeGraphVisualizationBundleArtifact(bundleArtifact, outputDirectory);
 
     printGraphOutput(
-        createGraphEnvelope("graph visualize", activeContext, options, { outputPath }),
+        createGraphEnvelope("graph visualize", activeContext, options, exportResult),
         options.json === true,
-        `Exported graph visualization to ${outputPath}`
+        `Exported graph visualization bundle to ${path.join(outputDirectory, exportResult.entryHtmlPath)}`
     );
 
     if (options.open) {
-        openUrlInDefaultBrowser(outputPath);
+        openUrlInDefaultBrowser(path.join(outputDirectory, exportResult.entryHtmlPath));
     }
 }
 
@@ -449,12 +556,12 @@ export function createGraphCommand(): Command {
 
     const visualizeCommand = addGraphSharedOptions(
         applyStandardCommandOptions(new Command("visualize")).description(
-            "Render an interactive graph index visualization HTML file."
+            "Render an interactive graph index visualization HTML+assets bundle."
         ),
         { includeForce: true }
     );
     visualizeCommand
-        .addOption(new Option("--output <path>", "Output HTML file path"))
+        .addOption(new Option("--output <path>", "Output visualization directory path"))
         .addOption(new Option("--open", "Open the generated file in your default browser").default(true))
         .addOption(new Option("--no-open", "Do not open the generated file").default(false))
         .addOption(new Option("--serve", "Serve dynamically rather than writing an output file").default(false))
@@ -473,12 +580,69 @@ export function createGraphCommand(): Command {
 }
 function createDocumentationCatalogs() {
     const cliCommands = getCliCommandCatalog();
+    const lintCatalogEntryById = new Map(
+        Lint.listLintRuleCatalogEntries().map((entry) => [entry.ruleId, entry] as const)
+    );
+    const semanticIndexCodemodIdSet = new Set(Refactor.listSemanticProjectIndexDependentCodemodIds());
+
     return Object.freeze({
         cliCommands,
         mcpServer: Object.freeze({
             name: "gmloop-mcp",
             version: "0.0.1"
         }),
-        mcpTools: getMcpToolCatalogEntries()
+        mcpTools: getMcpToolCatalogEntries(),
+        workspaceRules: Object.freeze({
+            formatOptions: Format.listProjectFormatOptionCatalogEntries().map((entry) =>
+                Object.freeze({
+                    defaultValue: entry.defaultValue,
+                    description: entry.description,
+                    name: entry.name
+                })
+            ),
+            lintRules: Lint.listLintRuleCatalogEntries().map((entry) =>
+                Object.freeze({
+                    description: lintCatalogEntryById.get(entry.ruleId)?.description ?? entry.description,
+                    fixable: entry.fixable,
+                    ruleId: entry.ruleId
+                })
+            ),
+            refactorCodemods: Refactor.listRegisteredCodemods().map((entry) =>
+                Object.freeze({
+                    description: entry.description,
+                    id: entry.id,
+                    requiresSemanticProjectIndex: semanticIndexCodemodIdSet.has(entry.id)
+                })
+            )
+        })
+    });
+}
+
+async function writeGraphVisualizationBundleArtifact(
+    bundleArtifact: GraphVisualizationBundleArtifact,
+    outputDirectory: string
+): Promise<GraphVisualizationExportResult> {
+    await mkdir(outputDirectory, { recursive: true });
+
+    await Promise.all(
+        bundleArtifact.files.map(async (bundleFile) => {
+            const absoluteBundlePath = path.resolve(outputDirectory, bundleFile.relativePath);
+            const absoluteOutputRoot = path.resolve(outputDirectory) + path.sep;
+            if (
+                !absoluteBundlePath.startsWith(absoluteOutputRoot) &&
+                absoluteBundlePath !== path.resolve(outputDirectory)
+            ) {
+                throw new Error(
+                    `Refusing to write graph visualization bundle file outside the output directory: ${bundleFile.relativePath}`
+                );
+            }
+            await mkdir(path.dirname(absoluteBundlePath), { recursive: true });
+            await writeFile(absoluteBundlePath, bundleFile.bytes);
+        })
+    );
+
+    return Object.freeze({
+        entryHtmlPath: bundleArtifact.entryHtmlPath,
+        outputDirectory
     });
 }

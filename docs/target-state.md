@@ -604,3 +604,42 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 - Asset hot-reloading for sprites and sounds via stable resource-ID swapping.
 - Source-map generation for in-game debugging of patched GML.
 - In-game UI for patch rollback and version management.
+
+## 7. UI Workspace Target State (`@gmloop/ui`)
+
+### 7.1 Core UI Architecture
+
+- `@gmloop/ui` is the sole owner of browser-facing UI rendering and interaction surfaces.
+- UI implementation is Lit + TypeScript only; all UI components, state models, and events must be fully typed.
+- UI behavior is organized as reusable, domain-specific Lit components rather than one-off string templates or ad-hoc DOM mutation.
+- Graph rendering keeps D3 for layout/simulation where needed, but integrates through typed adapter boundaries that are framework-aware (`mount`, `update`, `dispose`).
+
+### 7.2 Asset and Delivery Contract
+
+- UI delivery is bundle-based, not single-inline-document based:
+  - entry document (`index.html`)
+  - bundled scripts and styles under `assets/`
+  - deterministic renderer artifact metadata for CLI/server consumers.
+- Production assets must be optimized by the build pipeline (bundled/minified/sourcemapped according to environment mode).
+- CDN-hosted runtime dependencies are prohibited for shipped UI artifacts.
+- Runtime JS/CSS dependencies (including visualization/runtime libraries) must be served from local bundle files only.
+
+### 7.3 Styling Contract
+
+- UI uses a single global stylesheet entrypoint for the application shell.
+- Component and surface styling is authored in dedicated standalone `.css` files and composed through that global stylesheet entrypoint.
+- Inline style strings and template-embedded standalone CSS blocks are not permitted for primary UI styling.
+- Design tokens (colors, spacing, typography, elevation, motion timings) are centralized and reused across components.
+
+### 7.4 Live / Hot Reload Workflow
+
+- UI local development uses a dedicated dev server with hot module replacement (HMR) for fast feedback loops.
+- CLI-hosted API endpoints (`/api/*`) are consumed through local proxying in dev mode so UI iteration does not require manual rebuild/restart loops.
+- HMR is a development-only delivery path; production artifacts remain static bundle outputs consumed by CLI export/serve flows.
+
+### 7.5 Type and Reuse Guarantees
+
+- Public UI render contracts are typed and versioned by explicit TypeScript interfaces.
+- Component inputs/outputs are typed (properties, custom events, callback contracts) with no untyped `any` escape hatches.
+- Shared primitives (buttons/cards/badges/layout shells) are reused across surfaces to prevent duplication and drift.
+- New UI surfaces must extend existing primitives/contracts before introducing new visual or state abstractions.

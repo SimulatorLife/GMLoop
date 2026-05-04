@@ -1,12 +1,11 @@
 {
-  "version": 1,
   "agentPools": {
     "actions": {
       "default": "codex",
       "agents": [
         {"weight":1.0,"name":"copilot"},
         {"weight":1.0,"name":"codex"},
-        {"weight":0.0,"name":"gemini"}
+        {"weight":1.0,"name":"gemini"}
       ]
     },
     "followUps": {

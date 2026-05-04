@@ -18,9 +18,8 @@
         </div>
       </div>
       <div class="loaded-target-stack">
-        <div id="loaded-target" class="loaded-path"><strong>Active:</strong> {{DOCUMENT_TITLE}}</div>
-        <div id="loaded-source" class="loaded-path"></div>
-        <div id="loaded-selected" class="loaded-path"></div>
+        <div id="loaded-target" class="loaded-target-card"><strong>Loaded Project</strong><span>{{DOCUMENT_TITLE}}</span></div>
+        <div id="loaded-target-details" class="loaded-path"></div>
       </div>
     </div>
     <div id="page-toolbar">
@@ -55,6 +54,7 @@
       <div class="docs-toggle-row">
         <button id="docs-view-cli" class="top-nav-button active">CLI</button>
         <button id="docs-view-mcp" class="top-nav-button">MCP</button>
+        <button id="docs-view-rules" class="top-nav-button">Rules</button>
       </div>
       <p id="docs-meta" class="docs-meta"></p>
       <div id="docs-content">
@@ -63,6 +63,9 @@
         </div>
         <div id="mcp-page" class="docs-subpage hidden">
           <div id="mcp-content" class="docs-grid"></div>
+        </div>
+        <div id="rules-page" class="docs-subpage hidden">
+          <div id="rules-content" class="docs-grid"></div>
         </div>
       </div>
     </section>

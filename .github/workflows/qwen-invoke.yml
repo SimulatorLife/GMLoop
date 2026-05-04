@@ -19,7 +19,7 @@ defaults:
 
 jobs:
   invoke:
-    if: ${{ github.event.issue.pull_request && (github.event.comment.body == '@qwen' || startsWith(github.event.comment.body || '', '@qwen ')) }}
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body || '', '@qwen') }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
@@ -27,8 +27,7 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: qwen
-      agent_package: ${{ vars.QWEN_CODE_PACKAGE || '@qwen-code/qwen-code@0.14.5' }}
-      max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
+      agent_package: '@qwen-code/qwen-code@latest'
       agent_setup_command: |
         set -euo pipefail
 
@@ -52,39 +51,15 @@ jobs:
       agent_command: |
         set -euo pipefail
 
-        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
-          echo "❌ Missing prompt context from PR comment."
-          exit 1
-        fi
-
-        QWEN_CI_SYSTEM_PROMPT="$(cat <<'PROMPT'
-        You are running in GitHub Actions as an autonomous coding agent.
-        Use real tool calls for shell commands and file edits.
-        For shell commands, call the native run_shell_command tool by name.
-        For file changes, call the native edit or write_file tools by name.
-        Do not print JSON objects that describe intended tool calls.
-        Do not respond with a plan-only answer, recommendations, standalone JSON, or instructions for another process.
-        Keep using tools until the task is complete and there actual changes to commit.
-        PROMPT
-        )"
-        export QWEN_CI_SYSTEM_PROMPT
-
-        QWEN_TASK_PROMPT="$(cat <<'PROMPT'
-        If the task asks for lint fixes, run `pnpm run lint` first, choose one deterministic ESLint issue from the real output, edit the actual source file that produced it, then re-run `pnpm run lint`, `pnpm run build:ts`, and `pnpm run lint:quiet`.
-        Do not speculate about likely files, helper names, or rule failures before command output identifies them.
-        Do not finish with only analysis or a plan; leave a concrete repository diff in the worktree.
-        When using file tools, use absolute paths under the repository root if a relative path is not enough.
-        Do not output a JSON plan, a fake function call, or `startNewTask`
-        Do not ask the user for a file path: *find* the relevant file path to use/edit.
-        PROMPT
-        )"
-        export QWEN_TASK_PROMPT
-
-        REPOSITORY_ROOT="$(pwd)"
-        QWEN_AGENT_PROMPT="$(printf 'Repository root: %s\n\n%s\n\nUser task from PR comment:\n%s\n' "${REPOSITORY_ROOT}" "${QWEN_TASK_PROMPT}" "${ADDITIONAL_CONTEXT}")"
-        export QWEN_AGENT_PROMPT
-
+        set +e
         stdbuf -oL -eL qwen \
           --yolo \
-          --append-system-prompt "${QWEN_CI_SYSTEM_PROMPT}" \
-          --prompt "${QWEN_AGENT_PROMPT}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"
+          --debug \
+          --output-format=stream-json \
+          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"
+        qwen_status="${PIPESTATUS[0]}"
+        set -e
+
+        if [ "${qwen_status}" -ne 0 ]; then
+          exit "${qwen_status}"
+        fi

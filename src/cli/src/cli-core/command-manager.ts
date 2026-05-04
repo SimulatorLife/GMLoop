@@ -259,11 +259,12 @@ export function createCliCommandManager(options: CliCommandManagerOptions): {
 } {
     const manager = new CliCommandManager(options);
     const registry: CliCommandRegistry = Object.freeze({
-        registerDefaultCommand: (registryOptions) => manager.registerDefaultCommand(registryOptions),
-        registerCommand: (registryOptions) => manager.registerCommand(registryOptions)
+        registerDefaultCommand: (registryOptions: CliCommandRegistrationOptions) =>
+            manager.registerDefaultCommand(registryOptions),
+        registerCommand: (registryOptions: CliCommandRegistrationOptions) => manager.registerCommand(registryOptions)
     });
     const runner: CliCommandRunner = Object.freeze({
-        run: (argv) => manager.run(argv)
+        run: (argv: Array<string>) => manager.run(argv)
     });
 
     return Object.freeze({ registry, runner });

@@ -21,7 +21,6 @@ type ResourceCommandSharedOptions = Readonly<{
 const RESOURCE_COMMAND_FAILURE_PREFIX = "Resource command failed.";
 const RESOURCE_KIND_ARGUMENT_DESCRIPTION = "Resource kind";
 
-
 function printMutationResult(result: ProjectResourceMutationResult): void {
     console.log(`Action: ${result.action}`);
     console.log(`Manifest: ${result.manifestPath}`);

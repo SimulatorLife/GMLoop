@@ -7,7 +7,8 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
-import { printProjectPayload, resolveProjectContext } from "../workflow/project-context.js";
+import { printProjectPayload } from "../workflow/project-context.js";
+import { resolveCommandProjectContext } from "../workflow/project-root.js";
 
 type ValidateSharedOptions = Readonly<{
     config?: string;
@@ -39,7 +40,7 @@ async function runValidateFileAction(targetPath: string, options: ValidateShared
 }
 
 async function runValidateProjectAction(options: ValidateSharedOptions): Promise<void> {
-    const context = await resolveProjectContext(options);
+    const context = await resolveCommandProjectContext(options);
     const graphIndex = await Semantic.buildGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,
@@ -58,7 +59,7 @@ async function runValidateProjectAction(options: ValidateSharedOptions): Promise
 }
 
 async function runValidateRoomAction(roomNameOrId: string, options: ValidateSharedOptions): Promise<void> {
-    const context = await resolveProjectContext(options);
+    const context = await resolveCommandProjectContext(options);
     await Semantic.buildGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,
@@ -84,7 +85,7 @@ async function runValidateRoomAction(roomNameOrId: string, options: ValidateShar
 }
 
 async function runValidateResourceAction(resourceNameOrId: string, options: ValidateSharedOptions): Promise<void> {
-    const context = await resolveProjectContext(options);
+    const context = await resolveCommandProjectContext(options);
     await Semantic.buildGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,

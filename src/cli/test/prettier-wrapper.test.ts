@@ -1302,6 +1302,11 @@ void describe("Prettier wrapper CLI", () => {
                 /Tip: passing only a file or directory path runs 'format'/,
                 "Expected stdout to clarify the path-only shorthand behavior"
             );
+            assert.match(
+                stdout,
+                /Use 'help <command>' to open command-specific usage quickly/,
+                "Expected stdout to describe the help alias shortcut"
+            );
         } finally {
             await fs.rm(tempDirectory, { recursive: true, force: true });
         }

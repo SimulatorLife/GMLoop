@@ -57,13 +57,17 @@ function isListenPermissionError(error: unknown): boolean {
 }
 
 void test("graph visualization server serves UI-rendered HTML and exposes regeneration JSON", async (testContext) => {
+    let openedPath: string | null = null;
     let handle;
     try {
         handle = await startGraphVisualizationServer({
             regenerate: async () => ({ changed: true }),
-            openProjectTargets: async () => ({ changed: true }),
-            renderHtml: (isServerMode) =>
-                UI.renderGraphVisualizationHtml(createSampleGraphVisualizationData(), {
+            openProjectTargets: async (input) => {
+                openedPath = input.path;
+                return { changed: true };
+            },
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
                     isServerMode,
                     title: "/tmp/project"
                 })
@@ -80,18 +84,43 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         const htmlResponse = await fetch(handle.url);
         assert.equal(htmlResponse.status, 200);
         const htmlText = await htmlResponse.text();
-        assert.match(htmlText, /player_update/u);
         assert.match(htmlText, /id="regenerate"/u);
+        assert.match(htmlText, /assets\/graph-visualization\.js/u);
+        assert.match(htmlText, /assets\/vendor\/d3\.min\.js/u);
+        assert.doesNotMatch(htmlText, /cdn\./u);
+
+        const scriptResponse = await fetch(`${handle.url}/assets/graph-visualization.js`);
+        assert.equal(scriptResponse.status, 200);
+        const scriptText = await scriptResponse.text();
+        assert.match(scriptText, /player_update/u);
+        assert.match(scriptText, /bootstrapGraphVisualizationApp/u);
+
+        const d3Response = await fetch(`${handle.url}/assets/vendor/d3.min.js`);
+        assert.equal(d3Response.status, 200);
 
         const reindexResponse = await fetch(`${handle.url}/api/reindex`, { method: "POST" });
         assert.equal(reindexResponse.status, 200);
         const reindexPayload = (await reindexResponse.json()) as { changed: boolean; ok: boolean };
         assert.deepEqual(reindexPayload, { changed: true, ok: true });
 
-        const openResponse = await fetch(`${handle.url}/api/open`, { method: "POST" });
+        const openWithoutBodyResponse = await fetch(`${handle.url}/api/open`, { method: "POST" });
+        assert.equal(openWithoutBodyResponse.status, 200);
+        const openWithoutBodyPayload = (await openWithoutBodyResponse.json()) as { changed: boolean; ok: boolean };
+        assert.deepEqual(openWithoutBodyPayload, { changed: true, ok: true });
+        assert.equal(openedPath, null);
+
+        const openPath = "/tmp/project/Project.yyp";
+        const openResponse = await fetch(`${handle.url}/api/open`, {
+            body: JSON.stringify({ path: openPath }),
+            headers: {
+                "Content-Type": "application/json"
+            },
+            method: "POST"
+        });
         assert.equal(openResponse.status, 200);
         const openPayload = (await openResponse.json()) as { changed: boolean; ok: boolean };
         assert.deepEqual(openPayload, { changed: true, ok: true });
+        assert.equal(openedPath, openPath);
     } finally {
         await handle.stop();
     }
@@ -110,8 +139,8 @@ void test("graph visualization server keeps the current view accessible while re
                 await regenerationComplete;
                 return { changed: false };
             },
-            renderHtml: (isServerMode) =>
-                UI.renderGraphVisualizationHtml(createSampleGraphVisualizationData(), {
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
                     isServerMode,
                     title: "/tmp/project"
                 })

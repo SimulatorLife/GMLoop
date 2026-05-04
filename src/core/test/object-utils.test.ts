@@ -11,6 +11,7 @@ import {
     incrementMapValue,
     isObjectLike,
     isPlainObject,
+    sortObjectKeys,
     withDefinedValue,
     withObjectLike
 } from "../src/utils/object.js";
@@ -418,4 +419,32 @@ void test("hasMethods returns false when any property is not a function (array)"
     };
 
     assert.strictEqual(hasMethods(obj, ["get", "set", "has"]), false);
+});
+
+void test("sortObjectKeys recursively sorts object keys", () => {
+    const input = {
+        z: 1,
+        a: {
+            c: 3,
+            b: 2
+        },
+        d: [{ f: 6, e: 5 }, 4]
+    };
+
+    const expected = {
+        a: {
+            b: 2,
+            c: 3
+        },
+        d: [{ e: 5, f: 6 }, 4],
+        z: 1
+    };
+
+    const result = sortObjectKeys(input);
+    assert.deepStrictEqual(result, expected);
+
+    // Verify key order explicitly
+    assert.deepStrictEqual(Object.keys(result as object), ["a", "d", "z"]);
+    assert.deepStrictEqual(Object.keys((result as any).a), ["b", "c"]);
+    assert.deepStrictEqual(Object.keys((result as any).d[0]), ["e", "f"]);
 });

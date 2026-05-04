@@ -1,3 +1,16 @@
+import type {
+    D3DragEvent,
+    D3ZoomEvent,
+    DragBehavior,
+    ForceLink,
+    Simulation,
+    SimulationLinkDatum,
+    SimulationNodeDatum,
+    ZoomBehavior,
+    ZoomTransform
+} from "d3";
+import * as d3 from "d3";
+
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "./graph-visualization-style-metadata.js";
 import type {
     GraphVisualizationData,
@@ -9,13 +22,13 @@ import type {
     GraphVisualizationProjectConfigurationCatalog
 } from "./types.js";
 
-type BrowserFileHandle = Readonly<{
+export type BrowserFileHandle = Readonly<{
     name: string;
     text(): Promise<string>;
     webkitRelativePath?: string;
 }>;
 
-type BrowserAppDependencies = Readonly<{
+export type BrowserAppDependencies = Readonly<{
     data: GraphVisualizationData;
     directoryOpen: (options: Readonly<Record<string, unknown>>) => Promise<ReadonlyArray<BrowserFileHandle>>;
     documentationCatalogs: GraphVisualizationDocumentationCatalogs | null;
@@ -36,16 +49,19 @@ type LoadedProjectConfiguration = Readonly<{
     prettier: ReadonlyArray<Readonly<{ content: string; path: string }>>;
 }>;
 
-type MutableGraphNodeRecord = Omit<GraphVisualizationNodeRecord, "fx" | "fy" | "x" | "y"> & {
-    fx: number | null;
-    fy: number | null;
-    x: number;
-    y: number;
-};
+type MutableGraphNodeRecord = Omit<GraphVisualizationNodeRecord, "fx" | "fy" | "x" | "y"> &
+    SimulationNodeDatum &
+    Readonly<{
+        fx: number | null;
+        fy: number | null;
+        x: number;
+        y: number;
+    }>;
 
 type MutableGraphEdgeEndpoint = string | MutableGraphNodeRecord;
 
 type MutableGraphEdgeRecord = Omit<GraphVisualizationEdgeRecord, "source" | "target"> &
+    SimulationLinkDatum<MutableGraphNodeRecord> &
     Readonly<{
         source: MutableGraphEdgeEndpoint;
         target: MutableGraphEdgeEndpoint;
@@ -62,96 +78,18 @@ function readErrorName(errorValue: unknown): string {
     return "";
 }
 
-type GraphSelectionApi = Readonly<{
-    append(name: string): GraphSelectionApi;
-    attr(name: string, value: string | number | ((datum: never) => string | number | null) | null): GraphSelectionApi;
-    call(
-        callback: (selection: GraphSelectionApi, ...arguments_: Array<unknown>) => void,
-        ...arguments_: Array<unknown>
-    ): GraphSelectionApi;
-    classed(name: string, value: boolean | ((datum: never) => boolean)): GraphSelectionApi;
-    data(dataValues: ReadonlyArray<unknown>, key?: (datum: never) => string): GraphSelectionApi;
-    empty(): boolean;
-    enter(): GraphSelectionApi;
-    exit(): GraphSelectionApi;
-    html(value: string): GraphSelectionApi;
-    merge(other: GraphSelectionApi): GraphSelectionApi;
-    node(): Element | null;
-    on(name: string, handler: (event: never, datum: never) => void): GraphSelectionApi;
-    property(name: string, value: boolean): GraphSelectionApi;
-    remove(): GraphSelectionApi;
-    select(selector: string): GraphSelectionApi;
-    selectAll(selector: string): GraphSelectionApi;
-    style(name: string, value: string | ((datum: never) => string | null) | null): GraphSelectionApi;
-    text(value: string | ((datum: never) => string)): GraphSelectionApi;
-    transition(): GraphSelectionApi;
-}>;
+type GraphSelectionApi<ElementType extends d3.BaseType = d3.BaseType, Datum = unknown> = d3.Selection<
+    ElementType,
+    Datum,
+    d3.BaseType,
+    unknown
+>;
 
-type GraphSimulationApi = Readonly<{
-    alpha(value: number): GraphSimulationApi;
-    alphaDecay(value: number): GraphSimulationApi;
-    alphaTarget(value: number): GraphSimulationApi;
-    force(
-        name: string,
-        forceValue?: unknown
-    ): GraphSimulationApi & Readonly<{ links(dataValues: ReadonlyArray<unknown>): void }>;
-    nodes(dataValues: ReadonlyArray<unknown>): GraphSimulationApi;
-    on(name: string, handler: () => void): GraphSimulationApi;
-    restart(): GraphSimulationApi;
-    velocityDecay(value: number): GraphSimulationApi;
-}>;
+type GraphSimulationApi = Simulation<MutableGraphNodeRecord, MutableGraphEdgeRecord>;
 
-type GraphPathRenderer = () => string;
+type GraphDragBehavior = DragBehavior<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>;
 
-type GraphDragBehavior = ((selection: GraphSelectionApi) => void) &
-    Readonly<{
-        on(name: string, handler: (event: never, datum: never) => void): GraphDragBehavior;
-    }>;
-
-type GraphZoomBehavior = ((selection: GraphSelectionApi, argument?: unknown) => void) &
-    Readonly<{
-        on(name: string, handler: (event: never) => void): GraphZoomBehavior;
-        scaleExtent(values: ReadonlyArray<number>): GraphZoomBehavior;
-    }>;
-
-type GraphRuntimeApi = Readonly<{
-    drag(): GraphDragBehavior;
-    forceCenter(x: number, y: number): unknown;
-    forceCollide(): Readonly<{
-        iterations(value: number): unknown;
-        radius(value: (datum: never) => number): Readonly<{
-            iterations(value: number): unknown;
-        }>;
-    }>;
-    forceLink(): Readonly<{
-        distance(value: number): unknown;
-        id(value: (datum: never) => string): Readonly<{
-            distance(distanceValue: number): unknown;
-        }>;
-    }>;
-    forceManyBody(): Readonly<{
-        strength(value: number): unknown;
-    }>;
-    forceSimulation(): GraphSimulationApi;
-    select(target: string | Element | null): GraphSelectionApi;
-    selectAll(selector: string): GraphSelectionApi;
-    symbol(): Readonly<{
-        size(value: number): Readonly<{
-            type(symbolType: unknown): GraphPathRenderer;
-        }>;
-        type(symbolType: unknown): Readonly<{
-            size(value: number): GraphPathRenderer;
-        }>;
-    }>;
-    symbolCircle: unknown;
-    symbolDiamond: unknown;
-    symbolSquare: unknown;
-    zoom(): GraphZoomBehavior;
-    zoomIdentity: unknown;
-    zoomTransform(element: Element | null): Readonly<{
-        k: number;
-    }>;
-}>;
+type GraphZoomBehavior = ZoomBehavior<SVGSVGElement, unknown>;
 
 type TooltipMouseEvent = MouseEvent &
     Readonly<{
@@ -173,17 +111,9 @@ type FilterType =
     | typeof RESOURCE_GROUP_FILTER_TYPE
     | GraphVisualizationEdgeRecord["type"];
 
-function readGraphRuntime(): GraphRuntimeApi {
-    const runtimeValue = Reflect.get(globalThis, "d3");
-    if (runtimeValue === undefined || runtimeValue === null) {
-        throw new Error("The graph visualization requires the D3 runtime.");
-    }
-    return runtimeValue as GraphRuntimeApi;
-}
-
-function readGraphTransform(eventValue: never): GraphTransform {
-    const transformValue = Reflect.get(eventValue as object, "transform");
-    const zoomFactor = Number(Reflect.get(transformValue as object, "k"));
+function readGraphTransform(eventValue: D3ZoomEvent<SVGSVGElement, unknown>): GraphTransform {
+    const transformValue: ZoomTransform = eventValue.transform;
+    const zoomFactor = transformValue.k;
     return {
         k: Number.isFinite(zoomFactor) ? zoomFactor : 1,
         transformText: String(transformValue ?? "")
@@ -208,12 +138,12 @@ function readEdgeEndpointId(endpoint: MutableGraphEdgeEndpoint): string {
     return typeof endpoint === "string" ? endpoint : endpoint.id;
 }
 
-function readGraphNode(nodeValue: never): MutableGraphNodeRecord {
-    return nodeValue as MutableGraphNodeRecord;
+function readGraphNode(nodeValue: MutableGraphNodeRecord): MutableGraphNodeRecord {
+    return nodeValue;
 }
 
-function readNodeIdentifier(nodeValue: never): string {
-    return String(Reflect.get(nodeValue as object, "id"));
+function readNodeIdentifier(nodeValue: MutableGraphNodeRecord): string {
+    return nodeValue.id;
 }
 
 function rebuildGraphIndexes(
@@ -300,9 +230,19 @@ function createConfigItem(
 ): HTMLLIElement {
     const item = document.createElement("li");
     item.className = "config-item";
+    const titleRow = document.createElement("div");
+    titleRow.className = "config-item-title";
     const heading = document.createElement("strong");
     heading.textContent = title;
-    item.append(heading);
+    titleRow.append(heading);
+    if (descriptionText.length > 0) {
+        const help = document.createElement("span");
+        help.className = "config-help";
+        help.title = descriptionText;
+        help.textContent = "?";
+        titleRow.append(help);
+    }
+    item.append(titleRow);
     if (descriptionText.length > 0) {
         const description = document.createElement("span");
         description.textContent = descriptionText;
@@ -349,64 +289,63 @@ function formatLabel(textValue: string): string {
     return textValue.charAt(0).toUpperCase() + textValue.slice(1).replaceAll("_", " ");
 }
 
-function dragMoved(eventValue: never, datumValue: never): void {
-    const nodeValue = datumValue as MutableGraphNodeRecord;
-    nodeValue.fx = Number(Reflect.get(eventValue as object, "x"));
-    nodeValue.fy = Number(Reflect.get(eventValue as object, "y"));
+function dragMoved(eventValue: D3DragEvent<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>): void {
+    const nodeValue = eventValue.subject;
+    nodeValue.fx = eventValue.x;
+    nodeValue.fy = eventValue.y;
 }
 
 function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoadedTarget | null): void {
     const loadedTargetElement = document.getElementById("loaded-target");
-    const loadedSourceElement = document.getElementById("loaded-source");
-    const loadedSelectedElement = document.getElementById("loaded-selected");
-    if (
-        !(loadedTargetElement instanceof HTMLElement) ||
-        !(loadedSourceElement instanceof HTMLElement) ||
-        !(loadedSelectedElement instanceof HTMLElement)
-    ) {
+    const loadedTargetDetailsElement = document.getElementById("loaded-target-details");
+    if (!(loadedTargetElement instanceof HTMLElement) || !(loadedTargetDetailsElement instanceof HTMLElement)) {
+        return;
+    }
+    const loadedTargetLabel = loadedTargetElement.querySelector("span");
+    if (!(loadedTargetLabel instanceof HTMLElement)) {
         return;
     }
 
     if (currentLoadedTarget === null) {
-        loadedTargetElement.textContent = "No active target";
-        loadedSourceElement.textContent = "";
-        loadedSelectedElement.textContent = "";
+        loadedTargetLabel.textContent = "No project loaded";
+        loadedTargetDetailsElement.textContent = "Use Open... to load a GameMaker project.";
         return;
     }
 
-    loadedTargetElement.textContent = `Active: ${currentLoadedTarget.activePath}`;
-    loadedSourceElement.textContent = `Source: ${currentLoadedTarget.source} | Project: ${currentLoadedTarget.projectRoot}`;
-    if (currentLoadedTarget.selectedPaths.length > 1) {
-        const selectedPaths = currentLoadedTarget.selectedPaths;
-        loadedSelectedElement.textContent =
-            selectedPaths.length > 3
-                ? `Selected paths: ${selectedPaths.slice(0, 3).join(", ")} (+${String(
-                      selectedPaths.length - 3
-                  )} more files)`
-                : `Selected paths: ${selectedPaths.join(", ")}`;
-        return;
-    }
-
-    loadedSelectedElement.textContent = "";
+    loadedTargetLabel.textContent = currentLoadedTarget.projectRoot || currentLoadedTarget.activePath;
+    loadedTargetDetailsElement.innerHTML = "";
+    const source = document.createElement("strong");
+    source.textContent = `Source: ${currentLoadedTarget.source}`;
+    loadedTargetDetailsElement.append(source);
+    const detailText = document.createElement("span");
+    detailText.textContent = ` | Active path: ${currentLoadedTarget.activePath} | Selected: ${String(
+        currentLoadedTarget.selectedPaths.length
+    )} item(s)`;
+    loadedTargetDetailsElement.append(detailText);
 }
 
 function updateDocsViewState(
     state: Readonly<{
-        activeDocsView: "cli" | "mcp";
+        activeDocsView: "cli" | "mcp" | "rules";
         cliMetaText: string;
         mcpMetaText: string;
+        rulesMetaText: string;
     }>
 ): void {
     const cliPage = document.getElementById("cli-page");
     const mcpPage = document.getElementById("mcp-page");
+    const rulesPage = document.getElementById("rules-page");
     const cliButton = document.getElementById("docs-view-cli");
     const mcpButton = document.getElementById("docs-view-mcp");
+    const rulesButton = document.getElementById("docs-view-rules");
     const docsMetaElement = document.getElementById("docs-meta");
     if (
         !(cliPage instanceof HTMLElement) ||
         !(mcpPage instanceof HTMLElement) ||
+        !(rulesPage instanceof HTMLElement) ||
         !(cliButton instanceof HTMLButtonElement) ||
         !(mcpButton instanceof HTMLButtonElement) ||
+        !(rulesButton instanceof HTMLButtonElement) ||
         !(docsMetaElement instanceof HTMLElement)
     ) {
         return;
@@ -414,17 +353,28 @@ function updateDocsViewState(
 
     cliPage.classList.toggle("hidden", state.activeDocsView !== "cli");
     mcpPage.classList.toggle("hidden", state.activeDocsView !== "mcp");
+    rulesPage.classList.toggle("hidden", state.activeDocsView !== "rules");
     cliButton.classList.toggle("active", state.activeDocsView === "cli");
     mcpButton.classList.toggle("active", state.activeDocsView === "mcp");
-    docsMetaElement.textContent = state.activeDocsView === "cli" ? state.cliMetaText : state.mcpMetaText;
+    rulesButton.classList.toggle("active", state.activeDocsView === "rules");
+    if (state.activeDocsView === "cli") {
+        docsMetaElement.textContent = state.cliMetaText;
+        return;
+    }
+    if (state.activeDocsView === "mcp") {
+        docsMetaElement.textContent = state.mcpMetaText;
+        return;
+    }
+    docsMetaElement.textContent = state.rulesMetaText;
 }
 
 function wirePageNavigation(
     state: {
-        activeDocsView: "cli" | "mcp";
+        activeDocsView: "cli" | "mcp" | "rules";
         activePage: "config" | "docs" | "graph";
         cliMetaText: string;
         mcpMetaText: string;
+        rulesMetaText: string;
     },
     applyPageState: () => void,
     updateDocsViewStateFn: () => void
@@ -441,6 +391,7 @@ function wirePageNavigation(
 
     const docsCliButton = document.getElementById("docs-view-cli");
     const docsMcpButton = document.getElementById("docs-view-mcp");
+    const docsRulesButton = document.getElementById("docs-view-rules");
     if (docsCliButton instanceof HTMLButtonElement) {
         docsCliButton.addEventListener("click", () => {
             state.activeDocsView = "cli";
@@ -453,6 +404,12 @@ function wirePageNavigation(
             updateDocsViewStateFn();
         });
     }
+    if (docsRulesButton instanceof HTMLButtonElement) {
+        docsRulesButton.addEventListener("click", () => {
+            state.activeDocsView = "rules";
+            updateDocsViewStateFn();
+        });
+    }
 }
 
 function renderDocumentationCatalog(
@@ -461,30 +418,36 @@ function renderDocumentationCatalog(
     metaState: {
         cliMetaText: string;
         mcpMetaText: string;
+        rulesMetaText: string;
     }
 ): void {
     const docsMetaElement = document.getElementById("docs-meta");
     const cliContentElement = document.getElementById("cli-content");
     const mcpContentElement = document.getElementById("mcp-content");
+    const rulesContentElement = document.getElementById("rules-content");
     if (
         !(docsMetaElement instanceof HTMLElement) ||
         !(cliContentElement instanceof HTMLElement) ||
-        !(mcpContentElement instanceof HTMLElement)
+        !(mcpContentElement instanceof HTMLElement) ||
+        !(rulesContentElement instanceof HTMLElement)
     ) {
         return;
     }
 
     cliContentElement.innerHTML = "";
     mcpContentElement.innerHTML = "";
+    rulesContentElement.innerHTML = "";
 
     if (dependencies.documentationCatalogs === null) {
         metaState.cliMetaText = "No CLI catalog metadata is available for this view.";
         metaState.mcpMetaText = "No MCP catalog metadata is available for this view.";
+        metaState.rulesMetaText = "No workspace rules metadata is available for this view.";
         const emptyState = document.createElement("div");
         emptyState.className = "catalog-empty";
         emptyState.textContent = "Documentation catalogs are not available.";
         cliContentElement.append(emptyState.cloneNode(true));
-        mcpContentElement.append(emptyState);
+        mcpContentElement.append(emptyState.cloneNode(true));
+        rulesContentElement.append(emptyState);
         updateDocsViewStateFn();
         return;
     }
@@ -544,13 +507,64 @@ function renderDocumentationCatalog(
         mcpContentElement.append(createCatalogCard(entry.toolName, entry.description, entry.commandDisplayName, rows));
     });
 
+    const workspaceRules = dependencies.documentationCatalogs.workspaceRules;
+    metaState.rulesMetaText = `${String(workspaceRules.formatOptions.length)} format options, ${String(
+        workspaceRules.lintRules.length
+    )} lint rules, ${String(workspaceRules.refactorCodemods.length)} refactor codemods loaded directly from workspace registries.`;
+
+    const formatRows = workspaceRules.formatOptions.map((entry) =>
+        createCatalogItemRow(entry.name, `${entry.description} (default: ${JSON.stringify(entry.defaultValue)})`)
+    );
+    rulesContentElement.append(
+        createCatalogCard(
+            "Prettier / Format Options",
+            "Live formatter option catalog sourced from @gmloop/format.",
+            "Format.listProjectFormatOptionCatalogEntries()",
+            formatRows
+        )
+    );
+
+    const lintRows = workspaceRules.lintRules.map((entry) =>
+        createCatalogItemRow(
+            entry.ruleId,
+            `${entry.description} (${entry.fixable === null ? "not auto-fixable" : `fixable: ${entry.fixable}`})`
+        )
+    );
+    rulesContentElement.append(
+        createCatalogCard(
+            "Lint Rules",
+            "Live lint rule catalog sourced from @gmloop/lint.",
+            "Lint.listLintRuleCatalogEntries()",
+            lintRows
+        )
+    );
+
+    const refactorRows = workspaceRules.refactorCodemods.map((entry) =>
+        createCatalogItemRow(
+            entry.id,
+            `${entry.description} (${
+                entry.requiresSemanticProjectIndex
+                    ? "requires semantic project index"
+                    : "does not require semantic project index"
+            })`
+        )
+    );
+    rulesContentElement.append(
+        createCatalogCard(
+            "Refactor Codemods",
+            "Live codemod catalog sourced from @gmloop/refactor.",
+            "Refactor.listRegisteredCodemods()",
+            refactorRows
+        )
+    );
+
     updateDocsViewStateFn();
 }
 
 function updateGraphViewMode(
     state: Readonly<{
         activeGraphView: "json" | "visual";
-        graphRuntime: GraphRuntimeApi;
+        graphRuntime: typeof d3;
         jsonView: GraphSelectionApi;
         linksRaw: Array<MutableGraphEdgeRecord>;
         nodesRaw: Array<MutableGraphNodeRecord>;
@@ -583,7 +597,7 @@ function updateGraphViewMode(
 function updatePageState(
     state: Readonly<{
         activePage: "config" | "docs" | "graph";
-        graphRuntime: GraphRuntimeApi;
+        graphRuntime: typeof d3;
         jsonView: GraphSelectionApi;
         svg: GraphSelectionApi;
     }>,
@@ -624,7 +638,8 @@ function updatePageState(
     }
     if (state.activePage === "docs") {
         toolbarHeading.textContent = "Docs";
-        toolbarSubheading.textContent = "Live CLI and MCP workspace catalogs are combined in a single Docs view.";
+        toolbarSubheading.textContent =
+            "Live CLI, MCP, and workspace rule catalogs are combined in a single Docs view.";
     } else {
         toolbarHeading.textContent = "Config";
         toolbarSubheading.textContent =
@@ -674,13 +689,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     const regenerateButtonLabel = '<span class="button-content"><span class="button-label">Regenerate</span></span>';
     const regeneratingButtonLabel =
         '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Regenerating…</span></span>';
-    const graphRuntime = readGraphRuntime();
+    const graphRuntime = d3;
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const svg = graphRuntime.select("#graph");
-    const jsonView = graphRuntime.select("#json-view");
-    const container = graphRuntime.select("#container");
-    const tooltip = graphRuntime.select("#tooltip");
+    const svg = graphRuntime.select<SVGSVGElement, unknown>("#graph");
+    const jsonView = graphRuntime.select<HTMLElement, unknown>("#json-view");
+    const container = graphRuntime.select<SVGGElement, unknown>("#container");
+    const tooltip = graphRuntime.select<HTMLElement, unknown>("#tooltip");
     const edgeLineVisualStyleByType = new Map(EDGE_LINE_VISUAL_STYLES.map((style) => [style.type, style]));
     const nodeVisualStyleByKind = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
     const edgeTypes = Array.from(new Set(dependencies.data.edges.map((edgeValue) => edgeValue.type)));
@@ -703,24 +718,32 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let labelMode: "auto" | "off" | "on" = "auto";
     let activeGraphView: "json" | "visual" = "visual";
     const navigationState: {
-        activeDocsView: "cli" | "mcp";
+        activeDocsView: "cli" | "mcp" | "rules";
         activePage: "config" | "docs" | "graph";
         cliMetaText: string;
         mcpMetaText: string;
+        rulesMetaText: string;
     } = {
         activeDocsView: "cli",
         activePage: "graph",
         cliMetaText: "",
-        mcpMetaText: ""
+        mcpMetaText: "",
+        rulesMetaText: ""
     };
     let activeFilters = new Set(edgeTypes);
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
     let nodesRaw = cloneGraphNodes(allNodes);
     let linksRaw = cloneGraphEdges(dependencies.data.edges);
-    let link = container.append("g").selectAll(".link");
-    let nodeGroup = container.append("g").selectAll(".node-group");
-    let node = nodeGroup.select("path.node");
-    let nodeLabels = nodeGroup.select("text");
+    let link: d3.Selection<SVGPathElement, MutableGraphEdgeRecord, SVGGElement, unknown> = container
+        .append("g")
+        .selectAll<SVGPathElement, MutableGraphEdgeRecord>(".link");
+    let nodeGroup: d3.Selection<SVGGElement, MutableGraphNodeRecord, SVGGElement, unknown> = container
+        .append("g")
+        .selectAll<SVGGElement, MutableGraphNodeRecord>(".node-group");
+    let node: d3.Selection<SVGPathElement, MutableGraphNodeRecord, SVGGElement, unknown> =
+        nodeGroup.select<SVGPathElement>("path.node");
+    let nodeLabels: d3.Selection<SVGTextElement, MutableGraphNodeRecord, SVGGElement, unknown> =
+        nodeGroup.select<SVGTextElement>("text");
     const searchHighlightNodeIds = new Set<string>();
     let focusNodeId: string | null = null;
     let pinnedTooltipNodeId: string | null = null;
@@ -732,8 +755,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     const neighborMap = new Map<string, Set<string>>();
     rebuildGraphIndexes(linksRaw, incomingCount, outgoingCount, neighborMap);
 
-    const zoomBehavior = graphRuntime
-        .zoom()
+    const zoomBehavior: GraphZoomBehavior = graphRuntime
+        .zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.1, 4])
         .on("zoom", (eventValue) => {
             const transform = readGraphTransform(eventValue);
@@ -746,16 +769,14 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 nodeLabels.style("display", transform.k > 0.8 ? "block" : "none");
             }
         });
-    svg.call((selection) => {
-        selection.call(zoomBehavior as (selection: GraphSelectionApi) => void);
-    });
+    svg.call(zoomBehavior);
 
-    const simulation = graphRuntime
-        .forceSimulation()
+    const simulation: GraphSimulationApi = graphRuntime
+        .forceSimulation<MutableGraphNodeRecord>()
         .force(
             "link",
             graphRuntime
-                .forceLink()
+                .forceLink<MutableGraphNodeRecord, MutableGraphEdgeRecord>()
                 .id((datum) => readNodeIdentifier(datum))
                 .distance(50)
         )
@@ -764,7 +785,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         .force(
             "collide",
             graphRuntime
-                .forceCollide()
+                .forceCollide<MutableGraphNodeRecord>()
                 .radius((datum) => getRadius(readGraphNode(datum), incomingCount, outgoingCount))
                 .iterations(2)
         )
@@ -846,10 +867,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
         graphRuntime.select("#reset-default").on("click", () => {
             svg.transition().call((selection) => {
-                selection.call(
-                    zoomBehavior as (selection: GraphSelectionApi) => void,
-                    graphRuntime.zoomIdentity as never
-                );
+                zoomBehavior.transform(selection, graphRuntime.zoomIdentity);
             });
             resetGraphStateToDefaults();
             updateGraph();
@@ -1414,7 +1432,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             (nodeValue) => activeNodeIds.has(nodeValue.id) && activeNodeFilters.has(nodeValue.kind)
         );
         link = link.data(filteredLinks, (datumValue) => {
-            const edgeValue = datumValue as MutableGraphEdgeRecord;
+            const edgeValue = datumValue;
             return `${readEdgeEndpointId(edgeValue.source)}-${readEdgeEndpointId(edgeValue.target)}-${edgeValue.type}`;
         });
         link.exit().remove();
@@ -1439,41 +1457,33 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
         nodeGroup = nodeGroup.data(filteredNodes, (datumValue) => String(Reflect.get(datumValue as object, "id")));
         nodeGroup.exit().remove();
+        const nodeDragBehavior: GraphDragBehavior = graphRuntime
+            .drag<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>()
+            .on("start", (eventValue) => dragStarted(eventValue))
+            .on("drag", (eventValue) => dragMoved(eventValue))
+            .on("end", (eventValue) => dragEnded(eventValue));
+
         const nodeEnter = nodeGroup
             .enter()
             .append("g")
             .attr("class", "node-group")
             .call((selection) => {
-                selection.call(
-                    graphRuntime
-                        .drag()
-                        .on("start", (eventValue, datumValue) => dragStarted(eventValue, datumValue))
-                        .on("drag", (eventValue, datumValue) => dragMoved(eventValue, datumValue))
-                        .on("end", (eventValue, datumValue) => dragEnded(eventValue, datumValue)) as (
-                        selection: GraphSelectionApi
-                    ) => void
-                );
+                selection.call(nodeDragBehavior);
             });
 
         nodeEnter
             .append("path")
             .attr("class", (datumValue) => {
-                const nodeValue = datumValue as MutableGraphNodeRecord;
+                const nodeValue = datumValue;
                 return `node node-${nodeValue.kind}${nodeValue.graphId === "toolset" ? " toolset" : ""}`;
             })
-            .attr("d", (datumValue) => renderNodeShape(datumValue as MutableGraphNodeRecord))
+            .attr("d", (datumValue) => renderNodeShape(datumValue))
             .classed("node", true)
             .classed("toolset", (datumValue) => String(Reflect.get(datumValue as object, "graphId")) === "toolset")
-            .on("mouseover", (eventValue, datumValue) =>
-                showTooltip(eventValue as TooltipMouseEvent, datumValue as MutableGraphNodeRecord)
-            )
+            .on("mouseover", (eventValue, datumValue) => showTooltip(eventValue as TooltipMouseEvent, datumValue))
             .on("mouseout", () => hideTooltipWithDelay())
-            .on("click", (eventValue, datumValue) =>
-                handleNodeClick(eventValue as MouseEvent, datumValue as MutableGraphNodeRecord)
-            )
-            .on("dblclick", (eventValue, datumValue) =>
-                handleNodeDoubleClick(eventValue as MouseEvent, datumValue as MutableGraphNodeRecord)
-            );
+            .on("click", (eventValue, datumValue) => handleNodeClick(eventValue as MouseEvent, datumValue))
+            .on("dblclick", (eventValue, datumValue) => handleNodeDoubleClick(eventValue as MouseEvent, datumValue));
 
         nodeEnter
             .append("text")
@@ -1483,16 +1493,19 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             .style("display", "none");
 
         nodeGroup = nodeEnter.merge(nodeGroup);
-        node = nodeGroup.select("path.node");
-        nodeLabels = nodeGroup.select("text");
+        node = nodeGroup.select<SVGPathElement>("path.node");
+        nodeLabels = nodeGroup.select<SVGTextElement>("text");
         node.attr("class", (datumValue) => {
-            const nodeValue = datumValue as MutableGraphNodeRecord;
+            const nodeValue = datumValue;
             const styleKind = nodeVisualStyleByKind.has(nodeValue.kind) ? nodeValue.kind : "default";
             return `node node-${styleKind}${nodeValue.graphId === "toolset" ? " toolset" : ""}`;
         });
 
         simulation.nodes(filteredNodes).on("tick", ticked);
-        simulation.force("link").links(filteredLinks);
+        const linkForce = simulation.force("link");
+        if (linkForce !== undefined && "links" in linkForce) {
+            (linkForce as ForceLink<MutableGraphNodeRecord, MutableGraphEdgeRecord>).links(filteredLinks);
+        }
         simulation.alpha(0.3).restart();
         applyHighlights();
     }
@@ -1505,12 +1518,12 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         } else if (resourceKinds.has(nodeValue.kind)) {
             symbolType = graphRuntime.symbolSquare;
         }
-        return graphRuntime.symbol().type(symbolType).size(symbolArea)();
+        return graphRuntime.symbol().type(symbolType).size(symbolArea)() ?? "";
     }
 
     function ticked(): void {
         link.attr("d", (datumValue) => {
-            const edgeValue = datumValue as MutableGraphEdgeRecord;
+            const edgeValue = datumValue;
             const sourceNode = edgeValue.source as MutableGraphNodeRecord;
             const targetNode = edgeValue.target as MutableGraphNodeRecord;
             const dx = targetNode.x - sourceNode.x;
@@ -1522,14 +1535,14 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             return `M${sourceNode.x},${sourceNode.y}L${targetNode.x},${targetNode.y}`;
         });
         nodeGroup.attr("transform", (datumValue) => {
-            const nodeValue = datumValue as MutableGraphNodeRecord;
+            const nodeValue = datumValue;
             return `translate(${nodeValue.x},${nodeValue.y})`;
         });
     }
 
-    function dragStarted(eventValue: never, datumValue: never): void {
-        const nodeValue = datumValue as MutableGraphNodeRecord;
-        const isActive = Boolean(Reflect.get(eventValue as object, "active"));
+    function dragStarted(eventValue: D3DragEvent<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>): void {
+        const nodeValue = eventValue.subject;
+        const isActive = eventValue.active;
         if (!isActive) {
             simulation.alphaTarget(0.3).restart();
         }
@@ -1537,8 +1550,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         nodeValue.fy = nodeValue.y;
     }
 
-    function dragEnded(eventValue: never, _datumValue: never): void {
-        const isActive = Boolean(Reflect.get(eventValue as object, "active"));
+    function dragEnded(eventValue: D3DragEvent<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>): void {
+        const isActive = eventValue.active;
         if (!isActive) {
             simulation.alphaTarget(0);
         }
@@ -1681,7 +1694,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             return (isFocusActive && nodeId === focusNodeId) || (isSearchActive && searchHighlightNodeIds.has(nodeId));
         });
         link.classed("dimmed", (datumValue) => {
-            const edgeValue = datumValue as MutableGraphEdgeRecord;
+            const edgeValue = datumValue;
             const sourceId = readEdgeEndpointId(edgeValue.source);
             const targetId = readEdgeEndpointId(edgeValue.target);
             if (focusNodeId !== null) {
@@ -1701,6 +1714,23 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 const button = graphRuntime.select("#open-project");
                 button.attr("disabled", "true").html(openingButtonLabel);
                 try {
+                    if (dependencies.isServerMode) {
+                        const openResponse = await fetch("/api/open", {
+                            method: "POST"
+                        });
+                        if (!openResponse.ok) {
+                            const responseText = await openResponse.text();
+                            throw new Error(responseText || "Server rejected project load request.");
+                        }
+                        const responsePayload = (await openResponse.json()) as Readonly<{ changed?: boolean }>;
+                        if (responsePayload.changed === true) {
+                            globalThis.location.reload();
+                            return;
+                        }
+                        button.attr("disabled", null).html(openButtonLabel);
+                        return;
+                    }
+
                     let selectedFiles: ReadonlyArray<BrowserFileHandle> | null = null;
                     try {
                         selectedFiles = await dependencies.directoryOpen({ recursive: true });

@@ -681,6 +681,38 @@ export function restoreProperties<TTarget extends Record<PropertyKey, unknown>, 
 }
 
 /**
+ * Recursively sort the keys of an object (or objects within an array) to ensure
+ * deterministic JSON serialization.
+ *
+ * Consolidates the repeated logic used across CLI runtime modules (such as
+ * `project-state-store` and `artifact-store`) so all deterministic artifacts
+ * share the same sorting semantics. The helper preserves array order while
+ * recursively sorting any nested plain objects.
+ *
+ * @param {unknown} value The value to sort.
+ * @returns {unknown} A new object with sorted keys, or the original value if it's
+ *                    not a plain object or array.
+ */
+export function sortObjectKeys(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map(sortObjectKeys);
+    }
+
+    if (!isPlainObject(value)) {
+        return value;
+    }
+
+    const sorted: Record<string, unknown> = {};
+    const keys = Object.keys(value).sort();
+
+    for (const key of keys) {
+        sorted[key] = sortObjectKeys((value as Record<string, unknown>)[key]);
+    }
+
+    return sorted;
+}
+
+/**
  * Resolves a `ReadonlyMap` of GML identifier names to suffix strings by merging
  * a set of defaults with optional user-provided overrides.
  *

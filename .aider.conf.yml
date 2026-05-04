@@ -14,3 +14,4 @@ disable-playwright: true
 subtree-only: true
 check-update: false
 verbose: false
+aiderignore: .aiexclude
