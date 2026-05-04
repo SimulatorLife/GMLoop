@@ -278,7 +278,11 @@ function buildUnwrapEdit(sourceText: string, withNode: Record<string, unknown>):
     // Position of the first character after `{` and its trailing newline.
     // This marks the start of the body content we want to keep.
     let bodyContentStart = bodyStart + 1; // skip the opening `{`
-    while (bodyContentStart < sourceText.length && sourceText[bodyContentStart] !== "\n" && sourceText[bodyContentStart] !== "\r") {
+    while (
+        bodyContentStart < sourceText.length &&
+        sourceText[bodyContentStart] !== "\n" &&
+        sourceText[bodyContentStart] !== "\r"
+    ) {
         bodyContentStart++;
     }
     if (bodyContentStart < sourceText.length && sourceText[bodyContentStart] === "\r") {
@@ -293,7 +297,11 @@ function buildUnwrapEdit(sourceText: string, withNode: Record<string, unknown>):
 
     // Position immediately after the closing `}` line (including its newline).
     let afterClosingBraceLine = bodyEnd + 1; // skip the closing `}`
-    while (afterClosingBraceLine < sourceText.length && sourceText[afterClosingBraceLine] !== "\n" && sourceText[afterClosingBraceLine] !== "\r") {
+    while (
+        afterClosingBraceLine < sourceText.length &&
+        sourceText[afterClosingBraceLine] !== "\n" &&
+        sourceText[afterClosingBraceLine] !== "\r"
+    ) {
         afterClosingBraceLine++;
     }
     if (afterClosingBraceLine < sourceText.length && sourceText[afterClosingBraceLine] === "\r") {

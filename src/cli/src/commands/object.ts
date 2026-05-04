@@ -19,8 +19,8 @@ function addObjectSharedOptions(command: Command): Command {
         .option("--json", "Emit JSON output.");
 }
 
-function printObjectPayload(payload: unknown, options: PlannedSurfaceSharedOptions): void {
-    printPlannedSurfacePayload(payload, options.json === true);
+function printObjectPayload(payload: unknown): void {
+    printPlannedSurfacePayload(payload);
 }
 
 function emitObjectUnavailableLeaf(
@@ -38,8 +38,7 @@ function emitObjectUnavailableLeaf(
                 details,
                 state: "not_available"
             }
-        },
-        options
+        }
     );
 }
 
@@ -61,7 +60,7 @@ export function createObjectCommand(): Command {
             query: "",
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "object");
-        printObjectPayload({ command: "object list", ok: true, payload }, options);
+        printObjectPayload({ command: "object list", ok: true, payload });
     });
 
     const inspect = addObjectSharedOptions(
@@ -91,7 +90,7 @@ export function createObjectCommand(): Command {
                       projectRoot: context.projectRoot,
                       toolsetRoot: options.toolsetRoot
                   });
-        printObjectPayload({ command: "object inspect", ok: payload !== null, payload }, options);
+        printObjectPayload({ command: "object inspect", ok: payload !== null, payload });
     });
 
     const update = addObjectSharedOptions(
@@ -125,8 +124,7 @@ export function createObjectCommand(): Command {
                     objectCount: objects.length,
                     state: "available"
                 }
-            },
-            options
+            }
         );
     });
 

@@ -5,7 +5,8 @@ import { Argument, Command } from "commander";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createPathOption, createVerboseOption, createWriteOption } from "../cli-core/shared-command-options.js";
-import { discoverProjectRoot, resolveCommandProjectContext } from "../workflow/project-root.js";
+import { ensureProjectGraphIndex, printProjectPayload } from "../workflow/project-context.js";
+import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type ResourceCommandSharedOptions = Readonly<{
     config?: string;
@@ -19,28 +20,6 @@ type ResourceCommandSharedOptions = Readonly<{
 
 const RESOURCE_COMMAND_FAILURE_PREFIX = "Resource command failed.";
 const RESOURCE_KIND_ARGUMENT_DESCRIPTION = "Resource kind";
-
-async function ensureResourceGraphIndex(options: ResourceCommandSharedOptions): Promise<{
-    projectConfig: Record<string, unknown>;
-    projectRoot: string;
-}> {
-    const context = await resolveCommandProjectContext(options);
-    await Semantic.buildGraphIndex({
-        databasePath: options.databasePath,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-    return context;
-}
-
-function printResourcePayload(payload: unknown, asJson: boolean): void {
-    if (asJson) {
-        console.log(JSON.stringify(payload, null, 2));
-        return;
-    }
-    console.log(JSON.stringify(payload, null, 2));
-}
 
 function printMutationResult(result: ProjectResourceMutationResult): void {
     console.log(`Action: ${result.action}`);
@@ -237,7 +216,7 @@ export function createResourceCommand(): Command {
     listCommand.action(async function resourceListCommandAction() {
         await runResourceCommandAction(async () => {
             const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
+            const context = await ensureProjectGraphIndex(options);
             const result = Semantic.searchGraphIndex({
                 databasePath: options.databasePath,
                 projectConfig: context.projectConfig,
@@ -245,7 +224,7 @@ export function createResourceCommand(): Command {
                 query: "",
                 toolsetRoot: options.toolsetRoot
             });
-            printResourcePayload({ ok: true, payload: result.results }, options.json === true);
+            printProjectPayload({ ok: true, payload: result.results });
         });
     });
 
@@ -257,7 +236,7 @@ export function createResourceCommand(): Command {
     findCommand.action(async function resourceFindCommandAction(query: string) {
         await runResourceCommandAction(async () => {
             const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
+            const context = await ensureProjectGraphIndex(options);
             const result = Semantic.searchGraphIndex({
                 databasePath: options.databasePath,
                 projectConfig: context.projectConfig,
@@ -265,7 +244,7 @@ export function createResourceCommand(): Command {
                 query,
                 toolsetRoot: options.toolsetRoot
             });
-            printResourcePayload({ ok: true, payload: result }, options.json === true);
+            printProjectPayload({ ok: true, payload: result });
         });
     });
 
@@ -277,7 +256,7 @@ export function createResourceCommand(): Command {
     inspectCommand.action(async function resourceInspectCommandAction(nameOrId: string) {
         await runResourceCommandAction(async () => {
             const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
+            const context = await ensureProjectGraphIndex(options);
             const resolvedId = nameOrId.includes("::")
                 ? nameOrId
                 : (Semantic.searchGraphIndex({
@@ -298,7 +277,7 @@ export function createResourceCommand(): Command {
                 projectRoot: context.projectRoot,
                 toolsetRoot: options.toolsetRoot
             });
-            printResourcePayload({ ok: payload !== null, payload }, options.json === true);
+            printProjectPayload({ ok: payload !== null, payload });
         });
     });
 
@@ -310,7 +289,7 @@ export function createResourceCommand(): Command {
     depsCommand.action(async function resourceDepsCommandAction(nameOrId: string) {
         await runResourceCommandAction(async () => {
             const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
+            const context = await ensureProjectGraphIndex(options);
             const search = Semantic.searchGraphIndex({
                 databasePath: options.databasePath,
                 limit: 1,
@@ -330,10 +309,7 @@ export function createResourceCommand(): Command {
                 projectRoot: context.projectRoot,
                 toolsetRoot: options.toolsetRoot
             });
-            printResourcePayload(
-                { ok: true, payload: neighbors.filter((entry) => entry.direction === "outgoing") },
-                options.json === true
-            );
+            printProjectPayload({ ok: true, payload: neighbors.filter((entry) => entry.direction === "outgoing") });
         });
     });
 
@@ -345,7 +321,7 @@ export function createResourceCommand(): Command {
     dependentsCommand.action(async function resourceDependentsCommandAction(nameOrId: string) {
         await runResourceCommandAction(async () => {
             const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
+            const context = await ensureProjectGraphIndex(options);
             const search = Semantic.searchGraphIndex({
                 databasePath: options.databasePath,
                 limit: 1,
@@ -365,7 +341,7 @@ export function createResourceCommand(): Command {
                 projectRoot: context.projectRoot,
                 toolsetRoot: options.toolsetRoot
             });
-            printResourcePayload({ ok: true, payload: usages }, options.json === true);
+            printProjectPayload({ ok: true, payload: usages });
         });
     });
 
@@ -375,7 +351,7 @@ export function createResourceCommand(): Command {
     auditCommand.action(async function resourceAuditCommandAction() {
         await runResourceCommandAction(async () => {
             const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
+            const context = await ensureProjectGraphIndex(options);
             const everything = Semantic.searchGraphIndex({
                 databasePath: options.databasePath,
                 limit: 2000,
@@ -388,10 +364,7 @@ export function createResourceCommand(): Command {
                 acc[entry.kind] = (acc[entry.kind] ?? 0) + 1;
                 return acc;
             }, {});
-            printResourcePayload(
-                { ok: true, payload: { kindCounts, total: everything.results.length } },
-                options.json === true
-            );
+            printProjectPayload({ ok: true, payload: { kindCounts, total: everything.results.length } });
         });
     });
 

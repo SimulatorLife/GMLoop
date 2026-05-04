@@ -118,7 +118,9 @@ function getRequiredAiderCommand(source: string): string {
 }
 
 function getRequiredGeminiCommand(source: string): string {
-    const commandStartIndex = source.indexOf('stdbuf -oL -eL node --max-old-space-size=12288 "${GEMINI_CLI_ENTRYPOINT}" \\');
+    const commandStartIndex = source.indexOf(
+        'stdbuf -oL -eL node --max-old-space-size=12288 "${GEMINI_CLI_ENTRYPOINT}" \\'
+    );
     assert.notEqual(commandStartIndex, -1, "Gemini workflow must invoke the Gemini CLI entrypoint through node.");
 
     const commandTail = source.slice(commandStartIndex);
@@ -130,7 +132,10 @@ function getRequiredGeminiCommand(source: string): string {
             capturedCommandLines.push(line);
             break;
         }
-        if (capturedCommandLines.length > 0 || line.includes('stdbuf -oL -eL node --max-old-space-size=12288 "${GEMINI_CLI_ENTRYPOINT}"')) {
+        if (
+            capturedCommandLines.length > 0 ||
+            line.includes('stdbuf -oL -eL node --max-old-space-size=12288 "${GEMINI_CLI_ENTRYPOINT}"')
+        ) {
             capturedCommandLines.push(line);
         }
     }
@@ -337,7 +342,10 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(source, /jq -Rr '/u);
     assert.match(source, /fromjson\? \/\/ \{"type":"raw","text": \.\}/u);
     assert.match(source, /\[message\/\\\(\$role\\\)\]/u);
-    assert.match(source, /\(\$event\.name \/\/ \$event\.tool_name \/\/ \$event\.toolUse\.name \/\/ "unknown"\) as \$name/u);
+    assert.match(
+        source,
+        /\(\$event\.name \/\/ \$event\.tool_name \/\/ \$event\.toolUse\.name \/\/ "unknown"\) as \$name/u
+    );
     assert.match(source, /\[tool_use\]/u);
     assert.match(source, /\[tool_result\/\\\(\$name\\\)\]/u);
     assert.match(
@@ -591,8 +599,14 @@ void test("agent invoke workflow checks and pushes changes after every agent att
 void test("agent invoke requests merge-conflict resolution with the same agent after a successful dirty push", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
-    assert.match(source, /outputs:\n\s+should_request_merge_conflict_resolution: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.should_request_merge_conflict_resolution \|\| 'false' \}\}/u);
-    assert.match(source, /follow_up_agent: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.follow_up_agent \|\| '' \}\}/u);
+    assert.match(
+        source,
+        /outputs:\n\s+should_request_merge_conflict_resolution: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.should_request_merge_conflict_resolution \|\| 'false' \}\}/u
+    );
+    assert.match(
+        source,
+        /follow_up_agent: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.follow_up_agent \|\| '' \}\}/u
+    );
     assert.match(source, /- name: Evaluate merge conflicts after successful push/u);
     assert.match(source, /if: always\(\) && steps\.report_outcome\.outputs\.agent_failed != 'true'/u);
     assert.match(source, /FOLLOW_UP_AGENT: \$\{\{ inputs\.agent \}\}/u);

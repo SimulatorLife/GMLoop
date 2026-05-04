@@ -57,7 +57,7 @@ function selectDeterministicWeightedCandidate(
         .map((candidate) => ({
             name: candidate.name,
             weight: candidate.weight,
-            slots: toSlots(candidate.weight),
+            slots: toSlots(candidate.weight)
         }))
         .sort((left, right) => left.name.localeCompare(right.name));
 
@@ -79,7 +79,7 @@ function selectDeterministicWeightedCandidate(
     return {
         name: cycle[cycleIndex],
         cycleIndex: cycleIndex + 1,
-        cycleLength: cycle.length,
+        cycleLength: cycle.length
     };
 }
 
@@ -153,15 +153,27 @@ void test("merge conflict workflow supports reusable invocations with explicit P
     );
 
     assert.match(conflictWorkflow, /workflow_call:/u);
-    assert.match(conflictWorkflow, /target_pr_number:\n\s+description: "Optional PR number to target for conflict resolution\."\n\s+required: false/u);
+    assert.match(
+        conflictWorkflow,
+        /target_pr_number:\n\s+description: "Optional PR number to target for conflict resolution\."\n\s+required: false/u
+    );
     assert.match(conflictWorkflow, /agent:\n\s+description: "Optional agent override\."\n\s+required: false/u);
     assert.match(conflictWorkflow, /GH_USER_TOKEN:\n\s+required: true/u);
-    assert.match(conflictWorkflow, /TARGET_PR_NUMBER_INPUT: \$\{\{ inputs\.target_pr_number \|\| github\.event\.inputs\.target_pr_number \|\| '' \}\}/u);
-    assert.match(conflictWorkflow, /const manualRun = context\.eventName === "workflow_dispatch" && manualInput\.length > 0;/u);
+    assert.match(
+        conflictWorkflow,
+        /TARGET_PR_NUMBER_INPUT: \$\{\{ inputs\.target_pr_number \|\| github\.event\.inputs\.target_pr_number \|\| '' \}\}/u
+    );
+    assert.match(
+        conflictWorkflow,
+        /const manualRun = context\.eventName === "workflow_dispatch" && manualInput\.length > 0;/u
+    );
     assert.match(conflictWorkflow, /AGENT: \$\{\{ inputs\.agent \|\| github\.event\.inputs\.agent \|\| '' \}\}/u);
     assert.match(conflictWorkflow, /with:\n\s+github-token: \$\{\{ secrets\.GH_USER_TOKEN \}\}\n\s+script: \|/u);
     assert.match(conflictWorkflow, /const lines = \[\n\s+marker,/u);
-    assert.match(conflictWorkflow, /const lines = \[[\s\S]*?\n\s+`\$\{mention\} This PR currently has merge conflicts/u);
+    assert.match(
+        conflictWorkflow,
+        /const lines = \[[\s\S]*?\n\s+`\$\{mention\} This PR currently has merge conflicts/u
+    );
 });
 
 void test("workflow selectors use deterministic run-number weighted selection", async () => {
@@ -191,10 +203,11 @@ void test("workflow selectors use deterministic run-number weighted selection", 
 void test("deterministic weighted selector alternates equal-weight candidates", () => {
     const candidates = [
         { name: "codex", weight: 1 },
-        { name: "copilot", weight: 1 },
+        { name: "copilot", weight: 1 }
     ] as const;
-    const picks = Array.from({ length: 6 }, (_, index) =>
-        selectDeterministicWeightedCandidate(candidates, index + 1)?.name
+    const picks = Array.from(
+        { length: 6 },
+        (_, index) => selectDeterministicWeightedCandidate(candidates, index + 1)?.name
     );
 
     assert.deepEqual(picks, ["codex", "copilot", "codex", "copilot", "codex", "copilot"]);
@@ -203,10 +216,11 @@ void test("deterministic weighted selector alternates equal-weight candidates", 
 void test("deterministic weighted selector respects unequal weights", () => {
     const candidates = [
         { name: "codex", weight: 2 },
-        { name: "copilot", weight: 1 },
+        { name: "copilot", weight: 1 }
     ] as const;
-    const picks = Array.from({ length: 3000 }, (_, index) =>
-        selectDeterministicWeightedCandidate(candidates, index + 1)?.name
+    const picks = Array.from(
+        { length: 3000 },
+        (_, index) => selectDeterministicWeightedCandidate(candidates, index + 1)?.name
     );
     const codexCount = picks.filter((name) => name === "codex").length;
     const copilotCount = picks.filter((name) => name === "copilot").length;
@@ -220,7 +234,7 @@ void test("deterministic weighted selector excludes non-positive weights", () =>
         [
             { name: "codex", weight: 0 },
             { name: "copilot", weight: -1 },
-            { name: "gemini", weight: 1 },
+            { name: "gemini", weight: 1 }
         ],
         3
     );
@@ -232,10 +246,7 @@ void test("deterministic weighted selector excludes non-positive weights", () =>
 });
 
 void test("failing test recovery probes the full validation surface before opening a PR", async () => {
-    const workflow = await readFile(
-        path.resolve(process.cwd(), ".github/workflows/agent-41-test-failure.yml"),
-        "utf8"
-    );
+    const workflow = await readFile(path.resolve(process.cwd(), ".github/workflows/agent-41-test-failure.yml"), "utf8");
 
     assert.match(workflow, /validation_failed: \$\{\{ steps\.run_validation\.outputs\.failed \}\}/u);
     assert.match(workflow, /needs\.check_validation\.outputs\.validation_failed == 'true'/u);
@@ -278,9 +289,15 @@ void test("bad test remediation workflow targets fragile tests and strengthens c
         "utf8"
     );
 
-    assert.match(workflow, /Identify one genuinely bad automated test or one small cluster of closely related bad tests/u);
+    assert.match(
+        workflow,
+        /Identify one genuinely bad automated test or one small cluster of closely related bad tests/u
+    );
     assert.match(workflow, /assert implementation details instead of externally visible behavior/u);
-    assert.match(workflow, /depend on test execution order, global state, timing, randomness, or the current environment/u);
+    assert.match(
+        workflow,
+        /depend on test execution order, global state, timing, randomness, or the current environment/u
+    );
     assert.match(workflow, /Prefer stronger contract-focused assertions, clearer setup, and deterministic behavior/u);
     assert.match(workflow, /why the original test was "bad", explain the new contract-focused shape/u);
 });
