@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 import { getNodeType } from "../src/ast/node-helpers/index.js";
 

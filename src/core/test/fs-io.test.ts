@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 import { getFileMtime, listDirectory } from "../src/fs/index.js";
 import { isErrorWithCode } from "../src/utils/error.js";
