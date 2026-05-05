@@ -3,8 +3,11 @@ import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promise
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { Semantic } from "@gmloop/semantic";
 
+import {
+    defaultProjectMetadataAdapter,
+    type ProjectMetadataAdapter
+} from "./project-metadata-adapter.js";
 import {
     ProjectResourceKind,
     type ProjectResourceKindValue,
@@ -34,6 +37,8 @@ type ProjectManifestEntry = Readonly<{
  */
 export interface AddProjectResourceRequest {
     dryRun?: boolean;
+    /** Codec for reading/writing .yy metadata files. Defaults to plain JSON. */
+    metadataAdapter?: ProjectMetadataAdapter;
     projectRoot: string;
     resourceKind: ProjectResourceKindValue;
     resourceName: string;
@@ -44,6 +49,8 @@ export interface AddProjectResourceRequest {
  */
 export interface RemoveProjectResourceRequest {
     dryRun?: boolean;
+    /** Codec for reading/writing .yy metadata files. Defaults to plain JSON. */
+    metadataAdapter?: ProjectMetadataAdapter;
     projectRoot: string;
     resourceKind: ProjectResourceKindValue;
     resourceName: string;
@@ -54,6 +61,8 @@ export interface RemoveProjectResourceRequest {
  */
 export interface RenameProjectResourceRequest {
     dryRun?: boolean;
+    /** Codec for reading/writing .yy metadata files. Defaults to plain JSON. */
+    metadataAdapter?: ProjectMetadataAdapter;
     newResourceName: string;
     projectRoot: string;
     resourceKind: ProjectResourceKindValue;
@@ -65,6 +74,8 @@ export interface RenameProjectResourceRequest {
  */
 export interface DuplicateProjectResourceRequest {
     dryRun?: boolean;
+    /** Codec for reading/writing .yy metadata files. Defaults to plain JSON. */
+    metadataAdapter?: ProjectMetadataAdapter;
     newResourceName: string;
     projectRoot: string;
     resourceKind: ProjectResourceKindValue;
@@ -77,6 +88,8 @@ export interface DuplicateProjectResourceRequest {
 export interface MoveProjectResourceRequest {
     destinationFolder: string;
     dryRun?: boolean;
+    /** Codec for reading/writing .yy metadata files. Defaults to plain JSON. */
+    metadataAdapter?: ProjectMetadataAdapter;
     projectRoot: string;
     resourceKind: ProjectResourceKindValue;
     resourceName: string;
@@ -167,7 +180,10 @@ async function pathExists(candidatePath: string): Promise<boolean> {
     }
 }
 
-async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProjectManifest> {
+async function resolveProjectManifest(
+    projectRoot: string,
+    adapter: ProjectMetadataAdapter
+): Promise<ResolvedProjectManifest> {
     const directoryEntries = await readdir(projectRoot, {
         withFileTypes: true
     });
@@ -188,7 +204,7 @@ async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProj
 
     const manifestFileName = manifestFileNames[0];
     const manifestAbsolutePath = path.join(projectRoot, manifestFileName);
-    const manifestDocument = await readProjectMetadataDocument(manifestAbsolutePath);
+    const manifestDocument = await readProjectMetadataDocument(manifestAbsolutePath, adapter);
     const manifestName =
         Core.getNonEmptyString(manifestDocument.name) ??
         path.basename(manifestFileName, path.extname(manifestFileName));
@@ -200,9 +216,12 @@ async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProj
     });
 }
 
-async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
+async function readProjectMetadataDocument(
+    absolutePath: string,
+    adapter: ProjectMetadataAdapter
+): Promise<Record<string, unknown>> {
     const rawContent = await readFile(absolutePath, "utf8");
-    return Semantic.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
+    return adapter.parseDocument(rawContent, absolutePath);
 }
 
 function createProjectResourceContext(
@@ -677,12 +696,13 @@ function createResourceMetadataDocument(context: ProjectResourceContext): Record
 
 function createResourceArtifacts(
     context: ProjectResourceContext,
-    metadataDocument: Record<string, unknown>
+    metadataDocument: Record<string, unknown>,
+    adapter: ProjectMetadataAdapter
 ): Array<ProjectResourceArtifact> {
     const artifacts: Array<ProjectResourceArtifact> = [
         {
             path: context.resourcePath,
-            content: `${Semantic.stringifyProjectMetadataDocument(metadataDocument, context.resourcePath)}\n`
+            content: `${adapter.stringifyDocument(metadataDocument, context.resourcePath)}\n`
         }
     ];
 

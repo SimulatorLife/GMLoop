@@ -13,38 +13,6 @@ import type { GmlRuleDefinition } from "../rule-definition.js";
 const LOGICAL_NOT_ALIAS = "not";
 const LOGICAL_NOT_OPERATOR = "!";
 const WHITESPACE_PATTERN = /\s/u;
-const WORD_OPERATOR_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
-
-function resolveReportLocation(context: Rule.RuleContext, index: number): { line: number; column: number } {
-    const sourceCodeWithLocator = context.sourceCode as Rule.RuleContext["sourceCode"] & {
-        getLocFromIndex?: (index: number) => { line: number; column: number };
-    };
-
-    if (typeof sourceCodeWithLocator.getLocFromIndex === "function") {
-        const located = sourceCodeWithLocator.getLocFromIndex(index);
-        if (
-            typeof located?.line === "number" &&
-            Number.isFinite(located.line) &&
-            typeof located.column === "number" &&
-            Number.isFinite(located.column)
-        ) {
-            return located;
-        }
-    }
-
-    const sourceText = context.sourceCode.text;
-    const clampedIndex = Core.clamp(index, 0, sourceText.length);
-    let line = 1;
-    let lineStart = 0;
-    for (let cursor = 0; cursor < clampedIndex; cursor += 1) {
-        if (sourceText[cursor] === "\n") {
-            line += 1;
-            lineStart = cursor + 1;
-        }
-    }
-
-    return { line, column: clampedIndex - lineStart };
-}
 
 function isIdentifierStartCharacter(character: string | undefined): boolean {
     if (typeof character !== "string" || character.length === 0) {
@@ -117,75 +85,6 @@ function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string): string {
     return applySourceTextEdits(sourceText, edits);
 }
 
-function locateBinaryOperatorSourceRange(parameters: {
-    sourceText: string;
-    node: Rule.Node;
-    operator: string;
-    normalizedOperator: string;
-    expressionStart: number;
-    expressionEnd: number;
-}): [number, number] | null {
-    const leftNode = (parameters.node as { left?: Rule.Node }).left;
-    const rightNode = (parameters.node as { right?: Rule.Node }).right;
-    const leftEndIndex = leftNode ? Core.getNodeEndIndex(leftNode) : null;
-    const rightStartIndex = rightNode ? Core.getNodeStartIndex(rightNode) : null;
-    const searchStart =
-        typeof leftEndIndex === "number"
-            ? Core.clamp(leftEndIndex, parameters.expressionStart, parameters.expressionEnd)
-            : parameters.expressionStart;
-    const searchEnd =
-        typeof rightStartIndex === "number"
-            ? Core.clamp(rightStartIndex, searchStart, parameters.expressionEnd)
-            : parameters.expressionEnd;
-    if (searchStart >= searchEnd) {
-        return null;
-    }
-
-    const candidates = [
-        ...new Set([parameters.operator, parameters.normalizedOperator].filter((value) => value.length > 0))
-    ].sort((left, right) => right.length - left.length);
-    if (candidates.length === 0) {
-        return null;
-    }
-
-    const scanState = Core.createStringCommentScanState();
-    let cursor = searchStart;
-    while (cursor < searchEnd) {
-        const scannedIndex = Core.advanceStringCommentScan(
-            parameters.sourceText,
-            parameters.sourceText.length,
-            cursor,
-            scanState,
-            true
-        );
-        if (scannedIndex !== cursor) {
-            cursor = scannedIndex;
-            continue;
-        }
-
-        for (const candidate of candidates) {
-            const candidateEnd = cursor + candidate.length;
-            if (candidateEnd > searchEnd || parameters.sourceText.slice(cursor, candidateEnd) !== candidate) {
-                continue;
-            }
-
-            if (
-                WORD_OPERATOR_PATTERN.test(candidate) &&
-                (!Core.isIdentifierBoundaryCharacter(parameters.sourceText[cursor - 1]) ||
-                    !Core.isIdentifierBoundaryCharacter(parameters.sourceText[candidateEnd]))
-            ) {
-                continue;
-            }
-
-            return [cursor, candidateEnd];
-        }
-
-        cursor += 1;
-    }
-
-    return null;
-}
-
 export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
@@ -193,48 +92,6 @@ export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition
             return Object.freeze({
                 Program() {
                     reportProgramTextRewrite(context, definition, rewriteLogicalNotAliasesOutsideTrivia);
-                },
-                BinaryExpression(node) {
-                    const normalized = Core.OPERATOR_ALIAS_MAP.get(node.operator);
-                    if (normalized) {
-                        const operator = String(node.operator);
-                        const start = Core.getNodeStartIndex(node);
-                        const end = Core.getNodeEndIndex(node);
-                        if (
-                            typeof start === "number" &&
-                            typeof end === "number" &&
-                            operator.length > 0 &&
-                            normalized !== operator
-                        ) {
-                            const operatorRange = locateBinaryOperatorSourceRange({
-                                sourceText: context.sourceCode.text,
-                                node,
-                                operator,
-                                normalizedOperator: normalized,
-                                expressionStart: start,
-                                expressionEnd: end
-                            });
-                            if (operatorRange === null) {
-                                return;
-                            }
-
-                            const [operatorStart, operatorEnd] = operatorRange;
-                            const originalOperatorText = context.sourceCode.text.slice(operatorStart, operatorEnd);
-                            if (
-                                originalOperatorText.length === operator.length &&
-                                originalOperatorText.toLowerCase() === operator &&
-                                originalOperatorText !== operator
-                            ) {
-                                return;
-                            }
-
-                            context.report({
-                                loc: resolveReportLocation(context, operatorStart),
-                                messageId: definition.messageId,
-                                fix: (fixer) => fixer.replaceTextRange([operatorStart, operatorEnd], normalized)
-                            });
-                        }
-                    }
                 },
                 UnaryExpression() {
                     // Parse-failure and legacy alias normalization is handled by Program text rewrite.
