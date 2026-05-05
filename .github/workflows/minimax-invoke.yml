@@ -35,9 +35,7 @@ jobs:
 
         set +e
         stdbuf -oL -eL codex exec \
-          --model MiniMax-M2.7 \
-          --profile=simple \
-          --config model_provider='"minimax"' \
+          --profile=minimax \
           --json \
           - < "${AGENT_PROMPT_FILE}" \
           2>&1 | tee "$RUNNER_TEMP/agent-stream.jsonl"
