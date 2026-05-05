@@ -37,7 +37,6 @@ jobs:
         stdbuf -oL -eL qwen \
           --yolo \
           --model=MiniMax-M2.7 \
-          --debug \
           --output-format=stream-json \
           --prompt "" < "${AGENT_PROMPT_FILE}" \
           2>&1 | tee "$RUNNER_TEMP/agent-stream.jsonl"

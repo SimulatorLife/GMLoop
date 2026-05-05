@@ -4,7 +4,7 @@
     "name": "qwen3:1.7b",
     "skipLoopDetection": true,
     "skipStartupContext": true,
-    "maxSessionTurns": 12,
+    "maxSessionTurns": 300,
     "generationConfig": {
       "timeout": 900000,
       "maxRetries": 2,
@@ -40,13 +40,15 @@
           }
         }
       },
-            {
+      {
         "id": "MiniMax-M2.7",
         "envKey": "OPENAI_API_KEY",
         "baseUrl": "https://api.minimax.io/v1",
         "generationConfig": {
           "timeout": 900000,
-          "maxRetries": 2,
+          "enableCacheControl": true,
+          "contextWindowSize": 196608,
+          "maxRetries": 3,
           "samplingParams": {
             "max_tokens": 8192
           }

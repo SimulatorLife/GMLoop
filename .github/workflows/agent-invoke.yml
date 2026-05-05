@@ -160,7 +160,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.pr_number }}
-          AGENT_NAME: ${{ inputs.agent }}
           REPOSITORY: ${{ github.repository }}
           MESSAGE: |-
             **[🤖 ${{ inputs.agent }}]** Hi, I've received your request and will begin working on it now. See the [logs for progress](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
