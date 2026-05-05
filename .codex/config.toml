@@ -27,6 +27,9 @@ enabled = true
 [projects."/Users/henrykirk/GMLoop"]
 trust_level = "trusted"
 
+[projects."/home/runner/work/GMLoop/GMLoop"]
+trust_level = "trusted"
+
 [sandbox_workspace_write]
 network_access = true
 
