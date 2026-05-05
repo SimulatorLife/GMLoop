@@ -5,7 +5,8 @@
       "agents": [
         {"weight":1.0,"name":"copilot"},
         {"weight":1.0,"name":"codex"},
-        {"weight":1.0,"name":"gemini"}
+        {"weight":0.5,"name":"gemini"},
+        {"weight":0.0,"name":"mini-max"}
       ]
     },
     "followUps": {
