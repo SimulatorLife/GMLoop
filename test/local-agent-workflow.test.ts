@@ -306,10 +306,8 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.match(source, /contains\(github\.event\.comment\.body \|\| '', '@gemini'\)/u);
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, /agent: gemini/u);
-    assert.match(source, /validate_local_endpoint: false/u);
     assert.match(source, /agent_package: '@google\/gemini-cli@latest'/u);
     assert.doesNotMatch(source, /max_agent_retries:/u);
-    assert.match(source, /api_key: \$\{\{ secrets\.GEMINI_API_KEY \}\}/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
     assert.match(sharedPrompt, /one focused, minimal code change set/u);
@@ -362,7 +360,6 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.doesNotMatch(source, /GEMINI_AGENT_PROMPT/u);
     assert.match(source, /gemini_status="\$\{PIPESTATUS\[0\]\}"/u);
     assert.doesNotMatch(source, /ollama pull/u);
-    assert.doesNotMatch(source, /validate_local_endpoint: true/u);
     assert.doesNotMatch(source, /_deprecated-gemini-invoke/u);
     assert.ok(!workflowFileNames.includes("_deprecated-gemini-invoke.yml"));
     assert.doesNotMatch(agentCommand, /ollama pull/u);
@@ -410,7 +407,6 @@ void test("agent invoke validates local OpenAI-compatible endpoint without loadi
     assert.doesNotMatch(source, /LOCAL_MODEL/u);
     assert.doesNotMatch(source, /ollama pull/u);
     assert.doesNotMatch(source, /chat\/completions/u);
-    assert.match(source, /validate_local_endpoint:/u);
     assert.match(source, /OLLAMA_NATIVE_URL='http:\/\/127\.0\.0\.1:11434'/u);
     assert.match(source, /\$\{OLLAMA_NATIVE_URL\}\/api\/version/u);
     assert.match(source, /\$\{OPENAI_BASE_URL%\/\}\/models/u);

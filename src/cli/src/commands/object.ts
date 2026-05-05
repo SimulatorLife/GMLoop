@@ -29,17 +29,15 @@ function emitObjectUnavailableLeaf(
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
-    printObjectPayload(
-        {
-            command: commandName,
-            ok: true,
-            payload: {
-                capability,
-                details,
-                state: "not_available"
-            }
+    printObjectPayload({
+        command: commandName,
+        ok: true,
+        payload: {
+            capability,
+            details,
+            state: "not_available"
         }
-    );
+    });
 }
 
 export function createObjectCommand(): Command {
@@ -116,16 +114,14 @@ export function createObjectCommand(): Command {
             query: "",
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "object");
-        printObjectPayload(
-            {
-                command: "object validate",
-                ok: true,
-                payload: {
-                    objectCount: objects.length,
-                    state: "available"
-                }
+        printObjectPayload({
+            command: "object validate",
+            ok: true,
+            payload: {
+                objectCount: objects.length,
+                state: "available"
             }
-        );
+        });
     });
 
     const event = applyStandardCommandOptions(new Command("event")).description("Object event operations.");

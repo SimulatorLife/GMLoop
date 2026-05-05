@@ -12,6 +12,8 @@ background_terminal_max_timeout = 600000
 shell_snapshot = true           # Speed up repeated commands
 unified_exec = true
 steer = true
+multi_agent = true
+fast_mode = false
 
 [analytics]
 enabled = false
@@ -31,3 +33,18 @@ network_access = true
 [agents]
 max_threads = 5
 max_depth = 1
+
+[model_providers.minimax]
+name = "MiniMax"
+base_url = "https://api.minimax.io"
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+
+[profiles.simple.features]
+multi_agent = false
+browser_use = false
+apps = false
+computer_use = false
+image_generation = false
+in_app_browser = false
+plugins = false
