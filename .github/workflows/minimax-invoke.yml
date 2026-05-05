@@ -27,6 +27,7 @@ jobs:
     with:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
+      openai_base_url: 'https://api.minimax.io'
       agent: mini-max
       agent_package: '@openai/codex'
       agent_command: |
