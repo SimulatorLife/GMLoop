@@ -1,4 +1,4 @@
-name: '▶️ MiniMax Invoke'
+name: '▶️ MiniMax Codex Invoke'
 
 on:
   issue_comment:
@@ -19,7 +19,7 @@ defaults:
 
 jobs:
   invoke:
-    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body || '', '@mini-max') }}
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body || '', '@mini-max-codex') }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
       OPENAI_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
@@ -27,19 +27,17 @@ jobs:
     with:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
-      agent: mini-max
-      agent_package: '@qwen-code/qwen-code@latest'
       openai_base_url: 'https://api.minimax.io/v1'
+      agent: mini-max-codex
+      agent_package: '@openai/codex@0.80.0'
       agent_command: |
         set -euo pipefail
 
         set +e
-        stdbuf -oL -eL qwen \
-          --yolo \
-          --model=MiniMax-M2.7 \
-          --debug \
-          --output-format=stream-json \
-          --prompt "" < "${AGENT_PROMPT_FILE}" \
+        stdbuf -oL -eL codex exec \
+          --profile=minimax \
+          --json \
+          - < "${AGENT_PROMPT_FILE}" \
           2>&1 | tee "$RUNNER_TEMP/agent-stream.jsonl"
         agent_status="${PIPESTATUS[0]}"
         set -e
