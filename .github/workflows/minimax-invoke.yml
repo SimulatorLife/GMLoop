@@ -35,7 +35,6 @@ jobs:
 
         set +e
         stdbuf -oL -eL codex exec \
-          --ask-for-approval=never \
           --model=MiniMax-M2.7 \
           --profile=simple \
           --config model_provider='"minimax"' \
