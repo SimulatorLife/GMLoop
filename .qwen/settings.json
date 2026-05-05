@@ -89,6 +89,7 @@
     "deny": [
       "web_search",
       "WebFetch",
+      "ask_user_question",
 
       "Bash(git checkout*)",
       "Bash(git switch*)",
