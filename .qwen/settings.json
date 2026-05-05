@@ -39,6 +39,18 @@
             "max_tokens": 1536
           }
         }
+      },
+            {
+        "id": "MiniMax-M2.7",
+        "envKey": "OPENAI_API_KEY",
+        "baseUrl": "https://api.minimax.io/v1",
+        "generationConfig": {
+          "timeout": 900000,
+          "maxRetries": 2,
+          "samplingParams": {
+            "max_tokens": 8192
+          }
+        }
       }
     ]
   },
@@ -77,6 +89,7 @@
     "deny": [
       "web_search",
       "WebFetch",
+      "ask_user_question",
 
       "Bash(git checkout*)",
       "Bash(git switch*)",
