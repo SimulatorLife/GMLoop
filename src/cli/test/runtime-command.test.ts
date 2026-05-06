@@ -1,20 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { test } from "node:test";
 
 import { runCliTestCommand } from "../src/cli.js";
-
-async function withTempProject(testName: string, run: (projectRoot: string) => Promise<void>): Promise<void> {
-    const projectRoot = await mkdtemp(path.join(tmpdir(), `gmloop-${testName}-`));
-    await writeFile(path.join(projectRoot, "gmloop.json"), "{}\n", "utf8");
-    try {
-        await run(projectRoot);
-    } finally {
-        await rm(projectRoot, { recursive: true, force: true });
-    }
-}
+import { withTempProject } from "./shared-temp-project.js";
 
 void test("runtime command catalog includes expected leaves", async () => {
     const { getCliCommandCatalog } = await import("../src/cli.js");
