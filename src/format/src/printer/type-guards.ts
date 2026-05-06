@@ -264,10 +264,15 @@ export function isInsideConstructorFunction(path: any): boolean {
 }
 
 /**
- * Checks if synthetic parenthesis flattening is enabled in the current context.
+ * Returns `true` unconditionally. The GML formatter always strips redundant
+ * synthetic parentheses because they are parser-inserted disambiguation
+ * wrappers with no semantic or readability value in GML output. The decision
+ * is purely layout-focused and owned exclusively by the formatter; no flag
+ * from the parser or any external config is required. (target-state.md §2.1,
+ * §3.2 – formatter owns layout-only canonicalization)
  */
-export function isSyntheticParenFlatteningEnabled(path: any): boolean {
-    return checkSyntheticParenFlattening(path);
+export function isSyntheticParenFlatteningEnabled(_path: any): boolean {
+    return true;
 }
 
 /**
@@ -313,35 +318,22 @@ export function isLValueExpression(nodeType: string): boolean {
     return nodeType === "MemberIndexExpression" || nodeType === "CallExpression" || nodeType === "MemberDotExpression";
 }
 
+/**
+ * Determines if a node type is an expression that can be used in a single-line
+ * `with` statement.
+ */
+export function isSingleLineWithExpression(nodeType: string): boolean {
+    return (
+        nodeType === "Identifier" ||
+        nodeType === "CallExpression" ||
+        nodeType === "MemberDotExpression" ||
+        nodeType === "MemberIndexExpression"
+    );
+}
+
 // ============================================================================
 // Helper Functions (Internal)
 // ============================================================================
-
-/**
- * Checks if synthetic parenthesis flattening is configured in the AST.
- *
- * @internal
- */
-function checkSyntheticParenFlattening(path: any): boolean {
-    let depth = 1;
-    while (true) {
-        const ancestor = safeGetParentNode(path, depth - 1);
-
-        if (!ancestor) {
-            return false;
-        }
-
-        if (ancestor.type === "FunctionDeclaration" || ancestor.type === "ConstructorDeclaration") {
-            if (ancestor._flattenSyntheticNumericParens === true) {
-                return true;
-            }
-        } else if (ancestor.type === "Program") {
-            return ancestor._flattenSyntheticNumericParens === true;
-        }
-
-        depth += 1;
-    }
-}
 
 /**
  * Determines if an expression produces a string-like value.
