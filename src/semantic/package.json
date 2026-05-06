@@ -12,7 +12,6 @@
     "dist"
   ],
   "dependencies": {
-    "@bscotch/yy": "^2.7.0",
     "@gmloop/core": "workspace:*",
     "@gmloop/parser": "workspace:*"
   },

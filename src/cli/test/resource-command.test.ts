@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, it, test } from "node:test";
 
-import { Semantic } from "@gmloop/semantic";
+import { Core } from "@gmloop/core";
 
 import { runCliTestCommand } from "../src/cli.js";
 import { createResourceCommand } from "../src/commands/resource.js";
@@ -51,7 +51,7 @@ void test("resource add script creates files and resource remove deletes them", 
         assert.match(addResult.stdout, /Action: add/u);
         assert.match(addResult.stdout, /scr_bootstrap/u);
 
-        const manifestDocument = Semantic.parseProjectMetadataDocumentForMutation(
+        const manifestDocument = Core.parseProjectMetadataDocumentForMutation(
             await readFile(path.join(projectRoot, "MyGame.yyp"), "utf8"),
             path.join(projectRoot, "MyGame.yyp")
         ).document;
@@ -66,7 +66,7 @@ void test("resource add script creates files and resource remove deletes them", 
         assert.equal(removeResult.exitCode, 0);
         assert.match(removeResult.stdout, /Action: remove/u);
 
-        const removedManifestDocument = Semantic.parseProjectMetadataDocumentForMutation(
+        const removedManifestDocument = Core.parseProjectMetadataDocumentForMutation(
             await readFile(path.join(projectRoot, "MyGame.yyp"), "utf8"),
             path.join(projectRoot, "MyGame.yyp")
         ).document;
@@ -124,7 +124,7 @@ void test("resource rename/duplicate/move execute project-resource mutations end
         assert.match(moveResult.stdout, /Action: move/u);
         await assert.doesNotReject(access(path.join(projectRoot, "scripts/custom_folder/scr_copy.yy")));
 
-        const manifestDocument = Semantic.parseProjectMetadataDocumentForMutation(
+        const manifestDocument = Core.parseProjectMetadataDocumentForMutation(
             await readFile(path.join(projectRoot, "MyGame.yyp"), "utf8"),
             path.join(projectRoot, "MyGame.yyp")
         ).document;

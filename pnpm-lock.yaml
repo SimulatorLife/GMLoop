@@ -180,7 +180,11 @@ importers:
         specifier: ^8.20.0
         version: 8.20.0
 
-  src/core: {}
+  src/core:
+    dependencies:
+      '@bscotch/yy':
+        specifier: ^2.7.0
+        version: 2.7.0
 
   src/fixture-runner:
     dependencies:
@@ -252,9 +256,6 @@ importers:
       '@gmloop/parser':
         specifier: workspace:*
         version: link:../parser
-      '@gmloop/semantic':
-        specifier: workspace:*
-        version: link:../semantic
     devDependencies:
       '@gmloop/fixture-runner':
         specifier: workspace:*
@@ -268,9 +269,6 @@ importers:
 
   src/semantic:
     dependencies:
-      '@bscotch/yy':
-        specifier: ^2.7.0
-        version: 2.7.0
       '@gmloop/core':
         specifier: workspace:*
         version: link:../core

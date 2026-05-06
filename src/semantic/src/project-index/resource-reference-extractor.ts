@@ -1,6 +1,5 @@
-import { Core } from "@gmloop/core";
+import { Core, type ProjectMetadataSchemaName } from "@gmloop/core";
 
-import { type ProjectMetadataSchemaName, resolveProjectMetadataSchemaName } from "../project-metadata/yy-adapter.js";
 import { isProjectManifestPath, matchProjectResourceMetadataExtension } from "./constants.js";
 import { normalizeProjectResourcePath } from "./path-normalization.js";
 
@@ -220,7 +219,7 @@ export function extractAssetReferencesFromMetadataDocument({
         ? collectProjectManifestReferenceCandidates(document)
         : collectAssetReferenceCandidates(
               document,
-              resolveProjectMetadataSchemaName(sourcePath, document.resourceType)
+              Core.resolveProjectMetadataSchemaName(sourcePath, document.resourceType)
           );
 
     return collected
