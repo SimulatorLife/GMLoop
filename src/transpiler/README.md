@@ -206,4 +206,4 @@ The module is currently in **active development**. It provides basic expression 
 
 - [Target State Architecture Plan](../../docs/target-state.md) - Detailed transpiler and semantic architecture
 - [Runtime Wrapper README](../runtime-wrapper/README.md) - Hot-reload workflow
-- [Runtime Wrapper](../runtime-wrapper/) - JavaScript runtime integration
+- [Runtime Wrapper](../runtime-wrapper) - JavaScript runtime integration
