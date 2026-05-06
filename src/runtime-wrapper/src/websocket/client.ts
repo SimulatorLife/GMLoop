@@ -567,8 +567,15 @@ function parseWebSocketPayload(
         return null;
     }
 
+    return parsePayloadText(message, "WebSocket patch payload", onError);
+}
+
+function parsePayloadText(text: string, description: string, onError?: WebSocketClientOptions["onError"]): unknown {
     try {
-        return JSON.parse(message);
+        return Core.parseJsonWithContext(text, {
+            description,
+            source: "runtime websocket message"
+        });
     } catch (error) {
         if (onError) {
             const safeError = toRuntimePatchError(error);
@@ -594,7 +601,7 @@ function decodeBinaryPayload(
     try {
         const view = toUint8Array(payload);
         const decoded = textDecoder.decode(view);
-        return JSON.parse(decoded);
+        return parsePayloadText(decoded, "binary WebSocket patch payload", onError);
     } catch (error) {
         if (onError) {
             const safeError = toRuntimePatchError(error);
