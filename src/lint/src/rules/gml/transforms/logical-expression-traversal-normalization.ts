@@ -1,5 +1,7 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
+import { replaceNode } from "./math-ast-builders.js";
+
 const { isObjectLike } = Core;
 
 /**
@@ -740,19 +742,4 @@ function nodesAreEqual(a: any, b: any): boolean {
     // Deep comparison for simple structural equality, avoiding cyclic issues
     // Just handling simple Identifiers and Literals for now for Absorption laws.
     return false;
-}
-
-/**
- * Replace properties of 'target' with properties of 'source'.
- * This mutates 'target' in place, effectively replacing it in the AST.
- */
-function replaceNode(target: any, source: any) {
-    // Clear existing keys
-    for (const key of Object.keys(target)) {
-        delete target[key];
-    }
-    // Copy new keys
-    for (const key of Object.keys(source)) {
-        target[key] = source[key];
-    }
 }

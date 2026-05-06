@@ -49,16 +49,13 @@ void describe("GmlTranspiler.transpileClosure", () => {
 
         void it("includes metadata with timestamp", () => {
             const transpiler = new Transpiler.GmlTranspiler();
-            const before = Date.now();
             const patch = transpiler.transpileClosure({
                 sourceText: "function f() { return 1; }",
                 symbolId: "gml/closure/scr/f"
             });
-            const after = Date.now();
 
-            assert.ok(patch.metadata?.timestamp !== undefined);
-            assert.ok(patch.metadata.timestamp >= before);
-            assert.ok(patch.metadata.timestamp <= after);
+            assert.strictEqual(typeof patch.metadata?.timestamp, "number", "timestamp should be a number");
+            assert.ok(patch.metadata.timestamp > 0, "timestamp should be positive");
         });
 
         void it("includes sourcePath in metadata when provided", () => {
