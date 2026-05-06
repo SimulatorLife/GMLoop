@@ -14,6 +14,7 @@ unified_exec = true
 steer = true
 multi_agent = true
 fast_mode = false
+image_generation = false
 
 [analytics]
 enabled = false
@@ -41,7 +42,7 @@ max_depth = 1
 name = "MiniMax"
 base_url = "https://api.minimax.io/v1"
 env_key = "OPENAI_API_KEY"
-wire_api = "chat"
+wire_api = "responses"
 
 [profiles.minimax]
 model_provider = "minimax"
@@ -52,6 +53,5 @@ multi_agent = false
 browser_use = false
 apps = false
 computer_use = false
-image_generation = false
 in_app_browser = false
 plugins = false

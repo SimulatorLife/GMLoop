@@ -81,6 +81,7 @@
     {"weight":0.085,"name":"agent-103-legacy-shim-removal"},
     {"weight":0.1,"name":"agent-104-test-deduplication"},
     {"weight":0.1,"name":"agent-105-semantic-graph-fidelity"},
-    {"weight":0.1,"name":"agent-106-bad-test-remediation"}
+    {"weight":0.1,"name":"agent-106-bad-test-remediation"},
+    {"weight":0.2,"name":"agent-107-ui-workspace"}
   ]
 }
