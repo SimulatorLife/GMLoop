@@ -897,16 +897,16 @@ void test("WebSocket client prefers trySafeApply when available", async () => {
     delete globalWithWebSocket.WebSocket;
 });
 
-void test("WebSocket client handles invalid JSON gracefully", async () => {
+void test("WebSocket client reports contextual errors for invalid JSON text", async () => {
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
-    let errorCalled = false;
+    let reportedError: RuntimePatchError | null = null;
 
     globalWithWebSocket.WebSocket = MockWebSocket;
 
     const client = RuntimeWrapper.createWebSocketClient({
         wrapper,
         onError: (error, context) => {
-            errorCalled = true;
+            reportedError = error;
             assert.strictEqual(context, "patch");
         },
         autoConnect: true
@@ -922,7 +922,43 @@ void test("WebSocket client handles invalid JSON gracefully", async () => {
 
     await wait(10);
 
-    assert.ok(errorCalled);
+    assert.ok(reportedError);
+    assert.match(reportedError.message, /Failed to parse WebSocket patch payload from runtime websocket message:/);
+
+    client.disconnect();
+    delete globalWithWebSocket.WebSocket;
+});
+
+void test("WebSocket client reports contextual errors for invalid binary JSON", async () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+    let reportedError: RuntimePatchError | null = null;
+
+    globalWithWebSocket.WebSocket = MockWebSocket;
+
+    const client = RuntimeWrapper.createWebSocketClient({
+        wrapper,
+        onError: (error, context) => {
+            reportedError = error;
+            assert.strictEqual(context, "patch");
+        },
+        autoConnect: true
+    });
+
+    await wait(50);
+
+    const ws = client.getWebSocket();
+    assert.ok(ws, "WebSocket should be available");
+
+    const encoded = new TextEncoder().encode("invalid json");
+    (ws as MockWebSocket).simulateMessage(encoded);
+
+    await wait(10);
+
+    assert.ok(reportedError);
+    assert.match(
+        reportedError.message,
+        /Failed to parse binary WebSocket patch payload from runtime websocket message:/
+    );
 
     client.disconnect();
     delete globalWithWebSocket.WebSocket;
