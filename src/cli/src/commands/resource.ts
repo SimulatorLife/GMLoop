@@ -176,6 +176,68 @@ async function runMoveResourceAction(
     printMutationResult(result);
 }
 
+function resolveNodeIdFromQuery(
+    nameOrId: string,
+    options: ResourceCommandSharedOptions,
+    context: Awaited<ReturnType<typeof ensureProjectGraphIndex>>
+): string {
+    if (nameOrId.includes("::")) {
+        return nameOrId;
+    }
+    const search = Semantic.searchGraphIndex({
+        databasePath: options.databasePath,
+        limit: 1,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        query: nameOrId,
+        toolsetRoot: options.toolsetRoot
+    });
+    const nodeId = search.results[0]?.id;
+    if (!nodeId) {
+        throw new Error(`Could not resolve resource '${nameOrId}'.`);
+    }
+    return nodeId;
+}
+
+async function runInspectResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
+    const context = await ensureProjectGraphIndex(options);
+    const resolvedId = resolveNodeIdFromQuery(nameOrId, options, context);
+    const payload = Semantic.getGraphNode({
+        databasePath: options.databasePath,
+        nodeId: resolvedId,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+    printProjectPayload({ ok: payload !== null, payload });
+}
+
+async function runDepsResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
+    const context = await ensureProjectGraphIndex(options);
+    const nodeId = resolveNodeIdFromQuery(nameOrId, options, context);
+    const neighbors = Semantic.getGraphNeighbors({
+        databasePath: options.databasePath,
+        nodeId,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+    printProjectPayload({ ok: true, payload: neighbors.filter((entry) => entry.direction === "outgoing") });
+}
+
+async function runDependentsResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
+    const context = await ensureProjectGraphIndex(options);
+    const nodeId = resolveNodeIdFromQuery(nameOrId, options, context);
+    const usages = Semantic.getGraphUsages({
+        databasePath: options.databasePath,
+        nodeId,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+    printProjectPayload({ ok: true, payload: usages });
+}
+
 /**
  * Create the resource command suite for adding and removing GameMaker assets.
  */
@@ -255,29 +317,7 @@ export function createResourceCommand(): Command {
     );
     inspectCommand.action(async function resourceInspectCommandAction(nameOrId: string) {
         await runResourceCommandAction(async () => {
-            const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureProjectGraphIndex(options);
-            const resolvedId = nameOrId.includes("::")
-                ? nameOrId
-                : (Semantic.searchGraphIndex({
-                      databasePath: options.databasePath,
-                      limit: 1,
-                      projectConfig: context.projectConfig,
-                      projectRoot: context.projectRoot,
-                      query: nameOrId,
-                      toolsetRoot: options.toolsetRoot
-                  }).results[0]?.id ?? null);
-            if (!resolvedId) {
-                throw new Error(`Could not resolve resource '${nameOrId}'.`);
-            }
-            const payload = Semantic.getGraphNode({
-                databasePath: options.databasePath,
-                nodeId: resolvedId,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                toolsetRoot: options.toolsetRoot
-            });
-            printProjectPayload({ ok: payload !== null, payload });
+            await runInspectResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
         });
     });
 
@@ -288,28 +328,7 @@ export function createResourceCommand(): Command {
     );
     depsCommand.action(async function resourceDepsCommandAction(nameOrId: string) {
         await runResourceCommandAction(async () => {
-            const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureProjectGraphIndex(options);
-            const search = Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                limit: 1,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: nameOrId,
-                toolsetRoot: options.toolsetRoot
-            });
-            const nodeId = search.results[0]?.id;
-            if (!nodeId) {
-                throw new Error(`Could not resolve resource '${nameOrId}'.`);
-            }
-            const neighbors = Semantic.getGraphNeighbors({
-                databasePath: options.databasePath,
-                nodeId,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                toolsetRoot: options.toolsetRoot
-            });
-            printProjectPayload({ ok: true, payload: neighbors.filter((entry) => entry.direction === "outgoing") });
+            await runDepsResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
         });
     });
 
@@ -320,28 +339,7 @@ export function createResourceCommand(): Command {
     );
     dependentsCommand.action(async function resourceDependentsCommandAction(nameOrId: string) {
         await runResourceCommandAction(async () => {
-            const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureProjectGraphIndex(options);
-            const search = Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                limit: 1,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: nameOrId,
-                toolsetRoot: options.toolsetRoot
-            });
-            const nodeId = search.results[0]?.id;
-            if (!nodeId) {
-                throw new Error(`Could not resolve resource '${nameOrId}'.`);
-            }
-            const usages = Semantic.getGraphUsages({
-                databasePath: options.databasePath,
-                nodeId,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                toolsetRoot: options.toolsetRoot
-            });
-            printProjectPayload({ ok: true, payload: usages });
+            await runDependentsResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
         });
     });
 
