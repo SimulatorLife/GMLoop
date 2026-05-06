@@ -517,7 +517,6 @@ const MATH_OPTIMIZATION_SIGNAL_PATTERN =
 const MATH_STRONG_SIGNAL_PATTERN =
     /[*/%]|\b(?:div|mod|power|sqrt|sqr|sin|cos|tan|dsin|dcos|dtan|degtorad|radtodeg|arctan2|darctan2|ln|exp|log2|point_distance(?:_3d)?|point_direction|lengthdir_[xy]|dot_product(?:_3d)?|mean)\b/u;
 const DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN = /[/%]|\b(?:div|mod)\b/u;
-const NUMERIC_COMPARISON_TOLERANCE = 1e-9;
 const MAX_MATH_OPTIMIZATION_CANDIDATE_TEXT_LENGTH = 2000;
 const MAX_MANUAL_NORMALIZATION_CANDIDATE_TEXT_LENGTH = 600;
 
@@ -563,10 +562,6 @@ function shouldAttemptManualNormalization(sourceTextOfNode: string): boolean {
         ((sourceTextOfNode.includes("+") || sourceTextOfNode.includes("-")) &&
             NUMERIC_LITERAL_SIGNAL_PATTERN.test(sourceTextOfNode))
     );
-}
-
-function areNumbersApproximatelyEqual(left: number, right: number): boolean {
-    return Math.abs(left - right) <= NUMERIC_COMPARISON_TOLERANCE;
 }
 
 function tryReadNumericLiteralValue(node: unknown): number | null {
@@ -697,7 +692,7 @@ function tryReadHalfScaledBase(node: unknown) {
 
     if (expression.operator === "/") {
         const denominatorValue = tryReadNumericLiteralValue(expression.right);
-        if (denominatorValue === null || !areNumbersApproximatelyEqual(denominatorValue, 2)) {
+        if (denominatorValue === null || !Core.areNumbersApproximatelyEqual(denominatorValue, 2)) {
             return null;
         }
 
@@ -709,12 +704,12 @@ function tryReadHalfScaledBase(node: unknown) {
     }
 
     const leftValue = tryReadNumericLiteralValue(expression.left);
-    if (leftValue !== null && areNumbersApproximatelyEqual(leftValue, 0.5)) {
+    if (leftValue !== null && Core.areNumbersApproximatelyEqual(leftValue, 0.5)) {
         return unwrapParenthesized(expression.right);
     }
 
     const rightValue = tryReadNumericLiteralValue(expression.right);
-    if (rightValue !== null && areNumbersApproximatelyEqual(rightValue, 0.5)) {
+    if (rightValue !== null && Core.areNumbersApproximatelyEqual(rightValue, 0.5)) {
         return unwrapParenthesized(expression.left);
     }
 
@@ -819,12 +814,12 @@ function formatCanonicalNumericLiteral(value: number): string | null {
         return null;
     }
 
-    if (Math.abs(value) <= NUMERIC_COMPARISON_TOLERANCE) {
+    if (Core.areNumbersApproximatelyEqual(value, 0)) {
         return "0";
     }
 
     const roundedInteger = Math.round(value);
-    if (areNumbersApproximatelyEqual(value, roundedInteger)) {
+    if (Core.areNumbersApproximatelyEqual(value, roundedInteger)) {
         return roundedInteger.toString();
     }
 
@@ -838,7 +833,7 @@ function tryBuildGroupedRatioProductReplacement(sourceText: string, node: unknow
     }
 
     const divisorValue = tryReadNumericLiteralValue(expression.right);
-    if (divisorValue === null || Math.abs(divisorValue) <= NUMERIC_COMPARISON_TOLERANCE) {
+    if (divisorValue === null || Core.areNumbersApproximatelyEqual(divisorValue, 0)) {
         return null;
     }
 
