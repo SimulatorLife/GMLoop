@@ -1,5 +1,5 @@
 ---
-name: ui-light-dom-lit
+name: ui
 description: Use this skill when building or modifying the GMLoop UI under src/ui. The UI stack is Lit + TypeScript with light-DOM rendering only.
 ---
 
@@ -32,7 +32,7 @@ The UI stack for this repository is:
 - TypeScript
 - light DOM rendering only
 
-All Lit UI components in this repository must follow the existing light-DOM pattern defined by [light-dom-lit-element.ts](/Users/henrykirk/GMLoop/src/ui/src/app/components/light-dom-lit-element.ts:1).
+All Lit UI components in this repository must follow the existing light-DOM pattern defined by [light-dom-lit-element.ts](../../../src/ui/src/app/components/light-dom-lit-element.ts).
 
 ## Working Approach
 
@@ -319,9 +319,9 @@ Then implement the UI with:
 
 ## Repo-Specific Guidance
 
-- The canonical base class is [light-dom-lit-element.ts](/Users/henrykirk/GMLoop/src/ui/src/app/components/light-dom-lit-element.ts:1).
-- The app-shell composition pattern lives in [gm-app-shell.ts](/Users/henrykirk/GMLoop/src/ui/src/app/components/gm-app-shell.ts:1).
-- Toolbar interaction and event emission patterns live in [gm-graph-toolbar.ts](/Users/henrykirk/GMLoop/src/ui/src/app/components/gm-graph-toolbar.ts:1).
+- The canonical base class is [light-dom-lit-element.ts](../../../src/ui/src/app/components/light-dom-lit-element.ts).
+- The app-shell composition pattern lives in [gm-app-shell.ts](../../../src/ui/src/app/components/gm-app-shell.ts).
+- Toolbar interaction and event emission patterns live in [gm-graph-toolbar.ts](../../../src/ui/src/app/components/gm-graph-toolbar.ts).
 - Existing custom events currently use `bubbles: true` and may also use `composed: true`; do not add new shadow-DOM-oriented rationale around that. Match the repo's integration needs rather than generic custom-element advice.
 
 ## Implementation Checklist

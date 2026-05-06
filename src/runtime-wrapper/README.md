@@ -1,7 +1,7 @@
 # Runtime Wrapper Module
 
 This package hosts the browser-side runtime wrapper described in
-`docs/hot-reload.md`. It receives transpiler patches from the CLI over a WebSocket
+`../../docs/target-state.md`. It receives transpiler patches from the CLI over a WebSocket
 connection and swaps them into the running GameMaker HTML5 export without restarting the game.
 
 ## Responsibilities

@@ -11,7 +11,7 @@ This document synthesizes the target state for the GameMaker Language parser pro
 5. **Bounded-Memory Refactors**: Run large-project semantic indexing and codemod pipelines without retaining monolithic project-wide aggregates in memory. The target architecture uses bounded-memory streaming with spill-to-disk backends and whole-plan validation only where correctness requires it.
 6. **Live Hot-Reloading**: Enable true hot-loading of GML code, assets, and shaders without restarting the game by transpiling GML to JavaScript on demand and injecting it via a runtime wrapper.
 
-Concrete graph-index design and implementation details now live in [docs/gml-graph-index-plan.md](/Users/henrykirk/GMLoop/docs/gml-graph-index-plan.md). Graph/search/context retrieval is owned by `@gmloop/semantic`.
+Concrete graph-index design and implementation details now live in [docs/gml-graph-index-plan.md](gml-graph-index-plan.md). Graph/search/context retrieval is owned by `@gmloop/semantic`.
 
 ## 2. Workspace Ownership Boundaries
 
@@ -142,7 +142,7 @@ Running the refactor codemod pipeline on a large real project can exceed 15 GB o
 
 Example workload:
 
-- `pnpm run cli -- fix --path /Users/henrykirk/GameMakerStudio2/InterplanetaryFootball`
+- `pnpm run cli -- fix --path GameMakerStudio2/InterplanetaryFootball`
 
 Root-cause pattern:
 
@@ -417,7 +417,7 @@ Allowed variation:
 
 1. `pnpm run test:fixtures:profile`
 2. `pnpm run test:fixtures:profile:deep-cpu`
-3. `pnpm run cli -- fix --path /Users/henrykirk/GameMakerStudio2/InterplanetaryFootball`
+3. `pnpm run cli -- fix --path GameMakerStudio2/InterplanetaryFootball`
 
 Track:
 
@@ -539,7 +539,7 @@ Profiling suites:
 Real-project workload:
 
 1. Run the fix workflow against the target project.
-   - `pnpm run cli -- fix --path /Users/henrykirk/GameMakerStudio2/InterplanetaryFootball`
+   - `pnpm run cli -- fix --path GameMakerStudio2/InterplanetaryFootball`
 2. Capture telemetry emitted by:
    - `src/cli/src/commands/fix.ts` stage telemetry (duration plus RSS and heap high-water)
    - semantic project-index metrics metadata (`maxRss`, `maxHeapUsed`)
