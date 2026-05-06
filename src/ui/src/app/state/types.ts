@@ -43,4 +43,5 @@ export type GraphVisualizationUiAction =
     | Readonly<{ type: "cycle-label-mode" }>
     | Readonly<{ pending: boolean; type: "set-regenerate-pending" }>
     | Readonly<{ pending: boolean; type: "set-open-project-pending" }>
-    | Readonly<{ errorMessage: string | null; type: "set-error" }>;
+    | Readonly<{ errorMessage: string | null; type: "set-error" }>
+    | Readonly<{ type: "reset-defaults" }>;
