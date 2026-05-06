@@ -654,10 +654,7 @@ export class GmlSemanticBridge {
 
         try {
             const absolutePath = path.resolve(this.projectRoot, metadataPath);
-            const parsed = Semantic.parseProjectMetadataDocumentForMutation(
-                stagedMetadataContent,
-                absolutePath
-            ).document;
+            const parsed = Core.parseProjectMetadataDocumentForMutation(stagedMetadataContent, absolutePath).document;
             this.stagedParsedMetadata.set(metadataPath, parsed);
             return parsed;
         } catch {
@@ -1412,7 +1409,7 @@ export class GmlSemanticBridge {
 
         try {
             const rawContent = fs.readFileSync(absolutePath, "utf8");
-            const parsed = Semantic.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
+            const parsed = Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
             this.projectMetadataSourceByPath.set(resourcePath, rawContent);
             this.parsedProjectMetadataByPath.set(resourcePath, parsed);
             return parsed;
@@ -1491,7 +1488,7 @@ export class GmlSemanticBridge {
         if (latestBatchMetadataDocument !== undefined) {
             const loadedDocument: MutableProjectMetadataDocument = {
                 parsed: structuredClone(latestBatchMetadataDocument),
-                rawContent: Semantic.stringifyProjectMetadataDocument(latestBatchMetadataDocument, metadataPath)
+                rawContent: Core.stringifyProjectMetadataDocument(latestBatchMetadataDocument, metadataPath)
             };
             mutableDocumentsByPath.set(metadataPath, loadedDocument);
             this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
@@ -1504,7 +1501,7 @@ export class GmlSemanticBridge {
                 parsed: structuredClone(stagedParsedMetadata),
                 rawContent:
                     this.stagedMetadataContents.get(metadataPath) ??
-                    Semantic.stringifyProjectMetadataDocument(stagedParsedMetadata, metadataPath)
+                    Core.stringifyProjectMetadataDocument(stagedParsedMetadata, metadataPath)
             };
             mutableDocumentsByPath.set(metadataPath, loadedDocument);
             this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
@@ -1532,7 +1529,7 @@ export class GmlSemanticBridge {
 
         try {
             const rawContent = fs.readFileSync(absolutePath, "utf8");
-            const parsed = Semantic.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
+            const parsed = Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
             this.projectMetadataSourceByPath.set(metadataPath, rawContent);
             this.parsedProjectMetadataByPath.set(metadataPath, parsed);
             const loadedDocument: MutableProjectMetadataDocument = {
@@ -1690,13 +1687,13 @@ export class GmlSemanticBridge {
                     continue;
                 }
 
-                const existingValue = Semantic.getProjectMetadataValueAtPath(parsed, reference.propertyPath);
+                const existingValue = Core.getProjectMetadataValueAtPath(parsed, reference.propertyPath);
                 const existingReferenceName = Core.isObjectLike(existingValue)
                     ? Core.getNonEmptyString((existingValue as Record<string, unknown>).name)
                     : null;
                 const replacementReferenceName =
                     existingReferenceName && existingReferenceName === oldName ? newName : null;
-                const updated = Semantic.updateProjectMetadataReferenceByPath({
+                const updated = Core.updateProjectMetadataReferenceByPath({
                     document: parsed,
                     propertyPath: reference.propertyPath,
                     newResourcePath,
@@ -1734,9 +1731,9 @@ export class GmlSemanticBridge {
 
             const shouldNormalizeResourcePathOrdering = requiresMetadataResourcePathOrderNormalization(rawContent);
             let canonicalContent = shouldNormalizeResourcePathOrdering
-                ? Semantic.stringifyProjectMetadataDocument(parsed, resourceEntry.path)
-                : (Semantic.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
-                  Semantic.stringifyProjectMetadataDocument(parsed, resourceEntry.path));
+                ? Core.stringifyProjectMetadataDocument(parsed, resourceEntry.path)
+                : (Core.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
+                  Core.stringifyProjectMetadataDocument(parsed, resourceEntry.path));
             if (
                 shouldApplyRawResourcePathFallback &&
                 !shouldNormalizeResourcePathOrdering &&
@@ -1847,8 +1844,8 @@ export class GmlSemanticBridge {
         }
 
         const canonicalContent =
-            Semantic.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
-            Semantic.stringifyProjectMetadataDocument(parsed, resourceOrderPath);
+            Core.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
+            Core.stringifyProjectMetadataDocument(parsed, resourceOrderPath);
 
         if (canonicalContent === rawContent) {
             return;

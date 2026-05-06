@@ -2,7 +2,6 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { isProjectMetadataParseError, parseProjectMetadataDocument } from "../project-metadata/yy-adapter.js";
 import {
     isProjectManifestPath,
     matchProjectResourceMetadataExtension,
@@ -204,9 +203,9 @@ async function loadResourceDocument(
         // fields (e.g. sprite sequence channel data) with empty defaults, causing
         // asset reference data loss. Schema validation is only needed for mutation
         // workflows, not for read-only resource analysis.
-        return parseProjectMetadataDocument(rawContents, file.absolutePath ?? file.relativePath);
+        return Core.parseProjectMetadataDocument(rawContents, file.absolutePath ?? file.relativePath);
     } catch (error) {
-        if (isProjectMetadataParseError(error)) {
+        if (Core.isProjectMetadataParseError(error)) {
             return null;
         }
         throw error;
