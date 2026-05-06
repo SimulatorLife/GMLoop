@@ -6,7 +6,7 @@
 - Produce a machine-readable artefact (stored as `resources/feather-metadata.json`) that can be regenerated against any GameMaker release tag and consumed by future formatting heuristics.
 
 ## Current implementation
-- [`src/cli/src/commands/generate-feather-metadata.js`](../src/cli/src/commands/generate-feather-metadata.js) implements the scraper and defaults to writing `resources/feather-metadata.json`, keeping the generated dataset beside the identifier snapshot for easy consumption. All tooling now lives under the CLI—do not add stand-alone scripts when expanding the pipeline.
+- [`src/cli/src/commands/generate-feather-metadata.ts`](../src/cli/src/commands/generate-feather-metadata.ts) implements the scraper and defaults to writing `resources/feather-metadata.json`, keeping the generated dataset beside the identifier snapshot for easy consumption. All tooling now lives under the CLI—do not add stand-alone scripts when expanding the pipeline.
 - Manual content now lives in the `vendor/GameMaker-Manual` git submodule, eliminating bespoke GitHub downloads and caches. When iterating on unpublished builds, pass `--manual-root` to point at an alternate snapshot or `--manual-package` to fall back to an npm registry package installed via `pnpm add` if needed.
 - The CLI surface is intentionally small: `--output` selects the destination file (defaulting to `resources/feather-metadata.json`), the manual source flags above control the asset location, and `--quiet` suppresses status logging for CI and scripted runs.
 
@@ -18,7 +18,7 @@
    - `Feather_Directives` explains project-level overrides (`// Feather ignore …`, `// Feather use …`) including path glob syntax, so we can understand how to map diagnostics to suppressions and profiles.【40be1b†L1-L44】
    - `Feather_Data_Types` details the base types, specifiers, and collection syntax recognised by the language server, which we can lift to inform formatter-aware type hints later.【ec129e†L1-L80】
 2. **Existing identifier harvesting command**
-- [`src/cli/src/commands/generate-gml-identifiers.js`](../src/cli/src/commands/generate-gml-identifiers.js) shares the same manual source resolver, so both artefact generators operate against the installed package or any explicit manual root supplied by the caller.
+- [`src/cli/src/commands/generate-gml-identifiers.ts`](../src/cli/src/commands/generate-gml-identifiers.ts) shares the same manual source resolver, so both artefact generators operate against the installed package or any explicit manual root supplied by the caller.
 
 ## Extraction pipeline outline
 1. **Version selection & sourcing**
@@ -36,7 +36,7 @@
       - Define a JSON schema that groups diagnostics under `{ id, title, defaultSeverity?, description, notes[], examples[], strictModeOnly }`. Severity is not spelled out in the HTML, so leave it optional for now and plan a follow-up investigation into IDE config files once we locate them.
       - Emit separate top-level sections for `diagnostics`, `namingRules`, `directives`, and `types`. Include metadata (`manualRoot`, `packageName`, `packageVersion`, `generatedAt`) that records the repository-relative manual root so snapshots do not embed machine-specific absolute paths.
 5. **Tooling integration**
-  - Expose a dedicated CLI entry point in `src/cli/src/commands/generate-feather-metadata.js`, sharing ergonomics with the identifier generator and wiring it into `pnpm run build:feather-metadata` for easy regeneration and CI checks. Document the regeneration workflow alongside the identifier snapshot instructions in the [README](../README.md#regenerate-metadata-snapshots).
+  - Expose a dedicated CLI entry point in `src/cli/src/commands/generate-feather-metadata.ts`, sharing ergonomics with the identifier generator and wiring it into `pnpm run build:feather-metadata` for easy regeneration and CI checks. Document the regeneration workflow alongside the identifier snapshot instructions in the [README](../README.md#regenerate-metadata-snapshots).
   - Write smoke tests that parse the generated JSON and assert that key sentinel rules (e.g. GM2017 naming rule) are present, flagging upstream changes early.
 
 ## Regeneration helper

@@ -200,10 +200,10 @@ The test suite includes:
 
 ## Status
 
-The module is currently in **active development**. It provides basic expression transpilation and serves as the foundation for the full GML → JavaScript pipeline described in `docs/semantic-scope-plan.md`.
+The module is currently in **active development**. It provides basic expression transpilation and serves as the foundation for the full GML → JavaScript pipeline described in `docs/target-state.md`.
 
 ## References
 
-- [Semantic Scope Plan](../../docs/semantic-scope-plan.md) - Detailed transpiler architecture
-- [Hot Reload Architecture](../../docs/hot-reload.md) - Hot-reload workflow
+- [Target State Architecture Plan](../../docs/target-state.md) - Detailed transpiler and semantic architecture
+- [Runtime Wrapper README](../runtime-wrapper/README.md) - Hot-reload workflow
 - [Runtime Wrapper](../runtime-wrapper/) - JavaScript runtime integration

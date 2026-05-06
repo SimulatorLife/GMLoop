@@ -1,6 +1,6 @@
 # Refactor Engine Module
 
-This package powers GML-native codemods and semantic refactoring transactions, as outlined in the [formatter/linter split plan](../../docs/formatter-linter-split-plan.md). It implements a native, GML-centric Collection API (inspired by `jscodeshift`) to handle atomic cross-file edits, metadata updates (`.yy`, `.yyp`), and structural migrations.
+This package powers GML-native codemods and semantic refactoring transactions, as outlined in the [target-state architecture plan](../../docs/target-state.md). It implements a native, GML-centric Collection API (inspired by `jscodeshift`) to handle atomic cross-file edits, metadata updates (`.yy`, `.yyp`), and structural migrations.
 
 ## Ownership Boundaries
 
