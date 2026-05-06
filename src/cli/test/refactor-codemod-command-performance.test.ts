@@ -77,11 +77,7 @@ async function runRefactorCodemodWriteScenario(): Promise<{
 
     for (let index = 0; index < SCRIPT_COUNT; index += 1) {
         const scriptName = `demo_script_${index}`;
-        const previousName = index === 0 ? null : `demo_script_${index - 1}`;
-        const sourceText =
-            previousName === null
-                ? `function ${scriptName}() {\n    return ${index};\n}\n`
-                : `function ${scriptName}() {\n    return ${previousName}() + ${index};\n}\n`;
+        const sourceText = `function ${scriptName}() {\n    return ${index};\n}\n`;
         await writeScriptResource(projectRoot, scriptName, sourceText);
     }
 
