@@ -19,7 +19,30 @@ export type RunnerStartOptions = Readonly<{
     projectRoot: string;
 }>;
 
-function createRunnerController(): RunnerController {
+/**
+ * Minimal spawn interface used by the runner controller.
+ * Typed as a function that returns `ChildProcessWithoutNullStreams` so callers
+ * can substitute a lightweight mock for unit testing without spawning real
+ * processes.
+ */
+export type RunnerSpawnFn = (
+    command: string,
+    args: ReadonlyArray<string>,
+    options: { stdio: ["ignore", "pipe", "pipe"] }
+) => ChildProcessWithoutNullStreams;
+
+/**
+ * Creates a new, isolated runner controller instance.
+ *
+ * Production code should use `getRunnerController()` to obtain the shared
+ * singleton. This factory is exported so that unit tests can inject a mock
+ * spawn implementation to exercise lifecycle behaviour without spawning real
+ * child processes.
+ *
+ * @param spawnFn - Process-spawn implementation; defaults to Node's built-in
+ *   `child_process.spawn`.
+ */
+export function createRunnerController(spawnFn: RunnerSpawnFn = spawn as RunnerSpawnFn): RunnerController {
     let activeProcess: ChildProcessWithoutNullStreams | null = null;
     let activePid: number | null = null;
 
@@ -40,6 +63,14 @@ function createRunnerController(): RunnerController {
             });
         });
         processHandle.on("exit", (code, signal) => {
+            // Guard: only update shared state when `processHandle` is still the
+            // active process. `restart()` synchronously replaces `activeProcess`
+            // with the new handle before the old process's async `exit` event
+            // fires. Without this check the stale handler would null out the new
+            // process reference and corrupt `status()` / `stop()` behaviour.
+            if (activeProcess !== processHandle) {
+                return;
+            }
             activeProcess = null;
             activePid = null;
             runnerState.setState("stopped");
@@ -61,7 +92,7 @@ function createRunnerController(): RunnerController {
                 throw new Error("Runner process is already running.");
             }
 
-            const childProcess = spawn(options.command, [...options.args], {
+            const childProcess = spawnFn(options.command, [...options.args], {
                 stdio: ["ignore", "pipe", "pipe"]
             });
 
