@@ -21,6 +21,7 @@ import {
     type RenameImpactNode,
     type RenameRequest,
     SymbolKind,
+    type SymbolKindValue,
     type TranspilerBridge,
     type TranspilerPatch,
     type WorkspaceReadFile
@@ -379,59 +380,124 @@ export async function computeHotReloadCascade(
 }
 
 /**
+ * Resolve the symbol kind from a parsed symbol ID, applying known category fallbacks
+ * and returning null when the kind cannot be determined.
+ * Keeps the main `checkHotReloadSafety` body flat and readable.
+ */
+function resolveSymbolKind(rawSymbolKind: string): {
+    kind: SymbolKindValue | null;
+    requiresRestart: boolean;
+    reason?: string;
+} {
+    if (SCRIPT_RESOURCE_SYMBOL_KINDS.has(rawSymbolKind)) {
+        return { kind: SymbolKind.SCRIPT, requiresRestart: false };
+    }
+
+    if (NON_SCRIPT_RESOURCE_SYMBOL_KINDS.has(rawSymbolKind)) {
+        return {
+            kind: null,
+            requiresRestart: true,
+            reason: `Resource renames for '${rawSymbolKind}' require metadata and file updates outside hot reload`
+        };
+    }
+
+    if (rawSymbolKind === "enum-member") {
+        return {
+            kind: null,
+            requiresRestart: false,
+            reason: "Enum member renames require dependent script recompilation"
+        };
+    }
+
+    return { kind: null, requiresRestart: true };
+}
+
+/**
+ * Return a blocking safety result for symbol kinds that categorically cannot be
+ * hot-reloaded, including actionable guidance the caller can surface directly.
+ * The `requiresRestart` flag is the only behaviour that varies; all other fields
+ * share the same shape as a normal `HotReloadSafetySummary`.
+ */
+function symbolKindBlockedResult(
+    reason: string,
+    requiresRestart: boolean,
+    canAutoFix = false,
+    extraSuggestions: ReadonlyArray<string> = []
+): HotReloadSafetySummary {
+    return {
+        safe: false,
+        reason,
+        requiresRestart,
+        canAutoFix,
+        suggestions: [
+            requiresRestart
+                ? "Apply the rename as a full refactor transaction instead of relying on hot reload"
+                : "Apply the rename together with all dependent references",
+            ...(requiresRestart ? ["Restart the running game after renaming non-script resources"] : []),
+            ...extraSuggestions
+        ]
+    };
+}
+
+/**
+ * Return a guarded safety result for when the semantic analyzer is unavailable.
+ * Hot reload safety checks require structural knowledge the analyzer provides.
+ */
+function noSemanticAnalyzerResult(): HotReloadSafetySummary {
+    return {
+        safe: false,
+        reason: "Hot reload safety checks require a semantic analyzer to verify the rename",
+        requiresRestart: true,
+        canAutoFix: false,
+        suggestions: [
+            "Run the semantic analysis pass before requesting hot reload safety",
+            "Provide a semantic analyzer implementation when constructing RefactorEngine"
+        ]
+    };
+}
+
+/**
  * Check whether a rename operation is safe for hot reload.
- * This method performs a comprehensive analysis of whether a rename can be
- * applied without requiring a full game restart, taking into account symbol
- * types, scope changes, and runtime implications.
+ * Performs a comprehensive analysis of whether a rename can be applied without
+ * requiring a full game restart, accounting for symbol types, scope changes,
+ * and runtime implications.
  */
 export async function checkHotReloadSafety(
     request: RenameRequest,
     semantic: PartialSemanticAnalyzer | null
 ): Promise<HotReloadSafetySummary> {
     const { symbolId, newName } = request ?? {};
-    const suggestions: Array<string> = [];
 
+    // Guard: reject incomplete requests immediately
     if (!symbolId || !newName) {
         return {
             safe: false,
             reason: "Invalid rename request: missing symbolId or newName",
             requiresRestart: true,
             canAutoFix: false,
-            suggestions
+            suggestions: []
         };
     }
 
-    // Validate identifier format first
+    // Guard: require a valid identifier name
     try {
         assertValidIdentifierName(newName);
     } catch (error) {
         return {
             safe: false,
-            reason: `Invalid identifier name: ${error.message}`,
+            reason: `Invalid identifier name: ${(error as Error).message}`,
             requiresRestart: true,
             canAutoFix: false,
-            suggestions
+            suggestions: []
         };
     }
 
-    // Hot reload safety analysis relies on semantic knowledge to confirm the
-    // symbol exists and to reason about scope conflicts. When the semantic
-    // analyzer is unavailable, return a guarded failure instead of throwing so
-    // callers receive actionable feedback they can surface to users.
+    // Guard: require a semantic analyzer for structural reasoning
     if (!semantic) {
-        return {
-            safe: false,
-            reason: "Hot reload safety checks require a semantic analyzer to verify the rename",
-            requiresRestart: true,
-            canAutoFix: false,
-            suggestions: [
-                "Run the semantic analysis pass before requesting hot reload safety",
-                "Provide a semantic analyzer implementation when constructing RefactorEngine"
-            ]
-        };
+        return noSemanticAnalyzerResult();
     }
 
-    // Check if symbol exists
+    // Guard: symbol must exist in the semantic index
     const exists = await SymbolQueries.validateSymbolExists(symbolId, semantic);
     if (!exists) {
         return {
@@ -446,8 +512,7 @@ export async function checkHotReloadSafety(
         };
     }
 
-    // Extract symbol metadata from the ID
-    // SymbolId format: gml/{kind}/{name}, e.g., "gml/script/scr_player"
+    // Guard: symbolId must conform to the expected "gml/{kind}/{name}" shape
     const symbolParts = parseSymbolIdParts(symbolId);
     if (!symbolParts) {
         return {
@@ -466,37 +531,18 @@ export async function checkHotReloadSafety(
     let symbolKind = parseSymbolKind(rawSymbolKind);
     const symbolName = symbolParts.symbolName;
 
-    if (symbolKind === null && SCRIPT_RESOURCE_SYMBOL_KINDS.has(rawSymbolKind)) {
-        symbolKind = SymbolKind.SCRIPT;
+    // Resolve the kind, applying known category fallbacks.
+    // Returns immediately for categorically blocked kinds so the caller never
+    // reaches the switch below for non-script resources or enum members.
+    if (symbolKind === null) {
+        const resolution = resolveSymbolKind(rawSymbolKind);
+        symbolKind = resolution.kind;
+        if (resolution.kind === null && resolution.reason !== undefined) {
+            return symbolKindBlockedResult(resolution.reason, resolution.requiresRestart);
+        }
     }
 
-    if (symbolKind === null && NON_SCRIPT_RESOURCE_SYMBOL_KINDS.has(rawSymbolKind)) {
-        return {
-            safe: false,
-            reason: `Resource renames for '${rawSymbolKind}' require metadata and file updates outside hot reload`,
-            requiresRestart: true,
-            canAutoFix: false,
-            suggestions: [
-                "Apply the rename as a full refactor transaction instead of relying on hot reload",
-                "Restart the running game after renaming non-script resources"
-            ]
-        };
-    }
-
-    if (symbolKind === null && rawSymbolKind === "enum-member") {
-        return {
-            safe: false,
-            reason: "Enum member renames require dependent script recompilation",
-            requiresRestart: false,
-            canAutoFix: true,
-            suggestions: [
-                "Apply the rename together with all dependent references",
-                "Reload dependent scripts after the enum member rename completes"
-            ]
-        };
-    }
-
-    // Validate symbol kind
+    // Guard: reject unknown kinds that could not be resolved
     if (symbolKind === null) {
         const validKinds = Object.values(SymbolKind).join(", ");
         return {
@@ -504,14 +550,11 @@ export async function checkHotReloadSafety(
             reason: `Invalid symbol kind '${rawSymbolKind}' in symbolId`,
             requiresRestart: true,
             canAutoFix: false,
-            suggestions: [
-                `Valid symbol kinds are: ${validKinds}`,
-                "Ensure symbolId follows the pattern: gml/{kind}/{name}"
-            ]
+            suggestions: [`Valid symbol kinds are: ${validKinds}`]
         };
     }
 
-    // Check for name conflict
+    // Guard: name must actually change
     if (symbolName === newName) {
         return {
             safe: false,
@@ -522,39 +565,37 @@ export async function checkHotReloadSafety(
         };
     }
 
-    // Gather occurrences to analyze scope and usage patterns
+    // Gather occurrences and detect conflicts before committing to a reload decision
     const occurrences = await SymbolQueries.gatherSymbolOccurrences(symbolName, semantic);
-
-    // Detect potential conflicts
     const conflicts = await detectRenameConflicts(symbolName, newName, occurrences, semantic, semantic);
 
+    // Guard: reserved keyword conflicts are blocking
+    if (conflicts.some((c) => c.type === ConflictType.RESERVED)) {
+        return {
+            safe: false,
+            reason: "Cannot rename to a reserved keyword",
+            requiresRestart: true,
+            canAutoFix: false,
+            suggestions: ["Choose a different name that isn't a reserved keyword"]
+        };
+    }
+
+    // Guard: shadowing conflicts can be auto-fixed by the refactor engine
+    if (conflicts.some((c) => c.type === ConflictType.SHADOW)) {
+        return {
+            safe: false,
+            reason: "Rename would introduce shadowing conflicts",
+            requiresRestart: false,
+            canAutoFix: true,
+            suggestions: [
+                "The refactor engine can automatically qualify identifiers to avoid shadowing",
+                "Consider using a less common name to avoid conflicts"
+            ]
+        };
+    }
+
+    // Remaining conflicts are non-blocking but surfaced for awareness
     if (conflicts.length > 0) {
-        const hasReservedConflict = conflicts.some((c) => c.type === ConflictType.RESERVED);
-        const hasShadowConflict = conflicts.some((c) => c.type === ConflictType.SHADOW);
-
-        if (hasReservedConflict) {
-            return {
-                safe: false,
-                reason: "Cannot rename to a reserved keyword",
-                requiresRestart: true,
-                canAutoFix: false,
-                suggestions: ["Choose a different name that isn't a reserved keyword"]
-            };
-        }
-
-        if (hasShadowConflict) {
-            return {
-                safe: false,
-                reason: "Rename would introduce shadowing conflicts",
-                requiresRestart: false,
-                canAutoFix: true,
-                suggestions: [
-                    "The refactor engine can automatically qualify identifiers to avoid shadowing",
-                    "Consider using a less common name to avoid conflicts"
-                ]
-            };
-        }
-
         return {
             safe: false,
             reason: `Rename has ${conflicts.length} conflict(s)`,
@@ -564,11 +605,9 @@ export async function checkHotReloadSafety(
         };
     }
 
-    // Analyze hot reload implications based on symbol kind
+    // All guards passed — determine safety based on symbol kind
     switch (symbolKind) {
         case SymbolKind.SCRIPT: {
-            // Script renames are generally safe for hot reload as long as
-            // we update all call sites simultaneously
             return {
                 safe: true,
                 reason: "Script renames are hot-reload-safe",
@@ -582,34 +621,27 @@ export async function checkHotReloadSafety(
         }
 
         case SymbolKind.VAR: {
-            // Instance and global variable renames are safe if we update
-            // all references, but need careful handling of self/other context
-            if (symbolId.includes("::")) {
-                // Instance variable (e.g., gml/var/obj_enemy::hp)
-                return {
-                    safe: true,
-                    reason: "Instance variable renames are hot-reload-safe",
-                    requiresRestart: false,
-                    canAutoFix: true,
-                    suggestions: [
-                        "All references will be updated with proper scope qualification",
-                        "Existing instances will retain their current values"
-                    ]
-                };
-            } else {
-                // Global variable
-                return {
-                    safe: true,
-                    reason: "Global variable renames are hot-reload-safe",
-                    requiresRestart: false,
-                    canAutoFix: true,
-                    suggestions: ["Global state will be preserved during hot reload"]
-                };
-            }
+            return symbolId.includes("::")
+                ? {
+                      safe: true,
+                      reason: "Instance variable renames are hot-reload-safe",
+                      requiresRestart: false,
+                      canAutoFix: true,
+                      suggestions: [
+                          "All references will be updated with proper scope qualification",
+                          "Existing instances will retain their current values"
+                      ]
+                  }
+                : {
+                      safe: true,
+                      reason: "Global variable renames are hot-reload-safe",
+                      requiresRestart: false,
+                      canAutoFix: true,
+                      suggestions: ["Global state will be preserved during hot reload"]
+                  };
         }
 
         case SymbolKind.EVENT: {
-            // Event renames require special handling but are generally safe
             return {
                 safe: true,
                 reason: "Event renames are hot-reload-safe with reinit",
@@ -624,8 +656,6 @@ export async function checkHotReloadSafety(
 
         case SymbolKind.MACRO:
         case SymbolKind.ENUM: {
-            // Macros and enums are compile-time constructs, so renaming them
-            // requires recompiling all dependent code
             return {
                 safe: false,
                 reason: "Macro/enum renames require dependent script recompilation",
@@ -639,7 +669,7 @@ export async function checkHotReloadSafety(
         }
 
         default: {
-            // Exhaustiveness check - TypeScript ensures all cases are handled
+            // Exhaustiveness check — TypeScript ensures all SymbolKind variants are handled
             const _exhaustive: never = symbolKind;
             return _exhaustive;
         }
