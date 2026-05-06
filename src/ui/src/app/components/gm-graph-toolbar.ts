@@ -1,4 +1,5 @@
 import { html } from "lit";
+import { ref } from "lit/directives/ref.js";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
@@ -24,6 +25,70 @@ export class GmGraphToolbar extends LightDomLitElement {
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
+
+    #searchInput: HTMLInputElement | null = null;
+
+    #onKeyDown = (event: KeyboardEvent): void => {
+        if (!this.state) {
+            return;
+        }
+
+        if (event.key === "Escape" && this.state.searchQuery) {
+            event.preventDefault();
+            this.#emitSearchQuery("");
+            return;
+        }
+
+        if (event.altKey || event.metaKey || event.ctrlKey) {
+            return;
+        }
+
+        switch (event.key.toLowerCase()) {
+            case "g": {
+                if (document.activeElement === this.#searchInput) {
+                    return;
+                }
+                event.preventDefault();
+                this.#emitToggleGraphView();
+                break;
+            }
+            case "l": {
+                if (document.activeElement === this.#searchInput) {
+                    return;
+                }
+                event.preventDefault();
+                this.#emitCycleLabelMode();
+                break;
+            }
+            case "r": {
+                if (document.activeElement === this.#searchInput) {
+                    return;
+                }
+                event.preventDefault();
+                this.#emitResetDefaults();
+                break;
+            }
+        }
+    };
+
+    #onSearchInput = (eventValue: Event): void => {
+        const target = eventValue.target;
+        if (!(target instanceof HTMLInputElement)) {
+            return;
+        }
+        this.#emitSearchQuery(target.value);
+    };
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        this.addEventListener("keydown", this.#onKeyDown);
+    }
+
+    public disconnectedCallback(): void {
+        super.disconnectedCallback();
+        this.removeEventListener("keydown", this.#onKeyDown);
+        this.#searchInput = null;
+    }
 
     #emitSearchQuery(searchQuery: string): void {
         this.dispatchEvent(
@@ -101,13 +166,10 @@ export class GmGraphToolbar extends LightDomLitElement {
                         aria-label="Search graph nodes"
                         .value=${this.state.searchQuery}
                         placeholder="Search nodes…"
-                        @input=${(eventValue: Event) => {
-                            const target = eventValue.target;
-                            if (!(target instanceof HTMLInputElement)) {
-                                return;
-                            }
-                            this.#emitSearchQuery(target.value);
-                        }}
+                        ${ref((element) => {
+                            this.#searchInput = element as HTMLInputElement | null;
+                        })}
+                        @input=${this.#onSearchInput}
                     />
                     <button
                         id="toggle-view"

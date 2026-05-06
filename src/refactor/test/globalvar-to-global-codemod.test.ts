@@ -6,6 +6,29 @@ import { Refactor } from "../index.js";
 const { applyGlobalvarToGlobalCodemod, collectGlobalvarDeclaredNames } = Refactor.GlobalvarToGlobal;
 
 // ---------------------------------------------------------------------------
+// shared helpers
+// ---------------------------------------------------------------------------
+
+/** Creates an async readFile that resolves from a Map of file path -> content. */
+function createFileMapReader(files: Map<string, string>): (filePath: string) => Promise<string> {
+    return async (filePath: string) => files.get(filePath) ?? "";
+}
+
+/** Creates an async writeFile that collects writes into a Map. */
+function createWriteCollector(): {
+    writeFile: (filePath: string, content: string) => Promise<void>;
+    writes: Map<string, string>;
+} {
+    const writes = new Map<string, string>();
+    return {
+        writes,
+        writeFile: async (filePath: string, content: string) => {
+            writes.set(filePath, content);
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
 // collectGlobalvarDeclaredNames
 // ---------------------------------------------------------------------------
 
@@ -152,14 +175,12 @@ void test("applyGlobalvarToGlobalCodemod respects excludeNames option for refere
 void test("executeGlobalvarToGlobalCodemod migrates declarations and references across a single file", async () => {
     const engine = new Refactor.RefactorEngine();
     const files = new Map<string, string>([["/project/globals.gml", "globalvar score;\nscore = 0;\n"]]);
-    const writes = new Map<string, string>();
+    const { writes, writeFile } = createWriteCollector();
 
     const result = await engine.executeGlobalvarToGlobalCodemod({
         filePaths: [...files.keys()],
-        readFile: async (filePath) => files.get(filePath) ?? "",
-        writeFile: async (filePath, content) => {
-            writes.set(filePath, content);
-        }
+        readFile: createFileMapReader(files),
+        writeFile
     });
 
     assert.equal(result.changedFiles.length, 1);
@@ -174,14 +195,12 @@ void test("executeGlobalvarToGlobalCodemod propagates declarations from one file
         ["/project/init.gml", "globalvar score;\nscore = 0;\n"],
         ["/project/game.gml", "score += 10;\n"]
     ]);
-    const writes = new Map<string, string>();
+    const { writes, writeFile } = createWriteCollector();
 
     const result = await engine.executeGlobalvarToGlobalCodemod({
         filePaths: [...files.keys()],
-        readFile: async (filePath) => files.get(filePath) ?? "",
-        writeFile: async (filePath, content) => {
-            writes.set(filePath, content);
-        }
+        readFile: createFileMapReader(files),
+        writeFile
     });
 
     // Both files should be changed.
@@ -209,14 +228,12 @@ void test("executeGlobalvarToGlobalCodemod returns empty result when no globalva
 void test("executeGlobalvarToGlobalCodemod supports dry-run mode", async () => {
     const engine = new Refactor.RefactorEngine();
     const files = new Map<string, string>([["/project/globals.gml", "globalvar score;\nscore = 0;\n"]]);
-    const writes = new Map<string, string>();
+    const { writes, writeFile } = createWriteCollector();
 
     const result = await engine.executeGlobalvarToGlobalCodemod({
         filePaths: [...files.keys()],
-        readFile: async (filePath) => files.get(filePath) ?? "",
-        writeFile: async (filePath, content) => {
-            writes.set(filePath, content);
-        },
+        readFile: createFileMapReader(files),
+        writeFile,
         dryRun: true
     });
 
@@ -235,7 +252,7 @@ void test("executeGlobalvarToGlobalCodemod requires writeFile in write mode", as
         () =>
             engine.executeGlobalvarToGlobalCodemod({
                 filePaths: [...files.keys()],
-                readFile: async (filePath) => files.get(filePath) ?? "",
+                readFile: createFileMapReader(files),
                 dryRun: false
             }),
         { message: "executeGlobalvarToGlobalCodemod requires a writeFile function in write mode" }
