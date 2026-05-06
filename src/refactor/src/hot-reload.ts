@@ -430,9 +430,9 @@ function symbolKindBlockedResult(
         requiresRestart,
         canAutoFix,
         suggestions: [
-            ...(requiresRestart
+            requiresRestart
                 ? "Apply the rename as a full refactor transaction instead of relying on hot reload"
-                : "Apply the rename together with all dependent references"),
+                : "Apply the rename together with all dependent references",
             ...(requiresRestart ? ["Restart the running game after renaming non-script resources"] : []),
             ...extraSuggestions
         ]
