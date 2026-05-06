@@ -74,7 +74,7 @@
     {"weight":0.2,"name":"agent-96-hot-transpiler"},
     {"weight":0.3,"name":"agent-97-hot-cli"},
     {"weight":0.1,"name":"agent-98-hot-integration"},
-    {"weight":0.25,"name":"agent-99-test-duration"},
+    {"weight":1,"name":"agent-99-test-duration"},
     {"weight":0.1,"name":"agent-100-generalization"},
     {"weight":0.15,"name":"agent-101-bloat-removal"},
     {"weight":0.125,"name":"agent-102-split-long-file"},
