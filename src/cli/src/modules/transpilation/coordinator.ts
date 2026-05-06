@@ -510,7 +510,7 @@ export function transpileFile(
             patch = context.transpiler.transpileEvent({
                 sourceText: content,
                 symbolId: fileKind.symbolId,
-                ...(ast === undefined ? {} : { ast })
+                ast
             });
         } else {
             const fileName = path.basename(filePath, path.extname(filePath));
@@ -521,7 +521,7 @@ export function transpileFile(
             patch = context.transpiler.transpileScript({
                 sourceText: content,
                 symbolId,
-                ...(ast === undefined ? {} : { ast })
+                ast
             });
         }
 

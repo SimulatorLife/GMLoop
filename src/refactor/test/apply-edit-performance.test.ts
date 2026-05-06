@@ -24,7 +24,6 @@
  * while still ensuring that large regressions in the write-path hot loop are caught.
  */
 import assert from "node:assert/strict";
-import { performance } from "node:perf_hooks";
 import test from "node:test";
 
 import { Refactor } from "../index.js";
@@ -34,6 +33,7 @@ import type {
     PartialSemanticAnalyzer,
     RefactorProjectConfig
 } from "../src/types.js";
+import { measureMedianDurationMs } from "./test-helpers/performance-timing.js";
 
 const WRITE_PATH_FILE_COUNT = 400;
 const WRITE_PATH_TARGETS_PER_FILE = 60;
@@ -117,39 +117,6 @@ function buildNamingConventionSemanticStub(
             errors: [],
             warnings: []
         })
-    };
-}
-
-async function measureMedianDurationMs<T>(
-    sampleCount: number,
-    execute: () => Promise<T>
-): Promise<{
-    durationMs: number;
-    result: T;
-}> {
-    const samples = await Promise.all(
-        Array.from({ length: sampleCount }, async () => {
-            const startTime = performance.now();
-            const result = await execute();
-            return {
-                durationMs: performance.now() - startTime,
-                result
-            };
-        })
-    );
-
-    const sortedDurations = samples.map((sample) => sample.durationMs).sort((left, right) => left - right);
-    const medianSampleIndex = Math.floor(sortedDurations.length / 2);
-    const medianDuration = sortedDurations[medianSampleIndex];
-    const latestSample = samples.at(-1);
-
-    if (latestSample === undefined || medianDuration === undefined) {
-        throw new Error("measureMedianDurationMs requires at least one sample");
-    }
-
-    return {
-        durationMs: medianDuration,
-        result: latestSample.result
     };
 }
 
