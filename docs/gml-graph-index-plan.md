@@ -2,7 +2,7 @@
 
 ## Summary
 
-Create a new standalone design doc at [docs/gml-graph-index-plan.md](/Users/henrykirk/GMLoop/docs/gml-graph-index-plan.md) containing the exact approved plan, then implement that plan by adding a semantic-owned dual-root graph index backed by SQLite, exposed through new CLI graph commands and thin MCP wrappers/resources.
+Create a new standalone design doc at [docs/gml-graph-index-plan.md](GMLoop/docs/gml-graph-index-plan.md) containing the exact approved plan, then implement that plan by adding a semantic-owned dual-root graph index backed by SQLite, exposed through new CLI graph commands and thin MCP wrappers/resources.
 
 The implementation must preserve existing ownership boundaries:
 
@@ -13,20 +13,20 @@ The implementation must preserve existing ownership boundaries:
 
 ## Documentation Changes
 
-- Create [docs/gml-graph-index-plan.md](/Users/henrykirk/GMLoop/docs/gml-graph-index-plan.md) with the exact approved plan text and the same major sections:
+- Create [docs/gml-graph-index-plan.md](GMLoop/docs/gml-graph-index-plan.md) with the exact approved plan text and the same major sections:
   - Summary
   - Key Changes
   - Test Plan
   - Assumptions and Defaults
-- Update [docs/target-state.md](/Users/henrykirk/GMLoop/docs/target-state.md) with a short cross-reference that the concrete graph-index design now lives in the new plan doc and that graph/search/context retrieval is owned by `@gmloop/semantic`
-- Update [docs/examples/gmloop.json](/Users/henrykirk/GMLoop/docs/examples/gmloop.json) to show the new `graph` config section for `toolsetRoot`, `databasePath`, and local embedding settings
-- Update [src/mcp/README.md](/Users/henrykirk/GMLoop/src/mcp/README.md) to mention the new graph leaf commands and graph-backed MCP resources
+- Update [docs/target-state.md](GMLoop/docs/target-state.md) with a short cross-reference that the concrete graph-index design now lives in the new plan doc and that graph/search/context retrieval is owned by `@gmloop/semantic`
+- Update [docs/examples/gmloop.json](GMLoop/docs/examples/gmloop.json) to show the new `graph` config section for `toolsetRoot`, `databasePath`, and local embedding settings
+- Update [src/mcp/README.md](GMLoop/src/mcp/README.md) to mention the new graph leaf commands and graph-backed MCP resources
 
 ## Implementation Changes
 
 ### 1. Add a semantic graph-index domain
 
-Add a new `src/semantic/src/graph-index/` namespace and export it from [src/semantic/src/index.ts](/Users/henrykirk/GMLoop/src/semantic/src/index.ts). This domain owns:
+Add a new `src/semantic/src/graph-index/` namespace and export it from [src/semantic/src/index.ts](GMLoop/src/semantic/src/index.ts). This domain owns:
 
 - dual-root graph descriptors and config normalization
 - SQLite schema creation and migration
@@ -194,7 +194,7 @@ CLI flags override config values. Defaults should keep project-only mode working
 
 ## Assumptions and Defaults
 
-- The plan document is a new standalone file at [docs/gml-graph-index-plan.md](/Users/henrykirk/GMLoop/docs/gml-graph-index-plan.md).
+- The plan document is a new standalone file at [docs/gml-graph-index-plan.md](GMLoop/docs/gml-graph-index-plan.md).
 - `@gmloop/semantic` is the correct owner because this feature is project-aware analysis and retrieval, not formatting, lint fixing, or refactor edit planning.
 - SQLite is authoritative for retrieval in v1, while existing semantic project indexing remains the analysis intake.
 - The default DB path is project-local, under `.gmloop/`.
