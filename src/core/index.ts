@@ -17,6 +17,7 @@ export type {
     MutableDocCommentLines,
     MutableGameMakerAstNode,
     ParserTransform,
+    ProjectMetadataSchemaName,
     StringCommentScanState,
     StripCommentsTransformOptions
 } from "./src/index.js";

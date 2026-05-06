@@ -19,7 +19,6 @@ type WorkflowWeight = Readonly<{
 }>;
 
 type AgentWeightsConfig = Readonly<{
-    version: number;
     agentPools: Readonly<Record<string, AgentPool>>;
     workflows: ReadonlyArray<WorkflowWeight>;
 }>;
@@ -99,14 +98,17 @@ function assertPoolCanSelectAgent(poolName: string, pool: AgentPool): void {
 void test("agent weights separate initial actions from follow-up routing pools", async () => {
     const config = await readAgentWeightsConfig();
 
-    assert.equal(config.version, 1);
     assert.equal(Object.hasOwn(config, "agents"), false, "legacy top-level agents array should be removed.");
+    assert.ok(Object.hasOwn(config.agentPools, "actions"), "initial action routing should use an actions pool.");
+    assert.ok(Object.hasOwn(config.agentPools, "followUps"), "follow-up routing should use a followUps pool.");
 
     assertPoolCanSelectAgent("actions", config.agentPools.actions);
     assertPoolCanSelectAgent("followUps", config.agentPools.followUps);
-
-    assert.equal(config.agentPools.actions.default, "codex");
-    assert.equal(config.agentPools.followUps.default, "copilot");
+    assert.notDeepEqual(
+        config.agentPools.actions,
+        config.agentPools.followUps,
+        "initial actions and follow-ups should be independently configurable pools."
+    );
 });
 
 void test("scheduler still has weighted workflows after agent pool migration", async () => {

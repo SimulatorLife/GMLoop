@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { Yy } from "@bscotch/yy";
-import { Core } from "@gmloop/core";
+
+import { toPosixPath } from "../fs/path.js";
+import { isErrorLike } from "../utils/capability-probes.js";
+import { getErrorMessageOrFallback } from "../utils/error.js";
+import { assertPlainObject, isObjectLike } from "../utils/object.js";
+import { getNonEmptyString, isNonEmptyString, isNonEmptyTrimmedString, trimStringEntries } from "../utils/string.js";
 
 const PROJECT_METADATA_PARSE_ERROR = "ProjectMetadataParseError";
 const PROJECT_METADATA_SCHEMA_VALIDATION_ERROR = "ProjectMetadataSchemaValidationError";
@@ -20,14 +25,14 @@ const RESOURCE_TYPE_TO_SCHEMA_NAME = Object.freeze({
     GMRoomUI: "roomui"
 });
 
-export type ProjectMetadataSchemaName = keyof typeof Yy.schemas;
+export type ProjectMetadataSchemaName = Extract<keyof typeof Yy.schemas, string>;
 
 const PROJECT_METADATA_SCHEMA_NAMES: ReadonlySet<ProjectMetadataSchemaName> = Object.freeze(
     new Set(Object.keys(Yy.schemas) as Array<ProjectMetadataSchemaName>)
 );
 
 function mapResourceTypeToSchemaName(resourceType: unknown): ProjectMetadataSchemaName | null {
-    if (!Core.isNonEmptyTrimmedString(resourceType)) {
+    if (!isNonEmptyTrimmedString(resourceType)) {
         return null;
     }
 
@@ -36,7 +41,7 @@ function mapResourceTypeToSchemaName(resourceType: unknown): ProjectMetadataSche
 }
 
 function mapResourcePathToSchemaName(sourcePath: string): ProjectMetadataSchemaName | null {
-    const normalizedPath = Core.toPosixPath(sourcePath);
+    const normalizedPath = toPosixPath(sourcePath);
     if (normalizedPath.toLowerCase().endsWith(".yyp")) {
         // Prevent inferring the "project" schema for GameMaker .yyp manifests.
         // The @bscotch/yy library's project schema validation silently filters out
@@ -48,7 +53,7 @@ function mapResourcePathToSchemaName(sourcePath: string): ProjectMetadataSchemaN
         return null;
     }
 
-    const segments = Core.trimStringEntries(normalizedPath.split("/"));
+    const segments = trimStringEntries(normalizedPath.split("/"));
     if (segments.length < 2) {
         return null;
     }
@@ -79,10 +84,10 @@ export function resolveProjectMetadataSchemaName(
  */
 export class ProjectMetadataParseError extends Error {
     constructor(sourcePath: string, cause: unknown) {
-        const details = Core.getErrorMessageOrFallback(cause);
+        const details = getErrorMessageOrFallback(cause);
         super(`Failed to parse GameMaker metadata from '${sourcePath}': ${details}`);
         this.name = PROJECT_METADATA_PARSE_ERROR;
-        this.cause = Core.isErrorLike(cause) ? cause : undefined;
+        this.cause = isErrorLike(cause) ? cause : undefined;
     }
 }
 
@@ -91,12 +96,12 @@ export class ProjectMetadataParseError extends Error {
  */
 export class ProjectMetadataSchemaValidationError extends Error {
     constructor(sourcePath: string, schemaName: string, cause: unknown) {
-        const details = Core.getErrorMessageOrFallback(cause);
+        const details = getErrorMessageOrFallback(cause);
         super(
             `Metadata at '${sourcePath}' does not match inferred '${schemaName}' schema required for safe mutation: ${details}`
         );
         this.name = PROJECT_METADATA_SCHEMA_VALIDATION_ERROR;
-        this.cause = Core.isErrorLike(cause) ? cause : undefined;
+        this.cause = isErrorLike(cause) ? cause : undefined;
     }
 }
 
@@ -109,7 +114,7 @@ export class ProjectMetadataSchemaValidationError extends Error {
  * worker/sandbox boundaries) without relying on `instanceof`.
  */
 export function isProjectMetadataParseError(value: unknown): value is ProjectMetadataParseError {
-    return Core.getNonEmptyString((value as { name?: string })?.name) === PROJECT_METADATA_PARSE_ERROR;
+    return getNonEmptyString((value as { name?: string })?.name) === PROJECT_METADATA_PARSE_ERROR;
 }
 
 /**
@@ -121,11 +126,11 @@ export function isProjectMetadataParseError(value: unknown): value is ProjectMet
  * worker/sandbox boundaries) without relying on `instanceof`.
  */
 export function isProjectMetadataSchemaValidationError(value: unknown): value is ProjectMetadataSchemaValidationError {
-    return Core.getNonEmptyString((value as { name?: string })?.name) === PROJECT_METADATA_SCHEMA_VALIDATION_ERROR;
+    return getNonEmptyString((value as { name?: string })?.name) === PROJECT_METADATA_SCHEMA_VALIDATION_ERROR;
 }
 
 function assertProjectMetadataDocumentIsPlainObject(parsed: unknown, sourcePath: string) {
-    return Core.assertPlainObject(parsed, {
+    return assertPlainObject(parsed, {
         errorMessage: `Resource JSON at ${sourcePath} must be a plain object.`
     });
 }
@@ -267,7 +272,7 @@ export function parseProjectMetadataDocumentForMutation(rawContents: string, sou
  * Stringify a metadata payload using Stitch's yy serializer.
  */
 function ensureResourceTypeBeforeResourcePath(document: Record<string, unknown>): Record<string, unknown> {
-    if (!Core.isObjectLike(document)) {
+    if (!isObjectLike(document)) {
         return document;
     }
 
@@ -306,7 +311,7 @@ function ensureResourceTypeBeforeResourcePathInSerializedOutput(
     output: string,
     document: Record<string, unknown>
 ): string {
-    if (!Core.isObjectLike(document) || !Core.isNonEmptyString(document.resourceType)) {
+    if (!isObjectLike(document) || !isNonEmptyString(document.resourceType)) {
         return output;
     }
 
@@ -369,7 +374,7 @@ function normalizeMetadataValueForSerialization(value: unknown): unknown {
         return value.map((entry) => normalizeMetadataValueForSerialization(entry));
     }
 
-    if (!Core.isObjectLike(value)) {
+    if (!isObjectLike(value)) {
         return value;
     }
 
@@ -385,7 +390,7 @@ export function stringifyProjectMetadataDocument(document: Record<string, unknow
     const normalizedDocument = ensureResourceTypeBeforeResourcePath(
         normalizeMetadataValueForSerialization(document) as Record<string, unknown>
     );
-    let schemaName = Core.isNonEmptyString(sourcePath)
+    let schemaName = isNonEmptyString(sourcePath)
         ? resolveProjectMetadataSchemaName(sourcePath, normalizedDocument.resourceType)
         : null;
 
@@ -503,7 +508,7 @@ function resolveProjectMetadataPathTarget(
     key: string | number;
     value: unknown;
 } | null {
-    const segments = Core.trimStringEntries(propertyPath.split(".")).filter((segment) => segment.length > 0);
+    const segments = trimStringEntries(propertyPath.split(".")).filter((segment) => segment.length > 0);
     if (segments.length === 0) {
         return null;
     }
@@ -531,7 +536,7 @@ function resolveProjectMetadataPathTarget(
             continue;
         }
 
-        if (!Core.isObjectLike(current)) {
+        if (!isObjectLike(current)) {
             return null;
         }
 
@@ -733,7 +738,7 @@ function resolveProjectMetadataValueTextRangeInObject(
     }
 
     const [segment, ...remainingSegments] = propertySegments;
-    if (!Core.isNonEmptyString(segment) || /^\d+$/u.test(segment)) {
+    if (!isNonEmptyString(segment) || /^\d+$/u.test(segment)) {
         return null;
     }
 
@@ -893,11 +898,11 @@ export function findProjectMetadataValueTextRange(
     rawContents: string,
     propertyPath: string
 ): ProjectMetadataValueTextRange | null {
-    if (!Core.isNonEmptyString(rawContents) || !Core.isNonEmptyString(propertyPath)) {
+    if (!isNonEmptyString(rawContents) || !isNonEmptyString(propertyPath)) {
         return null;
     }
 
-    const propertySegments = Core.trimStringEntries(propertyPath.split(".")).filter((segment) => segment.length > 0);
+    const propertySegments = trimStringEntries(propertyPath.split(".")).filter((segment) => segment.length > 0);
     if (propertySegments.length === 0) {
         return null;
     }
@@ -928,7 +933,7 @@ export function applyProjectMetadataStringMutations(
     let nextContents = rawContents;
 
     for (const mutation of stringMutations) {
-        if (!Core.isNonEmptyString(mutation?.propertyPath) || typeof mutation?.value !== "string") {
+        if (!isNonEmptyString(mutation?.propertyPath) || typeof mutation?.value !== "string") {
             return null;
         }
 
@@ -952,7 +957,7 @@ export function applyProjectMetadataStringMutations(
  * Resolve a nested value from parsed metadata by property path.
  */
 export function getProjectMetadataValueAtPath(document: Record<string, unknown>, propertyPath: string): unknown {
-    if (!Core.isNonEmptyString(propertyPath)) {
+    if (!isNonEmptyString(propertyPath)) {
         return document;
     }
 
@@ -976,7 +981,7 @@ export function updateProjectMetadataReferenceByPath({
     newResourcePath: string | null;
     newName: string | null;
 }): boolean {
-    if (!Core.isNonEmptyString(propertyPath) || !Core.isObjectLike(document)) {
+    if (!isNonEmptyString(propertyPath) || !isObjectLike(document)) {
         return false;
     }
 
@@ -985,16 +990,16 @@ export function updateProjectMetadataReferenceByPath({
         return false;
     }
 
-    if (Core.isObjectLike(target.value)) {
+    if (isObjectLike(target.value)) {
         const targetRecord = target.value as Record<string, unknown>;
         let changed = false;
 
-        if (Core.isNonEmptyString(newResourcePath) && targetRecord.path !== newResourcePath) {
+        if (isNonEmptyString(newResourcePath) && targetRecord.path !== newResourcePath) {
             targetRecord.path = newResourcePath;
             changed = true;
         }
 
-        if (Core.isNonEmptyString(newName) && targetRecord.name !== newName) {
+        if (isNonEmptyString(newName) && targetRecord.name !== newName) {
             targetRecord.name = newName;
             changed = true;
         }
@@ -1002,11 +1007,7 @@ export function updateProjectMetadataReferenceByPath({
         return changed;
     }
 
-    if (
-        typeof target.value === "string" &&
-        Core.isNonEmptyString(newResourcePath) &&
-        target.value !== newResourcePath
-    ) {
+    if (typeof target.value === "string" && isNonEmptyString(newResourcePath) && target.value !== newResourcePath) {
         if (Array.isArray(target.container)) {
             target.container[target.key as number] = newResourcePath;
         } else {

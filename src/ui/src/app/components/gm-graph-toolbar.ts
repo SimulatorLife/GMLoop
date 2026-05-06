@@ -4,6 +4,7 @@ import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
+    GRAPH_UI_EVENT_RESET_DEFAULTS,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
@@ -52,6 +53,15 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
+    #emitResetDefaults(): void {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_RESET_DEFAULTS, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    }
+
     #emitRegenerate(): void {
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_TRIGGER_REGENERATE, {
@@ -88,6 +98,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                     <input
                         id="search"
                         type="search"
+                        aria-label="Search graph nodes"
                         .value=${this.state.searchQuery}
                         placeholder="Search nodes…"
                         @input=${(eventValue: Event) => {
@@ -98,14 +109,18 @@ export class GmGraphToolbar extends LightDomLitElement {
                             this.#emitSearchQuery(target.value);
                         }}
                     />
-                    <button id="toggle-view" @click=${() => this.#emitToggleGraphView()}>
+                    <button
+                        id="toggle-view"
+                        aria-pressed=${this.state.activeGraphView === "json"}
+                        @click=${() => this.#emitToggleGraphView()}
+                    >
                         ${this.state.activeGraphView === "visual" ? "JSON" : "Visual"}
                     </button>
                     <button id="toggle-labels" @click=${() => this.#emitCycleLabelMode()}>
                         Labels:
                         ${this.state.labelMode === "always" ? "On" : this.state.labelMode === "hidden" ? "Off" : "Auto"}
                     </button>
-                    <button id="reset-default">Reset</button>
+                    <button id="reset-default" @click=${() => this.#emitResetDefaults()}>Reset</button>
                     ${this.model.isServerMode
                         ? html`
                               <button

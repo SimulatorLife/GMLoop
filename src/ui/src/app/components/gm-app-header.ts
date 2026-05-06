@@ -67,6 +67,7 @@ export class GmAppHeader extends LightDomLitElement {
                             <nav class="top-nav" aria-label="Primary">
                                 <button
                                     id="tab-graph"
+                                    aria-pressed=${this.state.activePage === "graph"}
                                     class=${this.state.activePage === "graph"
                                         ? "top-nav-button active"
                                         : "top-nav-button"}
@@ -76,6 +77,7 @@ export class GmAppHeader extends LightDomLitElement {
                                 </button>
                                 <button
                                     id="tab-docs"
+                                    aria-pressed=${this.state.activePage === "docs"}
                                     class=${this.state.activePage === "docs"
                                         ? "top-nav-button active"
                                         : "top-nav-button"}
@@ -85,6 +87,7 @@ export class GmAppHeader extends LightDomLitElement {
                                 </button>
                                 <button
                                     id="tab-config"
+                                    aria-pressed=${this.state.activePage === "config"}
                                     class=${this.state.activePage === "config"
                                         ? "top-nav-button active"
                                         : "top-nav-button"}

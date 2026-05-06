@@ -12,6 +12,9 @@
     "dist",
     "resource-directory.json"
   ],
+  "dependencies": {
+    "@bscotch/yy": "^2.7.0"
+  },
   "engines": {
     "node": ">=22.5.0"
   },

@@ -772,12 +772,7 @@ jobs:
               return 0
             fi
 
-          retry_message="$(printf '**[🤖 %s]** The local agent did not produce pushable repository changes on attempt %s/%s, so I am starting retry attempt %s/%s.\n' \
-            "${AGENT_NAME}" \
-            "${failed_attempt}" \
-            "${total_attempts}" \
-            "${next_attempt}" \
-            "${total_attempts}")"
+            retry_message="**[🤖 ${AGENT_NAME}]** The local agent did not produce pushable repository changes on attempt ${failed_attempt}/${total_attempts}, so I am starting retry attempt ${next_attempt}/${total_attempts}."
 
             if gh issue comment "${PR_NUMBER}" --body "${retry_message}" --repo "${REPOSITORY}"; then
               date +"%F %T" > "$RETRY_COMMENT_SENTINEL"

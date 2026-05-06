@@ -10,6 +10,7 @@ import type { GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
+    GRAPH_UI_EVENT_RESET_DEFAULTS,
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
@@ -60,6 +61,10 @@ export class GmAppShell extends LightDomLitElement {
         this.#handleCycleLabelMode();
     };
 
+    readonly #onResetDefaults = (): void => {
+        this.#handleResetDefaults();
+    };
+
     readonly #onTriggerOpenProject = (): void => {
         this.#handleTriggerOpenProject();
     };
@@ -80,6 +85,7 @@ export class GmAppShell extends LightDomLitElement {
         this.addEventListener(GRAPH_UI_EVENT_SET_SEARCH_QUERY, this.#onSetSearchQuery);
         this.addEventListener(GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW, this.#onToggleGraphView);
         this.addEventListener(GRAPH_UI_EVENT_CYCLE_LABEL_MODE, this.#onCycleLabelMode);
+        this.addEventListener(GRAPH_UI_EVENT_RESET_DEFAULTS, this.#onResetDefaults);
         this.addEventListener(GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, this.#onTriggerOpenProject);
         this.addEventListener(GRAPH_UI_EVENT_TRIGGER_REGENERATE, this.#onTriggerRegenerate);
         this.#unsubscribe = this.#store.subscribe((nextState) => {
@@ -95,6 +101,7 @@ export class GmAppShell extends LightDomLitElement {
         this.removeEventListener(GRAPH_UI_EVENT_SET_SEARCH_QUERY, this.#onSetSearchQuery);
         this.removeEventListener(GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW, this.#onToggleGraphView);
         this.removeEventListener(GRAPH_UI_EVENT_CYCLE_LABEL_MODE, this.#onCycleLabelMode);
+        this.removeEventListener(GRAPH_UI_EVENT_RESET_DEFAULTS, this.#onResetDefaults);
         this.removeEventListener(GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, this.#onTriggerOpenProject);
         this.removeEventListener(GRAPH_UI_EVENT_TRIGGER_REGENERATE, this.#onTriggerRegenerate);
         this.#unsubscribe?.();
@@ -135,6 +142,10 @@ export class GmAppShell extends LightDomLitElement {
 
     #handleCycleLabelMode(): void {
         this.#store.dispatch({ type: "cycle-label-mode" });
+    }
+
+    #handleResetDefaults(): void {
+        this.#store.dispatch({ type: "reset-defaults" });
     }
 
     #handleTriggerOpenProject(): void {
