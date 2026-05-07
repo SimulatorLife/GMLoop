@@ -27,127 +27,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Refactor } from "../index.js";
-import type {
-    ConfiguredCodemodRunResult,
-    NamingConventionTarget,
-    PartialSemanticAnalyzer,
-    RefactorProjectConfig
-} from "../src/types.js";
+import type { NamingConventionTarget } from "../src/types.js";
+import {
+    buildNamingConventionCodemodExecutor,
+    buildNamingConventionSemanticStub,
+    createSyntheticLocalNamingFixture
+} from "./test-helpers/naming-convention-performance.js";
 import { measureMedianDurationMs } from "./test-helpers/performance-timing.js";
 
 const WRITE_PATH_FILE_COUNT = 400;
 const WRITE_PATH_TARGETS_PER_FILE = 60;
 const WRITE_PATH_PERFORMANCE_THRESHOLD_MS = 1400;
-
-type SyntheticFileFixture = {
-    sourceText: string;
-    targets: Array<NamingConventionTarget>;
-};
-
-function createSyntheticLocalNamingFixture(
-    filePath: string,
-    fileIndex: number,
-    targetsPerFile: number
-): SyntheticFileFixture {
-    const lines: Array<string> = [];
-    const targets: Array<NamingConventionTarget> = [];
-    let offset = 0;
-
-    for (let targetIndex = 0; targetIndex < targetsPerFile; targetIndex += 1) {
-        const currentName = `bad_name_${fileIndex}_${targetIndex}`;
-        const declarationLine = `var ${currentName} = ${targetIndex};\n`;
-        const referenceLine = `show_debug_message(${currentName});\n`;
-        const declarationStart = offset + declarationLine.indexOf(currentName);
-        const referenceStart = offset + declarationLine.length + referenceLine.indexOf(currentName);
-
-        lines.push(declarationLine, referenceLine);
-        targets.push({
-            name: currentName,
-            category: "localVariable",
-            path: filePath,
-            scopeId: `scope:${fileIndex}:${targetIndex}`,
-            symbolId: null,
-            occurrences: [
-                {
-                    path: filePath,
-                    start: declarationStart,
-                    end: declarationStart + currentName.length,
-                    kind: Refactor.OccurrenceKind.DEFINITION,
-                    scopeId: `scope:${fileIndex}:${targetIndex}`
-                },
-                {
-                    path: filePath,
-                    start: referenceStart,
-                    end: referenceStart + currentName.length,
-                    kind: Refactor.OccurrenceKind.REFERENCE,
-                    scopeId: `scope:${fileIndex}:${targetIndex}`
-                }
-            ]
-        });
-
-        offset += declarationLine.length + referenceLine.length;
-    }
-
-    return {
-        sourceText: lines.join(""),
-        targets
-    };
-}
-
-function buildNamingConventionSemanticStub(
-    targetsByFile: Map<string, Array<NamingConventionTarget>>
-): PartialSemanticAnalyzer {
-    return {
-        listNamingConventionTargets: async (filePaths?: Array<string>) => {
-            const selectedPaths = filePaths === undefined ? null : new Set(filePaths);
-            const matchingTargets: Array<NamingConventionTarget> = [];
-
-            for (const [filePath, targets] of targetsByFile.entries()) {
-                const resourcePath = filePath.replace(/\.gml$/i, ".yy");
-                if (selectedPaths !== null && !selectedPaths.has(filePath) && !selectedPaths.has(resourcePath)) {
-                    continue;
-                }
-
-                matchingTargets.push(...targets);
-            }
-
-            return matchingTargets;
-        },
-        validateEdits: async () => ({
-            errors: [],
-            warnings: []
-        })
-    };
-}
-
-function buildNamingConventionCodemodExecutor(
-    engine: InstanceType<typeof Refactor.RefactorEngine>,
-    gmlFilePaths: Array<string>,
-    sourceTexts: Map<string, string>,
-    projectRoot: string
-): () => Promise<ConfiguredCodemodRunResult> {
-    const config: RefactorProjectConfig = {
-        codemods: {
-            namingConvention: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
-                    }
-                }
-            }
-        }
-    };
-
-    return () =>
-        engine.executeConfiguredCodemods({
-            projectRoot,
-            targetPaths: [projectRoot],
-            gmlFilePaths,
-            config,
-            readFile: async (filePath) => sourceTexts.get(filePath) ?? "",
-            dryRun: true
-        });
-}
 
 void test("namingConvention write-path stress test locks in the apply-edit optimisation gain (400 files × 60 targets)", async () => {
     const projectRoot = "/project";

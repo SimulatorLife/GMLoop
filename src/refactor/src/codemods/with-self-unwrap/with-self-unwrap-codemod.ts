@@ -1,5 +1,6 @@
 import { Parser } from "@gmloop/parser";
 
+import { applySourceTextEdits } from "../codemod-helpers.js";
 import type { WithSelfUnwrapCodemodOptions, WithSelfUnwrapEdit, WithSelfUnwrapResult } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -346,33 +347,6 @@ function buildUnwrapEdit(sourceText: string, withNode: Record<string, unknown>):
         end: afterClosingBraceLine,
         text: dedentedBody
     });
-}
-
-// ---------------------------------------------------------------------------
-// Edit application
-// ---------------------------------------------------------------------------
-
-/**
- * Apply a sorted list of non-overlapping edits to `sourceText` in a single
- * forward pass.
- */
-function applySourceTextEdits(sourceText: string, edits: ReadonlyArray<WithSelfUnwrapEdit>): string {
-    if (edits.length === 0) {
-        return sourceText;
-    }
-
-    const sorted = [...edits].toSorted((left, right) => left.start - right.start || left.end - right.end);
-    let result = "";
-    let cursor = 0;
-
-    for (const edit of sorted) {
-        result += sourceText.slice(cursor, edit.start);
-        result += edit.text;
-        cursor = edit.end;
-    }
-
-    result += sourceText.slice(cursor);
-    return result;
 }
 
 // ---------------------------------------------------------------------------
