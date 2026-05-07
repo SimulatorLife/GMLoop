@@ -22,7 +22,7 @@ export class GmAppHeader extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
-    static readonly #TOP_NAV_BUTTON_CLASS = "top-nav-button";
+    static readonly #TOP_NAV_BUTTON_BASE_CLASS = "top-nav-button";
 
     #emitNavigatePage(page: GraphVisualizationUiPage): void {
         this.dispatchEvent(
@@ -71,8 +71,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-graph"
                                     aria-pressed=${this.state.activePage === "graph"}
                                     class=${this.state.activePage === "graph"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_CLASS}
+                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
                                     @click=${() => this.#emitNavigatePage("graph")}
                                 >
                                     Graph Index
@@ -81,8 +81,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-docs"
                                     aria-pressed=${this.state.activePage === "docs"}
                                     class=${this.state.activePage === "docs"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_CLASS}
+                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
                                     @click=${() => this.#emitNavigatePage("docs")}
                                 >
                                     Docs
@@ -91,8 +91,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-config"
                                     aria-pressed=${this.state.activePage === "config"}
                                     class=${this.state.activePage === "config"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_CLASS}
+                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
                                     @click=${() => this.#emitNavigatePage("config")}
                                 >
                                     Config
@@ -101,8 +101,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-playground"
                                     aria-pressed=${this.state.activePage === "playground"}
                                     class=${this.state.activePage === "playground"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_CLASS}
+                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
                                     @click=${() => this.#emitNavigatePage("playground")}
                                 >
                                     Playground
