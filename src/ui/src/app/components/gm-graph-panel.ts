@@ -30,6 +30,16 @@ export class GmGraphPanel extends LightDomLitElement {
 
         return html`
             <section id="graph-page" class=${graphPageClassName}>
+                ${this.state.isRegeneratePending
+                    ? html`
+                          <div class="loading-overlay" role="status" aria-live="polite">
+                              <div class="loading-indicator">
+                                  <span class="loading-spinner" aria-hidden="true"></span>
+                                  <span class="loading-message">Regenerating graph index…</span>
+                              </div>
+                          </div>
+                      `
+                    : null}
                 <svg id="graph" class=${graphClassName}>
                     <defs>
                         <marker

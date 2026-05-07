@@ -58,6 +58,11 @@
     #tooltip div, #tooltip p { overflow-wrap: anywhere; }
     #tooltip p { margin: 8px 0 0 0; }
     #json-view { position: absolute; inset: 0; overflow: auto; margin: 0; padding: 18px 20px 20px; font-size: 12px; background: rgba(5, 10, 19, 0.92); color: #eaeaea; display: none; }
+    .loading-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(8, 14, 24, 0.76); backdrop-filter: blur(8px); z-index: 8; border-radius: 24px; }
+    .loading-indicator { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 28px 36px; background: rgba(11, 19, 32, 0.94); border: 1px solid rgba(89, 195, 195, 0.28); border-radius: 22px; box-shadow: 0 24px 56px rgba(0, 0, 0, 0.36); }
+    .loading-spinner { width: 32px; height: 32px; border: 3px solid rgba(89, 195, 195, 0.22); border-top-color: #59c3c3; border-radius: 50%; animation: graph-loading-spin 0.9s linear infinite; display: block; }
+    @keyframes graph-loading-spin { to { transform: rotate(360deg); } }
+    .loading-message { font-size: 14px; font-weight: 700; color: #f6fbff; letter-spacing: 0.01em; }
     .hidden { display: none !important; }
     #legend { position: absolute; bottom: 20px; right: 20px; background: rgba(11, 19, 32, 0.92); padding: 12px; border: 1px solid rgba(143,181,255,0.12); border-radius: 18px; font-size: 12px; z-index: 10; color: #eef6ff; max-height: 72%; overflow-y: auto; box-shadow: 0 18px 40px rgba(0,0,0,0.28); backdrop-filter: blur(14px); }
     .docs-page { height: 100%; overflow: auto; }
