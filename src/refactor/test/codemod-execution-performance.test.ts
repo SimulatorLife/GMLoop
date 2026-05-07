@@ -34,6 +34,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Refactor } from "../index.js";
+import type { NamingConventionTarget } from "../src/types.js";
 import {
     buildNamingConventionCodemodExecutor,
     buildNamingConventionSemanticStub,
@@ -61,7 +62,7 @@ const PERFORMANCE_THRESHOLD_MS = 1100;
 void test(`end-to-end codemod execution stays within regression threshold (${FILE_COUNT} files × ${TARGETS_PER_FILE} targets = ${TOTAL_EDITS} edits)`, async () => {
     const projectRoot = "/project";
     const sourceTexts = new Map<string, string>();
-    const targetsByFile = new Map<string, import("../src/types.js").NamingConventionTarget[]>();
+    const targetsByFile = new Map<string, NamingConventionTarget[]>();
     const gmlFilePaths = Array.from({ length: FILE_COUNT }, (_, fileIndex) => `scripts/script_${fileIndex}.gml`);
 
     for (const [fileIndex, filePath] of gmlFilePaths.entries()) {

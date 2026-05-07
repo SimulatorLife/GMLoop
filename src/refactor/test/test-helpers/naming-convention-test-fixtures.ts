@@ -7,7 +7,13 @@
  * performance regression tests.
  */
 import { Refactor } from "../../index.js";
-import type { NamingConventionTarget, PartialSemanticAnalyzer, RefactorProjectConfig } from "../../src/types.js";
+import type {
+    ConfiguredCodemodRunResult,
+    NamingConventionTarget,
+    PartialSemanticAnalyzer,
+    RefactorProjectConfig,
+    SymbolOccurrence
+} from "../../src/types.js";
 
 export type SyntheticFileFixture = {
     sourceText: string;
@@ -91,7 +97,7 @@ export function buildSingleTargetOccurrences(
     referenceStart: number,
     nameLength: number,
     scopeId: string
-): Array<import("../../src/types.js").SymbolOccurrence> {
+): Array<SymbolOccurrence> {
     return [
         {
             path: filePath,
@@ -172,7 +178,7 @@ export function buildNamingConventionCodemodExecutor(
     sourceTexts: Map<string, string>,
     projectRoot: string,
     namingConfig?: RefactorProjectConfig["codemods"]["namingConvention"]
-): () => Promise<import("../../src/types.js").ConfiguredCodemodRunResult> {
+): () => Promise<ConfiguredCodemodRunResult> {
     const config: RefactorProjectConfig = {
         codemods: {
             namingConvention: namingConfig ?? DEFAULT_LOCAL_VARIABLE_NAMING_CONFIG
