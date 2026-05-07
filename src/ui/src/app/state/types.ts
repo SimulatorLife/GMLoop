@@ -16,7 +16,7 @@ export type GraphVisualizationUiLabelMode = "auto" | "always" | "hidden";
 /**
  * Documentation sub-views in the docs surface.
  */
-export type GraphVisualizationUiDocsView = "cli" | "mcp";
+export type GraphVisualizationUiDocsView = "cli" | "mcp" | "rules";
 
 /**
  * Immutable UI state for graph/docs/config surfaces.

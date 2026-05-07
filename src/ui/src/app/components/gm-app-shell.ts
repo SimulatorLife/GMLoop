@@ -8,6 +8,10 @@ import {
 import { GraphVisualizationUiStore } from "../state/store.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import {
+    readGraphVisualizationUiStateFromCurrentUrl,
+    replaceGraphVisualizationUiStateInCurrentUrl
+} from "../state/url-state.js";
+import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
@@ -37,7 +41,7 @@ export class GmAppShell extends LightDomLitElement {
 
     #state: GraphVisualizationUiState;
 
-    #store = new GraphVisualizationUiStore();
+    #store: GraphVisualizationUiStore;
 
     #unsubscribe: (() => void) | null = null;
 
@@ -75,6 +79,7 @@ export class GmAppShell extends LightDomLitElement {
 
     public constructor() {
         super();
+        this.#store = new GraphVisualizationUiStore(readGraphVisualizationUiStateFromCurrentUrl());
         this.#state = this.#store.getState();
     }
 
@@ -90,6 +95,7 @@ export class GmAppShell extends LightDomLitElement {
         this.addEventListener(GRAPH_UI_EVENT_TRIGGER_REGENERATE, this.#onTriggerRegenerate);
         this.#unsubscribe = this.#store.subscribe((nextState) => {
             this.#state = nextState;
+            replaceGraphVisualizationUiStateInCurrentUrl(nextState);
             this.requestUpdate();
         });
     }

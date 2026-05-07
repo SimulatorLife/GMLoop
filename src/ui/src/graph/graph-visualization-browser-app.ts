@@ -11,6 +11,11 @@ import type {
 } from "d3";
 import * as d3 from "d3";
 
+import type { GraphVisualizationUiLabelMode, GraphVisualizationUiState } from "../app/state/types.js";
+import {
+    readGraphVisualizationUiStateFromCurrentUrl,
+    replaceGraphVisualizationUiStateInCurrentUrl
+} from "../app/state/url-state.js";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "./graph-visualization-style-metadata.js";
 import type {
     GraphVisualizationData,
@@ -110,6 +115,85 @@ type FilterType =
     | "enum-group"
     | typeof RESOURCE_GROUP_FILTER_TYPE
     | GraphVisualizationEdgeRecord["type"];
+
+const GRAPH_RESOURCE_KINDS = new Set<GraphVisualizationNodeKind>([
+    "anim_curve",
+    "data_file",
+    "extension",
+    "font",
+    "note",
+    "object",
+    "particle_system",
+    "path",
+    "room",
+    "script",
+    "sequence",
+    "shader",
+    "sound",
+    "sprite",
+    "tileset",
+    "timeline"
+]);
+
+const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphVisualizationNodeKind>([
+    "data_file",
+    "enum_member",
+    "function",
+    "global_variable",
+    "instance_variable",
+    "local_variable",
+    "struct_variable"
+]);
+
+const OPEN_PROJECT_BUTTON_LABEL = '<span class="button-content"><span class="button-label">Open...</span></span>';
+const OPENING_PROJECT_BUTTON_LABEL =
+    '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Opening…</span></span>';
+const REGENERATE_BUTTON_LABEL = '<span class="button-content"><span class="button-label">Regenerate</span></span>';
+const REGENERATING_BUTTON_LABEL =
+    '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Regenerating…</span></span>';
+
+function mapUiLabelModeToBrowserLabelMode(labelMode: GraphVisualizationUiLabelMode): "auto" | "off" | "on" {
+    if (labelMode === "always") {
+        return "on";
+    }
+
+    if (labelMode === "hidden") {
+        return "off";
+    }
+
+    return "auto";
+}
+
+function mapBrowserLabelModeToUiLabelMode(labelMode: "auto" | "off" | "on"): GraphVisualizationUiLabelMode {
+    if (labelMode === "on") {
+        return "always";
+    }
+
+    if (labelMode === "off") {
+        return "hidden";
+    }
+
+    return "auto";
+}
+
+function createCurrentGraphVisualizationUiStateSnapshot(
+    activePage: "config" | "docs" | "graph",
+    activeDocsView: "cli" | "mcp" | "rules",
+    activeGraphView: "json" | "visual",
+    labelMode: "auto" | "off" | "on",
+    searchQuery: string
+): GraphVisualizationUiState {
+    return {
+        activeDocsView,
+        activeGraphView,
+        activePage,
+        errorMessage: null,
+        isOpenProjectPending: false,
+        isRegeneratePending: false,
+        labelMode: mapBrowserLabelModeToUiLabelMode(labelMode),
+        searchQuery
+    };
+}
 
 function readGraphTransform(eventValue: D3ZoomEvent<SVGSVGElement, unknown>): GraphTransform {
     const transformValue: ZoomTransform = eventValue.transform;
@@ -377,7 +461,8 @@ function wirePageNavigation(
         rulesMetaText: string;
     },
     applyPageState: () => void,
-    updateDocsViewStateFn: () => void
+    updateDocsViewStateFn: () => void,
+    syncUrlState: () => void
 ): void {
     ["graph", "docs", "config"].forEach((pageValue) => {
         const button = document.getElementById(`tab-${pageValue}`);
@@ -385,6 +470,7 @@ function wirePageNavigation(
             button.addEventListener("click", () => {
                 state.activePage = pageValue as "config" | "docs" | "graph";
                 applyPageState();
+                syncUrlState();
             });
         }
     });
@@ -396,18 +482,21 @@ function wirePageNavigation(
         docsCliButton.addEventListener("click", () => {
             state.activeDocsView = "cli";
             updateDocsViewStateFn();
+            syncUrlState();
         });
     }
     if (docsMcpButton instanceof HTMLButtonElement) {
         docsMcpButton.addEventListener("click", () => {
             state.activeDocsView = "mcp";
             updateDocsViewStateFn();
+            syncUrlState();
         });
     }
     if (docsRulesButton instanceof HTMLButtonElement) {
         docsRulesButton.addEventListener("click", () => {
             state.activeDocsView = "rules";
             updateDocsViewStateFn();
+            syncUrlState();
         });
     }
 }
@@ -656,42 +745,9 @@ function updatePageState(
  * Bootstrap the graph visualization browser application.
  */
 export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependencies): void {
-    const resourceKinds = new Set<GraphVisualizationNodeKind>([
-        "anim_curve",
-        "data_file",
-        "extension",
-        "font",
-        "note",
-        "object",
-        "particle_system",
-        "path",
-        "room",
-        "script",
-        "sequence",
-        "shader",
-        "sound",
-        "sprite",
-        "tileset",
-        "timeline"
-    ]);
-    const defaultDisabledNodeKinds = new Set<GraphVisualizationNodeKind>([
-        "data_file",
-        "enum_member",
-        "function",
-        "global_variable",
-        "instance_variable",
-        "local_variable",
-        "struct_variable"
-    ]);
-    const openButtonLabel = '<span class="button-content"><span class="button-label">Open...</span></span>';
-    const openingButtonLabel =
-        '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Opening…</span></span>';
-    const regenerateButtonLabel = '<span class="button-content"><span class="button-label">Regenerate</span></span>';
-    const regeneratingButtonLabel =
-        '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Regenerating…</span></span>';
+    const initialUiState = readGraphVisualizationUiStateFromCurrentUrl();
     const graphRuntime = d3;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    const { innerHeight: height, innerWidth: width } = globalThis;
     const svg = graphRuntime.select<SVGSVGElement, unknown>("#graph");
     const jsonView = graphRuntime.select<HTMLElement, unknown>("#json-view");
     const container = graphRuntime.select<SVGGElement, unknown>("#container");
@@ -701,13 +757,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     const edgeTypes = Array.from(new Set(dependencies.data.edges.map((edgeValue) => edgeValue.type)));
     const allNodes = dependencies.data.nodes;
     const allNodeKinds = Array.from(new Set(allNodes.map((nodeValue) => nodeValue.kind)));
-    const defaultEnabledNodeKinds = allNodeKinds.filter((kindValue) => !defaultDisabledNodeKinds.has(kindValue));
-    const resourceTypesPresent = allNodeKinds.filter((kindValue) => resourceKinds.has(kindValue));
+    const defaultEnabledNodeKinds = allNodeKinds.filter((kindValue) => !DEFAULT_DISABLED_NODE_KINDS.has(kindValue));
+    const resourceTypesPresent = allNodeKinds.filter((kindValue) => GRAPH_RESOURCE_KINDS.has(kindValue));
     const enumTypesPresent = allNodeKinds.filter((kindValue) => kindValue === "enum" || kindValue === "enum_member");
     const otherTypesPresent = allNodeKinds.filter(
         (kindValue) =>
             kindValue !== "resource" &&
-            !resourceKinds.has(kindValue) &&
+            !GRAPH_RESOURCE_KINDS.has(kindValue) &&
             kindValue !== "enum" &&
             kindValue !== "enum_member"
     );
@@ -715,8 +771,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let currentLoadedTarget = dependencies.loadedTarget;
     const currentProjectConfiguration = dependencies.projectConfigurationCatalog;
     let selectedProjectConfiguration: LoadedProjectConfiguration | null = null;
-    let labelMode: "auto" | "off" | "on" = "auto";
-    let activeGraphView: "json" | "visual" = "visual";
+    let labelMode: "auto" | "off" | "on" = mapUiLabelModeToBrowserLabelMode(initialUiState.labelMode);
+    let activeGraphView: "json" | "visual" = initialUiState.activeGraphView;
     const navigationState: {
         activeDocsView: "cli" | "mcp" | "rules";
         activePage: "config" | "docs" | "graph";
@@ -724,12 +780,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         mcpMetaText: string;
         rulesMetaText: string;
     } = {
-        activeDocsView: "cli",
-        activePage: "graph",
+        activeDocsView: initialUiState.activeDocsView,
+        activePage: initialUiState.activePage,
         cliMetaText: "",
         mcpMetaText: "",
         rulesMetaText: ""
     };
+    let searchQuery = initialUiState.searchQuery;
     let activeFilters = new Set(edgeTypes);
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
     let nodesRaw = cloneGraphNodes(allNodes);
@@ -750,10 +807,25 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let resourceCheckbox: GraphSelectionApi | undefined;
     let enumCheckbox: GraphSelectionApi | undefined;
 
-    const incomingCount = new Map<string, number>();
-    const outgoingCount = new Map<string, number>();
-    const neighborMap = new Map<string, Set<string>>();
+    const graphIndexes = {
+        incomingCount: new Map<string, number>(),
+        neighborMap: new Map<string, Set<string>>(),
+        outgoingCount: new Map<string, number>()
+    };
+    const { incomingCount, neighborMap, outgoingCount } = graphIndexes;
     rebuildGraphIndexes(linksRaw, incomingCount, outgoingCount, neighborMap);
+
+    const syncUrlState = (): void => {
+        replaceGraphVisualizationUiStateInCurrentUrl(
+            createCurrentGraphVisualizationUiStateSnapshot(
+                navigationState.activePage,
+                navigationState.activeDocsView,
+                activeGraphView,
+                labelMode,
+                searchQuery
+            )
+        );
+    };
 
     const zoomBehavior: GraphZoomBehavior = graphRuntime
         .zoom<SVGSVGElement, unknown>()
@@ -761,13 +833,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         .on("zoom", (eventValue) => {
             const transform = readGraphTransform(eventValue);
             container.attr("transform", transform.transformText);
-            if (labelMode === "on") {
-                nodeLabels.style("display", "block");
-            } else if (labelMode === "off") {
-                nodeLabels.style("display", "none");
-            } else {
-                nodeLabels.style("display", transform.k > 0.8 ? "block" : "none");
-            }
+            applyCurrentLabelMode();
         });
     svg.call(zoomBehavior);
 
@@ -824,12 +890,14 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     renderDocumentationCatalog(dependencies, () => updateDocsViewState(navigationState), navigationState);
     renderProjectConfigurationCatalog();
     renderLegend();
-    wirePageNavigation(navigationState, applyPageState, () => updateDocsViewState(navigationState));
+    wirePageNavigation(navigationState, applyPageState, () => updateDocsViewState(navigationState), syncUrlState);
     wireViewControls();
+    applyLabelModeButtonText();
     wireOpenProjectButton();
     wireRegenerateButton();
     applyPageState();
     updateGraph();
+    applySearchQuery(searchQuery, false);
 
     tooltip.on("mouseenter", () => tooltip.classed("visible", true));
     tooltip.on("mouseleave", () => {
@@ -840,11 +908,17 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     svg.on("click", clearFocus);
 
     function wireViewControls(): void {
+        const searchInput = document.getElementById("search");
+        if (searchInput instanceof HTMLInputElement) {
+            searchInput.value = searchQuery;
+        }
+
         const toggleViewButton = document.getElementById("toggle-view");
         if (toggleViewButton instanceof HTMLButtonElement) {
             toggleViewButton.addEventListener("click", () => {
                 activeGraphView = activeGraphView === "visual" ? "json" : "visual";
                 applyGraphViewMode();
+                syncUrlState();
             });
         }
 
@@ -852,16 +926,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         if (toggleLabelsButton instanceof HTMLButtonElement) {
             toggleLabelsButton.addEventListener("click", () => {
                 labelMode = labelMode === "auto" ? "on" : labelMode === "on" ? "off" : "auto";
-                toggleLabelsButton.textContent =
-                    labelMode === "auto" ? "Labels: Auto" : labelMode === "on" ? "Labels: On" : "Labels: Off";
-                const currentTransform = graphRuntime.zoomTransform(svg.node());
-                if (labelMode === "on") {
-                    nodeLabels.style("display", "block");
-                } else if (labelMode === "off") {
-                    nodeLabels.style("display", "none");
-                } else {
-                    nodeLabels.style("display", currentTransform.k > 0.8 ? "block" : "none");
-                }
+                applyLabelModeButtonText();
+                applyCurrentLabelMode();
+                syncUrlState();
             });
         }
 
@@ -870,7 +937,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 zoomBehavior.transform(selection, graphRuntime.zoomIdentity);
             });
             resetGraphStateToDefaults();
+            applyGraphViewMode();
             updateGraph();
+            syncUrlState();
         });
 
         graphRuntime.select("#search").on("input", (eventValue) => {
@@ -878,25 +947,54 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             if (!(currentTarget instanceof HTMLInputElement)) {
                 return;
             }
-
-            const term = currentTarget.value.toLowerCase().trim();
-            searchHighlightNodeIds.clear();
-            focusNodeId = null;
-            hideTooltip();
-
-            if (term.length > 0) {
-                nodesRaw.forEach((nodeValue) => {
-                    if (
-                        nodeValue.name.toLowerCase().includes(term) ||
-                        nodeValue.displayName.toLowerCase().includes(term)
-                    ) {
-                        searchHighlightNodeIds.add(nodeValue.id);
-                    }
-                });
-            }
-
-            applyHighlights();
+            applySearchQuery(currentTarget.value, true);
         });
+    }
+
+    function applyLabelModeButtonText(): void {
+        const toggleLabelsButton = document.getElementById("toggle-labels");
+        if (!(toggleLabelsButton instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        toggleLabelsButton.textContent =
+            labelMode === "auto" ? "Labels: Auto" : labelMode === "on" ? "Labels: On" : "Labels: Off";
+    }
+
+    function applyCurrentLabelMode(): void {
+        const currentTransform = graphRuntime.zoomTransform(svg.node());
+        if (labelMode === "on") {
+            nodeLabels.style("display", "block");
+            return;
+        }
+
+        if (labelMode === "off") {
+            nodeLabels.style("display", "none");
+            return;
+        }
+
+        nodeLabels.style("display", currentTransform.k > 0.8 ? "block" : "none");
+    }
+
+    function applySearchQuery(nextSearchQuery: string, shouldSyncUrl: boolean): void {
+        searchQuery = nextSearchQuery;
+        const term = nextSearchQuery.toLowerCase().trim();
+        searchHighlightNodeIds.clear();
+        focusNodeId = null;
+        hideTooltip();
+
+        if (term.length > 0) {
+            nodesRaw.forEach((nodeValue) => {
+                if (nodeValue.name.toLowerCase().includes(term) || nodeValue.displayName.toLowerCase().includes(term)) {
+                    searchHighlightNodeIds.add(nodeValue.id);
+                }
+            });
+        }
+
+        applyHighlights();
+        if (shouldSyncUrl) {
+            syncUrlState();
+        }
     }
 
     async function loadProjectConfigurationFromFiles(
@@ -1317,7 +1415,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 shapeHtml = `<span style="color:${color}">&#9830;</span>`;
             } else if (
                 typeValue === RESOURCE_GROUP_FILTER_TYPE ||
-                (typeof typeValue === "string" && resourceKinds.has(typeValue as GraphVisualizationNodeKind))
+                (typeof typeValue === "string" && GRAPH_RESOURCE_KINDS.has(typeValue as GraphVisualizationNodeKind))
             ) {
                 shapeHtml = `<span style="color:${color}">&#9632;</span>`;
             }
@@ -1383,6 +1481,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         linksRaw = cloneGraphEdges(dependencies.data.edges);
         activeFilters = new Set(edgeTypes);
         activeNodeFilters = new Set(defaultEnabledNodeKinds);
+        activeGraphView = "visual";
+        labelMode = "auto";
+        searchQuery = "";
         searchHighlightNodeIds.clear();
         focusNodeId = null;
         pinnedTooltipNodeId = null;
@@ -1393,6 +1494,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         if (searchInput instanceof HTMLInputElement) {
             searchInput.value = "";
         }
+
+        applyLabelModeButtonText();
 
         graphRuntime.selectAll("#legend input[type='checkbox']").property("indeterminate", false);
         allNodeKinds.forEach((kindValue) => {
@@ -1507,6 +1610,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             (linkForce as ForceLink<MutableGraphNodeRecord, MutableGraphEdgeRecord>).links(filteredLinks);
         }
         simulation.alpha(0.3).restart();
+        applyCurrentLabelMode();
         applyHighlights();
     }
 
@@ -1515,7 +1619,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         let symbolType = graphRuntime.symbolCircle;
         if (nodeValue.kind.endsWith("_variable")) {
             symbolType = graphRuntime.symbolDiamond;
-        } else if (resourceKinds.has(nodeValue.kind)) {
+        } else if (GRAPH_RESOURCE_KINDS.has(nodeValue.kind)) {
             symbolType = graphRuntime.symbolSquare;
         }
         return graphRuntime.symbol().type(symbolType).size(symbolArea)() ?? "";
@@ -1663,11 +1767,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         focusNodeId = null;
         hideTooltip();
         searchHighlightNodeIds.clear();
+        searchQuery = "";
         const searchInput = document.getElementById("search");
         if (searchInput instanceof HTMLInputElement) {
             searchInput.value = "";
         }
         applyHighlights();
+        syncUrlState();
     }
 
     function applyHighlights(): void {
@@ -1712,7 +1818,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         openProjectButton.on("click", () => {
             void (async () => {
                 const button = graphRuntime.select("#open-project");
-                button.attr("disabled", "true").html(openingButtonLabel);
+                button.attr("disabled", "true").html(OPENING_PROJECT_BUTTON_LABEL);
                 try {
                     if (dependencies.isServerMode) {
                         const openResponse = await fetch("/api/open", {
@@ -1727,7 +1833,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                             globalThis.location.reload();
                             return;
                         }
-                        button.attr("disabled", null).html(openButtonLabel);
+                        button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);
                         return;
                     }
 
@@ -1736,7 +1842,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                         selectedFiles = await dependencies.directoryOpen({ recursive: true });
                     } catch (error) {
                         if (readErrorName(error) === "AbortError") {
-                            button.attr("disabled", null).html(openButtonLabel);
+                            button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);
                             return;
                         }
                         console.warn("Directory picker failed, falling back to file picker:", error);
@@ -1752,7 +1858,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                     }
 
                     if (selectedFiles.length === 0) {
-                        button.attr("disabled", null).html(openButtonLabel);
+                        button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);
                         return;
                     }
 
@@ -1771,7 +1877,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                     selectedProjectConfiguration = await loadProjectConfigurationFromFiles(selectedFiles);
                     renderLoadedTargetSummary(currentLoadedTarget);
                     renderProjectConfigurationCatalog();
-                    button.attr("disabled", null).html(openButtonLabel);
+                    button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);
                 } catch (error) {
                     console.error("Open project failed:", error);
                     button
@@ -1789,7 +1895,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         graphRuntime.select("#regenerate").on("click", () => {
             void (async () => {
                 const button = graphRuntime.select("#regenerate");
-                button.attr("disabled", "true").html(regeneratingButtonLabel);
+                button.attr("disabled", "true").html(REGENERATING_BUTTON_LABEL);
                 try {
                     const response = await fetch("/api/reindex", { method: "POST" });
                     if (response.ok) {
@@ -1798,7 +1904,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                             globalThis.location.reload();
                             return;
                         }
-                        button.attr("disabled", null).html(regenerateButtonLabel);
+                        button.attr("disabled", null).html(REGENERATE_BUTTON_LABEL);
                         return;
                     }
                     const responseText = await response.text();

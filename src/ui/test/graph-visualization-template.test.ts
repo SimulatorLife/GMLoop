@@ -126,6 +126,8 @@ void test("graph visualization module script embeds workspace rule catalogs when
     assert.match(script, /workspaceRules/u);
     assert.match(script, /gml\/test-rule/u);
     assert.match(script, /refactor\/test-codemod/u);
+    assert.match(script, /parseGraphVisualizationUiStateFromUrlSearch/u);
+    assert.match(script, /replaceGraphVisualizationUiStateInCurrentUrl/u);
 });
 
 void test("graph visualization css asset preserves core visual affordances", () => {
