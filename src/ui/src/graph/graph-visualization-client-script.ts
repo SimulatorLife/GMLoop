@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "./graph-visualization-style-metadata.js";
 
 const GRAPH_VISUALIZATION_BROWSER_APP_MODULE_FILE_NAME = "graph-visualization-browser-app.js";
+const GRAPH_VISUALIZATION_UI_REDUCER_MODULE_FILE_NAME = "reducer.js";
 const GRAPH_VISUALIZATION_URL_STATE_MODULE_FILE_NAME = "url-state.js";
 
 function readGraphVisualizationModuleSource(
@@ -58,6 +59,17 @@ function readGraphVisualizationUrlStateModuleSource(): string {
     );
 }
 
+function readGraphVisualizationUiReducerModuleSource(): string {
+    const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+    return readGraphVisualizationModuleSource(
+        [
+            path.resolve(moduleDirectory, "../app/state", GRAPH_VISUALIZATION_UI_REDUCER_MODULE_FILE_NAME),
+            path.resolve(moduleDirectory, "../../src/app/state", GRAPH_VISUALIZATION_UI_REDUCER_MODULE_FILE_NAME)
+        ],
+        "function createInitialGraphVisualizationUiState"
+    );
+}
+
 /**
  * Render the browser module source that boots the graph visualization application.
  */
@@ -80,6 +92,8 @@ export function renderGraphVisualizationClientScript(
         "window.__GMLOOP_DOCUMENTATION_CATALOGS__ = graphVisualizationDocumentationCatalogs;",
         "window.__GMLOOP_LOADED_TARGET__ = graphVisualizationLoadedTarget;",
         "window.__GMLOOP_PROJECT_CONFIGURATION__ = graphVisualizationProjectConfigurationCatalog;",
+        "",
+        readGraphVisualizationUiReducerModuleSource(),
         "",
         readGraphVisualizationUrlStateModuleSource(),
         "",

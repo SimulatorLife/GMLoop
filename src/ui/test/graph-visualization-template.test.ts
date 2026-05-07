@@ -126,6 +126,7 @@ void test("graph visualization module script embeds workspace rule catalogs when
     assert.match(script, /workspaceRules/u);
     assert.match(script, /gml\/test-rule/u);
     assert.match(script, /refactor\/test-codemod/u);
+    assert.match(script, /function createInitialGraphVisualizationUiState/u);
     assert.match(script, /parseGraphVisualizationUiStateFromUrlSearch/u);
     assert.match(script, /replaceGraphVisualizationUiStateInCurrentUrl/u);
 });
@@ -149,6 +150,14 @@ void test("graph visualization server-mode html includes regenerate affordance",
 
     assert.match(html, /id="regenerate"/u);
     assert.match(html, /button-label">Regenerate<\/span>/u);
+});
+
+void test("graph visualization bundle includes a graph empty state for no-project sessions", () => {
+    const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "Empty State" });
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.match(html, /id="graph-empty-state"/u);
+    assert.match(html, /Open a GameMaker project to start exploring the graph/u);
 });
 
 void test("renderGraphVisualizationHtml returns the bundle entry html", () => {

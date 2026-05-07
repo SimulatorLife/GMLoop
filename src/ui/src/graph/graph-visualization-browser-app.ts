@@ -408,6 +408,62 @@ function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoaded
     loadedTargetDetailsElement.append(detailText);
 }
 
+function updateGraphInteractionAvailability(
+    hasGraphData: boolean,
+    hasLoadedProject: boolean,
+    isServerMode: boolean
+): void {
+    const searchInput = document.getElementById("search");
+    const toggleViewButton = document.getElementById("toggle-view");
+    const toggleLabelsButton = document.getElementById("toggle-labels");
+    const resetDefaultButton = document.getElementById("reset-default");
+    const regenerateButton = document.getElementById("regenerate");
+    const emptyStateElement = document.getElementById("graph-empty-state");
+    if (
+        !(searchInput instanceof HTMLInputElement) ||
+        !(toggleViewButton instanceof HTMLButtonElement) ||
+        !(toggleLabelsButton instanceof HTMLButtonElement) ||
+        !(resetDefaultButton instanceof HTMLButtonElement) ||
+        !(emptyStateElement instanceof HTMLElement)
+    ) {
+        return;
+    }
+
+    const shouldDisableGraphControls = !hasGraphData;
+    searchInput.disabled = shouldDisableGraphControls;
+    toggleViewButton.disabled = shouldDisableGraphControls;
+    toggleLabelsButton.disabled = shouldDisableGraphControls;
+    resetDefaultButton.disabled = shouldDisableGraphControls;
+    if (regenerateButton instanceof HTMLButtonElement) {
+        regenerateButton.disabled = isServerMode && !hasLoadedProject;
+    }
+
+    if (hasGraphData) {
+        emptyStateElement.classList.add("hidden");
+        emptyStateElement.setAttribute("aria-hidden", "true");
+        return;
+    }
+
+    const titleElement = emptyStateElement.querySelector("strong");
+    const descriptionElement = emptyStateElement.querySelector("p");
+    if (!(titleElement instanceof HTMLElement) || !(descriptionElement instanceof HTMLElement)) {
+        return;
+    }
+
+    if (hasLoadedProject) {
+        titleElement.textContent = "No graph nodes are available for the current project.";
+        descriptionElement.textContent =
+            "Rebuild the graph index or load a different target to inspect semantic graph data here.";
+    } else {
+        titleElement.textContent = "Open a GameMaker project to start exploring the graph.";
+        descriptionElement.textContent =
+            "Use Open... to load a project, then return here for graph search, filters, and visualization controls.";
+    }
+
+    emptyStateElement.classList.remove("hidden");
+    emptyStateElement.setAttribute("aria-hidden", "false");
+}
+
 function updateDocsViewState(
     state: Readonly<{
         activeDocsView: "cli" | "mcp" | "rules";
@@ -741,6 +797,51 @@ function updatePageState(
     state.jsonView.classed("hidden", true).style("display", "none");
 }
 
+type GraphVisualizationSurfaceInitializer = Readonly<{
+    applyLabelModeButtonText: () => void;
+    applyPageState: () => void;
+    applySearchQuery: (nextSearchQuery: string, shouldSyncUrlState: boolean) => void;
+    currentLoadedTarget: GraphVisualizationLoadedTarget | null;
+    currentSearchQuery: string;
+    dependencies: BrowserAppDependencies;
+    hasGraphData: boolean;
+    navigationState: {
+        activeDocsView: "cli" | "mcp" | "rules";
+        activePage: "config" | "docs" | "graph";
+        cliMetaText: string;
+        mcpMetaText: string;
+        rulesMetaText: string;
+    };
+    renderLegend: () => void;
+    renderProjectConfigurationCatalog: () => void;
+    syncUrlState: () => void;
+    updateDocsViewState: () => void;
+    updateGraph: () => void;
+    wireOpenProjectButton: () => void;
+    wireRegenerateButton: () => void;
+    wireViewControls: () => void;
+}>;
+
+function initializeGraphVisualizationSurface(state: GraphVisualizationSurfaceInitializer): void {
+    renderLoadedTargetSummary(state.currentLoadedTarget);
+    updateGraphInteractionAvailability(
+        state.hasGraphData,
+        state.currentLoadedTarget !== null,
+        state.dependencies.isServerMode
+    );
+    renderDocumentationCatalog(state.dependencies, state.updateDocsViewState, state.navigationState);
+    state.renderProjectConfigurationCatalog();
+    state.renderLegend();
+    wirePageNavigation(state.navigationState, state.applyPageState, state.updateDocsViewState, state.syncUrlState);
+    state.wireViewControls();
+    state.applyLabelModeButtonText();
+    state.wireOpenProjectButton();
+    state.wireRegenerateButton();
+    state.applyPageState();
+    state.updateGraph();
+    state.applySearchQuery(state.currentSearchQuery, false);
+}
+
 /**
  * Bootstrap the graph visualization browser application.
  */
@@ -886,18 +987,24 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         );
     };
 
-    renderLoadedTargetSummary(currentLoadedTarget);
-    renderDocumentationCatalog(dependencies, () => updateDocsViewState(navigationState), navigationState);
-    renderProjectConfigurationCatalog();
-    renderLegend();
-    wirePageNavigation(navigationState, applyPageState, () => updateDocsViewState(navigationState), syncUrlState);
-    wireViewControls();
-    applyLabelModeButtonText();
-    wireOpenProjectButton();
-    wireRegenerateButton();
-    applyPageState();
-    updateGraph();
-    applySearchQuery(searchQuery, false);
+    initializeGraphVisualizationSurface({
+        applyLabelModeButtonText,
+        applyPageState,
+        applySearchQuery,
+        currentLoadedTarget,
+        currentSearchQuery: searchQuery,
+        dependencies,
+        hasGraphData: nodesRaw.length > 0,
+        navigationState,
+        renderLegend,
+        renderProjectConfigurationCatalog,
+        syncUrlState,
+        updateDocsViewState: () => updateDocsViewState(navigationState),
+        updateGraph,
+        wireOpenProjectButton,
+        wireRegenerateButton,
+        wireViewControls
+    });
 
     tooltip.on("mouseenter", () => tooltip.classed("visible", true));
     tooltip.on("mouseleave", () => {
@@ -1876,6 +1983,11 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                     });
                     selectedProjectConfiguration = await loadProjectConfigurationFromFiles(selectedFiles);
                     renderLoadedTargetSummary(currentLoadedTarget);
+                    updateGraphInteractionAvailability(
+                        nodesRaw.length > 0,
+                        currentLoadedTarget !== null,
+                        dependencies.isServerMode
+                    );
                     renderProjectConfigurationCatalog();
                     button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);
                 } catch (error) {
