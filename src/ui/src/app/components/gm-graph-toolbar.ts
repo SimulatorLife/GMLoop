@@ -5,10 +5,12 @@ import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
+    GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
+    type GraphUiNavigatePageDetail,
     type GraphUiSetSearchQueryDetail
 } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -68,6 +70,21 @@ export class GmGraphToolbar extends LightDomLitElement {
                 this.#emitResetDefaults();
                 break;
             }
+            case "1": {
+                event.preventDefault();
+                this.#emitNavigatePage("graph");
+                break;
+            }
+            case "2": {
+                event.preventDefault();
+                this.#emitNavigatePage("docs");
+                break;
+            }
+            case "3": {
+                event.preventDefault();
+                this.#emitNavigatePage("config");
+                break;
+            }
         }
     };
 
@@ -114,6 +131,16 @@ export class GmGraphToolbar extends LightDomLitElement {
             new CustomEvent(GRAPH_UI_EVENT_CYCLE_LABEL_MODE, {
                 bubbles: true,
                 composed: true
+            })
+        );
+    }
+
+    #emitNavigatePage(page: "graph" | "docs" | "config"): void {
+        this.dispatchEvent(
+            new CustomEvent<GraphUiNavigatePageDetail>(GRAPH_UI_EVENT_NAVIGATE_PAGE, {
+                bubbles: true,
+                composed: true,
+                detail: { page }
             })
         );
     }
