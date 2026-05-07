@@ -177,7 +177,7 @@ function mapBrowserLabelModeToUiLabelMode(labelMode: "auto" | "off" | "on"): Gra
 }
 
 function createCurrentGraphVisualizationUiStateSnapshot(
-    activePage: "config" | "docs" | "graph",
+    activePage: "config" | "docs" | "graph" | "playground",
     activeDocsView: "cli" | "mcp" | "rules",
     activeGraphView: "json" | "visual",
     labelMode: "auto" | "off" | "on",
@@ -569,7 +569,7 @@ function updateDocsViewState(
 function wirePageNavigation(
     state: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph";
+        activePage: "config" | "docs" | "graph" | "playground";
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;
@@ -578,11 +578,11 @@ function wirePageNavigation(
     updateDocsViewStateFn: () => void,
     syncUrlState: () => void
 ): void {
-    ["graph", "docs", "config"].forEach((pageValue) => {
+    ["graph", "docs", "config", "playground"].forEach((pageValue) => {
         const button = document.getElementById(`tab-${pageValue}`);
         if (button instanceof HTMLButtonElement) {
             button.addEventListener("click", () => {
-                state.activePage = pageValue as "config" | "docs" | "graph";
+                state.activePage = pageValue as "config" | "docs" | "graph" | "playground";
                 applyPageState();
                 syncUrlState();
             });
@@ -799,7 +799,7 @@ function updateGraphViewMode(
 
 function updatePageState(
     state: Readonly<{
-        activePage: "config" | "docs" | "graph";
+        activePage: "config" | "docs" | "graph" | "playground";
         graphRuntime: typeof d3;
         jsonView: GraphSelectionApi;
         svg: GraphSelectionApi;
@@ -809,7 +809,8 @@ function updatePageState(
     [
         { buttonId: "tab-graph", pageId: "graph-page", pageValue: "graph" },
         { buttonId: "tab-docs", pageId: "docs-page", pageValue: "docs" },
-        { buttonId: "tab-config", pageId: "config-page", pageValue: "config" }
+        { buttonId: "tab-config", pageId: "config-page", pageValue: "config" },
+        { buttonId: "tab-playground", pageId: "playground-page", pageValue: "playground" }
     ].forEach((entry) => {
         const button = document.getElementById(entry.buttonId);
         const page = document.getElementById(entry.pageId);
@@ -839,6 +840,11 @@ function updatePageState(
         updateGraphViewModeFn();
         return;
     }
+    if (state.activePage === "playground") {
+        toolbarHeading.textContent = "Playground";
+        toolbarSubheading.textContent = "Interactive GML playground for parsing, formatting, and rule experiments.";
+        return;
+    }
     if (state.activePage === "docs") {
         toolbarHeading.textContent = "Docs";
         toolbarSubheading.textContent =
@@ -865,7 +871,7 @@ type GraphVisualizationSurfaceInitializer = Readonly<{
     hasGraphData: boolean;
     navigationState: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph";
+        activePage: "config" | "docs" | "graph" | "playground";
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;
@@ -934,7 +940,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let activeGraphView: "json" | "visual" = initialUiState.activeGraphView;
     const navigationState: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph";
+        activePage: "config" | "docs" | "graph" | "playground";
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;

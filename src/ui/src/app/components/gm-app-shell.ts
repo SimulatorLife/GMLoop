@@ -176,6 +176,7 @@ export class GmAppShell extends LightDomLitElement {
                     : null}
                 <main>
                     <gm-graph-panel .model=${this.model} .state=${this.#state}></gm-graph-panel>
+                    <gm-playground-panel .model=${this.model} .state=${this.#state}></gm-playground-panel>
                     <gm-docs-panel .model=${this.model} .state=${this.#state}></gm-docs-panel>
                     <gm-config-panel .model=${this.model} .state=${this.#state}></gm-config-panel>
                 </main>

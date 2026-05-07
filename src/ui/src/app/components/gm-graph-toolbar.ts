@@ -2,7 +2,7 @@ import { html } from "lit";
 import { ref } from "lit/directives/ref.js";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
-import type { GraphVisualizationUiState } from "../state/types.js";
+import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
@@ -85,6 +85,11 @@ export class GmGraphToolbar extends LightDomLitElement {
                 this.#emitNavigatePage("config");
                 break;
             }
+            case "4": {
+                event.preventDefault();
+                this.#emitNavigatePage("playground");
+                break;
+            }
         }
     };
 
@@ -135,7 +140,7 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
-    #emitNavigatePage(page: "graph" | "docs" | "config"): void {
+    #emitNavigatePage(page: GraphVisualizationUiPage): void {
         this.dispatchEvent(
             new CustomEvent<GraphUiNavigatePageDetail>(GRAPH_UI_EVENT_NAVIGATE_PAGE, {
                 bubbles: true,
@@ -169,13 +174,21 @@ export class GmGraphToolbar extends LightDomLitElement {
         }
 
         const heading =
-            this.state.activePage === "graph" ? "Graph Index" : this.state.activePage === "docs" ? "Docs" : "Config";
+            this.state.activePage === "graph"
+                ? "Graph Index"
+                : this.state.activePage === "docs"
+                  ? "Docs"
+                  : this.state.activePage === "config"
+                    ? "Config"
+                    : "Playground";
         const subheading =
             this.state.activePage === "graph"
                 ? "Interactive graph exploration controls for the current graph index."
                 : this.state.activePage === "docs"
                   ? "CLI, MCP, and workspace rule catalogs generated from the active workspace."
-                  : "Project and tooling configuration metadata loaded for the active root.";
+                  : this.state.activePage === "config"
+                    ? "Project and tooling configuration metadata loaded for the active root."
+                    : "Interactive GML playground for parsing, formatting, and rule experiments.";
 
         const graphControlsClassName =
             this.state.activePage === "graph" ? "toolbar-controls" : "toolbar-controls hidden";

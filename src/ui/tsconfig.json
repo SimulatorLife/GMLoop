@@ -1,7 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": ".",
     "types": ["node"],
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "outDir": "./dist",
@@ -22,6 +21,13 @@
       "@gmloop/ui": ["./index.ts"]
     }
   },
+  "references": [
+    { "path": "../core" },
+    { "path": "../parser" },
+    { "path": "../format" },
+    { "path": "../refactor" },
+    { "path": "../lint" }
+  ],
   "include": ["index.ts", "src/**/*.ts", "test/**/*.ts"],
   "exclude": ["dist", "tmp", "node_modules"]
 }

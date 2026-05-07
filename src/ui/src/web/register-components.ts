@@ -7,8 +7,8 @@ import {
     GmConfigPanel,
     GmDocsPanel,
     GmGraphPanel,
-    GmGraphToolbar
-} from "../app/components/index.js";
+    GmGraphToolbar,
+    GmPlaygroundPanel} from "../app/components/index.js";
 
 function defineCustomElementOnce(name: string, constructorValue: CustomElementConstructor): void {
     if (!customElements.get(name)) {
@@ -26,6 +26,7 @@ export function registerGraphVisualizationCustomElements(): void {
     defineCustomElementOnce("gm-app-header", GmAppHeader);
     defineCustomElementOnce("gm-graph-toolbar", GmGraphToolbar);
     defineCustomElementOnce("gm-graph-panel", GmGraphPanel);
+    defineCustomElementOnce("gm-playground-panel", GmPlaygroundPanel);
     defineCustomElementOnce("gm-docs-panel", GmDocsPanel);
     defineCustomElementOnce("gm-config-panel", GmConfigPanel);
     defineCustomElementOnce("gm-app-shell", GmAppShell);
