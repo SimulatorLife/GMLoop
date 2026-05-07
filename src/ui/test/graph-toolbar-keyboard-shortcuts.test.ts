@@ -48,6 +48,20 @@ void test("reduceGraphVisualizationUiState with set-search-query updates searchQ
     assert.equal(updated.searchQuery, "script_test");
 });
 
+void test("reduceGraphVisualizationUiState with navigate-page updates activePage", () => {
+    const state = createInitialGraphVisualizationUiState();
+    assert.equal(state.activePage, "graph");
+
+    const docsPage = reduceGraphVisualizationUiState(state, { page: "docs", type: "navigate-page" });
+    assert.equal(docsPage.activePage, "docs");
+
+    const configPage = reduceGraphVisualizationUiState(docsPage, { page: "config", type: "navigate-page" });
+    assert.equal(configPage.activePage, "config");
+
+    const graphPage = reduceGraphVisualizationUiState(configPage, { page: "graph", type: "navigate-page" });
+    assert.equal(graphPage.activePage, "graph");
+});
+
 void test("reduceGraphVisualizationUiState preserves non-reset fields on reset-defaults", () => {
     const state = reduceGraphVisualizationUiState(createInitialGraphVisualizationUiState(), {
         page: "docs",
