@@ -53,6 +53,24 @@ void test("resource locator prefers the generated package manifest when present"
     }
 });
 
+void test("resource locator ignores stale generated package manifest paths", () => {
+    const fixture = createTemporaryCoreWorkspaceFixture();
+
+    try {
+        writeFileSync(
+            path.join(fixture.packageDirectoryPath, "resource-directory.json"),
+            JSON.stringify({ resourceDirectory: path.join(fixture.fixtureRootPath, "missing-resources") }, null, 2)
+        );
+
+        assert.equal(
+            __resolveBundledResourceBaseDirectoryForTests(fixture.nestedModuleDirectoryPath),
+            fixture.repositoryResourceDirectoryPath
+        );
+    } finally {
+        rmSync(fixture.fixtureRootPath, { force: true, recursive: true });
+    }
+});
+
 void test("resource locator falls back to the repository resources directory when no manifest exists", () => {
     const fixture = createTemporaryCoreWorkspaceFixture();
 
