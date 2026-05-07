@@ -13,7 +13,7 @@ import {
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
-const { getNodeStartIndex, getNodeEndIndex, unwrapParenthesizedExpression: unwrapParenthesized } = Core;
+const { compactArray, getNodeStartIndex, getNodeEndIndex, unwrapParenthesizedExpression: unwrapParenthesized } = Core;
 
 type LeadingArgumentFallback = Readonly<{
     parameterName: string;
@@ -230,7 +230,7 @@ function splitTopLevelCommaSegments(text: string): string[] {
         current += char;
     }
     segments.push(current.trim());
-    return segments.filter(Boolean);
+    return compactArray(segments) as string[];
 }
 
 function expandEditRangeToWholeLines(sourceText: string, start: number, end: number): { start: number; end: number } {
