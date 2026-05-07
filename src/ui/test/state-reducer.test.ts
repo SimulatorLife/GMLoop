@@ -26,17 +26,24 @@ void test("reset-defaults restores visual view, auto labels, and clears search q
     assert.equal(state.errorMessage, "something went wrong");
 });
 
+void test("reduceGraphVisualizationUiState with set-docs-view accepts the rules catalog subview", () => {
+    const state = createInitialGraphVisualizationUiState();
+    const updated = reduceGraphVisualizationUiState(state, { docsView: "rules", type: "set-docs-view" });
+
+    assert.equal(updated.activeDocsView, "rules");
+});
+
 void test("reset-defaults does not change other state fields beyond the targeted reset values", () => {
     const initialState = reduceGraphVisualizationUiState(createInitialGraphVisualizationUiState(), {
         page: "docs",
         type: "navigate-page"
     });
-    const docsState = reduceGraphVisualizationUiState(initialState, { docsView: "mcp", type: "set-docs-view" });
+    const docsState = reduceGraphVisualizationUiState(initialState, { docsView: "rules", type: "set-docs-view" });
 
     const afterReset = reduceGraphVisualizationUiState(docsState, { type: "reset-defaults" });
 
     assert.equal(afterReset.activePage, "docs");
-    assert.equal(afterReset.activeDocsView, "mcp");
+    assert.equal(afterReset.activeDocsView, "rules");
 });
 
 void test("reset-defaults on a state already at defaults is a no-op identity", () => {

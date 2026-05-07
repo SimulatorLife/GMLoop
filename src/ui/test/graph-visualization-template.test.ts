@@ -48,6 +48,10 @@ void test("graph visualization entry html references local assets and avoids CDN
     assert.doesNotMatch(html, /<link[^>]+href="https?:\/\//u);
     assert.match(html, /id="docs-view-rules"/u);
     assert.match(html, /id="loaded-target-details"/u);
+    assert.match(html, /class="project-context"/u);
+    assert.match(html, /aria-label="Open GMLoop GitHub repository"/u);
+    assert.match(html, /class="github-link-icon"/u);
+    assert.doesNotMatch(html, />GitHub Repo</u);
 });
 
 void test("graph visualization module script embeds serialized graph payload and boot logic", () => {
@@ -126,6 +130,11 @@ void test("graph visualization module script embeds workspace rule catalogs when
     assert.match(script, /workspaceRules/u);
     assert.match(script, /gml\/test-rule/u);
     assert.match(script, /refactor\/test-codemod/u);
+    assert.match(script, /function createInitialGraphVisualizationUiState/u);
+    assert.match(script, /parseGraphVisualizationUiStateFromUrlSearch/u);
+    assert.match(script, /replaceGraphVisualizationUiStateInCurrentUrl/u);
+    assert.match(script, /Workspace configuration snapshot/u);
+    assert.match(script, /Resolved Workspace Views/u);
 });
 
 void test("graph visualization css asset preserves core visual affordances", () => {
@@ -147,6 +156,14 @@ void test("graph visualization server-mode html includes regenerate affordance",
 
     assert.match(html, /id="regenerate"/u);
     assert.match(html, /button-label">Regenerate<\/span>/u);
+});
+
+void test("graph visualization bundle includes a graph empty state for no-project sessions", () => {
+    const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "Empty State" });
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.match(html, /id="graph-empty-state"/u);
+    assert.match(html, /Open a GameMaker project to start exploring the graph/u);
 });
 
 void test("renderGraphVisualizationHtml returns the bundle entry html", () => {

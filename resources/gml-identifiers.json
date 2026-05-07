@@ -3,7 +3,7 @@
     "manualRoot": "vendor/GameMaker-Manual",
     "packageName": null,
     "packageVersion": null,
-    "manualCommitHash": "ad82e491ccc687977d824b0cfa69a400000c1eb3"
+    "manualCommitHash": "ad82e491ccc687977d824b0cfa69a400000c1eb3",
   },
   "identifiers": {
     "abs": {
