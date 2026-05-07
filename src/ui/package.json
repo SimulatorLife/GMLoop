@@ -22,8 +22,7 @@
   "dependencies": {
     "browser-fs-access": "^0.38.0",
     "d3": "^7.9.0",
-    "lit": "^3.3.1",
-    "prettier": "^3.6.2"
+    "lit": "^3.3.1"
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",
