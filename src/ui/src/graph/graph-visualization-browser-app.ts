@@ -362,6 +362,64 @@ function createConfigCard(title: string, descriptionText: string, children: Read
     return card;
 }
 
+function createConfigSection(
+    eyebrowText: string,
+    title: string,
+    descriptionText: string,
+    children: ReadonlyArray<HTMLElement>
+): HTMLElement {
+    const section = document.createElement("section");
+    section.className = "config-section";
+
+    const header = document.createElement("div");
+    header.className = "config-section-header";
+
+    const eyebrow = document.createElement("span");
+    eyebrow.className = "config-section-eyebrow";
+    eyebrow.textContent = eyebrowText;
+    header.append(eyebrow);
+
+    const heading = document.createElement("h2");
+    heading.className = "config-section-title";
+    heading.textContent = title;
+    header.append(heading);
+
+    const description = document.createElement("p");
+    description.className = "config-section-description";
+    description.textContent = descriptionText;
+    header.append(description);
+
+    section.append(header);
+
+    const body = document.createElement("div");
+    body.className = "config-section-body";
+    children.forEach((child) => body.append(child));
+    section.append(body);
+
+    return section;
+}
+
+function createConfigSummaryMetric(
+    labelText: string,
+    valueText: string,
+    tone: "default" | "accent" = "default"
+): HTMLElement {
+    const metric = document.createElement("div");
+    metric.className = `config-summary-metric${tone === "accent" ? " config-summary-metric-accent" : ""}`;
+
+    const label = document.createElement("span");
+    label.className = "config-summary-label";
+    label.textContent = labelText;
+    metric.append(label);
+
+    const value = document.createElement("strong");
+    value.className = "config-summary-value";
+    value.textContent = valueText;
+    metric.append(value);
+
+    return metric;
+}
+
 function createBadge(labelText: string): HTMLSpanElement {
     const badge = document.createElement("span");
     badge.className = "config-badge";
@@ -1235,6 +1293,35 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                     : "No gmloop.json was found for the active selection. Defaults and registered workspace metadata are shown where available."
                 : "Loaded project configuration from the selected project.";
 
+        const summaryPanel = document.createElement("section");
+        summaryPanel.className = "config-summary-panel";
+        const summaryHeader = document.createElement("div");
+        summaryHeader.className = "config-summary-header";
+        const summaryTitle = document.createElement("h2");
+        summaryTitle.className = "config-summary-title";
+        summaryTitle.textContent = "Workspace configuration snapshot";
+        summaryHeader.append(summaryTitle);
+        const summaryDescription = document.createElement("p");
+        summaryDescription.className = "config-summary-description";
+        summaryDescription.textContent =
+            selectedProjectConfiguration === null
+                ? "The Config page combines the active project file, repository context, and the workspace-resolved format, lint, and refactor views."
+                : "The Config page combines the selected project file contents with workspace-resolved format, lint, and refactor views.";
+        summaryHeader.append(summaryDescription);
+        summaryPanel.append(summaryHeader);
+
+        const summaryMetrics = document.createElement("div");
+        summaryMetrics.className = "config-summary-metrics";
+        summaryMetrics.append(
+            createConfigSummaryMetric("gmloop.json", gmloopConfig.exists ? "Loaded" : "Defaults", "accent"),
+            createConfigSummaryMetric("Project Root", gmloopConfig.projectRoot || "(none)"),
+            createConfigSummaryMetric("Format Entries", String(effectiveConfiguration.format.entries.length)),
+            createConfigSummaryMetric("Lint Rules", String(effectiveConfiguration.lint.rules.length)),
+            createConfigSummaryMetric("Codemods", String(effectiveConfiguration.refactor.codemods.length))
+        );
+        summaryPanel.append(summaryMetrics);
+        configContentElement.append(summaryPanel);
+
         const overviewGrid = document.createElement("div");
         overviewGrid.className = "config-grid";
         const gmloopRaw = document.createElement("pre");
@@ -1263,7 +1350,14 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 repositoryLink
             ])
         );
-        configContentElement.append(overviewGrid);
+        configContentElement.append(
+            createConfigSection(
+                "Project Inputs",
+                "Source files and repository context",
+                "These cards stay close to the raw project inputs so it is obvious which values come from the selected project versus workspace defaults.",
+                [overviewGrid]
+            )
+        );
 
         if (selectedProjectConfiguration !== null) {
             const selectedConfigContainer = document.createElement("div");
@@ -1294,7 +1388,14 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             });
 
             if (selectedConfigContainer.children.length > 0) {
-                configContentElement.append(selectedConfigContainer);
+                configContentElement.append(
+                    createConfigSection(
+                        "Selected Files",
+                        "Loaded formatter and lint files",
+                        "When a project is opened directly in the browser, these cards show the raw config files that were discovered from that selection.",
+                        [selectedConfigContainer]
+                    )
+                );
             }
         }
 
@@ -1305,7 +1406,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 createConfigItem(entry.name, entry.description, JSON.stringify(entry.value, null, 2), [entry.source])
             );
         });
-        configContentElement.append(
+        const resolvedWorkspaceGrid = document.createElement("div");
+        resolvedWorkspaceGrid.className = "config-grid config-grid-wide";
+        resolvedWorkspaceGrid.append(
             createConfigCard("Format / Prettier", "Formatter-owned options sourced from the format workspace.", [
                 formatList
             ])
@@ -1322,7 +1425,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 createConfigItem(entry.ruleId, entry.description, JSON.stringify(entry.options, null, 2), badges)
             );
         });
-        configContentElement.append(
+        resolvedWorkspaceGrid.append(
             createConfigCard(
                 "Lint",
                 effectiveConfiguration.lint.ruleset === null
@@ -1343,10 +1446,18 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 createConfigItem(entry.id, entry.description, JSON.stringify(entry.config, null, 2), badges)
             );
         });
-        configContentElement.append(
+        resolvedWorkspaceGrid.append(
             createConfigCard("Refactor", "Registered codemods and the active project-level codemod configuration.", [
                 refactorList
             ])
+        );
+        configContentElement.append(
+            createConfigSection(
+                "Resolved Workspace Views",
+                "Effective settings used by GMLoop",
+                "These cards stay together because they are the normalized outputs the workspace actually uses for format, lint, and refactor behavior.",
+                [resolvedWorkspaceGrid]
+            )
         );
     }
 

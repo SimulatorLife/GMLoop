@@ -48,6 +48,10 @@ void test("graph visualization entry html references local assets and avoids CDN
     assert.doesNotMatch(html, /<link[^>]+href="https?:\/\//u);
     assert.match(html, /id="docs-view-rules"/u);
     assert.match(html, /id="loaded-target-details"/u);
+    assert.match(html, /class="project-context"/u);
+    assert.match(html, /aria-label="Open GMLoop GitHub repository"/u);
+    assert.match(html, /class="github-link-icon"/u);
+    assert.doesNotMatch(html, />GitHub Repo</u);
 });
 
 void test("graph visualization module script embeds serialized graph payload and boot logic", () => {
@@ -129,6 +133,8 @@ void test("graph visualization module script embeds workspace rule catalogs when
     assert.match(script, /function createInitialGraphVisualizationUiState/u);
     assert.match(script, /parseGraphVisualizationUiStateFromUrlSearch/u);
     assert.match(script, /replaceGraphVisualizationUiStateInCurrentUrl/u);
+    assert.match(script, /Workspace configuration snapshot/u);
+    assert.match(script, /Resolved Workspace Views/u);
 });
 
 void test("graph visualization css asset preserves core visual affordances", () => {

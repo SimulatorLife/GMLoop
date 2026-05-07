@@ -76,6 +76,7 @@ Then implement the UI with:
 ### Layout and Rhythm
 
 - Use a consistent spacing system.
+- Apply the Gestalt principle of proximity so related controls and information are visually grouped and unrelated elements are clearly separated.
 - Keep alignment intentional to a grid, baseline, edge, or optical center.
 - Maintain predictable content widths by breakpoint.
 - Keep long-form text at a readable measure.
