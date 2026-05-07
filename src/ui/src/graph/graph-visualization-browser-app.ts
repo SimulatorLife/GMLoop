@@ -884,6 +884,7 @@ type GraphVisualizationSurfaceInitializer = Readonly<{
     wireOpenProjectButton: () => void;
     wireRegenerateButton: () => void;
     wireViewControls: () => void;
+    wirePlaygroundControls: () => void;
 }>;
 
 function initializeGraphVisualizationSurface(state: GraphVisualizationSurfaceInitializer): void {
@@ -901,6 +902,7 @@ function initializeGraphVisualizationSurface(state: GraphVisualizationSurfaceIni
     state.applyLabelModeButtonText();
     state.wireOpenProjectButton();
     state.wireRegenerateButton();
+    state.wirePlaygroundControls();
     state.applyPageState();
     state.updateGraph();
     state.applySearchQuery(state.currentSearchQuery, false);
@@ -1067,7 +1069,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         updateGraph,
         wireOpenProjectButton,
         wireRegenerateButton,
-        wireViewControls
+        wireViewControls,
+        wirePlaygroundControls
     });
 
     tooltip.on("mouseenter", () => tooltip.classed("visible", true));
@@ -2148,6 +2151,137 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                         .html('<span class="button-content"><span class="button-label">Error</span></span>');
                 }
             })();
+        });
+    }
+
+    function wirePlaygroundControls(): void {
+        const input = document.getElementById("playground-input") as HTMLTextAreaElement | null;
+        const output = document.getElementById("playground-output");
+        const outputTitle = document.getElementById("playground-output-title");
+        const formatBtn = document.getElementById("toggle-format");
+        const lintBtn = document.getElementById("toggle-lint");
+        const refactorBtn = document.getElementById("toggle-refactor");
+        const codeViewBtn = document.getElementById("view-mode-code");
+        const astViewBtn = document.getElementById("view-mode-ast");
+
+        if (
+            !input ||
+            !output ||
+            !outputTitle ||
+            !formatBtn ||
+            !lintBtn ||
+            !refactorBtn ||
+            !codeViewBtn ||
+            !astViewBtn
+        ) {
+            return;
+        }
+
+        let isFormatEnabled = true;
+        let isLintEnabled = false;
+        let isRefactorEnabled = false;
+        let viewMode: "code" | "ast" = "code";
+        let lastAst = "{}";
+        let lastOutput = "";
+        let debounceTimer: number | null = null;
+
+        const savedInput = localStorage.getItem("gmloop-playground-input");
+        if (savedInput) {
+            input.value = savedInput;
+            void processPlaygroundInput();
+        }
+
+        function updateView() {
+            if (viewMode === "code") {
+                outputTitle.textContent = "Processed Result";
+                output.textContent = lastOutput;
+                codeViewBtn.classList.add("active");
+                astViewBtn.classList.remove("active");
+            } else {
+                outputTitle.textContent = "Parsed AST";
+                output.textContent = lastAst;
+                codeViewBtn.classList.remove("active");
+                astViewBtn.classList.add("active");
+            }
+        }
+
+        async function processPlaygroundInput() {
+            const gml = input.value;
+            if (!gml.trim()) {
+                lastOutput = "";
+                lastAst = "";
+                updateView();
+                return;
+            }
+
+            try {
+                const response = await fetch("/api/playground/process", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        gml,
+                        format: isFormatEnabled,
+                        lint: isLintEnabled,
+                        refactor: isRefactorEnabled
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error ?? `Server error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (data.payload.error) {
+                    lastOutput = data.payload.error;
+                    lastAst = "";
+                } else {
+                    lastOutput = data.payload.output;
+                    lastAst = data.payload.ast;
+                }
+            } catch (error) {
+                lastOutput = error instanceof Error ? error.message : String(error);
+                lastAst = "";
+            }
+            updateView();
+        }
+
+        input.addEventListener("input", () => {
+            localStorage.setItem("gmloop-playground-input", input.value);
+            if (debounceTimer !== null) {
+                globalThis.clearTimeout(debounceTimer);
+            }
+            debounceTimer = globalThis.setTimeout(() => {
+                void processPlaygroundInput();
+            }, 300);
+        });
+
+        formatBtn.addEventListener("click", () => {
+            isFormatEnabled = !isFormatEnabled;
+            formatBtn.classList.toggle("active", isFormatEnabled);
+            void processPlaygroundInput();
+        });
+
+        lintBtn.addEventListener("click", () => {
+            isLintEnabled = !isLintEnabled;
+            lintBtn.classList.toggle("active", isLintEnabled);
+            void processPlaygroundInput();
+        });
+
+        refactorBtn.addEventListener("click", () => {
+            isRefactorEnabled = !isRefactorEnabled;
+            refactorBtn.classList.toggle("active", isRefactorEnabled);
+            void processPlaygroundInput();
+        });
+
+        codeViewBtn.addEventListener("click", () => {
+            viewMode = "code";
+            updateView();
+        });
+
+        astViewBtn.addEventListener("click", () => {
+            viewMode = "ast";
+            updateView();
         });
     }
 }

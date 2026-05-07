@@ -97,13 +97,34 @@
       <div id="config-content" class="config-stack"></div>
     </section>
     <section id="playground-page" class="page">
-      <gm-playground-panel>
-        <div style="display: flex; height: 100%; align-items: center; justify-content: center; flex-direction: column; color: var(--gm-muted); font-family: sans-serif;">
-          <h2>Playground Unavailable</h2>
-          <p>The interactive GML Playground is only available in the full web application.</p>
-          <p>To access the playground, run <code>pnpm run dev</code> in the <code>src/ui</code> directory.</p>
-        </div>
-      </gm-playground-panel>
+      <div class="playground-toolbar">
+          <div class="rule-toggles">
+              <button id="toggle-format" class="rule-toggle active">Format</button>
+              <button id="toggle-lint" class="rule-toggle">Lint</button>
+              <button id="toggle-refactor" class="rule-toggle">Refactor</button>
+          </div>
+          <div style="flex: 1"></div>
+          <div class="view-selector">
+              <button id="view-mode-code" class="view-option active">Output Code</button>
+              <button id="view-mode-ast" class="view-option">AST View</button>
+          </div>
+      </div>
+      <div class="playground-main">
+          <div class="editor-pane">
+              <div class="pane-header">
+                  <span>Input GML</span>
+                  <span style="opacity: 0.5">Writable</span>
+              </div>
+              <textarea id="playground-input" class="playground-input" placeholder="Paste or write GML code here..." spellcheck="false"></textarea>
+          </div>
+          <div class="editor-pane">
+              <div class="pane-header">
+                  <span id="playground-output-title">Processed Result</span>
+                  <span style="opacity: 0.5">Read-only</span>
+              </div>
+              <pre id="playground-output" class="playground-output"></pre>
+          </div>
+      </div>
     </section>
   </main>
 </div>
