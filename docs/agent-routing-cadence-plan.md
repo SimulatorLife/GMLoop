@@ -2,31 +2,34 @@
 
 ## Summary
 
-Move `.github/workflows/weights.json` from "pick one workflow, then pick any action agent" to an explicit scheduled routing policy that selects **workflow + agent** together. The routing model should stay flat and auditable: workflows declare their task type, weight, and complexity; agents declare the task types and complexity range they are allowed to run.
+Revise `.github/workflows/weights.json` from a two-step scheduled policy of "pick one workflow, then let that workflow choose any action agent" to a single scheduled routing policy that selects **workflow + agent** together.
 
-This replaces the earlier per-workflow agent maps, tag allowlists, and capability matching options with a smaller final schema based on three task types:
+The revised design keeps the current repo split intact:
 
-- `code`: normal scheduled code, lint, style, documentation, clarity, and maintenance workflows.
-- `merging`: PR merge conflict repair workflows.
-- `regressions`: PR test regression repair workflows.
+- scheduled action routing is separate from follow-up routing
+- manual `agent` overrides remain available to humans
+- scheduled selection becomes a concrete workflow/agent pair chosen by the scheduler
+- the policy names actual repo agents consistently: `copilot`, `codex`, `qwen`, `gemini`, and `mini-max`
 
-All other scheduled work is assumed to be `code`. Do not introduce a general tag or capability system unless the routing policy grows beyond these three distinct task categories.
+The routing model stays flat and auditable. Scheduled workflows declare task type, base weight, and complexity. Scheduled agents declare their own weight, cadence, task-type eligibility, and optional complexity bounds.
 
-## Design Goals
+Only three scheduled task categories exist:
 
-- Keep `weights.json` concise enough to audit in one pass.
-- Allow qwen-local to run low-complexity `code` workflows on a faster cadence.
-- Keep merge conflict and test regression repair out of qwen-local unless explicitly enabled later.
-- Preserve one shared hourly default action cadence for codex/copilot instead of dispatching once per enabled agent.
-- Keep follow-up repair selection separate from scheduled task routing.
-- Avoid compatibility shims, transitional routing paths, or duplicate scheduler logic.
+- `code`: normal scheduled code, lint, style, documentation, clarity, and maintenance workflows
+- `merging`: PR merge-conflict repair workflows
+- `regressions`: PR test-regression repair workflows
 
-## Weight File Shape
+Do not add tags, capabilities, lane allowlists, or per-workflow agent maps unless the routing policy grows beyond these three categories.
 
-- `agents`: scheduled action agents, their global weights, cadence groups, task type eligibility, and optional complexity bounds.
-- `agentPools.followUps`: non-scheduled follow-up pools for automerge/regression comments and PR repair flows.
-- `scheduler`: fixed tick interval and shared cadence group dispatch budget.
-- `workflows`: scheduled task workflow weights, task type, and complexity.
+## Final Config Shape
+
+Use one authoritative schema in `.github/workflows/weights.json`:
+
+- `agents`: scheduled action agents used only by the scheduler and manual blank-agent action dispatch fallback
+- `agentPools.followUps`: non-scheduled follow-up pools for automerge, regression comments, conflict-repair follow-ups, and similar PR-specific retry flows
+- `workflows`: scheduled task workflow weights and routing metadata
+
+Scheduled action routing does **not** keep `agentPools.actions` in the final schema. The old action-pool path is removed rather than preserved in parallel.
 
 Sample `.github/workflows/weights.json`:
 
@@ -36,173 +39,245 @@ Sample `.github/workflows/weights.json`:
     {
       "name": "copilot",
       "weight": 1.0,
-      "cadenceTicks": 2,
-      "category": ["code", "merging", "regressions"],
-      "minComplexity": 2
+      "category": ["code", "merging", "regressions"]
     },
     {
       "name": "codex",
       "weight": 1.0,
-      "cadenceTicks": 2,
+      "cadenceTicks": 4,
       "category": ["code"],
       "minComplexity": 3
     },
     {
+      "name": "qwen",
+      "weight": 0.0,
+      "cadenceTicks": 2,
+      "category": ["code"],
+      "maxComplexity": 2
+    },
+    {
       "name": "gemini",
-      "weight": 1.0,
+      "weight": 0.0,
+      "cadenceTicks": 4,
+      "category": ["code"],
+      "maxComplexity": 2
+    },
+    {
+      "name": "mini-max",
+      "weight": 0.5,
+      "cadenceTicks": 4,
       "category": ["code"],
       "maxComplexity": 2
     }
   ],
+  "agentPools": {
+    "followUps": {
+      "default": "copilot",
+      "agents": [
+        {"weight": 0, "name": "codex"},
+        {"weight": 1, "name": "copilot"},
+        {"weight": 0, "name": "gemini"}
+      ]
+    }
+  },
   "workflows": [
     {
       "name": "agent-02-resolve-merge-conflicts",
       "weight": 1.0,
       "category": "merging",
-      "complexity": 4
+      "complexity": 3
     },
     {
       "name": "agent-04-style",
-      "weight": 0.2
+      "weight": 0.2,
+      "category": "code",
+      "complexity": 1
     },
-    {"name": "agent-10-documentation", "weight": 0.02},
     {
       "name": "agent-18-clarity",
       "weight": 0.25,
+      "category": "code",
       "complexity": 2
     },
-    {"name": "agent-23-lint", "weight": 0.33},
-    {"name": "agent-36-docstrings", "weight": 0.05},
-    {"name": "agent-84-document-intent", "weight": 0.02}
+    {
+      "name": "agent-23-lint",
+      "weight": 0.33,
+      "category": "code",
+      "complexity": 3
+    },
+    {
+      "name": "agent-41-test-failure",
+      "weight": 0.5,
+      "category": "regressions",
+      "complexity": 3
+    }
   ]
 }
 ```
 
-## Field Semantics
+Field semantics:
 
-### Agents
+- `agents[*].name`: concrete value passed to workflow `agent` inputs
+- `agents[*].weight`: scheduled routing weight for the agent; non-positive weights disable scheduled selection without invalidating the file
+- `agents[*].cadenceTicks`: optional positive integer count of scheduler ticks between due evaluations for that agent; defaults to `1` when omitted
+- `agents[*].category`: non-empty list of allowed scheduled task categories
+- `agents[*].minComplexity`: optional inclusive lower complexity bound
+- `agents[*].maxComplexity`: optional inclusive upper complexity bound
+- `workflows[*].name`: scheduled workflow name without the `.yml` suffix
+- `workflows[*].weight`: base task-selection weight
+- `workflows[*].category`: one of `code`, `merging`, or `regressions`
+- `workflows[*].complexity`: required integer routing-complexity score in the inclusive range `1..3`
 
-- `name`: concrete value passed to workflow `agent` inputs.
-- `weight`: global scheduled routing weight for the agent. Non-positive weights disable the agent for scheduled routing while still allowing its policy to be validated.
-- `cadenceTicks`:
-  - 1 -> every scheduler run -> every 1 hour
-  - 2 -> every 2 scheduler runs -> every 2 hours
-- `category`: task types this agent may run.
-- `minComplexity`: optional inclusive lower bound.
-- `maxComplexity`: optional inclusive upper bound.
+Complexity is mandatory on every scheduled workflow in the final schema. Do not rely on implicit defaults.
 
-At least one of `minComplexity` or `maxComplexity` may be omitted. Omitted lower bound means no minimum. Omitted upper bound means no maximum.
+Complexity represents routing risk and expected judgment, not runtime duration. Use only three levels:
 
-### Scheduler
+- `1`: low-complexity routine and recoverable work
+- `2`: normal medium-complexity work
+- `3`: highest-complexity scheduled work
 
-- `tickMinutes`: fixed `_scheduler.yml` wake-up interval.
-- `maxDispatchesPerCadenceGroup`: maximum scheduled task dispatches for each due cadence group on one scheduler tick.
+Merge repair, regression repair, broad refactors, and high-judgment maintenance tasks should use `3` rather than expanding the scale further.
 
-The default expected value is `1`, so codex and copilot can share one hourly default action dispatch while qwen-local can use an independent 30-minute low-complexity dispatch.
+## Routing Semantics
 
-### Workflows
+`_scheduler.yml` continues to run on its fixed 15-minute cron. That wake-up interval remains owned by the workflow file itself rather than duplicated in `weights.json`.
 
-- `name`: scheduled workflow name without the `.yml` suffix.
-- `weight`: base task selection weight.
-- `category`: one of `code`, `merging`, or `regressions`.
-- `complexity`: integer task complexity score.
+The scheduler loads `weights.json`, validates the final schema, and computes eligible workflow/agent pairs for the current tick.
 
-Complexity should describe routing risk and expected judgment, not runtime duration. Low-complexity workflows should be routine and recoverable. Merge repair, regression repair, architectural changes, broad refactors, and high-judgment tasks should receive higher complexity even when the workflow file itself is mechanically simple.
+An agent is due on a scheduler tick when:
 
-## Scheduler Behavior
+```text
+currentTickNumber % (agent.cadenceTicks ?? 1) === 0
+```
 
-- `_scheduler.yml` runs on a fixed 15-minute tick.
-- cadence: optional positive integer. Defaults to 1 if omitted. An agent is due when the current scheduler tick number is divisible by cadence.
-- The scheduler loads `weights.json`, validates the schema, and computes due cadence groups.
-- For each due cadence group, the scheduler enumerates eligible workflow/agent pairs.
-- A workflow/agent pair is eligible when:
-  - `agent.weight > 0`
-  - `workflow.weight > 0`
-  - `workflow.category` is included in `agent.category`
-  - `workflow.complexity >= agent.minComplexity` when `minComplexity` is present
-  - `workflow.complexity <= agent.maxComplexity` when `maxComplexity` is present
-  - `agent.cadenceGroup` is due on the current scheduler tick
-- Candidate pair weight is:
+A workflow/agent pair is eligible when:
+
+- `agent.weight > 0`
+- `workflow.weight > 0`
+- the agent is due on the current scheduler tick
+- `workflow.category` is included in `agent.category`
+- `workflow.complexity >= agent.minComplexity` when `minComplexity` is present
+- `workflow.complexity <= agent.maxComplexity` when `maxComplexity` is present
+
+Candidate pair weight is:
 
 ```text
 workflow.weight * agent.weight
 ```
 
-- The scheduler dispatches the selected workflow with the selected concrete `agent` input.
-- If a due cadence group has no eligible positive-weight workflow/agent pair, log and skip that group without failing the scheduler.
+Selection remains deterministic and uses the same general run-number weighted cycle approach the repo already uses today:
 
-## Routing Policy
+- use `GITHUB_RUN_NUMBER` as the selection input
+- build the candidate set only after cadence and eligibility filtering
+- sort deterministically before building the weighted cycle
+- select the candidate pair by deterministic weighted cycle position
 
-The intended initial policy is:
+The same config, candidate set, and `GITHUB_RUN_NUMBER` must always produce the same selected workflow/agent pair.
 
-- `copilot`: enabled for `code`, `merging`, and `regressions`
-- `codex`: configured for `code`
-- `gemini`: configured only for low-complexity `code`, initially disabled with `weight: 0.0` until the rollout is ready.
+The scheduler dispatches exactly one eligible workflow/agent pair per run, preserving one shared scheduled dispatch surface while still allowing faster due evaluation for agents with shorter cadence.
 
-## Follow-Up Pools
+If a scheduler tick has no eligible positive-weight workflow/agent pair, log and skip without failing the scheduler.
 
-Keep follow-up selection separate from scheduled action routing.
+Manual and follow-up behavior:
 
-`agentPools.followUps` remains the policy source for follow-up repair flows such as automerge comments, regression comments, and PR-specific retry paths. Those flows may reuse the same agent names, but they are not selected by the scheduled cadence algorithm.
+- Manual `workflow_dispatch.inputs.agent` remains an unrestricted human override.
+- Blank manual dispatch in `_agent-open-pr-and-ping.yml` must still resolve through the scheduled `agents` policy source defined in `weights.json`.
+- `agentPools.followUps` remains the only policy source for automerge comments, regression comments, conflict-repair follow-ups, and similar PR-specific retry paths.
+- Scheduled restrictions apply only to automated scheduler selection and blank manual fallback selection, not to explicit human overrides.
 
-Manual `workflow_dispatch.inputs.agent` overrides should remain available to humans. Scheduled routing restrictions apply to automated scheduler selection, not to explicit human overrides.
+## Policy Defaults
 
-## Validation
+Initial intended policy:
+
+- `copilot`: enabled for `code`, `merging`, and `regressions`; omitting `cadenceTicks` keeps it on the default every-run cadence
+- `codex`: enabled for higher-complexity `code` work on the standard hourly cadence
+- `qwen`: reserved for low-complexity `code` work on a faster 30-minute cadence, initially disabled with `weight: 0.0` until rollout is ready
+- `gemini`: retained as a named repo agent, but disabled for scheduled routing initially with `weight: 0.0`
+- `mini-max`: retained in scheduled routing as a low-complexity `code` option rather than silently removed
+
+Cadence defaults under the fixed 15-minute scheduler tick:
+
+- `cadenceTicks: 4` -> every 60 minutes
+- `cadenceTicks: 2` -> every 30 minutes
+- omitted `cadenceTicks` -> every scheduler run
+
+This document does **not** introduce a `qwen-local` scheduled identity. The repo’s existing local-Qwen identity is `qwen`, and the routing plan should continue to use that name unless a separate rename proposal is approved later.
+
+## Validation Rules
 
 Scheduler parsing should fail clearly when the configuration is internally inconsistent:
 
-- Agent names must be unique.
-- Workflow names must be unique.
-- Agent and workflow weights must be finite numbers.
-- Scheduled agent records must have `name`, `weight`, `cadenceGroup`, `cadenceMinutes`, and non-empty `category`.
-- Workflow records must have `name`, `weight`, and `complexity`. `category` is optional, but if present must be one of the defined task types. If `category` is omitted, it defaults to `code`.
-- `category` values must be one of `code`, `merging`, or `regressions`.
-- `complexity`, `minComplexity`, and `maxComplexity` must be integers.
-- `minComplexity` must be less than or equal to `maxComplexity` when both are present.
-- `cadenceMinutes` must be a positive multiple of `scheduler.tickMinutes`.
-- Agents sharing a `cadenceGroup` must use the same `cadenceMinutes`.
-- `scheduler.maxDispatchesPerCadenceGroup` must be a positive integer.
-- Non-positive agent and workflow weights should be ignored during selection, not treated as validation failures.
+- scheduled agent names must be unique
+- workflow names must be unique
+- scheduled agent and workflow weights must be finite numbers
+- scheduled agent records must have `name`, `weight`, and non-empty `category`
+- workflow records must have `name`, `weight`, `category`, and `complexity`
+- `category` values must be one of `code`, `merging`, or `regressions`
+- `complexity`, `minComplexity`, and `maxComplexity` must be integers in the inclusive range `1..3`
+- `cadenceTicks`, when present, must be an integer
+- `cadenceTicks`, when present, must be positive
+- `minComplexity` must be less than or equal to `maxComplexity` when both are present
+- follow-up pools must continue to satisfy the existing weighted-agent pool shape used by current non-scheduled workflows
+- non-positive scheduled agent and workflow weights should be ignored during selection, not treated as validation failures
 
-Validation should also include an explicit guard that qwen-local has no eligible `merging` or `regressions` route unless that route is intentionally added later.
+Validation should also include explicit policy guards for intentionally restricted scheduled agents:
 
-## Implementation Notes
+- `qwen` must have no eligible `merging` or `regressions` route unless intentionally added later
+- `gemini` must have no eligible `merging` or `regressions` route unless intentionally added later
+- any future removal of `mini-max` from scheduled routing must be expressed as an explicit config change, not a silent omission from the document
 
-- Update `_agent-open-pr-and-ping.yml` so manual blank-agent dispatch can still choose from `weights.json`, but scheduled dispatch should already pass a concrete agent.
-- Update `_scheduler.yml` to parse cadence groups from `agents`, not lane definitions.
-- Keep the selection algorithm in one scheduler implementation path. Do not preserve separate/previous routing logic; just update the existing scheduler to implement the new routing model fully and remove old code paths.
-- Preserve manual human overrides for workflow dispatch.
-- Do not add tags, capabilities, lane allowlists, or per-workflow agent maps unless the routing requirements become more specific than the three task types.
+## Migration Impact
+
+This document describes a real schema migration from the repo’s current scheduler shape, so the implementation notes must stay explicit about affected surfaces.
+
+Conceptual files affected:
+
+- `.github/workflows/_scheduler.yml`
+- `.github/workflows/_agent-open-pr-and-ping.yml`
+- `test/agent-weight-routing.test.ts`
+
+Required migration changes:
+
+- update `_scheduler.yml` to load scheduled agents from top-level `agents`, enumerate eligible workflow/agent pairs, and dispatch the selected concrete `agent`
+- update `_agent-open-pr-and-ping.yml` so blank manual action dispatch selects from scheduled `agents` instead of the removed `agentPools.actions`
+- preserve `agentPools.followUps` behavior in follow-up workflows such as automerge and conflict-repair flows
+- remove old scheduled action-pool routing logic rather than keeping parallel legacy paths
+- keep manual explicit `agent` overrides intact for human-triggered runs
+
+This plan intentionally preserves follow-up routing as a separate policy surface. It does **not** redesign non-scheduled follow-up flows beyond keeping them compatible with the updated weight file.
 
 ## Test Plan
 
-Update `test/agent-weight-routing.test.ts` to assert:
+Update `test/agent-weight-routing.test.ts` and related workflow tests to assert:
 
-- The only valid task types are `code`, `merging`, and `regressions`.
-- Cadence intervals are multiples of `scheduler.tickMinutes`.
-- Non-positive weights disable candidates without invalidating the file.
-- Follow-up pools remain separate from scheduled action routing.
+- schema validation checks only the final field set described in this document
+- the only valid scheduled task categories are `code`, `merging`, and `regressions`
+- workflow `complexity` is required on every scheduled workflow
+- workflow and agent complexity values are limited to `1..3`
+- non-positive weights disable candidates without invalidating the file
+- scheduled routing remains separate from `agentPools.followUps`
+- deterministic pair selection remains based on `GITHUB_RUN_NUMBER`
+- candidate pair weights combine `workflow.weight * agent.weight`
+- cadence filtering uses `cadenceTicks`
+- complexity bounds filter eligible pairs before weighted selection
+- task-category eligibility filters eligible pairs before weighted selection
+- the scheduler dispatch payload includes the selected concrete `agent`
+- manual explicit `agent` override bypasses scheduled eligibility rules
+- blank manual dispatch still selects from the scheduled `agents` policy source
+- `qwen` has no eligible `merging` or `regressions` route unless intentionally enabled later
+- `gemini` has no eligible `merging` or `regressions` route unless intentionally enabled later
 
-Add or extend workflow tests for `_scheduler.yml` to assert:
+Run after implementation:
 
-- The scheduler parses cadence groups from agent records.
-- Due cadence groups dispatch independently on the same scheduler tick.
-- Agents in the same cadence group share the configured dispatch budget.
-- The dispatch payload includes the selected concrete `agent`.
-- Candidate weights combine workflow and agent weights.
-- Complexity bounds filter eligible pairs before weighted selection.
-- Task type eligibility filters pairs before weighted selection.
-
-Run:
-
-- `pnpm run build:ts`
 - targeted root workflow tests
+- `pnpm run build:ts`
 - `pnpm run lint:quiet`
 
-## Assumptions
+## Assumptions And Defaults
 
-- "Actions" means scheduled task workflows like `agent-23-lint`, not GitHub marketplace actions.
-- qwen-local should initially run every 30 minutes for low-complexity `code` tasks once enabled.
-- Normal codex/copilot scheduled action cadence should remain hourly.
-- Manual human overrides remain allowed.
-- The allowlist is for automated scheduled routing.
+- the current repo shape is the source of truth unless this document explicitly proposes a migration
+- `qwen` is the existing local-Qwen identity in the repo and remains the default name used by this plan
+- `agentPools.followUps` stays as-is unless there is a strong reason to redesign non-scheduled routing too
+- the scheduler remains a fixed 15-minute tick
+- deterministic weighted selection remains the default because current workflows and tests already rely on it
+- "actions" in this document means scheduled task workflows such as `agent-23-lint`, not GitHub marketplace actions
