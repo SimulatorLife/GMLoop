@@ -25,16 +25,20 @@ const lintConfigs = createLintConfigsWithPlugins({
     featherPlugin: featherPluginObject
 });
 
-const lintProjectConfigHelpers = Object.freeze({
+/**
+ * Flattened lint config namespace that exposes project configuration helpers
+ * directly alongside the config sets (recommended, feather, performance).
+ *
+ * This flattens the hierarchy by placing helpers like `normalizeLintRulesConfig`
+ * and `createLintRuleEntriesFromProjectConfig` directly on `Lint.configs` rather
+ * than nested under `Lint.configs.projectConfig`, reducing chain depth from
+ * 4 segments to 3 segments and improving discoverability.
+ */
+export const configs = Object.freeze({
+    ...lintConfigs,
     normalizeLintRulesConfig,
     createLintRuleEntriesFromProjectConfig
 });
 
-const lintConfigNamespace = Object.freeze({
-    ...lintConfigs,
-    projectConfig: lintProjectConfigHelpers
-});
-
 export const plugin = gmlPluginObject;
 export const featherPlugin = featherPluginObject;
-export const configs = lintConfigNamespace;
