@@ -403,7 +403,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
             processPlayground: async ({ gml, format, lint, refactor }) => {
-                let ast = "{}";
+                let ast: string;
                 let output = gml;
                 let error: string | null = null;
 

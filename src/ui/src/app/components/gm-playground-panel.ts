@@ -36,20 +36,20 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #error: string | null = null;
 
-    #debounceTimer: number | null = null;
+    #debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
     protected firstUpdated(): void {
         const savedInput = localStorage.getItem("gmloop-playground-input");
         if (savedInput) {
             this.#gmlInput = savedInput;
-            this.#processInput();
+            void this.#processInput();
         }
     }
 
     protected updated(changedProperties: PropertyValues): void {
         super.updated(changedProperties);
         if (changedProperties.has("state") && this.state?.activePage === "playground") {
-            this.#processInput();
+            void this.#processInput();
         }
     }
 
@@ -63,7 +63,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         }
 
         this.#debounceTimer = globalThis.setTimeout(() => {
-            this.#processInput();
+            void this.#processInput();
             this.requestUpdate();
         }, 300);
 
@@ -115,19 +115,19 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #toggleFormat(): void {
         this.#isFormatEnabled = !this.#isFormatEnabled;
-        this.#processInput();
+        void this.#processInput();
         this.requestUpdate();
     }
 
     #toggleLint(): void {
         this.#isLintEnabled = !this.#isLintEnabled;
-        this.#processInput();
+        void this.#processInput();
         this.requestUpdate();
     }
 
     #toggleRefactor(): void {
         this.#isRefactorEnabled = !this.#isRefactorEnabled;
-        this.#processInput();
+        void this.#processInput();
         this.requestUpdate();
     }
 
