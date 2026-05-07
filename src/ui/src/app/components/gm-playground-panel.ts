@@ -147,39 +147,49 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             <section id="playground-page" class=${activeClassName}>
                 <div class="playground-toolbar">
                     <div class="rule-toggles">
-                        <div
+                        <button
+                            type="button"
                             class="rule-toggle ${this.#isFormatEnabled ? "active" : ""}"
+                            aria-pressed=${this.#isFormatEnabled}
                             @click=${() => this.#toggleFormat()}
                         >
                             Format
-                        </div>
-                        <div
+                        </button>
+                        <button
+                            type="button"
                             class="rule-toggle ${this.#isLintEnabled ? "active" : ""}"
+                            aria-pressed=${this.#isLintEnabled}
                             @click=${() => this.#toggleLint()}
                         >
                             Lint
-                        </div>
-                        <div
+                        </button>
+                        <button
+                            type="button"
                             class="rule-toggle ${this.#isRefactorEnabled ? "active" : ""}"
+                            aria-pressed=${this.#isRefactorEnabled}
                             @click=${() => this.#toggleRefactor()}
                         >
                             Refactor
-                        </div>
+                        </button>
                     </div>
                     <div style="flex: 1"></div>
                     <div class="view-selector">
-                        <div
+                        <button
+                            type="button"
                             class="view-option ${this.#viewMode === "code" ? "active" : ""}"
+                            aria-pressed=${this.#viewMode === "code"}
                             @click=${() => this.#setViewMode("code")}
                         >
                             Output Code
-                        </div>
-                        <div
+                        </button>
+                        <button
+                            type="button"
                             class="view-option ${this.#viewMode === "ast" ? "active" : ""}"
+                            aria-pressed=${this.#viewMode === "ast"}
                             @click=${() => this.#setViewMode("ast")}
                         >
                             AST View
-                        </div>
+                        </button>
                     </div>
                 </div>
 
