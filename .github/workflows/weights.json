@@ -9,7 +9,7 @@
     {
       "name": "codex",
       "weight": 1,
-      "cadenceTicks": 4,
+      "cadenceTicks": 3,
       "category": ["code"],
       "minComplexity": 3
     },

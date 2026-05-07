@@ -174,7 +174,7 @@ export class GmGraphToolbar extends LightDomLitElement {
             this.state.activePage === "graph"
                 ? "Interactive graph exploration controls for the current graph index."
                 : this.state.activePage === "docs"
-                  ? "CLI and MCP reference material generated from the active workspace."
+                  ? "CLI, MCP, and workspace rule catalogs generated from the active workspace."
                   : "Project and tooling configuration metadata loaded for the active root.";
 
         const graphControlsClassName =

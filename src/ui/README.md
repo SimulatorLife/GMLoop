@@ -79,8 +79,10 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - bundle assets include local runtime scripts and vendor files (no CDN dependencies)
 - `renderGraphVisualizationHtml(data, options)` remains as a thin convenience wrapper that reads the bundle entry HTML
 - CLI host code is responsible for obtaining payloads and writing/serving the emitted bundle artifact
-- graph/docs/config tabs are rendered from live workspace-fed catalogs, including a Docs `Rules` subview for format options, lint rules, and refactor codemods
+- graph/docs/config tabs are rendered from live workspace-fed catalogs
+- the Docs surface includes `CLI`, `MCP`, and `Rules` subviews for command, tool, and workspace rule catalogs
 - loaded project state is shown in one canonical header location and reflects the active graph/config context
+- graph/docs/config page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
 
 ## Design Rules
 
@@ -145,6 +147,8 @@ That separation is intentional and should be preserved as more UI surfaces are a
 ## Serve Host Contract
 
 `@gmloop/ui` does not invoke native dialogs or perform local filesystem selection itself. The host workspace provides that behavior and passes loaded-target metadata into the renderer.
+
+The shipped `graph visualize` bundle still uses the existing imperative graph runtime, while the `src/ui/src/web` entry mounts the newer Lit shell. Both paths should preserve the same user-facing docs/config/navigation contract.
 
 Current graph serve-mode host actions are:
 
