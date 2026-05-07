@@ -2183,7 +2183,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         let viewMode: "code" | "ast" = "code";
         let lastAst = "{}";
         let lastOutput = "";
-        let debounceTimer: number | null = null;
+        let debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
         const savedInput = localStorage.getItem("gmloop-playground-input");
         if (savedInput) {
