@@ -287,6 +287,9 @@ importers:
 
   src/ui:
     dependencies:
+      '@gmloop/core':
+        specifier: workspace:*
+        version: link:../core
       browser-fs-access:
         specifier: ^0.38.0
         version: 0.38.0

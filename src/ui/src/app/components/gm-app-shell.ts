@@ -1,3 +1,4 @@
+import { Core } from "@gmloop/core";
 import { html } from "lit";
 
 import {
@@ -146,7 +147,7 @@ export class GmAppShell extends LightDomLitElement {
             this.#store.dispatch({ errorMessage: null, type: "set-error" });
             await hostAction();
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message = Core.getErrorMessage(error, { fallback: "Unknown error" });
             this.#store.dispatch({ errorMessage: message, type: "set-error" });
         } finally {
             this.#store.dispatch({ pending: false, type: pendingType });
