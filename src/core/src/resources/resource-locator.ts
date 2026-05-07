@@ -34,7 +34,12 @@ function tryReadConfiguredResourceDirectory(packageDirectoryPath: string): strin
         );
     }
 
-    return configValue.resourceDirectory;
+    const resourceDirectoryPath = configValue.resourceDirectory.trim();
+    if (!existsSync(resourceDirectoryPath)) {
+        return null;
+    }
+
+    return resourceDirectoryPath;
 }
 
 function tryReadPackageName(directoryPath: string): string | null {
