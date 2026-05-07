@@ -10,9 +10,9 @@ import {
     applySourceTextEdits,
     createMeta,
     reportProgramTextRewrite,
-    type SourceTextEdit
+    type SourceTextEdit,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type RegionPairingState = Readonly<{
     unmatchedEndRegionLines: ReadonlyArray<RegionSourceLine>;

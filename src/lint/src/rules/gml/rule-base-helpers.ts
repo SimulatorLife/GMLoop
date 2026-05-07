@@ -1,23 +1,20 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "./rule-definition.js";
+const { clamp, getLineIndentationAtOffset, getLineStartOffset, isObjectLike } = Core;
 
-const { clamp, isObjectLike } = Core;
+export { getLineIndentationAtOffset, getLineStartOffset };
 
-export function getLineStartOffset(sourceText: string, offset: number): number {
-    return sourceText.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
-}
-
-export function getLineIndentationAtOffset(sourceText: string, offset: number): string {
-    const lineStart = getLineStartOffset(sourceText, offset);
-    let cursor = lineStart;
-    while (cursor < sourceText.length && (sourceText[cursor] === " " || sourceText[cursor] === "\t")) {
-        cursor += 1;
-    }
-
-    return sourceText.slice(lineStart, cursor);
-}
+/**
+ * Static metadata describing a single built-in GML lint rule.
+ */
+export type GmlRuleDefinition = Readonly<{
+    mapKey: `Gml${string}`;
+    shortName: string;
+    fullId: `gml/${string}`;
+    messageId: string;
+    schema?: ReadonlyArray<unknown>;
+}>;
 
 /**
  * Finds the nearest non-whitespace character before a source offset.

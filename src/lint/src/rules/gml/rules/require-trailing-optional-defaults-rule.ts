@@ -9,9 +9,9 @@ import {
     isAstNodeRecord,
     reportFullTextRewrite,
     type SourceTextEdit,
-    walkAstNodes
+    walkAstNodes,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { compactArray, getNodeStartIndex, getNodeEndIndex, unwrapParenthesizedExpression: unwrapParenthesized } = Core;
 

@@ -7,9 +7,9 @@ import {
     createMeta,
     isAstNodeRecord,
     isAstNodeWithType,
-    shouldReportUnsafe
+    shouldReportUnsafe,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { unwrapParenthesizedExpression } = Core;
 type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];

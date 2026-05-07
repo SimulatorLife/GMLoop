@@ -174,3 +174,43 @@ export function dominantLineEnding(text: string): "\r\n" | "\n" {
 
     return crlfCount > lfCount ? "\r\n" : "\n";
 }
+
+/**
+ * Return the source offset of the first character on the line that contains
+ * `offset`.
+ *
+ * The algorithm scans backwards for the most recent `\n` and adds one so the
+ * result always points at a non-newline character (or 0 when `offset` is on
+ * the first line).  Works correctly for both LF and CRLF line endings because
+ * the `\n` character is always present in CRLF sequences.
+ *
+ * @param sourceText Full source text to scan.
+ * @param offset     Character offset whose line start should be resolved.
+ * @returns Offset of the first character on the same line as `offset`.
+ */
+export function getLineStartOffset(sourceText: string, offset: number): number {
+    return sourceText.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
+}
+
+/**
+ * Extract the leading whitespace (spaces and tabs only) of the line containing
+ * `offset`.
+ *
+ * This is used by lint auto-fixers and codemod rewriters that need to preserve
+ * the existing indentation when inserting new statements before or after an
+ * existing line.
+ *
+ * @param sourceText Full source text to scan.
+ * @param offset     Character offset whose line indentation should be resolved.
+ * @returns String of space/tab characters that precede the first non-whitespace
+ *          character on the same line.
+ */
+export function getLineIndentationAtOffset(sourceText: string, offset: number): string {
+    const lineStart = getLineStartOffset(sourceText, offset);
+    let cursor = lineStart;
+    while (cursor < sourceText.length && (sourceText[cursor] === " " || sourceText[cursor] === "\t")) {
+        cursor += 1;
+    }
+
+    return sourceText.slice(lineStart, cursor);
+}

@@ -13,9 +13,9 @@ import {
     isIdentifierNode,
     rangeContainsCommentToken,
     walkAstNodes,
-    walkAstNodesWithParent
+    walkAstNodesWithParent,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type LoopNode = AstNodeWithType &
     Readonly<{

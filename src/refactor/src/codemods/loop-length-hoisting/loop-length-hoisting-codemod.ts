@@ -12,6 +12,8 @@ const DEFAULT_HOIST_ACCESSORS = Object.freeze({
     array_length: "len"
 });
 
+const { getLineIndentationAtOffset, getLineStartOffset } = Core;
+
 type ForStatementContainerContext = Readonly<{
     forNode: Record<string, unknown>;
     canInsertHoistBeforeLoop: boolean;
@@ -35,20 +37,6 @@ type LoopLengthHoistRewrite = Readonly<{
     callRewrites: ReadonlyArray<LoopLengthHoistingEdit>;
     reportOffset: number;
 }>;
-
-function getLineStartOffset(sourceText: string, offset: number): number {
-    return sourceText.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
-}
-
-function getLineIndentationAtOffset(sourceText: string, offset: number): string {
-    const lineStart = getLineStartOffset(sourceText, offset);
-    let cursor = lineStart;
-    while (cursor < sourceText.length && (sourceText[cursor] === " " || sourceText[cursor] === "\t")) {
-        cursor += 1;
-    }
-
-    return sourceText.slice(lineStart, cursor);
-}
 
 /**
  * Collect both identifier names and for-statement container contexts from the

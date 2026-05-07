@@ -8,9 +8,9 @@ import {
     isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
     isIdentifierNode,
-    walkAstNodes
+    walkAstNodes,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type SupportedArithmeticOperator = "+" | "-" | "*" | "/" | "%";
 type SupportedBitwiseOperator = "|" | "&" | "^";

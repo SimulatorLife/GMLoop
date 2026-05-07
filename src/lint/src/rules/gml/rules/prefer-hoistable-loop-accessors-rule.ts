@@ -9,9 +9,9 @@ import {
     resolveLocFromIndex,
     shouldReportUnsafe,
     walkAstNodes,
-    walkAstNodesWithParent
+    walkAstNodesWithParent,
+    type GmlRuleDefinition
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const DEFAULT_HOIST_ACCESSORS = Object.freeze({
     array_length: "len"
