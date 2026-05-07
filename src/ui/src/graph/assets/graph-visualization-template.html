@@ -31,6 +31,7 @@
         <button id="tab-graph" class="top-nav-button active">Graph Index</button>
         <button id="tab-docs" class="top-nav-button">Docs</button>
         <button id="tab-config" class="top-nav-button">Config</button>
+        <button id="tab-playground" class="top-nav-button">Playground</button>
       </nav>
       <div class="project-context">
         <button id="open-project" class="open-button"><span class="button-content"><span class="button-label">Open...</span></span></button>
@@ -94,6 +95,15 @@
     <section id="config-page" class="page docs-page">
       <p id="config-meta" class="docs-meta"></p>
       <div id="config-content" class="config-stack"></div>
+    </section>
+    <section id="playground-page" class="page">
+      <gm-playground-panel>
+        <div style="display: flex; height: 100%; align-items: center; justify-content: center; flex-direction: column; color: var(--gm-muted); font-family: sans-serif;">
+          <h2>Playground Unavailable</h2>
+          <p>The interactive GML Playground is only available in the full web application.</p>
+          <p>To access the playground, run <code>pnpm run dev</code> in the <code>src/ui</code> directory.</p>
+        </div>
+      </gm-playground-panel>
     </section>
   </main>
 </div>

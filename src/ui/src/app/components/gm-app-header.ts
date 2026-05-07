@@ -95,6 +95,16 @@ export class GmAppHeader extends LightDomLitElement {
                                 >
                                     Config
                                 </button>
+                                <button
+                                    id="tab-playground"
+                                    aria-pressed=${this.state.activePage === "playground"}
+                                    class=${this.state.activePage === "playground"
+                                        ? "top-nav-button active"
+                                        : "top-nav-button"}
+                                    @click=${() => this.#emitNavigatePage("playground")}
+                                >
+                                    Playground
+                                </button>
                             </nav>
                             <a
                                 id="github-link"
