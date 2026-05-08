@@ -205,29 +205,34 @@ function canUseOpaqueMathFactor(node: any): boolean {
 function trimOuterParentheses(value: string): string {
     let text = value.trim();
     while (text.startsWith("(") && text.endsWith(")")) {
-        let depth = 0;
-        let balanced = true;
-        for (let index = 0; index < text.length; index += 1) {
-            const char = text[index];
-            if (char === "(") {
-                depth += 1;
-            } else if (char === ")") {
-                depth -= 1;
-                if (depth === 0 && index !== text.length - 1) {
-                    balanced = false;
-                    break;
-                }
-            }
-        }
+        const inner = text.slice(1, -1);
+        const trimmed = inner.trim();
 
-        if (!balanced || depth !== 0) {
+        // Stripping the outermost pair is only valid if the inner content is
+        // already clean whitespace (no leading/trailing parens that would be lost
+        // by a .trim() alone) and the inner parens are balanced.
+        if (trimmed.length < inner.length || !containsBalancedParentheses(trimmed)) {
             break;
         }
 
-        text = text.slice(1, -1).trim();
+        text = trimmed;
     }
 
     return text;
+}
+function containsBalancedParentheses(text: string): boolean {
+    let depth = 0;
+    for (const ch of text) {
+        if (ch === "(") {
+            depth += 1;
+        } else if (ch === ")") {
+            depth -= 1;
+            if (depth < 0) {
+                return false;
+            }
+        }
+    }
+    return depth === 0;
 }
 
 function collectMultiplicativeComponents(sourceText: string, node: any): MultiplicativeComponents | null {
