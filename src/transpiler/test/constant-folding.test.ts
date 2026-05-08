@@ -204,6 +204,70 @@ void test("constant folding: comparison not equal", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Floating-point equality (epsilon-tolerant comparisons)
+// ---------------------------------------------------------------------------
+
+void test("constant folding: equality for near-identical floats (epsilon-tolerant)", () => {
+    // 0.1 + 0.2 in binary floating point is not exactly 0.3.
+    // Strict equality would incorrectly return false; epsilon comparison returns true.
+    const ast = binary("==", 0.1 + 0.2, 0.3);
+    assert.strictEqual(tryFoldConstantExpression(ast), true);
+});
+
+void test("constant folding: strict inequality for floats that differ by more than epsilon", () => {
+    // 0.1 + 0.2 and 0.4 are well-separated; the comparison should be false.
+    const ast = binary("==", 0.1 + 0.2, 0.4);
+    assert.strictEqual(tryFoldConstantExpression(ast), false);
+});
+
+void test("constant folding: inequality for near-identical floats", () => {
+    const ast = binary("!=", 0.1 + 0.2, 0.3);
+    assert.strictEqual(tryFoldConstantExpression(ast), false);
+});
+
+void test("constant folding: inequality for well-separated floats", () => {
+    const ast = binary("!=", 0.1 + 0.2, 0.4);
+    assert.strictEqual(tryFoldConstantExpression(ast), true);
+});
+
+void test("constant folding: strict equality (===) for identical floats", () => {
+    const ast = binary("===", 42, 42);
+    assert.strictEqual(tryFoldConstantExpression(ast), true);
+});
+
+void test("constant folding: strict inequality (!==) for identical floats", () => {
+    const ast = binary("!==", 42, 42);
+    assert.strictEqual(tryFoldConstantExpression(ast), false);
+});
+
+void test("constant folding: epsilon equality near zero", () => {
+    // Relative epsilon with scale floor of 1 means numbers smaller than
+    // ~8×EPSILON (~1.78e-15) are considered approximately equal to zero.
+    // A value like 1e-15 is within this range, so the comparison returns true.
+    const ast = binary("==", 1e-15, 0);
+    assert.strictEqual(tryFoldConstantExpression(ast), true);
+    // A much smaller value (1e-40) is far below the scale floor of 1,
+    // but diff=1e-40 still < epsilon*1=1.78e-15, so it's also approximately equal.
+    const ast2 = binary("==", 1e-40, 0);
+    assert.strictEqual(tryFoldConstantExpression(ast2), true);
+});
+
+void test("constant folding: epsilon equality for large values", () => {
+    // Large numbers accumulate relative error; epsilon tolerance should
+    // still keep clearly distinct values apart (e.g., 1e10 vs 1e10+1).
+    const ast = binary("==", 1e10, 1e10);
+    assert.strictEqual(tryFoldConstantExpression(ast), true);
+});
+
+void test("constant folding: string equality remains strict (no epsilon)", () => {
+    // Epsilon tolerance must not leak into string comparisons.
+    const ast = binary("==", "hello", "hello");
+    assert.strictEqual(tryFoldConstantExpression(ast), true);
+    const ast2 = binary("==", "hello", "world");
+    assert.strictEqual(tryFoldConstantExpression(ast2), false);
+});
+
+// ---------------------------------------------------------------------------
 // Bitwise operators
 // ---------------------------------------------------------------------------
 
