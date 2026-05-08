@@ -431,26 +431,31 @@ function printCallExpressionNode(node, path, options, print) {
     if (node.arguments.length === 0) {
         printedArgs = [printEmptyParens(path, options)];
     } else {
-        const callbackArguments = node.arguments.filter(
-            (argument) =>
-                argument?.type === Core.FUNCTION_DECLARATION ||
-                argument?.type === Core.FUNCTION_EXPRESSION ||
-                argument?.type === Core.CONSTRUCTOR_DECLARATION
-        );
-        const structArguments = [];
-        const structArgumentsToBreak = [];
-        for (let index = 0; index < node.arguments.length; index++) {
-            const argument = node.arguments[index];
-            if (argument?.type === Core.STRUCT_EXPRESSION) {
-                structArguments.push(argument);
-                const previousArgument = index > 0 ? node.arguments[index - 1] : null;
-                if (shouldForceBreakStructArgument(argument, options, previousArgument)) {
-                    structArgumentsToBreak.push(argument);
+        // Single-pass: categorize callback + struct in one iteration.
+        const callbackArguments: unknown[] = [];
+        const structArguments: unknown[] = [];
+        const structArgumentsToBreak: unknown[] = [];
+        const args = node.arguments;
+        const argsLen = args.length;
+        for (let i = 0; i < argsLen; i++) {
+            const arg = args[i];
+            const argType = arg?.type;
+            if (
+                argType === Core.FUNCTION_DECLARATION ||
+                argType === Core.FUNCTION_EXPRESSION ||
+                argType === Core.CONSTRUCTOR_DECLARATION
+            ) {
+                callbackArguments.push(arg);
+            } else if (argType === Core.STRUCT_EXPRESSION) {
+                structArguments.push(arg);
+                const prevArg = i > 0 ? args[i - 1] : null;
+                if (shouldForceBreakStructArgument(arg, options, prevArg)) {
+                    structArgumentsToBreak.push(arg);
                 }
             }
         }
 
-        structArgumentsToBreak.forEach((argument) => {
+        structArgumentsToBreak.forEach((argument: object) => {
             forcedStructArgumentBreaks.set(argument, true);
         });
 
@@ -605,26 +610,31 @@ function printNewExpressionNode(node, path, options, print) {
         return concat(["new ", print("expression"), printEmptyParens(path, options)]);
     }
 
-    const callbackArguments = node.arguments.filter(
-        (argument) =>
-            argument?.type === Core.FUNCTION_DECLARATION ||
-            argument?.type === Core.FUNCTION_EXPRESSION ||
-            argument?.type === Core.CONSTRUCTOR_DECLARATION
-    );
-    const structArguments = [];
-    const structArgumentsToBreak = [];
-    for (let index = 0; index < node.arguments.length; index++) {
-        const argument = node.arguments[index];
-        if (argument?.type === Core.STRUCT_EXPRESSION) {
-            structArguments.push(argument);
-            const previousArgument = index > 0 ? node.arguments[index - 1] : null;
-            if (shouldForceBreakStructArgument(argument, options, previousArgument)) {
-                structArgumentsToBreak.push(argument);
+    // Single-pass: categorize callback + struct in one iteration.
+    const callbackArguments: unknown[] = [];
+    const structArguments: unknown[] = [];
+    const structArgumentsToBreak: unknown[] = [];
+    const args = node.arguments;
+    const argsLen = args.length;
+    for (let i = 0; i < argsLen; i++) {
+        const arg = args[i];
+        const argType = arg?.type;
+        if (
+            argType === Core.FUNCTION_DECLARATION ||
+            argType === Core.FUNCTION_EXPRESSION ||
+            argType === Core.CONSTRUCTOR_DECLARATION
+        ) {
+            callbackArguments.push(arg);
+        } else if (argType === Core.STRUCT_EXPRESSION) {
+            structArguments.push(arg);
+            const prevArg = i > 0 ? args[i - 1] : null;
+            if (shouldForceBreakStructArgument(arg, options, prevArg)) {
+                structArgumentsToBreak.push(arg);
             }
         }
     }
 
-    structArgumentsToBreak.forEach((argument) => {
+    structArgumentsToBreak.forEach((argument: object) => {
         forcedStructArgumentBreaks.set(argument, true);
     });
 

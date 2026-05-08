@@ -153,9 +153,12 @@ export function visitChildNodes(node: unknown, callback: (child: unknown) => voi
     }
 
     if (Array.isArray(node)) {
-        const snapshot = [...node];
-        for (const item of snapshot) {
-            callback(item);
+        // Preserve snapshot semantics (mutation safety) while avoiding the extra
+        // iterator overhead of the spread + for...of pattern. Array.prototype.slice()
+        // creates a shallow copy with fewer allocations than [...node].
+        const snapshot = node.slice();
+        for (let i = 0, len = snapshot.length; i < len; i++) {
+            callback(snapshot[i]);
         }
         return;
     }
