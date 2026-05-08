@@ -960,6 +960,15 @@ export class ScopeTracker {
         return null;
     }
 
+    /**
+     * Counts retained identifier-resolution cache entries for diagnostics and memory regression tests.
+     *
+     * @returns Total number of cached name/scope resolution entries currently retained.
+     */
+    public countRetainedIdentifierResolutionCacheEntries(): number {
+        return this.identifierCache.countRetainedEntries();
+    }
+
     public resolveIdentifier(name: string | null | undefined, scopeId?: string | null): ScopeSymbolMetadata | null {
         if (!name) {
             return null;
@@ -2563,6 +2572,7 @@ export class ScopeTracker {
         for (const name of declaredNamesToInvalidate) {
             this.identifierCache.invalidate(name);
         }
+        this.identifierCache.invalidateScopes(scopeIdsToRemove);
 
         for (const pathToRecompute of pathsToRecompute) {
             recomputePathLastModified(

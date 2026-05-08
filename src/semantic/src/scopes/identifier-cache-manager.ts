@@ -106,4 +106,41 @@ export class IdentifierCacheManager {
             this.cache.delete(name);
         }
     }
+
+    /**
+     * Invalidates every cached resolution result that started from one of the given scopes.
+     *
+     * @param scopeIds - Scope IDs whose cached resolution entries should be removed.
+     */
+    public invalidateScopes(scopeIds: Iterable<string>): void {
+        const scopeIdsToRemove = new Set(scopeIds);
+        if (scopeIdsToRemove.size === 0) {
+            return;
+        }
+
+        for (const [name, scopeResults] of this.cache) {
+            for (const scopeId of scopeResults.keys()) {
+                if (scopeIdsToRemove.has(scopeId)) {
+                    scopeResults.delete(scopeId);
+                }
+            }
+
+            if (scopeResults.size === 0) {
+                this.cache.delete(name);
+            }
+        }
+    }
+
+    /**
+     * Counts retained cached name/scope resolution entries for diagnostics and regression tests.
+     *
+     * @returns Total number of cached resolution entries currently retained.
+     */
+    public countRetainedEntries(): number {
+        let retainedEntries = 0;
+        for (const scopeResults of this.cache.values()) {
+            retainedEntries += scopeResults.size;
+        }
+        return retainedEntries;
+    }
 }
