@@ -40,7 +40,42 @@ function isNullishValue(value: unknown): value is null | undefined {
     return value === null || value === undefined;
 }
 
-function evaluatePrimitiveEqualityOperator(
+// Map-based dispatch for numeric operators: eliminates verbose switch statements
+// while preserving identical runtime behavior. Each operator maps to a pure function
+// that handles the operation, including zero-divisor guards for div/%/mod.
+const NUMERIC_OPERATORS = new Map<string, (a: number, b: number) => number | boolean | null>([
+    ["+", (a, b) => a + b],
+    ["-", (a, b) => a - b],
+    ["*", (a, b) => a * b],
+    ["/", (a, b) => (isApproximatelyZero(b) ? null : a / b)],
+    [
+        "div",
+        (a, b) =>
+            // GML's div truncates toward zero (like C int/int). Math.trunc is correct here;
+            // Math.floor gives wrong results for negative operands (e.g. -7 div 2 → -3, not -4).
+            isApproximatelyZero(b) ? null : Math.trunc(a / b)
+    ],
+    ["%", (a, b) => (isApproximatelyZero(b) ? null : a % b)],
+    ["mod", (a, b) => (isApproximatelyZero(b) ? null : a % b)],
+    ["**", (a, b) => a ** b],
+    ["<", (a, b) => a < b],
+    ["<=", (a, b) => a <= b],
+    [">", (a, b) => a > b],
+    [">=", (a, b) => a >= b],
+    ["&", (a, b) => a & b],
+    ["|", (a, b) => a | b],
+    ["^", (a, b) => a ^ b],
+    ["xor", (a, b) => a ^ b],
+    ["<<", (a, b) => a << b],
+    [">>", (a, b) => a >> b]
+]);
+
+// Boolean operators that need short-circuit evaluation.
+// Unlike numeric operators, &&/and and ||/or must be evaluated inline
+// to preserve JavaScript's short-circuit semantics (e.g., false && x returns false without evaluating x).
+const BOOLEAN_OPERATORS = new Set(["&&", "and", "||", "or"]);
+
+function evaluateEqualityOperator(
     operator: string,
     left: string | number | boolean,
     right: string | number | boolean
@@ -102,65 +137,18 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
     const leftNumber = toNumericLiteral(left);
     const rightNumber = toNumericLiteral(right);
     if (leftNumber !== null && rightNumber !== null) {
-        switch (op) {
-            case "+": {
-                return leftNumber + rightNumber;
+        const numericFn = NUMERIC_OPERATORS.get(op);
+        if (numericFn !== undefined) {
+            const result = numericFn(leftNumber, rightNumber);
+            // Numeric operators return numbers/booleans; null indicates division by zero
+            if (result !== null) {
+                return result;
             }
-            case "-": {
-                return leftNumber - rightNumber;
-            }
-            case "*": {
-                return leftNumber * rightNumber;
-            }
-            case "/": {
-                // Avoid division by zero
-                return isApproximatelyZero(rightNumber) ? null : leftNumber / rightNumber;
-            }
-            case "div": {
-                // GML's div performs integer division truncating toward zero (like C int/int).
-                // Math.trunc is correct here; Math.floor would give wrong results for
-                // negative operands (e.g. -7 div 2 should be -3, not -4).
-                return isApproximatelyZero(rightNumber) ? null : Math.trunc(leftNumber / rightNumber);
-            }
-            case "%":
-            case "mod": {
-                // Avoid modulo by zero
-                return isApproximatelyZero(rightNumber) ? null : leftNumber % rightNumber;
-            }
-            case "**": {
-                return leftNumber ** rightNumber;
-            }
-            case "<": {
-                return leftNumber < rightNumber;
-            }
-            case "<=": {
-                return leftNumber <= rightNumber;
-            }
-            case ">": {
-                return leftNumber > rightNumber;
-            }
-            case ">=": {
-                return leftNumber >= rightNumber;
-            }
-            case "&": {
-                return leftNumber & rightNumber;
-            }
-            case "|": {
-                return leftNumber | rightNumber;
-            }
-            case "^":
-            case "xor": {
-                return leftNumber ^ rightNumber;
-            }
-            case "<<": {
-                return leftNumber << rightNumber;
-            }
-            case ">>": {
-                return leftNumber >> rightNumber;
-            }
-            default: {
-                return evaluatePrimitiveEqualityOperator(op, leftNumber, rightNumber);
-            }
+        }
+        // Fall through to equality check for comparison operators in the map that return null
+        const equalityResult = evaluateEqualityOperator(op, leftNumber, rightNumber);
+        if (equalityResult !== null) {
+            return equalityResult;
         }
     }
 
@@ -174,9 +162,11 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
             return normalizeStructKeyText(left) + normalizeStructKeyText(right);
         }
 
-        const strippedLeft = normalizeStructKeyText(left);
-        const strippedRight = normalizeStructKeyText(right);
-        const equalityResult = evaluatePrimitiveEqualityOperator(op, strippedLeft, strippedRight);
+        const equalityResult = evaluateEqualityOperator(
+            op,
+            normalizeStructKeyText(left),
+            normalizeStructKeyText(right)
+        );
         if (equalityResult !== null) {
             return equalityResult;
         }
@@ -186,18 +176,17 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
     const leftBoolean = toBooleanLiteral(left);
     const rightBoolean = toBooleanLiteral(right);
     if (leftBoolean !== null && rightBoolean !== null) {
-        switch (op) {
-            case "&&":
-            case "and": {
+        if (BOOLEAN_OPERATORS.has(op)) {
+            // Short-circuit evaluation for &&/and and ||/or
+            if (op === "&&" || op === "and") {
                 return leftBoolean && rightBoolean;
             }
-            case "||":
-            case "or": {
-                return leftBoolean || rightBoolean;
-            }
-            default: {
-                return evaluatePrimitiveEqualityOperator(op, leftBoolean, rightBoolean);
-            }
+            return leftBoolean || rightBoolean;
+        }
+        // Fall through to equality check
+        const equalityResult = evaluateEqualityOperator(op, leftBoolean, rightBoolean);
+        if (equalityResult !== null) {
+            return equalityResult;
         }
     }
 
