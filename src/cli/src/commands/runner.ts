@@ -7,6 +7,7 @@ import { applyStandardCommandOptions } from "../cli-core/command-standard-option
 import { handleCliError } from "../cli-core/errors.js";
 import { createPathOption } from "../cli-core/shared-command-options.js";
 import { getRunnerController, getRunnerStateStore } from "../modules/runtime/index.js";
+import { isRecord } from "../shared/error-guards.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type RunnerOptions = Readonly<{
@@ -29,10 +30,6 @@ type RunnerLaunchConfiguration = Readonly<{
 
 function printRunnerPayload(payload: unknown): void {
     console.log(JSON.stringify(payload, null, 2));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function parseRunnerArgsInput(value: string): Array<string> {

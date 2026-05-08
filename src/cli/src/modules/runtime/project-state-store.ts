@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
+import { isRecord } from "../../shared/error-guards.js";
+
 const { sortObjectKeys } = Core;
 
 /**
@@ -30,10 +32,6 @@ const EMPTY_RUNTIME_STATE: RuntimeProjectState = {
 
 function resolveRuntimeStatePath(projectRoot: string): string {
     return path.join(projectRoot, ".gmloop", "runtime", "state.json");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizeLogEntries(value: unknown): Array<RuntimeLogEntry> {
