@@ -1,7 +1,7 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { printNodeForAutofix } from "../../../language/autofix-printing.js";
+import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import { createMeta, findPreviousNonWhitespaceIndex, resolveLocFromIndex } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../transforms/logical-expression-traversal-normalization.js";
@@ -466,7 +466,7 @@ export function createOptimizeLogicalFlowRule(definition: GmlRuleDefinition): Ru
                         return;
                     }
 
-                    const newText = printNodeForAutofix(normalizationResult.ast, fullSourceText);
+                    const newText = gmlRuleAutofixServices.printNodeForAutofix(normalizationResult.ast, fullSourceText);
 
                     if (normalizeWhitespaceForComparison(sourceText) !== normalizeWhitespaceForComparison(newText)) {
                         rewrittenNodeRanges.push(nodeRange);
