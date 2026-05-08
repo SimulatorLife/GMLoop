@@ -47,6 +47,8 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
                 kind,
                 name,
                 display_name as displayName,
+                relative_path as filePath,
+                resource_path as resourcePath,
                 summary,
                 snippet
             FROM nodes
@@ -54,10 +56,12 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
         )
         .all() as unknown as ReadonlyArray<{
         displayName: string;
+        filePath: string | null;
         graphId: string;
         id: string;
         kind: string;
         name: string;
+        resourcePath: string | null;
         snippet: string;
         summary: string;
     }>;
@@ -66,10 +70,12 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
         (n) =>
             ({
                 displayName: n.displayName,
+                filePath: n.filePath,
                 graphId: n.graphId as GraphIndexScope,
                 id: n.id,
                 kind: n.kind as GraphNodeKind,
                 name: n.name,
+                resourcePath: n.resourcePath,
                 snippet: n.snippet,
                 summary: n.summary
             }) as const
