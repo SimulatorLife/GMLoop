@@ -34,11 +34,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Refactor } from "../index.js";
-import type { ConfiguredCodemodRunResult, NamingConventionTarget, RefactorProjectConfig } from "../src/types.js";
+import type { NamingConventionTarget } from "../src/types.js";
 import {
+    buildNamingConventionCodemodExecutor,
     buildNamingConventionSemanticStub,
     createSyntheticLocalNamingFixture
-} from "./test-helpers/naming-convention-performance.js";
+} from "./test-helpers/naming-convention-test-fixtures.js";
 import { measureMedianDurationMs } from "./test-helpers/performance-timing.js";
 
 const FILE_COUNT = 500;
@@ -61,7 +62,7 @@ const PERFORMANCE_THRESHOLD_MS = 1100;
 void test(`end-to-end codemod execution stays within regression threshold (${FILE_COUNT} files × ${TARGETS_PER_FILE} targets = ${TOTAL_EDITS} edits)`, async () => {
     const projectRoot = "/project";
     const sourceTexts = new Map<string, string>();
-    const targetsByFile = new Map<string, Array<NamingConventionTarget>>();
+    const targetsByFile = new Map<string, NamingConventionTarget[]>();
     const gmlFilePaths = Array.from({ length: FILE_COUNT }, (_, fileIndex) => `scripts/script_${fileIndex}.gml`);
 
     for (const [fileIndex, filePath] of gmlFilePaths.entries()) {
@@ -72,28 +73,7 @@ void test(`end-to-end codemod execution stays within regression threshold (${FIL
 
     const semantic = buildNamingConventionSemanticStub(targetsByFile);
     const engine = new Refactor.RefactorEngine({ semantic });
-
-    const config: RefactorProjectConfig = {
-        codemods: {
-            namingConvention: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
-                    }
-                }
-            }
-        }
-    };
-
-    const executeCodemod = (): Promise<ConfiguredCodemodRunResult> =>
-        engine.executeConfiguredCodemods({
-            projectRoot,
-            targetPaths: [projectRoot],
-            gmlFilePaths,
-            config,
-            readFile: async (filePath) => sourceTexts.get(filePath) ?? "",
-            dryRun: true
-        });
+    const executeCodemod = buildNamingConventionCodemodExecutor(engine, gmlFilePaths, sourceTexts, projectRoot);
 
     // Warm up JIT and module caches before measuring.
     await executeCodemod();
@@ -101,13 +81,11 @@ void test(`end-to-end codemod execution stays within regression threshold (${FIL
     const SAMPLE_COUNT = 5;
     const { durationMs, result } = await measureMedianDurationMs(SAMPLE_COUNT, executeCodemod);
 
-    // Verify correctness of the codemod execution.
     assert.equal(result.summaries.length, 1, "Expected exactly one codemod summary");
     assert.equal(result.summaries[0]?.id, "namingConvention", "Expected namingConvention codemod");
     assert.equal(result.summaries[0]?.changed, true, "Expected codemod to produce changes");
     assert.equal(result.appliedFiles.size, FILE_COUNT, `Expected ${FILE_COUNT} changed files`);
 
-    // Verify that the applied content contains the expected camelCase renames.
     const sampleFile = result.appliedFiles.get(gmlFilePaths[0]);
     assert.ok(sampleFile !== undefined, "Expected first file to have applied content");
     assert.ok(sampleFile.includes("badName00"), "Expected camelCase rename to be applied in output content");

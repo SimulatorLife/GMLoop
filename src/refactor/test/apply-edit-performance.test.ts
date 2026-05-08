@@ -23,54 +23,19 @@
  * Threshold is set to 1400 ms to remain stable under full-suite worker contention
  * while still ensuring that large regressions in the write-path hot loop are caught.
  */
-import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Refactor } from "../index.js";
-import type { NamingConventionTarget } from "../src/types.js";
-import {
-    buildNamingConventionCodemodExecutor,
-    buildNamingConventionSemanticStub,
-    createSyntheticLocalNamingFixture
-} from "./test-helpers/naming-convention-performance.js";
-import { measureMedianDurationMs } from "./test-helpers/performance-timing.js";
+import { runNamingConventionStressTest } from "./test-helpers/naming-convention-test-runner.js";
 
 const WRITE_PATH_FILE_COUNT = 400;
 const WRITE_PATH_TARGETS_PER_FILE = 60;
 const WRITE_PATH_PERFORMANCE_THRESHOLD_MS = 1400;
 
 void test("namingConvention write-path stress test locks in the apply-edit optimisation gain (400 files × 60 targets)", async () => {
-    const projectRoot = "/project";
-    const sourceTexts = new Map<string, string>();
-    const targetsByFile = new Map<string, Array<NamingConventionTarget>>();
-    const gmlFilePaths = Array.from(
-        { length: WRITE_PATH_FILE_COUNT },
-        (_, fileIndex) => `scripts/script_${fileIndex}.gml`
-    );
-
-    for (const [fileIndex, filePath] of gmlFilePaths.entries()) {
-        const fixture = createSyntheticLocalNamingFixture(filePath, fileIndex, WRITE_PATH_TARGETS_PER_FILE);
-        sourceTexts.set(filePath, fixture.sourceText);
-        targetsByFile.set(filePath, fixture.targets);
-    }
-
-    const semantic = buildNamingConventionSemanticStub(targetsByFile);
-    const engine = new Refactor.RefactorEngine({ semantic });
-    const executeStressRun = buildNamingConventionCodemodExecutor(engine, gmlFilePaths, sourceTexts, projectRoot);
-
-    // Warm up JIT and module caches before measuring.
-    await executeStressRun();
-
-    const SAMPLE_COUNT = 5;
-    const { durationMs, result } = await measureMedianDurationMs(SAMPLE_COUNT, executeStressRun);
-
-    assert.equal(result.summaries.length, 1);
-    assert.equal(result.summaries[0]?.id, "namingConvention");
-    assert.equal(result.summaries[0]?.changed, true);
-    assert.equal(result.appliedFiles.size, WRITE_PATH_FILE_COUNT);
-    assert.ok(
-        durationMs <= WRITE_PATH_PERFORMANCE_THRESHOLD_MS,
-        `Expected write-path stress test to finish within ${WRITE_PATH_PERFORMANCE_THRESHOLD_MS}ms, ` +
-            `received ${durationMs.toFixed(2)}ms`
-    );
+    await runNamingConventionStressTest({
+        fileCount: WRITE_PATH_FILE_COUNT,
+        targetsPerFile: WRITE_PATH_TARGETS_PER_FILE,
+        performanceThresholdMs: WRITE_PATH_PERFORMANCE_THRESHOLD_MS,
+        testDisplayName: "write-path (400 files × 60 targets)"
+    });
 });

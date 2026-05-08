@@ -1,14 +1,30 @@
-import assert from "node:assert/strict";
+/**
+ * Duplicate-scope and multi-declaration naming-convention codemod performance guard.
+ *
+ * Exercises the naming-convention planner at scale (220 files × 36 targets with
+ * duplicate scoped declarations, and 220 files × 60 targets in a shared scope)
+ * where the duplicate-scope and multi-declaration handling paths dominate.
+ *
+ * Each test is kept in its own file so that Node's test runner spawns it in a
+ * dedicated worker process, preventing intra-file concurrency from inflating timings.
+ *
+ * These tests lock in the following optimisation passes:
+ *
+ * **Duplicate-declaration keying** (duplicate-scope test):
+ *   Replaced the previous per-scope O(n²) duplicate keying with an O(n) Map
+ *   keyed on the declaration's normalized path+start+end.  This eliminates
+ *   the quadratic comparison overhead that grew with the number of declarations
+ *   per scope.
+ *
+ * **Lazy scope-decision allocation** (multi-declaration test):
+ *   Deferred the allocation of per-scope decision structures until they are
+ *   first accessed, rather than constructing them eagerly for every scope
+ *   encountered during target processing.  This avoids unnecessary Map/Set
+ *   allocations in the common case where a scope has only a single declaration.
+ */
 import test from "node:test";
 
-import { Refactor } from "../index.js";
-import type {
-    ConfiguredCodemodRunResult,
-    NamingConventionTarget,
-    PartialSemanticAnalyzer,
-    RefactorProjectConfig
-} from "../src/types.js";
-import { measureMedianDurationMs } from "./test-helpers/performance-timing.js";
+import { runNamingConventionStressTest } from "./test-helpers/naming-convention-test-runner.js";
 
 const FILE_COUNT = 220;
 const DUPLICATE_DECLARATIONS_PER_FILE = 36;
@@ -27,245 +43,23 @@ const MULTI_DECLARATION_SCOPE_PER_FILE = 60;
 // preserving regression protection against >2x slowdowns.
 const MULTI_DECLARATION_SCOPE_THRESHOLD_MS = 800;
 
-type SyntheticFileFixture = {
-    sourceText: string;
-    targets: Array<NamingConventionTarget>;
-};
-
-function createDuplicateScopeFixture(filePath: string, fileIndex: number): SyntheticFileFixture {
-    const lines: Array<string> = [];
-    const targets: Array<NamingConventionTarget> = [];
-    let offset = 0;
-
-    for (let duplicateIndex = 0; duplicateIndex < DUPLICATE_DECLARATIONS_PER_FILE; duplicateIndex += 1) {
-        const currentName = `bad_name_${fileIndex}_${duplicateIndex}`;
-        const declarationLine = `var ${currentName} = ${duplicateIndex};\n`;
-        const referenceLine = `show_debug_message(${currentName});\n`;
-        const declarationStart = offset + declarationLine.indexOf(currentName);
-        const referenceStart = offset + declarationLine.length + referenceLine.indexOf(currentName);
-
-        lines.push(declarationLine, referenceLine);
-
-        const duplicateTargetOccurrences = [
-            {
-                path: filePath,
-                start: declarationStart,
-                end: declarationStart + currentName.length,
-                kind: Refactor.OccurrenceKind.DEFINITION,
-                scopeId: "shared_scope"
-            },
-            {
-                path: filePath,
-                start: referenceStart,
-                end: referenceStart + currentName.length,
-                kind: Refactor.OccurrenceKind.REFERENCE,
-                scopeId: "shared_scope"
-            }
-        ];
-
-        // Duplicate semantic row for the same declaration to exercise duplicate-scoped
-        // declaration handling in the naming-convention planner hot path.
-        targets.push(
-            {
-                category: "localVariable",
-                name: currentName,
-                path: filePath,
-                scopeId: "shared_scope",
-                symbolId: null,
-                occurrences: duplicateTargetOccurrences
-            },
-            {
-                category: "localVariable",
-                name: currentName,
-                path: filePath,
-                scopeId: "shared_scope",
-                symbolId: null,
-                occurrences: duplicateTargetOccurrences
-            }
-        );
-
-        offset += declarationLine.length + referenceLine.length;
-    }
-
-    return {
-        sourceText: lines.join(""),
-        targets
-    };
-}
-
-function createMultiDeclarationScopeFixture(filePath: string, fileIndex: number): SyntheticFileFixture {
-    const lines: Array<string> = [];
-    const targets: Array<NamingConventionTarget> = [];
-    let offset = 0;
-
-    for (let declarationIndex = 0; declarationIndex < MULTI_DECLARATION_SCOPE_PER_FILE; declarationIndex += 1) {
-        const currentName = `bad_name_${fileIndex}_${declarationIndex}`;
-        const declarationLine = `var ${currentName} = ${declarationIndex};\n`;
-        const referenceLine = `show_debug_message(${currentName});\n`;
-        const declarationStart = offset + declarationLine.indexOf(currentName);
-        const referenceStart = offset + declarationLine.length + referenceLine.indexOf(currentName);
-
-        lines.push(declarationLine, referenceLine);
-        targets.push({
-            category: "localVariable",
-            name: currentName,
-            path: filePath,
-            scopeId: "shared_scope",
-            symbolId: null,
-            occurrences: [
-                {
-                    path: filePath,
-                    start: declarationStart,
-                    end: declarationStart + currentName.length,
-                    kind: Refactor.OccurrenceKind.DEFINITION,
-                    scopeId: "shared_scope"
-                },
-                {
-                    path: filePath,
-                    start: referenceStart,
-                    end: referenceStart + currentName.length,
-                    kind: Refactor.OccurrenceKind.REFERENCE,
-                    scopeId: "shared_scope"
-                }
-            ]
-        });
-
-        offset += declarationLine.length + referenceLine.length;
-    }
-
-    return {
-        sourceText: lines.join(""),
-        targets
-    };
-}
-
-function buildSemanticStub(targetsByFile: Map<string, Array<NamingConventionTarget>>): PartialSemanticAnalyzer {
-    return {
-        listNamingConventionTargets: async (filePaths?: Array<string>) => {
-            const selectedPaths = filePaths === undefined ? null : new Set(filePaths);
-            const matchingTargets: Array<NamingConventionTarget> = [];
-
-            for (const [filePath, targets] of targetsByFile.entries()) {
-                const resourcePath = filePath.replace(/\.gml$/i, ".yy");
-                if (selectedPaths !== null && !selectedPaths.has(filePath) && !selectedPaths.has(resourcePath)) {
-                    continue;
-                }
-
-                matchingTargets.push(...targets);
-            }
-
-            return matchingTargets;
-        },
-        validateEdits: async () => ({
-            errors: [],
-            warnings: []
-        })
-    };
-}
-
-function createNamingConventionConfig(): RefactorProjectConfig {
-    return {
-        codemods: {
-            namingConvention: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
-                    }
-                }
-            }
-        }
-    };
-}
-
-function buildNamingConventionExecutor(parameters: {
-    engine: InstanceType<typeof Refactor.RefactorEngine>;
-    projectRoot: string;
-    gmlFilePaths: Array<string>;
-    sourceTexts: Map<string, string>;
-}): () => Promise<ConfiguredCodemodRunResult> {
-    const { engine, projectRoot, gmlFilePaths, sourceTexts } = parameters;
-    const config = createNamingConventionConfig();
-    return () =>
-        engine.executeConfiguredCodemods({
-            projectRoot,
-            targetPaths: [projectRoot],
-            gmlFilePaths,
-            config,
-            readFile: async (filePath) => sourceTexts.get(filePath) ?? "",
-            dryRun: true
-        });
-}
-
 void test("namingConvention duplicate-scope stress test stays within the planner threshold", async () => {
-    const projectRoot = "/project";
-    const sourceTexts = new Map<string, string>();
-    const targetsByFile = new Map<string, Array<NamingConventionTarget>>();
-    const gmlFilePaths = Array.from({ length: FILE_COUNT }, (_, fileIndex) => `scripts/script_${fileIndex}.gml`);
-
-    for (const [fileIndex, filePath] of gmlFilePaths.entries()) {
-        const fixture = createDuplicateScopeFixture(filePath, fileIndex);
-        sourceTexts.set(filePath, fixture.sourceText);
-        targetsByFile.set(filePath, fixture.targets);
-    }
-
-    const semantic = buildSemanticStub(targetsByFile);
-    const engine = new Refactor.RefactorEngine({ semantic });
-
-    const executeCodemod = buildNamingConventionExecutor({
-        engine,
-        projectRoot,
-        gmlFilePaths,
-        sourceTexts
+    await runNamingConventionStressTest({
+        fileCount: FILE_COUNT,
+        targetsPerFile: DUPLICATE_DECLARATIONS_PER_FILE,
+        performanceThresholdMs: PERFORMANCE_THRESHOLD_MS,
+        testDisplayName: "duplicate-scope (220 files × 36 targets)",
+        sharedScopeId: "shared_scope",
+        duplicateTargetsPerDeclaration: true
     });
-
-    await executeCodemod();
-
-    const SAMPLE_COUNT = 5;
-    const { durationMs, result } = await measureMedianDurationMs(SAMPLE_COUNT, executeCodemod);
-
-    assert.equal(result.summaries.length, 1);
-    assert.equal(result.summaries[0]?.id, "namingConvention");
-    assert.equal(result.summaries[0]?.changed, true);
-    assert.equal(result.appliedFiles.size, FILE_COUNT);
-    assert.ok(
-        durationMs <= PERFORMANCE_THRESHOLD_MS,
-        `Expected duplicate-scope namingConvention stress test to finish within ${PERFORMANCE_THRESHOLD_MS}ms, received ${durationMs.toFixed(2)}ms`
-    );
 });
 
 void test("namingConvention multi-declaration scopes stay within allocation-regression threshold", async () => {
-    const projectRoot = "/project";
-    const sourceTexts = new Map<string, string>();
-    const targetsByFile = new Map<string, Array<NamingConventionTarget>>();
-    const gmlFilePaths = Array.from({ length: FILE_COUNT }, (_, fileIndex) => `scripts/script_${fileIndex}.gml`);
-
-    for (const [fileIndex, filePath] of gmlFilePaths.entries()) {
-        const fixture = createMultiDeclarationScopeFixture(filePath, fileIndex);
-        sourceTexts.set(filePath, fixture.sourceText);
-        targetsByFile.set(filePath, fixture.targets);
-    }
-
-    const semantic = buildSemanticStub(targetsByFile);
-    const engine = new Refactor.RefactorEngine({ semantic });
-
-    const executeCodemod = buildNamingConventionExecutor({
-        engine,
-        projectRoot,
-        gmlFilePaths,
-        sourceTexts
+    await runNamingConventionStressTest({
+        fileCount: FILE_COUNT,
+        targetsPerFile: MULTI_DECLARATION_SCOPE_PER_FILE,
+        performanceThresholdMs: MULTI_DECLARATION_SCOPE_THRESHOLD_MS,
+        testDisplayName: "multi-declaration scope (220 files × 60 targets)",
+        sharedScopeId: "shared_scope"
     });
-
-    await executeCodemod();
-
-    const SAMPLE_COUNT = 5;
-    const { durationMs, result } = await measureMedianDurationMs(SAMPLE_COUNT, executeCodemod);
-
-    assert.equal(result.summaries.length, 1);
-    assert.equal(result.summaries[0]?.id, "namingConvention");
-    assert.equal(result.summaries[0]?.changed, true);
-    assert.equal(result.appliedFiles.size, FILE_COUNT);
-    assert.ok(
-        durationMs <= MULTI_DECLARATION_SCOPE_THRESHOLD_MS,
-        `Expected multi-declaration namingConvention stress test to finish within ${MULTI_DECLARATION_SCOPE_THRESHOLD_MS}ms, received ${durationMs.toFixed(2)}ms`
-    );
 });
