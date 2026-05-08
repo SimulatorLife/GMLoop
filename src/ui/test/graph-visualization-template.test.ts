@@ -26,6 +26,10 @@ function readBundleFileText(bundle: ReturnType<typeof renderGraphVisualizationBu
     return decodeBytes(file.bytes);
 }
 
+function countTextOccurrences(text: string, pattern: RegExp): number {
+    return Array.from(text.matchAll(pattern)).length;
+}
+
 void test("graph visualization bundle emits entry html plus local runtime assets", () => {
     const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "Test Graph" });
 
@@ -54,6 +58,18 @@ void test("graph visualization entry html references local assets and avoids CDN
     assert.doesNotMatch(html, />GitHub Repo</u);
     assert.match(html, /id="toggle-lint" class="rule-toggle active"/u);
     assert.match(html, /id="toggle-refactor" class="rule-toggle active"/u);
+});
+
+void test("graph visualization entry html keeps project opening inside the project context card", () => {
+    const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "No project loaded" });
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.equal(countTextOccurrences(html, /id="open-project"/gu), 1);
+    assert.match(html, /<div class="loaded-target-actions">[\s\S]*id="open-project"/u);
+    assert.match(
+        html,
+        /<div id="loaded-target" class="loaded-target-card"><span class="loaded-path-label">Loaded Project<\/span><span class="loaded-path-value">No project loaded<\/span><\/div>/u
+    );
 });
 
 void test("graph visualization module script embeds serialized graph payload and boot logic", () => {
@@ -90,6 +106,15 @@ void test("graph visualization module script embeds serialized graph payload and
     assert.match(script, /InterplanetaryFootball/u);
     assert.match(script, /bootstrapGraphVisualizationApp\(\{/u);
     assert.match(script, /import \{ fileOpen, directoryOpen \} from "\.\/vendor\/browser-fs-access\.js";/u);
+});
+
+void test("graph visualization module script renders unloaded project state without repeated empty labels", () => {
+    const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "No project loaded" });
+    const script = readBundleFileText(bundle, "assets/graph-visualization.js");
+
+    assert.match(script, /loadedTargetLabel\.textContent = "Loaded Project";/u);
+    assert.match(script, /loadedTargetValue\.textContent = "No project loaded";/u);
+    assert.doesNotMatch(script, /loadedTargetLabel\.textContent = "No project loaded";/u);
 });
 
 void test("graph visualization module script embeds workspace rule catalogs when provided", () => {
@@ -136,7 +161,8 @@ void test("graph visualization module script embeds workspace rule catalogs when
     assert.match(script, /parseGraphVisualizationUiStateFromUrlSearch/u);
     assert.match(script, /replaceGraphVisualizationUiStateInCurrentUrl/u);
     assert.match(script, /Workspace configuration snapshot/u);
-    assert.match(script, /Resolved Workspace Views/u);
+    assert.match(script, /Rendered Workspace View/u);
+    assert.match(script, /Raw gmloop\.json/u);
 });
 
 void test("graph visualization css asset preserves core visual affordances", () => {
