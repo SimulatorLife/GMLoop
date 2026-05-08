@@ -87,10 +87,12 @@ void test("graph visualization module script embeds serialized graph payload and
             nodes: [
                 {
                     displayName: "InterplanetaryFootball",
+                    filePath: null,
                     graphId: "project",
                     id: "project::resource::InterplanetaryFootball.yyp",
                     kind: "project",
                     name: "InterplanetaryFootball",
+                    resourcePath: "InterplanetaryFootball.yyp",
                     snippet: "",
                     summary: "project 'InterplanetaryFootball'. Defined in InterplanetaryFootball.yyp."
                 }
@@ -104,6 +106,9 @@ void test("graph visualization module script embeds serialized graph payload and
 
     assert.match(script, /const graphVisualizationData = /u);
     assert.match(script, /InterplanetaryFootball/u);
+    assert.match(script, /resourcePath":"InterplanetaryFootball\.yyp/u);
+    assert.match(script, /function readGraphNodePathLabel/u);
+    assert.match(script, /Path:/u);
     assert.match(script, /bootstrapGraphVisualizationApp\(\{/u);
     assert.match(script, /import \{ fileOpen, directoryOpen \} from "\.\/vendor\/browser-fs-access\.js";/u);
 });
