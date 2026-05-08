@@ -1,7 +1,7 @@
 // This module defines the public API surface for the Core package. Do NOT add
 // re-export wrappers, compatibility shims, or transitional helpers here. The Core
 // namespace is intentionally minimal and exposes only the canonical functionality
-// defined in the submodules (AST, Comments, FS, Text, Utils, Resources). Adding
+// defined in the submodules (AST, Comments, FS, Text, Utils, Reporting, Resources). Adding
 // legacy-support layers or pass-through exports would:
 //   1. Dilute the single-responsibility principle by mixing compatibility concerns
 //      with the core domain logic.
@@ -22,6 +22,7 @@ import * as AST from "./ast/index.js";
 import * as Comments from "./comments/index.js";
 import * as FS from "./fs/index.js";
 import * as ProjectConfig from "./project-config/index.js";
+import * as Reporting from "./reporting/index.js";
 import * as IdentifierMetadata from "./resources/gml-identifier-loading.js";
 import * as Resources from "./resources/index.js";
 import * as Text from "./text/index.js";
@@ -35,6 +36,7 @@ type CoreNamespace = typeof AST &
     typeof FS &
     typeof ProjectConfig &
     typeof Resources &
+    typeof Reporting &
     typeof IdentifierMetadata &
     typeof Comments &
     typeof Transforms;
@@ -48,6 +50,7 @@ export const Core: CoreNamespace = Object.freeze({
     ...FS,
     ...IdentifierMetadata,
     ...ProjectConfig,
+    ...Reporting,
     ...Resources,
     ...Text,
     ...Transforms,
