@@ -90,7 +90,7 @@ void test("graph toolbar renders grouped controls for search, view state, and ac
     assert.match(rendered, /class="toolbar-control-group toolbar-search-group"/u);
     assert.match(rendered, /id="toggle-view"[\s\S]*class="toolbar-chip-button"/u);
     assert.match(rendered, /id="toggle-labels"[\s\S]*class="toolbar-chip-button"/u);
-    assert.match(rendered, /id="reset-default" class="toolbar-chip-button"/u);
+    assert.match(rendered, /id="reset-default"[\s\S]*class="toolbar-chip-button"/u);
     assert.match(rendered, /id="regenerate"[\s\S]*class="toolbar-chip-button"/u);
 });
 
