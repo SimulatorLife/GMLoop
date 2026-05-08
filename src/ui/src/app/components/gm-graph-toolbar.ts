@@ -200,47 +200,69 @@ export class GmGraphToolbar extends LightDomLitElement {
                     <span id="toolbar-subheading">${subheading}</span>
                 </div>
                 <div id="graph-controls" class=${graphControlsClassName}>
-                    <input
-                        id="search"
-                        type="search"
-                        aria-label="Search graph nodes"
-                        .value=${this.state.searchQuery}
-                        placeholder="Search nodes…"
-                        ${ref((element) => {
-                            this.#searchInput = element as HTMLInputElement | null;
-                        })}
-                        @input=${this.#onSearchInput}
-                    />
-                    <button
-                        id="toggle-view"
-                        aria-pressed=${this.state.activeGraphView === "json"}
-                        @click=${() => this.#emitToggleGraphView()}
-                    >
-                        ${this.state.activeGraphView === "visual" ? "JSON" : "Visual"}
-                    </button>
-                    <button id="toggle-labels" @click=${() => this.#emitCycleLabelMode()}>
-                        Labels:
-                        ${this.state.labelMode === "always" ? "On" : this.state.labelMode === "hidden" ? "Off" : "Auto"}
-                    </button>
-                    <button id="reset-default" @click=${() => this.#emitResetDefaults()}>Reset</button>
-                    ${this.model.isServerMode
-                        ? html`
-                              <button
-                                  id="regenerate"
-                                  ?disabled=${this.state.isRegeneratePending}
-                                  @click=${() => this.#emitRegenerate()}
-                              >
-                                  <span class="button-content">
-                                      ${this.state.isRegeneratePending
-                                          ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                          : null}
-                                      <span class="button-label"
-                                          >${this.state.isRegeneratePending ? "Regenerating…" : "Regenerate"}</span
-                                      >
-                                  </span>
-                              </button>
-                          `
-                        : null}
+                    <div class="toolbar-control-group toolbar-search-group">
+                        <input
+                            id="search"
+                            type="search"
+                            aria-label="Search graph nodes"
+                            .value=${this.state.searchQuery}
+                            placeholder="Search nodes…"
+                            ${ref((element) => {
+                                this.#searchInput = element as HTMLInputElement | null;
+                            })}
+                            @input=${this.#onSearchInput}
+                        />
+                    </div>
+                    <div class="toolbar-control-group">
+                        <button
+                            id="toggle-view"
+                            class="toolbar-chip-button"
+                            aria-pressed=${this.state.activeGraphView === "json"}
+                            @click=${() => this.#emitToggleGraphView()}
+                        >
+                            ${this.state.activeGraphView === "visual" ? "JSON" : "Visual"}
+                        </button>
+                        <button
+                            id="toggle-labels"
+                            class="toolbar-chip-button"
+                            @click=${() => this.#emitCycleLabelMode()}
+                        >
+                            Labels:
+                            ${this.state.labelMode === "always"
+                                ? "On"
+                                : this.state.labelMode === "hidden"
+                                  ? "Off"
+                                  : "Auto"}
+                        </button>
+                    </div>
+                    <div class="toolbar-control-group">
+                        <button
+                            id="reset-default"
+                            class="toolbar-chip-button"
+                            @click=${() => this.#emitResetDefaults()}
+                        >
+                            Reset
+                        </button>
+                        ${this.model.isServerMode
+                            ? html`
+                                  <button
+                                      id="regenerate"
+                                      class="toolbar-chip-button"
+                                      ?disabled=${this.state.isRegeneratePending}
+                                      @click=${() => this.#emitRegenerate()}
+                                  >
+                                      <span class="button-content">
+                                          ${this.state.isRegeneratePending
+                                              ? html`<span class="button-spinner" aria-hidden="true"></span>`
+                                              : null}
+                                          <span class="button-label"
+                                              >${this.state.isRegeneratePending ? "Regenerating…" : "Regenerate"}</span
+                                          >
+                                      </span>
+                                  </button>
+                              `
+                            : null}
+                    </div>
                 </div>
             </div>
         `;

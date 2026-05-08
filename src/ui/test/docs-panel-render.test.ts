@@ -1,50 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { TemplateResult } from "lit";
-
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
 import type { GraphVisualizationDocumentationCatalogs } from "../src/graph/types.js";
+import { renderTemplateValue } from "./render-template-helpers.js";
 
 class TestableGmDocsPanel extends GmDocsPanel {
     public renderForTest(): unknown {
         return this.render();
     }
-}
-
-function isTemplateResult(value: unknown): value is TemplateResult {
-    if (typeof value !== "object" || value === null) {
-        return false;
-    }
-
-    return Array.isArray(Reflect.get(value, "strings")) && Array.isArray(Reflect.get(value, "values"));
-}
-
-function renderTemplateValue(value: unknown): string {
-    if (Array.isArray(value)) {
-        return value.map((entry) => renderTemplateValue(entry)).join("");
-    }
-
-    if (isTemplateResult(value)) {
-        let output = "";
-        for (const [index, stringPart] of value.strings.entries()) {
-            output += stringPart;
-            if (index < value.values.length) {
-                output += renderTemplateValue(value.values[index]);
-            }
-        }
-        return output;
-    }
-
-    if (value === null || value === undefined) {
-        return "";
-    }
-
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        return String(value);
-    }
-
-    return JSON.stringify(value) ?? "";
 }
 
 function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs {

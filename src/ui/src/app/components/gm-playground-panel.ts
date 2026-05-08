@@ -5,6 +5,7 @@ import { Core } from "@gmloop/core";
 import { html, type PropertyValues } from "lit";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../playground-default-gml.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
@@ -21,7 +22,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
-    #gmlInput = "";
+    #gmlInput = DEFAULT_PLAYGROUND_GML_SOURCE;
 
     #gmlOutput = "";
 
@@ -31,9 +32,9 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #isFormatEnabled = true;
 
-    #isLintEnabled = false;
+    #isLintEnabled = true;
 
-    #isRefactorEnabled = false;
+    #isRefactorEnabled = true;
 
     #error: string | null = null;
 
@@ -41,10 +42,10 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     protected firstUpdated(): void {
         const savedInput = localStorage.getItem("gmloop-playground-input");
-        if (savedInput) {
+        if (savedInput !== null) {
             this.#gmlInput = savedInput;
-            void this.#processInput();
         }
+        void this.#processInput();
     }
 
     protected updated(changedProperties: PropertyValues): void {
@@ -173,7 +174,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                             Refactor
                         </button>
                     </div>
-                    <div style="flex: 1"></div>
+                    <div class="playground-toolbar-spacer" aria-hidden="true"></div>
                     <div class="view-selector">
                         <button
                             type="button"
@@ -198,7 +199,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                     <div class="editor-pane">
                         <div class="pane-header">
                             <span>Input GML</span>
-                            <span style="opacity: 0.5">Writable</span>
+                            <span class="pane-header-status">Writable</span>
                         </div>
                         <textarea
                             class="playground-input"
@@ -211,15 +212,10 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                     <div class="editor-pane">
                         <div class="pane-header">
                             <span>${this.#viewMode === "code" ? "Processed Result" : "Parsed AST"}</span>
-                            <span style="opacity: 0.5">Read-only</span>
+                            <span class="pane-header-status">Read-only</span>
                         </div>
                         ${this.#error
-                            ? html`<div
-                                  class="playground-output"
-                                  style="color: #ff8080; background: rgba(255, 0, 0, 0.05)"
-                              >
-                                  ${this.#error}
-                              </div>`
+                            ? html`<div class="playground-output is-error">${this.#error}</div>`
                             : this.#viewMode === "code"
                               ? html`<pre class="playground-output">${this.#gmlOutput}</pre>`
                               : html`<pre class="playground-output">${this.#astJson}</pre>`}

@@ -11,6 +11,7 @@ import type {
 } from "d3";
 import * as d3 from "d3";
 
+import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../app/playground-default-gml.js";
 import type { GraphVisualizationUiLabelMode, GraphVisualizationUiState } from "../app/state/types.js";
 import {
     readGraphVisualizationUiStateFromCurrentUrl,
@@ -460,9 +461,9 @@ function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoaded
     source.textContent = `Source: ${currentLoadedTarget.source}`;
     loadedTargetDetailsElement.append(source);
     const detailText = document.createElement("span");
-    detailText.textContent = ` | Active path: ${currentLoadedTarget.activePath} | Selected: ${String(
-        currentLoadedTarget.selectedPaths.length
-    )} item(s)`;
+    detailText.textContent = ` | Selected: ${String(currentLoadedTarget.selectedPaths.length)} item${
+        currentLoadedTarget.selectedPaths.length === 1 ? "" : "s"
+    }`;
     loadedTargetDetailsElement.append(detailText);
 }
 
@@ -1341,24 +1342,6 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 gmloopRaw
             ])
         );
-
-        const repositoryLink = document.createElement("a");
-        repositoryLink.className = "github-link";
-        repositoryLink.href = effectiveConfiguration.githubRepositoryUrl || "https://github.com/SimulatorLife/GMLoop";
-        repositoryLink.target = "_blank";
-        repositoryLink.rel = "noreferrer";
-        repositoryLink.textContent = "Open Public Repository";
-        overviewGrid.append(
-            createConfigCard("Repository", "Project root and canonical public repository for GMLoop.", [
-                createConfigItem(
-                    "Project Root",
-                    "Active project root used by graph, lint, format, and refactor workflows.",
-                    gmloopConfig.projectRoot || "(none)",
-                    []
-                ),
-                repositoryLink
-            ])
-        );
         configContentElement.append(
             createConfigSection(
                 "Project Inputs",
@@ -2178,18 +2161,20 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         }
 
         let isFormatEnabled = true;
-        let isLintEnabled = false;
-        let isRefactorEnabled = false;
+        let isLintEnabled = true;
+        let isRefactorEnabled = true;
         let viewMode: "code" | "ast" = "code";
         let lastAst = "{}";
         let lastOutput = "";
         let debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
         const savedInput = localStorage.getItem("gmloop-playground-input");
-        if (savedInput) {
+        if (savedInput === null) {
+            input.value = DEFAULT_PLAYGROUND_GML_SOURCE;
+        } else {
             input.value = savedInput;
-            void processPlaygroundInput();
         }
+        void processPlaygroundInput();
 
         function updateView() {
             if (viewMode === "code") {

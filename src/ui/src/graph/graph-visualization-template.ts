@@ -125,7 +125,7 @@ export function renderGraphVisualizationBundle(
         .replace(
             "{{REGENERATE_BUTTON}}",
             isServerMode
-                ? '<button id="regenerate" style="background: linear-gradient(135deg, rgba(89,195,195,0.26), rgba(139,92,246,0.28)); border-color: rgba(89,195,195,0.4);"><span class="button-content"><span class="button-label">Regenerate</span></span></button>'
+                ? '<button id="regenerate" class="toolbar-chip-button toolbar-accent-button"><span class="button-content"><span class="button-label">Regenerate</span></span></button>'
                 : ""
         )
         .replace("{{ARROW_CALLS_COLOR}}", getEdgeLineColor("calls"))

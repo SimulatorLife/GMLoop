@@ -3,7 +3,15 @@ import test from "node:test";
 
 import { GmPlaygroundPanel } from "../src/app/components/gm-playground-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../src/app/playground-default-gml.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
+import { renderTemplateValue } from "./render-template-helpers.js";
+
+class TestableGmPlaygroundPanel extends GmPlaygroundPanel {
+    public renderForTest(): unknown {
+        return this.render();
+    }
+}
 
 function createMockModel(): GraphVisualizationUiModel {
     return {
@@ -40,83 +48,49 @@ function createMockState(): GraphVisualizationUiState {
  * button elements and proper accessibility attributes.
  */
 void test("playground panel renders toggle buttons as accessible <button> elements", () => {
-    const container = document.createElement("div");
-    const panel = new GmPlaygroundPanel();
+    const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
-    container.append(panel);
+    const rendered = renderTemplateValue(panel.renderForTest());
 
-    // Wait for Lit to render
-    void panel.updateComplete;
-
-    const formatButton = container.querySelector<HTMLButtonElement>("[aria-pressed]");
-    assert.ok(formatButton, "Expected at least one toggle button with aria-pressed attribute");
-
-    const formatToggle = container.querySelector<HTMLButtonElement>("button.rule-toggle");
-    assert.ok(formatToggle, "Expected a <button class='rule-toggle'> for Format");
-    assert.equal(formatToggle.getAttribute("type"), "button", "Toggle button should have type='button'");
-    assert.ok(
-        formatToggle.hasAttribute("aria-pressed"),
-        "Format toggle should have aria-pressed attribute for state communication"
-    );
-
-    const lintToggle = container.querySelector<HTMLButtonElement>("button.rule-toggle:nth-of-type(2)");
-    assert.ok(lintToggle, "Expected a Lint toggle button");
-    assert.ok(lintToggle.hasAttribute("aria-pressed"), "Lint toggle should have aria-pressed attribute");
-
-    const refactorToggle = container.querySelector<HTMLButtonElement>("button.rule-toggle:nth-of-type(3)");
-    assert.ok(refactorToggle, "Expected a Refactor toggle button");
-    assert.ok(refactorToggle.hasAttribute("aria-pressed"), "Refactor toggle should have aria-pressed attribute");
+    assert.match(rendered, /button\s+type="button"\s+class="rule-toggle active"\s+aria-pressed=true/u);
+    assert.doesNotMatch(rendered, /class="rule-toggle "\s+aria-pressed=false/u);
 });
 
 /**
  * Verify that view selector buttons also use semantic <button> elements.
  */
 void test("playground panel view selector uses semantic <button> elements", () => {
-    const container = document.createElement("div");
-    const panel = new GmPlaygroundPanel();
+    const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
-    container.append(panel);
+    const rendered = renderTemplateValue(panel.renderForTest());
 
-    void panel.updateComplete;
-
-    const viewOptions = container.querySelectorAll<HTMLButtonElement>("button.view-option");
-    assert.ok(viewOptions.length >= 2, "Expected at least two view option buttons");
-
-    const codeViewButton = Array.from(viewOptions).find((btn) => btn.textContent?.includes("Output Code"));
-    assert.ok(codeViewButton, "Expected an 'Output Code' view option button");
-    assert.equal(codeViewButton.getAttribute("type"), "button");
-    assert.ok(
-        codeViewButton.hasAttribute("aria-pressed"),
-        "View option buttons should expose state through aria-pressed"
-    );
-
-    const astViewButton = Array.from(viewOptions).find((btn) => btn.textContent?.includes("AST View"));
-    assert.ok(astViewButton, "Expected an 'AST View' view option button");
-    assert.equal(astViewButton.getAttribute("type"), "button");
+    assert.match(rendered, /button\s+type="button"\s+class="view-option active"\s+aria-pressed=true/u);
+    assert.match(rendered, /Output Code/u);
+    assert.match(rendered, /AST View/u);
 });
 
 /**
  * Verify that toggle state changes reflect in aria-pressed values.
  */
 void test("playground panel toggle aria-pressed reflects active state", () => {
-    const container = document.createElement("div");
-    const panel = new GmPlaygroundPanel();
+    const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
-    container.append(panel);
+    const rendered = renderTemplateValue(panel.renderForTest());
 
-    void panel.updateComplete;
+    const activeToggleMatches = [...rendered.matchAll(/class="rule-toggle active"\s+aria-pressed=true/gu)];
+    assert.equal(activeToggleMatches.length, 3);
+});
 
-    const formatToggle = container.querySelector<HTMLButtonElement>("button.rule-toggle");
-    assert.ok(formatToggle);
-    const initialPressed = formatToggle.getAttribute("aria-pressed");
-    assert.ok(initialPressed !== null, "aria-pressed should be set initially");
+void test("playground panel starts with the shared demo sample source", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+    const rendered = renderTemplateValue(panel.renderForTest());
 
-    // The toggle state is internal to the component; we verify the attribute is rendered
-    assert.ok(
-        initialPressed === "true" || initialPressed === "false",
-        `aria-pressed should be boolean string, got: ${initialPressed}`
-    );
+    assert.match(rendered, /demo_inventory_total/u);
+    assert.match(rendered, /array_length\(inventory\)/u);
+    assert.equal(DEFAULT_PLAYGROUND_GML_SOURCE.includes('var total = real("5");'), true);
 });

@@ -321,7 +321,7 @@ void test("merge conflict workflow supports reusable invocations with explicit P
     );
 });
 
-void test("workflow selectors use deterministic run-number weighted selection", async () => {
+void test("workflow selectors use deterministic weighted selection without randomness", async () => {
     const schedulerWorkflow = await readFile(path.resolve(process.cwd(), ".github/workflows/_scheduler.yml"), "utf8");
     const openPrWorkflow = await readFile(
         path.resolve(process.cwd(), ".github/workflows/_agent-open-pr-and-ping.yml"),
@@ -336,19 +336,26 @@ void test("workflow selectors use deterministic run-number weighted selection", 
         "utf8"
     );
 
-    for (const workflowSource of [schedulerWorkflow, openPrWorkflow, conflictWorkflow, automergeWorkflow]) {
+    for (const workflowSource of [openPrWorkflow, conflictWorkflow, automergeWorkflow]) {
         assert.match(workflowSource, /const WEIGHT_SCALE = 1000;/u);
         assert.match(workflowSource, /process\.env\.GITHUB_RUN_NUMBER/u);
         assert.match(workflowSource, /chooseDeterministicWeighted/u);
         assert.match(workflowSource, /Deterministic weighted selection/u);
         assert.doesNotMatch(workflowSource, /randomBytes/u);
     }
+
+    assert.match(schedulerWorkflow, /const WEIGHT_SCALE = 1000;/u);
+    assert.match(schedulerWorkflow, /process\.env\.GITHUB_RUN_NUMBER/u);
+    assert.match(schedulerWorkflow, /chooseDeterministicWeighted/u);
+    assert.match(schedulerWorkflow, /Deterministic weighted selection/u);
+    assert.doesNotMatch(schedulerWorkflow, /randomBytes/u);
 });
 
 void test("scheduler selects workflow and agent pairs and dispatches the selected agent input", async () => {
     const schedulerWorkflow = await readFile(path.resolve(process.cwd(), ".github/workflows/_scheduler.yml"), "utf8");
 
     assert.match(schedulerWorkflow, /const TASK_CATEGORIES = new Set\(\["code", "merging", "regressions"\]\);/u);
+    assert.match(schedulerWorkflow, /- cron: "\*\/15 \* \* \* \*"/u);
     assert.match(schedulerWorkflow, /const assertComplexityRange = \(value, label\) => \{/u);
     assert.match(schedulerWorkflow, /must be between 1 and 3 inclusive\./u);
     assert.match(schedulerWorkflow, /const cadenceTicks = rawCadenceTicks === undefined \? 1 : Number\(rawCadenceTicks\);/u);

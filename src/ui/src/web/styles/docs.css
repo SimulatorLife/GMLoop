@@ -6,63 +6,73 @@
 .docs-toggle-row {
   display: flex;
   gap: 10px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
 .docs-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 18px;
+  gap: 20px;
 }
 
 .docs-meta {
   margin: 0 0 18px;
-  color: var(--gm-muted);
-  font-size: 13px;
+  color: var(--gm-text-subdued);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .catalog-card h3 {
-  margin: 0 0 8px;
-  color: #f3f8ff;
-  font-size: 14px;
+  margin: 0 0 10px;
+  color: var(--gm-text);
+  font-size: 16px;
 }
 
 .catalog-card p {
-  margin: 0 0 10px;
-  color: #c8d5e5;
-  font-size: 12px;
+  margin: 0 0 12px;
+  color: var(--gm-text-secondary);
+  font-size: 13px;
   line-height: 1.5;
 }
 
 .catalog-usage {
   display: block;
-  margin-bottom: 10px;
-  color: #8ed1fc;
-  font-size: 11px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--gm-surface-inset);
+  border: 1px solid rgba(143, 181, 255, 0.12);
+  color: var(--gm-accent-strong);
+  font-size: 12px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .catalog-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .catalog-item {
-  color: #d9e3ef;
-  font-size: 11px;
-  line-height: 1.4;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(143, 181, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--gm-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .catalog-item code {
-  color: #f7c873;
+  color: #f7d081;
 }
 
 .catalog-empty {
-  color: #96a7ba;
-  font-size: 12px;
+  color: var(--gm-text-subdued);
+  font-size: 13px;
 }

@@ -31,10 +31,11 @@ main {
 
 .error-banner {
   margin: 10px 22px 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(255, 120, 120, 0.45);
+  padding: 12px 14px;
+  border: 1px solid var(--gm-error-border);
   border-radius: 14px;
-  background: rgba(100, 26, 26, 0.42);
-  color: #ffe3e3;
-  font-size: 12px;
+  background: var(--gm-error-surface);
+  color: var(--gm-error-text);
+  font-size: 13px;
+  line-height: 1.45;
 }

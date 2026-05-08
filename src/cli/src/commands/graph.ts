@@ -10,6 +10,7 @@ import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { UI } from "@gmloop/ui";
 import { Command, Option } from "commander";
+import { ESLint } from "eslint";
 
 import { getCliCommandCatalog, getMcpToolCatalogEntries } from "../cli.js";
 import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
@@ -70,6 +71,15 @@ type OsaScriptExecutionResult = Readonly<{
     stderr: string;
     stdout: string;
 }>;
+
+function createMutableGraphPlaygroundLintConfig(): Array<Record<string, unknown>> {
+    return Lint.configs.recommended.map((config) => ({
+        ...config,
+        files: Array.isArray(config.files) ? [...config.files] : config.files,
+        plugins: config.plugins ? { ...config.plugins } : undefined,
+        rules: config.rules ? { ...config.rules } : undefined
+    }));
+}
 
 function isMacOsDialogCancellationError(error: unknown, stderr: string): boolean {
     if (!(error instanceof Error)) {
@@ -425,7 +435,15 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     }
 
                     if (lint) {
-                        // Placeholder for lint processing.
+                        const eslint = new ESLint({
+                            overrideConfigFile: true,
+                            fix: true,
+                            overrideConfig: createMutableGraphPlaygroundLintConfig()
+                        });
+                        const [result] = await eslint.lintText(output, {
+                            filePath: "graph-visualization-playground.gml"
+                        });
+                        output = result.output ?? output;
                     }
 
                     if (format) {

@@ -108,10 +108,6 @@ export class GmConfigPanel extends LightDomLitElement {
                                 <strong>Configuration exists</strong>
                                 <span>${configCatalog.gmloop.exists ? "Yes" : "No"}</span>
                             </li>
-                            <li class="config-item">
-                                <strong>GitHub repository</strong>
-                                <span>${configCatalog.githubRepositoryUrl}</span>
-                            </li>
                         </ul>
                         <pre class="config-raw">${serializeConfigurationValue(configCatalog.gmloop.rawConfig)}</pre>
                     </gm-card>
