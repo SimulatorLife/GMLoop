@@ -1,7 +1,7 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { printExpression, readNodeText } from "../../../language/autofix-printing.js";
+import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,
@@ -247,7 +247,7 @@ function collectMultiplicativeComponents(sourceText: string, node: any): Multipl
     }
 
     if (canUseOpaqueMathFactor(unwrapped)) {
-        const text = readNodeText(sourceText, unwrapped);
+        const text = gmlRuleAutofixServices.readNodeText(sourceText, unwrapped);
         if (!text) {
             return null;
         }
@@ -392,7 +392,7 @@ function simplifyMathExpression(sourceText: string, node: any, _source?: string)
     }
 
     const simplified = normalizeLeadingNumericCoefficientOrder(multiplicativeExpression);
-    const originalText = readNodeText(sourceText, node);
+    const originalText = gmlRuleAutofixServices.readNodeText(sourceText, node);
     if (originalText && trimOuterParentheses(originalText) === trimOuterParentheses(simplified)) {
         return null;
     }
@@ -456,7 +456,7 @@ function extractHalfLengthdirRotationExpression(node: any, variableName: string,
                     unwrapParenthesized(args[0])?.type === "Literal" &&
                     unwrapParenthesized(args[0])?.value === 1
                 ) {
-                    return readNodeText(sourceText, args[1]);
+                    return gmlRuleAutofixServices.readNodeText(sourceText, args[1]);
                 }
             }
         }
@@ -589,7 +589,7 @@ function isCanonicalNumericLiteralText(sourceText: string, node: unknown): boole
         return false;
     }
 
-    const literalText = readNodeText(sourceText, expression);
+    const literalText = gmlRuleAutofixServices.readNodeText(sourceText, expression);
     const canonicalText = formatCanonicalNumericLiteral(numericValue);
     return literalText !== null && canonicalText !== null && literalText === canonicalText;
 }
@@ -642,7 +642,7 @@ function tryBuildConstantNumericReplacement(sourceText: string, node: unknown): 
         return null;
     }
 
-    const originalText = readNodeText(sourceText, node);
+    const originalText = gmlRuleAutofixServices.readNodeText(sourceText, node);
     return originalText && originalText !== replacement ? replacement : null;
 }
 
@@ -670,7 +670,7 @@ function tryReadSquaredOperandText(sourceText: string, node: unknown): string | 
         return null;
     }
 
-    const operandText = readNodeText(sourceText, expression.left);
+    const operandText = gmlRuleAutofixServices.readNodeText(sourceText, expression.left);
     return operandText ? trimOuterParentheses(operandText) : null;
 }
 
@@ -764,8 +764,8 @@ function tryBuildHalfLengthdirDifferenceReplacement(sourceText: string, node: un
         return null;
     }
 
-    const baseText = readNodeText(sourceText, baseExpression);
-    const angleText = readNodeText(sourceText, rawAngleArgument);
+    const baseText = gmlRuleAutofixServices.readNodeText(sourceText, baseExpression);
+    const angleText = gmlRuleAutofixServices.readNodeText(sourceText, rawAngleArgument);
     if (!baseText || !angleText) {
         return null;
     }
@@ -849,7 +849,7 @@ function tryBuildGroupedRatioProductReplacement(sourceText: string, node: unknow
 
     const scaledMultiplier = ratioMultiplierMatch.multiplier / divisorValue;
     const multiplierText = formatCanonicalNumericLiteral(scaledMultiplier);
-    const ratioText = readNodeText(sourceText, ratioMultiplierMatch.ratioExpression);
+    const ratioText = gmlRuleAutofixServices.readNodeText(sourceText, ratioMultiplierMatch.ratioExpression);
     if (!multiplierText || !ratioText) {
         return null;
     }
@@ -954,8 +954,8 @@ function tryBuildFastDotProductReplacement(sourceText: string, node: any): strin
             return null;
         }
 
-        const leftText = readNodeText(sourceText, leftOperand);
-        const rightText = readNodeText(sourceText, rightOperand);
+        const leftText = gmlRuleAutofixServices.readNodeText(sourceText, leftOperand);
+        const rightText = gmlRuleAutofixServices.readNodeText(sourceText, rightOperand);
         if (!leftText || !rightText) {
             return null;
         }
@@ -1181,12 +1181,12 @@ function attemptManualNormalization(sourceText: string, node: any): string | nul
     simplifyZeroDivisionNumerators(clone, context as any);
     cleanupMultiplicativeIdentityParentheses(clone, context as any);
 
-    const original = readNodeText(sourceText, node) || "";
+    const original = gmlRuleAutofixServices.readNodeText(sourceText, node) || "";
     if (Core.areExpressionNodesEquivalentIgnoringParentheses(node, clone)) {
         return null;
     }
 
-    const printed = printExpression(clone, sourceText);
+    const printed = gmlRuleAutofixServices.printExpression(clone, sourceText);
     if (!printed) {
         return null;
     }
@@ -1302,7 +1302,7 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                 return;
             }
 
-            const sourceTextOfNode = readNodeText(sourceText, targetNode);
+            const sourceTextOfNode = gmlRuleAutofixServices.readNodeText(sourceText, targetNode);
             if (sourceTextOfNode) {
                 if (hasComment(targetNode)) {
                     return;

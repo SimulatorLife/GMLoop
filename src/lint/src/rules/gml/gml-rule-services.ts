@@ -3,6 +3,7 @@ import {
     promoteLeadingDocCommentTextToDescription,
     resolveParameterName
 } from "../../doc-comment/index.js";
+import { printExpression, printNodeForAutofix, readNodeText } from "../../language/autofix-printing.js";
 import { createLimitedRecoveryProjection } from "../../language/index.js";
 import { forEachScientificNotationToken } from "../../malformed/index.js";
 import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
@@ -59,4 +60,18 @@ export const gmlRuleLanguageServices = Object.freeze({
  */
 export const gmlRuleMalformedServices = Object.freeze({
     forEachScientificNotationToken
+});
+
+/**
+ * Stable autofix-printing contract for GML rule implementations.
+ *
+ * Rules that need to print AST nodes back to source text for lint autofixes
+ * should import from this object rather than reaching three directory levels
+ * into `src/lint/src/language/autofix-printing.js`. When the printing logic
+ * is refactored, only this file needs updating — rule consumers stay stable.
+ */
+export const gmlRuleAutofixServices = Object.freeze({
+    printExpression,
+    printNodeForAutofix,
+    readNodeText
 });

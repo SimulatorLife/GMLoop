@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    gmlRuleAutofixServices,
     gmlRuleDeprecatedIdentifierServices,
     gmlRuleDocCommentServices,
     gmlRuleLanguageServices,
@@ -30,4 +31,14 @@ void test("gml-rule-services contracts are frozen and cannot be mutated at runti
     assert.ok(Object.isFrozen(gmlRuleDeprecatedIdentifierServices));
     assert.ok(Object.isFrozen(gmlRuleLanguageServices));
     assert.ok(Object.isFrozen(gmlRuleMalformedServices));
+});
+
+void test("gmlRuleAutofixServices exposes the autofix-printing contract needed by rules", () => {
+    assert.equal(typeof gmlRuleAutofixServices.printExpression, "function");
+    assert.equal(typeof gmlRuleAutofixServices.printNodeForAutofix, "function");
+    assert.equal(typeof gmlRuleAutofixServices.readNodeText, "function");
+});
+
+void test("gml-rule-services gmlRuleAutofixServices is frozen and cannot be mutated at runtime", () => {
+    assert.ok(Object.isFrozen(gmlRuleAutofixServices));
 });
