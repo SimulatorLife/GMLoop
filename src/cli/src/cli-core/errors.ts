@@ -106,9 +106,8 @@ function formatAggregateErrors(error: unknown, seen: Set<unknown>): string | nul
     }
 
     const aggregate = error as { errors: Array<unknown> };
-    const formatted = Core.compactArray(aggregate.errors.map((entry) => formatErrorValue(entry, seen))).map((text) =>
-        indentBlock(`- ${text.replaceAll("\n", "\n  ")}`)
-    );
+    const mapped: Array<string> = aggregate.errors.map((entry) => formatErrorValue(entry, seen));
+    const formatted = Core.compactArray(mapped).map((text) => indentBlock(`- ${text.replaceAll("\n", "\n  ")}`));
 
     if (formatted.length === 0) {
         return null;
