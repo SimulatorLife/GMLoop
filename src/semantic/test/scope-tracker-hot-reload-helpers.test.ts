@@ -63,6 +63,23 @@ void describe("ScopeTracker hot-reload helper methods", () => {
             assert.ok(results.has("alpha"));
             assert.ok(results.has("beta"));
         });
+        void it("does not report unchanged symbols from a scope modified by another symbol", async () => {
+            const tracker = new ScopeTracker({ enabled: true });
+
+            tracker.enterScope("program");
+            tracker.declare("stable", { name: "stable" });
+
+            const timestamp = Date.now();
+
+            await delay();
+
+            tracker.declare("changed", { name: "changed" });
+
+            const results = tracker.getModifiedSymbolScopes(new Set(["stable", "changed"]), timestamp);
+
+            assert.equal(results.has("stable"), false, "Should skip symbols not touched after the cutoff");
+            assert.equal(results.has("changed"), true, "Should still report symbols touched after the cutoff");
+        });
 
         void it("accepts Set-like substitutes without instanceof dependency", async () => {
             const tracker = new ScopeTracker({ enabled: true });
