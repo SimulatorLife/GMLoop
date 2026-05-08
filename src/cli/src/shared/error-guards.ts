@@ -1,5 +1,13 @@
 import { Core } from "@gmloop/core";
 
+/**
+ * Type guard: true when `value` is a plain Record (non-null object that is not
+ * an Array).  Useful for narrowing unknown JSON-deserialized payloads.
+ */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 export interface ErrorLikeDetails {
     name?: string;
     message?: string;

@@ -7,17 +7,15 @@
 
 import prettier, { type SupportLanguage, type SupportOptions } from "prettier";
 
-import { gmlFormatComponents } from "./components/default-format-components.js";
-import type { GmlFormat, GmlFormatDefaultOptions } from "./components/format-types.js";
+import {
+    defaultGmlFormatProvider,
+    type GmlFormat,
+    type GmlFormatDefaultOptions,
+    type GmlFormatProvider
+} from "./components/index.js";
 import { resolveCoreOptionOverrides } from "./options/core-option-overrides.js";
 import { extractProjectFormatOptions } from "./options/project-config.js";
 import { listProjectFormatOptionCatalogEntries } from "./options/project-config-catalog.js";
-import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "./printer/constants.js";
-import { normalizeFormattedOutput } from "./printer/normalize-formatted-output.js";
-
-export const parsers = gmlFormatComponents.parsers;
-export const printers = gmlFormatComponents.printers;
-export const formatOptions = gmlFormatComponents.options;
 
 export const languages: SupportLanguage[] = [
     {
@@ -28,14 +26,6 @@ export const languages: SupportLanguage[] = [
     }
 ];
 
-const BASE_PRETTIER_DEFAULTS: Record<string, unknown> = {
-    tabWidth: DEFAULT_TAB_WIDTH,
-    semi: true,
-    printWidth: DEFAULT_PRINT_WIDTH,
-    bracketSpacing: false, // Keep false to match existing GML formatting expectations.
-    singleQuote: false
-};
-
 function extractOptionDefaults(optionConfigMap: SupportOptions): Record<string, unknown> {
     return Object.fromEntries(
         Object.entries(optionConfigMap)
@@ -44,55 +34,74 @@ function extractOptionDefaults(optionConfigMap: SupportOptions): Record<string, 
     );
 }
 
-const coreOptionOverrides = resolveCoreOptionOverrides();
-const formatOptionDefaults = extractOptionDefaults(formatOptions);
+function createDefaultOptions(provider: GmlFormatProvider): GmlFormatDefaultOptions {
+    const coreOptionOverrides = resolveCoreOptionOverrides();
+    const formatOptionDefaults = extractOptionDefaults(provider.components.options);
 
-export const defaultOptions: GmlFormatDefaultOptions = Object.freeze({
-    // Merge order:
-    // GML Prettier defaults -> option defaults -> fixed overrides
-    ...BASE_PRETTIER_DEFAULTS,
-    ...formatOptionDefaults,
-    ...coreOptionOverrides
-});
-
-/**
- * Utility function and entry point to format GML source code.
- *
- * This is a thin, deterministic wrapper around `prettier.format()` using the
- * GML plugin. It must not inspect `source` to patch the result — doing so
- * would make formatting non-deterministic (same logical structure, different
- * source text → different output), violating target-state.md §3.2.
- *
- * Post-processing that normalises whitespace-only layout details (blank-line
- * collapsing, trailing-newline normalisation, etc.) belongs in
- * `normalizeFormattedOutput`, which operates solely on the already-formatted
- * string and therefore remains deterministic.
- */
-async function format(source: string, options: SupportOptions = {}) {
-    const prettierFormatOptions: Record<string, unknown> = {
-        ...options,
-        parser: "gml-parse",
-        plugins: [Format]
-    };
-
-    const formatted = await prettier.format(source, prettierFormatOptions);
-
-    if (typeof formatted !== "string") {
-        throw new TypeError("Expected Prettier to return a string result.");
-    }
-
-    return formatted;
+    return Object.freeze({
+        // Merge order:
+        // GML Prettier defaults -> option defaults -> fixed overrides
+        ...provider.prettierDefaults,
+        ...formatOptionDefaults,
+        ...coreOptionOverrides
+    });
 }
 
-export const Format: GmlFormat = {
-    languages,
-    parsers,
-    printers,
-    options: formatOptions,
-    defaultOptions,
-    extractProjectFormatOptions,
-    listProjectFormatOptionCatalogEntries,
-    format,
-    normalizeFormattedOutput
-};
+/**
+ * Create a GML Prettier plugin from an abstract formatter provider.
+ *
+ * The provider boundary keeps orchestration code independent from concrete
+ * parser, printer, comment, and output-normalization adapters. Default runtime
+ * exports call this factory with the canonical provider, while tests can inject
+ * a provider to verify the high-level plugin only depends on the abstraction.
+ */
+export function createGmlFormat(provider: GmlFormatProvider = defaultGmlFormatProvider): GmlFormat {
+    const defaultOptions = createDefaultOptions(provider);
+    const plugin: GmlFormat = {
+        languages,
+        parsers: provider.components.parsers,
+        printers: provider.components.printers,
+        options: provider.components.options,
+        defaultOptions,
+        extractProjectFormatOptions,
+        listProjectFormatOptionCatalogEntries,
+        /**
+         * Utility function and entry point to format GML source code.
+         *
+         * This is a thin, deterministic wrapper around `prettier.format()` using the
+         * GML plugin. It must not inspect `source` to patch the result — doing so
+         * would make formatting non-deterministic (same logical structure, different
+         * source text → different output), violating target-state.md §3.2.
+         *
+         * Post-processing that normalises whitespace-only layout details (blank-line
+         * collapsing, trailing-newline normalisation, etc.) belongs in
+         * `normalizeFormattedOutput`, which operates solely on the already-formatted
+         * string and therefore remains deterministic.
+         */
+        async format(source: string, options: SupportOptions = {}) {
+            const prettierFormatOptions: Record<string, unknown> = {
+                ...options,
+                parser: "gml-parse",
+                plugins: [plugin]
+            };
+
+            const formatted = await prettier.format(source, prettierFormatOptions);
+
+            if (typeof formatted !== "string") {
+                throw new TypeError("Expected Prettier to return a string result.");
+            }
+
+            return formatted;
+        },
+        normalizeFormattedOutput: provider.normalizeFormattedOutput
+    };
+
+    return Object.freeze(plugin);
+}
+
+export const Format: GmlFormat = createGmlFormat();
+export const parsers = Format.parsers;
+export const printers = Format.printers;
+export const formatOptions = Format.options;
+export const defaultOptions: GmlFormatDefaultOptions = Format.defaultOptions ?? Object.freeze({});
 export default Format;
