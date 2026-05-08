@@ -175,3 +175,54 @@ void test("graph visualization server keeps the current view accessible while re
         await handle.stop();
     }
 });
+
+/**
+ * Verify that the server's error reporting uses the capability probe contract
+ * (`Core.isErrorLike`) rather than `instanceof Error`, so that cross-realm error
+ * objects (e.g. from worker threads or sandboxed modules) are reported correctly.
+ */
+void test("graph visualization server reports cross-realm error messages via capability probe", async (testContext) => {
+    // Simulate a cross-realm error that is NOT instanceof Error but matches the
+    // error-like shape (message + name) that Core.isErrorLike recognizes. The cast
+    // satisfies the `only-throw-error` lint rule while preserving the non-Error
+    // prototype so the test actually exercises the capability-probe contract.
+    const crossRealmErrorLike = Object.freeze({
+        message: "sandboxed-module-failure",
+        name: "SandboxedError"
+    }) as unknown as Error;
+
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => {
+                // Simulate a cross-realm error that is NOT instanceof Error
+                throw crossRealmErrorLike;
+            },
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/reindex`, { method: "POST" });
+        assert.equal(response.status, 500);
+
+        const payload = (await response.json()) as { error: string };
+        assert.equal(
+            payload.error,
+            "sandboxed-module-failure",
+            "The server should surface the cross-realm error's message via Core.isErrorLike"
+        );
+    } finally {
+        await handle.stop();
+    }
+});

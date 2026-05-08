@@ -1,5 +1,7 @@
 import * as http from "node:http";
 
+import { Core } from "@gmloop/core";
+
 import type { ServerEndpoint, ServerLifecycle } from "./server-contracts.js";
 
 type GraphVisualizationServerRenderBundle = (
@@ -201,8 +203,15 @@ function findGraphVisualizationBundleFile(
     return bundle.files.find((file) => file.relativePath === relativePath) ?? null;
 }
 
+/**
+ * Resolve a human-readable message from an unknown error value.
+ *
+ * Uses a capability probe rather than `instanceof Error` so that cross-realm
+ * errors (e.g. from sandboxed modules or worker threads) and custom error-like
+ * objects are handled without relying on prototype-chain identity.
+ */
 function resolveErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : "Unknown error";
+    return Core.isErrorLike(error) ? error.message : "Unknown error";
 }
 
 async function readRequestBody(request: http.IncomingMessage): Promise<string> {
