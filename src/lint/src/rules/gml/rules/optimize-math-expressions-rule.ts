@@ -25,6 +25,7 @@ import {
     applyScalarCondensing,
     simplifyZeroDivisionNumerators
 } from "../transforms/math-traversal-normalization.js";
+import { evaluateSkipDecision } from "./optimize-math-skip-evaluator.js";
 
 const {
     getNodeStartIndex,
@@ -1199,34 +1200,7 @@ function attemptManualNormalization(sourceText: string, node: any): string | nul
 }
 
 function shouldSkipBinaryExpressionCandidate(parentNode: unknown, parentKey: string | null): boolean {
-    if (!parentNode || typeof parentNode !== "object") {
-        return false;
-    }
-
-    const parentType = (parentNode as { type?: unknown }).type;
-    if (typeof parentType !== "string") {
-        return false;
-    }
-
-    if (
-        parentType === "BinaryExpression" ||
-        parentType === "UnaryExpression" ||
-        parentType === "LogicalExpression" ||
-        parentType === "ParenthesizedExpression"
-    ) {
-        return true;
-    }
-
-    if (
-        (parentType === "VariableDeclarator" && parentKey === "init") ||
-        (parentType === "AssignmentExpression" && parentKey === "right") ||
-        (parentType === "IfStatement" && parentKey === "test") ||
-        (parentType === "ReturnStatement" && parentKey === "argument")
-    ) {
-        return true;
-    }
-
-    return false;
+    return evaluateSkipDecision(parentNode, parentKey);
 }
 
 function performGeneralExpressionSimplification(node: any, sourceText: string, edits: SourceTextEdit[]) {
