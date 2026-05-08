@@ -1834,8 +1834,16 @@ function createGm2031Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createFullTextRewriteRule(entry, (sourceText) => {
         let rewritten = sourceText.replaceAll(/if \(([^)]+)\)\s*\n\{/g, "if ($1) {");
         const lines = rewritten.split(/\r?\n/u);
-        for (const [index, line] of lines.entries()) {
+
+        // SAFETY: Use a while loop with an explicit index counter instead of
+        // for...of + splice. After splice shifts elements left, the iterator index
+        // becomes stale (off-by-one for every element after the splice point).
+        // With a managed counter, index stays accurate even after splice.
+        let index = 0;
+        while (index < lines.length) {
+            const line = lines[index];
             if (!/^\s*_file2\s*=\s*file_find_first\(/u.test(line)) {
+                index += 1;
                 continue;
             }
 
@@ -1845,12 +1853,17 @@ function createGm2031Rule(entry: FeatherManifestEntry): Rule.RuleModule {
             }
 
             if (previousNonEmptyLineIndex >= 0 && lines[previousNonEmptyLineIndex].trim() === "file_find_close();") {
-                break;
+                // A close already precedes this open — skip past it so we keep scanning
+                // for subsequent un-guarded opens rather than stopping immediately.
+                index = previousNonEmptyLineIndex + 1;
+                continue;
             }
 
             const indentation = /^(\s*)/u.exec(line)?.[1] ?? "";
             lines.splice(index, 0, `${indentation}file_find_close();`);
-            break;
+            // After splice, index now points to the injected close line; advance so
+            // the next iteration examines the original line at its new offset +1.
+            index += 2;
         }
 
         rewritten = lines.join("\n");
