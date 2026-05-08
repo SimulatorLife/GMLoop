@@ -1,6 +1,6 @@
-import { toArrayFromIterable } from "./array.js";
-import { getOrCreateMapEntry, incrementMapValue } from "./object.js";
-import { getNonEmptyString, normalizeStringList } from "./string.js";
+import { toArrayFromIterable } from "../utils/array.js";
+import { getOrCreateMapEntry, incrementMapValue } from "../utils/object.js";
+import { getNonEmptyString, normalizeStringList } from "../utils/string.js";
 
 const hasHrtime = typeof process?.hrtime?.bigint === "function";
 
@@ -213,7 +213,7 @@ function createFinalizer({ autoLog, logger, category, snapshot, timings, counter
 
 /**
  * Construct a metrics tracker that records timing, counter, cache, and metadata
- * information for a formatter run.
+ * information for a reporting run.
  *
  * The tracker intentionally embraces loose inputs so callers can feed
  * user-supplied configuration without pre-validating everything. Cache keys can
