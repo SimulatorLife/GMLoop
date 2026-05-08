@@ -73,6 +73,10 @@ type MutableGraphEdgeRecord = Omit<GraphVisualizationEdgeRecord, "source" | "tar
         target: MutableGraphEdgeEndpoint;
     }>;
 
+type ConfigViewMode = "raw" | "rendered";
+
+const CONFIG_LIST_CLASS_NAME = "config-list";
+
 function readErrorName(errorValue: unknown): string {
     if (errorValue instanceof Error) {
         return errorValue.name;
@@ -959,6 +963,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let searchQuery = initialUiState.searchQuery;
     let activeFilters = new Set(edgeTypes);
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
+    let activeConfigViewMode: ConfigViewMode = "rendered";
     let nodesRaw = cloneGraphNodes(allNodes);
     let linksRaw = cloneGraphEdges(dependencies.data.edges);
     let link: d3.Selection<SVGPathElement, MutableGraphEdgeRecord, SVGGElement, unknown> = container
@@ -1334,67 +1339,44 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         summaryPanel.append(summaryMetrics);
         configContentElement.append(summaryPanel);
 
-        const overviewGrid = document.createElement("div");
-        overviewGrid.className = "config-grid";
-        const gmloopRaw = document.createElement("pre");
-        gmloopRaw.className = "config-raw";
-        gmloopRaw.textContent = JSON.stringify(gmloopConfig.rawConfig || {}, null, 2);
-        overviewGrid.append(
-            createConfigCard("gmloop.json", gmloopConfig.configPath ?? "No gmloop.json file is currently loaded.", [
-                gmloopRaw
-            ])
-        );
-        configContentElement.append(
-            createConfigSection(
-                "Project Inputs",
-                "Source files and repository context",
-                "These cards stay close to the raw project inputs so it is obvious which values come from the selected project versus workspace defaults.",
-                [overviewGrid]
-            )
-        );
+        const configToggleRow = document.createElement("div");
+        configToggleRow.className = "config-toggle-row";
 
-        if (selectedProjectConfiguration !== null) {
-            const selectedConfigContainer = document.createElement("div");
-            selectedConfigContainer.className = "config-grid";
+        const renderedButton = document.createElement("button");
+        renderedButton.id = "config-view-rendered";
+        renderedButton.className = activeConfigViewMode === "rendered" ? "top-nav-button active" : "top-nav-button";
+        renderedButton.textContent = "Rendered";
+        renderedButton.addEventListener("click", () => {
+            activeConfigViewMode = "rendered";
+            renderProjectConfigurationCatalog();
+        });
+        configToggleRow.append(renderedButton);
 
-            selectedProjectConfiguration.prettier.forEach((entry) => {
-                const contentPre = document.createElement("pre");
-                contentPre.className = "config-raw";
-                contentPre.textContent = entry.content;
-                selectedConfigContainer.append(
-                    createConfigCard(
-                        `Prettier config: ${entry.path}`,
-                        "Selected project Prettier configuration file.",
-                        [contentPre]
-                    )
-                );
-            });
+        const rawButton = document.createElement("button");
+        rawButton.id = "config-view-raw";
+        rawButton.className = activeConfigViewMode === "raw" ? "top-nav-button active" : "top-nav-button";
+        rawButton.textContent = "Raw gmloop.json";
+        rawButton.addEventListener("click", () => {
+            activeConfigViewMode = "raw";
+            renderProjectConfigurationCatalog();
+        });
+        configToggleRow.append(rawButton);
+        configContentElement.append(configToggleRow);
 
-            selectedProjectConfiguration.eslint.forEach((entry) => {
-                const contentPre = document.createElement("pre");
-                contentPre.className = "config-raw";
-                contentPre.textContent = entry.content;
-                selectedConfigContainer.append(
-                    createConfigCard(`ESLint config: ${entry.path}`, "Selected project ESLint configuration file.", [
-                        contentPre
-                    ])
-                );
-            });
-
-            if (selectedConfigContainer.children.length > 0) {
-                configContentElement.append(
-                    createConfigSection(
-                        "Selected Files",
-                        "Loaded formatter and lint files",
-                        "When a project is opened directly in the browser, these cards show the raw config files that were discovered from that selection.",
-                        [selectedConfigContainer]
-                    )
-                );
-            }
+        if (activeConfigViewMode === "raw") {
+            const gmloopRaw = document.createElement("pre");
+            gmloopRaw.className = "config-raw";
+            gmloopRaw.textContent = JSON.stringify(gmloopConfig.rawConfig || {}, null, 2);
+            configContentElement.append(
+                createConfigCard("gmloop.json", gmloopConfig.configPath ?? "No gmloop.json file is currently loaded.", [
+                    gmloopRaw
+                ])
+            );
+            return;
         }
 
         const formatList = document.createElement("ul");
-        formatList.className = "config-list";
+        formatList.className = CONFIG_LIST_CLASS_NAME;
         effectiveConfiguration.format.entries.forEach((entry) => {
             formatList.append(
                 createConfigItem(entry.name, entry.description, JSON.stringify(entry.value, null, 2), [entry.source])
@@ -1409,7 +1391,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         );
 
         const lintList = document.createElement("ul");
-        lintList.className = "config-list";
+        lintList.className = CONFIG_LIST_CLASS_NAME;
         effectiveConfiguration.lint.rules.forEach((entry) => {
             const badges = [entry.level];
             if (entry.fixable !== null) {
@@ -1430,7 +1412,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         );
 
         const refactorList = document.createElement("ul");
-        refactorList.className = "config-list";
+        refactorList.className = CONFIG_LIST_CLASS_NAME;
         effectiveConfiguration.refactor.codemods.forEach((entry) => {
             const badges = [entry.enabled ? "enabled" : "disabled"];
             if (entry.requiresSemanticProjectIndex) {
@@ -1445,12 +1427,35 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 refactorList
             ])
         );
+        const projectMetadataList = document.createElement("ul");
+        projectMetadataList.className = CONFIG_LIST_CLASS_NAME;
+        projectMetadataList.append(
+            createConfigItem(
+                "Config path",
+                "Location of the active gmloop configuration file.",
+                gmloopConfig.configPath ?? "Not found",
+                []
+            ),
+            createConfigItem(
+                "Configuration exists",
+                "Whether a gmloop.json file was found for the active project.",
+                gmloopConfig.exists ? "Yes" : "No",
+                []
+            )
+        );
         configContentElement.append(
             createConfigSection(
-                "Resolved Workspace Views",
+                "Rendered Workspace View",
                 "Effective settings used by GMLoop",
-                "These cards stay together because they are the normalized outputs the workspace actually uses for format, lint, and refactor behavior.",
-                [resolvedWorkspaceGrid]
+                "This view keeps the human-friendly project summary and the normalized format, lint, and refactor settings together.",
+                [
+                    createConfigCard(
+                        "Project Metadata",
+                        "Active project root used by graph, lint, format, and refactor workflows.",
+                        [projectMetadataList]
+                    ),
+                    resolvedWorkspaceGrid
+                ]
             )
         );
     }
