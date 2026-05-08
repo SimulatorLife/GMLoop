@@ -181,6 +181,18 @@ function mapBrowserLabelModeToUiLabelMode(labelMode: "auto" | "off" | "on"): Gra
     return "auto";
 }
 
+function readGraphNodePathLabel(nodeValue: GraphVisualizationNodeRecord): string | null {
+    if (nodeValue.filePath !== null && nodeValue.resourcePath !== null) {
+        return `${nodeValue.filePath} (resource: ${nodeValue.resourcePath})`;
+    }
+
+    if (nodeValue.filePath !== null) {
+        return nodeValue.filePath;
+    }
+
+    return nodeValue.resourcePath;
+}
+
 function createCurrentGraphVisualizationUiStateSnapshot(
     activePage: "config" | "docs" | "graph" | "playground",
     activeDocsView: "cli" | "mcp" | "rules",
@@ -1167,7 +1179,12 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
         if (term.length > 0) {
             nodesRaw.forEach((nodeValue) => {
-                if (nodeValue.name.toLowerCase().includes(term) || nodeValue.displayName.toLowerCase().includes(term)) {
+                const pathLabel = readGraphNodePathLabel(nodeValue);
+                if (
+                    nodeValue.name.toLowerCase().includes(term) ||
+                    nodeValue.displayName.toLowerCase().includes(term) ||
+                    pathLabel?.toLowerCase().includes(term) === true
+                ) {
                     searchHighlightNodeIds.add(nodeValue.id);
                 }
             });
@@ -1897,6 +1914,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         details.append("span").text(` ${nodeValue.kind} | `);
         details.append("strong").text("Graph:");
         details.append("span").text(` ${nodeValue.graphId}`);
+
+        const pathLabel = readGraphNodePathLabel(nodeValue);
+        if (pathLabel !== null) {
+            const pathDetails = tooltip.append("div");
+            pathDetails.append("strong").text("Path:");
+            pathDetails.append("span").text(` ${pathLabel}`);
+        }
 
         const connections = tooltip.append("div");
         connections.append("strong").text("Connections:");
