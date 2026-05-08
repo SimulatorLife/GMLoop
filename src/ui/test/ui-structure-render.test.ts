@@ -74,6 +74,7 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.match(rendered, /class="header-actions"/u);
     assert.match(rendered, /class="header-navigation-row"/u);
     assert.match(rendered, /class="loaded-target-actions"/u);
+    assert.equal(Array.from(rendered.matchAll(/id="open-project"/gu)).length, 1);
     assert.match(rendered, /id="open-project"[\s\S]*class="open-button"/u);
     assert.match(rendered, /class="loaded-path-label">Active<\/span>/u);
     assert.match(rendered, /class="loaded-path-label">Selected<\/span>/u);
@@ -90,7 +91,7 @@ void test("graph toolbar renders grouped controls for search, view state, and ac
     assert.match(rendered, /class="toolbar-control-group toolbar-search-group"/u);
     assert.match(rendered, /id="toggle-view"[\s\S]*class="toolbar-chip-button"/u);
     assert.match(rendered, /id="toggle-labels"[\s\S]*class="toolbar-chip-button"/u);
-    assert.match(rendered, /id="reset-default" class="toolbar-chip-button"/u);
+    assert.match(rendered, /id="reset-default"[\s\S]*class="toolbar-chip-button"/u);
     assert.match(rendered, /id="regenerate"[\s\S]*class="toolbar-chip-button"/u);
 });
 
@@ -108,7 +109,7 @@ void test("playground panel renders structural spacer and readable pane status l
 });
 
 void test("playground panel source uses class-based error rendering instead of inline styles", () => {
-    const source = readFileSync("/Users/henrykirk/GMLoop/src/ui/src/app/components/gm-playground-panel.ts", "utf8");
+    const source = readFileSync(new URL("../../src/app/components/gm-playground-panel.ts", import.meta.url), "utf8");
 
     assert.match(source, /class="playground-output is-error"/u);
     assert.doesNotMatch(source, /style="color: #ff8080/u);
