@@ -448,18 +448,20 @@ function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoaded
     if (!(loadedTargetElement instanceof HTMLElement) || !(loadedTargetDetailsElement instanceof HTMLElement)) {
         return;
     }
-    const loadedTargetLabel = loadedTargetElement.querySelector("span");
-    if (!(loadedTargetLabel instanceof HTMLElement)) {
+    const loadedTargetLabel = loadedTargetElement.querySelector(".loaded-path-label");
+    const loadedTargetValue = loadedTargetElement.querySelector(".loaded-path-value");
+    if (!(loadedTargetLabel instanceof HTMLElement) || !(loadedTargetValue instanceof HTMLElement)) {
         return;
     }
 
+    loadedTargetLabel.textContent = "Loaded Project";
     if (currentLoadedTarget === null) {
-        loadedTargetLabel.textContent = "No project loaded";
+        loadedTargetValue.textContent = "No project loaded";
         loadedTargetDetailsElement.textContent = "Use Open... to load a GameMaker project.";
         return;
     }
 
-    loadedTargetLabel.textContent = currentLoadedTarget.projectRoot || currentLoadedTarget.activePath;
+    loadedTargetValue.textContent = currentLoadedTarget.projectRoot || currentLoadedTarget.activePath;
     loadedTargetDetailsElement.innerHTML = "";
     const source = document.createElement("strong");
     source.textContent = `Source: ${currentLoadedTarget.source}`;
