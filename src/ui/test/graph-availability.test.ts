@@ -37,10 +37,12 @@ void test("hasLoadedGraphIndex returns true when the model includes graph nodes"
             nodes: [
                 {
                     displayName: "Player",
+                    filePath: "/tmp/test/objects/obj_player/obj_player.gml",
                     graphId: "project",
                     id: "node-1",
                     kind: "object",
                     name: "obj_player",
+                    resourcePath: "objects/obj_player",
                     snippet: "",
                     summary: ""
                 }
