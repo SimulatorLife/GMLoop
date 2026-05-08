@@ -3,8 +3,11 @@ import type { GameMakerAstNode } from "@gmloop/core";
 import { handleComments, printComment } from "../comments/index.js";
 import { LogicalOperatorsStyle } from "../options/logical-operators-style.js";
 import { gmlParserAdapter } from "../parsers/index.js";
+import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "../printer/constants.js";
 import { print } from "../printer/index.js";
+import { normalizeFormattedOutput } from "../printer/normalize-formatted-output.js";
 import { normalizeGmlFormatComponents } from "./format-component-normalizer.js";
+import { createGmlFormatProvider } from "./format-provider.js";
 import type { GmlFormatComponentBundle, GmlFormatComponentContract } from "./format-types.js";
 
 /**
@@ -32,6 +35,26 @@ export const defaultGmlFormatComponentImplementations: GmlFormatComponentContrac
 export const gmlFormatComponents: GmlFormatComponentBundle = Object.freeze(
     normalizeGmlFormatComponents(createDefaultGmlFormatComponents())
 );
+
+const DEFAULT_PRETTIER_OPTIONS = Object.freeze({
+    tabWidth: DEFAULT_TAB_WIDTH,
+    semi: true,
+    printWidth: DEFAULT_PRINT_WIDTH,
+    bracketSpacing: false, // Keep false to match existing GML formatting expectations.
+    singleQuote: false
+});
+
+/**
+ * Default abstract provider consumed by the high-level Prettier plugin entry
+ * point. Concrete parser, printer, comment, and normalization implementations
+ * stay behind this component boundary so orchestration code depends only on the
+ * provider contract.
+ */
+export const defaultGmlFormatProvider = createGmlFormatProvider({
+    components: gmlFormatComponents,
+    prettierDefaults: DEFAULT_PRETTIER_OPTIONS,
+    normalizeFormattedOutput
+});
 
 export function createDefaultGmlFormatComponents(): GmlFormatComponentBundle {
     return {
