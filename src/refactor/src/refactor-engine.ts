@@ -153,6 +153,15 @@ function deduplicateSymbolOccurrences(occurrences: Array<SymbolOccurrence>): Arr
     return [...deduplicatedByStart.values()];
 }
 
+function toWorkspacePathKey(filePath: string): string {
+    const normalizedPath = Core.toPosixPath(filePath);
+    if (!Core.isNonEmptyString(normalizedPath)) {
+        return "";
+    }
+
+    return path.posix.normalize(normalizedPath);
+}
+
 function semanticSupportsBatchWorkspaceOverlay(
     semantic: PartialSemanticAnalyzer | null
 ): semantic is PartialSemanticAnalyzer &
@@ -166,8 +175,8 @@ function dropRedundantTextEditsForMetadataRewrites(workspace: WorkspaceEdit): Wo
         return workspace;
     }
 
-    const metadataPaths = new Set(metadataEdits.map((metadataEdit) => metadataEdit.path));
-    const hasRedundantTextEdits = workspace.edits.some((edit) => metadataPaths.has(edit.path));
+    const metadataPathKeys = new Set(metadataEdits.map((metadataEdit) => toWorkspacePathKey(metadataEdit.path)));
+    const hasRedundantTextEdits = workspace.edits.some((edit) => metadataPathKeys.has(toWorkspacePathKey(edit.path)));
     if (!hasRedundantTextEdits) {
         return workspace;
     }
@@ -175,7 +184,7 @@ function dropRedundantTextEditsForMetadataRewrites(workspace: WorkspaceEdit): Wo
     const normalizedWorkspace = new WorkspaceEdit();
 
     for (const edit of workspace.edits) {
-        if (metadataPaths.has(edit.path)) {
+        if (metadataPathKeys.has(toWorkspacePathKey(edit.path))) {
             continue;
         }
 
@@ -797,28 +806,29 @@ export class RefactorEngine {
             }
         }
 
-        const metadataPaths = new Set<string>();
+        const metadataPathKeys = new Set<string>();
         for (const metadataEdit of metadataEdits) {
             if (!Core.isNonEmptyString(metadataEdit.path)) {
                 errors.push("Metadata edit path must be a non-empty string");
                 continue;
             }
 
-            if (metadataPaths.has(metadataEdit.path)) {
+            const metadataPathKey = toWorkspacePathKey(metadataEdit.path);
+            if (metadataPathKeys.has(metadataPathKey)) {
                 errors.push(`Duplicate metadata edit detected for ${metadataEdit.path}`);
                 continue;
             }
 
-            metadataPaths.add(metadataEdit.path);
+            metadataPathKeys.add(metadataPathKey);
 
             if (typeof metadataEdit.content !== "string") {
                 errors.push(`Metadata edit content for ${metadataEdit.path} must be a string`);
             }
         }
 
-        for (const metadataPath of metadataPaths) {
-            if (grouped.has(metadataPath)) {
-                errors.push(`Cannot combine text and metadata edits for ${metadataPath}`);
+        for (const textEditPath of grouped.keys()) {
+            if (metadataPathKeys.has(toWorkspacePathKey(textEditPath))) {
+                errors.push(`Cannot combine text and metadata edits for ${textEditPath}`);
             }
         }
 
