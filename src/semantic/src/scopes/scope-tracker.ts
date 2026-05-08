@@ -9,7 +9,7 @@ import { ensureIdentifierOccurrences, Scope } from "./scope.js";
 import {
     formatKnownScopeOverrideKeywords,
     isScopeOverrideKeyword,
-    ScopeOverrideKeyword
+    SCOPE_OVERRIDE_KEYWORD
 } from "./scope-override-keywords.js";
 import {
     collectFilePathsForSymbolSummaries,
@@ -51,7 +51,7 @@ function resolveStringScopeOverride(
     currentScope: Scope | null
 ): Scope | null {
     if (isScopeOverrideKeyword(scopeOverride)) {
-        return scopeOverride === ScopeOverrideKeyword.GLOBAL ? (tracker.getRootScope() ?? currentScope) : currentScope;
+        return scopeOverride === SCOPE_OVERRIDE_KEYWORD ? (tracker.getRootScope() ?? currentScope) : currentScope;
     }
 
     const found = tracker.getScopeStack().find((scope) => scope.id === scopeOverride);
@@ -60,9 +60,9 @@ function resolveStringScopeOverride(
         return found;
     }
 
-    const keywords = formatKnownScopeOverrideKeywords();
+    const keywords = formatKnownScopeOverrideKeywords().join(", ");
     throw new RangeError(
-        `Unknown scope override string '${scopeOverride}'. Expected one of: ${keywords}, or a known scope identifier.`
+        `Unknown scope override string '${String(scopeOverride)}'. Expected one of: ${keywords}, or a known scope identifier.`
     );
 }
 
