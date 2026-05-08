@@ -529,7 +529,7 @@ const tsConfig = defineConfig({
                     },
                     {
                         from: "ui",
-                        allow: ["ui"]
+                        allow: ["core", "ui"]
                     },
                     {
                         from: "fixture-runner",

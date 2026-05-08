@@ -121,57 +121,73 @@ void test("refactor codemod --write stays within the end-to-end CLI runtime thre
 });
 
 void test("refactor codemod --write keeps mixed-case manifest path rewrites within the runtime threshold", async () => {
-    const projectRoot = await createSyntheticRefactorProject({
-        refactor: {
-            codemods: {
-                namingConvention: {
-                    rules: {
-                        scriptResourceName: {
-                            caseStyle: "camel"
+    const SAMPLE_COUNT = 3;
+    const projectRoots = new Set<string>();
+
+    try {
+        const { durationMs, result } = await measureMedianDurationMs(SAMPLE_COUNT, async () => {
+            const projectRoot = await createSyntheticRefactorProject({
+                refactor: {
+                    codemods: {
+                        namingConvention: {
+                            rules: {
+                                scriptResourceName: {
+                                    caseStyle: "camel"
+                                }
+                            }
                         }
                     }
                 }
+            });
+            projectRoots.add(projectRoot);
+
+            for (let index = 0; index < CASE_INSENSITIVE_MANIFEST_SCRIPT_COUNT; index += 1) {
+                const scriptName = `demo_script_${index}`;
+                await writeScriptResource(
+                    projectRoot,
+                    scriptName,
+                    `function ${scriptName}() {\n    return ${index};\n}\n`
+                );
+                await registerProjectResource(
+                    projectRoot,
+                    `UPPER_${index}`,
+                    `SCRIPTS/DEMO_SCRIPT_${index}/DEMO_SCRIPT_${index}.YY`
+                );
             }
-        }
-    });
 
-    try {
-        for (let index = 0; index < CASE_INSENSITIVE_MANIFEST_SCRIPT_COUNT; index += 1) {
-            const scriptName = `demo_script_${index}`;
-            await writeScriptResource(projectRoot, scriptName, `function ${scriptName}() {\n    return ${index};\n}\n`);
-            await registerProjectResource(
-                projectRoot,
-                `UPPER_${index}`,
-                `SCRIPTS/DEMO_SCRIPT_${index}/DEMO_SCRIPT_${index}.YY`
-            );
-        }
+            const projectManifestPath = path.join(projectRoot, "MyGame.yyp");
+            const projectManifest = JSON.parse(await readFile(projectManifestPath, "utf8")) as {
+                resources: Array<{ id: { name: string; path: string } }>;
+            };
+            projectManifest.resources = projectManifest.resources.map((entry) => ({
+                id: {
+                    name: entry.id.name,
+                    path: entry.id.path.replace("scripts/", "SCRIPTS/").replace(".yy", ".YY")
+                }
+            }));
+            await writeFile(projectManifestPath, `${JSON.stringify(projectManifest, null, 4)}\n`, "utf8");
 
-        const projectManifestPath = path.join(projectRoot, "MyGame.yyp");
-        const projectManifest = JSON.parse(await readFile(projectManifestPath, "utf8")) as {
-            resources: Array<{ id: { name: string; path: string } }>;
-        };
-        projectManifest.resources = projectManifest.resources.map((entry) => ({
-            id: {
-                name: entry.id.name,
-                path: entry.id.path.replace("scripts/", "SCRIPTS/").replace(".yy", ".YY")
-            }
-        }));
-        await writeFile(projectManifestPath, `${JSON.stringify(projectManifest, null, 4)}\n`, "utf8");
+            const startTime = performance.now();
+            const runResult = await runCliTestCommand({
+                argv: ["refactor", "codemod", "--write"],
+                cwd: projectRoot
+            });
 
-        const startTime = performance.now();
-        const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--write"],
-            cwd: projectRoot
+            return {
+                durationMs: performance.now() - startTime,
+                result: runResult
+            };
         });
-        const durationMs = performance.now() - startTime;
 
-        assert.equal(result.exitCode, 0);
-        assert.match(result.stdout, /\[namingConvention\] changed/);
+        assert.equal(result.result.exitCode, 0);
+        assert.match(result.result.stdout, /\[namingConvention\] changed/);
         assert.ok(
             durationMs <= CASE_INSENSITIVE_MANIFEST_THRESHOLD_MS,
-            `Expected mixed-case manifest codemod runtime under ${CASE_INSENSITIVE_MANIFEST_THRESHOLD_MS}ms, received ${durationMs.toFixed(2)}ms`
+            `Expected median mixed-case manifest codemod runtime under ${CASE_INSENSITIVE_MANIFEST_THRESHOLD_MS}ms across ${SAMPLE_COUNT} samples, received ${durationMs.toFixed(2)}ms`
         );
     } finally {
-        await rm(projectRoot, { recursive: true, force: true });
+        for (const projectRoot of projectRoots) {
+            await rm(projectRoot, { recursive: true, force: true });
+        }
     }
 });

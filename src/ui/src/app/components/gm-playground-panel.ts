@@ -1,6 +1,7 @@
 // import { Format } from "@gmloop/format";
 // import { Parser } from "@gmloop/parser";
 // import { Refactor } from "@gmloop/refactor";
+import { Core } from "@gmloop/core";
 import { html, type PropertyValues } from "lit";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
@@ -105,7 +106,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 this.#gmlOutput = data.payload.output;
             }
         } catch (error) {
-            this.#error = error instanceof Error ? error.message : String(error);
+            this.#error = Core.getErrorMessage(error, { fallback: "Unknown error" });
             this.#gmlOutput = "";
             this.#astJson = "";
         }
