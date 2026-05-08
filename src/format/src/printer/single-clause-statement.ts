@@ -12,16 +12,8 @@ export function buildClauseGroup(doc) {
     return group([indent([ifBreak(line), doc]), ifBreak(line)]);
 }
 
-function unwrapParensForInitializer(node) {
-    let current = node;
-    while (current?.type === "ParenthesizedExpression") {
-        current = current.expression;
-    }
-    return current;
-}
-
 function getInnermostClauseExpression(node) {
-    return unwrapParensForInitializer(node);
+    return Core.unwrapParenthesizedExpression(node);
 }
 
 function wrapInClauseParens(path, print, clauseKey, printWithoutExtraParens) {
