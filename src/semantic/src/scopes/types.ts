@@ -36,6 +36,8 @@ export type Occurrence = {
 export type ScopeSummary = {
     hasDeclaration: boolean;
     hasReference: boolean;
+    /** Most recent declaration/reference timestamp for this symbol in this scope. */
+    lastModified: number;
 };
 
 /**
