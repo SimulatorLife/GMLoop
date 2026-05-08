@@ -287,6 +287,9 @@ importers:
 
   src/ui:
     dependencies:
+      '@gmloop/core':
+        specifier: workspace:*
+        version: link:../core
       browser-fs-access:
         specifier: ^0.38.0
         version: 0.38.0
@@ -296,9 +299,6 @@ importers:
       lit:
         specifier: ^3.3.1
         version: 3.3.2
-      prettier:
-        specifier: ^3.6.2
-        version: 3.6.2
     devDependencies:
       '@types/d3':
         specifier: ^7.4.3

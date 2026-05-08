@@ -1,6 +1,7 @@
-import { Format } from "@gmloop/format";
-import { Parser } from "@gmloop/parser";
-import { Refactor } from "@gmloop/refactor";
+// import { Format } from "@gmloop/format";
+// import { Parser } from "@gmloop/parser";
+// import { Refactor } from "@gmloop/refactor";
+import { Core } from "@gmloop/core";
 import { html, type PropertyValues } from "lit";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
@@ -36,20 +37,20 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #error: string | null = null;
 
-    #debounceTimer: number | null = null;
+    #debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
     protected firstUpdated(): void {
         const savedInput = localStorage.getItem("gmloop-playground-input");
         if (savedInput) {
             this.#gmlInput = savedInput;
-            this.#processInput();
+            void this.#processInput();
         }
     }
 
     protected updated(changedProperties: PropertyValues): void {
         super.updated(changedProperties);
         if (changedProperties.has("state") && this.state?.activePage === "playground") {
-            this.#processInput();
+            void this.#processInput();
         }
     }
 
@@ -58,19 +59,19 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.#gmlInput = target.value;
         localStorage.setItem("gmloop-playground-input", this.#gmlInput);
 
-        if (this.#debounceTimer) {
-            clearTimeout(this.#debounceTimer);
+        if (this.#debounceTimer !== null) {
+            globalThis.clearTimeout(this.#debounceTimer);
         }
 
         this.#debounceTimer = globalThis.setTimeout(() => {
-            this.#processInput();
+            void this.#processInput();
             this.requestUpdate();
         }, 300);
 
         this.requestUpdate();
     };
 
-    #processInput(): void {
+    async #processInput(): Promise<void> {
         this.#error = null;
         if (!this.#gmlInput.trim()) {
             this.#gmlOutput = "";
@@ -79,68 +80,55 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         }
 
         try {
-            // 1. Parse for AST
-            const gmlParser = new Parser.GMLParser(this.#gmlInput);
-            const program = gmlParser.parse();
-            this.#astJson = JSON.stringify(
-                program,
-                (key, value) => {
-                    if (key === "parent" || key === "sourceRange") return undefined;
-                    return value;
-                },
-                2
-            );
+            const response = await fetch("/api/playground/process", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    gml: this.#gmlInput,
+                    format: this.#isFormatEnabled,
+                    lint: this.#isLintEnabled,
+                    refactor: this.#isRefactorEnabled
+                })
+            });
 
-            // 2. Apply rules sequentially
-            let result = this.#gmlInput;
-
-            if (this.#isRefactorEnabled) {
-                const codemodResult = Refactor.LoopLengthHoisting.applyLoopLengthHoistingCodemod(result);
-                result = codemodResult.outputText;
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error ?? `Server error: ${response.status}`);
             }
 
-            if (this.#isLintEnabled) {
-                // Note: Full ESLint autofixes are not fully supported in the browser build yet,
-                // but this acts as a placeholder where a browser-safe linter bundle would run.
-                // For demonstration, we could apply simple syntactic checks or string replacements.
-                // Right now it just passes through.
-            }
-
-            if (this.#isFormatEnabled) {
-                void Format.format(result)
-                    .then((formatted) => {
-                        this.#gmlOutput = formatted;
-                        this.requestUpdate();
-                    })
-                    .catch((error) => {
-                        this.#error = `Formatting error: ${error.message}`;
-                        this.requestUpdate();
-                    });
+            const data = await response.json();
+            if (data.payload.error) {
+                this.#error = data.payload.error;
+                this.#gmlOutput = "";
+                this.#astJson = "";
             } else {
-                this.#gmlOutput = result;
+                this.#astJson = data.payload.ast;
+                this.#gmlOutput = data.payload.output;
             }
         } catch (error) {
-            this.#error = error instanceof Error ? error.message : String(error);
+            this.#error = Core.getErrorMessage(error, { fallback: "Unknown error" });
             this.#gmlOutput = "";
             this.#astJson = "";
         }
+
+        this.requestUpdate();
     }
 
     #toggleFormat(): void {
         this.#isFormatEnabled = !this.#isFormatEnabled;
-        this.#processInput();
+        void this.#processInput();
         this.requestUpdate();
     }
 
     #toggleLint(): void {
         this.#isLintEnabled = !this.#isLintEnabled;
-        this.#processInput();
+        void this.#processInput();
         this.requestUpdate();
     }
 
     #toggleRefactor(): void {
         this.#isRefactorEnabled = !this.#isRefactorEnabled;
-        this.#processInput();
+        void this.#processInput();
         this.requestUpdate();
     }
 
@@ -160,39 +148,49 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             <section id="playground-page" class=${activeClassName}>
                 <div class="playground-toolbar">
                     <div class="rule-toggles">
-                        <div
+                        <button
+                            type="button"
                             class="rule-toggle ${this.#isFormatEnabled ? "active" : ""}"
+                            aria-pressed=${this.#isFormatEnabled}
                             @click=${() => this.#toggleFormat()}
                         >
                             Format
-                        </div>
-                        <div
+                        </button>
+                        <button
+                            type="button"
                             class="rule-toggle ${this.#isLintEnabled ? "active" : ""}"
+                            aria-pressed=${this.#isLintEnabled}
                             @click=${() => this.#toggleLint()}
                         >
                             Lint
-                        </div>
-                        <div
+                        </button>
+                        <button
+                            type="button"
                             class="rule-toggle ${this.#isRefactorEnabled ? "active" : ""}"
+                            aria-pressed=${this.#isRefactorEnabled}
                             @click=${() => this.#toggleRefactor()}
                         >
                             Refactor
-                        </div>
+                        </button>
                     </div>
                     <div style="flex: 1"></div>
                     <div class="view-selector">
-                        <div
+                        <button
+                            type="button"
                             class="view-option ${this.#viewMode === "code" ? "active" : ""}"
+                            aria-pressed=${this.#viewMode === "code"}
                             @click=${() => this.#setViewMode("code")}
                         >
                             Output Code
-                        </div>
-                        <div
+                        </button>
+                        <button
+                            type="button"
                             class="view-option ${this.#viewMode === "ast" ? "active" : ""}"
+                            aria-pressed=${this.#viewMode === "ast"}
                             @click=${() => this.#setViewMode("ast")}
                         >
                             AST View
-                        </div>
+                        </button>
                     </div>
                 </div>
 

@@ -75,6 +75,14 @@ void test("root test discovery includes formatter, lint, refactor, and cross-mod
     }
 });
 
+void test("global test discovery includes the shared root fixture registry runner", async () => {
+    const packageManifest = await readRootPackageManifest();
+
+    assert.match(packageManifest.scripts["test:files"], /test\/dist\/fixture-suites\.js/u);
+    assert.match(packageManifest.scripts["test:ci"], /pnpm -s test:files/u);
+    assert.match(packageManifest.scripts["test:coverage"], /pnpm -s test:files/u);
+});
+
 void test("fixture-only aggregate command points at the shared root registry runner", async () => {
     const packageManifest = await readRootPackageManifest();
     assert.equal(packageManifest.scripts["test:fixtures:files"], "echo test/dist/fixture-suites.js");

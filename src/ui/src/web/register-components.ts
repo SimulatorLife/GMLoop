@@ -8,7 +8,8 @@ import {
     GmDocsPanel,
     GmGraphPanel,
     GmGraphToolbar,
-    GmPlaygroundPanel} from "../app/components/index.js";
+    GmPlaygroundPanel
+} from "../app/components/index.js";
 
 function defineCustomElementOnce(name: string, constructorValue: CustomElementConstructor): void {
     if (!customElements.get(name)) {

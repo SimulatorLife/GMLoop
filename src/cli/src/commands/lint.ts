@@ -1155,8 +1155,7 @@ async function configureLintConfig(parameters: {
 
         try {
             const gmloopConfig = await Core.loadGmloopProjectConfig(resolvedGmloopConfigPath);
-            const lintRuleEntries =
-                LINT_NAMESPACE.configs.projectConfig.createLintRuleEntriesFromProjectConfig(gmloopConfig);
+            const lintRuleEntries = LINT_NAMESPACE.configs.createLintRuleEntriesFromProjectConfig(gmloopConfig);
             const mergedOverrideEntries = LINT_NAMESPACE.configs.recommended.map((entry) => {
                 if (!entry.rules) {
                     return entry;

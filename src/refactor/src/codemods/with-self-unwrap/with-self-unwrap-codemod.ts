@@ -1,6 +1,6 @@
 import { Parser } from "@gmloop/parser";
 
-import { applySourceTextEdits } from "../codemod-edit-utils.js";
+import { applySourceTextEdits } from "../codemod-helpers.js";
 import type { WithSelfUnwrapCodemodOptions, WithSelfUnwrapEdit, WithSelfUnwrapResult } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -348,12 +348,6 @@ function buildUnwrapEdit(sourceText: string, withNode: Record<string, unknown>):
         text: dedentedBody
     });
 }
-
-// ---------------------------------------------------------------------------
-// Edit application
-// ---------------------------------------------------------------------------
-
-// applySourceTextEdits is provided by codemod-edit-utils.ts
 
 // ---------------------------------------------------------------------------
 // Public API

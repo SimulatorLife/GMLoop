@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
-import { applySourceTextEdits } from "../codemod-edit-utils.js";
+import { applySourceTextEdits } from "../codemod-helpers.js";
 import type {
     LoopLengthHoistingCodemodOptions,
     LoopLengthHoistingCodemodResult,

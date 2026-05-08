@@ -25,6 +25,9 @@ const resolveUiViteConfiguration = () => {
     return {
         root: resolveUiPath("./src/web"),
         base: "./",
+        esbuild: {
+            target: "es2022"
+        },
         server: {
             host: devServerHost,
             port: devServerPort,
@@ -43,6 +46,7 @@ const resolveUiViteConfiguration = () => {
             strictPort: true
         },
         build: {
+            target: "es2022",
             emptyOutDir: true,
             manifest: true,
             outDir: resolveUiPath("./dist/web"),
