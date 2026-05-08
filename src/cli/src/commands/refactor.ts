@@ -530,9 +530,8 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         ...rawConfig,
         refactor: normalizeRefactorProjectConfig(rawConfig.refactor)
     });
-    const selectedCodemodLines = formatCodemodSelectionSummary(config, onlyCodemods);
-
     if (list) {
+        const selectedCodemodLines = formatCodemodSelectionSummary(config, onlyCodemods);
         const selectedCodemods = onlyCodemods.length > 0 ? onlyCodemods.join(", ") : "(all configured codemods)";
         console.log(`Project root: ${projectRoot}`);
         console.log(`Config path: ${configPath}`);
