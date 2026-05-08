@@ -1440,6 +1440,100 @@ void test("WebSocket client tracks connection errors in metrics", async () => {
     }
 });
 
+void test("WebSocket client clears timers on error to prevent leaks", async () => {
+    globalWithWebSocket.WebSocket = MockWebSocket;
+
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalClearTimeout = globalThis.clearTimeout;
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const trackedTimers = new Map<ReturnType<typeof originalSetTimeout>, { type: "reconnect"; cleared: boolean }>();
+    const trackedIntervals = new Map<ReturnType<typeof originalSetInterval>, { type: "readiness"; cleared: boolean }>();
+
+    const restoreTimers = () => {
+        globalThis.setTimeout = originalSetTimeout;
+        globalThis.clearTimeout = originalClearTimeout;
+        globalThis.setInterval = originalSetInterval;
+        globalThis.clearInterval = originalClearInterval;
+    };
+
+    let client: ReturnType<typeof RuntimeWrapper.createWebSocketClient> | null = null;
+
+    try {
+        globalThis.setTimeout = ((
+            fn: (...callbackArgs: Array<unknown>) => void,
+            delay?: number,
+            ...args: Array<unknown>
+        ) => {
+            const handle = originalSetTimeout(() => {
+                trackedTimers.delete(handle);
+                fn(...args);
+            }, delay);
+            trackedTimers.set(handle, { type: "reconnect", cleared: false });
+            return handle;
+        }) as typeof setTimeout;
+
+        globalThis.clearTimeout = ((handle: ReturnType<typeof originalSetTimeout>) => {
+            const meta = trackedTimers.get(handle);
+            if (meta) {
+                meta.cleared = true;
+            }
+            return originalClearTimeout(handle);
+        }) as typeof clearTimeout;
+
+        globalThis.setInterval = ((
+            fn: (...callbackArgs: Array<unknown>) => void,
+            interval?: number,
+            ...args: Array<unknown>
+        ) => {
+            const handle = originalSetInterval(fn, interval, ...args);
+            trackedIntervals.set(handle, { type: "readiness", cleared: false });
+            return handle;
+        }) as typeof setInterval;
+
+        globalThis.clearInterval = ((handle: ReturnType<typeof originalSetInterval>) => {
+            const meta = trackedIntervals.get(handle);
+            if (meta) {
+                meta.cleared = true;
+            }
+            return originalClearInterval(handle);
+        }) as typeof clearInterval;
+
+        client = RuntimeWrapper.createWebSocketClient({
+            autoConnect: true,
+            reconnectDelay: 200,
+            wrapper: RuntimeWrapper.createRuntimeWrapper()
+        });
+
+        await flush();
+
+        const ws = client.getWebSocket();
+        assert.ok(ws, "WebSocket should be available");
+        const mockSocket = ws as MockWebSocket;
+
+        mockSocket.simulateError();
+        await flush();
+
+        const unclearedTimers = [...trackedTimers.values()].filter((t) => !t.cleared);
+        const unclearedIntervals = [...trackedIntervals.values()].filter((i) => !i.cleared);
+
+        assert.strictEqual(
+            unclearedTimers.length,
+            0,
+            "reconnectTimer should be cleared when error fires (no dangling setTimeout)"
+        );
+        assert.strictEqual(
+            unclearedIntervals.length,
+            0,
+            "readinessTimer should be cleared when error fires (no dangling setInterval)"
+        );
+    } finally {
+        restoreTimers();
+        client?.disconnect();
+        delete globalWithWebSocket.WebSocket;
+    }
+});
+
 void test("WebSocket client falls back to a generic message for non-Error error events", async () => {
     globalWithWebSocket.WebSocket = MockWebSocket;
 

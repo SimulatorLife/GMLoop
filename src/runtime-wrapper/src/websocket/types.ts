@@ -52,6 +52,7 @@ export interface WebSocketClientState {
     pendingPatchHead: number;
     readinessTimer: ReturnType<typeof setInterval> | null;
     runtimeReady: boolean;
+    errorPendingReconnectSuppression?: boolean;
 }
 
 export interface PatchQueueMetrics {

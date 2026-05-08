@@ -301,6 +301,59 @@ void test("planRename drops metadata-file text edits when a full metadata rewrit
     assert.deepEqual(validation.errors, []);
 });
 
+void test("planRename drops metadata-file text edits when metadata rewrite path uses windows separators", async () => {
+    const metadataPath = String.raw`objects\oCamera\oCamera.yy`;
+    const mockSemantic = {
+        hasSymbol: () => true,
+        getSymbolOccurrences: () => [
+            {
+                path: "objects/oCamera/oCamera.yy",
+                start: 10,
+                end: 17,
+                scopeId: "scope:resource:oCamera"
+            },
+            {
+                path: "objects/oSystem/Other_2.gml",
+                start: 28,
+                end: 35,
+                scopeId: "scope:object:oSystem"
+            }
+        ],
+        getAdditionalSymbolEdits: () => {
+            const workspace = new WorkspaceEditFactory();
+            workspace.addMetadataEdit(
+                metadataPath,
+                '{"name":"o_camera","resourcePath":"objects/o_camera/o_camera.yy"}'
+            );
+            return workspace;
+        }
+    };
+    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+
+    const workspace = await engine.planRename({
+        symbolId: "gml/objects/oCamera",
+        newName: "o_camera"
+    });
+
+    assert.equal(workspace.edits.length, 1);
+    assert.equal(workspace.edits[0]?.path, "objects/oSystem/Other_2.gml");
+    assert.equal(workspace.metadataEdits.length, 1);
+    assert.equal(workspace.metadataEdits[0]?.path, metadataPath);
+});
+
+void test("validateRename rejects text edits plus metadata rewrites for separator-only path variants", async () => {
+    const metadataPath = String.raw`objects\oCamera\oCamera.yy`;
+    const engine = new RefactorEngineClass();
+    const workspace = new WorkspaceEditFactory();
+    workspace.addEdit("objects/oCamera/oCamera.yy", 0, 7, "o_camera");
+    workspace.addMetadataEdit(metadataPath, '{"name":"o_camera"}');
+
+    const validation = await engine.validateRename(workspace);
+
+    assert.equal(validation.valid, false);
+    assert.ok(validation.errors.some((error) => error.includes("Cannot combine text and metadata edits")));
+});
+
 void test("validateSymbolExists requires semantic analyzer", async () => {
     const engine = new RefactorEngineClass();
     await assert.rejects(() => engine.validateSymbolExists("gml/script/foo"), {
