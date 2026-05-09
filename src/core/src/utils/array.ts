@@ -1,4 +1,3 @@
-import { identity } from "./function.js";
 import { isObjectLike } from "./object.js";
 
 // Reuse a frozen empty array to avoid allocating a new array on every call to
@@ -311,7 +310,7 @@ export function mergeUniqueValues(
     { coerce, getKey = (value) => value, freeze = true }: MergeUniqueValueOptions<any> = {}
 ) {
     const merged = Array.isArray(defaultValues) ? [...defaultValues] : [];
-    const normalize = typeof coerce === "function" ? coerce : identity;
+    const normalize = typeof coerce === "function" ? coerce : (value: unknown) => value;
     const seen = new Set();
 
     for (const element of merged) {
