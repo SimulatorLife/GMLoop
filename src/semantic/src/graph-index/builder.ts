@@ -70,6 +70,16 @@ type ProjectIndexIdentifierEntry = {
     scopeId?: string;
 };
 
+type ProjectIndexScopeRecord = {
+    displayName?: string | null;
+    event?: { eventNum?: number | null; eventType?: number | null; name?: string | null } | null;
+    filePaths?: Array<string>;
+    id?: string;
+    kind?: string;
+    name?: string | null;
+    resourcePath?: string | null;
+};
+
 type ProjectIndexSnapshot = {
     files?: Record<
         string,
@@ -87,17 +97,7 @@ type ProjectIndexSnapshot = {
         assetReferences?: Array<{ fromResourcePath?: string; targetPath?: string }>;
     };
     resources?: Record<string, { gmlFiles?: Array<string>; name?: string; path?: string; resourceType?: string }>;
-    scopes?: Record<
-        string,
-        {
-            displayName?: string | null;
-            filePaths?: Array<string>;
-            id?: string;
-            kind?: string;
-            name?: string | null;
-            resourcePath?: string | null;
-        }
-    >;
+    scopes?: Record<string, ProjectIndexScopeRecord>;
 };
 
 type ProjectionContext = {
@@ -242,7 +242,11 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
     }
 }
 
-function createGraphNodeId(graphId: GraphIndexScope, category: "file" | "resource" | "symbol", value: string): string {
+function createGraphNodeId(
+    graphId: GraphIndexScope,
+    category: "file" | "resource" | "scope" | "symbol",
+    value: string
+): string {
     if (category === "symbol") {
         return `${graphId}::${value}`;
     }
@@ -401,11 +405,12 @@ function resolveCallerNodeId(
     context: ProjectionContext,
     relativePath: string,
     callerFileNodeId: string,
-    callRecord: Record<string, unknown>
+    callRecord: Record<string, unknown>,
+    fallbackScopeId: string | null
 ): string {
     const callLocationLine = readLocationLine(asRecord(asRecord(callRecord.location).start));
     const callerFilePath = getString(asRecord(callRecord.from).filePath) ?? relativePath;
-    const callerScopeId = getString(asRecord(callRecord.from).scopeId);
+    const callerScopeId = getString(asRecord(callRecord.from).scopeId) ?? fallbackScopeId;
     if (callerScopeId === null && callLocationLine === null) {
         const callerResourcePath = resolveResourcePathForFile(context, callerFilePath);
         const callerScriptNode =
@@ -475,7 +480,7 @@ function registerNodeIndexes(context: ProjectionContext, node: GraphNodeRecord):
         context.nodeIdsByScipSymbol.set(node.scipSymbol, node.id);
     }
 
-    if (node.scopeId && node.kind !== "function") {
+    if (node.scopeId && node.kind !== "function" && !node.kind.endsWith("_variable")) {
         context.nodeIdsByScopeId.set(node.scopeId, node.id);
     }
 }
@@ -851,6 +856,90 @@ function projectResources(context: ProjectionContext): void {
     }
 }
 
+function createObjectEventDisplayName(scopeRecord: ProjectIndexScopeRecord): string | null {
+    const displayName = getString(scopeRecord.displayName);
+    if (displayName) {
+        return displayName;
+    }
+
+    return getString(scopeRecord.name);
+}
+
+function createObjectEventName(scopeRecord: ProjectIndexScopeRecord, firstFilePath: string | null): string | null {
+    const name = getString(scopeRecord.name);
+    if (name) {
+        return name;
+    }
+
+    const eventRecord = asRecord(scopeRecord.event);
+    const eventName = getString(eventRecord.name);
+    if (eventName) {
+        return eventName;
+    }
+
+    if (firstFilePath) {
+        return path.posix.basename(firstFilePath, path.posix.extname(firstFilePath));
+    }
+
+    return null;
+}
+
+function projectObjectEventScopes(context: ProjectionContext): void {
+    const scopes = asRecord(context.projectIndex.scopes);
+
+    for (const rawScopeRecord of Object.values(scopes)) {
+        const scopeRecord = asRecord(rawScopeRecord) as ProjectIndexScopeRecord;
+        if (scopeRecord.kind !== "objectEvent") {
+            continue;
+        }
+
+        const scopeId = getString(scopeRecord.id);
+        const resourcePath = getString(scopeRecord.resourcePath);
+        const filePaths = (Array.isArray(scopeRecord.filePaths) ? scopeRecord.filePaths : []).filter(
+            (filePath): filePath is string => typeof filePath === "string" && filePath.trim().length > 0
+        );
+        const firstFilePath = filePaths[0] ?? null;
+        const name = createObjectEventName(scopeRecord, firstFilePath);
+        if (!scopeId || !resourcePath || !name) {
+            continue;
+        }
+
+        const displayName = createObjectEventDisplayName(scopeRecord) ?? name;
+        const node = createNodeRecord({
+            displayName,
+            filePath: firstFilePath,
+            graphId: context.graphId,
+            id: createGraphNodeId(context.graphId, "scope", scopeId),
+            kind: "object_event",
+            name,
+            resourcePath,
+            scopeId,
+            summary: createGraphNodeSummary({
+                filePath: firstFilePath,
+                kind: "object_event",
+                name,
+                resourcePath
+            })
+        });
+
+        context.nodeRecords.push(node);
+        registerNodeIndexes(context, node);
+        context.edgeRecords.push({
+            fromId: createGraphNodeId(context.graphId, "resource", resourcePath),
+            toId: node.id,
+            type: "contains"
+        });
+
+        for (const filePath of filePaths) {
+            context.edgeRecords.push({
+                fromId: node.id,
+                toId: createGraphNodeId(context.graphId, "file", filePath),
+                type: "contains"
+            });
+        }
+    }
+}
+
 function projectFiles(context: ProjectionContext): void {
     const files = asRecord(context.projectIndex.files);
     for (const relativePath of Object.keys(files)) {
@@ -1062,7 +1151,13 @@ function projectRelationshipEdges(context: ProjectionContext): void {
                 continue;
             }
 
-            const callerNodeId = resolveCallerNodeId(context, relativePath, callerFileNodeId, callRecord);
+            const callerNodeId = resolveCallerNodeId(
+                context,
+                relativePath,
+                callerFileNodeId,
+                callRecord,
+                getString(fileRecord.scopeId)
+            );
             const targetNodeId = resolveCallTargetNodeId(context, callRecord, targetName, relativePath);
             if (targetNodeId) {
                 context.edgeRecords.push({ fromId: callerNodeId, toId: targetNodeId, type: "calls" });
@@ -1125,7 +1220,8 @@ function addCrossGraphEdges(
                 projectContext,
                 relativePath,
                 projectCallerFileNodeId,
-                callRecord
+                callRecord,
+                getString(fileRecord.scopeId)
             );
             const toolsetTargetNodeId = lookupUniqueNodeByNameAndKind(toolsetContext, targetName, "script");
             if (!toolsetTargetNodeId) {
@@ -1502,6 +1598,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
         projectFiles(projectContext);
         projectResources(projectContext);
+        projectObjectEventScopes(projectContext);
         projectIdentifierCollections(projectContext);
         projectRelationshipEdges(projectContext);
         removeDanglingEdges(projectContext);
@@ -1512,6 +1609,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
             toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
             projectFiles(toolsetContext);
             projectResources(toolsetContext);
+            projectObjectEventScopes(toolsetContext);
             projectIdentifierCollections(toolsetContext);
             projectRelationshipEdges(toolsetContext);
             removeDanglingEdges(toolsetContext);
