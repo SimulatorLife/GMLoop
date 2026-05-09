@@ -145,8 +145,14 @@ export class GmlTranspiler {
         return parser.parse();
     }
 
-    private resolveProgramAst(request: TranspileScriptRequest | TranspileEventRequest): ProgramNode {
-        const astCandidate = request.ast ?? this.parseProgram(request.sourceText);
+    private resolveProgramAst(
+        request: TranspileScriptRequest | TranspileEventRequest | TranspileClosureRequest
+    ): ProgramNode {
+        if (request.ast === undefined) {
+            return this.parseProgram(request.sourceText);
+        }
+
+        const astCandidate = request.ast;
         if (!Core.isObjectLike(astCandidate)) {
             throw new TypeError("transpile request requires ast to be a Program-like object when provided");
         }
