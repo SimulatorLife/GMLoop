@@ -28,8 +28,8 @@ function addRoomSharedOptions(command: Command): Command {
         .option("--json", "Emit JSON output.");
 }
 
-function printRoomPayload(payload: unknown, options: PlannedSurfaceSharedOptions): void {
-    printPlannedSurfacePayload(payload, options.json === true);
+function printRoomPayload(payload: unknown): void {
+    printPlannedSurfacePayload(payload);
 }
 
 function mapMutationResult(result: ProjectResourceMutationResult): {
@@ -60,14 +60,11 @@ async function runRoomResourceMutation(
     const context = await resolvePlannedSurfaceProjectContext(options);
     const result = await runMutation(context.projectRoot);
 
-    printRoomPayload(
-        {
-            command: commandName,
-            ok: true,
-            payload: mapMutationResult(result)
-        },
-        options
-    );
+    printRoomPayload({
+        command: commandName,
+        ok: true,
+        payload: mapMutationResult(result)
+    });
 }
 
 function emitRoomUnavailableLeaf(
@@ -76,18 +73,15 @@ function emitRoomUnavailableLeaf(
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
-    printRoomPayload(
-        {
-            command: commandName,
-            ok: true,
-            payload: {
-                capability,
-                details,
-                state: "not_available"
-            }
-        },
-        options
-    );
+    printRoomPayload({
+        command: commandName,
+        ok: true,
+        payload: {
+            capability,
+            details,
+            state: "not_available"
+        }
+    });
 }
 
 export function createRoomCommand(): Command {
@@ -104,7 +98,7 @@ export function createRoomCommand(): Command {
             query: "",
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "room");
-        printRoomPayload({ command: "room list", ok: true, payload: rooms }, options);
+        printRoomPayload({ command: "room list", ok: true, payload: rooms });
     });
 
     const inspect = addRoomSharedOptions(
@@ -134,7 +128,7 @@ export function createRoomCommand(): Command {
                       projectRoot: context.projectRoot,
                       toolsetRoot: options.toolsetRoot
                   });
-        printRoomPayload({ command: "room inspect", ok: payload !== null, payload }, options);
+        printRoomPayload({ command: "room inspect", ok: payload !== null, payload });
     });
 
     const query = addRoomSharedOptions(
@@ -154,7 +148,7 @@ export function createRoomCommand(): Command {
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "room");
 
-        printRoomPayload({ command: "room query", ok: true, payload }, options);
+        printRoomPayload({ command: "room query", ok: true, payload });
     });
 
     const validate = addRoomSharedOptions(
@@ -171,17 +165,14 @@ export function createRoomCommand(): Command {
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "room");
 
-        printRoomPayload(
-            {
-                command: "room validate",
-                ok: true,
-                payload: {
-                    roomCount: rooms.length,
-                    state: "available"
-                }
-            },
-            options
-        );
+        printRoomPayload({
+            command: "room validate",
+            ok: true,
+            payload: {
+                roomCount: rooms.length,
+                state: "available"
+            }
+        });
     });
 
     const preview = addRoomSharedOptions(
@@ -198,17 +189,14 @@ export function createRoomCommand(): Command {
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "room");
 
-        printRoomPayload(
-            {
-                command: "room preview",
-                ok: true,
-                payload: {
-                    roomIds: rooms.map((entry) => entry.id),
-                    state: "available"
-                }
-            },
-            options
-        );
+        printRoomPayload({
+            command: "room preview",
+            ok: true,
+            payload: {
+                roomIds: rooms.map((entry) => entry.id),
+                state: "available"
+            }
+        });
     });
 
     const summary = addRoomSharedOptions(
@@ -225,17 +213,14 @@ export function createRoomCommand(): Command {
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "room");
 
-        printRoomPayload(
-            {
-                command: "room summary",
-                ok: true,
-                payload: {
-                    names: rooms.map((entry) => entry.name),
-                    roomCount: rooms.length
-                }
-            },
-            options
-        );
+        printRoomPayload({
+            command: "room summary",
+            ok: true,
+            payload: {
+                names: rooms.map((entry) => entry.name),
+                roomCount: rooms.length
+            }
+        });
     });
 
     const create = addRoomSharedOptions(

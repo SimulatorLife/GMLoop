@@ -58,7 +58,12 @@ function isNumericLiteralOne(node: unknown, sourceText: string): boolean {
         return false;
     }
 
-    return Number(literalText) === 1;
+    const parsed = Number(literalText);
+    // Use epsilon-tolerant comparison so that literals like "1.", "1.0", or
+    // "1.0000" that differ only in formatting also match the value 1. This
+    // prevents precision artifacts in the parser from blocking legitimate
+    // rewrites (e.g., source that reads `+= 1.0` should still trigger `++`).
+    return Core.areNumbersApproximatelyEqual(parsed, 1);
 }
 
 function tryGetPreferIncrementDecrementCandidate(

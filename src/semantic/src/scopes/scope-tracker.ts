@@ -9,7 +9,7 @@ import { ensureIdentifierOccurrences, Scope } from "./scope.js";
 import {
     formatKnownScopeOverrideKeywords,
     isScopeOverrideKeyword,
-    ScopeOverrideKeyword
+    SCOPE_OVERRIDE_KEYWORD
 } from "./scope-override-keywords.js";
 import {
     collectFilePathsForSymbolSummaries,
@@ -51,7 +51,7 @@ function resolveStringScopeOverride(
     currentScope: Scope | null
 ): Scope | null {
     if (isScopeOverrideKeyword(scopeOverride)) {
-        return scopeOverride === ScopeOverrideKeyword.GLOBAL ? (tracker.getRootScope() ?? currentScope) : currentScope;
+        return scopeOverride === SCOPE_OVERRIDE_KEYWORD ? (tracker.getRootScope() ?? currentScope) : currentScope;
     }
 
     const found = tracker.getScopeStack().find((scope) => scope.id === scopeOverride);
@@ -60,15 +60,16 @@ function resolveStringScopeOverride(
         return found;
     }
 
-    const keywords = formatKnownScopeOverrideKeywords();
+    const keywords = formatKnownScopeOverrideKeywords().join(", ");
     throw new RangeError(
-        `Unknown scope override string '${scopeOverride}'. Expected one of: ${keywords}, or a known scope identifier.`
+        `Unknown scope override string '${String(scopeOverride)}'. Expected one of: ${keywords}, or a known scope identifier.`
     );
 }
 
 const DEFAULT_DECLARATION_ROLE: ScopeRole = Object.freeze({ type: "declaration" });
 const DEFAULT_REFERENCE_ROLE: ScopeRole = Object.freeze({ type: "reference" });
 const DEFAULT_LOOKUP_CACHE_MAX_ENTRIES = 2048;
+const EMPTY_INVALIDATION_SET: Array<{ scopeId: string; scopeKind: string; reason: string }> = [];
 
 /**
  * Manages lexical and structural scopes, symbol declarations, and references.
@@ -462,8 +463,10 @@ export class ScopeTracker {
         }
 
         let scopeSummary = scopeSummaryMap.get(scope.id);
-        if (!scopeSummary) {
-            scopeSummary = { hasDeclaration: false, hasReference: false };
+        if (scopeSummary) {
+            scopeSummary.lastModified = scope.lastModifiedTimestamp;
+        } else {
+            scopeSummary = { hasDeclaration: false, hasReference: false, lastModified: scope.lastModifiedTimestamp };
             scopeSummaryMap.set(scope.id, scopeSummary);
         }
 
@@ -959,6 +962,15 @@ export class ScopeTracker {
         return null;
     }
 
+    /**
+     * Counts retained identifier-resolution cache entries for diagnostics and memory regression tests.
+     *
+     * @returns Total number of cached name/scope resolution entries currently retained.
+     */
+    public countRetainedIdentifierResolutionCacheEntries(): number {
+        return this.identifierCache.countRetainedEntries();
+    }
+
     public resolveIdentifier(name: string | null | undefined, scopeId?: string | null): ScopeSymbolMetadata | null {
         if (!name) {
             return null;
@@ -1402,15 +1414,17 @@ export class ScopeTracker {
         { includeDescendants = false }: { includeDescendants?: boolean } = {}
     ): Map<string, Array<{ scopeId: string; scopeKind: string; reason: string }>> {
         const results = new Map<string, Array<{ scopeId: string; scopeKind: string; reason: string }>>();
-        const normalizedPathResultsCache = new Map<
-            string,
-            Array<{ scopeId: string; scopeKind: string; reason: string }>
-        >();
         const transitiveDependentsCache = new Map<
             string,
             Array<{ dependentScopeId: string; dependentScopeKind: string; depth: number }>
         >();
-        const descendantScopesCache = new Map<string, Array<{ scopeId: string; scopeKind: string; depth: number }>>();
+        const normalizedPathResultsCache = new Map<
+            string,
+            Array<{ scopeId: string; scopeKind: string; reason: string }>
+        >();
+        const descendantScopesCache = includeDescendants
+            ? new Map<string, Array<{ scopeId: string; scopeKind: string; depth: number }>>()
+            : null;
 
         for (const path of paths) {
             if (!path || typeof path !== "string" || path.length === 0) {
@@ -1430,8 +1444,8 @@ export class ScopeTracker {
 
             const scopeIds = this.pathToScopesIndex.get(trackedPath);
             if (!scopeIds || scopeIds.size === 0) {
-                normalizedPathResultsCache.set(trackedPath, []);
-                results.set(path, []);
+                normalizedPathResultsCache.set(trackedPath, EMPTY_INVALIDATION_SET);
+                results.set(path, EMPTY_INVALIDATION_SET);
                 continue;
             }
 
@@ -1476,10 +1490,10 @@ export class ScopeTracker {
                 }
 
                 if (includeDescendants) {
-                    let descendants = descendantScopesCache.get(scopeId);
+                    let descendants = descendantScopesCache?.get(scopeId);
                     if (!descendants) {
                         descendants = this.getDescendantScopes(scopeId);
-                        descendantScopesCache.set(scopeId, descendants);
+                        descendantScopesCache?.set(scopeId, descendants);
                     }
 
                     for (const desc of descendants) {
@@ -2391,24 +2405,20 @@ export class ScopeTracker {
 
             const modifiedScopes: string[] = [];
 
-            for (const scopeId of scopeSummaryMap.keys()) {
-                const scope = this.scopesById.get(scopeId);
-                if (!scope) {
+            for (const [scopeId, summary] of scopeSummaryMap) {
+                if (summary.lastModified <= sinceTimestamp) {
                     continue;
                 }
 
-                if (scope.lastModifiedTimestamp <= sinceTimestamp) {
+                if (!summary.hasDeclaration && !summary.hasReference) {
                     continue;
                 }
 
-                const entry = scope.occurrences.get(symbol);
-                if (!entry) {
+                if (!this.scopesById.has(scopeId)) {
                     continue;
                 }
 
-                if (entry.declarations.length > 0 || entry.references.length > 0) {
-                    modifiedScopes.push(scopeId);
-                }
+                modifiedScopes.push(scopeId);
             }
 
             if (modifiedScopes.length > 0) {
@@ -2560,6 +2570,7 @@ export class ScopeTracker {
         for (const name of declaredNamesToInvalidate) {
             this.identifierCache.invalidate(name);
         }
+        this.identifierCache.invalidateScopes(scopeIdsToRemove);
 
         for (const pathToRecompute of pathsToRecompute) {
             recomputePathLastModified(

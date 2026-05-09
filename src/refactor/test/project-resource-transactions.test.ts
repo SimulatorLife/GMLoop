@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { Semantic } from "@gmloop/semantic";
+import { Core } from "@gmloop/core";
 
 import {
     addProjectResource,
@@ -54,7 +54,7 @@ void test("addProjectResource creates script metadata, source, and manifest entr
             "scripts/scr_bootstrap/scr_bootstrap.gml"
         ]);
 
-        const manifestDocument = Semantic.parseProjectMetadataDocumentForMutation(
+        const manifestDocument = Core.parseProjectMetadataDocumentForMutation(
             await readFile(path.join(projectRoot, "MyGame.yyp"), "utf8"),
             path.join(projectRoot, "MyGame.yyp")
         ).document;
@@ -62,7 +62,7 @@ void test("addProjectResource creates script metadata, source, and manifest entr
         assert.equal(manifestDocument.resources[0].id.path, "scripts/scr_bootstrap/scr_bootstrap.yy");
 
         const scriptMetadataPath = path.join(projectRoot, "scripts/scr_bootstrap/scr_bootstrap.yy");
-        const scriptMetadata = Semantic.parseProjectMetadataDocumentForMutation(
+        const scriptMetadata = Core.parseProjectMetadataDocumentForMutation(
             await readFile(scriptMetadataPath, "utf8"),
             scriptMetadataPath
         ).document;
@@ -91,7 +91,7 @@ void test("addProjectResource creates sprite metadata plus frame and layer png p
         assert.equal(result.resourcePath, "sprites/spr_cursor/spr_cursor.yy");
 
         const spriteMetadataPath = path.join(projectRoot, "sprites/spr_cursor/spr_cursor.yy");
-        const spriteMetadata = Semantic.parseProjectMetadataDocumentForMutation(
+        const spriteMetadata = Core.parseProjectMetadataDocumentForMutation(
             await readFile(spriteMetadataPath, "utf8"),
             spriteMetadataPath
         ).document;
@@ -127,7 +127,7 @@ void test("removeProjectResource removes the manifest entry and canonical resour
 
         assert.deepEqual(result.deletedPaths, ["scripts/scr_cleanup"]);
 
-        const manifestDocument = Semantic.parseProjectMetadataDocumentForMutation(
+        const manifestDocument = Core.parseProjectMetadataDocumentForMutation(
             await readFile(path.join(projectRoot, "MyGame.yyp"), "utf8"),
             path.join(projectRoot, "MyGame.yyp")
         ).document;

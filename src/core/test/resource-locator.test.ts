@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "node:test";
 
 import {
     __resolveBundledResourceBaseDirectoryForTests,
@@ -47,6 +47,24 @@ void test("resource locator prefers the generated package manifest when present"
         assert.equal(
             __resolveBundledResourceBaseDirectoryForTests(fixture.nestedModuleDirectoryPath),
             configuredResourceDirectoryPath
+        );
+    } finally {
+        rmSync(fixture.fixtureRootPath, { force: true, recursive: true });
+    }
+});
+
+void test("resource locator ignores stale generated package manifest paths", () => {
+    const fixture = createTemporaryCoreWorkspaceFixture();
+
+    try {
+        writeFileSync(
+            path.join(fixture.packageDirectoryPath, "resource-directory.json"),
+            JSON.stringify({ resourceDirectory: path.join(fixture.fixtureRootPath, "missing-resources") }, null, 2)
+        );
+
+        assert.equal(
+            __resolveBundledResourceBaseDirectoryForTests(fixture.nestedModuleDirectoryPath),
+            fixture.repositoryResourceDirectoryPath
         );
     } finally {
         rmSync(fixture.fixtureRootPath, { force: true, recursive: true });

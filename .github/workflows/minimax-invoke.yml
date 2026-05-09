@@ -1,0 +1,62 @@
+name: '▶️ MiniMax Invoke'
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: '${{ github.workflow }}-invoke-${{ github.event_name }}-${{ github.event.issue.number }}'
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: 'bash'
+
+jobs:
+  invoke:
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body || '', '@mini-max') }}
+    uses: ./.github/workflows/agent-invoke.yml
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+    with:
+      pr_number: ${{ github.event.issue.number }}
+      additional_context: ${{ github.event.comment.body }}
+      agent: mini-max
+      openai_base_url: 'https://api.minimax.io/v1'
+      agent_setup_command: |
+        set -euo pipefail
+
+        pnpm_home="${RUNNER_TEMP}/pnpm-global"
+        mkdir -p "${pnpm_home}"
+        echo "PNPM_HOME=${pnpm_home}" >> "$GITHUB_ENV"
+        echo "${pnpm_home}" >> "$GITHUB_PATH"
+        export PNPM_HOME="${pnpm_home}"
+        export PATH="${PNPM_HOME}:${PATH}"
+
+        if ! command -v qwen >/dev/null 2>&1; then
+          pnpm add -g @qwen-code/qwen-code@latest
+        fi
+
+        qwen --version
+      agent_command: |
+        set -euo pipefail
+
+        set +e
+        stdbuf -oL -eL qwen \
+          --yolo \
+          --model=MiniMax-M2.7 \
+          --output-format=stream-json \
+          --prompt "" < "${AGENT_PROMPT_FILE}" \
+          2>&1 | tee "$RUNNER_TEMP/agent-stream.jsonl"
+        agent_status="${PIPESTATUS[0]}"
+        set -e
+
+        if [ "${agent_status}" -ne 0 ]; then
+          exit "${agent_status}"
+        fi

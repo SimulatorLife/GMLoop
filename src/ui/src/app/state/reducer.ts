@@ -84,6 +84,14 @@ export function reduceGraphVisualizationUiState(
                 errorMessage: action.errorMessage
             };
         }
+        case "reset-defaults": {
+            return {
+                ...state,
+                activeGraphView: "visual",
+                labelMode: "auto",
+                searchQuery: ""
+            };
+        }
         default: {
             return state;
         }

@@ -2,21 +2,18 @@
 import * as GraphIndex from "./graph-index/index.js";
 import * as IdentifierCase from "./identifier-case/index.js";
 import * as ProjectIndex from "./project-index/index.js";
-import * as ProjectMetadata from "./project-metadata/index.js";
 import * as Scopes from "./scopes/index.js";
 import * as Symbols from "./symbols/index.js";
 
 // Define the Semantic namespace type from existing module types
 type SemanticNamespace = typeof IdentifierCase &
     typeof GraphIndex &
-    typeof ProjectMetadata &
     typeof ProjectIndex &
     typeof Scopes &
     typeof Symbols & {
         // Preserve nested namespace access for consumers who want explicit grouping
         GraphIndex: typeof GraphIndex;
         IdentifierCase: typeof IdentifierCase;
-        ProjectMetadata: typeof ProjectMetadata;
         ProjectIndex: typeof ProjectIndex;
         Scopes: typeof Scopes;
         Symbols: typeof Symbols;
@@ -28,13 +25,11 @@ type SemanticNamespace = typeof IdentifierCase &
 export const Semantic: SemanticNamespace = Object.freeze({
     ...GraphIndex,
     ...IdentifierCase,
-    ...ProjectMetadata,
     ...ProjectIndex,
     ...Scopes,
     ...Symbols,
     GraphIndex,
     IdentifierCase,
-    ProjectMetadata,
     ProjectIndex,
     Scopes,
     Symbols

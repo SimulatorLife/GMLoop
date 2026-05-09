@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import process from "node:process";
-import test from "node:test";
+import { test } from "node:test";
 
 import { applyEnvironmentOverride, createEnvConfiguredValue } from "../src/utils/environment.js";
 

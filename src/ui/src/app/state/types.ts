@@ -1,7 +1,7 @@
 /**
  * Top-level page surfaces in the graph visualization UI.
  */
-export type GraphVisualizationUiPage = "graph" | "docs" | "config";
+export type GraphVisualizationUiPage = "graph" | "docs" | "config" | "playground";
 
 /**
  * Graph presentation modes in the graph surface.
@@ -16,7 +16,7 @@ export type GraphVisualizationUiLabelMode = "auto" | "always" | "hidden";
 /**
  * Documentation sub-views in the docs surface.
  */
-export type GraphVisualizationUiDocsView = "cli" | "mcp";
+export type GraphVisualizationUiDocsView = "cli" | "mcp" | "rules";
 
 /**
  * Immutable UI state for graph/docs/config surfaces.
@@ -43,4 +43,5 @@ export type GraphVisualizationUiAction =
     | Readonly<{ type: "cycle-label-mode" }>
     | Readonly<{ pending: boolean; type: "set-regenerate-pending" }>
     | Readonly<{ pending: boolean; type: "set-open-project-pending" }>
-    | Readonly<{ errorMessage: string | null; type: "set-error" }>;
+    | Readonly<{ errorMessage: string | null; type: "set-error" }>
+    | Readonly<{ type: "reset-defaults" }>;

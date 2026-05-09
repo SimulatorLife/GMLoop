@@ -120,6 +120,37 @@ void describe("ScopeTracker: clearScopesForPath", () => {
         void globalScope;
     });
 
+    void it("releases cached identifier resolutions that start from removed scopes", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+        const removedScopeCount = 25;
+
+        tracker.enterScope("program", { path: "/project/main.gml" });
+        tracker.enterScope("file", { path: "/project/transient.gml" });
+
+        for (let index = 0; index < removedScopeCount; index += 1) {
+            const functionScope = tracker.enterScope("function");
+            assert.equal(tracker.resolveIdentifier(`missing_${index}`, functionScope.id), null);
+            tracker.exitScope();
+        }
+
+        tracker.exitScope();
+        tracker.exitScope();
+
+        assert.equal(
+            tracker.countRetainedIdentifierResolutionCacheEntries(),
+            removedScopeCount,
+            "The allocation counter should capture cached entries before clearing the path"
+        );
+
+        tracker.clearScopesForPath("/project/transient.gml");
+
+        assert.equal(
+            tracker.countRetainedIdentifierResolutionCacheEntries(),
+            0,
+            "Clearing a path should release cached entries rooted at removed scopes"
+        );
+    });
+
     void it("invalidates each declared symbol cache key only once when removing multiple scopes", () => {
         const tracker = new ScopeTracker({ enabled: true });
 

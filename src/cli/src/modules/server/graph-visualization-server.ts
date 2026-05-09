@@ -1,5 +1,7 @@
 import * as http from "node:http";
 
+import { Core } from "@gmloop/core";
+
 import type { ServerEndpoint, ServerLifecycle } from "./server-contracts.js";
 
 type GraphVisualizationServerRenderBundle = (
@@ -15,12 +17,17 @@ type GraphVisualizationServerOpenProjectTargets = (
     input: Readonly<{ path: string | null }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
 
+type GraphVisualizationServerProcessPlayground = (
+    input: Readonly<{ gml: string; format: boolean; lint: boolean; refactor: boolean }>
+) => Promise<Readonly<{ ast: string; output: string; error: string | null }>>;
+
 export type GraphVisualizationServerOptions = Readonly<{
     host?: string;
     port?: number;
     regenerate: GraphVisualizationServerRegenerate;
     renderBundle: GraphVisualizationServerRenderBundle;
     openProjectTargets?: GraphVisualizationServerOpenProjectTargets;
+    processPlayground?: GraphVisualizationServerProcessPlayground;
 }>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
@@ -94,6 +101,25 @@ export async function startGraphVisualizationServer(
                     });
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ changed: selectionResult.changed, ok: true }));
+                } catch (error: unknown) {
+                    response.writeHead(500, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
+                }
+                return;
+            }
+
+            if (request.method === "POST" && request.url === "/api/playground/process" && options.processPlayground) {
+                try {
+                    const requestBody = await readRequestBody(request);
+                    const parsedBody = requestBody.length > 0 ? JSON.parse(requestBody) : {};
+                    const gml = typeof parsedBody.gml === "string" ? parsedBody.gml : "";
+                    const format = parsedBody.format === true;
+                    const lint = parsedBody.lint === true;
+                    const refactor = parsedBody.refactor === true;
+
+                    const result = await options.processPlayground({ gml, format, lint, refactor });
+                    response.writeHead(200, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ ok: true, payload: result }));
                 } catch (error: unknown) {
                     response.writeHead(500, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
@@ -177,8 +203,15 @@ function findGraphVisualizationBundleFile(
     return bundle.files.find((file) => file.relativePath === relativePath) ?? null;
 }
 
+/**
+ * Resolve a human-readable message from an unknown error value.
+ *
+ * Uses a capability probe rather than `instanceof Error` so that cross-realm
+ * errors (e.g. from sandboxed modules or worker threads) and custom error-like
+ * objects are handled without relying on prototype-chain identity.
+ */
 function resolveErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : "Unknown error";
+    return Core.isErrorLike(error) ? error.message : "Unknown error";
 }
 
 async function readRequestBody(request: http.IncomingMessage): Promise<string> {

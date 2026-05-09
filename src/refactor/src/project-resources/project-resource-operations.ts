@@ -3,7 +3,6 @@ import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promise
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { Semantic } from "@gmloop/semantic";
 
 import {
     ProjectResourceKind,
@@ -202,7 +201,7 @@ async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProj
 
 async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
     const rawContent = await readFile(absolutePath, "utf8");
-    return Semantic.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
+    return Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
 }
 
 function createProjectResourceContext(
@@ -682,7 +681,7 @@ function createResourceArtifacts(
     const artifacts: Array<ProjectResourceArtifact> = [
         {
             path: context.resourcePath,
-            content: `${Semantic.stringifyProjectMetadataDocument(metadataDocument, context.resourcePath)}\n`
+            content: `${Core.stringifyProjectMetadataDocument(metadataDocument, context.resourcePath)}\n`
         }
     ];
 
@@ -828,7 +827,7 @@ function updateManifestResourcesForAdd(
         ...manifestResources,
         createManifestEntry(context.resourceName, context.resourcePath)
     ];
-    return `${Semantic.stringifyProjectMetadataDocument(manifestDocument, context.manifest.absolutePath)}\n`;
+    return `${Core.stringifyProjectMetadataDocument(manifestDocument, context.manifest.absolutePath)}\n`;
 }
 
 function updateManifestResourcesForRemove(
@@ -838,7 +837,7 @@ function updateManifestResourcesForRemove(
     manifest: ResolvedProjectManifest
 ): string {
     manifestDocument.resources = manifestResources.filter((_, index) => index !== existingResource.manifestEntryIndex);
-    return `${Semantic.stringifyProjectMetadataDocument(manifestDocument, manifest.absolutePath)}\n`;
+    return `${Core.stringifyProjectMetadataDocument(manifestDocument, manifest.absolutePath)}\n`;
 }
 
 function collectSpriteFallbackDeletionPaths(
@@ -1154,7 +1153,7 @@ export async function renameProjectResource(
         nextResourcePath
     );
     manifestDocument.resources = updatedManifestResources;
-    const manifestContent = `${Semantic.stringifyProjectMetadataDocument(manifestDocument, manifest.absolutePath)}\n`;
+    const manifestContent = `${Core.stringifyProjectMetadataDocument(manifestDocument, manifest.absolutePath)}\n`;
     const dryRun = request.dryRun !== false;
 
     if (!dryRun) {
@@ -1199,7 +1198,7 @@ export async function renameProjectResource(
 
         await writeFile(
             destinationMetadataAbsolutePath,
-            `${Semantic.stringifyProjectMetadataDocument(updatedMetadata, destinationMetadataAbsolutePath)}\n`,
+            `${Core.stringifyProjectMetadataDocument(updatedMetadata, destinationMetadataAbsolutePath)}\n`,
             "utf8"
         );
         await writeFile(manifest.absolutePath, manifestContent, "utf8");
@@ -1280,7 +1279,7 @@ export async function duplicateProjectResource(
         ...manifestResources,
         createManifestEntry(destinationContext.resourceName, destinationContext.resourcePath)
     ];
-    const manifestContent = `${Semantic.stringifyProjectMetadataDocument(manifestDocument, manifest.absolutePath)}\n`;
+    const manifestContent = `${Core.stringifyProjectMetadataDocument(manifestDocument, manifest.absolutePath)}\n`;
     const dryRun = request.dryRun !== false;
     const sourceDirectoryPath = path.posix.dirname(existingResource.manifestResourcePath);
     const destinationDirectoryPath = path.posix.dirname(destinationContext.resourcePath);
@@ -1324,7 +1323,7 @@ export async function duplicateProjectResource(
 
         await writeFile(
             destinationMetadataAbsolutePath,
-            `${Semantic.stringifyProjectMetadataDocument(updatedMetadata, destinationMetadataAbsolutePath)}\n`,
+            `${Core.stringifyProjectMetadataDocument(updatedMetadata, destinationMetadataAbsolutePath)}\n`,
             "utf8"
         );
         if (resourceKind === ProjectResourceKind.SCRIPT) {
@@ -1404,7 +1403,7 @@ export async function moveProjectResource(request: MoveProjectResourceRequest): 
         nextResourcePath
     );
     manifestDocument.resources = updatedManifestResources;
-    const manifestContent = `${Semantic.stringifyProjectMetadataDocument(manifestDocument, manifest.absolutePath)}\n`;
+    const manifestContent = `${Core.stringifyProjectMetadataDocument(manifestDocument, manifest.absolutePath)}\n`;
     const dryRun = request.dryRun !== false;
     const sourceDirectoryPath = path.posix.dirname(existingResource.manifestResourcePath);
     const destinationDirectoryPath = path.posix.dirname(nextResourcePath);
@@ -1442,7 +1441,7 @@ export async function moveProjectResource(request: MoveProjectResourceRequest): 
         }
         await writeFile(
             destinationMetadataAbsolutePath,
-            `${Semantic.stringifyProjectMetadataDocument(updatedMetadata, destinationMetadataAbsolutePath)}\n`,
+            `${Core.stringifyProjectMetadataDocument(updatedMetadata, destinationMetadataAbsolutePath)}\n`,
             "utf8"
         );
         await writeFile(manifest.absolutePath, manifestContent, "utf8");

@@ -1,7 +1,14 @@
 .config-stack {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
+}
+
+.config-toggle-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
 }
 
 .config-grid {
@@ -12,15 +19,15 @@
 
 .config-card h3 {
   margin: 0 0 10px;
-  font-size: 15px;
-  color: #f3f8ff;
+  font-size: 16px;
+  color: var(--gm-text);
 }
 
 .config-card p {
-  margin: 0 0 10px;
-  font-size: 12px;
+  margin: 0 0 12px;
+  font-size: 13px;
   line-height: 1.5;
-  color: #c8d5e5;
+  color: var(--gm-text-secondary);
 }
 
 .config-list {
@@ -33,31 +40,31 @@
 }
 
 .config-item {
-  padding: 12px;
+  padding: 13px 14px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(143, 181, 255, 0.1);
+  border: 1px solid rgba(143, 181, 255, 0.12);
 }
 
 .config-item strong {
   display: block;
   margin-bottom: 4px;
   font-size: 13px;
-  color: #f8fbff;
+  color: var(--gm-text);
 }
 
 .config-item span {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
-  color: #c8d5e5;
+  color: var(--gm-text-secondary);
 }
 
 .config-value {
   margin-top: 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  color: #8ed1fc;
+  font-size: 12px;
+  color: var(--gm-accent-strong);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -73,10 +80,10 @@
   margin: 0;
   padding: 14px;
   border-radius: 18px;
-  border: 1px solid rgba(143, 181, 255, 0.1);
+  border: 1px solid rgba(143, 181, 255, 0.12);
   background: rgba(5, 10, 19, 0.9);
-  color: #dce8f5;
-  font-size: 11px;
+  color: var(--gm-text-secondary);
+  font-size: 12px;
   line-height: 1.55;
   overflow: auto;
 }

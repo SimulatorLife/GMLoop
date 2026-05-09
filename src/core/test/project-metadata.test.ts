@@ -19,7 +19,7 @@ import {
     stringifyProjectMetadataDocument,
     updateProjectMetadataReferenceByPath,
     writeProjectMetadataDocumentToFile
-} from "../src/project-metadata/yy-adapter.js";
+} from "../src/resources/project-metadata.js";
 
 void test("parseProjectMetadataDocument accepts trailing commas", () => {
     const parsed = parseProjectMetadataDocument(

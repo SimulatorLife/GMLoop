@@ -17,9 +17,10 @@
     "clean:types": "rm -rf dist",
     "dev": "vite --config ./vite.config.ts",
     "preview": "vite preview --config ./vite.config.ts",
-    "test": "pnpm run build:types && node --test dist/test/*.test.js"
+    "test": "pnpm run build:types && node --test \"dist/test/*.test.js\""
   },
   "dependencies": {
+    "@gmloop/core": "workspace:*",
     "browser-fs-access": "^0.38.0",
     "d3": "^7.9.0",
     "lit": "^3.3.1"

@@ -25,6 +25,12 @@ import {
     replaceNodeWith as replaceNodeByMutation
 } from "./math-ast-builders.js";
 import {
+    attemptConvertLengthDir,
+    isIdentityReplacementSafeExpression,
+    matchLengthdirReassignment,
+    matchScaledOperand
+} from "./math-lengthdir-transforms.js";
+import {
     areLiteralNumbersApproximatelyEqual,
     collectProductOperands,
     computeIntegerGcd,
@@ -44,8 +50,7 @@ import {
 } from "./math-numeric-utils.js";
 import {
     attemptConvertDegreesToRadians as simplifyDegreesToRadians,
-    attemptSimplifyTrigonometricCall,
-    identifyTrigCall
+    attemptSimplifyTrigonometricCall
 } from "./math-trig-conversions.js";
 
 const {
@@ -485,150 +490,6 @@ function combineLengthdirScalarAssignments(ast) {
         }
 
         combineLengthdirScalarAssignments(element);
-    }
-}
-
-function matchLengthdirReassignment(expression, identifierName) {
-    const root = Core.unwrapParenthesizedExpression(expression);
-    if (!root || root.type !== BINARY_EXPRESSION || root.operator !== "-") {
-        return null;
-    }
-
-    const callExpression = Core.unwrapParenthesizedExpression(root.right);
-    if (!callExpression || callExpression.type !== CALL_EXPRESSION) {
-        return null;
-    }
-
-    if (Core.hasComment(callExpression)) {
-        return null;
-    }
-
-    const functionName = Core.getUnwrappedIdentifierName(callExpression.object);
-    if (functionName !== "lengthdir_x") {
-        return null;
-    }
-
-    const args = Core.asArray<any>(callExpression.arguments);
-
-    if (args.length !== 2) {
-        return null;
-    }
-
-    const magnitudeInfo = matchIdentifierTimesFactor(args[0], identifierName);
-    if (!magnitudeInfo) {
-        return null;
-    }
-
-    const left = Core.unwrapParenthesizedExpression(root.left);
-    const difference = Core.unwrapParenthesizedExpression(left);
-    if (!difference || difference.type !== BINARY_EXPRESSION || difference.operator !== "-") {
-        return null;
-    }
-
-    if (!Core.isUnwrappedIdentifierWithName(difference.left, identifierName)) {
-        return null;
-    }
-
-    const subtractInfo = matchIdentifierTimesFactor(difference.right, identifierName);
-
-    if (!subtractInfo) {
-        return null;
-    }
-
-    const tolerance = computeNumericTolerance(0);
-    if (Math.abs(magnitudeInfo.factor - subtractInfo.factor) > tolerance) {
-        return null;
-    }
-
-    return {
-        factor: magnitudeInfo.factor,
-        factorNode: subtractInfo.literalNode ?? magnitudeInfo.literalNode,
-        angle: args[1],
-        functionName,
-        callExpression
-    };
-}
-
-function matchIdentifierTimesFactor(expression, identifierName) {
-    const unwrapped = Core.unwrapParenthesizedExpression(expression);
-    if (!unwrapped || Core.hasComment(unwrapped)) {
-        return null;
-    }
-
-    if (unwrapped.type !== BINARY_EXPRESSION) {
-        return null;
-    }
-
-    const operator = Core.getNormalizedOperator(unwrapped);
-
-    let factorNode;
-    let factorValue;
-
-    if (operator === "*") {
-        if (Core.isUnwrappedIdentifierWithName(unwrapped.left, identifierName)) {
-            factorNode = unwrapped.right;
-        } else if (Core.isUnwrappedIdentifierWithName(unwrapped.right, identifierName)) {
-            factorNode = unwrapped.left;
-        } else {
-            return null;
-        }
-
-        factorValue = parseNumericFactor(factorNode);
-    } else if (operator === "/") {
-        if (!Core.isUnwrappedIdentifierWithName(unwrapped.left, identifierName)) {
-            return null;
-        }
-
-        const divisorValue = parseNumericFactor(unwrapped.right);
-        if (divisorValue === null) {
-            return null;
-        }
-
-        if (Math.abs(divisorValue) <= computeNumericTolerance(0)) {
-            return null;
-        }
-
-        factorNode = unwrapped.right;
-        factorValue = 1 / divisorValue;
-    } else {
-        return null;
-    }
-
-    if (factorValue === null) {
-        return null;
-    }
-
-    const literalNode = Core.unwrapParenthesizedExpression(factorNode) ?? factorNode;
-
-    return {
-        factor: factorValue,
-        literalNode
-    };
-}
-
-function isIdentityReplacementSafeExpression(node) {
-    if (!isObjectLike(node)) {
-        return false;
-    }
-
-    if (Core.hasComment(node)) {
-        return false;
-    }
-
-    switch (node.type) {
-        case IDENTIFIER:
-        case LITERAL:
-        case CALL_EXPRESSION:
-        case MEMBER_DOT_EXPRESSION:
-        case MEMBER_INDEX_EXPRESSION: {
-            return true;
-        }
-        case PARENTHESIZED_EXPRESSION: {
-            return isIdentityReplacementSafeExpression(node.expression);
-        }
-        default: {
-            return false;
-        }
     }
 }
 
@@ -2180,66 +2041,6 @@ function attemptConvertLog2(node, context) {
     return true;
 }
 
-function attemptConvertLengthDir(node, context) {
-    if (!Core.isBinaryOperator(node, "*") || Core.hasComment(node)) {
-        return false;
-    }
-
-    const leftInfo = extractSignedOperand(node.left);
-    const rightInfo = extractSignedOperand(node.right);
-
-    const candidates = [
-        { length: leftInfo, trig: rightInfo },
-        { length: rightInfo, trig: leftInfo }
-    ];
-
-    for (const candidate of candidates) {
-        const trigInfo = identifyTrigCall(candidate.trig.node);
-        if (!trigInfo) {
-            continue;
-        }
-
-        const lengthNode = Core.unwrapParenthesizedExpression(candidate.length.node);
-        if (!lengthNode || !isSafeOperand(lengthNode)) {
-            continue;
-        }
-
-        const overallNegative = candidate.length.negative !== candidate.trig.negative;
-
-        if (trigInfo.kind === "cos") {
-            if (overallNegative) {
-                continue;
-            }
-
-            mutateToCallExpression(
-                node,
-                "lengthdir_x",
-                [Core.cloneAstNode(lengthNode), Core.cloneAstNode(trigInfo.argument)],
-                node
-            );
-            unwrapEnclosingParentheses(node, context);
-            return true;
-        }
-
-        if (trigInfo.kind === "sin") {
-            if (!overallNegative) {
-                continue;
-            }
-
-            mutateToCallExpression(
-                node,
-                "lengthdir_y",
-                [Core.cloneAstNode(lengthNode), Core.cloneAstNode(trigInfo.argument)],
-                node
-            );
-            unwrapEnclosingParentheses(node, context);
-            return true;
-        }
-    }
-
-    return false;
-}
-
 function attemptConvertDotProducts(node, context) {
     if (!Core.isBinaryOperator(node, "+") || Core.hasComment(node)) {
         return false;
@@ -2502,102 +2303,6 @@ function collectAdditionTerms(node, output) {
     }
 
     output.push(expression);
-}
-
-function matchScaledOperand(node, context) {
-    const expression = Core.unwrapParenthesizedExpression(node);
-    if (!expression) {
-        return null;
-    }
-
-    if (Core.hasComment(expression)) {
-        return null;
-    }
-
-    if (expression.type === UNARY_EXPRESSION) {
-        if (expression.operator === "-" || expression.operator === "+") {
-            const inner = matchScaledOperand(expression.argument, context);
-
-            if (!inner) {
-                return null;
-            }
-
-            const coefficient = expression.operator === "-" ? -inner.coefficient : inner.coefficient;
-
-            return {
-                coefficient,
-                base: inner.base,
-                rawBase: inner.rawBase
-            };
-        }
-
-        return null;
-    }
-
-    if (expression.type === BINARY_EXPRESSION) {
-        const rawLeft = expression.left;
-        const rawRight = expression.right;
-
-        if (!rawLeft || !rawRight) {
-            return null;
-        }
-
-        if (
-            Core.hasComment(rawLeft) ||
-            Core.hasComment(rawRight) ||
-            Core.hasInlineCommentBetween(rawLeft, rawRight, context)
-        ) {
-            return null;
-        }
-
-        const leftValue = parseNumericFactor(rawLeft);
-        const rightValue = parseNumericFactor(rawRight);
-
-        if (expression.operator === "*") {
-            const rightBase = Core.unwrapParenthesizedExpression(rawRight);
-            if (leftValue !== null && rightValue === null && rightBase) {
-                return {
-                    coefficient: leftValue,
-                    base: rightBase,
-                    rawBase: rawRight
-                };
-            }
-
-            const leftBase = Core.unwrapParenthesizedExpression(rawLeft);
-            if (rightValue !== null && leftValue === null && leftBase) {
-                return {
-                    coefficient: rightValue,
-                    base: leftBase,
-                    rawBase: rawLeft
-                };
-            }
-
-            return null;
-        }
-
-        if (expression.operator === "/") {
-            if (rightValue === null) {
-                return null;
-            }
-
-            if (Math.abs(rightValue) <= computeNumericTolerance(0)) {
-                return null;
-            }
-
-            const numerator = Core.unwrapParenthesizedExpression(rawLeft);
-            if (!numerator) {
-                return null;
-            }
-
-            return {
-                coefficient: 1 / rightValue,
-                base: numerator,
-                rawBase: rawLeft
-            };
-        }
-    }
-
-    return null;
 }
 
 function matchLengthdirScaledOperand(node, context) {
@@ -3078,22 +2783,6 @@ function collapseUnitMinusHalfFactor(node, context) {
 
     mutateToNumericLiteral(node, 0.5, node);
     return true;
-}
-
-function extractSignedOperand(node) {
-    const expression = Core.unwrapParenthesizedExpression(node);
-    if (!expression) {
-        return { node: null, negative: false };
-    }
-
-    if (expression.type === UNARY_EXPRESSION && expression.operator === "-") {
-        return {
-            node: expression.argument,
-            negative: true
-        };
-    }
-
-    return { node: expression, negative: false };
 }
 
 function areNodesApproximatelyEquivalent(a, b) {
@@ -3828,10 +3517,10 @@ export {
     attemptSimplifyDivisionByReciprocal,
     attemptSimplifyNegativeDivisionProduct,
     attemptSimplifyOneMinusFactor,
-    isIdentityReplacementSafeExpression,
     normalizeTraversalContext,
     simplifyZeroDivisionNumerators
 };
 
 export { replaceNodeWith } from "./math-ast-builders.js";
+export { isIdentityReplacementSafeExpression } from "./math-lengthdir-transforms.js";
 export { attemptConvertDegreesToRadians, matchDegreesToRadians } from "./math-trig-conversions.js";

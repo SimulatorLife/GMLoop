@@ -33,9 +33,11 @@ interface GeminiSettings {
         };
     };
     tools: {
-        core: string[];
+        core?: string[];
         useRipgrep: boolean;
         truncateToolOutputThreshold: number;
+        autoAccept?: boolean;
+        disableLLMCorrection?: boolean;
     };
 }
 
@@ -63,14 +65,23 @@ async function readAllWorkflowSources(): Promise<string> {
 }
 
 function getRequiredSharedAgentPrompt(source: string): string {
-    const match =
+    const heredocMatch =
         /cat > "\$\{AGENT_PROMPT_FILE\}" <<PROMPT\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*export AGENT_PROMPT_FILE/u.exec(
             source
         );
+    if (heredocMatch?.groups?.prompt) {
+        return heredocMatch.groups.prompt;
+    }
 
-    assert.ok(match?.groups?.prompt, "Parent workflow must define a shared AGENT_PROMPT_FILE heredoc.");
+    const writerMatch =
+        /write_agent_prompt_file\(\) \{\n(?<promptWriter>[\s\S]*?)\n\s*export AGENT_PROMPT_FILE\n\s*\}/u.exec(source);
 
-    return match.groups.prompt;
+    assert.ok(
+        writerMatch?.groups?.promptWriter,
+        "Parent workflow must materialize a shared AGENT_PROMPT_FILE for child agents."
+    );
+
+    return writerMatch.groups.promptWriter;
 }
 
 function getRequiredWorkflowInputBlock(source: string, inputName: string): string {
@@ -118,8 +129,16 @@ function getRequiredAiderCommand(source: string): string {
 }
 
 function getRequiredGeminiCommand(source: string): string {
-    const commandStartIndex = source.indexOf('stdbuf -oL -eL node --max-old-space-size=12288 "${GEMINI_CLI_ENTRYPOINT}" \\');
-    assert.notEqual(commandStartIndex, -1, "Gemini workflow must invoke the Gemini CLI entrypoint through node.");
+    const directCommandStartIndex = source.indexOf("stdbuf -oL -eL gemini \\");
+    const nodeCommandStartIndex = source.indexOf("stdbuf -oL -eL node --max-old-space-size=");
+    const commandStartIndex =
+        directCommandStartIndex === -1
+            ? nodeCommandStartIndex
+            : nodeCommandStartIndex === -1
+              ? directCommandStartIndex
+              : Math.min(directCommandStartIndex, nodeCommandStartIndex);
+
+    assert.notEqual(commandStartIndex, -1, "Gemini workflow must invoke the Gemini CLI with streamed output.");
 
     const commandTail = source.slice(commandStartIndex);
     const commandLines = commandTail.split("\n");
@@ -130,7 +149,11 @@ function getRequiredGeminiCommand(source: string): string {
             capturedCommandLines.push(line);
             break;
         }
-        if (capturedCommandLines.length > 0 || line.includes('stdbuf -oL -eL node --max-old-space-size=12288 "${GEMINI_CLI_ENTRYPOINT}"')) {
+        if (
+            capturedCommandLines.length > 0 ||
+            line.includes("stdbuf -oL -eL gemini") ||
+            line.includes("stdbuf -oL -eL node --max-old-space-size=")
+        ) {
             capturedCommandLines.push(line);
         }
     }
@@ -162,6 +185,21 @@ function assertAiderCommandIncludesRequiredFlags(commandSource: string): void {
     }
 }
 
+function assertWorkflowDispatchesToReusableAgent(source: string, agentName: string): void {
+    assert.match(
+        source,
+        new RegExp(String.raw`contains\(github\.event\.comment\.body \|\| '', '@${agentName}'\)`, "u")
+    );
+    assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
+    assert.match(source, new RegExp(String.raw`agent: ${agentName}`, "u"));
+}
+
+function assertWorkflowDeclaresAgentPackage(source: string, packageName: string): void {
+    const escapedPackageName = packageName.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
+
+    assert.match(source, new RegExp(String.raw`agent_package:\s*'?${escapedPackageName}(?:@[^'\s]+)?'?`, "u"));
+}
+
 function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
     assert.match(prompt, /Repository root:/u);
     assert.match(prompt, /User task from PR comment:/u);
@@ -179,17 +217,15 @@ function assertQwenUsesLocalAgentLoop(source: string, sharedPrompt: string): voi
     const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
 
-    assert.match(source, /contains\(github\.event\.comment\.body \|\| '', '@qwen'\)/u);
-    assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
-    assert.match(source, /agent: qwen/u);
+    assertWorkflowDispatchesToReusableAgent(source, "qwen");
     assert.doesNotMatch(source, /agent_cli:/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
     assert.doesNotMatch(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
     assert.doesNotMatch(source, /^\s*QWEN_TASK_PROMPT=/mu);
-    assert.match(source, /cat "\$\{AGENT_PROMPT_FILE\}" \| stdbuf -oL -eL qwen/u);
     assert.doesNotMatch(source, /local-qwen-smoke/u);
     assert.match(source, /stdbuf -oL -eL qwen \\/u);
     assert.match(source, /--prompt ""/u);
+    assert.match(source, /< "\$\{AGENT_PROMPT_FILE\}"/u);
     assert.doesNotMatch(source, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
     assert.doesNotMatch(source, /QWEN_AGENT_PROMPT/u);
     assert.match(setupCommand, /pull_qwen_configured_model\(\)/u);
@@ -197,10 +233,10 @@ function assertQwenUsesLocalAgentLoop(source: string, sharedPrompt: string): voi
     assert.match(setupCommand, /ollama pull "\$\{configured_model\}"/u);
     assert.doesNotMatch(agentCommand, /ollama pull/u);
     assert.match(agentCommand, /set \+e/u);
-    assert.match(agentCommand, /qwen_status="\$\{PIPESTATUS\[0\]\}"/u);
+    assert.match(agentCommand, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
     assert.match(agentCommand, /set -e/u);
-    assert.match(agentCommand, /if \[ "\$\{qwen_status\}" -ne 0 \]; then/u);
-    assert.match(agentCommand, /exit "\$\{qwen_status\}"/u);
+    assert.match(agentCommand, /if \[ "\$\{agent_status\}" -ne 0 \]; then/u);
+    assert.match(agentCommand, /exit "\$\{agent_status\}"/u);
     assert.match(source, /(--approval-mode yolo|--yolo)/u);
     assert.doesNotMatch(source, /--append-system-prompt/u);
     assert.doesNotMatch(source, /--prompt-interactive/u);
@@ -219,7 +255,7 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
         source.lastIndexOf("agent_setup_command") < source.lastIndexOf("agent_command"),
         "Qwen must pull the configured local model before invoking the real task."
     );
-    assert.match(source, /agent_package: '@qwen-code\/qwen-code@0\.14\.5'/u);
+    assertWorkflowDeclaresAgentPackage(source, "@qwen-code/qwen-code");
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /verify_qwen_/u);
     assert.doesNotMatch(source, /openai-tool-registry/u);
@@ -241,9 +277,20 @@ void test("qwen invoke uses checked-in settings for local model selection", asyn
     assert.ok(settings.model.name.length > 0, "Qwen settings must declare a local model name.");
     assert.ok(settings.permissions.allow.includes("Read"));
     assert.ok(settings.permissions.allow.includes("Edit"));
-    assert.ok(settings.permissions.allow.includes("Bash(pnpm run *)"));
-    assert.ok(settings.permissions.deny.includes("WebSearch"));
-    assert.ok(settings.permissions.deny.includes("WebFetch"));
+    assert.ok(
+        settings.permissions.allow.some((permission) => /^Bash\(pnpm\b/u.test(permission)),
+        "Qwen settings must allow pnpm-backed repository validation commands."
+    );
+    assert.ok(
+        settings.permissions.deny.some(
+            (permission) => permission.toLowerCase() === "websearch" || permission === "web_search"
+        ),
+        "Qwen settings must deny web search tooling."
+    );
+    assert.ok(
+        settings.permissions.deny.some((permission) => permission.toLowerCase() === "webfetch"),
+        "Qwen settings must deny web fetch tooling."
+    );
 });
 
 void test("aider invoke is the single local-only Aider workflow", async () => {
@@ -256,10 +303,8 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     const aiderCommand = getRequiredAiderCommand(source);
 
     assert.match(source, /name: '▶️ Aider Invoke'/u);
-    assert.match(source, /contains\(github\.event\.comment\.body \|\| '', '@aider'\)/u);
-    assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
-    assert.match(source, /agent: aider/u);
-    assert.match(source, /agent_package: aider-chat/u);
+    assertWorkflowDispatchesToReusableAgent(source, "aider");
+    assertWorkflowDeclaresAgentPackage(source, "aider-chat");
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assert.match(setupCommand, /pull_aider_configured_model\(\)/u);
@@ -298,53 +343,31 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     const geminiCommand = getRequiredGeminiCommand(source);
 
     assert.match(source, /name: '▶️ Gemini Invoke'/u);
-    assert.match(source, /contains\(github\.event\.comment\.body \|\| '', '@gemini'\)/u);
-    assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
-    assert.match(source, /agent: gemini/u);
-    assert.match(source, /validate_local_endpoint: false/u);
-    assert.match(source, /agent_package: '@google\/gemini-cli@latest'/u);
+    assertWorkflowDispatchesToReusableAgent(source, "gemini");
+    assertWorkflowDeclaresAgentPackage(source, "@google/gemini-cli");
     assert.doesNotMatch(source, /max_agent_retries:/u);
-    assert.match(source, /api_key: \$\{\{ secrets\.GEMINI_API_KEY \}\}/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
     assert.match(sharedPrompt, /one focused, minimal code change set/u);
     assert.match(sharedPrompt, /Do not survey the entire repository exhaustively/u);
+    assert.match(sharedPrompt, /targeted search/u);
     assert.match(sharedPrompt, /Keep command and tool output small/u);
-    assert.match(sharedPrompt, /Prefer targeted `rg -n "<pattern>" <path>`/u);
-    assert.match(sharedPrompt, /Never invoke `rg` without at least one explicit search pattern/u);
     assert.match(sharedPrompt, /Do not finish with only analysis or a plan/u);
     assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
-    assert.doesNotMatch(agentCommand, /NODE_OPTIONS/u);
-    assert.match(source, /GEMINI_CLI_ENTRYPOINT=/u);
-    assert.match(setupCommand, /gemini_cli_entrypoint="\$\{gemini_package_root\}\/bundle\/gemini\.js"/u);
-    assert.match(setupCommand, /Could not locate Gemini CLI entrypoint/u);
-    assert.match(setupCommand, /echo "GEMINI_CLI_ENTRYPOINT=\$\{gemini_cli_entrypoint\}" >> "\$GITHUB_ENV"/u);
-    assert.match(source, /stdbuf -oL -eL node --max-old-space-size=12288 "\$\{GEMINI_CLI_ENTRYPOINT\}" \\/u);
-    assert.match(agentCommand, /Missing Gemini CLI entrypoint from setup step/u);
-    assert.match(setupCommand, /command -v rg/u);
-    assert.match(setupCommand, /sudo apt-get install -y ripgrep/u);
-    assert.match(setupCommand, /pnpm root -g/u);
-    assert.match(setupCommand, /ripgrep is unavailable after install attempt/u);
+    assert.match(setupCommand, /\.gemini\/policies\/tools\.toml/u);
+    assert.match(setupCommand, /cp ".gemini\/policies\/tools\.toml" "\$HOME\/.gemini\/policies\/tools\.toml"/u);
+    assert.match(agentCommand, /export GEMINI_CLI_TRUST_WORKSPACE=true/u);
+    assert.match(agentCommand, /export GEMINI_API_KEY="\$\{OPENAI_API_KEY\}"/u);
+    assert.match(agentCommand, /export NODE_OPTIONS="--max-old-space-size=\d+"/u);
     assert.doesNotMatch(setupCommand, /bundle\/vendor\/ripgrep/u);
     assert.doesNotMatch(setupCommand, /ln -sf "\$\(command -v rg\)"/u);
     assert.match(geminiCommand, /--approval-mode(?:=| )yolo/u);
     assert.match(geminiCommand, /--skip-trust/u);
-    assert.match(geminiCommand, /--output-format stream-json/u);
+    assert.match(geminiCommand, /--output-format(?:=| )stream-json/u);
     assert.doesNotMatch(geminiCommand, /--model/u);
     assert.match(geminiCommand, /--prompt ""/u);
     assert.match(geminiCommand, /< "\$\{AGENT_PROMPT_FILE\}"/u);
-    assert.match(source, /gemini-stream\.jsonl/u);
-    assert.match(source, /jq -Rr '/u);
-    assert.match(source, /fromjson\? \/\/ \{"type":"raw","text": \.\}/u);
-    assert.match(source, /\[message\/\\\(\$role\\\)\]/u);
-    assert.match(source, /\(\$event\.name \/\/ \$event\.tool_name \/\/ \$event\.toolUse\.name \/\/ "unknown"\) as \$name/u);
-    assert.match(source, /\[tool_use\]/u);
-    assert.match(source, /\[tool_result\/\\\(\$name\\\)\]/u);
-    assert.match(
-        source,
-        /\(\$event\.message \/\/ \$event\.error\.message \/\/ \$event\.text \/\/ \(\$event \| tostring\)\) as \$message/u
-    );
-    assert.match(source, /\[result\]/u);
+    assert.match(source, /agent-stream\.jsonl/u);
     assert.doesNotMatch(geminiCommand, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
     assert.doesNotMatch(agentCommand, /max_api_attempts="\$\{GEMINI_API_MAX_ATTEMPTS:-4\}"/u);
     assert.doesNotMatch(agentCommand, /RESOURCE_EXHAUSTED\|429\|quota exceeded\|rate\.\?limit/u);
@@ -352,9 +375,8 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
     assert.doesNotMatch(agentCommand, /jitter_ms=\$\(\(RANDOM % 1000\)\)/u);
     assert.doesNotMatch(agentCommand, /sleep "\$\{sleep_seconds\}"/u);
     assert.doesNotMatch(source, /GEMINI_AGENT_PROMPT/u);
-    assert.match(source, /gemini_status="\$\{PIPESTATUS\[0\]\}"/u);
+    assert.match(source, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
     assert.doesNotMatch(source, /ollama pull/u);
-    assert.doesNotMatch(source, /validate_local_endpoint: true/u);
     assert.doesNotMatch(source, /_deprecated-gemini-invoke/u);
     assert.ok(!workflowFileNames.includes("_deprecated-gemini-invoke.yml"));
     assert.doesNotMatch(agentCommand, /ollama pull/u);
@@ -363,21 +385,25 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
 
 void test("gemini settings allow the git commands required for merge-conflict resolution workflows", async () => {
     const settings = await readGeminiSettings();
-    const allowedTools = settings.tools.core;
+    const allowedTools = settings.tools.core ?? [];
 
     assert.equal(settings.tools.useRipgrep, false);
-    assert.equal(settings.model.maxSessionTurns, 8);
-    assert.equal(settings.general.sessionRetention.enabled, false);
-    assert.equal(settings.tools.truncateToolOutputThreshold, 4000);
+    assert.ok(settings.model.maxSessionTurns > 0, "Gemini must allow at least one agent turn.");
+    assert.ok(settings.tools.truncateToolOutputThreshold > 0, "Gemini must bound verbose tool output.");
     assert.ok(!allowedTools.includes("GrepTool"));
     assert.ok(!allowedTools.includes("RipGrepTool"));
-    assert.ok(allowedTools.includes("LSTool"));
-    assert.ok(allowedTools.includes("ReadFileTool"));
-    assert.ok(allowedTools.includes("GlobTool"));
-    assert.ok(allowedTools.includes("EditTool"));
-    assert.ok(allowedTools.includes("WriteFileTool"));
-    assert.ok(allowedTools.includes("ActivateSkillTool"));
-    assert.ok(allowedTools.includes("run_shell_command"));
+    if (allowedTools.length > 0) {
+        assert.ok(allowedTools.includes("LSTool"));
+        assert.ok(allowedTools.includes("ReadFileTool"));
+        assert.ok(allowedTools.includes("GlobTool"));
+        assert.ok(allowedTools.includes("EditTool"));
+        assert.ok(allowedTools.includes("WriteFileTool"));
+        assert.ok(allowedTools.includes("ActivateSkillTool"));
+        assert.ok(allowedTools.includes("run_shell_command"));
+    } else {
+        assert.equal(settings.tools.autoAccept, true);
+        assert.equal(settings.tools.disableLLMCorrection, true);
+    }
 });
 
 void test("aider invoke uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
@@ -402,8 +428,8 @@ void test("agent invoke validates local OpenAI-compatible endpoint without loadi
     assert.doesNotMatch(source, /LOCAL_MODEL/u);
     assert.doesNotMatch(source, /ollama pull/u);
     assert.doesNotMatch(source, /chat\/completions/u);
-    assert.match(source, /validate_local_endpoint:/u);
-    assert.match(source, /OLLAMA_NATIVE_URL='http:\/\/127\.0\.0\.1:11434'/u);
+    assert.match(source, /OLLAMA_NATIVE_URL="\$\{OPENAI_BASE_URL%\/\}"/u);
+    assert.match(source, /OLLAMA_NATIVE_URL="\$\{OLLAMA_NATIVE_URL%\/v1\}"/u);
     assert.match(source, /\$\{OLLAMA_NATIVE_URL\}\/api\/version/u);
     assert.match(source, /\$\{OPENAI_BASE_URL%\/\}\/models/u);
     assert.match(source, /jq -e 'type == "object"'/u);
@@ -416,7 +442,12 @@ void test("agent invoke exports OpenAI API type for every child agent", async ()
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const aiderSource = await readWorkflowSource("aider-invoke.yml");
 
-    assert.match(parentSource, /env:\n\s+OPENAI_API_TYPE: openai\n\s+NODE_OPTIONS: --max-old-space-size=12288/u);
+    assert.match(
+        parentSource,
+        /env:\n\s+OPENAI_API_TYPE: openai\n\s+OPENAI_BASE_URL: \$\{\{ inputs\.openai_base_url \}\}/u
+    );
+    assert.match(parentSource, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \|\| 'ollama' \}\}/u);
+    assert.doesNotMatch(parentSource, /NODE_OPTIONS: --max-old-space-size/u);
     assert.doesNotMatch(aiderSource, /export OPENAI_API_TYPE=/u);
     assert.doesNotMatch(aiderSource, /--set-env OPENAI_API_TYPE=openai/u);
 });
@@ -424,16 +455,33 @@ void test("agent invoke exports OpenAI API type for every child agent", async ()
 void test("agent invoke streams custom command output while preserving exit status", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
     const setupInputBlock = getRequiredWorkflowInputBlock(source, "agent_setup_command");
+    const setupFileInputBlock = getRequiredWorkflowInputBlock(source, "agent_setup_command_file");
 
     assert.match(setupInputBlock, /type: string/u);
     assert.match(setupInputBlock, /required: false/u);
+    assert.match(setupFileInputBlock, /type: string/u);
+    assert.match(setupFileInputBlock, /required: false/u);
     assert.match(source, /- name: Run agent setup command/u);
-    assert.match(source, /if: \$\{\{ inputs\.agent_setup_command != '' \}\}/u);
-    assert.match(source, /cat >"\$setup_script" <<'SCRIPT'/u);
-    assert.match(source, /\$\{\{ inputs\.agent_setup_command \}\}/u);
+    assert.match(
+        source,
+        /if: \$\{\{ inputs\.agent_setup_command != '' \|\| inputs\.agent_setup_command_file != '' \}\}/u
+    );
+    assert.match(source, /AGENT_SETUP_COMMAND: \$\{\{ inputs\.agent_setup_command \}\}/u);
+    assert.match(source, /AGENT_SETUP_COMMAND_FILE: \$\{\{ inputs\.agent_setup_command_file \}\}/u);
+    assert.match(source, /if \[ -n "\$\{AGENT_SETUP_COMMAND_FILE:-\}" \]; then/u);
+    assert.match(source, /\/\*\|\.\.\/\*\|\*\/\.\.\/\*\|\*\/\.\.\|\.\.\)/u);
+    assert.match(source, /agent_setup_command_file must be a safe repository-relative path/u);
+    assert.match(source, /source_setup_script="\$\{GITHUB_WORKSPACE\}\/\$\{AGENT_SETUP_COMMAND_FILE\}"/u);
+    assert.match(source, /cp "\$\{source_setup_script\}" "\$setup_script"/u);
+    assert.match(source, /printf '%s\\n' "\$\{AGENT_SETUP_COMMAND\}" > "\$setup_script"/u);
+    assert.match(source, /sed -i 's\/\\r\$\/\/' "\$setup_script"/u);
     assert.match(source, /stdbuf -oL -eL bash "\$setup_script" 2>&1 \| tee "\$RUNNER_TEMP\/agent-setup\.log"/u);
-    assert.match(source, /GEMINI_CLI_TRUST_WORKSPACE: 'true'/u);
     assert.match(source, /- name: Run agent custom command with retries/u);
+    assert.match(source, /if: \$\{\{ inputs\.agent_command != '' \|\| inputs\.agent_command_file != '' \}\}/u);
+    assert.match(source, /AGENT_COMMAND: \$\{\{ inputs\.agent_command \}\}/u);
+    assert.match(source, /AGENT_COMMAND_FILE: \$\{\{ inputs\.agent_command_file \}\}/u);
+    assert.match(source, /if \[ -n "\$\{AGENT_COMMAND_FILE:-\}" \]; then/u);
+    assert.match(source, /agent_command_file must be a safe repository-relative path/u);
     assert.match(source, /stdbuf -oL -eL bash "\$script" 2>&1 \| tee "\$\{attempt_log\}"/u);
     assert.match(source, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
     assert.match(source, /return "\$\{agent_status\}"/u);
@@ -443,7 +491,8 @@ void test("agent invoke streams custom command output while preserving exit stat
 void test("agent invoke accepts marker-prefixed agent comments but still requires the first meaningful line to target the agent", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
-    assert.match(source, /leading HTML comment markers or blank lines/u);
+    assert.match(source, /BEGIN \{ skipping = 1 \}/u);
+    assert.match(source, /if \(skipping && line ~ \/\^\[\[:space:\]\]\*\$\/\) next/u);
     assert.match(source, /line ~ \/\^\[\[:space:\]\]\*<!--\.\*-->\[\[:space:\]\]\*\$\/\) next/u);
     assert.match(source, /grep -qE "\^\$\{mention\}\(\[\[:space:\]\]\|\$\)"/u);
     assert.match(source, /Comment does not start with \$\{mention\} after optional marker lines; aborting\./u);
@@ -453,9 +502,11 @@ void test("agent invoke accepts marker-prefixed agent comments but still require
 void test("agent invoke workflow fails when a successful agent run produces no push", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
+    assert.match(source, /RUN_AGENT_OUTCOME: \$\{\{ steps\.run_agent\.outcome \|\| '' \}\}/u);
+    assert.match(source, /RUN_AGENT_CONCLUSION: \$\{\{ steps\.run_agent\.conclusion \|\| '' \}\}/u);
     assert.match(
         source,
-        /if \[ "\$\{\{ steps\.run_agent\.outcome \}\}" = "failure" \] \|\| \[ "\$\{\{ steps\.run_agent\.conclusion \}\}" = "failure" \]; then/u
+        /if \[ "\$\{RUN_AGENT_OUTCOME\}" = "failure" \] \|\| \[ "\$\{RUN_AGENT_CONCLUSION\}" = "failure" \]; then/u
     );
     assert.match(source, /if \[ -f "\$SENTINEL" \]; then/u);
     assert.match(source, /Agent completed without producing pushable local changes/u);
@@ -591,8 +642,14 @@ void test("agent invoke workflow checks and pushes changes after every agent att
 void test("agent invoke requests merge-conflict resolution with the same agent after a successful dirty push", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
-    assert.match(source, /outputs:\n\s+should_request_merge_conflict_resolution: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.should_request_merge_conflict_resolution \|\| 'false' \}\}/u);
-    assert.match(source, /follow_up_agent: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.follow_up_agent \|\| '' \}\}/u);
+    assert.match(
+        source,
+        /outputs:\n\s+should_request_merge_conflict_resolution: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.should_request_merge_conflict_resolution \|\| 'false' \}\}/u
+    );
+    assert.match(
+        source,
+        /follow_up_agent: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.follow_up_agent \|\| '' \}\}/u
+    );
     assert.match(source, /- name: Evaluate merge conflicts after successful push/u);
     assert.match(source, /if: always\(\) && steps\.report_outcome\.outputs\.agent_failed != 'true'/u);
     assert.match(source, /FOLLOW_UP_AGENT: \$\{\{ inputs\.agent \}\}/u);

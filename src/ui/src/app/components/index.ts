@@ -5,5 +5,6 @@ export * from "./gm-config-panel.js";
 export * from "./gm-docs-panel.js";
 export * from "./gm-graph-panel.js";
 export * from "./gm-graph-toolbar.js";
+export * from "./gm-playground-panel.js";
 export * from "./light-dom-lit-element.js";
 export * from "./primitives/index.js";

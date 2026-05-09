@@ -1,6 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { isRecord } from "../../shared/error-guards.js";
+
 type RunnerLifecycleState = "paused" | "running" | "stopped";
 
 export type RunnerLogKind = "compile" | "runtime";
@@ -45,10 +47,6 @@ const DEFAULT_PERSISTED_STATE: PersistedRunnerState = Object.freeze({
 
 function resolveRunnerStatePath(projectRoot: string): string {
     return path.join(projectRoot, ".gmloop", "runtime", "runner-state.json");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizeRunnerState(value: unknown): PersistedRunnerState {

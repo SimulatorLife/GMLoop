@@ -1,6 +1,6 @@
 # Refactor Engine Module
 
-This package powers GML-native codemods and semantic refactoring transactions, as outlined in the [formatter/linter split plan](../../docs/formatter-linter-split-plan.md). It implements a native, GML-centric Collection API (inspired by `jscodeshift`) to handle atomic cross-file edits, metadata updates (`.yy`, `.yyp`), and structural migrations.
+This package powers GML-native codemods and semantic refactoring transactions, as outlined in the [target-state architecture plan](../../docs/target-state.md). It implements a native, GML-centric Collection API (inspired by `jscodeshift`) to handle atomic cross-file edits, metadata updates (`.yy`, `.yyp`), and structural migrations.
 
 ## Ownership Boundaries
 
@@ -50,7 +50,7 @@ Current guardrails focus on the two hottest naming-convention paths that showed 
 
 The refactor workspace keeps naming-convention codemod stress tests in the regular TypeScript test suite:
 
-- [`src/refactor/test/naming-convention-performance.test.ts`](./test/naming-convention-performance.test.ts) exercises high-volume local rename planning and edit application.
+- [`src/refactor/test/naming-convention-performance.test.ts`](test/naming-convention-performance.test.ts) exercises high-volume local rename planning and edit application.
 - [`src/cli/test/refactor-codemod-performance.test.ts`](../cli/test/refactor-codemod-performance.test.ts) exercises the indexed CLI bridge path for large top-level rename batches.
 - [`src/cli/test/refactor-codemod-command-performance.test.ts`](../cli/test/refactor-codemod-command-performance.test.ts) exercises end-to-end `refactor codemod --write` execution on a larger synthetic GameMaker project so CLI indexing, planning, and write-back stay bounded.
 - [`src/cli/test/refactor-naming-target-discovery-performance.test.ts`](../cli/test/refactor-naming-target-discovery-performance.test.ts) exercises naming-target discovery on mixed declaration/reference workloads so reference-only files do not rebuild local-reference indexes unnecessarily.

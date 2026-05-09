@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 // Node deprecated the loose equality helpers (for example `assert.equal`).
 // These tests intentionally rely on the strict variants so future refactors do

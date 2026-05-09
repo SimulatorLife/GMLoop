@@ -1,6 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { Core } from "@gmloop/core";
+
+import { isRecord } from "../../shared/error-guards.js";
+
+const { sortObjectKeys } = Core;
+
 /**
  * Persisted runtime log entry scoped to one project.
  */
@@ -26,10 +32,6 @@ const EMPTY_RUNTIME_STATE: RuntimeProjectState = {
 
 function resolveRuntimeStatePath(projectRoot: string): string {
     return path.join(projectRoot, ".gmloop", "runtime", "state.json");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizeLogEntries(value: unknown): Array<RuntimeLogEntry> {
@@ -80,22 +82,6 @@ function normalizeRuntimeState(value: unknown): RuntimeProjectState {
     };
 }
 
-function sortObjectKeysDeep(value: unknown): unknown {
-    if (Array.isArray(value)) {
-        return value.map((entry) => sortObjectKeysDeep(entry));
-    }
-    if (!isRecord(value)) {
-        return value;
-    }
-
-    const sorted: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort()) {
-        sorted[key] = sortObjectKeysDeep(value[key]);
-    }
-
-    return sorted;
-}
-
 /**
  * Read runtime state for a project, returning an empty state when none exists.
  */
@@ -119,8 +105,8 @@ export function writeRuntimeProjectState(projectRoot: string, state: RuntimeProj
     mkdirSync(path.dirname(statePath), { recursive: true });
 
     const normalized = {
-        globals: sortObjectKeysDeep(state.globals),
-        instances: sortObjectKeysDeep(state.instances),
+        globals: sortObjectKeys(state.globals),
+        instances: sortObjectKeys(state.instances),
         logs: [...state.logs].sort(
             (left, right) => left.timestamp - right.timestamp || left.message.localeCompare(right.message)
         )

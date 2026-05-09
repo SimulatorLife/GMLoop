@@ -2,12 +2,12 @@
 
 This repository is the source monorepo for various GameMaker Language tools, including:
 
-- a Prettier formatter plugin ([`@gmloop/format`](./src/format/))
-- an ESLint language plugin + rules ([`@gmloop/lint`](./src/lint/))
-- a codemod/refactor engine ([`@gmloop/refactor`](./src/refactor/))
-- a **gml** to **js** transpiler ([`@gmloop/transpiler`](./src/transpiler/))
-- HTML5-runtime live reloading ([`@gmloop/runtime-wrapper`](./src/runtime-wrapper/))
-- [parser](./src/parser/), [semantic analysis](./src/semantic/), and [CLI](./src/cli/) workspaces
+- a Prettier formatter plugin ([`@gmloop/format`](src/format))
+- an ESLint language plugin + rules ([`@gmloop/lint`](src/lint))
+- a codemod/refactor engine ([`@gmloop/refactor`](src/refactor))
+- a **gml** to **js** transpiler ([`@gmloop/transpiler`](src/transpiler))
+- HTML5-runtime live reloading ([`@gmloop/runtime-wrapper`](src/runtime-wrapper))
+- [parser](src/parser), [semantic analysis](src/semantic), and [CLI](src/cli) workspaces
 
 ## Table of contents
 
@@ -22,7 +22,7 @@ This repository is the source monorepo for various GameMaker Language tools, inc
 
 ## Formatter at a glance
 
-Formatter ([`@gmloop/format`](./src/format/)) does layout/canonical rendering only (whitespace, semicolons, etc). It does not rewrite code or change semantics.
+Formatter ([`@gmloop/format`](src/format)) does layout/canonical rendering only (whitespace, semicolons, etc). It does not rewrite code or change semantics.
 
 ```gml
 // input

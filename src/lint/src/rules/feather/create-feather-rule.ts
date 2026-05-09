@@ -1,7 +1,7 @@
 import type { Rule } from "eslint";
 
 import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
-import { resolveLocFromIndex } from "../gml/rule-base-helpers.js";
+import { findMatchingBraceEndIndex, resolveLocFromIndex } from "../gml/rule-base-helpers.js";
 import type { FeatherManifestEntry } from "./manifest.js";
 
 type EnumBlockMatch = {
@@ -184,26 +184,6 @@ function collapseAdjacentDuplicateParamDocs(sourceText: string): string {
     }
 
     return dedupedLines.join("\n");
-}
-
-function findMatchingBraceEndIndex(sourceText: string, openBraceIndex: number): number {
-    let depth = 0;
-    for (let index = openBraceIndex; index < sourceText.length; index += 1) {
-        const character = sourceText[index];
-        if (character === "{") {
-            depth += 1;
-            continue;
-        }
-
-        if (character === "}") {
-            depth -= 1;
-            if (depth === 0) {
-                return index + 1;
-            }
-        }
-    }
-
-    return -1;
 }
 
 function getDirectDeprecatedReplacement(identifierName: string): string | null {

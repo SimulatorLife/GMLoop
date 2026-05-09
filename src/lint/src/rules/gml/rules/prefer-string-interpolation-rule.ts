@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { printExpression } from "../../../language/autofix-printing.js";
+import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import {
     type AstNodeRecord,
     createMeta,
@@ -64,7 +64,7 @@ function getNodeTextFromContext(context: Rule.RuleContext, astNode: any): string
 
 function printInterpolationExpression(context: Rule.RuleContext, expressionNode: unknown): string {
     const sourceText = context.sourceCode.text;
-    const printed = printExpression(expressionNode, sourceText).trim();
+    const printed = gmlRuleAutofixServices.printExpression(expressionNode, sourceText).trim();
     if (printed.length > 0) {
         return printed;
     }

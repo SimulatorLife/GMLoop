@@ -3,6 +3,17 @@
     padding: 16px 14px 12px;
   }
 
+  .topbar-row,
+  .page-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .header-identity-row,
+  .header-actions {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+
   .page-toolbar {
     margin: 0 14px;
     border-radius: 18px;
@@ -23,5 +34,15 @@
 
   .toolbar-controls {
     width: 100%;
+    justify-content: flex-start;
+  }
+
+  .toolbar-control-group,
+  .toolbar-search-group {
+    width: 100%;
+  }
+
+  .playground-main {
+    grid-template-columns: 1fr;
   }
 }

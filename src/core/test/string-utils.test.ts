@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 // Prefer strict assertion helpers to avoid relying on Node.js' deprecated
 // loose equality variants like assert.equal/assert.deepEqual.

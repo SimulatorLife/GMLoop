@@ -56,10 +56,10 @@ jobs:
           --yolo \
           --debug \
           --output-format=stream-json \
-          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/qwen.log"
-        qwen_status="${PIPESTATUS[0]}"
+          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/agent-stream.jsonl"
+        agent_status="${PIPESTATUS[0]}"
         set -e
 
-        if [ "${qwen_status}" -ne 0 ]; then
-          exit "${qwen_status}"
+        if [ "${agent_status}" -ne 0 ]; then
+          exit "${agent_status}"
         fi

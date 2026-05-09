@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 import { assignClonedLocation } from "../src/ast/locations.js";
 import type { MutableGameMakerAstNode } from "../src/ast/types.js";

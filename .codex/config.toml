@@ -12,6 +12,9 @@ background_terminal_max_timeout = 600000
 shell_snapshot = true           # Speed up repeated commands
 unified_exec = true
 steer = true
+multi_agent = true
+fast_mode = false
+image_generation = false
 
 [analytics]
 enabled = false
@@ -25,9 +28,30 @@ enabled = true
 [projects."/Users/henrykirk/GMLoop"]
 trust_level = "trusted"
 
+[projects."/home/runner/work/GMLoop/GMLoop"]
+trust_level = "trusted"
+
 [sandbox_workspace_write]
 network_access = true
 
 [agents]
 max_threads = 5
 max_depth = 1
+
+[model_providers.minimax]
+name = "MiniMax"
+base_url = "https://api.minimax.io/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+
+[profiles.minimax]
+model_provider = "minimax"
+model = "MiniMax-M2.7"
+
+[profiles.minimax.features]
+multi_agent = false
+browser_use = false
+apps = false
+computer_use = false
+in_app_browser = false
+plugins = false

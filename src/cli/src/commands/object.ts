@@ -19,8 +19,8 @@ function addObjectSharedOptions(command: Command): Command {
         .option("--json", "Emit JSON output.");
 }
 
-function printObjectPayload(payload: unknown, options: PlannedSurfaceSharedOptions): void {
-    printPlannedSurfacePayload(payload, options.json === true);
+function printObjectPayload(payload: unknown): void {
+    printPlannedSurfacePayload(payload);
 }
 
 function emitObjectUnavailableLeaf(
@@ -29,18 +29,15 @@ function emitObjectUnavailableLeaf(
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
-    printObjectPayload(
-        {
-            command: commandName,
-            ok: true,
-            payload: {
-                capability,
-                details,
-                state: "not_available"
-            }
-        },
-        options
-    );
+    printObjectPayload({
+        command: commandName,
+        ok: true,
+        payload: {
+            capability,
+            details,
+            state: "not_available"
+        }
+    });
 }
 
 export function createObjectCommand(): Command {
@@ -61,7 +58,7 @@ export function createObjectCommand(): Command {
             query: "",
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "object");
-        printObjectPayload({ command: "object list", ok: true, payload }, options);
+        printObjectPayload({ command: "object list", ok: true, payload });
     });
 
     const inspect = addObjectSharedOptions(
@@ -91,7 +88,7 @@ export function createObjectCommand(): Command {
                       projectRoot: context.projectRoot,
                       toolsetRoot: options.toolsetRoot
                   });
-        printObjectPayload({ command: "object inspect", ok: payload !== null, payload }, options);
+        printObjectPayload({ command: "object inspect", ok: payload !== null, payload });
     });
 
     const update = addObjectSharedOptions(
@@ -117,17 +114,14 @@ export function createObjectCommand(): Command {
             query: "",
             toolsetRoot: options.toolsetRoot
         }).results.filter((entry) => entry.kind === "object");
-        printObjectPayload(
-            {
-                command: "object validate",
-                ok: true,
-                payload: {
-                    objectCount: objects.length,
-                    state: "available"
-                }
-            },
-            options
-        );
+        printObjectPayload({
+            command: "object validate",
+            ok: true,
+            payload: {
+                objectCount: objects.length,
+                state: "available"
+            }
+        });
     });
 
     const event = applyStandardCommandOptions(new Command("event")).description("Object event operations.");

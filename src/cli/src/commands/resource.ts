@@ -1,4 +1,3 @@
-import { Core } from "@gmloop/core";
 import { type ProjectResourceMutationResult, Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Argument, Command } from "commander";
@@ -6,6 +5,7 @@ import { Argument, Command } from "commander";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createPathOption, createVerboseOption, createWriteOption } from "../cli-core/shared-command-options.js";
+import { ensureProjectGraphIndex, printProjectPayload } from "../workflow/project-context.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type ResourceCommandSharedOptions = Readonly<{
@@ -20,44 +20,6 @@ type ResourceCommandSharedOptions = Readonly<{
 
 const RESOURCE_COMMAND_FAILURE_PREFIX = "Resource command failed.";
 const RESOURCE_KIND_ARGUMENT_DESCRIPTION = "Resource kind";
-
-async function resolveResourceContext(options: ResourceCommandSharedOptions): Promise<{
-    projectConfig: Record<string, unknown>;
-    projectRoot: string;
-}> {
-    const projectRoot = await discoverProjectRoot({
-        configPath: options.config,
-        explicitProjectPath: options.path
-    });
-    const configPath = options.config ?? `${projectRoot}/gmloop.json`;
-    const loadedConfig = await Core.loadGmloopProjectConfig(configPath).catch(() => ({}));
-    return {
-        projectConfig: Core.isObjectLike(loadedConfig) ? (loadedConfig as Record<string, unknown>) : {},
-        projectRoot
-    };
-}
-
-async function ensureResourceGraphIndex(options: ResourceCommandSharedOptions): Promise<{
-    projectConfig: Record<string, unknown>;
-    projectRoot: string;
-}> {
-    const context = await resolveResourceContext(options);
-    await Semantic.buildGraphIndex({
-        databasePath: options.databasePath,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-    return context;
-}
-
-function printResourcePayload(payload: unknown, asJson: boolean): void {
-    if (asJson) {
-        console.log(JSON.stringify(payload, null, 2));
-        return;
-    }
-    console.log(JSON.stringify(payload, null, 2));
-}
 
 function printMutationResult(result: ProjectResourceMutationResult): void {
     console.log(`Action: ${result.action}`);
@@ -214,6 +176,68 @@ async function runMoveResourceAction(
     printMutationResult(result);
 }
 
+function resolveNodeIdFromQuery(
+    nameOrId: string,
+    options: ResourceCommandSharedOptions,
+    context: Awaited<ReturnType<typeof ensureProjectGraphIndex>>
+): string {
+    if (nameOrId.includes("::")) {
+        return nameOrId;
+    }
+    const search = Semantic.searchGraphIndex({
+        databasePath: options.databasePath,
+        limit: 1,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        query: nameOrId,
+        toolsetRoot: options.toolsetRoot
+    });
+    const nodeId = search.results[0]?.id;
+    if (!nodeId) {
+        throw new Error(`Could not resolve resource '${nameOrId}'.`);
+    }
+    return nodeId;
+}
+
+async function runInspectResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
+    const context = await ensureProjectGraphIndex(options);
+    const resolvedId = resolveNodeIdFromQuery(nameOrId, options, context);
+    const payload = Semantic.getGraphNode({
+        databasePath: options.databasePath,
+        nodeId: resolvedId,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+    printProjectPayload({ ok: payload !== null, payload });
+}
+
+async function runDepsResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
+    const context = await ensureProjectGraphIndex(options);
+    const nodeId = resolveNodeIdFromQuery(nameOrId, options, context);
+    const neighbors = Semantic.getGraphNeighbors({
+        databasePath: options.databasePath,
+        nodeId,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+    printProjectPayload({ ok: true, payload: neighbors.filter((entry) => entry.direction === "outgoing") });
+}
+
+async function runDependentsResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
+    const context = await ensureProjectGraphIndex(options);
+    const nodeId = resolveNodeIdFromQuery(nameOrId, options, context);
+    const usages = Semantic.getGraphUsages({
+        databasePath: options.databasePath,
+        nodeId,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+    printProjectPayload({ ok: true, payload: usages });
+}
+
 /**
  * Create the resource command suite for adding and removing GameMaker assets.
  */
@@ -254,7 +278,7 @@ export function createResourceCommand(): Command {
     listCommand.action(async function resourceListCommandAction() {
         await runResourceCommandAction(async () => {
             const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
+            const context = await ensureProjectGraphIndex(options);
             const result = Semantic.searchGraphIndex({
                 databasePath: options.databasePath,
                 projectConfig: context.projectConfig,
@@ -262,7 +286,7 @@ export function createResourceCommand(): Command {
                 query: "",
                 toolsetRoot: options.toolsetRoot
             });
-            printResourcePayload({ ok: true, payload: result.results }, options.json === true);
+            printProjectPayload({ ok: true, payload: result.results });
         });
     });
 
@@ -274,7 +298,7 @@ export function createResourceCommand(): Command {
     findCommand.action(async function resourceFindCommandAction(query: string) {
         await runResourceCommandAction(async () => {
             const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
+            const context = await ensureProjectGraphIndex(options);
             const result = Semantic.searchGraphIndex({
                 databasePath: options.databasePath,
                 projectConfig: context.projectConfig,
@@ -282,7 +306,7 @@ export function createResourceCommand(): Command {
                 query,
                 toolsetRoot: options.toolsetRoot
             });
-            printResourcePayload({ ok: true, payload: result }, options.json === true);
+            printProjectPayload({ ok: true, payload: result });
         });
     });
 
@@ -293,29 +317,7 @@ export function createResourceCommand(): Command {
     );
     inspectCommand.action(async function resourceInspectCommandAction(nameOrId: string) {
         await runResourceCommandAction(async () => {
-            const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
-            const resolvedId = nameOrId.includes("::")
-                ? nameOrId
-                : (Semantic.searchGraphIndex({
-                      databasePath: options.databasePath,
-                      limit: 1,
-                      projectConfig: context.projectConfig,
-                      projectRoot: context.projectRoot,
-                      query: nameOrId,
-                      toolsetRoot: options.toolsetRoot
-                  }).results[0]?.id ?? null);
-            if (!resolvedId) {
-                throw new Error(`Could not resolve resource '${nameOrId}'.`);
-            }
-            const payload = Semantic.getGraphNode({
-                databasePath: options.databasePath,
-                nodeId: resolvedId,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                toolsetRoot: options.toolsetRoot
-            });
-            printResourcePayload({ ok: payload !== null, payload }, options.json === true);
+            await runInspectResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
         });
     });
 
@@ -326,31 +328,7 @@ export function createResourceCommand(): Command {
     );
     depsCommand.action(async function resourceDepsCommandAction(nameOrId: string) {
         await runResourceCommandAction(async () => {
-            const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
-            const search = Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                limit: 1,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: nameOrId,
-                toolsetRoot: options.toolsetRoot
-            });
-            const nodeId = search.results[0]?.id;
-            if (!nodeId) {
-                throw new Error(`Could not resolve resource '${nameOrId}'.`);
-            }
-            const neighbors = Semantic.getGraphNeighbors({
-                databasePath: options.databasePath,
-                nodeId,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                toolsetRoot: options.toolsetRoot
-            });
-            printResourcePayload(
-                { ok: true, payload: neighbors.filter((entry) => entry.direction === "outgoing") },
-                options.json === true
-            );
+            await runDepsResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
         });
     });
 
@@ -361,28 +339,7 @@ export function createResourceCommand(): Command {
     );
     dependentsCommand.action(async function resourceDependentsCommandAction(nameOrId: string) {
         await runResourceCommandAction(async () => {
-            const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
-            const search = Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                limit: 1,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: nameOrId,
-                toolsetRoot: options.toolsetRoot
-            });
-            const nodeId = search.results[0]?.id;
-            if (!nodeId) {
-                throw new Error(`Could not resolve resource '${nameOrId}'.`);
-            }
-            const usages = Semantic.getGraphUsages({
-                databasePath: options.databasePath,
-                nodeId,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                toolsetRoot: options.toolsetRoot
-            });
-            printResourcePayload({ ok: true, payload: usages }, options.json === true);
+            await runDependentsResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
         });
     });
 
@@ -392,7 +349,7 @@ export function createResourceCommand(): Command {
     auditCommand.action(async function resourceAuditCommandAction() {
         await runResourceCommandAction(async () => {
             const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureResourceGraphIndex(options);
+            const context = await ensureProjectGraphIndex(options);
             const everything = Semantic.searchGraphIndex({
                 databasePath: options.databasePath,
                 limit: 2000,
@@ -405,10 +362,7 @@ export function createResourceCommand(): Command {
                 acc[entry.kind] = (acc[entry.kind] ?? 0) + 1;
                 return acc;
             }, {});
-            printResourcePayload(
-                { ok: true, payload: { kindCounts, total: everything.results.length } },
-                options.json === true
-            );
+            printProjectPayload({ ok: true, payload: { kindCounts, total: everything.results.length } });
         });
     });
 

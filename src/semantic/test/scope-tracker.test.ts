@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ScopeOverrideKeyword } from "../src/scopes/index.js";
+import { SCOPE_OVERRIDE_KEYWORD } from "../src/scopes/index.js";
 import ScopeTracker from "../src/scopes/scope-tracker.js";
 import { createRange, type SourceLocation, type SourceRange } from "./scope-tracker-helpers.js";
 
@@ -10,7 +10,7 @@ void test("resolveScopeOverride returns the root scope when using the global key
     const rootScope = tracker.enterScope("root");
     tracker.enterScope("child");
 
-    const result = tracker.resolveScopeOverride(ScopeOverrideKeyword.GLOBAL);
+    const result = tracker.resolveScopeOverride(SCOPE_OVERRIDE_KEYWORD);
 
     assert.strictEqual(result, rootScope);
 });

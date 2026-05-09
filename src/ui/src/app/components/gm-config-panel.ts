@@ -9,6 +9,8 @@ import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
+type ConfigViewMode = "raw" | "rendered";
+
 function serializeConfigurationValue(value: unknown): string {
     return JSON.stringify(value, null, 2);
 }
@@ -69,6 +71,13 @@ export class GmConfigPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
+    #configViewMode: ConfigViewMode = "rendered";
+
+    #setConfigViewMode(nextConfigViewMode: ConfigViewMode): void {
+        this.#configViewMode = nextConfigViewMode;
+        this.requestUpdate();
+    }
+
     protected render() {
         if (!this.model || !this.state) {
             return html``;
@@ -96,41 +105,65 @@ export class GmConfigPanel extends LightDomLitElement {
                     Project root ${configCatalog.gmloop.projectRoot} • ${formatEntries.length} format entries •
                     ${lintRules.length} lint rules • ${codemods.length} refactor codemods
                 </p>
+                <div class="config-toggle-row">
+                    <button
+                        id="config-view-rendered"
+                        class=${this.#configViewMode === "rendered" ? "top-nav-button active" : "top-nav-button"}
+                        @click=${() => this.#setConfigViewMode("rendered")}
+                    >
+                        Rendered
+                    </button>
+                    <button
+                        id="config-view-raw"
+                        class=${this.#configViewMode === "raw" ? "top-nav-button active" : "top-nav-button"}
+                        @click=${() => this.#setConfigViewMode("raw")}
+                    >
+                        Raw gmloop.json
+                    </button>
+                </div>
                 <div id="config-content" class="config-stack">
-                    <gm-card class="config-card" heading="Project Metadata">
-                        <p>Active project root used by graph, lint, format, and refactor workflows.</p>
-                        <ul class="config-list">
-                            <li class="config-item">
-                                <strong>Config path</strong>
-                                <span>${configCatalog.gmloop.configPath ?? "Not found"}</span>
-                            </li>
-                            <li class="config-item">
-                                <strong>Configuration exists</strong>
-                                <span>${configCatalog.gmloop.exists ? "Yes" : "No"}</span>
-                            </li>
-                            <li class="config-item">
-                                <strong>GitHub repository</strong>
-                                <span>${configCatalog.githubRepositoryUrl}</span>
-                            </li>
-                        </ul>
-                        <pre class="config-raw">${serializeConfigurationValue(configCatalog.gmloop.rawConfig)}</pre>
-                    </gm-card>
-                    <gm-card class="config-card" heading="Format">
-                        <ul class="config-list">
-                            ${formatEntries.map((entry) => renderConfigEntry(entry))}
-                        </ul>
-                    </gm-card>
-                    <gm-card class="config-card" heading="Lint Rules">
-                        <p>Ruleset: ${configCatalog.lint.ruleset ?? "none"}</p>
-                        <ul class="config-list">
-                            ${lintRules.map((entry) => renderLintRuleEntry(entry))}
-                        </ul>
-                    </gm-card>
-                    <gm-card class="config-card" heading="Refactor Codemods">
-                        <ul class="config-list">
-                            ${codemods.map((entry) => renderCodemodEntry(entry))}
-                        </ul>
-                    </gm-card>
+                    ${this.#configViewMode === "raw"
+                        ? html`
+                              <gm-card class="config-card" heading="gmloop.json">
+                                  <p>
+                                      ${configCatalog.gmloop.configPath ?? "No gmloop.json file is currently loaded."}
+                                  </p>
+                                  <pre class="config-raw">
+${serializeConfigurationValue(configCatalog.gmloop.rawConfig)}</pre
+                                  >
+                              </gm-card>
+                          `
+                        : html`
+                              <gm-card class="config-card" heading="Project Metadata">
+                                  <p>Active project root used by graph, lint, format, and refactor workflows.</p>
+                                  <ul class="config-list">
+                                      <li class="config-item">
+                                          <strong>Config path</strong>
+                                          <span>${configCatalog.gmloop.configPath ?? "Not found"}</span>
+                                      </li>
+                                      <li class="config-item">
+                                          <strong>Configuration exists</strong>
+                                          <span>${configCatalog.gmloop.exists ? "Yes" : "No"}</span>
+                                      </li>
+                                  </ul>
+                              </gm-card>
+                              <gm-card class="config-card" heading="Format">
+                                  <ul class="config-list">
+                                      ${formatEntries.map((entry) => renderConfigEntry(entry))}
+                                  </ul>
+                              </gm-card>
+                              <gm-card class="config-card" heading="Lint Rules">
+                                  <p>Ruleset: ${configCatalog.lint.ruleset ?? "none"}</p>
+                                  <ul class="config-list">
+                                      ${lintRules.map((entry) => renderLintRuleEntry(entry))}
+                                  </ul>
+                              </gm-card>
+                              <gm-card class="config-card" heading="Refactor Codemods">
+                                  <ul class="config-list">
+                                      ${codemods.map((entry) => renderCodemodEntry(entry))}
+                                  </ul>
+                              </gm-card>
+                          `}
                 </div>
             </section>
         `;

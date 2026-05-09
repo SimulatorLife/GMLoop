@@ -22,14 +22,13 @@ jobs:
     if: ${{ github.event.issue.pull_request && contains(github.event.comment.body || '', '@gemini') }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
-      api_key: ${{ secrets.GEMINI_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
     with:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: gemini
       agent_package: '@google/gemini-cli@latest'
-      validate_local_endpoint: false
       agent_setup_command: |
         mkdir -p "$HOME/.gemini/policies"
         if [ -f ".gemini/policies/tools.toml" ]; then
@@ -42,7 +41,7 @@ jobs:
         set -euo pipefail
 
         export GEMINI_CLI_TRUST_WORKSPACE=true
-        export GEMINI_API_KEY="${API_KEY}"
+        export GEMINI_API_KEY="${OPENAI_API_KEY}"
         export NODE_OPTIONS="--max-old-space-size=4096"
 
         set +e
@@ -51,10 +50,10 @@ jobs:
           --policy="$HOME/.gemini/policies" \
           --output-format=stream-json \
           --skip-trust \
-          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/gemini-stream.jsonl"
-        gemini_status="${PIPESTATUS[0]}"
+          --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/agent-stream.jsonl"
+        agent_status="${PIPESTATUS[0]}"
         set -e
 
-        if [ "${gemini_status}" -ne 0 ]; then
-          exit "${gemini_status}"
+        if [ "${agent_status}" -ne 0 ]; then
+          exit "${agent_status}"
         fi

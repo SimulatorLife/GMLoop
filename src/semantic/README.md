@@ -1,6 +1,6 @@
 # Semantic Analyzer Subsystem
 
-This `src/semantic` subsystem is a semantic layer that annotates parse tree(s) to add _meaning_ to the parsed GML code so the emitter/transpiler can make correct decisions. See the plan for this component/feature in [../../docs/semantic-scope-plan.md](../../docs/semantic-scope-plan.md).
+This `src/semantic` subsystem is a semantic layer that annotates parse tree(s) to add _meaning_ to the parsed GML code so the emitter/transpiler can make correct decisions. See the current architecture plan in [../../docs/target-state.md](../../docs/target-state.md).
 
 ## Ownership Boundaries
 

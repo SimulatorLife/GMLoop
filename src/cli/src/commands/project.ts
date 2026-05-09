@@ -5,6 +5,7 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createPathOption } from "../cli-core/shared-command-options.js";
+import { printProjectPayload } from "../workflow/project-context.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type ProjectCacheCleanOptions = Readonly<{
@@ -15,14 +16,6 @@ type ProjectCacheCleanOptions = Readonly<{
     project?: boolean;
     runner?: boolean;
 }>;
-
-function printProjectPayload(payload: unknown, asJson: boolean): void {
-    if (asJson) {
-        console.log(JSON.stringify(payload, null, 2));
-        return;
-    }
-    console.log(JSON.stringify(payload, null, 2));
-}
 
 async function runProjectCacheCleanAction(options: ProjectCacheCleanOptions): Promise<void> {
     const projectRoot = await discoverProjectRoot({
@@ -38,18 +31,15 @@ async function runProjectCacheCleanAction(options: ProjectCacheCleanOptions): Pr
         await Promise.all(targets.map((target) => rm(target, { force: true, recursive: true })));
     }
 
-    printProjectPayload(
-        {
-            command: "project cache clean",
-            mode: options.force === true ? "apply" : "dry-run",
-            ok: true,
-            payload: {
-                projectRoot,
-                targets
-            }
-        },
-        options.json === true
-    );
+    printProjectPayload({
+        command: "project cache clean",
+        mode: options.force === true ? "apply" : "dry-run",
+        ok: true,
+        payload: {
+            projectRoot,
+            targets
+        }
+    });
 }
 
 export function createProjectCommand(): Command {

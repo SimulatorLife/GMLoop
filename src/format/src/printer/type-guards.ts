@@ -42,6 +42,9 @@ const SIMPLE_CALL_ARGUMENT_TYPES = new Set([
  * - Does not have line breaks in its leading or trailing whitespace
  * - Consists of a single line
  * - Does not have line breaks in its content
+ *
+ * @param comment - The comment object to inspect.
+ * @returns `true` if the comment is an inline empty block comment, `false` otherwise.
  */
 export function isInlineEmptyBlockComment(comment: any): boolean {
     if (!comment || comment.type !== "CommentBlock") {
@@ -73,6 +76,9 @@ export function isInlineEmptyBlockComment(comment: any): boolean {
  * A simple call expression:
  * - Has an identifier as the callee
  * - Has zero arguments, OR exactly one simple argument without comments
+ *
+ * @param node - The AST node to inspect.
+ * @returns `true` if the call expression is simple and can be formatted compactly, `false` otherwise.
  */
 export function isSimpleCallExpression(node: any): boolean {
     if (!node || node.type !== "CallExpression") {
@@ -114,6 +120,10 @@ export function isSimpleCallExpression(node: any): boolean {
  * Determines if an argument node is complex (requires special formatting).
  *
  * Complex arguments include functions, constructors, structs, and non-simple call expressions.
+ * These nodes typically need indentation, line breaks, or other layout adjustments.
+ *
+ * @param node - The AST node to inspect as a call argument.
+ * @returns `true` if the argument requires special formatting treatment, `false` otherwise.
  */
 export function isComplexArgumentNode(node: any): boolean {
     const nodeType = Core.getNodeType(node);
@@ -136,8 +146,11 @@ export function isComplexArgumentNode(node: any): boolean {
 /**
  * Determines if a node is a simple call argument.
  *
- * Simple call arguments are identifiers, literals, member expressions, etc.
- * that don't require special indentation or breaking.
+ * Simple call arguments are identifiers, literals, member expressions, and certain
+ * string values that don't require special indentation or line breaking.
+ *
+ * @param node - The AST node to inspect as a call argument.
+ * @returns `true` if the node is a simple call argument, `false` otherwise.
  */
 export function isSimpleCallArgument(node: any): boolean {
     const nodeType = Core.getNodeType(node);
@@ -165,6 +178,12 @@ export function isSimpleCallArgument(node: any): boolean {
 
 /**
  * Determines if an argument is a callback (function/constructor/struct).
+ *
+ * Callback arguments represent callable constructs that may need special
+ * formatting treatment (indentation, line breaks) in function calls.
+ *
+ * @param argument - The AST node to inspect as a function call argument.
+ * @returns `true` if the argument is a function, constructor, or struct expression, `false` otherwise.
  */
 export function isCallbackArgument(argument: any): boolean {
     const argumentType = argument?.type;
@@ -178,6 +197,13 @@ export function isCallbackArgument(argument: any): boolean {
 
 /**
  * Determines if a node represents a numeric computation.
+ *
+ * Numeric computation nodes include literals with numeric values, unary expressions
+ * with +/- operators on numeric values, binary expressions with arithmetic operators,
+ * parenthesized numeric expressions, and call expressions that return numbers.
+ *
+ * @param node - The AST node to inspect.
+ * @returns `true` if the node represents a numeric computation, `false` otherwise.
  */
 export function isNumericComputationNode(node: any): boolean {
     if (!node || typeof node !== OBJECT_TYPE) {
@@ -233,6 +259,12 @@ export function isNumericComputationNode(node: any): boolean {
 
 /**
  * Determines if the current node is inside a constructor function.
+ *
+ * Used to detect when formatting code that appears within a constructor declaration
+ * body, where certain formatting rules may apply differently.
+ *
+ * @param path - The AST path for traversal.
+ * @returns `true` if the current node is inside a constructor function, `false` otherwise.
  */
 export function isInsideConstructorFunction(path: any): boolean {
     if (!path || typeof path.getParentNode !== "function") {
@@ -264,14 +296,26 @@ export function isInsideConstructorFunction(path: any): boolean {
 }
 
 /**
- * Checks if synthetic parenthesis flattening is enabled in the current context.
+ * Returns `true` unconditionally. The GML formatter always strips redundant
+ * synthetic parentheses because they are parser-inserted disambiguation
+ * wrappers with no semantic or readability value in GML output. The decision
+ * is purely layout-focused and owned exclusively by the formatter; no flag
+ * from the parser or any external config is required. (target-state.md §2.1,
+ * §3.2 – formatter owns layout-only canonicalization)
  */
-export function isSyntheticParenFlatteningEnabled(path: any): boolean {
-    return checkSyntheticParenFlattening(path);
+export function isSyntheticParenFlatteningEnabled(_path: any): boolean {
+    return true;
 }
 
 /**
  * Determines if the current node is in an l-value chain (left-hand side of assignment).
+ *
+ * L-value expressions appear on the left side of assignment operations and determine
+ * what is being assigned to. This is important for parenthesization decisions where
+ * synthetic parentheses around the left-hand side may affect parsing.
+ *
+ * @param path - The AST path for the node being checked.
+ * @returns `true` if the node is in an l-value position, `false` otherwise.
  */
 export function isInLValueChain(path: any): boolean {
     if (!path || typeof path.getParentNode !== "function") {
@@ -308,9 +352,36 @@ export function isInLValueChain(path: any): boolean {
 
 /**
  * Determines if a node type represents an l-value expression.
+ *
+ * L-value expressions can appear on the left-hand side of assignments.
+ * In GML, these include member index expressions (array access), call expressions
+ * (function calls), and member dot expressions (property access).
+ *
+ * @param nodeType - The AST node type string to check.
+ * @returns `true` if the node type is an l-value, `false` otherwise.
  */
 export function isLValueExpression(nodeType: string): boolean {
     return nodeType === "MemberIndexExpression" || nodeType === "CallExpression" || nodeType === "MemberDotExpression";
+}
+
+/**
+ * Determines if a node type is an expression that can be used in a single-line
+ * `with` statement.
+ *
+ * Single-line `with` statements in GML only support certain expression types.
+ * This guard identifies which node types are valid for `with (expr)` where
+ * the block can remain on a single line.
+ *
+ * @param nodeType - The AST node type string to check.
+ * @returns `true` if the node type can be used in a single-line `with` statement, `false` otherwise.
+ */
+export function isSingleLineWithExpression(nodeType: string): boolean {
+    return (
+        nodeType === "Identifier" ||
+        nodeType === "CallExpression" ||
+        nodeType === "MemberDotExpression" ||
+        nodeType === "MemberIndexExpression"
+    );
 }
 
 // ============================================================================
@@ -318,33 +389,14 @@ export function isLValueExpression(nodeType: string): boolean {
 // ============================================================================
 
 /**
- * Checks if synthetic parenthesis flattening is configured in the AST.
- *
- * @internal
- */
-function checkSyntheticParenFlattening(path: any): boolean {
-    let depth = 1;
-    while (true) {
-        const ancestor = safeGetParentNode(path, depth - 1);
-
-        if (!ancestor) {
-            return false;
-        }
-
-        if (ancestor.type === "FunctionDeclaration" || ancestor.type === "ConstructorDeclaration") {
-            if (ancestor._flattenSyntheticNumericParens === true) {
-                return true;
-            }
-        } else if (ancestor.type === "Program") {
-            return ancestor._flattenSyntheticNumericParens === true;
-        }
-
-        depth += 1;
-    }
-}
-
-/**
  * Determines if an expression produces a string-like value.
+ *
+ * String-like expressions include string literals, parenthesized string expressions,
+ * concatenation with string operands, and calls to string conversion functions
+ * (e.g., `string()`, `string_*` functions).
+ *
+ * @param node - The AST node to inspect.
+ * @returns `true` if the expression produces a string-like value, `false` otherwise.
  */
 export function expressionIsStringLike(node: any): boolean {
     if (!node || typeof node !== OBJECT_TYPE) {
@@ -382,6 +434,12 @@ export function expressionIsStringLike(node: any): boolean {
 
 /**
  * Checks if text contains any line break characters.
+ *
+ * Used to detect line breaks in comment whitespace or string content to determine
+ * if formatting should treat a comment as inline or multi-line.
+ *
+ * @param text - The text string to check for line breaks.
+ * @returns `true` if the text contains any line break character (`\r`, `\n`, `\u2028`, or `\u2029`), `false` otherwise.
  */
 export function hasLineBreak(text: any): boolean {
     return typeof text === STRING_TYPE && /[\r\n\u2028\u2029]/.test(text);

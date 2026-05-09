@@ -24,7 +24,7 @@ on:
       agent:
         required: false
         type: string
-        default: "" # Optional override; blank => weighted random selection
+        default: "" # Optional override; blank => deterministic scheduled-agent selection
     outputs:
       pr_number:
         value: ${{ jobs.open_and_ping.outputs.pr_number }}
@@ -81,8 +81,6 @@ jobs:
             const fs = require('fs');
             const path = require('path');
 
-            const ACTION_AGENT_POOL = 'actions';
-            const DEFAULT_AGENT = 'copilot';
             const WEIGHT_SCALE = 1000;
 
             const normalize = (value) => {
@@ -136,33 +134,64 @@ jobs:
               };
             };
 
-            const parseAgentCandidates = (pool) => {
-              if (!pool || !Array.isArray(pool.agents)) {
-                return [];
-              }
-
-              return pool.agents
-                .map((agent) => ({
-                  name: typeof agent?.name === 'string' ? agent.name : '',
-                  weight: Number(agent?.weight),
-                }))
-                .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
-                .map((agent) => ({
-                  name: agent.name,
-                  weight: agent.weight,
-                  slug: normalize(agent.name),
-                  slots: toSlots(agent.weight),
-                }))
-                .filter((agent) => agent.slug);
-            };
-
             const loadWeightsConfig = () => {
               const weightsPath = path.resolve(process.cwd(), process.env.WEIGHTS_PATH || '.github/workflows/weights.json');
               const raw = fs.readFileSync(weightsPath, 'utf8');
               return JSON.parse(raw);
             };
 
-            const selectAgent = (poolName, requestedAgent) => {
+            const parseScheduledAgentCandidates = (agents) => {
+              if (!Array.isArray(agents)) {
+                throw new Error('weights.json must define a top-level agents array.');
+              }
+
+              const seenNames = new Set();
+              const candidates = [];
+
+              for (const [index, agent] of agents.entries()) {
+                const name = typeof agent?.name === 'string' ? agent.name.trim() : '';
+                const weight = Number(agent?.weight);
+                const rawCadenceTicks = agent?.cadenceTicks;
+                const cadenceTicks = rawCadenceTicks === undefined ? 1 : Number(rawCadenceTicks);
+
+                if (!name) {
+                  throw new Error(`agents[${index}] must define a non-empty name.`);
+                }
+
+                if (seenNames.has(name)) {
+                  throw new Error(`Scheduled agent names must be unique. Duplicate: ${name}`);
+                }
+                seenNames.add(name);
+
+                if (!Number.isFinite(weight)) {
+                  throw new Error(`agents[${index}].weight must be a finite number.`);
+                }
+
+                if (rawCadenceTicks !== undefined && (!Number.isInteger(cadenceTicks) || cadenceTicks <= 0)) {
+                  throw new Error(`agents[${index}].cadenceTicks must be a positive integer.`);
+                }
+
+                if (weight <= 0) {
+                  continue;
+                }
+
+                const slug = normalize(name);
+                if (!slug) {
+                  continue;
+                }
+
+                candidates.push({
+                  name,
+                  weight,
+                  slug,
+                  slots: toSlots(weight),
+                });
+              }
+
+              return candidates;
+            };
+
+            const selectAgent = (requestedAgent) => {
               if (requestedAgent) {
                 return {
                   agent: requestedAgent,
@@ -170,46 +199,29 @@ jobs:
                 };
               }
 
-              let poolDefault = DEFAULT_AGENT;
-              let candidates = [];
-              try {
-                const parsed = loadWeightsConfig();
-                const pool = parsed?.agentPools?.[poolName] ?? null;
-                const configuredDefault = normalize(pool?.default);
-                if (configuredDefault) {
-                  poolDefault = configuredDefault;
-                }
-                candidates = parseAgentCandidates(pool);
-              } catch (error) {
-                core.warning(`Falling back to default agent due to configuration error: ${error.message}`);
-              }
+              const parsed = loadWeightsConfig();
+              const candidates = parseScheduledAgentCandidates(parsed?.agents);
 
-              if (!candidates.length) {
-                return {
-                  agent: poolDefault,
-                  reason: `${poolName} pool default fallback`,
-                };
+              if (candidates.length === 0) {
+                throw new Error('No positive-weight scheduled agents are configured for blank manual dispatch.');
               }
 
               const runNumber = getRunNumber();
               const chosen = chooseDeterministicWeighted(candidates, runNumber);
               if (!chosen || !chosen.selected) {
-                return {
-                  agent: poolDefault,
-                  reason: `${poolName} deterministic weighted selection fallback`,
-                };
+                throw new Error('Unable to compute deterministic scheduled-agent selection.');
               }
 
               const { slug, name, weight, slots } = chosen.selected;
               const cyclePosition = chosen.cycleIndex + 1;
               core.info(
-                `Deterministic weighted selection picked agent "${name}" from ${poolName} pool ` +
+                `Deterministic weighted selection picked scheduled agent "${name}" ` +
                 `(slug=${slug}, weight=${weight}, slots=${slots}) for run #${runNumber} ` +
                 `at cycle position ${cyclePosition}/${chosen.cycleLength} from total weight ${chosen.totalWeight.toFixed(6)}.`
               );
               return {
                 agent: slug,
-                reason: `${poolName} deterministic weighted selection`,
+                reason: 'scheduled deterministic weighted selection',
               };
             };
 
@@ -228,7 +240,7 @@ jobs:
               core.setOutput('branch', branchName);
             };
 
-            const selection = selectAgent(ACTION_AGENT_POOL, requested);
+            const selection = selectAgent(requested);
             finalize(selection.agent, selection.reason);
 
       - name: Create empty commit on new branch (from latest base)

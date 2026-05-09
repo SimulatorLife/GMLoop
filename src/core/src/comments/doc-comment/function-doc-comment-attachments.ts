@@ -225,7 +225,12 @@ export function normalizeFunctionDocCommentAttachments(
         return;
     }
 
-    const targets = collectFunctionDocTargets(rootNode);
+    // Clone the targets array before iterating so that mutations to targetNode.docComments
+    // inside the loop (via attachFunctionDocCommentToTarget) cannot affect the sorted
+    // traversal order. Without this, push() inside the inner findNearestReachable call
+    // could cause subsequent targets to be reached prematurely when comment ranges
+    // overlap, leading to a comment being attached to the wrong function node.
+    const targets = [...collectFunctionDocTargets(rootNode)];
     if (targets.length === 0) {
         return;
     }

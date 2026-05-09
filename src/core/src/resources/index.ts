@@ -28,4 +28,21 @@ export {
     resetReservedIdentifierMetadataLoader,
     setReservedIdentifierMetadataLoader
 } from "./gml-identifier-loading.js";
+export type { ProjectMetadataSchemaName } from "./project-metadata.js";
+export {
+    applyProjectMetadataStringMutations,
+    findProjectMetadataValueTextRange,
+    getProjectMetadataValueAtPath,
+    isProjectMetadataParseError,
+    isProjectMetadataSchemaValidationError,
+    parseProjectMetadataDocument,
+    parseProjectMetadataDocumentForMutation,
+    parseProjectMetadataDocumentWithSchema,
+    readProjectMetadataDocumentForMutationFromFile,
+    readProjectMetadataDocumentFromFile,
+    resolveProjectMetadataSchemaName,
+    stringifyProjectMetadataDocument,
+    updateProjectMetadataReferenceByPath,
+    writeProjectMetadataDocumentToFile
+} from "./project-metadata.js";
 export { resolveBundledResourcePath, resolveBundledResourceUrl } from "./resource-locator.js";

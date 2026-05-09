@@ -1,12 +1,17 @@
 import { html } from "lit";
+import { ref } from "lit/directives/ref.js";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
-import type { GraphVisualizationUiState } from "../state/types.js";
+import { hasLoadedGraphIndex, hasLoadedGraphProject } from "../graph-availability.js";
+import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
+    GRAPH_UI_EVENT_NAVIGATE_PAGE,
+    GRAPH_UI_EVENT_RESET_DEFAULTS,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
+    type GraphUiNavigatePageDetail,
     type GraphUiSetSearchQueryDetail
 } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -24,7 +29,111 @@ export class GmGraphToolbar extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
+    #searchInput: HTMLInputElement | null = null;
+
+    #canUseGraphControls(): boolean {
+        return this.model !== null && hasLoadedGraphIndex(this.model);
+    }
+
+    #onKeyDown = (event: KeyboardEvent): void => {
+        if (!this.state) {
+            return;
+        }
+
+        if (event.key === "Escape" && this.state.searchQuery) {
+            event.preventDefault();
+            this.#emitSearchQuery("");
+            return;
+        }
+
+        if (event.altKey || event.metaKey || event.ctrlKey) {
+            return;
+        }
+
+        switch (event.key.toLowerCase()) {
+            case "g": {
+                if (document.activeElement === this.#searchInput) {
+                    return;
+                }
+                if (!this.#canUseGraphControls()) {
+                    return;
+                }
+                event.preventDefault();
+                this.#emitToggleGraphView();
+                break;
+            }
+            case "l": {
+                if (document.activeElement === this.#searchInput) {
+                    return;
+                }
+                if (!this.#canUseGraphControls()) {
+                    return;
+                }
+                event.preventDefault();
+                this.#emitCycleLabelMode();
+                break;
+            }
+            case "r": {
+                if (document.activeElement === this.#searchInput) {
+                    return;
+                }
+                if (!this.#canUseGraphControls()) {
+                    return;
+                }
+                event.preventDefault();
+                this.#emitResetDefaults();
+                break;
+            }
+            case "1": {
+                if (!this.#canUseGraphControls()) {
+                    return;
+                }
+                event.preventDefault();
+                this.#emitNavigatePage("graph");
+                break;
+            }
+            case "2": {
+                event.preventDefault();
+                this.#emitNavigatePage("docs");
+                break;
+            }
+            case "3": {
+                event.preventDefault();
+                this.#emitNavigatePage("config");
+                break;
+            }
+            case "4": {
+                event.preventDefault();
+                this.#emitNavigatePage("playground");
+                break;
+            }
+        }
+    };
+
+    #onSearchInput = (eventValue: Event): void => {
+        const target = eventValue.target;
+        if (!(target instanceof HTMLInputElement)) {
+            return;
+        }
+        this.#emitSearchQuery(target.value);
+    };
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        this.addEventListener("keydown", this.#onKeyDown);
+    }
+
+    public disconnectedCallback(): void {
+        super.disconnectedCallback();
+        this.removeEventListener("keydown", this.#onKeyDown);
+        this.#searchInput = null;
+    }
+
     #emitSearchQuery(searchQuery: string): void {
+        if (!this.#canUseGraphControls()) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent<GraphUiSetSearchQueryDetail>(GRAPH_UI_EVENT_SET_SEARCH_QUERY, {
                 bubbles: true,
@@ -35,6 +144,10 @@ export class GmGraphToolbar extends LightDomLitElement {
     }
 
     #emitToggleGraphView(): void {
+        if (!this.#canUseGraphControls()) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW, {
                 bubbles: true,
@@ -44,6 +157,10 @@ export class GmGraphToolbar extends LightDomLitElement {
     }
 
     #emitCycleLabelMode(): void {
+        if (!this.#canUseGraphControls()) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_CYCLE_LABEL_MODE, {
                 bubbles: true,
@@ -52,7 +169,38 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
+    #emitNavigatePage(page: GraphVisualizationUiPage): void {
+        if (page === "graph" && !this.#canUseGraphControls()) {
+            return;
+        }
+
+        this.dispatchEvent(
+            new CustomEvent<GraphUiNavigatePageDetail>(GRAPH_UI_EVENT_NAVIGATE_PAGE, {
+                bubbles: true,
+                composed: true,
+                detail: { page }
+            })
+        );
+    }
+
+    #emitResetDefaults(): void {
+        if (!this.#canUseGraphControls()) {
+            return;
+        }
+
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_RESET_DEFAULTS, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    }
+
     #emitRegenerate(): void {
+        if (!this.model || !hasLoadedGraphProject(this.model)) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_TRIGGER_REGENERATE, {
                 bubbles: true,
@@ -67,13 +215,23 @@ export class GmGraphToolbar extends LightDomLitElement {
         }
 
         const heading =
-            this.state.activePage === "graph" ? "Graph Index" : this.state.activePage === "docs" ? "Docs" : "Config";
+            this.state.activePage === "graph"
+                ? "Graph Index"
+                : this.state.activePage === "docs"
+                  ? "Docs"
+                  : this.state.activePage === "config"
+                    ? "Config"
+                    : "Playground";
         const subheading =
             this.state.activePage === "graph"
                 ? "Interactive graph exploration controls for the current graph index."
                 : this.state.activePage === "docs"
-                  ? "CLI and MCP reference material generated from the active workspace."
-                  : "Project and tooling configuration metadata loaded for the active root.";
+                  ? "CLI, MCP, and workspace rule catalogs generated from the active workspace."
+                  : this.state.activePage === "config"
+                    ? "Project and tooling configuration metadata loaded for the active root."
+                    : "Interactive GML playground for parsing, formatting, and rule experiments.";
+        const hasLoadedIndex = hasLoadedGraphIndex(this.model);
+        const hasLoadedProject = hasLoadedGraphProject(this.model);
 
         const graphControlsClassName =
             this.state.activePage === "graph" ? "toolbar-controls" : "toolbar-controls hidden";
@@ -85,45 +243,73 @@ export class GmGraphToolbar extends LightDomLitElement {
                     <span id="toolbar-subheading">${subheading}</span>
                 </div>
                 <div id="graph-controls" class=${graphControlsClassName}>
-                    <input
-                        id="search"
-                        type="search"
-                        .value=${this.state.searchQuery}
-                        placeholder="Search nodes…"
-                        @input=${(eventValue: Event) => {
-                            const target = eventValue.target;
-                            if (!(target instanceof HTMLInputElement)) {
-                                return;
-                            }
-                            this.#emitSearchQuery(target.value);
-                        }}
-                    />
-                    <button id="toggle-view" @click=${() => this.#emitToggleGraphView()}>
-                        ${this.state.activeGraphView === "visual" ? "JSON" : "Visual"}
-                    </button>
-                    <button id="toggle-labels" @click=${() => this.#emitCycleLabelMode()}>
-                        Labels:
-                        ${this.state.labelMode === "always" ? "On" : this.state.labelMode === "hidden" ? "Off" : "Auto"}
-                    </button>
-                    <button id="reset-default">Reset</button>
-                    ${this.model.isServerMode
-                        ? html`
-                              <button
-                                  id="regenerate"
-                                  ?disabled=${this.state.isRegeneratePending}
-                                  @click=${() => this.#emitRegenerate()}
-                              >
-                                  <span class="button-content">
-                                      ${this.state.isRegeneratePending
-                                          ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                          : null}
-                                      <span class="button-label"
-                                          >${this.state.isRegeneratePending ? "Regenerating…" : "Regenerate"}</span
-                                      >
-                                  </span>
-                              </button>
-                          `
-                        : null}
+                    <div class="toolbar-control-group toolbar-search-group">
+                        <input
+                            id="search"
+                            type="search"
+                            aria-label="Search graph nodes"
+                            .value=${this.state.searchQuery}
+                            placeholder="Search nodes…"
+                            ?disabled=${!hasLoadedIndex}
+                            ${ref((element) => {
+                                this.#searchInput = element as HTMLInputElement | null;
+                            })}
+                            @input=${this.#onSearchInput}
+                        />
+                    </div>
+                    <div class="toolbar-control-group">
+                        <button
+                            id="toggle-view"
+                            class="toolbar-chip-button"
+                            aria-pressed=${this.state.activeGraphView === "json"}
+                            ?disabled=${!hasLoadedIndex}
+                            @click=${() => this.#emitToggleGraphView()}
+                        >
+                            ${this.state.activeGraphView === "visual" ? "JSON" : "Visual"}
+                        </button>
+                        <button
+                            id="toggle-labels"
+                            class="toolbar-chip-button"
+                            ?disabled=${!hasLoadedIndex}
+                            @click=${() => this.#emitCycleLabelMode()}
+                        >
+                            Labels:
+                            ${this.state.labelMode === "always"
+                                ? "On"
+                                : this.state.labelMode === "hidden"
+                                  ? "Off"
+                                  : "Auto"}
+                        </button>
+                    </div>
+                    <div class="toolbar-control-group">
+                        <button
+                            id="reset-default"
+                            class="toolbar-chip-button"
+                            ?disabled=${!hasLoadedIndex}
+                            @click=${() => this.#emitResetDefaults()}
+                        >
+                            Reset
+                        </button>
+                        ${this.model.isServerMode
+                            ? html`
+                                  <button
+                                      id="regenerate"
+                                      class="toolbar-chip-button"
+                                      ?disabled=${this.state.isRegeneratePending || !hasLoadedProject}
+                                      @click=${() => this.#emitRegenerate()}
+                                  >
+                                      <span class="button-content">
+                                          ${this.state.isRegeneratePending
+                                              ? html`<span class="button-spinner" aria-hidden="true"></span>`
+                                              : null}
+                                          <span class="button-label"
+                                              >${this.state.isRegeneratePending ? "Regenerating…" : "Regenerate"}</span
+                                          >
+                                      </span>
+                                  </button>
+                              `
+                            : null}
+                    </div>
                 </div>
             </div>
         `;

@@ -11,6 +11,12 @@ import type {
 } from "d3";
 import * as d3 from "d3";
 
+import { resolveInitialPlaygroundGmlSource } from "../app/playground-default-gml.js";
+import type { GraphVisualizationUiLabelMode, GraphVisualizationUiState } from "../app/state/types.js";
+import {
+    readGraphVisualizationUiStateFromCurrentUrl,
+    replaceGraphVisualizationUiStateInCurrentUrl
+} from "../app/state/url-state.js";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "./graph-visualization-style-metadata.js";
 import type {
     GraphVisualizationData,
@@ -67,6 +73,10 @@ type MutableGraphEdgeRecord = Omit<GraphVisualizationEdgeRecord, "source" | "tar
         target: MutableGraphEdgeEndpoint;
     }>;
 
+type ConfigViewMode = "raw" | "rendered";
+
+const CONFIG_LIST_CLASS_NAME = "config-list";
+
 function readErrorName(errorValue: unknown): string {
     if (errorValue instanceof Error) {
         return errorValue.name;
@@ -110,6 +120,97 @@ type FilterType =
     | "enum-group"
     | typeof RESOURCE_GROUP_FILTER_TYPE
     | GraphVisualizationEdgeRecord["type"];
+
+const GRAPH_RESOURCE_KINDS = new Set<GraphVisualizationNodeKind>([
+    "anim_curve",
+    "data_file",
+    "extension",
+    "font",
+    "note",
+    "object",
+    "particle_system",
+    "path",
+    "room",
+    "script",
+    "sequence",
+    "shader",
+    "sound",
+    "sprite",
+    "tileset",
+    "timeline"
+]);
+
+const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphVisualizationNodeKind>([
+    "data_file",
+    "enum_member",
+    "function",
+    "global_variable",
+    "instance_variable",
+    "local_variable",
+    "struct_variable"
+]);
+
+const OPEN_PROJECT_BUTTON_LABEL = '<span class="button-content"><span class="button-label">Open...</span></span>';
+const OPENING_PROJECT_BUTTON_LABEL =
+    '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Opening…</span></span>';
+const REGENERATE_BUTTON_LABEL = '<span class="button-content"><span class="button-label">Regenerate</span></span>';
+const REGENERATING_BUTTON_LABEL =
+    '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Regenerating…</span></span>';
+
+function mapUiLabelModeToBrowserLabelMode(labelMode: GraphVisualizationUiLabelMode): "auto" | "off" | "on" {
+    if (labelMode === "always") {
+        return "on";
+    }
+
+    if (labelMode === "hidden") {
+        return "off";
+    }
+
+    return "auto";
+}
+
+function mapBrowserLabelModeToUiLabelMode(labelMode: "auto" | "off" | "on"): GraphVisualizationUiLabelMode {
+    if (labelMode === "on") {
+        return "always";
+    }
+
+    if (labelMode === "off") {
+        return "hidden";
+    }
+
+    return "auto";
+}
+
+function readGraphNodePathLabel(nodeValue: GraphVisualizationNodeRecord): string | null {
+    if (nodeValue.filePath !== null && nodeValue.resourcePath !== null) {
+        return `${nodeValue.filePath} (resource: ${nodeValue.resourcePath})`;
+    }
+
+    if (nodeValue.filePath !== null) {
+        return nodeValue.filePath;
+    }
+
+    return nodeValue.resourcePath;
+}
+
+function createCurrentGraphVisualizationUiStateSnapshot(
+    activePage: "config" | "docs" | "graph" | "playground",
+    activeDocsView: "cli" | "mcp" | "rules",
+    activeGraphView: "json" | "visual",
+    labelMode: "auto" | "off" | "on",
+    searchQuery: string
+): GraphVisualizationUiState {
+    return {
+        activeDocsView,
+        activeGraphView,
+        activePage,
+        errorMessage: null,
+        isOpenProjectPending: false,
+        isRegeneratePending: false,
+        labelMode: mapBrowserLabelModeToUiLabelMode(labelMode),
+        searchQuery
+    };
+}
 
 function readGraphTransform(eventValue: D3ZoomEvent<SVGSVGElement, unknown>): GraphTransform {
     const transformValue: ZoomTransform = eventValue.transform;
@@ -278,6 +379,64 @@ function createConfigCard(title: string, descriptionText: string, children: Read
     return card;
 }
 
+function createConfigSection(
+    eyebrowText: string,
+    title: string,
+    descriptionText: string,
+    children: ReadonlyArray<HTMLElement>
+): HTMLElement {
+    const section = document.createElement("section");
+    section.className = "config-section";
+
+    const header = document.createElement("div");
+    header.className = "config-section-header";
+
+    const eyebrow = document.createElement("span");
+    eyebrow.className = "config-section-eyebrow";
+    eyebrow.textContent = eyebrowText;
+    header.append(eyebrow);
+
+    const heading = document.createElement("h2");
+    heading.className = "config-section-title";
+    heading.textContent = title;
+    header.append(heading);
+
+    const description = document.createElement("p");
+    description.className = "config-section-description";
+    description.textContent = descriptionText;
+    header.append(description);
+
+    section.append(header);
+
+    const body = document.createElement("div");
+    body.className = "config-section-body";
+    children.forEach((child) => body.append(child));
+    section.append(body);
+
+    return section;
+}
+
+function createConfigSummaryMetric(
+    labelText: string,
+    valueText: string,
+    tone: "default" | "accent" = "default"
+): HTMLElement {
+    const metric = document.createElement("div");
+    metric.className = `config-summary-metric${tone === "accent" ? " config-summary-metric-accent" : ""}`;
+
+    const label = document.createElement("span");
+    label.className = "config-summary-label";
+    label.textContent = labelText;
+    metric.append(label);
+
+    const value = document.createElement("strong");
+    value.className = "config-summary-value";
+    value.textContent = valueText;
+    metric.append(value);
+
+    return metric;
+}
+
 function createBadge(labelText: string): HTMLSpanElement {
     const badge = document.createElement("span");
     badge.className = "config-badge";
@@ -301,27 +460,90 @@ function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoaded
     if (!(loadedTargetElement instanceof HTMLElement) || !(loadedTargetDetailsElement instanceof HTMLElement)) {
         return;
     }
-    const loadedTargetLabel = loadedTargetElement.querySelector("span");
-    if (!(loadedTargetLabel instanceof HTMLElement)) {
+    const loadedTargetLabel = loadedTargetElement.querySelector(".loaded-path-label");
+    const loadedTargetValue = loadedTargetElement.querySelector(".loaded-path-value");
+    if (!(loadedTargetLabel instanceof HTMLElement) || !(loadedTargetValue instanceof HTMLElement)) {
         return;
     }
 
+    loadedTargetLabel.textContent = "Loaded Project";
     if (currentLoadedTarget === null) {
-        loadedTargetLabel.textContent = "No project loaded";
+        loadedTargetValue.textContent = "No project loaded";
         loadedTargetDetailsElement.textContent = "Use Open... to load a GameMaker project.";
         return;
     }
 
-    loadedTargetLabel.textContent = currentLoadedTarget.projectRoot || currentLoadedTarget.activePath;
+    loadedTargetValue.textContent = currentLoadedTarget.projectRoot || currentLoadedTarget.activePath;
     loadedTargetDetailsElement.innerHTML = "";
     const source = document.createElement("strong");
     source.textContent = `Source: ${currentLoadedTarget.source}`;
     loadedTargetDetailsElement.append(source);
     const detailText = document.createElement("span");
-    detailText.textContent = ` | Active path: ${currentLoadedTarget.activePath} | Selected: ${String(
-        currentLoadedTarget.selectedPaths.length
-    )} item(s)`;
+    detailText.textContent = ` | Selected: ${String(currentLoadedTarget.selectedPaths.length)} item${
+        currentLoadedTarget.selectedPaths.length === 1 ? "" : "s"
+    }`;
     loadedTargetDetailsElement.append(detailText);
+}
+
+function updateGraphInteractionAvailability(
+    hasGraphData: boolean,
+    hasLoadedProject: boolean,
+    isServerMode: boolean
+): void {
+    const searchInput = document.getElementById("search");
+    const toggleViewButton = document.getElementById("toggle-view");
+    const toggleLabelsButton = document.getElementById("toggle-labels");
+    const resetDefaultButton = document.getElementById("reset-default");
+    const regenerateButton = document.getElementById("regenerate");
+    const emptyStateElement = document.getElementById("graph-empty-state");
+    if (
+        !(searchInput instanceof HTMLInputElement) ||
+        !(toggleViewButton instanceof HTMLButtonElement) ||
+        !(toggleLabelsButton instanceof HTMLButtonElement) ||
+        !(resetDefaultButton instanceof HTMLButtonElement) ||
+        !(emptyStateElement instanceof HTMLElement)
+    ) {
+        return;
+    }
+
+    const shouldDisableGraphControls = !hasGraphData;
+    searchInput.disabled = shouldDisableGraphControls;
+    toggleViewButton.disabled = shouldDisableGraphControls;
+    toggleLabelsButton.disabled = shouldDisableGraphControls;
+    resetDefaultButton.disabled = shouldDisableGraphControls;
+    document.querySelectorAll("#legend input[type='checkbox']").forEach((checkboxElement) => {
+        if (checkboxElement instanceof HTMLInputElement) {
+            checkboxElement.disabled = shouldDisableGraphControls;
+        }
+    });
+    if (regenerateButton instanceof HTMLButtonElement) {
+        regenerateButton.disabled = isServerMode && !hasLoadedProject;
+    }
+
+    if (hasGraphData) {
+        emptyStateElement.classList.add("hidden");
+        emptyStateElement.setAttribute("aria-hidden", "true");
+        return;
+    }
+
+    const titleElement = emptyStateElement.querySelector("strong");
+    const descriptionElement = emptyStateElement.querySelector("p");
+    if (!(titleElement instanceof HTMLElement) || !(descriptionElement instanceof HTMLElement)) {
+        return;
+    }
+
+    if (hasLoadedProject) {
+        titleElement.textContent = "No graph nodes are available for the current project.";
+        descriptionElement.textContent =
+            "Rebuild the graph index or load a different target to inspect semantic graph data here.";
+    } else {
+        titleElement.textContent = "Open a GameMaker project to start exploring the graph.";
+        descriptionElement.textContent =
+            "Use Open... to load a project, then return here for graph search, filters, and visualization controls.";
+    }
+
+    emptyStateElement.classList.remove("hidden");
+    emptyStateElement.setAttribute("aria-hidden", "false");
 }
 
 function updateDocsViewState(
@@ -371,20 +593,22 @@ function updateDocsViewState(
 function wirePageNavigation(
     state: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph";
+        activePage: "config" | "docs" | "graph" | "playground";
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;
     },
     applyPageState: () => void,
-    updateDocsViewStateFn: () => void
+    updateDocsViewStateFn: () => void,
+    syncUrlState: () => void
 ): void {
-    ["graph", "docs", "config"].forEach((pageValue) => {
+    ["graph", "docs", "config", "playground"].forEach((pageValue) => {
         const button = document.getElementById(`tab-${pageValue}`);
         if (button instanceof HTMLButtonElement) {
             button.addEventListener("click", () => {
-                state.activePage = pageValue as "config" | "docs" | "graph";
+                state.activePage = pageValue as "config" | "docs" | "graph" | "playground";
                 applyPageState();
+                syncUrlState();
             });
         }
     });
@@ -396,18 +620,21 @@ function wirePageNavigation(
         docsCliButton.addEventListener("click", () => {
             state.activeDocsView = "cli";
             updateDocsViewStateFn();
+            syncUrlState();
         });
     }
     if (docsMcpButton instanceof HTMLButtonElement) {
         docsMcpButton.addEventListener("click", () => {
             state.activeDocsView = "mcp";
             updateDocsViewStateFn();
+            syncUrlState();
         });
     }
     if (docsRulesButton instanceof HTMLButtonElement) {
         docsRulesButton.addEventListener("click", () => {
             state.activeDocsView = "rules";
             updateDocsViewStateFn();
+            syncUrlState();
         });
     }
 }
@@ -596,7 +823,7 @@ function updateGraphViewMode(
 
 function updatePageState(
     state: Readonly<{
-        activePage: "config" | "docs" | "graph";
+        activePage: "config" | "docs" | "graph" | "playground";
         graphRuntime: typeof d3;
         jsonView: GraphSelectionApi;
         svg: GraphSelectionApi;
@@ -606,7 +833,8 @@ function updatePageState(
     [
         { buttonId: "tab-graph", pageId: "graph-page", pageValue: "graph" },
         { buttonId: "tab-docs", pageId: "docs-page", pageValue: "docs" },
-        { buttonId: "tab-config", pageId: "config-page", pageValue: "config" }
+        { buttonId: "tab-config", pageId: "config-page", pageValue: "config" },
+        { buttonId: "tab-playground", pageId: "playground-page", pageValue: "playground" }
     ].forEach((entry) => {
         const button = document.getElementById(entry.buttonId);
         const page = document.getElementById(entry.pageId);
@@ -636,6 +864,11 @@ function updatePageState(
         updateGraphViewModeFn();
         return;
     }
+    if (state.activePage === "playground") {
+        toolbarHeading.textContent = "Playground";
+        toolbarSubheading.textContent = "Interactive GML playground for parsing, formatting, and rule experiments.";
+        return;
+    }
     if (state.activePage === "docs") {
         toolbarHeading.textContent = "Docs";
         toolbarSubheading.textContent =
@@ -652,46 +885,60 @@ function updatePageState(
     state.jsonView.classed("hidden", true).style("display", "none");
 }
 
+type GraphVisualizationSurfaceInitializer = Readonly<{
+    applyLabelModeButtonText: () => void;
+    applyPageState: () => void;
+    applySearchQuery: (nextSearchQuery: string, shouldSyncUrlState: boolean) => void;
+    currentLoadedTarget: GraphVisualizationLoadedTarget | null;
+    currentSearchQuery: string;
+    dependencies: BrowserAppDependencies;
+    hasGraphData: boolean;
+    navigationState: {
+        activeDocsView: "cli" | "mcp" | "rules";
+        activePage: "config" | "docs" | "graph" | "playground";
+        cliMetaText: string;
+        mcpMetaText: string;
+        rulesMetaText: string;
+    };
+    renderLegend: () => void;
+    renderProjectConfigurationCatalog: () => void;
+    syncUrlState: () => void;
+    updateDocsViewState: () => void;
+    updateGraph: () => void;
+    wireOpenProjectButton: () => void;
+    wireRegenerateButton: () => void;
+    wireViewControls: () => void;
+    wirePlaygroundControls: () => void;
+}>;
+
+function initializeGraphVisualizationSurface(state: GraphVisualizationSurfaceInitializer): void {
+    renderLoadedTargetSummary(state.currentLoadedTarget);
+    updateGraphInteractionAvailability(
+        state.hasGraphData,
+        state.currentLoadedTarget !== null,
+        state.dependencies.isServerMode
+    );
+    renderDocumentationCatalog(state.dependencies, state.updateDocsViewState, state.navigationState);
+    state.renderProjectConfigurationCatalog();
+    state.renderLegend();
+    wirePageNavigation(state.navigationState, state.applyPageState, state.updateDocsViewState, state.syncUrlState);
+    state.wireViewControls();
+    state.applyLabelModeButtonText();
+    state.wireOpenProjectButton();
+    state.wireRegenerateButton();
+    state.wirePlaygroundControls();
+    state.applyPageState();
+    state.updateGraph();
+    state.applySearchQuery(state.currentSearchQuery, false);
+}
+
 /**
  * Bootstrap the graph visualization browser application.
  */
 export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependencies): void {
-    const resourceKinds = new Set<GraphVisualizationNodeKind>([
-        "anim_curve",
-        "data_file",
-        "extension",
-        "font",
-        "note",
-        "object",
-        "particle_system",
-        "path",
-        "room",
-        "script",
-        "sequence",
-        "shader",
-        "sound",
-        "sprite",
-        "tileset",
-        "timeline"
-    ]);
-    const defaultDisabledNodeKinds = new Set<GraphVisualizationNodeKind>([
-        "data_file",
-        "enum_member",
-        "function",
-        "global_variable",
-        "instance_variable",
-        "local_variable",
-        "struct_variable"
-    ]);
-    const openButtonLabel = '<span class="button-content"><span class="button-label">Open...</span></span>';
-    const openingButtonLabel =
-        '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Opening…</span></span>';
-    const regenerateButtonLabel = '<span class="button-content"><span class="button-label">Regenerate</span></span>';
-    const regeneratingButtonLabel =
-        '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Regenerating…</span></span>';
+    const initialUiState = readGraphVisualizationUiStateFromCurrentUrl();
     const graphRuntime = d3;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    const { innerHeight: height, innerWidth: width } = globalThis;
     const svg = graphRuntime.select<SVGSVGElement, unknown>("#graph");
     const jsonView = graphRuntime.select<HTMLElement, unknown>("#json-view");
     const container = graphRuntime.select<SVGGElement, unknown>("#container");
@@ -701,13 +948,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     const edgeTypes = Array.from(new Set(dependencies.data.edges.map((edgeValue) => edgeValue.type)));
     const allNodes = dependencies.data.nodes;
     const allNodeKinds = Array.from(new Set(allNodes.map((nodeValue) => nodeValue.kind)));
-    const defaultEnabledNodeKinds = allNodeKinds.filter((kindValue) => !defaultDisabledNodeKinds.has(kindValue));
-    const resourceTypesPresent = allNodeKinds.filter((kindValue) => resourceKinds.has(kindValue));
+    const defaultEnabledNodeKinds = allNodeKinds.filter((kindValue) => !DEFAULT_DISABLED_NODE_KINDS.has(kindValue));
+    const resourceTypesPresent = allNodeKinds.filter((kindValue) => GRAPH_RESOURCE_KINDS.has(kindValue));
     const enumTypesPresent = allNodeKinds.filter((kindValue) => kindValue === "enum" || kindValue === "enum_member");
     const otherTypesPresent = allNodeKinds.filter(
         (kindValue) =>
             kindValue !== "resource" &&
-            !resourceKinds.has(kindValue) &&
+            !GRAPH_RESOURCE_KINDS.has(kindValue) &&
             kindValue !== "enum" &&
             kindValue !== "enum_member"
     );
@@ -715,23 +962,25 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let currentLoadedTarget = dependencies.loadedTarget;
     const currentProjectConfiguration = dependencies.projectConfigurationCatalog;
     let selectedProjectConfiguration: LoadedProjectConfiguration | null = null;
-    let labelMode: "auto" | "off" | "on" = "auto";
-    let activeGraphView: "json" | "visual" = "visual";
+    let labelMode: "auto" | "off" | "on" = mapUiLabelModeToBrowserLabelMode(initialUiState.labelMode);
+    let activeGraphView: "json" | "visual" = initialUiState.activeGraphView;
     const navigationState: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph";
+        activePage: "config" | "docs" | "graph" | "playground";
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;
     } = {
-        activeDocsView: "cli",
-        activePage: "graph",
+        activeDocsView: initialUiState.activeDocsView,
+        activePage: initialUiState.activePage,
         cliMetaText: "",
         mcpMetaText: "",
         rulesMetaText: ""
     };
+    let searchQuery = initialUiState.searchQuery;
     let activeFilters = new Set(edgeTypes);
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
+    let activeConfigViewMode: ConfigViewMode = "rendered";
     let nodesRaw = cloneGraphNodes(allNodes);
     let linksRaw = cloneGraphEdges(dependencies.data.edges);
     let link: d3.Selection<SVGPathElement, MutableGraphEdgeRecord, SVGGElement, unknown> = container
@@ -750,10 +999,25 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let resourceCheckbox: GraphSelectionApi | undefined;
     let enumCheckbox: GraphSelectionApi | undefined;
 
-    const incomingCount = new Map<string, number>();
-    const outgoingCount = new Map<string, number>();
-    const neighborMap = new Map<string, Set<string>>();
+    const graphIndexes = {
+        incomingCount: new Map<string, number>(),
+        neighborMap: new Map<string, Set<string>>(),
+        outgoingCount: new Map<string, number>()
+    };
+    const { incomingCount, neighborMap, outgoingCount } = graphIndexes;
     rebuildGraphIndexes(linksRaw, incomingCount, outgoingCount, neighborMap);
+
+    const syncUrlState = (): void => {
+        replaceGraphVisualizationUiStateInCurrentUrl(
+            createCurrentGraphVisualizationUiStateSnapshot(
+                navigationState.activePage,
+                navigationState.activeDocsView,
+                activeGraphView,
+                labelMode,
+                searchQuery
+            )
+        );
+    };
 
     const zoomBehavior: GraphZoomBehavior = graphRuntime
         .zoom<SVGSVGElement, unknown>()
@@ -761,13 +1025,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         .on("zoom", (eventValue) => {
             const transform = readGraphTransform(eventValue);
             container.attr("transform", transform.transformText);
-            if (labelMode === "on") {
-                nodeLabels.style("display", "block");
-            } else if (labelMode === "off") {
-                nodeLabels.style("display", "none");
-            } else {
-                nodeLabels.style("display", transform.k > 0.8 ? "block" : "none");
-            }
+            applyCurrentLabelMode();
         });
     svg.call(zoomBehavior);
 
@@ -820,16 +1078,25 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         );
     };
 
-    renderLoadedTargetSummary(currentLoadedTarget);
-    renderDocumentationCatalog(dependencies, () => updateDocsViewState(navigationState), navigationState);
-    renderProjectConfigurationCatalog();
-    renderLegend();
-    wirePageNavigation(navigationState, applyPageState, () => updateDocsViewState(navigationState));
-    wireViewControls();
-    wireOpenProjectButton();
-    wireRegenerateButton();
-    applyPageState();
-    updateGraph();
+    initializeGraphVisualizationSurface({
+        applyLabelModeButtonText,
+        applyPageState,
+        applySearchQuery,
+        currentLoadedTarget,
+        currentSearchQuery: searchQuery,
+        dependencies,
+        hasGraphData: nodesRaw.length > 0,
+        navigationState,
+        renderLegend,
+        renderProjectConfigurationCatalog,
+        syncUrlState,
+        updateDocsViewState: () => updateDocsViewState(navigationState),
+        updateGraph,
+        wireOpenProjectButton,
+        wireRegenerateButton,
+        wireViewControls,
+        wirePlaygroundControls
+    });
 
     tooltip.on("mouseenter", () => tooltip.classed("visible", true));
     tooltip.on("mouseleave", () => {
@@ -840,11 +1107,17 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     svg.on("click", clearFocus);
 
     function wireViewControls(): void {
+        const searchInput = document.getElementById("search");
+        if (searchInput instanceof HTMLInputElement) {
+            searchInput.value = searchQuery;
+        }
+
         const toggleViewButton = document.getElementById("toggle-view");
         if (toggleViewButton instanceof HTMLButtonElement) {
             toggleViewButton.addEventListener("click", () => {
                 activeGraphView = activeGraphView === "visual" ? "json" : "visual";
                 applyGraphViewMode();
+                syncUrlState();
             });
         }
 
@@ -852,16 +1125,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         if (toggleLabelsButton instanceof HTMLButtonElement) {
             toggleLabelsButton.addEventListener("click", () => {
                 labelMode = labelMode === "auto" ? "on" : labelMode === "on" ? "off" : "auto";
-                toggleLabelsButton.textContent =
-                    labelMode === "auto" ? "Labels: Auto" : labelMode === "on" ? "Labels: On" : "Labels: Off";
-                const currentTransform = graphRuntime.zoomTransform(svg.node());
-                if (labelMode === "on") {
-                    nodeLabels.style("display", "block");
-                } else if (labelMode === "off") {
-                    nodeLabels.style("display", "none");
-                } else {
-                    nodeLabels.style("display", currentTransform.k > 0.8 ? "block" : "none");
-                }
+                applyLabelModeButtonText();
+                applyCurrentLabelMode();
+                syncUrlState();
             });
         }
 
@@ -870,7 +1136,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 zoomBehavior.transform(selection, graphRuntime.zoomIdentity);
             });
             resetGraphStateToDefaults();
+            applyGraphViewMode();
             updateGraph();
+            syncUrlState();
         });
 
         graphRuntime.select("#search").on("input", (eventValue) => {
@@ -878,25 +1146,59 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             if (!(currentTarget instanceof HTMLInputElement)) {
                 return;
             }
-
-            const term = currentTarget.value.toLowerCase().trim();
-            searchHighlightNodeIds.clear();
-            focusNodeId = null;
-            hideTooltip();
-
-            if (term.length > 0) {
-                nodesRaw.forEach((nodeValue) => {
-                    if (
-                        nodeValue.name.toLowerCase().includes(term) ||
-                        nodeValue.displayName.toLowerCase().includes(term)
-                    ) {
-                        searchHighlightNodeIds.add(nodeValue.id);
-                    }
-                });
-            }
-
-            applyHighlights();
+            applySearchQuery(currentTarget.value, true);
         });
+    }
+
+    function applyLabelModeButtonText(): void {
+        const toggleLabelsButton = document.getElementById("toggle-labels");
+        if (!(toggleLabelsButton instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        toggleLabelsButton.textContent =
+            labelMode === "auto" ? "Labels: Auto" : labelMode === "on" ? "Labels: On" : "Labels: Off";
+    }
+
+    function applyCurrentLabelMode(): void {
+        const currentTransform = graphRuntime.zoomTransform(svg.node());
+        if (labelMode === "on") {
+            nodeLabels.style("display", "block");
+            return;
+        }
+
+        if (labelMode === "off") {
+            nodeLabels.style("display", "none");
+            return;
+        }
+
+        nodeLabels.style("display", currentTransform.k > 0.8 ? "block" : "none");
+    }
+
+    function applySearchQuery(nextSearchQuery: string, shouldSyncUrl: boolean): void {
+        searchQuery = nextSearchQuery;
+        const term = nextSearchQuery.toLowerCase().trim();
+        searchHighlightNodeIds.clear();
+        focusNodeId = null;
+        hideTooltip();
+
+        if (term.length > 0) {
+            nodesRaw.forEach((nodeValue) => {
+                const pathLabel = readGraphNodePathLabel(nodeValue);
+                if (
+                    nodeValue.name.toLowerCase().includes(term) ||
+                    nodeValue.displayName.toLowerCase().includes(term) ||
+                    pathLabel?.toLowerCase().includes(term) === true
+                ) {
+                    searchHighlightNodeIds.add(nodeValue.id);
+                }
+            });
+        }
+
+        applyHighlights();
+        if (shouldSyncUrl) {
+            syncUrlState();
+        }
     }
 
     async function loadProjectConfigurationFromFiles(
@@ -1030,84 +1332,88 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                     : "No gmloop.json was found for the active selection. Defaults and registered workspace metadata are shown where available."
                 : "Loaded project configuration from the selected project.";
 
-        const overviewGrid = document.createElement("div");
-        overviewGrid.className = "config-grid";
-        const gmloopRaw = document.createElement("pre");
-        gmloopRaw.className = "config-raw";
-        gmloopRaw.textContent = JSON.stringify(gmloopConfig.rawConfig || {}, null, 2);
-        overviewGrid.append(
-            createConfigCard("gmloop.json", gmloopConfig.configPath ?? "No gmloop.json file is currently loaded.", [
-                gmloopRaw
-            ])
+        const summaryPanel = document.createElement("section");
+        summaryPanel.className = "config-summary-panel";
+        const summaryHeader = document.createElement("div");
+        summaryHeader.className = "config-summary-header";
+        const summaryTitle = document.createElement("h2");
+        summaryTitle.className = "config-summary-title";
+        summaryTitle.textContent = "Workspace configuration snapshot";
+        summaryHeader.append(summaryTitle);
+        const summaryDescription = document.createElement("p");
+        summaryDescription.className = "config-summary-description";
+        summaryDescription.textContent =
+            selectedProjectConfiguration === null
+                ? "The Config page combines the active project file, repository context, and the workspace-resolved format, lint, and refactor views."
+                : "The Config page combines the selected project file contents with workspace-resolved format, lint, and refactor views.";
+        summaryHeader.append(summaryDescription);
+        summaryPanel.append(summaryHeader);
+
+        const summaryMetrics = document.createElement("div");
+        summaryMetrics.className = "config-summary-metrics";
+        summaryMetrics.append(
+            createConfigSummaryMetric("gmloop.json", gmloopConfig.exists ? "Loaded" : "Defaults", "accent"),
+            createConfigSummaryMetric("Project Root", gmloopConfig.projectRoot || "(none)"),
+            createConfigSummaryMetric("Format Entries", String(effectiveConfiguration.format.entries.length)),
+            createConfigSummaryMetric("Lint Rules", String(effectiveConfiguration.lint.rules.length)),
+            createConfigSummaryMetric("Codemods", String(effectiveConfiguration.refactor.codemods.length))
         );
+        summaryPanel.append(summaryMetrics);
+        configContentElement.append(summaryPanel);
 
-        const repositoryLink = document.createElement("a");
-        repositoryLink.className = "github-link";
-        repositoryLink.href = effectiveConfiguration.githubRepositoryUrl || "https://github.com/SimulatorLife/GMLoop";
-        repositoryLink.target = "_blank";
-        repositoryLink.rel = "noreferrer";
-        repositoryLink.textContent = "Open Public Repository";
-        overviewGrid.append(
-            createConfigCard("Repository", "Project root and canonical public repository for GMLoop.", [
-                createConfigItem(
-                    "Project Root",
-                    "Active project root used by graph, lint, format, and refactor workflows.",
-                    gmloopConfig.projectRoot || "(none)",
-                    []
-                ),
-                repositoryLink
-            ])
-        );
-        configContentElement.append(overviewGrid);
+        const configToggleRow = document.createElement("div");
+        configToggleRow.className = "config-toggle-row";
 
-        if (selectedProjectConfiguration !== null) {
-            const selectedConfigContainer = document.createElement("div");
-            selectedConfigContainer.className = "config-grid";
+        const renderedButton = document.createElement("button");
+        renderedButton.id = "config-view-rendered";
+        renderedButton.className = activeConfigViewMode === "rendered" ? "top-nav-button active" : "top-nav-button";
+        renderedButton.textContent = "Rendered";
+        renderedButton.addEventListener("click", () => {
+            activeConfigViewMode = "rendered";
+            renderProjectConfigurationCatalog();
+        });
+        configToggleRow.append(renderedButton);
 
-            selectedProjectConfiguration.prettier.forEach((entry) => {
-                const contentPre = document.createElement("pre");
-                contentPre.className = "config-raw";
-                contentPre.textContent = entry.content;
-                selectedConfigContainer.append(
-                    createConfigCard(
-                        `Prettier config: ${entry.path}`,
-                        "Selected project Prettier configuration file.",
-                        [contentPre]
-                    )
-                );
-            });
+        const rawButton = document.createElement("button");
+        rawButton.id = "config-view-raw";
+        rawButton.className = activeConfigViewMode === "raw" ? "top-nav-button active" : "top-nav-button";
+        rawButton.textContent = "Raw gmloop.json";
+        rawButton.addEventListener("click", () => {
+            activeConfigViewMode = "raw";
+            renderProjectConfigurationCatalog();
+        });
+        configToggleRow.append(rawButton);
+        configContentElement.append(configToggleRow);
 
-            selectedProjectConfiguration.eslint.forEach((entry) => {
-                const contentPre = document.createElement("pre");
-                contentPre.className = "config-raw";
-                contentPre.textContent = entry.content;
-                selectedConfigContainer.append(
-                    createConfigCard(`ESLint config: ${entry.path}`, "Selected project ESLint configuration file.", [
-                        contentPre
-                    ])
-                );
-            });
-
-            if (selectedConfigContainer.children.length > 0) {
-                configContentElement.append(selectedConfigContainer);
-            }
+        if (activeConfigViewMode === "raw") {
+            const gmloopRaw = document.createElement("pre");
+            gmloopRaw.className = "config-raw";
+            gmloopRaw.textContent = JSON.stringify(gmloopConfig.rawConfig || {}, null, 2);
+            configContentElement.append(
+                createConfigCard("gmloop.json", gmloopConfig.configPath ?? "No gmloop.json file is currently loaded.", [
+                    gmloopRaw
+                ])
+            );
+            return;
         }
 
         const formatList = document.createElement("ul");
-        formatList.className = "config-list";
+        formatList.className = CONFIG_LIST_CLASS_NAME;
         effectiveConfiguration.format.entries.forEach((entry) => {
             formatList.append(
                 createConfigItem(entry.name, entry.description, JSON.stringify(entry.value, null, 2), [entry.source])
             );
         });
-        configContentElement.append(
+        const resolvedWorkspaceGrid = document.createElement("div");
+        resolvedWorkspaceGrid.className = "config-grid config-grid-wide";
+        resolvedWorkspaceGrid.append(
             createConfigCard("Format / Prettier", "Formatter-owned options sourced from the format workspace.", [
                 formatList
             ])
         );
 
         const lintList = document.createElement("ul");
-        lintList.className = "config-list";
+        lintList.className = CONFIG_LIST_CLASS_NAME;
         effectiveConfiguration.lint.rules.forEach((entry) => {
             const badges = [entry.level];
             if (entry.fixable !== null) {
@@ -1117,7 +1423,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 createConfigItem(entry.ruleId, entry.description, JSON.stringify(entry.options, null, 2), badges)
             );
         });
-        configContentElement.append(
+        resolvedWorkspaceGrid.append(
             createConfigCard(
                 "Lint",
                 effectiveConfiguration.lint.ruleset === null
@@ -1128,7 +1434,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         );
 
         const refactorList = document.createElement("ul");
-        refactorList.className = "config-list";
+        refactorList.className = CONFIG_LIST_CLASS_NAME;
         effectiveConfiguration.refactor.codemods.forEach((entry) => {
             const badges = [entry.enabled ? "enabled" : "disabled"];
             if (entry.requiresSemanticProjectIndex) {
@@ -1138,10 +1444,41 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 createConfigItem(entry.id, entry.description, JSON.stringify(entry.config, null, 2), badges)
             );
         });
-        configContentElement.append(
+        resolvedWorkspaceGrid.append(
             createConfigCard("Refactor", "Registered codemods and the active project-level codemod configuration.", [
                 refactorList
             ])
+        );
+        const projectMetadataList = document.createElement("ul");
+        projectMetadataList.className = CONFIG_LIST_CLASS_NAME;
+        projectMetadataList.append(
+            createConfigItem(
+                "Config path",
+                "Location of the active gmloop configuration file.",
+                gmloopConfig.configPath ?? "Not found",
+                []
+            ),
+            createConfigItem(
+                "Configuration exists",
+                "Whether a gmloop.json file was found for the active project.",
+                gmloopConfig.exists ? "Yes" : "No",
+                []
+            )
+        );
+        configContentElement.append(
+            createConfigSection(
+                "Rendered Workspace View",
+                "Effective settings used by GMLoop",
+                "This view keeps the human-friendly project summary and the normalized format, lint, and refactor settings together.",
+                [
+                    createConfigCard(
+                        "Project Metadata",
+                        "Active project root used by graph, lint, format, and refactor workflows.",
+                        [projectMetadataList]
+                    ),
+                    resolvedWorkspaceGrid
+                ]
+            )
         );
     }
 
@@ -1279,6 +1616,12 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 }
             );
         });
+
+        updateGraphInteractionAvailability(
+            nodesRaw.length > 0,
+            currentLoadedTarget !== null,
+            dependencies.isServerMode
+        );
     }
 
     function createFilterCheckbox(
@@ -1317,7 +1660,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 shapeHtml = `<span style="color:${color}">&#9830;</span>`;
             } else if (
                 typeValue === RESOURCE_GROUP_FILTER_TYPE ||
-                (typeof typeValue === "string" && resourceKinds.has(typeValue as GraphVisualizationNodeKind))
+                (typeof typeValue === "string" && GRAPH_RESOURCE_KINDS.has(typeValue as GraphVisualizationNodeKind))
             ) {
                 shapeHtml = `<span style="color:${color}">&#9632;</span>`;
             }
@@ -1383,6 +1726,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         linksRaw = cloneGraphEdges(dependencies.data.edges);
         activeFilters = new Set(edgeTypes);
         activeNodeFilters = new Set(defaultEnabledNodeKinds);
+        activeGraphView = "visual";
+        labelMode = "auto";
+        searchQuery = "";
         searchHighlightNodeIds.clear();
         focusNodeId = null;
         pinnedTooltipNodeId = null;
@@ -1393,6 +1739,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         if (searchInput instanceof HTMLInputElement) {
             searchInput.value = "";
         }
+
+        applyLabelModeButtonText();
 
         graphRuntime.selectAll("#legend input[type='checkbox']").property("indeterminate", false);
         allNodeKinds.forEach((kindValue) => {
@@ -1507,6 +1855,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             (linkForce as ForceLink<MutableGraphNodeRecord, MutableGraphEdgeRecord>).links(filteredLinks);
         }
         simulation.alpha(0.3).restart();
+        applyCurrentLabelMode();
         applyHighlights();
     }
 
@@ -1515,7 +1864,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         let symbolType = graphRuntime.symbolCircle;
         if (nodeValue.kind.endsWith("_variable")) {
             symbolType = graphRuntime.symbolDiamond;
-        } else if (resourceKinds.has(nodeValue.kind)) {
+        } else if (GRAPH_RESOURCE_KINDS.has(nodeValue.kind)) {
             symbolType = graphRuntime.symbolSquare;
         }
         return graphRuntime.symbol().type(symbolType).size(symbolArea)() ?? "";
@@ -1576,6 +1925,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         details.append("span").text(` ${nodeValue.kind} | `);
         details.append("strong").text("Graph:");
         details.append("span").text(` ${nodeValue.graphId}`);
+
+        const pathLabel = readGraphNodePathLabel(nodeValue);
+        if (pathLabel !== null) {
+            const pathDetails = tooltip.append("div");
+            pathDetails.append("strong").text("Path:");
+            pathDetails.append("span").text(` ${pathLabel}`);
+        }
 
         const connections = tooltip.append("div");
         connections.append("strong").text("Connections:");
@@ -1663,11 +2019,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         focusNodeId = null;
         hideTooltip();
         searchHighlightNodeIds.clear();
+        searchQuery = "";
         const searchInput = document.getElementById("search");
         if (searchInput instanceof HTMLInputElement) {
             searchInput.value = "";
         }
         applyHighlights();
+        syncUrlState();
     }
 
     function applyHighlights(): void {
@@ -1712,7 +2070,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         openProjectButton.on("click", () => {
             void (async () => {
                 const button = graphRuntime.select("#open-project");
-                button.attr("disabled", "true").html(openingButtonLabel);
+                button.attr("disabled", "true").html(OPENING_PROJECT_BUTTON_LABEL);
                 try {
                     if (dependencies.isServerMode) {
                         const openResponse = await fetch("/api/open", {
@@ -1727,7 +2085,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                             globalThis.location.reload();
                             return;
                         }
-                        button.attr("disabled", null).html(openButtonLabel);
+                        button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);
                         return;
                     }
 
@@ -1736,7 +2094,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                         selectedFiles = await dependencies.directoryOpen({ recursive: true });
                     } catch (error) {
                         if (readErrorName(error) === "AbortError") {
-                            button.attr("disabled", null).html(openButtonLabel);
+                            button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);
                             return;
                         }
                         console.warn("Directory picker failed, falling back to file picker:", error);
@@ -1752,7 +2110,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                     }
 
                     if (selectedFiles.length === 0) {
-                        button.attr("disabled", null).html(openButtonLabel);
+                        button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);
                         return;
                     }
 
@@ -1770,8 +2128,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                     });
                     selectedProjectConfiguration = await loadProjectConfigurationFromFiles(selectedFiles);
                     renderLoadedTargetSummary(currentLoadedTarget);
+                    updateGraphInteractionAvailability(
+                        nodesRaw.length > 0,
+                        currentLoadedTarget !== null,
+                        dependencies.isServerMode
+                    );
                     renderProjectConfigurationCatalog();
-                    button.attr("disabled", null).html(openButtonLabel);
+                    button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);
                 } catch (error) {
                     console.error("Open project failed:", error);
                     button
@@ -1789,7 +2152,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         graphRuntime.select("#regenerate").on("click", () => {
             void (async () => {
                 const button = graphRuntime.select("#regenerate");
-                button.attr("disabled", "true").html(regeneratingButtonLabel);
+                button.attr("disabled", "true").html(REGENERATING_BUTTON_LABEL);
                 try {
                     const response = await fetch("/api/reindex", { method: "POST" });
                     if (response.ok) {
@@ -1798,7 +2161,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                             globalThis.location.reload();
                             return;
                         }
-                        button.attr("disabled", null).html(regenerateButtonLabel);
+                        button.attr("disabled", null).html(REGENERATE_BUTTON_LABEL);
                         return;
                     }
                     const responseText = await response.text();
@@ -1813,6 +2176,138 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                         .html('<span class="button-content"><span class="button-label">Error</span></span>');
                 }
             })();
+        });
+    }
+
+    function wirePlaygroundControls(): void {
+        const input = document.getElementById("playground-input") as HTMLTextAreaElement | null;
+        const output = document.getElementById("playground-output");
+        const outputTitle = document.getElementById("playground-output-title");
+        const formatBtn = document.getElementById("toggle-format");
+        const lintBtn = document.getElementById("toggle-lint");
+        const refactorBtn = document.getElementById("toggle-refactor");
+        const codeViewBtn = document.getElementById("view-mode-code");
+        const astViewBtn = document.getElementById("view-mode-ast");
+
+        if (
+            !input ||
+            !output ||
+            !outputTitle ||
+            !formatBtn ||
+            !lintBtn ||
+            !refactorBtn ||
+            !codeViewBtn ||
+            !astViewBtn
+        ) {
+            return;
+        }
+
+        let isFormatEnabled = true;
+        let isLintEnabled = true;
+        let isRefactorEnabled = true;
+        let viewMode: "code" | "ast" = "code";
+        let lastAst = "{}";
+        let lastOutput = "";
+        let debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+        const savedInput = localStorage.getItem("gmloop-playground-input");
+        input.value = resolveInitialPlaygroundGmlSource(savedInput);
+        if (savedInput !== input.value) {
+            localStorage.setItem("gmloop-playground-input", input.value);
+        }
+        void processPlaygroundInput();
+
+        function updateView() {
+            if (viewMode === "code") {
+                outputTitle.textContent = "Processed Result";
+                output.textContent = lastOutput;
+                codeViewBtn.classList.add("active");
+                astViewBtn.classList.remove("active");
+            } else {
+                outputTitle.textContent = "Parsed AST";
+                output.textContent = lastAst;
+                codeViewBtn.classList.remove("active");
+                astViewBtn.classList.add("active");
+            }
+        }
+
+        async function processPlaygroundInput() {
+            const gml = input.value;
+            if (!gml.trim()) {
+                lastOutput = "";
+                lastAst = "";
+                updateView();
+                return;
+            }
+
+            try {
+                const response = await fetch("/api/playground/process", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        gml,
+                        format: isFormatEnabled,
+                        lint: isLintEnabled,
+                        refactor: isRefactorEnabled
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error ?? `Server error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (data.payload.error) {
+                    lastOutput = data.payload.error;
+                    lastAst = "";
+                } else {
+                    lastOutput = data.payload.output;
+                    lastAst = data.payload.ast;
+                }
+            } catch (error) {
+                lastOutput = error instanceof Error ? error.message : String(error);
+                lastAst = "";
+            }
+            updateView();
+        }
+
+        input.addEventListener("input", () => {
+            localStorage.setItem("gmloop-playground-input", input.value);
+            if (debounceTimer !== null) {
+                globalThis.clearTimeout(debounceTimer);
+            }
+            debounceTimer = globalThis.setTimeout(() => {
+                void processPlaygroundInput();
+            }, 300);
+        });
+
+        formatBtn.addEventListener("click", () => {
+            isFormatEnabled = !isFormatEnabled;
+            formatBtn.classList.toggle("active", isFormatEnabled);
+            void processPlaygroundInput();
+        });
+
+        lintBtn.addEventListener("click", () => {
+            isLintEnabled = !isLintEnabled;
+            lintBtn.classList.toggle("active", isLintEnabled);
+            void processPlaygroundInput();
+        });
+
+        refactorBtn.addEventListener("click", () => {
+            isRefactorEnabled = !isRefactorEnabled;
+            refactorBtn.classList.toggle("active", isRefactorEnabled);
+            void processPlaygroundInput();
+        });
+
+        codeViewBtn.addEventListener("click", () => {
+            viewMode = "code";
+            updateView();
+        });
+
+        astViewBtn.addEventListener("click", () => {
+            viewMode = "ast";
+            updateView();
         });
     }
 }

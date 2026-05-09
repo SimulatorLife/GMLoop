@@ -1,73 +1,73 @@
 .page-toolbar {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, auto);
+  gap: var(--gm-space-related);
+  align-items: start;
   padding: 14px 18px;
   margin: 0 22px;
   border: 1px solid var(--gm-border);
   border-radius: 20px;
-  background: linear-gradient(180deg, rgba(16, 28, 46, 0.92), rgba(12, 22, 36, 0.92));
+  background: linear-gradient(180deg, var(--gm-surface-elevated), var(--gm-surface-elevated-strong));
   box-shadow: var(--gm-shadow);
 }
 
 .toolbar-title {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .toolbar-title strong {
-  color: #f4f8fc;
-  font-size: 14px;
+  color: var(--gm-text);
+  font-size: 15px;
 }
 
 .toolbar-title span {
-  color: var(--gm-muted);
-  font-size: 12px;
+  color: var(--gm-text-subdued);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .toolbar-controls {
   display: flex;
-  gap: 10px;
+  gap: var(--gm-space-related);
+  align-items: start;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.toolbar-control-group {
+  display: flex;
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
 
+.toolbar-search-group {
+  min-width: min(100%, 260px);
+}
+
 #search {
-  min-width: 220px;
+  min-width: 240px;
   padding: 9px 12px;
-  border: 1px solid rgba(143, 181, 255, 0.14);
+  border: 1px solid var(--gm-border);
   border-radius: 14px;
-  background: rgba(4, 11, 20, 0.62);
-  color: #eef6ff;
+  background: var(--gm-surface-inset);
+  color: var(--gm-text);
   font-size: 13px;
 }
 
-button {
-  border: 1px solid rgba(143, 181, 255, 0.14);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #eef6ff;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 9px 12px;
-  transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    transform 140ms ease;
+#search::placeholder {
+  color: rgba(173, 187, 208, 0.68);
 }
 
-button:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(143, 181, 255, 0.24);
-  transform: translateY(-1px);
+.toolbar-chip-button {
+  padding-inline: 14px;
+  border-radius: 999px;
 }
 
-button:disabled {
-  cursor: wait;
-  opacity: 0.8;
-  transform: none;
+.toolbar-chip-button[aria-pressed="true"] {
+  background: linear-gradient(135deg, rgba(89, 195, 195, 0.18), rgba(139, 92, 246, 0.18));
+  border-color: rgba(89, 195, 195, 0.38);
+  color: var(--gm-text);
 }

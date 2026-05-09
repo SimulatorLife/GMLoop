@@ -26,6 +26,10 @@ function readBundleFileText(bundle: ReturnType<typeof renderGraphVisualizationBu
     return decodeBytes(file.bytes);
 }
 
+function countTextOccurrences(text: string, pattern: RegExp): number {
+    return Array.from(text.matchAll(pattern)).length;
+}
+
 void test("graph visualization bundle emits entry html plus local runtime assets", () => {
     const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "Test Graph" });
 
@@ -48,6 +52,24 @@ void test("graph visualization entry html references local assets and avoids CDN
     assert.doesNotMatch(html, /<link[^>]+href="https?:\/\//u);
     assert.match(html, /id="docs-view-rules"/u);
     assert.match(html, /id="loaded-target-details"/u);
+    assert.match(html, /class="project-context"/u);
+    assert.match(html, /aria-label="Open GMLoop GitHub repository"/u);
+    assert.match(html, /class="github-link-icon"/u);
+    assert.doesNotMatch(html, />GitHub Repo</u);
+    assert.match(html, /id="toggle-lint" class="rule-toggle active"/u);
+    assert.match(html, /id="toggle-refactor" class="rule-toggle active"/u);
+});
+
+void test("graph visualization entry html keeps project opening inside the project context card", () => {
+    const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "No project loaded" });
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.equal(countTextOccurrences(html, /id="open-project"/gu), 1);
+    assert.match(html, /<div class="loaded-target-actions">[\s\S]*id="open-project"/u);
+    assert.match(
+        html,
+        /<div id="loaded-target" class="loaded-target-card"><span class="loaded-path-label">Loaded Project<\/span><span class="loaded-path-value">No project loaded<\/span><\/div>/u
+    );
 });
 
 void test("graph visualization module script embeds serialized graph payload and boot logic", () => {
@@ -65,10 +87,12 @@ void test("graph visualization module script embeds serialized graph payload and
             nodes: [
                 {
                     displayName: "InterplanetaryFootball",
+                    filePath: null,
                     graphId: "project",
                     id: "project::resource::InterplanetaryFootball.yyp",
                     kind: "project",
                     name: "InterplanetaryFootball",
+                    resourcePath: "InterplanetaryFootball.yyp",
                     snippet: "",
                     summary: "project 'InterplanetaryFootball'. Defined in InterplanetaryFootball.yyp."
                 }
@@ -82,8 +106,22 @@ void test("graph visualization module script embeds serialized graph payload and
 
     assert.match(script, /const graphVisualizationData = /u);
     assert.match(script, /InterplanetaryFootball/u);
+    assert.match(script, /resourcePath":"InterplanetaryFootball\.yyp/u);
+    assert.match(script, /function readGraphNodePathLabel/u);
+    assert.match(script, /Path:/u);
+    assert.match(script, /const DEFAULT_PLAYGROUND_GML_SOURCE = \[/u);
+    assert.match(script, /function resolveInitialPlaygroundGmlSource/u);
     assert.match(script, /bootstrapGraphVisualizationApp\(\{/u);
     assert.match(script, /import \{ fileOpen, directoryOpen \} from "\.\/vendor\/browser-fs-access\.js";/u);
+});
+
+void test("graph visualization module script renders unloaded project state without repeated empty labels", () => {
+    const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "No project loaded" });
+    const script = readBundleFileText(bundle, "assets/graph-visualization.js");
+
+    assert.match(script, /loadedTargetLabel\.textContent = "Loaded Project";/u);
+    assert.match(script, /loadedTargetValue\.textContent = "No project loaded";/u);
+    assert.doesNotMatch(script, /loadedTargetLabel\.textContent = "No project loaded";/u);
 });
 
 void test("graph visualization module script embeds workspace rule catalogs when provided", () => {
@@ -126,6 +164,12 @@ void test("graph visualization module script embeds workspace rule catalogs when
     assert.match(script, /workspaceRules/u);
     assert.match(script, /gml\/test-rule/u);
     assert.match(script, /refactor\/test-codemod/u);
+    assert.match(script, /function createInitialGraphVisualizationUiState/u);
+    assert.match(script, /parseGraphVisualizationUiStateFromUrlSearch/u);
+    assert.match(script, /replaceGraphVisualizationUiStateInCurrentUrl/u);
+    assert.match(script, /Workspace configuration snapshot/u);
+    assert.match(script, /Rendered Workspace View/u);
+    assert.match(script, /Raw gmloop\.json/u);
 });
 
 void test("graph visualization css asset preserves core visual affordances", () => {
@@ -136,6 +180,10 @@ void test("graph visualization css asset preserves core visual affordances", () 
     assert.match(css, /#tooltip/u);
     assert.match(css, /\.link \{ stroke-opacity: 0\.72;/u);
     assert.match(css, /@keyframes graph-button-spin/u);
+    assert.match(css, /button:disabled \{ cursor: not-allowed;/u);
+    assert.match(css, /button:disabled:hover \{ background: rgba\(255,255,255,0\.055\);/u);
+    assert.match(css, /\.top-nav-button\.active:disabled \{/u);
+    assert.match(css, /\.filter-item:has\(input:disabled\) \{ cursor: not-allowed; opacity: 0\.45; \}/u);
 });
 
 void test("graph visualization server-mode html includes regenerate affordance", () => {
@@ -147,6 +195,14 @@ void test("graph visualization server-mode html includes regenerate affordance",
 
     assert.match(html, /id="regenerate"/u);
     assert.match(html, /button-label">Regenerate<\/span>/u);
+});
+
+void test("graph visualization bundle includes a graph empty state for no-project sessions", () => {
+    const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "Empty State" });
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.match(html, /id="graph-empty-state"/u);
+    assert.match(html, /Open a GameMaker project to start exploring the graph/u);
 });
 
 void test("renderGraphVisualizationHtml returns the bundle entry html", () => {

@@ -277,6 +277,49 @@ void test("deduplicatePatchesById keeps only the newest patch for duplicate ids"
     assert.deepStrictEqual(result.patches, [uniquePatch, newestVersion]);
 });
 
+void test("patch queue metrics account for partial batch failures", async () => {
+    const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
+        patchQueue: {
+            flushIntervalMs: 1000
+        },
+        wrapperMutator: (wrapper) => ({
+            ...wrapper,
+            applyPatchBatch: (_patches) => ({
+                success: false,
+                appliedCount: 1,
+                failedIndex: 1,
+                error: "simulated failure",
+                rolledBack: false,
+                version: wrapper.getVersion()
+            })
+        })
+    });
+
+    try {
+        sendScriptPatch(ws, "gml/script/partial_failure_a");
+        sendScriptPatch(ws, "gml/script/partial_failure_b");
+        sendScriptPatch(ws, "gml/script/partial_failure_c");
+
+        const flushedCount = client.flushPatchQueue();
+        assert.strictEqual(flushedCount, 3);
+
+        await waitForQueueMetrics(
+            client,
+            "queue to flush partial-failure batch",
+            (snapshot) => snapshot.totalFlushed >= 3 && snapshot.flushCount >= 1,
+            150
+        );
+
+        const metrics = client.getConnectionMetrics();
+        assert.strictEqual(metrics.patchesApplied, 1);
+        assert.strictEqual(metrics.patchesFailed, 2);
+        assert.strictEqual(metrics.patchErrors, 2);
+    } finally {
+        client.disconnect();
+        restoreRuntimeGlobals();
+    }
+});
+
 void test("patch queue reorders dependency-linked patches before batch apply", async () => {
     const { wrapper, client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
         patchQueue: {

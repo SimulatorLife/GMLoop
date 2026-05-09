@@ -5,10 +5,12 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 import { Format } from "@gmloop/format";
 import { Lint } from "@gmloop/lint";
+import { Parser } from "@gmloop/parser";
 import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { UI } from "@gmloop/ui";
 import { Command, Option } from "commander";
+import { ESLint } from "eslint";
 
 import { getCliCommandCatalog, getMcpToolCatalogEntries } from "../cli.js";
 import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
@@ -69,6 +71,15 @@ type OsaScriptExecutionResult = Readonly<{
     stderr: string;
     stdout: string;
 }>;
+
+function createMutableGraphPlaygroundLintConfig(): Array<Record<string, unknown>> {
+    return Lint.configs.recommended.map((config) => ({
+        ...config,
+        files: Array.isArray(config.files) ? [...config.files] : config.files,
+        plugins: config.plugins ? { ...config.plugins } : undefined,
+        rules: config.rules ? { ...config.rules } : undefined
+    }));
+}
 
 function isMacOsDialogCancellationError(error: unknown, stderr: string): boolean {
     if (!(error instanceof Error)) {
@@ -400,6 +411,51 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 activeSource = "finder-open";
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
+            },
+            processPlayground: async ({ gml, format, lint, refactor }) => {
+                let ast: string;
+                let output = gml;
+                let error: string | null = null;
+
+                try {
+                    const gmlParser = new Parser.GMLParser(gml);
+                    const program = gmlParser.parse();
+                    ast = JSON.stringify(
+                        program,
+                        (key, value) => {
+                            if (key === "parent" || key === "sourceRange") return undefined;
+                            return value;
+                        },
+                        2
+                    );
+
+                    if (refactor) {
+                        const codemodResult = Refactor.LoopLengthHoisting.applyLoopLengthHoistingCodemod(output);
+                        output = codemodResult.outputText;
+                    }
+
+                    if (lint) {
+                        const eslint = new ESLint({
+                            overrideConfigFile: true,
+                            fix: true,
+                            overrideConfig: createMutableGraphPlaygroundLintConfig()
+                        });
+                        const [result] = await eslint.lintText(output, {
+                            filePath: "graph-visualization-playground.gml"
+                        });
+                        output = result.output ?? output;
+                    }
+
+                    if (format) {
+                        output = await Format.format(output);
+                    }
+                } catch (error_) {
+                    error = error_ instanceof Error ? error_.message : String(error_);
+                    output = "";
+                    ast = "";
+                }
+
+                return Object.freeze({ ast, output, error });
             },
             renderBundle: async (isServerMode) => {
                 const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(

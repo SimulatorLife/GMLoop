@@ -188,7 +188,7 @@ pnpm --filter @gmloop/lint run test
 ```
 
 Performance-sensitive autofix rules also have dedicated regression coverage under
-[`test/rules/optimized-autofix-performance.test.ts`](./test/rules/optimized-autofix-performance.test.ts).
+[`test/rules/optimized-autofix-performance.test.ts`](test/rules/optimized-autofix-performance.test.ts).
 Those tests run as part of the normal compiled Node test suite, so CI enforces
 both fix correctness and the current runtime budgets for the measured hot paths.
 

@@ -13,8 +13,7 @@
   ],
   "dependencies": {
     "@gmloop/core": "workspace:*",
-    "@gmloop/parser": "workspace:*",
-    "@gmloop/semantic": "workspace:*"
+    "@gmloop/parser": "workspace:*"
   },
   "scripts": {
     "build:types": "tsc -b tsconfig.json",

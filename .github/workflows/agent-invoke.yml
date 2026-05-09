@@ -33,16 +33,16 @@ on:
       agent_package:
         type: string
         required: false
-      validate_local_endpoint:
-        type: boolean
+      openai_base_url:
+        type: string
         required: false
-        default: true
+        default: 'http://127.0.0.1:11434/v1'
       max_agent_retries:
         type: number
         required: false
         default: 1
     secrets:
-      api_key:
+      OPENAI_API_KEY:
         required: false
       GH_USER_TOKEN:
         required: true
@@ -60,6 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OPENAI_API_TYPE: openai
+      OPENAI_BASE_URL: ${{ inputs.openai_base_url }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'ollama' }}
     permissions:
       contents: write
       issues: write
@@ -158,7 +160,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.pr_number }}
-          AGENT_NAME: ${{ inputs.agent }}
           REPOSITORY: ${{ github.repository }}
           MESSAGE: |-
             **[🤖 ${{ inputs.agent }}]** Hi, I've received your request and will begin working on it now. See the [logs for progress](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
@@ -276,14 +277,16 @@ jobs:
             **/pnpm-lock.yaml
 
       - name: Start and validate local OpenAI-compatible endpoint
-        if: ${{ inputs.validate_local_endpoint }}
+        if: ${{ startsWith(inputs.openai_base_url, 'http://127.0.0.1') || startsWith(inputs.openai_base_url, 'http://localhost') }}
         shell: bash
         run: |
           set -euo pipefail
 
-          OLLAMA_NATIVE_URL='http://127.0.0.1:11434'
-          OPENAI_BASE_URL="${OLLAMA_NATIVE_URL}/v1"
-          OPENAI_API_KEY='ollama'
+          test -n "${OPENAI_BASE_URL:-}" || { echo "OPENAI_BASE_URL is empty"; exit 1; }
+          test -n "${OPENAI_API_KEY:-}" || { echo "OPENAI_API_KEY is empty"; exit 1; }
+
+          OLLAMA_NATIVE_URL="${OPENAI_BASE_URL%/}"
+          OLLAMA_NATIVE_URL="${OLLAMA_NATIVE_URL%/v1}"
 
           if [ -n "${NO_PROXY:-}" ]; then
             NO_PROXY="${NO_PROXY},127.0.0.1,localhost"
@@ -402,7 +405,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          API_KEY: ${{ secrets.api_key || '' }}
           AGENT_SETUP_COMMAND: ${{ inputs.agent_setup_command }}
           AGENT_SETUP_COMMAND_FILE: ${{ inputs.agent_setup_command_file }}
         run: |
@@ -458,7 +460,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           ADDITIONAL_CONTEXT: ${{ steps.validate_pr.outputs.additional_context || '' }}
-          API_KEY: ${{ secrets.api_key || '' }}
           AGENT_NAME: ${{ inputs.agent }}
           MAX_AGENT_RETRIES: ${{ inputs.max_agent_retries }}
           WORKING_BRANCH: ${{ env.WORKING_BRANCH }}
@@ -771,12 +772,7 @@ jobs:
               return 0
             fi
 
-          retry_message="$(printf '**[🤖 %s]** The local agent did not produce pushable repository changes on attempt %s/%s, so I am starting retry attempt %s/%s.\n' \
-            "${AGENT_NAME}" \
-            "${failed_attempt}" \
-            "${total_attempts}" \
-            "${next_attempt}" \
-            "${total_attempts}")"
+            retry_message="**[🤖 ${AGENT_NAME}]** The local agent did not produce pushable repository changes on attempt ${failed_attempt}/${total_attempts}, so I am starting retry attempt ${next_attempt}/${total_attempts}."
 
             if gh issue comment "${PR_NUMBER}" --body "${retry_message}" --repo "${REPOSITORY}"; then
               date +"%F %T" > "$RETRY_COMMENT_SENTINEL"

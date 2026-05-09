@@ -1,7 +1,7 @@
 /**
  * Supported top-level UI surface identifiers.
  */
-export type UISurfaceId = "ast" | "docs" | "graph" | "rules";
+export type UISurfaceId = "ast" | "docs" | "graph" | "rules" | "playground";
 
 /**
  * Delivery status for a top-level UI surface.
@@ -48,6 +48,12 @@ export const UI_SURFACE_DEFINITIONS: ReadonlyArray<UISurfaceDefinition> = Object
         id: "rules",
         owningWorkspace: UI_OWNING_WORKSPACE,
         status: PLANNED_SURFACE_STATUS
+    },
+    {
+        description: "Interactive GML playground for parsing, formatting, and rule application experiments.",
+        id: "playground",
+        owningWorkspace: UI_OWNING_WORKSPACE,
+        status: "implemented"
     }
 ]);
 
