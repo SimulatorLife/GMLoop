@@ -5,6 +5,7 @@ import GameMakerLanguageParserVisitor from "../runtime/game-maker-language-parse
 import type {
     GlobalIdentifierTracker,
     IdentifierRoleApplicator,
+    IdentifierRoleCloner,
     IdentifierRoleContextController,
     ParserContext,
     ParserContextWithMethods,
@@ -27,7 +28,11 @@ type MutableParserVisitor = ParserVisitorInstance & {
 };
 
 type ParserScopeTracker =
-    | (GlobalIdentifierTracker & IdentifierRoleContextController & IdentifierRoleApplicator & ScopeLifecycle)
+    | (GlobalIdentifierTracker &
+          IdentifierRoleContextController &
+          IdentifierRoleApplicator &
+          IdentifierRoleCloner &
+          ScopeLifecycle)
     | null;
 type DirectiveKeyword = "define" | "macro";
 type DirectiveKeywordRange = {
