@@ -36,8 +36,13 @@ import type { GmlRuleDefinition } from "../rule-definition.js";
  * Matches a valid GML numeric literal string: optional sign, integer part,
  * optional decimal, and optional exponent. Used to validate that the content
  * of the string argument to `real()` can be safely emitted as a bare literal.
+ *
+ * This pattern is deliberately duplicated here rather than imported from
+ * `@gmloop/format` to keep the linter's public API surface minimal. The lint
+ * workspace must not re-export internal formatter utilities that could pull in
+ * Prettier internals and widen the dependency graph for consumers.
  */
-const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/u;
 
 /**
  * Extracts the inner content of a GML string literal node value.
