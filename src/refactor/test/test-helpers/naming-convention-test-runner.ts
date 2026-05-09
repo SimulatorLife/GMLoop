@@ -12,7 +12,7 @@ import type { ConfiguredCodemodRunResult, NamingConventionTarget } from "../../s
 import {
     buildNamingConventionCodemodExecutor,
     buildNamingConventionSemanticStub,
-    buildSingleTargetOccurrences,
+    buildSingleNamingTargetData,
     createSyntheticLocalNamingFixture,
     type SyntheticFileFixture
 } from "./naming-convention-test-fixtures.js";
@@ -172,42 +172,13 @@ function buildTestFixture(
         let offset = 0;
 
         for (let targetIndex = 0; targetIndex < targetsPerFile; targetIndex += 1) {
-            const currentName = `bad_name_${fileIndex}_${targetIndex}`;
-            const declarationLine = `var ${currentName} = ${targetIndex};\n`;
-            const referenceLine = `show_debug_message(${currentName});\n`;
-            const declarationStart = offset + declarationLine.indexOf(currentName);
-            const referenceStart = offset + declarationLine.length + referenceLine.indexOf(currentName);
+            const scopeId = sharedScopeId ?? "shared_scope";
+            const data = buildSingleNamingTargetData(filePath, fileIndex, targetIndex, offset, scopeId);
 
-            lines.push(declarationLine, referenceLine);
+            lines.push(data.declarationLine, data.referenceLine);
+            targets.push(data.target, { ...data.target });
 
-            const occurrences = buildSingleTargetOccurrences(
-                filePath,
-                declarationStart,
-                referenceStart,
-                currentName.length,
-                sharedScopeId ?? "shared_scope"
-            );
-
-            targets.push(
-                {
-                    category: "localVariable",
-                    name: currentName,
-                    path: filePath,
-                    scopeId: sharedScopeId ?? "shared_scope",
-                    symbolId: null,
-                    occurrences
-                },
-                {
-                    category: "localVariable",
-                    name: currentName,
-                    path: filePath,
-                    scopeId: sharedScopeId ?? "shared_scope",
-                    symbolId: null,
-                    occurrences
-                }
-            );
-
-            offset += declarationLine.length + referenceLine.length;
+            offset = data.newOffset;
         }
 
         return {

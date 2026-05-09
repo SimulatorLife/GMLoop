@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { ScopeTracker } from "../src/scopes/scope-tracker.js";
+import { wrapNormalizedPathSpy } from "./scope-tracker-helpers.js";
 
 /**
  * Tests for `ScopeTracker.getFilePathsDeclaringSymbol`.
@@ -208,30 +209,9 @@ void describe("ScopeTracker.getBatchFilePathsDeclaringSymbols", () => {
         tracker.declare("beta", { name: "beta" });
         tracker.exitScope();
 
-        const trackerPrototype = Object.getPrototypeOf(tracker) as {
-            normalizeTrackedPath(path: string): string;
-        };
-        const originalNormalizeTrackedPath = trackerPrototype.normalizeTrackedPath.bind(tracker);
-        const seenInputs = new Set<string>();
-        let repeatedPathNormalizations = 0;
-        Object.defineProperty(tracker, "normalizeTrackedPath", {
-            value: (path: string): string => {
-                if (seenInputs.has(path)) {
-                    repeatedPathNormalizations += 1;
-                } else {
-                    seenInputs.add(path);
-                }
-                return originalNormalizeTrackedPath(path);
-            },
-            configurable: true
-        });
+        const { tracker: instrumented, repeatedPathNormalizations } = wrapNormalizedPathSpy(tracker);
 
-        const results = tracker.getBatchFilePathsDeclaringSymbols(["alpha", "beta"]);
-
-        Object.defineProperty(tracker, "normalizeTrackedPath", {
-            value: originalNormalizeTrackedPath,
-            configurable: true
-        });
+        const results = instrumented.getBatchFilePathsDeclaringSymbols(["alpha", "beta"]);
 
         assert.deepEqual([...(results.get("alpha") ?? [])], ["C:/project/scripts/shared.gml"]);
         assert.deepEqual(
