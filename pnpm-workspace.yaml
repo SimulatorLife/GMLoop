@@ -16,3 +16,8 @@ onlyBuiltDependencies:
   - esbuild
   - fast-folder-size
   - unrs-resolver
+
+allowBuilds:
+  esbuild: true
+  fast-folder-size: true
+  unrs-resolver: true
