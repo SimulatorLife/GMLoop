@@ -153,6 +153,7 @@ export type {
 export { RenameValidationCache } from "./rename-validation-cache.js";
 export type { CacheStats, SemanticCacheConfig } from "./semantic-cache.js";
 export { SemanticQueryCache } from "./semantic-cache.js";
+export { readExclusiveSemanticLocationIndex, readSemanticLocationIndex } from "./semantic-index-helpers.js";
 export type {
     ApplyWorkspaceEditOptions,
     AstNode,
