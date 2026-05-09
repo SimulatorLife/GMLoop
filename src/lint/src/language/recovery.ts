@@ -461,9 +461,11 @@ function applyRecoveryTextInsertions(
 
     chunks.push(sourceText.slice(copiedThrough));
 
+    // cloneObjectEntries shallow-clones each entry before deep-freezing so
+    // mutations in the returned arrays cannot corrupt the accumulated state.
     return Object.freeze({
         parseSource: chunks.join(""),
-        textInsertions: Object.freeze(textInsertions.map((entry) => Object.freeze({ ...entry })))
+        textInsertions: Object.freeze(Core.cloneObjectEntries(textInsertions))
     });
 }
 
@@ -610,7 +612,9 @@ function createArgumentSeparatorProjection(sourceText: string): Readonly<{
 
     chunks.push(sourceText.slice(copiedThrough));
 
-    const frozenInsertions = Object.freeze(insertions.map((entry) => Object.freeze({ ...entry })));
+    // cloneObjectEntries shallow-clones each entry before deep-freezing so
+    // mutations in the returned arrays cannot corrupt the accumulated state.
+    const frozenInsertions = Object.freeze(Core.cloneObjectEntries(insertions));
     return Object.freeze({
         parseSource: chunks.join(""),
         insertions: frozenInsertions,
