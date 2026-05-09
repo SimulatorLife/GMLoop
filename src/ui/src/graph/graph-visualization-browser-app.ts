@@ -11,7 +11,7 @@ import type {
 } from "d3";
 import * as d3 from "d3";
 
-import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../app/playground-default-gml.js";
+import { resolveInitialPlaygroundGmlSource } from "../app/playground-default-gml.js";
 import type { GraphVisualizationUiLabelMode, GraphVisualizationUiState } from "../app/state/types.js";
 import {
     readGraphVisualizationUiStateFromCurrentUrl,
@@ -511,6 +511,11 @@ function updateGraphInteractionAvailability(
     toggleViewButton.disabled = shouldDisableGraphControls;
     toggleLabelsButton.disabled = shouldDisableGraphControls;
     resetDefaultButton.disabled = shouldDisableGraphControls;
+    document.querySelectorAll("#legend input[type='checkbox']").forEach((checkboxElement) => {
+        if (checkboxElement instanceof HTMLInputElement) {
+            checkboxElement.disabled = shouldDisableGraphControls;
+        }
+    });
     if (regenerateButton instanceof HTMLButtonElement) {
         regenerateButton.disabled = isServerMode && !hasLoadedProject;
     }
@@ -1611,6 +1616,12 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 }
             );
         });
+
+        updateGraphInteractionAvailability(
+            nodesRaw.length > 0,
+            currentLoadedTarget !== null,
+            dependencies.isServerMode
+        );
     }
 
     function createFilterCheckbox(
@@ -2200,10 +2211,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         let debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
         const savedInput = localStorage.getItem("gmloop-playground-input");
-        if (savedInput === null) {
-            input.value = DEFAULT_PLAYGROUND_GML_SOURCE;
-        } else {
-            input.value = savedInput;
+        input.value = resolveInitialPlaygroundGmlSource(savedInput);
+        if (savedInput !== input.value) {
+            localStorage.setItem("gmloop-playground-input", input.value);
         }
         void processPlaygroundInput();
 

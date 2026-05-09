@@ -63,7 +63,16 @@ button:hover {
 .gm-button:disabled,
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.65;
+  opacity: 0.45;
+  transform: none;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+.gm-button:disabled:hover,
+button:disabled:hover {
+  background: var(--gm-surface-muted);
+  border-color: var(--gm-border);
   transform: none;
 }
 

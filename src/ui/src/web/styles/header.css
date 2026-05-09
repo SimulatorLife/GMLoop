@@ -116,11 +116,24 @@
   transform: translateY(-1px);
 }
 
+.top-nav-button:disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  transform: none;
+}
+
 .top-nav-button.active {
   background: linear-gradient(135deg, rgba(89, 195, 195, 0.18), rgba(139, 92, 246, 0.18));
   border-color: rgba(89, 195, 195, 0.38);
   color: var(--gm-text);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.top-nav-button.active:disabled {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(143, 181, 255, 0.08);
+  color: var(--gm-text-subdued);
+  box-shadow: none;
 }
 
 .github-link {

@@ -18,7 +18,9 @@
     .top-nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px; border-radius: 18px; border: 1px solid var(--gm-border); background: rgba(4,11,20,0.45); }
     .top-nav-button { border: 1px solid transparent; background: transparent; color: var(--gm-text-secondary); border-radius: 999px; padding: 8px 14px; font-weight: 700; letter-spacing: 0.01em; }
     .top-nav-button:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.1); transform: translateY(-1px); }
+    .top-nav-button:disabled:hover { background: transparent; border-color: transparent; transform: none; }
     .top-nav-button.active { background: linear-gradient(135deg, rgba(89,195,195,0.18), rgba(139,92,246,0.18)); border-color: rgba(89,195,195,0.38); color: var(--gm-text); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
+    .top-nav-button.active:disabled { background: rgba(255,255,255,0.04); border-color: rgba(143,181,255,0.08); color: var(--gm-text-subdued); box-shadow: none; }
     .docs-toggle-row { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
     .github-link { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 14px; border: 1px solid var(--gm-border); background: rgba(255,255,255,0.04); color: var(--gm-text-interactive); text-decoration: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02); }
     .github-link:hover { background: rgba(255,255,255,0.08); border-color: var(--gm-border-strong); color: #fff; transform: translateY(-1px); }
@@ -43,7 +45,9 @@
     #search::placeholder { color: rgba(173, 187, 208, 0.68); }
     button { border: 1px solid var(--gm-border); border-radius: 14px; background: rgba(255,255,255,0.055); color: var(--gm-text-interactive); cursor: pointer; font-size: 13px; font-weight: 700; padding: 9px 12px; }
     button:hover { background: rgba(255,255,255,0.09); border-color: var(--gm-border-strong); transform: translateY(-1px); }
-    button:disabled { cursor: wait; opacity: 0.65; transform: none; }
+    button:disabled { cursor: not-allowed; opacity: 0.45; transform: none; pointer-events: none; box-shadow: none; }
+    button:disabled:hover { background: rgba(255,255,255,0.055); border-color: var(--gm-border); transform: none; }
+    input:disabled { cursor: not-allowed; opacity: 0.45; }
     button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: none; box-shadow: 0 0 0 1px rgba(6,12,22,0.96), 0 0 0 4px var(--gm-focus-ring); }
     .toolbar-chip-button { padding-inline: 14px; border-radius: 999px; }
     .toolbar-accent-button { background: linear-gradient(135deg, rgba(89,195,195,0.22), rgba(139,92,246,0.22)); border-color: rgba(89,195,195,0.42); }
@@ -124,6 +128,7 @@
     .config-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 999px; background: rgba(255,255,255,0.06); border: 1px solid rgba(143,181,255,0.12); font-size: 10px; font-weight: 700; color: #e7eef8; text-transform: uppercase; letter-spacing: 0.04em; }
     .config-raw { margin: 0; padding: 14px; border-radius: 18px; background: rgba(5, 10, 19, 0.9); border: 1px solid rgba(143,181,255,0.1); color: #dce8f5; font-size: 11px; line-height: 1.55; overflow: auto; }
     .filter-item { display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 1.45; cursor: pointer; margin-top: 4px; }
+    .filter-item:has(input:disabled) { cursor: not-allowed; opacity: 0.45; }
     .filter-section { margin-bottom: 10px; }
     .filter-section strong { display: block; margin-bottom: 7px; cursor: pointer; }
     .sub-filter { margin-left: 15px; }

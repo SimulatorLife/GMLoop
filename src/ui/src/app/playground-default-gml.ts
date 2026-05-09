@@ -14,3 +14,17 @@ export const DEFAULT_PLAYGROUND_GML_SOURCE = [
     "return total;",
     "}"
 ].join("\n");
+
+/**
+ * Resolve the initial playground source from persisted browser state.
+ *
+ * Empty persisted values should not suppress the shared demo sample because the
+ * playground is intended to open with a ready-to-run example by default.
+ *
+ * @param savedInput - Persisted editor text from browser storage, when present.
+ * @returns The stored source when it contains non-whitespace content; otherwise
+ *   the shared default playground sample.
+ */
+export function resolveInitialPlaygroundGmlSource(savedInput: null | string): string {
+    return savedInput === null || savedInput.trim() === "" ? DEFAULT_PLAYGROUND_GML_SOURCE : savedInput;
+}
