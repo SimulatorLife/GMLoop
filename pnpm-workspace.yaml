@@ -11,3 +11,8 @@ packages:
   - src/refactor
   - src/fixture-runner
   - src/mcp
+
+onlyBuiltDependencies:
+  - esbuild
+  - fast-folder-size
+  - unrs-resolver
