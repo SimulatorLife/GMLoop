@@ -83,7 +83,7 @@ function createMutableGraphPlaygroundLintConfig(): Array<Record<string, unknown>
 }
 
 function isMacOsDialogCancellationError(error: unknown, stderr: string): boolean {
-    if (!(error instanceof Error)) {
+    if (!Core.isErrorLike(error)) {
         return false;
     }
 
@@ -104,7 +104,7 @@ async function runOsaScript(lines: ReadonlyArray<string>): Promise<OsaScriptExec
         const args = lines.flatMap((line) => ["-e", line] as const);
         execFile("osascript", args, { encoding: "utf8" }, (error, stdout, stderr) => {
             if (error) {
-                reject(error instanceof Error ? error : new Error("osascript execution failed."));
+                reject(Core.isErrorLike(error) ? error : new Error("osascript execution failed."));
                 return;
             }
             resolve(
@@ -134,7 +134,7 @@ async function pickProjectPathUsingNativeDialog(): Promise<string | null> {
         const result = await runOsaScript(scriptLines);
         return result.stdout.trim();
     } catch (error: unknown) {
-        if (error instanceof Error) {
+        if (Core.isErrorLike(error)) {
             const stderr = readOsaScriptErrorStderr(error);
             if (isMacOsDialogCancellationError(error, stderr)) {
                 return null;
@@ -463,7 +463,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         output = transpiler.transpileExpression(output);
                     }
                 } catch (error_) {
-                    error = error_ instanceof Error ? error_.message : String(error_);
+                    error = Core.isErrorLike(error_) ? error_.message : String(error_);
                     output = "";
                     ast = "";
                 }
