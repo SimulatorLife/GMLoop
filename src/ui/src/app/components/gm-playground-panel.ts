@@ -40,6 +40,15 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
+    public disconnectedCallback(): void {
+        if (this.#debounceTimer !== null) {
+            globalThis.clearTimeout(this.#debounceTimer);
+            this.#debounceTimer = null;
+        }
+
+        super.disconnectedCallback();
+    }
+
     protected firstUpdated(): void {
         const savedInput = localStorage.getItem("gmloop-playground-input");
         this.#gmlInput = resolveInitialPlaygroundGmlSource(savedInput);
