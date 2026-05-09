@@ -1,19 +1,6 @@
 import { isErrorLike } from "./capability-probes.js";
 import { assertFunction } from "./object.js";
 
-/**
- * Return the provided value without modification. Centralizes the identity
- * function used across helper modules so hot paths can reuse a single exported
- * implementation instead of allocating ad-hoc closures.
- *
- * @template T
- * @param {T} value
- * @returns {T}
- */
-export function identity<T>(value: T): T {
-    return value;
-}
-
 // Export a singleton no-op function for stable reference equality checks.
 // Many helpers (e.g., semantic integrations, CLI cleanup handlers) need a
 // shared fallback callback that does nothing. Using a module-level singleton

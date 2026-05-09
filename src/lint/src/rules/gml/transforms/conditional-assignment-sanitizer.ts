@@ -264,9 +264,3 @@ export const conditionalAssignmentSanitizerTransform = Object.freeze({
     sanitizeConditionalAssignments,
     applySanitizedIndexAdjustments
 });
-
-export default {
-    conditionalAssignmentSanitizerTransform,
-    sanitizeConditionalAssignments,
-    applySanitizedIndexAdjustments
-};
