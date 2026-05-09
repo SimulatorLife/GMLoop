@@ -465,3 +465,44 @@ void test("ternary constant folding: does not fold non-boolean literal condition
     };
     assert.strictEqual(tryFoldConstantTernaryExpression(ast), null);
 });
+
+// ---------------------------------------------------------------------------
+// Regression: guard against malformed AST with missing branches
+// ---------------------------------------------------------------------------
+
+// Regression tests: guard against malformed AST with missing branches.
+// The cast to TernaryExpressionNode bypasses the readonly/immutable type
+// constraints so we can model AST nodes that are missing required fields.
+
+function malformedTernary(partial: { type: string; test?: unknown; consequent?: unknown; alternate?: unknown }) {
+    return partial as Parameters<typeof tryFoldConstantTernaryExpression>[0];
+}
+
+void test("ternary constant folding: guards against missing consequent", () => {
+    const ast = malformedTernary({
+        type: "TernaryExpression",
+        test: { type: "Literal" as const, value: true },
+        alternate: { type: "Literal" as const, value: 2 }
+        // consequent intentionally omitted — would throw TypeError without guard
+    });
+    assert.strictEqual(tryFoldConstantTernaryExpression(ast), null);
+});
+
+void test("ternary constant folding: guards against missing alternate", () => {
+    const ast = malformedTernary({
+        type: "TernaryExpression",
+        test: { type: "Literal" as const, value: true },
+        consequent: { type: "Literal" as const, value: 1 }
+        // alternate intentionally omitted — would throw TypeError without guard
+    });
+    assert.strictEqual(tryFoldConstantTernaryExpression(ast), null);
+});
+
+void test("ternary constant folding: guards against both branches missing", () => {
+    const ast = malformedTernary({
+        type: "TernaryExpression",
+        test: { type: "Literal" as const, value: true }
+        // both consequent and alternate intentionally omitted
+    });
+    assert.strictEqual(tryFoldConstantTernaryExpression(ast), null);
+});

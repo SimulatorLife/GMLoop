@@ -113,6 +113,12 @@ void test("semver-sensitive lint constants are pinned", () => {
     for (const ruleId of Lint.services.performanceOverrideRuleIds) {
         assert.match(ruleId, /^(?:gml|feather)\/.+$/);
     }
+
+    // Verify canonical access path: performanceOverrideRuleIds is accessible
+    // directly on the Lint namespace (flattened alias), not as a separate
+    // module-level re-export that bypassed the services namespace.
+    assert.ok(Array.isArray(Lint.performanceOverrideRuleIds));
+    assertEquals(Lint.performanceOverrideRuleIds, Lint.services.performanceOverrideRuleIds);
 });
 
 void test("services namespace excludes project-aware analysis helpers", () => {
@@ -129,6 +135,19 @@ void test("services namespace excludes project-aware analysis helpers", () => {
     for (const serviceName of forbiddenServiceNames) {
         assert.equal(serviceName in Lint.services, false, `${serviceName} must not be exported from Lint.services`);
     }
+});
+
+void test("performanceOverrideRuleIds is not a separate module-level re-export (legacy-path removed)", () => {
+    // The canonical source for performanceOverrideRuleIds is the services object.
+    // A previous pattern exported it directly from the module as a convenience
+    // re-export (effectively `export { PERFORMANCE_OVERRIDE_RULE_IDS as performanceOverrideRuleIds }`).
+    // That legacy path has been removed; the constant is now only accessible via:
+    //   1. Lint.services.performanceOverrideRuleIds  (primary through namespace)
+    //   2. Lint.performanceOverrideRuleIds          (flattened alias on Lint namespace)
+    // The separate module-level re-export that bypassed the namespace is gone.
+    assert.equal("performanceOverrideRuleIds" in Lint.services, true);
+    assert.equal("performanceOverrideRuleIds" in Lint, true);
+    assertEquals(Lint.performanceOverrideRuleIds, Lint.services.performanceOverrideRuleIds);
 });
 
 void test("feather namespace rule IDs are strictly feather/gm#### only", () => {

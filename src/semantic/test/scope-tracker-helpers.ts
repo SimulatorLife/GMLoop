@@ -10,6 +10,52 @@ export type SourceRange = {
     end: SourceLocation;
 };
 
+/**
+ * Wraps a ScopeTracker instance with a spy on {@link normalizeTrackedPath} that
+ * records how many times each path string is presented for normalization.
+ * Callers use the returned `repeatedPathNormalizations` counter to assert that
+ * the batch API normalizes each distinct input at most once.
+ *
+ * @example
+ * ```ts
+ * const { tracker, repeatedPathNormalizations } = wrapNormalizedPathSpy(tracker);
+ * tracker.getBatchFilePathsDeclaringSymbols(["alpha", "beta"]);
+ * assert.equal(repeatedPathNormalizations, 0, "each source path normalized at most once");
+ * ```
+ */
+export function wrapNormalizedPathSpy(target: ScopeTracker): {
+    tracker: ScopeTracker;
+    repeatedPathNormalizations: number;
+} {
+    const trackerPrototype = Object.getPrototypeOf(target) as {
+        normalizeTrackedPath(path: string): string;
+    };
+    const original = trackerPrototype.normalizeTrackedPath.bind(target);
+    const seenInputs = new Set<string>();
+    let repeatedPathNormalizations = 0;
+
+    Object.defineProperty(target, "normalizeTrackedPath", {
+        value: (path: string): string => {
+            if (seenInputs.has(path)) {
+                repeatedPathNormalizations += 1;
+            } else {
+                seenInputs.add(path);
+            }
+            return original(path);
+        },
+        configurable: true
+    });
+
+    return {
+        get tracker() {
+            return target;
+        },
+        get repeatedPathNormalizations() {
+            return repeatedPathNormalizations;
+        }
+    };
+}
+
 export function createLocation(line: number, index: number = 0): SourceLocation {
     return { line, index };
 }
