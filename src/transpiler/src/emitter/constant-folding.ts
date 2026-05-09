@@ -318,5 +318,11 @@ export function tryFoldConstantTernaryExpression(ast: TernaryExpressionNode): Gm
         return null;
     }
 
+    // Guard against malformed AST where consequent/alternate are missing.
+    // Returning null signals that folding cannot proceed safely.
+    if (!ast.consequent || !ast.alternate) {
+        return null;
+    }
+
     return foldedCondition ? ast.consequent : ast.alternate;
 }
