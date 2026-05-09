@@ -266,7 +266,7 @@ export function mergeSyntheticDocComments(
         (result as any)._preserveDescriptionBreaks = true;
     }
 
-    ({ result, removedAnyLine } = integrateReturnAndFunctionLines({
+    ({ result, removedAnyLine } = mergeReturnDocLinesAndRepositionFunctionTag({
         result,
         returnsLines,
         removedAnyLine,
@@ -497,7 +497,17 @@ export function mergeSyntheticDocComments(
     return finalResult;
 }
 
-function integrateReturnAndFunctionLines({
+/**
+ * Orchestrates the post-merge doc-tag line layout for return and function
+ * documentation. Coordinates three focused responsibilities:
+ *
+ *  1. `mergeReturnLinesIntoResult` - injects return-tag lines into the result
+ *  2. `repositionFunctionLineNearIgnoreOrOverride` - places @function near @ignore/@override
+ *  3. `repositionFunctionLinesAfterDeprecatedTag` - places @function after @deprecated
+ *
+ * @internal
+ */
+function mergeReturnDocLinesAndRepositionFunctionTag({
     result,
     returnsLines,
     removedAnyLine,
@@ -509,17 +519,22 @@ function integrateReturnAndFunctionLines({
     removedAnyLine: boolean;
     docTagHelpers: DocTagHelpers;
     originalHasDeprecatedTag: boolean;
-}) {
+}): { result: MutableDocCommentLines; removedAnyLine: boolean } {
+    // 1. Inject return-tag lines into the result, tracking whether any existing
+    //    @returns lines were removed in the process.
     ({ result, removedAnyLine } = mergeReturnLinesIntoResult({ result, returnsLines, removedAnyLine }));
 
+    // 2. Deduplicate any @returns entries introduced by the merge step.
     const finalDedupedResult = dedupeReturnDocLines(result);
     result = toMutableArray(finalDedupedResult.lines) as MutableDocCommentLines;
     if (finalDedupedResult.removed) {
         removedAnyLine = true;
     }
 
+    // 3. Reposition @function near @ignore or @override if either is present.
     result = repositionFunctionLineNearIgnoreOrOverride(result, docTagHelpers);
 
+    // 4. When @deprecated is present, push all @function lines after it.
     if (originalHasDeprecatedTag) {
         result = repositionFunctionLinesAfterDeprecatedTag(result, docTagHelpers);
     }
