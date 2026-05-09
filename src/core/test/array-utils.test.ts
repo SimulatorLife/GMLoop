@@ -65,6 +65,13 @@ void test("mergeUniqueValues combines unique values and can coerce entries", () 
     assert.ok(!Object.isFrozen(result));
 });
 
+void test("mergeUniqueValues passes values through unchanged when no coerce is provided", () => {
+    const result = mergeUniqueValues(["alpha", "beta"], ["beta", "gamma"]);
+
+    assert.deepEqual(result, ["alpha", "beta", "gamma"]);
+    assert.ok(Object.isFrozen(result));
+});
+
 void test("toArrayFromIterable snapshots arrays before mutation", () => {
     const input = ["alpha", "beta"];
 
