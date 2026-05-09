@@ -104,7 +104,7 @@ jobs:
           echo "version=$(grep '"packageManager": "pnpm@' package.json | cut -d@ -f2 | tr -d '\",')" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm (${{ matrix.target }})
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ steps.pnpm-version.outputs.version }}
           run_install: false
@@ -237,7 +237,7 @@ jobs:
           echo "version=$(grep '"packageManager": "pnpm@' package.json | cut -d@ -f2 | tr -d '\",')" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ steps.pnpm-version-summary.outputs.version }}
           run_install: false
