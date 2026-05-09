@@ -1,5 +1,5 @@
 import { isNonEmptyString, isObjectLike, isRegExpLike, toTrimmedString } from "../../utils/index.js";
-import { getCommentBoundaryIndex, getCommentValue } from "../comment-utils.js";
+import { getCommentValue, getLineCommentRawText } from "../comment-utils.js";
 import { applyJsDocReplacements } from "../doc-comment/type-normalization.js";
 import { evaluateBannerCommentPolicy, isBelowBannerSlashThreshold } from "./banner-comment-policy.js";
 import {
@@ -42,31 +42,6 @@ const DOC_TAG_LINE_PREFIX_PATTERN = /^\/+\(\s*\)@/;
 // These should not be treated as banner decorations even if they contain
 // characters like "**" that would normally be considered decoration.
 const DOC_LIKE_COMMENT_PATTERN = /^\/\/\s+\/(?![/])/;
-
-function getLineCommentRawText(comment, options: any = {}) {
-    const commentStart = getCommentBoundaryIndex(comment, "start");
-    const commentEnd = getCommentBoundaryIndex(comment, "end");
-
-    if (options.originalText && commentStart !== null && commentEnd !== null) {
-        return options.originalText.slice(commentStart, commentEnd + 1);
-    }
-
-    if (!isObjectLike(comment)) {
-        return "";
-    }
-
-    if (comment.leadingText) {
-        return comment.leadingText;
-    }
-
-    if (comment.raw) {
-        return comment.raw;
-    }
-
-    const fallbackValue = comment.value == null ? "" : String(comment.value);
-
-    return `//${fallbackValue}`;
-}
 
 type BannerNormalizationOptions = {
     assumeDecorated?: boolean;
@@ -633,4 +608,4 @@ function looksLikeCommentedOutCode(text, codeDetectionPatterns) {
     return false;
 }
 
-export { applyInlinePadding, formatLineComment, getLineCommentRawText, normalizeBannerCommentText };
+export { applyInlinePadding, formatLineComment, normalizeBannerCommentText };
