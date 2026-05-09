@@ -10,20 +10,6 @@ import {
     VM_EVAL_TIMEOUT_ENV_VAR
 } from "../src/runtime-options/vm-eval-timeout.js";
 
-const originalDefaultTimeout = getDefaultVmEvalTimeoutMs();
-const originalEnvTimeout = process.env[VM_EVAL_TIMEOUT_ENV_VAR];
-
-afterEach(() => {
-    if (originalEnvTimeout === undefined) {
-        delete process.env[VM_EVAL_TIMEOUT_ENV_VAR];
-    } else {
-        process.env[VM_EVAL_TIMEOUT_ENV_VAR] = originalEnvTimeout;
-    }
-
-    applyVmEvalTimeoutEnvOverride();
-    setDefaultVmEvalTimeoutMs(originalDefaultTimeout);
-});
-
 void describe("resolveVmEvalTimeout", () => {
     void it("returns the default when value is undefined", () => {
         assert.strictEqual(resolveVmEvalTimeout(), DEFAULT_VM_EVAL_TIMEOUT_MS);
@@ -88,6 +74,25 @@ void describe("VM evaluation timeout defaults", () => {
 });
 
 void describe("VM evaluation timeout environment overrides", () => {
+    // Capture state AFTER any previous test has run (post-teardown), so we
+    // pick up whatever value the runtime state holds at the point this suite
+    // begins.  Module-level capture would capture stale values if another
+    // module's tests had already mutated state.
+    afterEach(() => {
+        if (originalEnvTimeout === undefined) {
+            delete process.env[VM_EVAL_TIMEOUT_ENV_VAR];
+        } else {
+            process.env[VM_EVAL_TIMEOUT_ENV_VAR] = originalEnvTimeout;
+        }
+
+        applyVmEvalTimeoutEnvOverride();
+        setDefaultVmEvalTimeoutMs(originalDefaultTimeout);
+    });
+
+    // Snapshot module-level constants once — they never change.
+    const originalDefaultTimeout = DEFAULT_VM_EVAL_TIMEOUT_MS;
+    const originalEnvTimeout = process.env[VM_EVAL_TIMEOUT_ENV_VAR];
+
     void it("applies the timeout from the environment when provided", () => {
         process.env[VM_EVAL_TIMEOUT_ENV_VAR] = "7500";
         applyVmEvalTimeoutEnvOverride();
