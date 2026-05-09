@@ -104,4 +104,31 @@ void describe("Transpiler AST reuse", () => {
         assert.strictEqual(patch.id, symbolId);
         assert.ok(patch.js_body.includes("y"));
     });
+
+    void it("uses a provided AST without re-parsing sourceText", () => {
+        const transpiler = new Transpiler.GmlTranspiler();
+        assert.throws(() => Parser.GMLParser.parse("invalid syntax %%%%"));
+
+        const patch = transpiler.transpileScript({
+            sourceText: "invalid syntax %%%%",
+            symbolId: "gml/script/ast_only",
+            ast: {
+                type: "Program",
+                body: [
+                    {
+                        type: "ExpressionStatement",
+                        expression: {
+                            type: "AssignmentExpression",
+                            operator: "=",
+                            left: { type: "Identifier", name: "score" },
+                            right: { type: "Literal", value: 100 }
+                        }
+                    }
+                ]
+            }
+        });
+
+        assert.strictEqual(patch.kind, "script");
+        assert.match(patch.js_body, /score = 100;/);
+    });
 });
