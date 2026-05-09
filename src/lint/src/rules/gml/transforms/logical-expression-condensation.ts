@@ -723,6 +723,22 @@ function combineConditionalBoolean(testExpr, consequentExpr, alternateExpr) {
     return createBooleanOr([whenTrue, whenFalse]);
 }
 
+/**
+ * Builds a simplified and factored candidate expression from given indices (minterms or maxterms).
+ * Encapsulates the common normalization pipeline: implicant minimization -> simplify -> factor -> candidate.
+ * This extracts the shared transformation pattern from generateSimplifiedCandidates, letting each
+ * normalized form (DNF/CNF) be produced via a single call rather than an inline pipeline.
+ */
+function buildNormalizedFormCandidate(
+    indices: readonly number[],
+    variableCount: number,
+    negated: boolean
+): ReturnType<typeof simplifyBooleanExpression> {
+    const expression = buildExpressionFromImplicants(indices, variableCount, negated);
+    const simplified = simplifyBooleanExpression(expression);
+    return factorBooleanExpression(simplified);
+}
+
 function generateSimplifiedCandidates(expression, context) {
     const simplifiedBase = simplifyBooleanExpression(expression);
     const truthTable = evaluateTruthTable(simplifiedBase, context.variables.length);
@@ -740,15 +756,11 @@ function generateSimplifiedCandidates(expression, context) {
     addCandidate(candidates, simplifiedBase);
     addCandidate(candidates, factorBooleanExpression(simplifiedBase));
 
-    const dnf = buildExpressionFromImplicants(truthTable.minterms, context.variables.length, false);
-    const simplifiedDnf = simplifyBooleanExpression(dnf);
-    const factoredDnf = factorBooleanExpression(simplifiedDnf);
-    addCandidate(candidates, factoredDnf);
+    const dnf = buildNormalizedFormCandidate(truthTable.minterms, context.variables.length, false);
+    addCandidate(candidates, dnf);
 
-    const cnf = buildExpressionFromImplicants(truthTable.maxterms, context.variables.length, true);
-    const simplifiedCnf = simplifyBooleanExpression(cnf);
-    const factoredCnf = factorBooleanExpression(simplifiedCnf);
-    addCandidate(candidates, factoredCnf);
+    const cnf = buildNormalizedFormCandidate(truthTable.maxterms, context.variables.length, true);
+    addCandidate(candidates, cnf);
 
     return [...candidates.values()];
 }
