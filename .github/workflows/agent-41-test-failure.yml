@@ -19,64 +19,28 @@ jobs:
         outputs:
             validation_failed: ${{ steps.run_validation.outputs.failed }}
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@v6
 
-            - name: Read Node version from .nvmrc
-              id: read-node-version
-              run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v6
+              with:
+                cache: true
 
-            - name: Use Node.js
+            - name: Setup node
               uses: actions/setup-node@v6
               with:
-                  node-version: ${{ steps.read-node-version.outputs.version }}
-
-            - name: Enable pnpm via Corepack
-              run: |
-                  corepack enable
-                  corepack prepare $(node -p "require('./package.json').packageManager") --activate
-
-            - name: Resolve pnpm store path
-              id: pnpm-store
-              run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-
-            - name: Cache pnpm store
-              uses: actions/cache@v4
-              with:
-                  path: ${{ steps.pnpm-store.outputs.path }}
-                  key: ${{ runner.os }}-node-${{ steps.read-node-version.outputs.version }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
-                  restore-keys: |
-                      ${{ runner.os }}-node-${{ steps.read-node-version.outputs.version }}-pnpm-store-
-                      ${{ runner.os }}-node-
+                node-version-file: .nvmrc
+                cache: 'pnpm'
+                cache-dependency-path: |
+                  pnpm-lock.yaml
+                  **/pnpm-lock.yaml
 
             - name: Install dependencies
-              id: install_dependencies
-              run: |
-                  set -o pipefail
-                  echo "ok=false" >> "$GITHUB_OUTPUT"
-                  install_log="$(mktemp)"
-                  if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-                    echo "ok=true" >> "$GITHUB_OUTPUT"
-                    exit 0
-                  fi
-
-                  if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-                    echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-                    pnpm install --no-frozen-lockfile && echo "ok=true" >> "$GITHUB_OUTPUT"
-                    exit 0
-                  fi
-
-                  echo "::warning::Dependency install failed for a reason other than outdated lockfile."
-                  exit 0
+              run: pnpm install --frozen-lockfile --recursive
 
             - name: Run project validation
               id: run_validation
               run: |
-                  if [ "${{ steps.install_dependencies.outputs.ok }}" != "true" ]; then
-                    echo "Dependency installation did not succeed; treating as failed recovery candidate."
-                    echo "failed=true" >> "$GITHUB_OUTPUT"
-                    exit 0
-                  fi
-
                   set +e
                   failed_commands=()
 

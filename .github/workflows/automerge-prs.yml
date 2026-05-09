@@ -89,49 +89,27 @@ jobs:
 
       # If the synthetic merge ref doesn't exist, continue so the leg can still upload nothing and be summarized.
       - name: Checkout (${{ matrix.target }})
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.ref.outputs.ref }}
         continue-on-error: ${{ matrix.target == 'merge' }}
 
-      - name: Read Node version from .nvmrc
-        id: node-version
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
-
-      - name: Read pnpm version from package.json
-        id: pnpm-version
-        run: |
-          echo "version=$(grep '"packageManager": "pnpm@' package.json | cut -d@ -f2 | tr -d '\",')" >> "$GITHUB_OUTPUT"
-
       - name: Setup pnpm (${{ matrix.target }})
         uses: pnpm/action-setup@v6
         with:
-          version: ${{ steps.pnpm-version.outputs.version }}
-          run_install: false
+          cache: true
 
       - name: Setup Node (${{ matrix.target }})
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.node-version.outputs.version }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
 
-      - name: Install deps (${{ matrix.target }})
-        run: |
-          set -o pipefail
-          install_log="$(mktemp)"
-          if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-            exit 0
-          fi
-
-          if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-            echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-            pnpm install --no-frozen-lockfile
-            exit 0
-          fi
-
-          echo "::error::Dependency install failed for a reason other than outdated lockfile."
-          exit 1
+      - name: Install deps
+        run: pnpm install --frozen-lockfile --recursive
         continue-on-error: ${{ matrix.target == 'merge' }}
 
       - name: Build typescript (${{ matrix.target }})
@@ -225,46 +203,24 @@ jobs:
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
     steps:
       - name: Checkout repo (for scripts)
-        uses: actions/checkout@v5
-
-      - name: Read Node version from .nvmrc
-        id: node-version-summary
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
-
-      - name: Read pnpm version from package.json
-        id: pnpm-version-summary
-        run: |
-          echo "version=$(grep '"packageManager": "pnpm@' package.json | cut -d@ -f2 | tr -d '\",')" >> "$GITHUB_OUTPUT"
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: ${{ steps.pnpm-version-summary.outputs.version }}
-          run_install: false
+          cache: true
 
-      - name: Setup Node
+      - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.node-version-summary.outputs.version }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
 
-      - name: Install deps
-        run: |
-          set -o pipefail
-          install_log="$(mktemp)"
-          if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-            exit 0
-          fi
-
-          if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-            echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-            pnpm install --no-frozen-lockfile
-            exit 0
-          fi
-
-          echo "::error::Dependency install failed for a reason other than outdated lockfile."
-          exit 1
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --recursive
 
       - name: Build typescript
         run: |

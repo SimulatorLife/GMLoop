@@ -209,7 +209,7 @@ jobs:
 
       - name: Checkout repository
         if: ${{ steps.select_pr.outputs.found == 'true' }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Comment to request conflict resolution (as your user)
         id: comment

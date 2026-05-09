@@ -665,24 +665,10 @@ void test("agent invoke requests merge-conflict resolution with the same agent a
     assert.match(source, /agent: \$\{\{ needs\.invoke\.outputs\.follow_up_agent \}\}/u);
 });
 
-void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
-    const source = await readWorkflowSource("agent-invoke.yml");
-
-    assert.match(source, /Read Node version from \.nvmrc/u);
-    assert.match(source, /echo "version=\$\(cat \.nvmrc\)" >> "\$GITHUB_OUTPUT"/u);
-    assert.match(source, /Read pnpm version from package\.json/u);
-    assert.match(source, /packageManager\.split\('@'\)\[1\]/u);
-    assert.match(source, /version: \$\{\{ steps\.read-pnpm-version\.outputs\.version \}\}/u);
-    assert.match(source, /uses: actions\/setup-node@v6/u);
-    assert.match(source, /node-version: \$\{\{ steps\.read-node-version\.outputs\.version \}\}/u);
-    assert.doesNotMatch(source, /version: 10\.32\.1/u);
-    assert.doesNotMatch(source, /node-version: "22"/u);
-});
-
 void test("GitHub workflows do not hardcode repository Node or pnpm versions", async () => {
     const source = await readAllWorkflowSources();
 
-    assert.doesNotMatch(source, /^\s*version:\s*10\.32\.1\s*$/mu);
-    assert.doesNotMatch(source, /^\s*node-version:\s*["']?22["']?\s*$/mu);
-    assert.doesNotMatch(source, /pnpm@10\.32\.1/u);
+    assert.doesNotMatch(source, /^\s*version:\s.*$/mu);
+    assert.doesNotMatch(source, /^\s*node-version:\s.*$/mu);
+    assert.doesNotMatch(source, /pnpm@.*/u);
 });
