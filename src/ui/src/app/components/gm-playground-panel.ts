@@ -36,9 +36,20 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #isRefactorEnabled = true;
 
+    #transpileMode: "none" | "patch" | "expression" = "none";
+
     #error: string | null = null;
 
     #debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+    public disconnectedCallback(): void {
+        if (this.#debounceTimer !== null) {
+            globalThis.clearTimeout(this.#debounceTimer);
+            this.#debounceTimer = null;
+        }
+
+        super.disconnectedCallback();
+    }
 
     protected firstUpdated(): void {
         const savedInput = localStorage.getItem("gmloop-playground-input");
@@ -89,7 +100,8 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                     gml: this.#gmlInput,
                     format: this.#isFormatEnabled,
                     lint: this.#isLintEnabled,
-                    refactor: this.#isRefactorEnabled
+                    refactor: this.#isRefactorEnabled,
+                    transpileMode: this.#transpileMode
                 })
             });
 
@@ -134,6 +146,12 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
+    #setTranspileMode(mode: "patch" | "expression"): void {
+        this.#transpileMode = this.#transpileMode === mode ? "none" : mode;
+        void this.#processInput();
+        this.requestUpdate();
+    }
+
     #setViewMode(mode: "code" | "ast"): void {
         this.#viewMode = mode;
         this.requestUpdate();
@@ -173,6 +191,22 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                             @click=${() => this.#toggleRefactor()}
                         >
                             Refactor
+                        </button>
+                        <button
+                            type="button"
+                            class="rule-toggle ${this.#transpileMode === "patch" ? "active" : ""}"
+                            aria-pressed=${this.#transpileMode === "patch"}
+                            @click=${() => this.#setTranspileMode("patch")}
+                        >
+                            Patch Transpile
+                        </button>
+                        <button
+                            type="button"
+                            class="rule-toggle ${this.#transpileMode === "expression" ? "active" : ""}"
+                            aria-pressed=${this.#transpileMode === "expression"}
+                            @click=${() => this.#setTranspileMode("expression")}
+                        >
+                            Expression Transpile
                         </button>
                     </div>
                     <div class="playground-toolbar-spacer" aria-hidden="true"></div>

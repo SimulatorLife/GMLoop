@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import { normalizeDocParamName } from "../../../parameter-utils/index.js";
 import { gmlRuleDocCommentServices } from "../gml-rule-services.js";
 import {
     type AstNodeWithType,
@@ -229,7 +230,7 @@ function extractParamsFromLine(line: string): Array<{ name: string; defaultVal?:
         .filter((p) => p.length > 0);
     return list.map((p) => {
         const parts = p.split("=").map((s) => s.trim());
-        const name = parts[0].replace(/^_+/, "");
+        const name = normalizeDocParamName(parts[0]);
         let defaultVal: string | undefined;
         if (parts.length > 1) {
             defaultVal = parts.slice(1).join("=");
@@ -365,10 +366,6 @@ type DocCommentParamMetadata = Readonly<{
     typeText: string | null;
 }>;
 
-function normalizeParamName(name: string): string {
-    return name.replace(/^_+/, "");
-}
-
 function rewriteDocCommentParamLineName(line: string, replacementName: string): string {
     const optionalMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[([A-Za-z0-9_]+)([^\]]*)\](.*)$/u.exec(line);
     if (optionalMatch) {
@@ -401,7 +398,7 @@ function remapUnmatchedParamDocLinesToFunctionOrder(
             continue;
         }
 
-        const normalizedDocParamName = normalizeParamName(metadata.name);
+        const normalizedDocParamName = normalizeDocParamName(metadata.name);
         if (
             functionParameterNameSet.has(normalizedDocParamName) &&
             !matchedFunctionParamNames.has(normalizedDocParamName)
@@ -452,12 +449,12 @@ function parseDocCommentParamMetadata(line: string): DocCommentParamMetadata | n
 function normalizeDocParamLineParameterName(line: string): string {
     const optionalMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[([A-Za-z0-9_]+)([^\]]*)\](.*)$/u.exec(line);
     if (optionalMatch) {
-        return `${optionalMatch[1]}[${normalizeParamName(optionalMatch[2])}${optionalMatch[3]}]${optionalMatch[4]}`;
+        return `${optionalMatch[1]}[${normalizeDocParamName(optionalMatch[2])}${optionalMatch[3]}]${optionalMatch[4]}`;
     }
 
     const requiredMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)([A-Za-z0-9_]+)(.*)$/u.exec(line);
     if (requiredMatch) {
-        return `${requiredMatch[1]}${normalizeParamName(requiredMatch[2])}${requiredMatch[3]}`;
+        return `${requiredMatch[1]}${normalizeDocParamName(requiredMatch[2])}${requiredMatch[3]}`;
     }
 
     return line;
@@ -471,7 +468,7 @@ function collectDocCommentParamTypesByName(docLines: ReadonlyArray<string>): Map
             continue;
         }
 
-        const cleanName = normalizeParamName(metadata.name);
+        const cleanName = normalizeDocParamName(metadata.name);
         if (!typesByName.has(cleanName)) {
             typesByName.set(cleanName, metadata.typeText);
         }
@@ -490,7 +487,7 @@ function removeParamDocLinesNotInFunctionSignature(
             return true;
         }
 
-        return functionParameterNames.has(normalizeParamName(metadata.name));
+        return functionParameterNames.has(normalizeDocParamName(metadata.name));
     });
 }
 
@@ -514,7 +511,7 @@ function reorderDocParamLinesByFunctionOrder(
             return {
                 index,
                 line,
-                name: normalizeParamName(metadata.name)
+                name: normalizeDocParamName(metadata.name)
             };
         })
         .filter((entry): entry is { index: number; line: string; name: string } => entry !== null);
@@ -646,7 +643,7 @@ function getIdentifierNodeName(node: unknown): string | null {
 
 function getNormalizedIdentifierNodeName(node: unknown): string | null {
     const name = getIdentifierNodeName(node);
-    return name === null ? null : normalizeParamName(name);
+    return name === null ? null : normalizeDocParamName(name);
 }
 
 function isStructValuedExpression(expression: unknown): boolean {
@@ -759,7 +756,7 @@ function inferConcreteReturnTypeFromArgument(
             return "any";
         }
 
-        const cleanName = normalizeParamName(identifierName);
+        const cleanName = normalizeDocParamName(identifierName);
         if (structValuedIdentifiers.has(cleanName)) {
             return "Struct";
         }
@@ -1010,7 +1007,7 @@ function synthesizeFunctionDocCommentBlock(
     for (const line of block) {
         const metadata = parseDocCommentParamMetadata(line);
         if (metadata) {
-            existingParams.add(normalizeParamName(metadata.name));
+            existingParams.add(normalizeDocParamName(metadata.name));
         }
     }
 
@@ -1027,7 +1024,7 @@ function synthesizeFunctionDocCommentBlock(
         }
 
         if (!paramName) continue;
-        const cleanName = normalizeParamName(paramName);
+        const cleanName = normalizeDocParamName(paramName);
         if (existingParams.has(cleanName)) {
             if (defaultVal === undefined) {
                 updateExistingParamDocWithoutDefault(block, cleanName);
@@ -1250,7 +1247,7 @@ function collectExistingParamNames(docLines: ReadonlyArray<string>): Set<string>
     for (const line of docLines) {
         const metadata = parseDocCommentParamMetadata(line);
         if (metadata) {
-            existingParams.add(normalizeParamName(metadata.name));
+            existingParams.add(normalizeDocParamName(metadata.name));
         }
     }
     return existingParams;
@@ -1327,7 +1324,7 @@ function mergeFallbackParamLines(
     fallbackParams: ReadonlyArray<FallbackParameterEntry>,
     indentation: string
 ): void {
-    const fallbackParamNamesInOrder = fallbackParams.map((parameter) => normalizeParamName(parameter.name));
+    const fallbackParamNamesInOrder = fallbackParams.map((parameter) => normalizeDocParamName(parameter.name));
     const fallbackParamNames = new Set(fallbackParamNamesInOrder);
     const remappedFallbackBlock = remapUnmatchedParamDocLinesToFunctionOrder(fallbackBlock, fallbackParamNamesInOrder);
     const prunedFallbackBlock = removeParamDocLinesNotInFunctionSignature(remappedFallbackBlock, fallbackParamNames);
@@ -1336,7 +1333,7 @@ function mergeFallbackParamLines(
 
     const existingParams = collectExistingParamNames(fallbackBlock);
     for (const { name, defaultVal } of fallbackParams) {
-        const cleanName = normalizeParamName(name);
+        const cleanName = normalizeDocParamName(name);
         if (existingParams.has(cleanName)) {
             if (defaultVal === undefined) {
                 updateExistingParamDocWithoutDefault(fallbackBlock, cleanName);
@@ -1628,7 +1625,7 @@ function getFunctionParameterNames(functionNode: any): { inOrder: string[]; set:
             continue;
         }
 
-        inOrder.push(normalizeParamName(parameterName));
+        inOrder.push(normalizeDocParamName(parameterName));
     }
     return { inOrder, set: new Set(inOrder) };
 }

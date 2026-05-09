@@ -2,6 +2,7 @@ import * as http from "node:http";
 
 import { Core } from "@gmloop/core";
 
+import { tryParseJsonPayload } from "../../shared/error-guards.js";
 import type { ServerEndpoint, ServerLifecycle } from "./server-contracts.js";
 
 type GraphVisualizationServerRenderBundle = (
@@ -18,7 +19,13 @@ type GraphVisualizationServerOpenProjectTargets = (
 ) => Promise<GraphVisualizationServerRegenerationResult>;
 
 type GraphVisualizationServerProcessPlayground = (
-    input: Readonly<{ gml: string; format: boolean; lint: boolean; refactor: boolean }>
+    input: Readonly<{
+        gml: string;
+        format: boolean;
+        lint: boolean;
+        refactor: boolean;
+        transpileMode: "none" | "patch" | "expression";
+    }>
 ) => Promise<Readonly<{ ast: string; output: string; error: string | null }>>;
 
 export type GraphVisualizationServerOptions = Readonly<{
@@ -91,11 +98,13 @@ export async function startGraphVisualizationServer(
             if (request.method === "POST" && request.url === "/api/open" && options.openProjectTargets) {
                 try {
                     const requestBody = await readRequestBody(request);
-                    const parsedBody = requestBody.length > 0 ? JSON.parse(requestBody) : {};
-                    const selectedPath =
-                        typeof Reflect.get(parsedBody as object, "path") === "string"
-                            ? String(Reflect.get(parsedBody as object, "path")).trim()
-                            : "";
+                    const parsedBody = tryParseJsonPayload(requestBody);
+                    if (parsedBody === null) {
+                        response.writeHead(400, { "Content-Type": "application/json" });
+                        response.end(JSON.stringify({ error: "Invalid JSON or non-object payload" }));
+                        return;
+                    }
+                    const selectedPath = typeof parsedBody.path === "string" ? String(parsedBody.path).trim() : "";
                     const selectionResult = await options.openProjectTargets({
                         path: selectedPath.length > 0 ? selectedPath : null
                     });
@@ -111,13 +120,22 @@ export async function startGraphVisualizationServer(
             if (request.method === "POST" && request.url === "/api/playground/process" && options.processPlayground) {
                 try {
                     const requestBody = await readRequestBody(request);
-                    const parsedBody = requestBody.length > 0 ? JSON.parse(requestBody) : {};
+                    const parsedBody = tryParseJsonPayload(requestBody);
+                    if (parsedBody === null) {
+                        response.writeHead(400, { "Content-Type": "application/json" });
+                        response.end(JSON.stringify({ error: "Invalid JSON or non-object payload" }));
+                        return;
+                    }
                     const gml = typeof parsedBody.gml === "string" ? parsedBody.gml : "";
                     const format = parsedBody.format === true;
                     const lint = parsedBody.lint === true;
                     const refactor = parsedBody.refactor === true;
+                    const transpileMode =
+                        parsedBody.transpileMode === "patch" || parsedBody.transpileMode === "expression"
+                            ? parsedBody.transpileMode
+                            : "none";
 
-                    const result = await options.processPlayground({ gml, format, lint, refactor });
+                    const result = await options.processPlayground({ gml, format, lint, refactor, transpileMode });
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ ok: true, payload: result }));
                 } catch (error: unknown) {

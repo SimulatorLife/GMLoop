@@ -2186,6 +2186,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         const formatBtn = document.getElementById("toggle-format");
         const lintBtn = document.getElementById("toggle-lint");
         const refactorBtn = document.getElementById("toggle-refactor");
+        const patchTranspileBtn = document.getElementById("toggle-transpile-patch");
+        const expressionTranspileBtn = document.getElementById("toggle-transpile-expression");
         const codeViewBtn = document.getElementById("view-mode-code");
         const astViewBtn = document.getElementById("view-mode-ast");
 
@@ -2196,6 +2198,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             !formatBtn ||
             !lintBtn ||
             !refactorBtn ||
+            !patchTranspileBtn ||
+            !expressionTranspileBtn ||
             !codeViewBtn ||
             !astViewBtn
         ) {
@@ -2205,10 +2209,16 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         let isFormatEnabled = true;
         let isLintEnabled = true;
         let isRefactorEnabled = true;
+        let transpileMode: "none" | "patch" | "expression" = "none";
         let viewMode: "code" | "ast" = "code";
         let lastAst = "{}";
         let lastOutput = "";
         let debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+        function updateTranspileButtonState(): void {
+            patchTranspileBtn.classList.toggle("active", transpileMode === "patch");
+            expressionTranspileBtn.classList.toggle("active", transpileMode === "expression");
+        }
 
         const savedInput = localStorage.getItem("gmloop-playground-input");
         input.value = resolveInitialPlaygroundGmlSource(savedInput);
@@ -2248,7 +2258,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                         gml,
                         format: isFormatEnabled,
                         lint: isLintEnabled,
-                        refactor: isRefactorEnabled
+                        refactor: isRefactorEnabled,
+                        transpileMode
                     })
                 });
 
@@ -2297,6 +2308,18 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         refactorBtn.addEventListener("click", () => {
             isRefactorEnabled = !isRefactorEnabled;
             refactorBtn.classList.toggle("active", isRefactorEnabled);
+            void processPlaygroundInput();
+        });
+
+        patchTranspileBtn.addEventListener("click", () => {
+            transpileMode = transpileMode === "patch" ? "none" : "patch";
+            updateTranspileButtonState();
+            void processPlaygroundInput();
+        });
+
+        expressionTranspileBtn.addEventListener("click", () => {
+            transpileMode = transpileMode === "expression" ? "none" : "expression";
+            updateTranspileButtonState();
             void processPlaygroundInput();
         });
 
