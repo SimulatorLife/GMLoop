@@ -2229,7 +2229,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
         function updateView() {
             if (viewMode === "code") {
-                outputTitle.textContent = "Processed Result";
+                outputTitle.textContent = transpileMode === "none" ? "GML" : "JS";
                 output.textContent = lastOutput;
                 codeViewBtn.classList.add("active");
                 astViewBtn.classList.remove("active");

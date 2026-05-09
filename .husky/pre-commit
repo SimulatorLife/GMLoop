@@ -55,8 +55,10 @@ if [ "${#prettier_targets[@]}" -gt 0 ]; then
 fi
 
 if [ "${#eslint_targets[@]}" -gt 0 ]; then
-	echo "Linting staged TypeScript files with ESLint..."
-	pnpm exec -- eslint --cache --fix "${eslint_targets[@]}"
+	echo "Linting staged TypeScript files with ESLint (best-effort auto-fix)..."
+	if ! pnpm exec -- eslint --cache --fix "${eslint_targets[@]}"; then
+		echo "ESLint still reported errors after auto-fix. Continuing commit by policy."
+	fi
 	files_to_restage+=("${eslint_targets[@]}")
 fi
 

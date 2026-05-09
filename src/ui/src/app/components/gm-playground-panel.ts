@@ -246,7 +246,13 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                     </div>
                     <div class="editor-pane">
                         <div class="pane-header">
-                            <span>${this.#viewMode === "code" ? "Processed Result" : "Parsed AST"}</span>
+                            <span
+                                >${this.#viewMode === "code"
+                                    ? this.#transpileMode === "none"
+                                        ? "GML"
+                                        : "JS"
+                                    : "Parsed AST"}</span
+                            >
                             <span class="pane-header-status">Read-only</span>
                         </div>
                         ${this.#error
