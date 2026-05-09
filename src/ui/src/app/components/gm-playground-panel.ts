@@ -5,7 +5,7 @@ import { Core } from "@gmloop/core";
 import { html, type PropertyValues } from "lit";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
-import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../playground-default-gml.js";
+import { DEFAULT_PLAYGROUND_GML_SOURCE, resolveInitialPlaygroundGmlSource } from "../playground-default-gml.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
@@ -42,8 +42,9 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     protected firstUpdated(): void {
         const savedInput = localStorage.getItem("gmloop-playground-input");
-        if (savedInput !== null) {
-            this.#gmlInput = savedInput;
+        this.#gmlInput = resolveInitialPlaygroundGmlSource(savedInput);
+        if (savedInput !== this.#gmlInput) {
+            localStorage.setItem("gmloop-playground-input", this.#gmlInput);
         }
         void this.#processInput();
     }

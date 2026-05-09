@@ -1,6 +1,7 @@
 import { html } from "lit";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import { hasLoadedGraphIndex } from "../graph-availability.js";
 import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
@@ -25,6 +26,14 @@ export class GmAppHeader extends LightDomLitElement {
     static readonly #TOP_NAV_BUTTON_BASE_CLASS = "top-nav-button";
 
     #emitNavigatePage(page: GraphVisualizationUiPage): void {
+        if (!this.model) {
+            return;
+        }
+
+        if (page === "graph" && !hasLoadedGraphIndex(this.model)) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent<GraphUiNavigatePageDetail>(GRAPH_UI_EVENT_NAVIGATE_PAGE, {
                 bubbles: true,
@@ -49,6 +58,7 @@ export class GmAppHeader extends LightDomLitElement {
         }
 
         const loadedTarget = this.model.loadedTarget;
+        const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const activePath = loadedTarget?.activePath ?? this.model.title;
         const loadedSource = loadedTarget?.source ?? "working-directory";
         const selectedPaths = loadedTarget?.selectedPaths ?? [];
@@ -88,6 +98,7 @@ export class GmAppHeader extends LightDomLitElement {
                                 <button
                                     id="tab-graph"
                                     aria-pressed=${this.state.activePage === "graph"}
+                                    ?disabled=${!hasLoadedIndex}
                                     class=${this.state.activePage === "graph"
                                         ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
                                         : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}

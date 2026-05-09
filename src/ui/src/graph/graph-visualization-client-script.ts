@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "./graph-visualization-style-metadata.js";
 
 const GRAPH_VISUALIZATION_BROWSER_APP_MODULE_FILE_NAME = "graph-visualization-browser-app.js";
+const GRAPH_VISUALIZATION_PLAYGROUND_DEFAULT_MODULE_FILE_NAME = "playground-default-gml.js";
 const GRAPH_VISUALIZATION_UI_REDUCER_MODULE_FILE_NAME = "reducer.js";
 const GRAPH_VISUALIZATION_URL_STATE_MODULE_FILE_NAME = "url-state.js";
 
@@ -45,6 +46,17 @@ function readGraphVisualizationBrowserAppModuleSource(): string {
             path.resolve(moduleDirectory, "../../src/graph", GRAPH_VISUALIZATION_BROWSER_APP_MODULE_FILE_NAME)
         ],
         "function bootstrapGraphVisualizationApp"
+    );
+}
+
+function readGraphVisualizationPlaygroundDefaultModuleSource(): string {
+    const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+    return readGraphVisualizationModuleSource(
+        [
+            path.resolve(moduleDirectory, "../app", GRAPH_VISUALIZATION_PLAYGROUND_DEFAULT_MODULE_FILE_NAME),
+            path.resolve(moduleDirectory, "../../src/app", GRAPH_VISUALIZATION_PLAYGROUND_DEFAULT_MODULE_FILE_NAME)
+        ],
+        "const DEFAULT_PLAYGROUND_GML_SOURCE"
     );
 }
 
@@ -96,6 +108,8 @@ export function renderGraphVisualizationClientScript(
         readGraphVisualizationUiReducerModuleSource(),
         "",
         readGraphVisualizationUrlStateModuleSource(),
+        "",
+        readGraphVisualizationPlaygroundDefaultModuleSource(),
         "",
         readGraphVisualizationBrowserAppModuleSource(),
         "",

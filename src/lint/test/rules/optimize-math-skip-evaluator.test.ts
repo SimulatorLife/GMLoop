@@ -15,7 +15,8 @@ import {
     evaluateMathOptimizationCandidate,
     evaluateSkipDecision,
     formatCanonicalNumericLiteral,
-    MATH_OPTIMIZATION_POLICY_CONSTANTS} from "../../src/rules/gml/rules/optimize-math-skip-evaluator.js";
+    MATH_OPTIMIZATION_POLICY_CONSTANTS
+} from "../../src/rules/gml/rules/optimize-math-skip-evaluator.js";
 
 void test("evaluateSkipDecision returns true for nested expression parents", () => {
     const parents = [

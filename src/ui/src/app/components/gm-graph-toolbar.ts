@@ -2,6 +2,7 @@ import { html } from "lit";
 import { ref } from "lit/directives/ref.js";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import { hasLoadedGraphIndex, hasLoadedGraphProject } from "../graph-availability.js";
 import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
@@ -30,6 +31,10 @@ export class GmGraphToolbar extends LightDomLitElement {
 
     #searchInput: HTMLInputElement | null = null;
 
+    #canUseGraphControls(): boolean {
+        return this.model !== null && hasLoadedGraphIndex(this.model);
+    }
+
     #onKeyDown = (event: KeyboardEvent): void => {
         if (!this.state) {
             return;
@@ -50,12 +55,18 @@ export class GmGraphToolbar extends LightDomLitElement {
                 if (document.activeElement === this.#searchInput) {
                     return;
                 }
+                if (!this.#canUseGraphControls()) {
+                    return;
+                }
                 event.preventDefault();
                 this.#emitToggleGraphView();
                 break;
             }
             case "l": {
                 if (document.activeElement === this.#searchInput) {
+                    return;
+                }
+                if (!this.#canUseGraphControls()) {
                     return;
                 }
                 event.preventDefault();
@@ -66,11 +77,17 @@ export class GmGraphToolbar extends LightDomLitElement {
                 if (document.activeElement === this.#searchInput) {
                     return;
                 }
+                if (!this.#canUseGraphControls()) {
+                    return;
+                }
                 event.preventDefault();
                 this.#emitResetDefaults();
                 break;
             }
             case "1": {
+                if (!this.#canUseGraphControls()) {
+                    return;
+                }
                 event.preventDefault();
                 this.#emitNavigatePage("graph");
                 break;
@@ -113,6 +130,10 @@ export class GmGraphToolbar extends LightDomLitElement {
     }
 
     #emitSearchQuery(searchQuery: string): void {
+        if (!this.#canUseGraphControls()) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent<GraphUiSetSearchQueryDetail>(GRAPH_UI_EVENT_SET_SEARCH_QUERY, {
                 bubbles: true,
@@ -123,6 +144,10 @@ export class GmGraphToolbar extends LightDomLitElement {
     }
 
     #emitToggleGraphView(): void {
+        if (!this.#canUseGraphControls()) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW, {
                 bubbles: true,
@@ -132,6 +157,10 @@ export class GmGraphToolbar extends LightDomLitElement {
     }
 
     #emitCycleLabelMode(): void {
+        if (!this.#canUseGraphControls()) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_CYCLE_LABEL_MODE, {
                 bubbles: true,
@@ -141,6 +170,10 @@ export class GmGraphToolbar extends LightDomLitElement {
     }
 
     #emitNavigatePage(page: GraphVisualizationUiPage): void {
+        if (page === "graph" && !this.#canUseGraphControls()) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent<GraphUiNavigatePageDetail>(GRAPH_UI_EVENT_NAVIGATE_PAGE, {
                 bubbles: true,
@@ -151,6 +184,10 @@ export class GmGraphToolbar extends LightDomLitElement {
     }
 
     #emitResetDefaults(): void {
+        if (!this.#canUseGraphControls()) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_RESET_DEFAULTS, {
                 bubbles: true,
@@ -160,6 +197,10 @@ export class GmGraphToolbar extends LightDomLitElement {
     }
 
     #emitRegenerate(): void {
+        if (!this.model || !hasLoadedGraphProject(this.model)) {
+            return;
+        }
+
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_TRIGGER_REGENERATE, {
                 bubbles: true,
@@ -189,6 +230,8 @@ export class GmGraphToolbar extends LightDomLitElement {
                   : this.state.activePage === "config"
                     ? "Project and tooling configuration metadata loaded for the active root."
                     : "Interactive GML playground for parsing, formatting, and rule experiments.";
+        const hasLoadedIndex = hasLoadedGraphIndex(this.model);
+        const hasLoadedProject = hasLoadedGraphProject(this.model);
 
         const graphControlsClassName =
             this.state.activePage === "graph" ? "toolbar-controls" : "toolbar-controls hidden";
@@ -207,6 +250,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                             aria-label="Search graph nodes"
                             .value=${this.state.searchQuery}
                             placeholder="Search nodes…"
+                            ?disabled=${!hasLoadedIndex}
                             ${ref((element) => {
                                 this.#searchInput = element as HTMLInputElement | null;
                             })}
@@ -218,6 +262,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                             id="toggle-view"
                             class="toolbar-chip-button"
                             aria-pressed=${this.state.activeGraphView === "json"}
+                            ?disabled=${!hasLoadedIndex}
                             @click=${() => this.#emitToggleGraphView()}
                         >
                             ${this.state.activeGraphView === "visual" ? "JSON" : "Visual"}
@@ -225,6 +270,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                         <button
                             id="toggle-labels"
                             class="toolbar-chip-button"
+                            ?disabled=${!hasLoadedIndex}
                             @click=${() => this.#emitCycleLabelMode()}
                         >
                             Labels:
@@ -239,6 +285,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                         <button
                             id="reset-default"
                             class="toolbar-chip-button"
+                            ?disabled=${!hasLoadedIndex}
                             @click=${() => this.#emitResetDefaults()}
                         >
                             Reset
@@ -248,7 +295,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                                   <button
                                       id="regenerate"
                                       class="toolbar-chip-button"
-                                      ?disabled=${this.state.isRegeneratePending}
+                                      ?disabled=${this.state.isRegeneratePending || !hasLoadedProject}
                                       @click=${() => this.#emitRegenerate()}
                                   >
                                       <span class="button-content">

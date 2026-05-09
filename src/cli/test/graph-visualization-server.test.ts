@@ -26,19 +26,23 @@ function createSampleGraphVisualizationData() {
         nodes: [
             {
                 displayName: "Project",
+                filePath: null,
                 graphId: "project",
                 id: "project::resource::Project.yyp",
                 kind: "project",
                 name: "Project",
+                resourcePath: "Project.yyp",
                 snippet: "",
                 summary: "project root"
             },
             {
                 displayName: "player_update",
+                filePath: "scripts/player_update/player_update.gml",
                 graphId: "project",
                 id: "project::gml/script/player_update",
                 kind: "script",
                 name: "player_update",
+                resourcePath: "scripts/player_update/player_update.yy",
                 snippet: "function player_update() {}",
                 summary: "script node"
             }

@@ -75,10 +75,12 @@ export type GraphVisualizationEdgeRecord = Readonly<{
  */
 export type GraphVisualizationNodeRecord = Readonly<{
     displayName: string;
+    filePath: string | null;
     graphId: GraphVisualizationScope;
     id: string;
     kind: GraphVisualizationNodeKind;
     name: string;
+    resourcePath: string | null;
     snippet: string;
     summary: string;
 }>;

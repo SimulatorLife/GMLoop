@@ -87,10 +87,12 @@ void test("graph visualization module script embeds serialized graph payload and
             nodes: [
                 {
                     displayName: "InterplanetaryFootball",
+                    filePath: null,
                     graphId: "project",
                     id: "project::resource::InterplanetaryFootball.yyp",
                     kind: "project",
                     name: "InterplanetaryFootball",
+                    resourcePath: "InterplanetaryFootball.yyp",
                     snippet: "",
                     summary: "project 'InterplanetaryFootball'. Defined in InterplanetaryFootball.yyp."
                 }
@@ -104,6 +106,11 @@ void test("graph visualization module script embeds serialized graph payload and
 
     assert.match(script, /const graphVisualizationData = /u);
     assert.match(script, /InterplanetaryFootball/u);
+    assert.match(script, /resourcePath":"InterplanetaryFootball\.yyp/u);
+    assert.match(script, /function readGraphNodePathLabel/u);
+    assert.match(script, /Path:/u);
+    assert.match(script, /const DEFAULT_PLAYGROUND_GML_SOURCE = \[/u);
+    assert.match(script, /function resolveInitialPlaygroundGmlSource/u);
     assert.match(script, /bootstrapGraphVisualizationApp\(\{/u);
     assert.match(script, /import \{ fileOpen, directoryOpen \} from "\.\/vendor\/browser-fs-access\.js";/u);
 });
@@ -173,6 +180,10 @@ void test("graph visualization css asset preserves core visual affordances", () 
     assert.match(css, /#tooltip/u);
     assert.match(css, /\.link \{ stroke-opacity: 0\.72;/u);
     assert.match(css, /@keyframes graph-button-spin/u);
+    assert.match(css, /button:disabled \{ cursor: not-allowed;/u);
+    assert.match(css, /button:disabled:hover \{ background: rgba\(255,255,255,0\.055\);/u);
+    assert.match(css, /\.top-nav-button\.active:disabled \{/u);
+    assert.match(css, /\.filter-item:has\(input:disabled\) \{ cursor: not-allowed; opacity: 0\.45; \}/u);
 });
 
 void test("graph visualization server-mode html includes regenerate affordance", () => {

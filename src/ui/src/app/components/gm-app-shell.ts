@@ -6,6 +6,7 @@ import {
     type GraphVisualizationUiCallbacks,
     type GraphVisualizationUiModel
 } from "../contracts.js";
+import { hasLoadedGraphIndex, hasLoadedGraphProject } from "../graph-availability.js";
 import { GraphVisualizationUiStore } from "../state/store.js";
 import type {
     GraphVisualizationUiDocsView,
@@ -54,8 +55,17 @@ export class GmAppShell extends LightDomLitElement {
     // ─── Private handlers (access #state and #store via closure) ───────────────
 
     #onNavigatePage = (eventValue: Event): void => {
+        if (!this.model) {
+            return;
+        }
+
+        const targetPage = (eventValue as CustomEvent<{ page: GraphVisualizationUiPage }>).detail.page;
+        if (targetPage === "graph" && !hasLoadedGraphIndex(this.model)) {
+            return;
+        }
+
         this.#store.dispatch({
-            page: (eventValue as CustomEvent<{ page: GraphVisualizationUiPage }>).detail.page,
+            page: targetPage,
             type: "navigate-page"
         });
     };
@@ -68,6 +78,10 @@ export class GmAppShell extends LightDomLitElement {
     };
 
     #onSetSearchQuery = (eventValue: Event): void => {
+        if (!this.model || !hasLoadedGraphIndex(this.model)) {
+            return;
+        }
+
         this.#store.dispatch({
             searchQuery: (eventValue as CustomEvent<{ searchQuery: string }>).detail.searchQuery,
             type: "set-search-query"
@@ -75,14 +89,26 @@ export class GmAppShell extends LightDomLitElement {
     };
 
     #onToggleGraphView = (): void => {
+        if (!this.model || !hasLoadedGraphIndex(this.model)) {
+            return;
+        }
+
         this.#store.dispatch({ type: "toggle-graph-view" });
     };
 
     #onCycleLabelMode = (): void => {
+        if (!this.model || !hasLoadedGraphIndex(this.model)) {
+            return;
+        }
+
         this.#store.dispatch({ type: "cycle-label-mode" });
     };
 
     #onResetDefaults = (): void => {
+        if (!this.model || !hasLoadedGraphIndex(this.model)) {
+            return;
+        }
+
         this.#store.dispatch({ type: "reset-defaults" });
     };
 
@@ -91,6 +117,10 @@ export class GmAppShell extends LightDomLitElement {
     };
 
     #onTriggerRegenerate = (): void => {
+        if (!this.model || !hasLoadedGraphProject(this.model)) {
+            return;
+        }
+
         void this.#runHostActionWithPendingState("set-regenerate-pending", this.callbacks.onRegenerate);
     };
 
