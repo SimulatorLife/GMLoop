@@ -190,11 +190,12 @@ export class GmAppShell extends LightDomLitElement {
         }
 
         return html`
+            <a class="skip-link" href="#graph-page">Skip to content</a>
             <div id="app-shell">
                 <gm-app-header .model=${this.model} .state=${this.#state}></gm-app-header>
                 <gm-graph-toolbar .model=${this.model} .state=${this.#state}></gm-graph-toolbar>
                 ${this.#state.errorMessage
-                    ? html`<div class="error-banner" role="alert">${this.#state.errorMessage}</div>`
+                    ? html`<div class="error-banner" role="alert" tabindex="-1">${this.#state.errorMessage}</div>`
                     : null}
                 <main>
                     <gm-graph-panel .model=${this.model} .state=${this.#state}></gm-graph-panel>
