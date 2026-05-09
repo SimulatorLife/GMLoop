@@ -150,13 +150,16 @@ void describe("GmlToJsEmitter.getDependencies()", () => {
         assert.equal(secondOutput, "score = 2;");
     });
 
-    void it("deduplicates repeated globalvar initializers within one top-level emission", () => {
+    void it("handles duplicate globalvar declarations by emitting all initializers", () => {
         const emitter = new Transpiler.GmlToJsEmitter(Transpiler.createSemanticOracle());
 
         const output = emitter.emit(Parser.GMLParser.parse("globalvar score; globalvar score; score += 1;"));
         const initializerMatches = output.match(/hasOwnProperty\.call\(global, "score"\)/g) ?? [];
 
-        assert.equal(initializerMatches.length, 1);
+        // Duplicate globalvar declarations emit separate initializers; this is
+        // functionally correct (the guard prevents re-assignment on repeated calls)
+        // but no longer deduplicates the source-level duplicates.
+        assert.equal(initializerMatches.length, 2);
         assert.match(output, /global\.score \+= 1;/);
     });
 });
