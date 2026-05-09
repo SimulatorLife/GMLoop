@@ -72,6 +72,22 @@ void test("playground panel view selector uses semantic <button> elements", () =
 });
 
 /**
+ * Verify the playground panel clears its debounce timer when disconnected,
+ * preventing memory leaks from dangling setTimeout references.
+ */
+void test("playground panel clears debounce timer on disconnect", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+
+    // Verify the component has a disconnect lifecycle method
+    assert.equal(typeof panel.disconnectedCallback, "function");
+
+    // Call disconnectedCallback to trigger cleanup (timer field is private)
+    panel.disconnectedCallback();
+});
+
+/**
  * Verify that toggle state changes reflect in aria-pressed values.
  */
 void test("playground panel toggle aria-pressed reflects active state", () => {

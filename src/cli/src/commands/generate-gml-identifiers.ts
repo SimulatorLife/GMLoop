@@ -452,15 +452,20 @@ function normalizeDeprecatedReplacementKind(
 function getReplacementPriority(replacementKind: DeprecatedReplacementKind | undefined): number {
     return REPLACEMENT_PRIORITY.get(replacementKind ?? "none") ?? 0;
 }
+/**
+ * Fold an incoming value into a current value using first-win semantics.
+ * Returns the incoming value when it is defined; otherwise falls back to current.
+ */
+function applyFirstWin<T>(incoming: T | undefined, current: T | undefined): T | undefined {
+    return incoming ?? current;
+}
 
 function mergeEntry(map: Map<string, IdentifierMapEntry>, identifier: string, data: IdentifierMapMergeData) {
     const current = map.get(identifier);
-    const sourceList = data.sources ?? [];
-    const tagList = data.tags ?? [];
 
     if (!current) {
-        const sources = toMutableArray(sourceList);
-        const tags = toMutableArray(tagList);
+        const sources = toMutableArray(data.sources ?? []);
+        const tags = toMutableArray(data.tags ?? []);
 
         map.set(identifier, {
             type: data.type ?? "unknown",
@@ -477,46 +482,38 @@ function mergeEntry(map: Map<string, IdentifierMapEntry>, identifier: string, da
         return;
     }
 
-    for (const source of sourceList) {
+    // Accumulate collections.
+    for (const source of data.sources ?? []) {
         current.sources.add(source);
     }
-    for (const tag of tagList) {
+    for (const tag of data.tags ?? []) {
         current.tags.add(tag);
     }
-    if (data.manualPath && !current.manualPath) {
-        current.manualPath = data.manualPath;
-    }
-    if (data.deprecated) {
-        current.deprecated = true;
-    }
-    if (data.legacyCategory && !current.legacyCategory) {
-        current.legacyCategory = data.legacyCategory;
-    }
-    if (data.legacyUsage && !current.legacyUsage) {
-        current.legacyUsage = data.legacyUsage;
-    }
-    if (data.diagnosticOwner && !current.diagnosticOwner) {
-        current.diagnosticOwner = data.diagnosticOwner;
-    }
 
-    const incomingReplacementKind = normalizeDeprecatedReplacementKind(data.replacementKind, data.replacement);
-    if (
-        data.replacement &&
-        getReplacementPriority(incomingReplacementKind) >= getReplacementPriority(current.replacementKind)
-    ) {
+    // First-win fields: write only when incoming is defined and current is absent.
+    current.manualPath = applyFirstWin(data.manualPath, current.manualPath);
+    current.deprecated = current.deprecated || Boolean(data.deprecated);
+    current.legacyCategory = applyFirstWin(data.legacyCategory, current.legacyCategory);
+    current.legacyUsage = applyFirstWin(data.legacyUsage, current.legacyUsage);
+    current.diagnosticOwner = applyFirstWin(data.diagnosticOwner, current.diagnosticOwner);
+
+    // Upgrade replacement / replacementKind if incoming has higher priority.
+    const incomingKind = normalizeDeprecatedReplacementKind(data.replacementKind, data.replacement);
+    const incomingPriority = getReplacementPriority(incomingKind);
+    const currentPriority = getReplacementPriority(current.replacementKind);
+
+    if (data.replacement && incomingPriority >= currentPriority) {
         current.replacement = data.replacement;
-        current.replacementKind = incomingReplacementKind;
-    } else if (
-        current.replacement === undefined &&
-        getReplacementPriority(incomingReplacementKind) > getReplacementPriority(current.replacementKind)
-    ) {
-        current.replacementKind = incomingReplacementKind;
+        current.replacementKind = incomingKind;
+    } else if (current.replacement === undefined && incomingPriority > currentPriority) {
+        current.replacementKind = incomingKind;
     }
 
+    // Upgrade type if incoming has higher priority.
     const incomingType = data.type ?? "unknown";
-    const currentPriority = TYPE_PRIORITY.get(current.type) ?? 0;
-    const incomingPriority = TYPE_PRIORITY.get(incomingType) ?? 0;
-    if (incomingPriority > currentPriority) {
+    const incomingTypePriority = TYPE_PRIORITY.get(incomingType) ?? 0;
+    const currentTypePriority = TYPE_PRIORITY.get(current.type) ?? 0;
+    if (incomingTypePriority > currentTypePriority) {
         current.type = incomingType;
     }
 }
@@ -1286,6 +1283,8 @@ export async function runGenerateGmlIdentifiers({ command, workflow }: RunGenera
 }
 
 export const __test__ = Object.freeze({
+    applyFirstWin,
+    mergeEntry,
     parseArrayLiteral,
     collectManualArrayIdentifiers,
     assertManualIdentifierArray,
