@@ -194,17 +194,6 @@ function assertWorkflowDispatchesToReusableAgent(source: string, agentName: stri
     assert.match(source, new RegExp(String.raw`agent: ${agentName}`, "u"));
 }
 
-/**
- * Asserts that the workflow source does NOT declare an `agent_package` field.
- * Child workflows that delegate to `agent-invoke.yml` must not declare their
- * own package; the parent workflow infers it from the `agent` input field.
- * Declaring it in the child would be redundant and could cause the parent to
- * misroute or override the intended agent.
- */
-function assertWorkflowDeclaresNoAgentPackage(source: string): void {
-    assert.doesNotMatch(source, /agent_package:/u);
-}
-
 function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
     assert.match(prompt, /Repository root:/u);
     assert.match(prompt, /User task from PR comment:/u);
