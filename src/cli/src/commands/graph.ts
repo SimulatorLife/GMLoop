@@ -18,8 +18,10 @@ import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
-import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
-import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
+import {
+    openUrlInDefaultBrowser,
+    startGraphVisualizationServer
+} from "../modules/server/graph-visualization-server.js";
 import { createGraphVisualizationProjectConfigurationCatalog } from "../modules/ui/index.js";
 import { discoverProjectRoot, resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 
