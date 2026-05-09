@@ -39,3 +39,23 @@ main {
   font-size: 13px;
   line-height: 1.45;
 }
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  z-index: 9999;
+  padding: 12px 18px;
+  border-radius: 0 0 14px 14px;
+  background: var(--gm-accent-strong);
+  color: #04101d;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  left: 22px;
+  top: 0;
+  outline: 3px solid var(--gm-focus-ring);
+  outline-offset: 2px;
+}

@@ -85,7 +85,7 @@ export class GmDocsPanel extends LightDomLitElement {
 
         return html`
             <section id="docs-page" class=${docsPageClassName}>
-                <div class="docs-toggle-row">
+                <div class="docs-toggle-row" role="group" aria-label="Documentation view selector">
                     <button
                         id="docs-view-cli"
                         class=${this.state.activeDocsView === "cli" ? "top-nav-button active" : "top-nav-button"}
