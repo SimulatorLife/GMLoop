@@ -130,7 +130,7 @@ function getRequiredAiderCommand(source: string): string {
 
 function getRequiredGeminiCommand(source: string): string {
     const directCommandStartIndex = source.indexOf("stdbuf -oL -eL gemini \\");
-    const nodeCommandStartIndex = source.indexOf('stdbuf -oL -eL node --max-old-space-size=');
+    const nodeCommandStartIndex = source.indexOf("stdbuf -oL -eL node --max-old-space-size=");
     const commandStartIndex =
         directCommandStartIndex === -1
             ? nodeCommandStartIndex
@@ -186,7 +186,10 @@ function assertAiderCommandIncludesRequiredFlags(commandSource: string): void {
 }
 
 function assertWorkflowDispatchesToReusableAgent(source: string, agentName: string): void {
-    assert.match(source, new RegExp(String.raw`contains\(github\.event\.comment\.body \|\| '', '@${agentName}'\)`, "u"));
+    assert.match(
+        source,
+        new RegExp(String.raw`contains\(github\.event\.comment\.body \|\| '', '@${agentName}'\)`, "u")
+    );
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, new RegExp(String.raw`agent: ${agentName}`, "u"));
 }
@@ -279,7 +282,9 @@ void test("qwen invoke uses checked-in settings for local model selection", asyn
         "Qwen settings must allow pnpm-backed repository validation commands."
     );
     assert.ok(
-        settings.permissions.deny.some((permission) => permission.toLowerCase() === "websearch" || permission === "web_search"),
+        settings.permissions.deny.some(
+            (permission) => permission.toLowerCase() === "websearch" || permission === "web_search"
+        ),
         "Qwen settings must deny web search tooling."
     );
     assert.ok(
@@ -437,7 +442,10 @@ void test("agent invoke exports OpenAI API type for every child agent", async ()
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const aiderSource = await readWorkflowSource("aider-invoke.yml");
 
-    assert.match(parentSource, /env:\n\s+OPENAI_API_TYPE: openai\n\s+OPENAI_BASE_URL: \$\{\{ inputs\.openai_base_url \}\}/u);
+    assert.match(
+        parentSource,
+        /env:\n\s+OPENAI_API_TYPE: openai\n\s+OPENAI_BASE_URL: \$\{\{ inputs\.openai_base_url \}\}/u
+    );
     assert.match(parentSource, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \|\| 'ollama' \}\}/u);
     assert.doesNotMatch(parentSource, /NODE_OPTIONS: --max-old-space-size/u);
     assert.doesNotMatch(aiderSource, /export OPENAI_API_TYPE=/u);
@@ -454,7 +462,10 @@ void test("agent invoke streams custom command output while preserving exit stat
     assert.match(setupFileInputBlock, /type: string/u);
     assert.match(setupFileInputBlock, /required: false/u);
     assert.match(source, /- name: Run agent setup command/u);
-    assert.match(source, /if: \$\{\{ inputs\.agent_setup_command != '' \|\| inputs\.agent_setup_command_file != '' \}\}/u);
+    assert.match(
+        source,
+        /if: \$\{\{ inputs\.agent_setup_command != '' \|\| inputs\.agent_setup_command_file != '' \}\}/u
+    );
     assert.match(source, /AGENT_SETUP_COMMAND: \$\{\{ inputs\.agent_setup_command \}\}/u);
     assert.match(source, /AGENT_SETUP_COMMAND_FILE: \$\{\{ inputs\.agent_setup_command_file \}\}/u);
     assert.match(source, /if \[ -n "\$\{AGENT_SETUP_COMMAND_FILE:-\}" \]; then/u);
