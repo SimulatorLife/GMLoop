@@ -54,7 +54,7 @@ export class EventBusManager {
             return;
         }
 
-        for (const { event, handler } of [...this.#subscriptions].reverse()) {
+        for (const { event, handler } of this.#subscriptions.toReversed()) {
             this.#element.removeEventListener(event, handler);
         }
         this.#isConnected = false;
