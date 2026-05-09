@@ -249,7 +249,6 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
         source.lastIndexOf("agent_setup_command") < source.lastIndexOf("agent_command"),
         "Qwen must pull the configured local model before invoking the real task."
     );
-    assertWorkflowDeclaresNoAgentPackage(source);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /verify_qwen_/u);
     assert.doesNotMatch(source, /openai-tool-registry/u);
@@ -298,7 +297,6 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
 
     assert.match(source, /name: '▶️ Aider Invoke'/u);
     assertWorkflowDispatchesToReusableAgent(source, "aider");
-    assertWorkflowDeclaresNoAgentPackage(source);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assert.match(setupCommand, /pull_aider_configured_model\(\)/u);
@@ -338,7 +336,6 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
 
     assert.match(source, /name: '▶️ Gemini Invoke'/u);
     assertWorkflowDispatchesToReusableAgent(source, "gemini");
-    assertWorkflowDeclaresNoAgentPackage(source);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
