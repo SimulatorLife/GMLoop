@@ -2,7 +2,7 @@ import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
 import { replaceNode } from "./math-ast-builders.js";
 
-const { isObjectLike } = Core;
+const { isObjectLike, unwrapParenthesizedExpression } = Core;
 
 /**
  * Apply logical expression simplifications using AST traversal.
@@ -133,15 +133,6 @@ function isLogicalBinaryNode(node: any): boolean {
     }
 
     return isLogicalOperator(node.operator);
-}
-
-function unwrapParenthesizedExpressionNode(node: any): any {
-    let currentNode = node;
-    while (currentNode && currentNode.type === "ParenthesizedExpression") {
-        currentNode = currentNode.expression;
-    }
-
-    return currentNode;
 }
 
 function isNegatedExpression(node: any): boolean {
@@ -510,8 +501,8 @@ function simplifyLogical(node: any): boolean {
     // Simplify: false || A -> A
 
     // We assume short-circuiting behavior.
-    const leftNode = unwrapParenthesizedExpressionNode(node.left);
-    const rightNode = unwrapParenthesizedExpressionNode(node.right);
+    const leftNode = unwrapParenthesizedExpression(node.left);
+    const rightNode = unwrapParenthesizedExpression(node.right);
     if (!leftNode || !rightNode) {
         return false;
     }
@@ -706,7 +697,7 @@ function areNegations(node1: any, node2: any): boolean {
 }
 
 function getBooleanValue(node: any): boolean | undefined {
-    const currentNode = unwrapParenthesizedExpressionNode(node);
+    const currentNode = unwrapParenthesizedExpression(node);
     if (!currentNode || currentNode.type !== "Literal") {
         return undefined;
     }

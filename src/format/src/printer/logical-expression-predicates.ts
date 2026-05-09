@@ -4,7 +4,7 @@ import { Core } from "@gmloop/core";
  * Determines if a node is a logical comparison clause pattern.
  */
 export function isLogicalComparisonClause(node: any): boolean {
-    const clauseExpression = unwrapLogicalClause(node);
+    const clauseExpression = Core.unwrapParenthesizedExpression(node);
     if (clauseExpression?.type !== "BinaryExpression") {
         return false;
     }
@@ -17,7 +17,7 @@ export function isLogicalComparisonClause(node: any): boolean {
 }
 
 function isComparisonAndConjunction(node: any): boolean {
-    const expression = unwrapLogicalClause(node);
+    const expression = Core.unwrapParenthesizedExpression(node);
     if (expression?.type !== "BinaryExpression") {
         return false;
     }
@@ -34,12 +34,12 @@ function isComparisonAndConjunction(node: any): boolean {
 }
 
 function isComparisonExpression(node: any): boolean {
-    const expression = unwrapLogicalClause(node);
+    const expression = Core.unwrapParenthesizedExpression(node);
     return expression?.type === "BinaryExpression" && Core.isComparisonBinaryOperator(expression.operator);
 }
 
 function isSimpleLogicalOperand(node: any): boolean {
-    const expression = unwrapLogicalClause(node);
+    const expression = Core.unwrapParenthesizedExpression(node);
     if (!expression) {
         return false;
     }
@@ -57,13 +57,4 @@ function isSimpleLogicalOperand(node: any): boolean {
     }
 
     return isComparisonExpression(expression);
-}
-
-function unwrapLogicalClause(node: any): any {
-    let current = node;
-    while (current?.type === "ParenthesizedExpression") {
-        current = current.expression;
-    }
-
-    return current ?? null;
 }
