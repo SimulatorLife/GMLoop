@@ -1,4 +1,5 @@
 export { createWebSocketClient } from "./client.js";
+export { ensureApplicationSurfaceAccessor, resolveRuntimeReadiness } from "./runtime-readiness.js";
 export type {
     MessageEventLike,
     PatchQueueMetrics,
