@@ -3,7 +3,9 @@ import { normalizeDocParamName } from "./parameter-utils/index.js";
 import { configs, featherPlugin, plugin } from "./plugin.js";
 import { ruleIds } from "./rules/catalog.js";
 import { listLintRuleCatalogEntries } from "./rules/rule-catalog.js";
-import { performanceOverrideRuleIds, services } from "./services/index.js";
+import { services } from "./services/index.js";
+
+const { performanceOverrideRuleIds } = services;
 
 /**
  * Flattened lint namespace that exposes frequently-accessed properties directly

@@ -116,6 +116,54 @@ export function buildSingleTargetOccurrences(
     ];
 }
 
+/**
+ * Build the data for a single naming target used by both the base fixture and
+ * the duplicate-target scenario builder.  Keeps the source-line assembly and
+ * occurrence construction in one place so the two callers stay identical.
+ */
+export function buildSingleNamingTargetData(
+    filePath: string,
+    fileIndex: number,
+    targetIndex: number,
+    currentOffset: number,
+    scopeId: string
+): {
+    name: string;
+    declarationLine: string;
+    referenceLine: string;
+    declarationStart: number;
+    referenceStart: number;
+    newOffset: number;
+    occurrences: Array<SymbolOccurrence>;
+    target: NamingConventionTarget;
+} {
+    const name = `bad_name_${fileIndex}_${targetIndex}`;
+    const declarationLine = `var ${name} = ${targetIndex};\n`;
+    const referenceLine = `show_debug_message(${name});\n`;
+    const declarationStart = currentOffset + declarationLine.indexOf(name);
+    const referenceStart = currentOffset + declarationLine.length + referenceLine.indexOf(name);
+
+    const occurrences = buildSingleTargetOccurrences(filePath, declarationStart, referenceStart, name.length, scopeId);
+
+    return {
+        name,
+        declarationLine,
+        referenceLine,
+        declarationStart,
+        referenceStart,
+        newOffset: currentOffset + declarationLine.length + referenceLine.length,
+        occurrences,
+        target: {
+            name,
+            category: "localVariable",
+            path: filePath,
+            scopeId,
+            symbolId: null,
+            occurrences
+        }
+    };
+}
+
 export function createSyntheticLocalNamingFixture(
     filePath: string,
     fileIndex: number,
@@ -127,31 +175,12 @@ export function createSyntheticLocalNamingFixture(
     let offset = 0;
 
     for (let targetIndex = 0; targetIndex < targetsPerFile; targetIndex += 1) {
-        const currentName = `bad_name_${fileIndex}_${targetIndex}`;
-        const declarationLine = `var ${currentName} = ${targetIndex};\n`;
-        const referenceLine = `show_debug_message(${currentName});\n`;
-        const declarationStart = offset + declarationLine.indexOf(currentName);
-        const referenceStart = offset + declarationLine.length + referenceLine.indexOf(currentName);
         const scopeId = sharedScopeId ?? `scope:${fileIndex}:${targetIndex}`;
+        const data = buildSingleNamingTargetData(filePath, fileIndex, targetIndex, offset, scopeId);
 
-        lines.push(declarationLine, referenceLine);
-        const occurrences = buildSingleTargetOccurrences(
-            filePath,
-            declarationStart,
-            referenceStart,
-            currentName.length,
-            scopeId
-        );
-        targets.push({
-            name: currentName,
-            category: "localVariable",
-            path: filePath,
-            scopeId,
-            symbolId: null,
-            occurrences
-        });
-
-        offset += declarationLine.length + referenceLine.length;
+        lines.push(data.declarationLine, data.referenceLine);
+        targets.push(data.target);
+        offset = data.newOffset;
     }
 
     return {
