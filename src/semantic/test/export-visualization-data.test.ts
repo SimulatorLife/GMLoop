@@ -38,17 +38,37 @@ void describe("exportGraphVisualizationData", () => {
 
         db.prepare(
             `
-            INSERT INTO nodes (id, graph_id, kind, name, display_name, summary, snippet)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO nodes (id, graph_id, kind, name, display_name, relative_path, resource_path, summary, snippet)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
-        ).run("node1", "project1", "script", "test_script", "test_script()", "A test", "function test_script() {}");
+        ).run(
+            "node1",
+            "project1",
+            "script",
+            "test_script",
+            "test_script()",
+            "scripts/test_script/test_script.gml",
+            "scripts/test_script/test_script.yy",
+            "A test",
+            "function test_script() {}"
+        );
 
         db.prepare(
             `
-            INSERT INTO nodes (id, graph_id, kind, name, display_name, summary, snippet)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO nodes (id, graph_id, kind, name, display_name, relative_path, resource_path, summary, snippet)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
-        ).run("node2", "project1", "object", "obj_test", "obj_test", "Test obj", "/* snippet */");
+        ).run(
+            "node2",
+            "project1",
+            "object",
+            "obj_test",
+            "obj_test",
+            null,
+            "objects/obj_test/obj_test.yy",
+            "Test obj",
+            "/* snippet */"
+        );
 
         db.prepare(
             `
@@ -73,7 +93,11 @@ void describe("exportGraphVisualizationData", () => {
         assert.strictEqual(data.nodes[0]?.id, "node1");
         assert.strictEqual(data.nodes[0]?.kind, "script");
         assert.strictEqual(data.nodes[0]?.displayName, "test_script()");
+        assert.strictEqual(data.nodes[0]?.filePath, "scripts/test_script/test_script.gml");
+        assert.strictEqual(data.nodes[0]?.resourcePath, "scripts/test_script/test_script.yy");
         assert.strictEqual(data.nodes[1]?.id, "node2");
+        assert.strictEqual(data.nodes[1]?.filePath, null);
+        assert.strictEqual(data.nodes[1]?.resourcePath, "objects/obj_test/obj_test.yy");
 
         assert.strictEqual(data.edges.length, 1);
         assert.strictEqual(data.edges[0]?.source, "node2");

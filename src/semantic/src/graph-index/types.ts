@@ -167,10 +167,12 @@ export type GraphVisualizationData = Readonly<{
     nodes: ReadonlyArray<
         Readonly<{
             displayName: string;
+            filePath: string | null;
             graphId: GraphIndexScope;
             id: string;
             kind: GraphNodeKind;
             name: string;
+            resourcePath: string | null;
             snippet: string;
             summary: string;
         }>

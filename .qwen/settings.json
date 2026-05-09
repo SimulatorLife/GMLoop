@@ -1,5 +1,5 @@
 {
-  "$version": 3,
+  "$version": 4,
   "model": {
     "name": "qwen3:1.7b",
     "skipLoopDetection": true,
@@ -92,7 +92,6 @@
       "web_search",
       "WebFetch",
       "ask_user_question",
-
       "Bash(git checkout*)",
       "Bash(git switch*)",
       "Bash(git restore*)",
@@ -100,7 +99,6 @@
       "Bash(git clean*)",
       "Bash(git branch*)",
       "Bash(git tag*)",
-
       "Bash(chmod *)",
       "Bash(chown *)",
       "Bash(curl *)",

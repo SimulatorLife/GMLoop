@@ -11,7 +11,7 @@ import type {
 } from "d3";
 import * as d3 from "d3";
 
-import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../app/playground-default-gml.js";
+import { resolveInitialPlaygroundGmlSource } from "../app/playground-default-gml.js";
 import type { GraphVisualizationUiLabelMode, GraphVisualizationUiState } from "../app/state/types.js";
 import {
     readGraphVisualizationUiStateFromCurrentUrl,
@@ -179,6 +179,18 @@ function mapBrowserLabelModeToUiLabelMode(labelMode: "auto" | "off" | "on"): Gra
     }
 
     return "auto";
+}
+
+function readGraphNodePathLabel(nodeValue: GraphVisualizationNodeRecord): string | null {
+    if (nodeValue.filePath !== null && nodeValue.resourcePath !== null) {
+        return `${nodeValue.filePath} (resource: ${nodeValue.resourcePath})`;
+    }
+
+    if (nodeValue.filePath !== null) {
+        return nodeValue.filePath;
+    }
+
+    return nodeValue.resourcePath;
 }
 
 function createCurrentGraphVisualizationUiStateSnapshot(
@@ -499,6 +511,11 @@ function updateGraphInteractionAvailability(
     toggleViewButton.disabled = shouldDisableGraphControls;
     toggleLabelsButton.disabled = shouldDisableGraphControls;
     resetDefaultButton.disabled = shouldDisableGraphControls;
+    document.querySelectorAll("#legend input[type='checkbox']").forEach((checkboxElement) => {
+        if (checkboxElement instanceof HTMLInputElement) {
+            checkboxElement.disabled = shouldDisableGraphControls;
+        }
+    });
     if (regenerateButton instanceof HTMLButtonElement) {
         regenerateButton.disabled = isServerMode && !hasLoadedProject;
     }
@@ -1167,7 +1184,12 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
         if (term.length > 0) {
             nodesRaw.forEach((nodeValue) => {
-                if (nodeValue.name.toLowerCase().includes(term) || nodeValue.displayName.toLowerCase().includes(term)) {
+                const pathLabel = readGraphNodePathLabel(nodeValue);
+                if (
+                    nodeValue.name.toLowerCase().includes(term) ||
+                    nodeValue.displayName.toLowerCase().includes(term) ||
+                    pathLabel?.toLowerCase().includes(term) === true
+                ) {
                     searchHighlightNodeIds.add(nodeValue.id);
                 }
             });
@@ -1594,6 +1616,12 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 }
             );
         });
+
+        updateGraphInteractionAvailability(
+            nodesRaw.length > 0,
+            currentLoadedTarget !== null,
+            dependencies.isServerMode
+        );
     }
 
     function createFilterCheckbox(
@@ -1898,6 +1926,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         details.append("strong").text("Graph:");
         details.append("span").text(` ${nodeValue.graphId}`);
 
+        const pathLabel = readGraphNodePathLabel(nodeValue);
+        if (pathLabel !== null) {
+            const pathDetails = tooltip.append("div");
+            pathDetails.append("strong").text("Path:");
+            pathDetails.append("span").text(` ${pathLabel}`);
+        }
+
         const connections = tooltip.append("div");
         connections.append("strong").text("Connections:");
         connections.append("span").text(` ${String(incomingConnections)} in, ${String(outgoingConnections)} out`);
@@ -2176,10 +2211,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         let debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
         const savedInput = localStorage.getItem("gmloop-playground-input");
-        if (savedInput === null) {
-            input.value = DEFAULT_PLAYGROUND_GML_SOURCE;
-        } else {
-            input.value = savedInput;
+        input.value = resolveInitialPlaygroundGmlSource(savedInput);
+        if (savedInput !== input.value) {
+            localStorage.setItem("gmloop-playground-input", input.value);
         }
         void processPlaygroundInput();
 
