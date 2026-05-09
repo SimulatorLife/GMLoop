@@ -6,7 +6,7 @@ import { asErrorLike } from "../shared/error-guards.js";
 
 const DEFAULT_INDENT = "  ";
 
-const CLI_USAGE_ERROR_BRAND = Symbol.for("prettier-plugin-gml/cli-usage-error");
+const CLI_USAGE_ERROR_BRAND = Symbol.for("gmloop/cli-usage-error");
 
 export interface ErrorWithMetadata extends Error {
     usage?: string | null;

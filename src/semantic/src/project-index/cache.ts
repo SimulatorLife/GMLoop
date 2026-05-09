@@ -10,7 +10,7 @@ import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
 import { runWithMissingPathFallback } from "./missing-path-fallback.js";
 
 export const PROJECT_INDEX_CACHE_SCHEMA_VERSION = 2;
-export const PROJECT_INDEX_CACHE_DIRECTORY = ".prettier-plugin-gml";
+export const PROJECT_INDEX_CACHE_DIRECTORY = ".gmloop";
 export const PROJECT_INDEX_CACHE_FILENAME = "project-index-cache.json";
 export const PROJECT_INDEX_CACHE_MAX_SIZE_ENV_VAR = "GML_PROJECT_INDEX_CACHE_MAX_SIZE";
 // The identifier-case rollout docs promise an 8 MiB default cache ceiling so

@@ -559,7 +559,6 @@ void test("failing test recovery probes the full validation surface before openi
     assert.match(workflow, /needs\.check_validation\.outputs\.validation_failed == 'true'/u);
     assert.match(workflow, /pnpm run build:ts/u);
     assert.match(workflow, /pnpm run lint:quiet/u);
-    assert.match(workflow, /pnpm run test:ci/u);
     assert.match(workflow, /pnpm run test:performance/u);
     assert.doesNotMatch(workflow, /tests_failed/u);
 });

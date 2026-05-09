@@ -1058,7 +1058,7 @@ but their canonical documentation sits here alongside the implementation.
 
 When rolling out rename scopes, continue to warm the project index cache
 before enabling write mode so the semantic layer can reuse cached dependency
-analysis. The bootstrap generates `.prettier-plugin-gml/project-index-cache.json`
+analysis. The bootstrap generates `.gmloop/project-index-cache.json`
 the first time a rename-enabled scope executes; pin `gmlIdentifierCaseProjectRoot`
 in CI builds to avoid repeated discovery work.
 

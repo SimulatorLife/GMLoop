@@ -92,7 +92,7 @@ void test("fix --help documents the combined workflow", async () => {
     if (result.exitCode !== 0) console.log("STDERR DUMP:", result.stderr);
     assert.equal(result.exitCode, 0);
     assert.match(result.stdout, /Run project codemods, lint fixes, and formatting in sequence/);
-    assert.match(result.stdout, /pnpm dlx prettier-plugin-gml fix --path path\/to\/project/);
+    assert.match(result.stdout, /pnpm dlx gmloop fix --path path\/to\/project/);
 });
 
 void test("fix --list prints command settings and exits", async () => {
@@ -203,6 +203,6 @@ void test("fix surfaces missing gmloop config errors as actionable usage guidanc
         result.stderr,
         /Run this command from a project directory containing gmloop\.json or pass --config <path-to-gmloop\.json>\./
     );
-    assert.match(result.stderr, /Usage: prettier-plugin-gml fix \[options\]/);
+    assert.match(result.stderr, /Usage: gmloop fix \[options\]/);
     assert.doesNotMatch(result.stderr, /\bat .*\/fix\.js/);
 });

@@ -90,7 +90,7 @@ void describe("Refactor command", () => {
         );
         assert.match(
             result.stderr,
-            /Usage: prettier-plugin-gml refactor \[options\] \[operation\] \[paths\.\.\.\]/,
+            /Usage: gmloop refactor \[options\] \[operation\] \[paths\.\.\.\]/,
             "Should include usage text so the user knows what to provide"
         );
         // No internal file path fragments should appear in the error output – the

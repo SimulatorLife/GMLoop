@@ -34,8 +34,8 @@ void test("parse --help output documents command examples and shared options", a
     assert.equal(exitCode, 0);
     assert.equal(stderr, "");
     assert.match(stdout, /Examples:/);
-    assert.match(stdout, /prettier-plugin-gml parse --path path\/to\/script\.gml/);
-    assert.match(stdout, /prettier-plugin-gml parse --write --path path\/to\/project/);
+    assert.match(stdout, /gmloop parse --path path\/to\/script\.gml/);
+    assert.match(stdout, /gmloop parse --write --path path\/to\/project/);
     assert.match(stdout, /--path <path>/);
     assert.match(stdout, /--write/);
     assert.match(stdout, /--list/);

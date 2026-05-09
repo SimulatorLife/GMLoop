@@ -14,7 +14,7 @@ import { importFormatModule, resolveFormatEntryPoint } from "../src/format-runti
 const temporaryDirectories = new Set<string>();
 
 function createTemporaryFormatModuleFile({ baseDirectory = os.tmpdir() } = {}) {
-    const directory = fs.mkdtempSync(path.join(baseDirectory, "prettier-plugin-gml-entry-"));
+    const directory = fs.mkdtempSync(path.join(baseDirectory, "gmloop-entry-"));
     temporaryDirectories.add(directory);
 
     const modulePath = path.join(directory, "custom-format-module.mjs");
@@ -90,7 +90,7 @@ void describe("resolveFormatEntryPoint", () => {
 
     void it("skips directory overrides when resolving the entry point", () => {
         const defaultEntryPoint = resolveFormatEntryPoint({ env: {} });
-        const directoryOverride = fs.mkdtempSync(path.join(os.tmpdir(), "prettier-plugin-gml-entry-dir-"));
+        const directoryOverride = fs.mkdtempSync(path.join(os.tmpdir(), "gmloop-entry-dir-"));
         temporaryDirectories.add(directoryOverride);
 
         const resolved = resolveFormatEntryPoint({

@@ -70,8 +70,7 @@ jobs:
                   if [ "$build_failed" = "true" ]; then
                     echo "::notice::Skipping test probes because TypeScript build failed."
                   else
-                    run_validation_command "pnpm run test:ci" pnpm run test:ci
-                    run_validation_command "pnpm run test:performance" pnpm run test:performance
+                    run_validation_command "pnpm run test" pnpm run test
                   fi
 
                   if [ "${#failed_commands[@]}" -ne 0 ]; then
@@ -100,7 +99,7 @@ jobs:
             prompt: >
                 There is at least one failing project validation command in the codebase. Start
                 by running the same validation surface used by this recovery workflow:
-                `pnpm run build:ts`, `pnpm run lint:quiet`, `pnpm run test:ci`, and
+                `pnpm run build:ts`, `pnpm run lint:quiet`, `pnpm run test`, and
                 `pnpm run test:performance`. Identify a single failing test, build error, lint
                 error, or the smallest related failure cluster with a shared root cause, then
                 explain the cause. Decide whether any failing test is still a valid expectation

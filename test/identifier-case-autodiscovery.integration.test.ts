@@ -76,7 +76,7 @@ void describe("identifier case project index bootstrap", () => {
             const firstOutput = await Format.format(fixtureSource, { ...baseOptions });
             assert.ok(firstOutput.includes("counter_value"));
 
-            const cacheFilePath = path.join(projectRoot, ".prettier-plugin-gml", "project-index-cache.json");
+            const cacheFilePath = path.join(projectRoot, ".gmloop", "project-index-cache.json");
             assert.equal(await fileExists(cacheFilePath), false);
 
             const secondOutput = await Format.format(firstOutput, { ...baseOptions });

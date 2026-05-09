@@ -382,9 +382,9 @@ export function createFixCommand(): Command {
                 [
                     "",
                     "Examples:",
-                    "  pnpm dlx prettier-plugin-gml fix --path path/to/project",
-                    "  pnpm dlx prettier-plugin-gml fix --write --path path/to/project",
-                    "  pnpm dlx prettier-plugin-gml fix --only namingConvention",
+                    "  pnpm dlx gmloop fix --path path/to/project",
+                    "  pnpm dlx gmloop fix --write --path path/to/project",
+                    "  pnpm dlx gmloop fix --only namingConvention",
                     ""
                 ].join("\n")
             )

@@ -18,8 +18,8 @@ import {
 import { type TranspilationContext, transpileFile } from "../modules/transpilation/index.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 
-const TRANSPILE_COMMAND_CLI_EXAMPLE = "pnpm dlx prettier-plugin-gml transpile --path path/to/script.gml";
-const TRANSPILE_COMMAND_FIX_EXAMPLE = "pnpm dlx prettier-plugin-gml transpile --write --path path/to/project";
+const TRANSPILE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop transpile --path path/to/script.gml";
+const TRANSPILE_COMMAND_FIX_EXAMPLE = "pnpm dlx gmloop transpile --write --path path/to/project";
 
 type TranspileCommandOptions = {
     path?: string;

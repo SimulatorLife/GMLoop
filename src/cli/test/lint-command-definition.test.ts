@@ -15,13 +15,13 @@ void test("lint --help output includes an examples section", async () => {
 void test("lint --help output shows a basic lint invocation example", async () => {
     const { stdout } = await runCliTestCommand({ argv: ["lint", "--help"] });
 
-    assert.match(stdout, /pnpm dlx prettier-plugin-gml lint path\/to\/project/);
+    assert.match(stdout, /pnpm dlx gmloop lint path\/to\/project/);
 });
 
 void test("lint --help output shows a --write example", async () => {
     const { stdout } = await runCliTestCommand({ argv: ["lint", "--help"] });
 
-    assert.match(stdout, /pnpm dlx prettier-plugin-gml lint --write/);
+    assert.match(stdout, /pnpm dlx gmloop lint --write/);
 });
 
 void test("lint --help output documents --path and --list options", async () => {

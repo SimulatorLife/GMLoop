@@ -119,9 +119,9 @@ const logLevelOption = createEnumeratedOptionHelpers(VALID_PRETTIER_LOG_LEVELS, 
     formatError: (list) => `Must be one of: ${list}`
 });
 
-const FORMAT_COMMAND_CLI_EXAMPLE = "pnpm dlx prettier-plugin-gml format path/to/project";
+const FORMAT_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop format path/to/project";
 const FORMAT_COMMAND_WORKSPACE_EXAMPLE = "pnpm run format:gml -- path/to/project";
-const FORMAT_COMMAND_FIX_EXAMPLE = `pnpm dlx prettier-plugin-gml format --write --path path/to/script${GML_EXTENSION}`;
+const FORMAT_COMMAND_FIX_EXAMPLE = `pnpm dlx gmloop format --write --path path/to/script${GML_EXTENSION}`;
 
 const PRETTIER_MODULE_ID = process.env.PRETTIER_PLUGIN_GML_PRETTIER_MODULE ?? "prettier";
 const TARGET_EXTENSIONS = Object.freeze([GML_EXTENSION]);
@@ -252,7 +252,7 @@ function resolvePrettier() {
         prettierModulePromise = import(PRETTIER_MODULE_ID).then(resolveModuleDefaultExport).catch((error) => {
             if (isMissingPrettierDependency(error)) {
                 const instructions = [
-                    "Prettier v3 must be installed alongside prettier-plugin-gml.",
+                    "Prettier v3 must be installed alongside gmloop.",
                     "Install it with:",
                     "  pnpm add -D prettier@^3"
                 ].join("\n");
@@ -410,7 +410,7 @@ function configureConsoleMethods(logLevel: string): void {
 // This ensures console.debug is disabled early on if requested.
 configureConsoleMethods(process.env.PRETTIER_PLUGIN_GML_LOG_LEVEL ?? DEFAULT_PRETTIER_LOG_LEVEL);
 
-export function createFormatCommand({ name = "prettier-plugin-gml" } = {}) {
+export function createFormatCommand({ name = "gmloop" } = {}) {
     const { option: skippedDirectorySampleLimitOption, parseLimit: parseSkippedDirectoryLimit } =
         createConfiguredSampleLimitOption({
             flag: "--ignored-directory-sample-limit <count>",
@@ -650,7 +650,7 @@ function ensureRevertSnapshotDirectory() {
     }
 
     if (!revertSnapshotDirectoryPromise) {
-        const prefix = path.join(os.tmpdir(), "prettier-plugin-gml-revert-");
+        const prefix = path.join(os.tmpdir(), "gmloop-revert-");
         revertSnapshotDirectoryPromise = mkdtemp(prefix).then(
             (directory) => {
                 revertSnapshotDirectory = directory;

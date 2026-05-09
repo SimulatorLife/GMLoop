@@ -696,10 +696,10 @@ export function createRefactorCommand(): Command {
             [
                 "",
                 "Examples:",
-                "  pnpm dlx prettier-plugin-gml refactor --old-name my_script --new-name my_renamed_script path/to/project",
-                "  pnpm dlx prettier-plugin-gml refactor --symbol-id gml/script/my_func --new-name my_func_v2",
-                "  pnpm dlx prettier-plugin-gml refactor codemod --list",
-                "  pnpm dlx prettier-plugin-gml refactor codemod --write path/to/project"
+                "  pnpm dlx gmloop refactor --old-name my_script --new-name my_renamed_script path/to/project",
+                "  pnpm dlx gmloop refactor --symbol-id gml/script/my_func --new-name my_func_v2",
+                "  pnpm dlx gmloop refactor codemod --list",
+                "  pnpm dlx gmloop refactor codemod --write path/to/project"
             ].join("\n")
         );
 

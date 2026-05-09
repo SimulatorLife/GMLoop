@@ -20,8 +20,8 @@ import { resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 
 const GML_FILE_EXTENSION = ".gml";
 const AST_JSON_EXTENSION = ".ast.json";
-const PARSE_COMMAND_CLI_EXAMPLE = "pnpm dlx prettier-plugin-gml parse --path path/to/script.gml";
-const PARSE_COMMAND_FIX_EXAMPLE = "pnpm dlx prettier-plugin-gml parse --write --path path/to/project";
+const PARSE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop parse --path path/to/script.gml";
+const PARSE_COMMAND_FIX_EXAMPLE = "pnpm dlx gmloop parse --write --path path/to/project";
 
 type ParseCommandOptions = {
     write?: boolean;

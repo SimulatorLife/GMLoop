@@ -58,7 +58,7 @@ The refactor workspace keeps naming-convention codemod stress tests in the regul
 - [`src/cli/test/refactor-script-resource-naming-performance.test.ts`](../cli/test/refactor-script-resource-naming-performance.test.ts) exercises script-backed function naming on large resource sets so repeated script-resource scans stay bounded.
 - [`src/cli/test/refactor-metadata-resource-naming-performance.test.ts`](../cli/test/refactor-metadata-resource-naming-performance.test.ts) exercises metadata-backed script resource renames on disk so repeated manifest/resource metadata parsing stays bounded.
 
-Use `pnpm run test:performance` to execute only the compiled performance suite locally. CI also runs that script explicitly on the `head` leg in addition to the normal `pnpm run test:ci` coverage pass, so performance regressions stay visible even when the broader test matrix is green.
+Use `pnpm run test:performance` to execute only the performance suite locally.
 
 ### Project-wide Codemod Execution
 
@@ -452,7 +452,7 @@ Selected-path namingConvention runs now resolve naming targets with one
 filtered semantic query for the whole file set instead of rescanning the full
 project index once per file. The refactor test suite includes a tracked
 stress test for this path, so the existing `pnpm run test:refactor` and
-`pnpm run test:ci` jobs catch regressions in both behavior and runtime.
+`pnpm run test:report` jobs catch regressions in both behavior and runtime.
 Naming-target discovery now also preserves the semantic provider method context
 (`this`) when invoking `listNamingConventionTargets`, so bridge-backed
 project-root resolution keeps working during batched resource rename queries.

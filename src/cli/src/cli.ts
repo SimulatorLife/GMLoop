@@ -176,7 +176,7 @@ function resolveHelpAliasCommandArguments(args) {
 }
 
 const program = applyStandardCommandOptions(new Command())
-    .name("prettier-plugin-gml")
+    .name("gmloop")
     .usage("[command] [options]")
     .description(
         `Utilities for working with the GMLoop toolchain.

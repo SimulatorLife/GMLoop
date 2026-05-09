@@ -3,7 +3,7 @@ import { getErrorMessageOrFallback } from "./error.js";
 import { assertPlainObject } from "./object.js";
 import { isNonEmptyString, toTrimmedString } from "./string.js";
 
-const JSON_PARSE_ERROR_CAPABILITY = Symbol.for("prettier-plugin-gml.json-parse-error");
+const JSON_PARSE_ERROR_CAPABILITY = Symbol.for("gmloop.json-parse-error");
 
 function hasJsonParseErrorContract(value: unknown) {
     if (!isErrorLike(value)) {
@@ -109,7 +109,7 @@ export class JsonParseError extends SyntaxError {
  *
  * The guard honours the symbol capability applied by {@link JsonParseError}
  * instances so downstream collaborators can opt-in by branding their own
- * facades with {@link Symbol.for "prettier-plugin-gml.json-parse-error"}.
+ * facades with {@link Symbol.for "gmloop.json-parse-error"}.
  * When the capability is absent, the function falls back to structural checks
  * that mirror the properties populated by {@link parseJsonWithContext},
  * allowing callers to branch on enriched metadata without relying on

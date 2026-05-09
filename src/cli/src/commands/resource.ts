@@ -413,8 +413,8 @@ export function createResourceCommand(): Command {
         [
             "",
             "Examples:",
-            "  pnpm dlx prettier-plugin-gml resource add script scr_bootstrap --path path/to/project --write",
-            "  pnpm dlx prettier-plugin-gml resource remove sprite spr_player --path path/to/project --write"
+            "  pnpm dlx gmloop resource add script scr_bootstrap --path path/to/project --write",
+            "  pnpm dlx gmloop resource remove sprite spr_player --path path/to/project --write"
         ].join("\n")
     );
 

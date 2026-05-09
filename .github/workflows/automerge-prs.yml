@@ -62,8 +62,8 @@ jobs:
 
   tests:
     needs: gate
-    if: ${{ needs.gate.outputs.should_run_tests == 'true' }} # <- job-level gate (will show Skipped)
-    name: Run tests (${{ matrix.target }})
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
+    name: Generate reports (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -76,18 +76,13 @@ jobs:
         id: ref
         run: |
           if [ "${{ matrix.target }}" = "base" ]; then
-            # Freeze base to the exact PR-event snapshot so comparisons stay stable
-            # even if the base branch advances while this workflow is running.
             echo "ref=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
           elif [ "${{ matrix.target }}" = "head" ]; then
-            # Explicit PR head commit (not the synthetic merge commit).
             echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
           else
-            # Synthetic merge commit captured for this PR event.
             echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
-      # If the synthetic merge ref doesn't exist, continue so the leg can still upload nothing and be summarized.
       - name: Checkout (${{ matrix.target }})
         uses: actions/checkout@v6
         with:
@@ -103,60 +98,18 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
-          cache: 'pnpm'
+          cache: pnpm
           cache-dependency-path: |
             pnpm-lock.yaml
             **/pnpm-lock.yaml
 
       - name: Install deps
-        run: pnpm install --frozen-lockfile --recursive
+        run: pnpm install --frozen-lockfile --recursive --force
         continue-on-error: ${{ matrix.target == 'merge' }}
 
-      - name: Build typescript (${{ matrix.target }})
-        run: |
-          mkdir -p reports
-          build_status=0
-          if pnpm run build:ts; then
-            build_status=0
-          else
-            build_status=$?
-            echo "::warning::TypeScript workspace build failed for target '${{ matrix.target }}'; continuing workflow."
-          fi
-
-          failures=0
-          if [ "$build_status" -ne 0 ]; then
-            failures=1
-          fi
-
-          {
-            echo '<?xml version="1.0" encoding="utf-8"?>'
-            echo '<testsuites>'
-            echo "  <testsuite name=\"build\" tests=\"1\" failures=\"$failures\" errors=\"0\" skipped=\"0\">"
-            echo '    <testcase name="pnpm run build:ts" classname="quality.build">'
-            if [ "$build_status" -ne 0 ]; then
-              echo "      <failure message=\"TypeScript workspace build failed\">pnpm run build:ts exited with status $build_status for ${{ matrix.target }}.</failure>"
-            fi
-            echo '    </testcase>'
-            echo '  </testsuite>'
-            echo '</testsuites>'
-          } > reports/build.xml
-
-      # Runs tests once, generating both JUnit XML and LCOV coverage
-      - name: Run tests & coverage (${{ matrix.target }})
-        id: run-tests
-        run: pnpm run test:ci
+      - name: Generate quality reports (${{ matrix.target }})
+        run: pnpm run report
         continue-on-error: true
-
-      - name: Ensure valid JUnit XML (${{ matrix.target }})
-        if: ${{ always() }}
-        run: |
-          mkdir -p reports
-          TEST_STATUS="${{ steps.run-tests.outcome }}" pnpm -s test:ensure-junit
-
-      - name: Run performance regression tests (${{ matrix.target }})
-        if: ${{ matrix.target == 'head' }}
-        continue-on-error: true
-        run: pnpm run test:performance
 
       - name: Publish test summary (${{ matrix.target }})
         if: ${{ always() }}
@@ -169,18 +122,6 @@ jobs:
           fail-on-empty: false
           use-actions-summary: false
 
-      - name: Run lint (${{ matrix.target }})
-        run: pnpm run lint:report
-        continue-on-error: true
-
-      - name: Run duplicates check (${{ matrix.target }})
-        run: pnpm run lint:duplicates:report
-        continue-on-error: true
-
-      - name: Collect project stats (${{ matrix.target }})
-        run: pnpm run stats:report
-        continue-on-error: true
-
       - name: Upload report artifacts (${{ matrix.target }})
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -191,6 +132,7 @@ jobs:
             reports/lcov.info
             reports/jscpd-report.json
             reports/project-health.json
+            reports/tree.txt
           retention-days: 7
 
   summarize:
@@ -220,13 +162,10 @@ jobs:
             **/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --recursive
+        run: pnpm install --frozen-lockfile --recursive --force
 
-      - name: Build typescript
-        run: |
-          if ! pnpm run build:ts; then
-            echo "::warning::TypeScript workspace build failed during summary job; continuing workflow."
-          fi
+      - name: Build CLI
+        run: pnpm run ensure:cli
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -245,7 +184,7 @@ jobs:
           mkdir -p reports
 
           # Run the CLI command with explicit paths to the downloaded artifacts
-          pnpm run cli generate-quality-report \
+          pnpm run cli:compiled generate-quality-report \
             --base report-base \
             --head report-head \
             --merge report-merge \
