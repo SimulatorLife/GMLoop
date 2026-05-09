@@ -1,4 +1,5 @@
 import { gmlLanguage } from "./language/gml-language.js";
+import { normalizeDocParamName } from "./parameter-utils/index.js";
 import { configs, featherPlugin, plugin } from "./plugin.js";
 import { ruleIds } from "./rules/catalog.js";
 import { listLintRuleCatalogEntries } from "./rules/rule-catalog.js";
@@ -26,5 +27,8 @@ export const Lint = Object.freeze({
 
     // Flattened aliases for high-traffic access patterns
     gmlLanguage,
-    performanceOverrideRuleIds
+    performanceOverrideRuleIds,
+
+    // Shared utilities
+    normalizeDocParamName
 });

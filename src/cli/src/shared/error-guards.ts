@@ -8,6 +8,33 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+/**
+ * Parse a JSON string and return the value on success, or `null` if the input
+ * is not valid JSON or the result is not a plain object.
+ *
+ * An empty input string is treated as equivalent to an empty object `{}`,
+ * preserving backward-compatible behaviour where callers that sent no body
+ * would receive an empty object from `JSON.parse('')`.
+ *
+ * Using this helper instead of bare `JSON.parse` in request handlers prevents
+ * uncaught `SyntaxError` exceptions from escaping the HTTP response boundary
+ * when a client sends malformed JSON or a non-object top-level value.
+ */
+export function tryParseJsonPayload(input: string): Record<string, unknown> | null {
+    if (input.length === 0) {
+        return Object.freeze({});
+    }
+    try {
+        const parsed = JSON.parse(input);
+        if (!isRecord(parsed)) {
+            return null;
+        }
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
 export interface ErrorLikeDetails {
     name?: string;
     message?: string;

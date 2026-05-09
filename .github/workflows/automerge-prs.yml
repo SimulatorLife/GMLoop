@@ -256,6 +256,9 @@ jobs:
           if [ $code -eq 0 ]; then
             echo "all_green=true" >> "$GITHUB_OUTPUT"
             echo "status=clean" >> "$GITHUB_OUTPUT"
+          elif [ $code -eq 11 ]; then
+            echo "all_green=false" >> "$GITHUB_OUTPUT"
+            echo "status=lint_errors" >> "$GITHUB_OUTPUT"
           elif [ $code -eq 10 ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "status=regressions" >> "$GITHUB_OUTPUT"
@@ -301,6 +304,41 @@ jobs:
             // Set output for auto-merge gate
             const allGreen = process.env.REGRESSION_ALL_GREEN === 'true';
             core.setOutput('all_green', allGreen ? 'true' : 'false');
+
+      - name: Request Agent help for lint errors
+        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN != '' }}
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ env.GH_USER_TOKEN }}
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- automerge-pr-lint-agent -->';
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request?.number;
+            if (!number) {
+              core.notice('No PR number; skipping Agent lint comment.');
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
+            const existing = comments.find(comment => comment.body && comment.body.includes(marker));
+            const body = [
+              marker,
+              '',
+              '@mini-max The auto-merge workflow detected lint errors on this PR gate target. Please prioritize lint-error fixes before test regression triage.',
+              '',
+              'Suggested next steps:',
+              '1. Run `pnpm run lint:quiet` and apply deterministic fixes first.',
+              '2. Re-run `pnpm run build:ts` and `pnpm run lint:quiet` until lint errors are fully resolved.',
+              '',
+              `Once done, push fixes to **${pr.head.ref}** on base **${pr.base.ref}** (PR #${number}).`
+            ].join('\n');
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+            }
+            core.notice(`Requested Agent assistance for lint errors on PR #${number}.`);
 
       - name: Request Agent help for regressions
         if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN != '' }}
@@ -511,6 +549,11 @@ jobs:
             }
 
             core.notice(`Requested Agent assistance for regressions on PR #${number}.`);
+
+      - name: Warn when Agent user token missing for lint errors
+        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN == '' }}
+        run: |
+          echo "::warning::GH_USER_TOKEN secret is not configured; skipping Agent lint comment."
 
       - name: Warn when Agent user token missing
         if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN == '' }}

@@ -111,31 +111,16 @@ void test("optimize-math-expressions rewrites division by near-2 as multiplicati
     // floating-point rounding rather than exactly 2. The rule must use
     // tolerance-aware comparison so it recognizes the near-2 literal and
     // rewrites the division to a multiplication by the reciprocal.
+    //
+    // This test covers both cases in one stronger assertion:
+    // 1. 2.0 normalizes to exactly 2 and triggers the rewrite (→ size * 0.5)
+    // 2. 1.9999999999999998 (floating-point noise for ~2) also triggers the
+    //    rewrite, proving epsilon-aware comparison vs strict equality.
     const input = "half1 = size / 2.0;\nhalf2 = size / 1.9999999999999998;\n";
     const result = lintWithRule("optimize-math-expressions", input, {});
 
     // Both lines should trigger the division-to-multiplication rewrite and
-    // produce a multiplication by 0.5. The rule normalizes 2.0 to exactly 2
-    // for comparison, so the first line always becomes `size * 0.5`. The
-    // second line (1.9999999999999998) should also be recognized as ~2 and
-    // rewritten to multiplication. The output should NOT contain `/`.
-    assert.equal(result.messages.length, 1);
-    assert.ok(result.output.includes("*"), "output should contain a multiplication, not division");
-    assert.equal(result.output.includes("/"), false, "output should not contain division operator");
-});
-
-void test("optimize-math-expressions canonicalizes near-2 literals using epsilon comparison", () => {
-    // A literal that represents approximately 2 but has floating-point noise
-    // (e.g., 1.9999999999999998 stored as a numeric literal) should be
-    // recognized as approximately 2 and trigger the division-by-2 rewrite.
-    // This validates that the rule uses epsilon comparison rather than
-    // strict equality for denominator matching.
-    const input = "half1 = size / 2.0;\nhalf2 = size / 1.9999999999999998;\n";
-    const result = lintWithRule("optimize-math-expressions", input, {});
-
-    // Both lines should trigger the division-to-multiplication rewrite.
-    // The rule normalizes 2.0 for comparison, so both near-2 literals
-    // are recognized and rewritten to multiplication by 0.5.
+    // produce a multiplication by 0.5. The output should NOT contain `/`.
     assert.equal(result.messages.length, 1);
     assert.ok(result.output.includes("*"), "output should contain a multiplication, not division");
     assert.equal(result.output.includes("/"), false, "output should not contain division operator");

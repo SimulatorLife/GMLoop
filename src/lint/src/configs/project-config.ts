@@ -1,13 +1,17 @@
 import type { GmloopProjectConfig } from "@gmloop/core";
 
 import {
+    isLintRuleLevel,
+    type LintRuleLevel as LintRuleLevelAlias,
+    normalizeLintRuleLevel
+} from "./lint-rule-level.js";
+import {
     LINT_RULESET_NAMES,
     LINT_RULESET_RULE_LEVELS,
-    type LintRuleLevel,
+    LintRuleLevel,
     type LintRulesetName
 } from "./rule-level-presets.js";
 
-const VALID_RULE_LEVELS = new Set(["off", "warn", "error"]);
 const LINT_RULESET_NAME_VALUES = new Set(LINT_RULESET_NAMES);
 
 function isLintRulesetName(value: string): value is LintRulesetName {
@@ -52,14 +56,16 @@ export function normalizeLintRulesConfig(
         throw new TypeError("gmloop.json lintRules must be an object.");
     }
 
-    const normalizedRules: Record<string, LintRuleLevel> = {
+    const normalizedRules: Record<string, LintRuleLevelAlias> = {
         ...rulesetRules
     };
     for (const [ruleId, rawLevel] of Object.entries(rawLintRules)) {
-        if (typeof rawLevel !== "string" || !VALID_RULE_LEVELS.has(rawLevel)) {
-            throw new TypeError(`gmloop.json lintRules.${ruleId} must be one of off, warn, or error.`);
+        if (!isLintRuleLevel(rawLevel)) {
+            throw new TypeError(
+                `gmloop.json lintRules.${ruleId} must be one of ${Object.values(LintRuleLevel).join(", ")}.`
+            );
         }
-        normalizedRules[ruleId] = rawLevel as LintRuleLevel;
+        normalizedRules[ruleId] = normalizeLintRuleLevel(rawLevel);
     }
 
     return Object.freeze(normalizedRules);

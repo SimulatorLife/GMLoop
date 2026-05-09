@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { hasCommentImmediatelyBefore, isDocLikeLeadingLine } from "../../src/doc-comment/metadata.js";
+import { hasCommentImmediatelyBefore, isDocLikeLeadingLine } from "../../src/doc-comment/index.js";
 
 void test("isDocLikeLeadingLine recognizes doc-like prefixes", () => {
     assert.equal(isDocLikeLeadingLine("/// @param value"), true);

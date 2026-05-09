@@ -36,6 +36,8 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #isRefactorEnabled = true;
 
+    #transpileMode: "none" | "patch" | "expression" = "none";
+
     #error: string | null = null;
 
     #debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -98,7 +100,8 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                     gml: this.#gmlInput,
                     format: this.#isFormatEnabled,
                     lint: this.#isLintEnabled,
-                    refactor: this.#isRefactorEnabled
+                    refactor: this.#isRefactorEnabled,
+                    transpileMode: this.#transpileMode
                 })
             });
 
@@ -143,6 +146,12 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
+    #setTranspileMode(mode: "patch" | "expression"): void {
+        this.#transpileMode = this.#transpileMode === mode ? "none" : mode;
+        void this.#processInput();
+        this.requestUpdate();
+    }
+
     #setViewMode(mode: "code" | "ast"): void {
         this.#viewMode = mode;
         this.requestUpdate();
@@ -183,6 +192,22 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         >
                             Refactor
                         </button>
+                        <button
+                            type="button"
+                            class="rule-toggle ${this.#transpileMode === "patch" ? "active" : ""}"
+                            aria-pressed=${this.#transpileMode === "patch"}
+                            @click=${() => this.#setTranspileMode("patch")}
+                        >
+                            Patch Transpile
+                        </button>
+                        <button
+                            type="button"
+                            class="rule-toggle ${this.#transpileMode === "expression" ? "active" : ""}"
+                            aria-pressed=${this.#transpileMode === "expression"}
+                            @click=${() => this.#setTranspileMode("expression")}
+                        >
+                            Expression Transpile
+                        </button>
                     </div>
                     <div class="playground-toolbar-spacer" aria-hidden="true"></div>
                     <div class="view-selector">
@@ -221,7 +246,13 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                     </div>
                     <div class="editor-pane">
                         <div class="pane-header">
-                            <span>${this.#viewMode === "code" ? "Processed Result" : "Parsed AST"}</span>
+                            <span
+                                >${this.#viewMode === "code"
+                                    ? this.#transpileMode === "none"
+                                        ? "GML"
+                                        : "JS"
+                                    : "Parsed AST"}</span
+                            >
                             <span class="pane-header-status">Read-only</span>
                         </div>
                         ${this.#error
