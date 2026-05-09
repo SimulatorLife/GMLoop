@@ -767,6 +767,53 @@ void test("gm2031 inserts file_find_close only once before the nested file_find_
     assertEquals(firstPass, secondPass);
 });
 
+void test("gm2031 fixes multiple _file2 = file_find_first calls in the same pass", () => {
+    // The rule targets _file2 = file_find_first(...) pattern.
+    // The fix (while loop instead of for...of + break) ensures all matching lines
+    // are processed in a single pass, not just the first one.
+    const input = [
+        "if (condition1)",
+        "{",
+        '    _file2 = file_find_first("/data1/*.json", fa_none);',
+        "}",
+        "",
+        "if (condition2)",
+        "{",
+        '    _file2 = file_find_first("/data2/*.json", fa_none);',
+        "}",
+        ""
+    ].join("\n");
+
+    const firstPass = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm2031", input).output;
+
+    // Both _file2 calls must get a preceding file_find_close in a single pass.
+    // The broken code would inject only the first one (break after splice).
+    assertEquals(countOccurrences(firstPass, "file_find_close();"), 2);
+    assertEquals(countOccurrences(firstPass, "_file2 = file_find_first("), 2);
+});
+
+void test("gm2031 fixes all _file2 calls including those after a close guard", () => {
+    // Key behavioral fix: the while loop does NOT break after finding a close guard —
+    // it skips past the close and continues scanning for more unguarded _file2 calls.
+    // The broken for...of+break code would stop at the first close it found, leaving
+    // subsequent unguarded _file2 calls unprocessed.
+    const input = [
+        '    _file2 = file_find_first("/data/*.json", fa_none);',
+        "",
+        "    file_find_close();",
+        "",
+        '    _file2 = file_find_first("/other/*.json", fa_none);',
+        ""
+    ].join("\n");
+
+    const firstPass = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm2031", input).output;
+
+    // The second _file2 must be fixed even though a close guard was found above it.
+    // (The first _file2 is also fixed — no preceding close guard for it.)
+    assertEquals(countOccurrences(firstPass, "_file2 = file_find_first("), 2);
+    assertEquals(countOccurrences(firstPass, "file_find_close();"), 2);
+});
+
 void test("gm2043 swaps declaration order exactly once across repeated fixer passes", () => {
     const input = ["i = 0;", "", "var i = 34;", ""].join("\n");
 
