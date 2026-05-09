@@ -323,7 +323,7 @@ const originalConsoleInfo = console.info;
 // Lightweight filter used to suppress only the diagnostic lines written by
 // internal modules. This avoids fully silencing real error messages while
 // preventing noisy diagnostic output that appears on stderr.
-function isDiagnosticErrorMessage(message) {
+export function isDiagnosticErrorMessage(message) {
     if (!message || typeof message !== "string") return false;
     return (
         message.startsWith("[feather:diagnostic]") ||
@@ -338,7 +338,7 @@ function isDiagnosticErrorMessage(message) {
 // those noisy messages to make repo-wide formatting runs deterministic. We
 // specifically filter function-name style debug messages that start with a
 // lowercase identifier followed by a colon or known debug phrases.
-function isDiagnosticStdoutMessage(message) {
+export function isDiagnosticStdoutMessage(message) {
     if (!message || typeof message !== "string") return false;
     // Example: 'promoteLeadingDocCommentTextToDescription: filteredResult pre-promotion'
     if (message.startsWith("promoteLeadingDocCommentTextToDescription:")) {
@@ -381,19 +381,19 @@ function configureConsoleMethods(logLevel: string): void {
             originalConsoleError.apply(console, args);
         };
         console.warn = (...args) => {
-            if (args.length > 0 && isDiagnosticErrorMessage(String(args[0]))) {
+            if (args.length > 0 && isDiagnosticStdoutMessage(String(args[0]))) {
                 return;
             }
             originalConsoleWarn.apply(console, args);
         };
         console.log = (...args) => {
-            if (args.length > 0 && isDiagnosticStdoutMessage(String(args[0]))) {
+            if (args.length > 0 && isDiagnosticErrorMessage(String(args[0]))) {
                 return;
             }
             originalConsoleLog.apply(console, args);
         };
         console.info = (...args) => {
-            if (args.length > 0 && isDiagnosticStdoutMessage(String(args[0]))) {
+            if (args.length > 0 && isDiagnosticErrorMessage(String(args[0]))) {
                 return;
             }
             originalConsoleInfo.apply(console, args);
