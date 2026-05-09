@@ -26,6 +26,9 @@ then return here for deeper context.
 - [CLI wrapper reference](../README.md#cli-wrapper-environment-knobs) &mdash; Quick
   lookup for environment variables and wrapper behaviour when scripting formatter
   runs in CI or editor tooling.
+- [CLI command guide](../src/cli/README.md) &mdash; Full command catalog and
+  project-config behavior for parser, lint, refactor, transpile, watch, and
+  graph workflows.
 
 ## Contributor workflow
 
@@ -72,6 +75,7 @@ implementation details:
   of the workspace packages, where generated assets live, and which scripts
   refresh them.
 
-## TODO / Ideas
+## Agent and automation surfaces
 
-- Create a new workspace for a GML-tooling MCP server that wraps/exposes the CLI's commands (`@gmloop/mcp`) so an AI agent can interact/invoke the tools.
+- [MCP workspace reference](../src/mcp/README.md) &mdash; Current
+  `@gmloop/mcp` package docs for exposing CLI-adjacent workflows to AI tooling.

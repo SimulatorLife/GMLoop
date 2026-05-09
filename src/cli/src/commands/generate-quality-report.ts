@@ -1391,7 +1391,7 @@ export function runGenerateQualityReport({ command }: any = {}) {
 
     if (exitCode !== 0) {
         process.exitCode = exitCode;
-        throw new CliUsageError("Test regressions detected.");
+        throw new CliUsageError(exitCode === 11 ? "Lint errors detected." : "Test regressions detected.");
     }
 
     return 0;
@@ -1583,8 +1583,13 @@ function runCli(options: any = {}) {
 
     let exitCode = 0;
     let statusLine;
+    const lintErrorCount = Number(target.lint?.errors ?? 0);
+    const hasLintErrors = Number.isFinite(lintErrorCount) && lintErrorCount > 0;
 
-    if (base.usedDir && target.usedDir) {
+    if (hasLintErrors) {
+        exitCode = 11;
+        statusLine = `❌ Lint errors detected on gate target (${usingMerged ? "Merged" : "PR (Head)"}): ${String(lintErrorCount)}.`;
+    } else if (base.usedDir && target.usedDir) {
         const regressions = detectRegressions(base, target);
         const gateLabel = usingMerged ? "Base → Merged" : "Base → PR (Head)";
         if (regressions.length > 0) {
