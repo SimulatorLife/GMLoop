@@ -194,10 +194,15 @@ function assertWorkflowDispatchesToReusableAgent(source: string, agentName: stri
     assert.match(source, new RegExp(String.raw`agent: ${agentName}`, "u"));
 }
 
-function assertWorkflowDeclaresAgentPackage(source: string, packageName: string): void {
-    const escapedPackageName = packageName.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
-
-    assert.match(source, new RegExp(String.raw`agent_package:\s*'?${escapedPackageName}(?:@[^'\s]+)?'?`, "u"));
+/**
+ * Asserts that the workflow source does NOT declare an `agent_package` field.
+ * Child workflows that delegate to `agent-invoke.yml` must not declare their
+ * own package; the parent workflow infers it from the `agent` input field.
+ * Declaring it in the child would be redundant and could cause the parent to
+ * misroute or override the intended agent.
+ */
+function assertWorkflowDeclaresNoAgentPackage(source: string): void {
+    assert.doesNotMatch(source, /agent_package:/u);
 }
 
 function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
@@ -255,7 +260,7 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
         source.lastIndexOf("agent_setup_command") < source.lastIndexOf("agent_command"),
         "Qwen must pull the configured local model before invoking the real task."
     );
-    assertWorkflowDeclaresAgentPackage(source, "@qwen-code/qwen-code");
+    assertWorkflowDeclaresNoAgentPackage(source);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /verify_qwen_/u);
     assert.doesNotMatch(source, /openai-tool-registry/u);
@@ -304,7 +309,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
 
     assert.match(source, /name: '▶️ Aider Invoke'/u);
     assertWorkflowDispatchesToReusableAgent(source, "aider");
-    assertWorkflowDeclaresAgentPackage(source, "aider-chat");
+    assertWorkflowDeclaresNoAgentPackage(source);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assert.match(setupCommand, /pull_aider_configured_model\(\)/u);
@@ -344,7 +349,7 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
 
     assert.match(source, /name: '▶️ Gemini Invoke'/u);
     assertWorkflowDispatchesToReusableAgent(source, "gemini");
-    assertWorkflowDeclaresAgentPackage(source, "@google/gemini-cli");
+    assertWorkflowDeclaresNoAgentPackage(source);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
