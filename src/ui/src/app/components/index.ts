@@ -1,3 +1,4 @@
+export * from "./event-bus-mixin.js";
 export * from "./events.js";
 export * from "./gm-app-header.js";
 export * from "./gm-app-shell.js";

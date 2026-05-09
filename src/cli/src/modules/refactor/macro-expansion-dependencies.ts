@@ -3,9 +3,8 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
+import { readSemanticLocationIndex } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
-
-import { readSemanticLocationIndex } from "./semantic-index-helpers.js";
 
 type MacroIdentifierEntry = {
     declarations?: Array<Record<string, unknown>>;

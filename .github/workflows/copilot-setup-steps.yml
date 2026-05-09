@@ -18,48 +18,26 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - name: Read Node version from .nvmrc
-        id: node-version
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
-
-      - name: Read pnpm version from package.json
-        id: pnpm-version
-        run: |
-          version=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).packageManager.split('@')[1]")
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
-          version: ${{ steps.pnpm-version.outputs.version }}
+          cache: true
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.node-version.outputs.version }}
+          node-version-file: .nvmrc
           cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: |
-          set -o pipefail
-          install_log="$(mktemp)"
-          if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-            exit 0
-          fi
-
-          if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-            echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-            pnpm install --no-frozen-lockfile
-            exit 0
-          fi
-
-          echo "::error::Dependency install failed for a reason other than outdated lockfile."
-          exit 1
+        run: pnpm install --frozen-lockfile --recursive
 
       - name: Build TypeScript workspaces (best effort)
         run: |

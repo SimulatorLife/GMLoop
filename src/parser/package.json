@@ -24,5 +24,5 @@
     "test": "pnpm run build:types && node --test dist/test/*.test.js",
     "antlr": "java -Xmx500M -jar ../../resources/antlr/antlr4-4.13.2-complete.jar -Dlanguage=JavaScript -visitor -o generated/ GameMakerLanguageLexer.g4 && java -Xmx500M -jar ../../resources/antlr/antlr4-4.13.2-complete.jar -Dlanguage=JavaScript -visitor -o generated/ GameMakerLanguageParser.g4"
   },
-  "packageManager": "pnpm@10.28.0"
+  "packageManager": "pnpm@11.0.8"
 }

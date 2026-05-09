@@ -28,7 +28,6 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: gemini
-      agent_package: '@google/gemini-cli@latest'
       agent_setup_command: |
         mkdir -p "$HOME/.gemini/policies"
         if [ -f ".gemini/policies/tools.toml" ]; then
@@ -45,7 +44,7 @@ jobs:
         export NODE_OPTIONS="--max-old-space-size=4096"
 
         set +e
-        stdbuf -oL -eL gemini \
+        stdbuf -oL -eL pnpm --silent dlx @google/gemini-cli@latest \
           --approval-mode=yolo \
           --policy="$HOME/.gemini/policies" \
           --output-format=stream-json \

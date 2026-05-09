@@ -180,6 +180,142 @@ void test("graph visualization server keeps the current view accessible while re
     }
 });
 
+void test("graph visualization server rejects malformed JSON on /api/open with 400", async (testContext) => {
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            openProjectTargets: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/open`, {
+            body: "not valid json",
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
+        assert.equal(response.status, 400);
+        const payload = (await response.json()) as { error: string };
+        assert.equal(payload.error, "Invalid JSON or non-object payload");
+    } finally {
+        await handle.stop();
+    }
+});
+
+void test("graph visualization server rejects non-object JSON on /api/open with 400", async (testContext) => {
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            openProjectTargets: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/open`, {
+            body: JSON.stringify("just a string"),
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
+        assert.equal(response.status, 400);
+        const payload = (await response.json()) as { error: string };
+        assert.equal(payload.error, "Invalid JSON or non-object payload");
+    } finally {
+        await handle.stop();
+    }
+});
+
+void test("graph visualization server rejects malformed JSON on /api/playground/process with 400", async (testContext) => {
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            processPlayground: async () => ({ ast: "", output: "", error: null })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/playground/process`, {
+            body: "{ invalid json",
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
+        assert.equal(response.status, 400);
+        const payload = (await response.json()) as { error: string };
+        assert.equal(payload.error, "Invalid JSON or non-object payload");
+    } finally {
+        await handle.stop();
+    }
+});
+
+void test("graph visualization server rejects non-object JSON on /api/playground/process with 400", async (testContext) => {
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            processPlayground: async () => ({ ast: "", output: "", error: null })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/playground/process`, {
+            body: JSON.stringify(42),
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
+        assert.equal(response.status, 400);
+        const payload = (await response.json()) as { error: string };
+        assert.equal(payload.error, "Invalid JSON or non-object payload");
+    } finally {
+        await handle.stop();
+    }
+});
+
 /**
  * Verify that the server's error reporting uses the capability probe contract
  * (`Core.isErrorLike`) rather than `instanceof Error`, so that cross-realm error

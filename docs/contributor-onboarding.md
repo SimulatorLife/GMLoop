@@ -50,8 +50,10 @@ pnpm run format:check
 Cross-module integration fixtures under `test/fixtures/integration/` are root-level
 integration coverage and run only through `pnpm run test`.
 
-Fixtures under `src/format/test/` and `src/parser/test/input/` are golden—do not
-edit them unless you are intentionally changing formatter or parser output.
+Fixtures under `test/fixtures/`, `src/format/test/fixtures/`,
+`src/parser/test/**/*.gml`, and `src/lint/test/**/*.gml` are golden—do not edit
+them unless you are intentionally changing formatter/parser/lint behavior and
+have explicit approval for fixture updates.
 
 Use the fixture profiling commands when performance work touches fixture runners
 or adapters:
@@ -102,6 +104,8 @@ pnpm run format:gml -- path/to/project
 
 * Start with the [documentation index](README.md) for deep dives and planning
   notes.
+* Read the [project target state](target-state.md) before making architecture or
+  ownership-boundary changes.
 * Review the [semantic subsystem reference](../src/semantic/README.md) before
   adjusting identifier-case discovery or project-index caching.
 

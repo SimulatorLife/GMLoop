@@ -7,7 +7,13 @@ type RuntimeReadyGlobals = Record<string, unknown> & {
 };
 
 /**
- * Resolve whether the GameMaker runtime is ready to accept websocket patches.
+ * Determine whether the GameMaker runtime is ready to accept websocket patches.
+ *
+ * Returns early if the cached `runtimeReady` flag is already true, otherwise
+ * probes the global table for the canonical readiness signal:
+ * `g_pBuiltIn` must be an object, `JSON_game` must expose array-typed
+ * `ScriptNames` and `Scripts` entries, and `Scripts` must contain at least
+ * one function-typed entry (the GameMaker runtime's initialization marker).
  *
  * @param runtimeReady The previously cached readiness state.
  * @returns True when the runtime is already known to be ready or is now detected as ready.
@@ -17,10 +23,6 @@ export function resolveRuntimeReadiness(runtimeReady: boolean): boolean {
         return true;
     }
 
-    return isRuntimeReady();
-}
-
-function isRuntimeReady(): boolean {
     const globals = globalThis as RuntimeReadyGlobals;
     const builtins = globals.g_pBuiltIn;
     if (typeof builtins !== "object" || builtins === null) {

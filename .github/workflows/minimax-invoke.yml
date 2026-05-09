@@ -29,26 +29,11 @@ jobs:
       additional_context: ${{ github.event.comment.body }}
       agent: mini-max
       openai_base_url: 'https://api.minimax.io/v1'
-      agent_setup_command: |
-        set -euo pipefail
-
-        pnpm_home="${RUNNER_TEMP}/pnpm-global"
-        mkdir -p "${pnpm_home}"
-        echo "PNPM_HOME=${pnpm_home}" >> "$GITHUB_ENV"
-        echo "${pnpm_home}" >> "$GITHUB_PATH"
-        export PNPM_HOME="${pnpm_home}"
-        export PATH="${PNPM_HOME}:${PATH}"
-
-        if ! command -v qwen >/dev/null 2>&1; then
-          pnpm add -g @qwen-code/qwen-code@latest
-        fi
-
-        qwen --version
       agent_command: |
         set -euo pipefail
 
         set +e
-        stdbuf -oL -eL qwen \
+        stdbuf -oL -eL pnpm --silent dlx @qwen-code/qwen-code@latest \
           --yolo \
           --model=MiniMax-M2.7 \
           --output-format=stream-json \

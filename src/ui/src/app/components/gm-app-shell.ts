@@ -17,6 +17,7 @@ import {
     readGraphVisualizationUiStateFromCurrentUrl,
     replaceGraphVisualizationUiStateInCurrentUrl
 } from "../state/url-state.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
@@ -31,6 +32,10 @@ import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
  * Root app shell that composes header, toolbar, and graph/docs/config surfaces.
+ *
+ * Event subscriptions are managed by an injected `EventBusManager` collaborator,
+ * which auto-registers listeners on `connectedCallback` and tears them down
+ * in reverse order on `disconnectedCallback`.
  */
 export class GmAppShell extends LightDomLitElement {
     public static override properties = {
@@ -47,10 +52,17 @@ export class GmAppShell extends LightDomLitElement {
     #store: GraphVisualizationUiStore;
 
     /**
-     * Unsubscribes from the store. Populated in `connectedCallback` and
-     * cleaned up in `disconnectedCallback` so the pair stays in sync.
+     * Manages the lifecycle of 8 event listeners for UI interactions.
+     * Initialized in the constructor; connected on `connectedCallback`
+     * and torn down on `disconnectedCallback`.
      */
-    #unsubscribe: (() => void) | null = null;
+    #eventBus: EventBusManager;
+
+    /**
+     * Store subscription handle for URL persistence. Populated in the
+     * constructor and cleaned up when the element disconnects.
+     */
+    #unsubscribeStore: (() => void) | null = null;
 
     // ─── Private handlers (access #state and #store via closure) ───────────────
 
@@ -128,42 +140,35 @@ export class GmAppShell extends LightDomLitElement {
         super();
         this.#store = new GraphVisualizationUiStore(readGraphVisualizationUiStateFromCurrentUrl());
         this.#state = this.#store.getState();
-    }
 
-    public override connectedCallback(): void {
-        super.connectedCallback();
-
-        // Register all event listeners
-        this.addEventListener(GRAPH_UI_EVENT_NAVIGATE_PAGE, this.#onNavigatePage);
-        this.addEventListener(GRAPH_UI_EVENT_SET_DOCS_VIEW, this.#onSetDocsView);
-        this.addEventListener(GRAPH_UI_EVENT_SET_SEARCH_QUERY, this.#onSetSearchQuery);
-        this.addEventListener(GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW, this.#onToggleGraphView);
-        this.addEventListener(GRAPH_UI_EVENT_CYCLE_LABEL_MODE, this.#onCycleLabelMode);
-        this.addEventListener(GRAPH_UI_EVENT_RESET_DEFAULTS, this.#onResetDefaults);
-        this.addEventListener(GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, this.#onTriggerOpenProject);
-        this.addEventListener(GRAPH_UI_EVENT_TRIGGER_REGENERATE, this.#onTriggerRegenerate);
+        this.#eventBus = new EventBusManager(this, [
+            { event: GRAPH_UI_EVENT_NAVIGATE_PAGE, handler: this.#onNavigatePage },
+            { event: GRAPH_UI_EVENT_SET_DOCS_VIEW, handler: this.#onSetDocsView },
+            { event: GRAPH_UI_EVENT_SET_SEARCH_QUERY, handler: this.#onSetSearchQuery },
+            { event: GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW, handler: this.#onToggleGraphView },
+            { event: GRAPH_UI_EVENT_CYCLE_LABEL_MODE, handler: this.#onCycleLabelMode },
+            { event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults },
+            { event: GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, handler: this.#onTriggerOpenProject },
+            { event: GRAPH_UI_EVENT_TRIGGER_REGENERATE, handler: this.#onTriggerRegenerate }
+        ]);
 
         // Subscribe to store and persist URL state on changes
-        this.#unsubscribe = this.#store.subscribe((nextState) => {
+        this.#unsubscribeStore = this.#store.subscribe((nextState) => {
             this.#state = nextState;
             replaceGraphVisualizationUiStateInCurrentUrl(nextState);
             this.requestUpdate();
         });
     }
 
-    public override disconnectedCallback(): void {
-        // Unregister all event listeners in reverse order of registration
-        this.removeEventListener(GRAPH_UI_EVENT_TRIGGER_REGENERATE, this.#onTriggerRegenerate);
-        this.removeEventListener(GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, this.#onTriggerOpenProject);
-        this.removeEventListener(GRAPH_UI_EVENT_RESET_DEFAULTS, this.#onResetDefaults);
-        this.removeEventListener(GRAPH_UI_EVENT_CYCLE_LABEL_MODE, this.#onCycleLabelMode);
-        this.removeEventListener(GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW, this.#onToggleGraphView);
-        this.removeEventListener(GRAPH_UI_EVENT_SET_SEARCH_QUERY, this.#onSetSearchQuery);
-        this.removeEventListener(GRAPH_UI_EVENT_SET_DOCS_VIEW, this.#onSetDocsView);
-        this.removeEventListener(GRAPH_UI_EVENT_NAVIGATE_PAGE, this.#onNavigatePage);
+    public override connectedCallback(): void {
+        super.connectedCallback();
+        this.#eventBus.connect();
+    }
 
-        this.#unsubscribe?.();
-        this.#unsubscribe = null;
+    public override disconnectedCallback(): void {
+        this.#eventBus.disconnect();
+        this.#unsubscribeStore?.();
+        this.#unsubscribeStore = null;
 
         super.disconnectedCallback();
     }
@@ -190,11 +195,12 @@ export class GmAppShell extends LightDomLitElement {
         }
 
         return html`
+            <a class="skip-link" href="#graph-page">Skip to content</a>
             <div id="app-shell">
                 <gm-app-header .model=${this.model} .state=${this.#state}></gm-app-header>
                 <gm-graph-toolbar .model=${this.model} .state=${this.#state}></gm-graph-toolbar>
                 ${this.#state.errorMessage
-                    ? html`<div class="error-banner" role="alert">${this.#state.errorMessage}</div>`
+                    ? html`<div class="error-banner" role="alert" tabindex="-1">${this.#state.errorMessage}</div>`
                     : null}
                 <main>
                     <gm-graph-panel .model=${this.model} .state=${this.#state}></gm-graph-panel>

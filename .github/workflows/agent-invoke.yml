@@ -30,9 +30,6 @@ on:
       agent_setup_command_file:
         type: string
         required: false
-      agent_package:
-        type: string
-        required: false
       openai_base_url:
         type: string
         required: false
@@ -169,7 +166,7 @@ jobs:
           gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"
 
       - name: Checkout target commit
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ steps.validate_pr.outputs.head_sha }}
@@ -244,37 +241,28 @@ jobs:
           git config --local --unset-all http.https://github.com/.extraheader || true
           git remote set-url origin "https://x-access-token:${GH_USER_TOKEN}@github.com/${{ github.repository }}.git"
 
-      - name: Read Node version from .nvmrc
-        id: read-node-version
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
-
-      - name: Read pnpm version from package.json
-        id: read-pnpm-version
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).packageManager.split('@')[1]")"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
-          version: ${{ steps.read-pnpm-version.outputs.version }}
-          run_install: false
+          cache: true
 
-      - name: Use Node from .nvmrc
+      - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.read-node-version.outputs.version }}
+          node-version-file: .nvmrc
           cache: 'pnpm'
           cache-dependency-path: |
             pnpm-lock.yaml
             **/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --recursive
+
+      - name: Build TypeScript workspaces (best effort)
+        run: |
+          if ! pnpm run build:ts; then
+            echo "::warning::TypeScript workspace build failed; continuing environment setup."
+          fi
 
       - name: Start and validate local OpenAI-compatible endpoint
         if: ${{ startsWith(inputs.openai_base_url, 'http://127.0.0.1') || startsWith(inputs.openai_base_url, 'http://localhost') }}
@@ -350,53 +338,6 @@ jobs:
 
             sleep 2
           done
-
-      - name: Install dependencies and build (root/workspaces)
-        shell: bash
-        run: |
-          set -o pipefail
-
-          run_typescript_build_best_effort() {
-            if ! pnpm run build:ts; then
-              echo "::warning::TypeScript workspace build failed; continuing agent workflow setup."
-            fi
-          }
-
-          install_log="$(mktemp)"
-
-          if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-            run_typescript_build_best_effort
-            exit 0
-          fi
-
-          if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-            echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-            pnpm install --no-frozen-lockfile
-            run_typescript_build_best_effort
-            exit 0
-          fi
-
-          echo "::error::Dependency install failed for a reason other than outdated lockfile."
-          exit 1
-
-      - name: Install agent CLI (from child)
-        if: ${{ inputs.agent_package != '' }}
-        shell: bash
-        env:
-          AGENT_CLI: ${{ inputs.agent }}
-          AGENT_PACKAGE: ${{ inputs.agent_package }}
-        run: |
-          set -euo pipefail
-
-          echo "Checking for CLI: ${AGENT_CLI} (from pnpm package: ${AGENT_PACKAGE})"
-
-          if ! command -v "${AGENT_CLI}" >/dev/null 2>&1; then
-            echo "Not found, installing ${AGENT_PACKAGE} via pnpm..."
-            pnpm add -g "${AGENT_PACKAGE}"
-            echo "Installed ${AGENT_PACKAGE}. CLI location: $(command -v "${AGENT_CLI}")"
-          else
-            echo "${AGENT_CLI} CLI already installed at: $(command -v "${AGENT_CLI}")"
-          fi
 
       - name: Run agent setup command
         if: ${{ inputs.agent_setup_command != '' || inputs.agent_setup_command_file != '' }}

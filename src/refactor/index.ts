@@ -100,3 +100,4 @@ export type {
     WorkspaceWriteFile
 } from "./src/index.js";
 export { Refactor, WORKSPACE_EDIT_REVISION_TOKEN } from "./src/index.js";
+export { readExclusiveSemanticLocationIndex, readSemanticLocationIndex } from "./src/index.js";

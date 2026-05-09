@@ -1143,6 +1143,48 @@ void test("quality report detects a target synthetic build failure as a regressi
     assert.match(markdown, /build :: pnpm run build:ts/u);
 });
 
+void test("quality report prioritizes lint errors before test regression status", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "suite",
+        `<testsuites><testsuite name="sample"><testcase name="stable" classname="suite" /></testsuite></testsuites>`
+    );
+    writeXml(
+        headDir,
+        "suite",
+        `<testsuites><testsuite name="sample"><testcase name="stable" classname="suite" /></testsuite></testsuites>`
+    );
+    writeXml(
+        mergeDir,
+        "suite",
+        `<testsuites><testsuite name="sample"><testcase name="stable" classname="suite"><failure message="regression" /></testcase></testsuite></testsuites>`
+    );
+    writeXml(
+        mergeDir,
+        "eslint-checkstyle",
+        `<checkstyle version="1.0"><file name="src/example.ts"><error line="1" severity="error" message="lint error" source="lint" /></file></checkstyle>`
+    );
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: mergeDir,
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 11);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /❌ Lint errors detected on gate target \(Merged\): 1\./u);
+});
+
 void test("command accepts options without positional arguments", async () => {
     const command = createGenerateQualityReportCommand();
 

@@ -27,7 +27,6 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: qwen
-      agent_package: '@qwen-code/qwen-code@latest'
       agent_setup_command: |
         set -euo pipefail
 
@@ -52,7 +51,7 @@ jobs:
         set -euo pipefail
 
         set +e
-        stdbuf -oL -eL qwen \
+        stdbuf -oL -eL pnpm --silent dlx @qwen-code/qwen-code@latest \
           --yolo \
           --debug \
           --output-format=stream-json \

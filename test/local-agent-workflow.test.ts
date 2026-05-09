@@ -130,7 +130,7 @@ function getRequiredAiderCommand(source: string): string {
 
 function getRequiredGeminiCommand(source: string): string {
     const directCommandStartIndex = source.indexOf("stdbuf -oL -eL gemini \\");
-    const nodeCommandStartIndex = source.indexOf('stdbuf -oL -eL node --max-old-space-size=');
+    const nodeCommandStartIndex = source.indexOf("stdbuf -oL -eL node --max-old-space-size=");
     const commandStartIndex =
         directCommandStartIndex === -1
             ? nodeCommandStartIndex
@@ -186,15 +186,12 @@ function assertAiderCommandIncludesRequiredFlags(commandSource: string): void {
 }
 
 function assertWorkflowDispatchesToReusableAgent(source: string, agentName: string): void {
-    assert.match(source, new RegExp(String.raw`contains\(github\.event\.comment\.body \|\| '', '@${agentName}'\)`, "u"));
+    assert.match(
+        source,
+        new RegExp(String.raw`contains\(github\.event\.comment\.body \|\| '', '@${agentName}'\)`, "u")
+    );
     assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
     assert.match(source, new RegExp(String.raw`agent: ${agentName}`, "u"));
-}
-
-function assertWorkflowDeclaresAgentPackage(source: string, packageName: string): void {
-    const escapedPackageName = packageName.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
-
-    assert.match(source, new RegExp(String.raw`agent_package:\s*'?${escapedPackageName}(?:@[^'\s]+)?'?`, "u"));
 }
 
 function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
@@ -252,7 +249,7 @@ void test("qwen invoke is the single local-only Qwen workflow", async () => {
         source.lastIndexOf("agent_setup_command") < source.lastIndexOf("agent_command"),
         "Qwen must pull the configured local model before invoking the real task."
     );
-    assertWorkflowDeclaresAgentPackage(source, "@qwen-code/qwen-code");
+    assertWorkflowDeclaresNoAgentPackage(source);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /verify_qwen_/u);
     assert.doesNotMatch(source, /openai-tool-registry/u);
@@ -279,7 +276,9 @@ void test("qwen invoke uses checked-in settings for local model selection", asyn
         "Qwen settings must allow pnpm-backed repository validation commands."
     );
     assert.ok(
-        settings.permissions.deny.some((permission) => permission.toLowerCase() === "websearch" || permission === "web_search"),
+        settings.permissions.deny.some(
+            (permission) => permission.toLowerCase() === "websearch" || permission === "web_search"
+        ),
         "Qwen settings must deny web search tooling."
     );
     assert.ok(
@@ -299,7 +298,7 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
 
     assert.match(source, /name: '▶️ Aider Invoke'/u);
     assertWorkflowDispatchesToReusableAgent(source, "aider");
-    assertWorkflowDeclaresAgentPackage(source, "aider-chat");
+    assertWorkflowDeclaresNoAgentPackage(source);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assert.match(setupCommand, /pull_aider_configured_model\(\)/u);
@@ -339,7 +338,7 @@ void test("gemini invoke is the maintained manual-only workflow for @gemini", as
 
     assert.match(source, /name: '▶️ Gemini Invoke'/u);
     assertWorkflowDispatchesToReusableAgent(source, "gemini");
-    assertWorkflowDeclaresAgentPackage(source, "@google/gemini-cli");
+    assertWorkflowDeclaresNoAgentPackage(source);
     assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
@@ -437,7 +436,10 @@ void test("agent invoke exports OpenAI API type for every child agent", async ()
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const aiderSource = await readWorkflowSource("aider-invoke.yml");
 
-    assert.match(parentSource, /env:\n\s+OPENAI_API_TYPE: openai\n\s+OPENAI_BASE_URL: \$\{\{ inputs\.openai_base_url \}\}/u);
+    assert.match(
+        parentSource,
+        /env:\n\s+OPENAI_API_TYPE: openai\n\s+OPENAI_BASE_URL: \$\{\{ inputs\.openai_base_url \}\}/u
+    );
     assert.match(parentSource, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \|\| 'ollama' \}\}/u);
     assert.doesNotMatch(parentSource, /NODE_OPTIONS: --max-old-space-size/u);
     assert.doesNotMatch(aiderSource, /export OPENAI_API_TYPE=/u);
@@ -454,7 +456,10 @@ void test("agent invoke streams custom command output while preserving exit stat
     assert.match(setupFileInputBlock, /type: string/u);
     assert.match(setupFileInputBlock, /required: false/u);
     assert.match(source, /- name: Run agent setup command/u);
-    assert.match(source, /if: \$\{\{ inputs\.agent_setup_command != '' \|\| inputs\.agent_setup_command_file != '' \}\}/u);
+    assert.match(
+        source,
+        /if: \$\{\{ inputs\.agent_setup_command != '' \|\| inputs\.agent_setup_command_file != '' \}\}/u
+    );
     assert.match(source, /AGENT_SETUP_COMMAND: \$\{\{ inputs\.agent_setup_command \}\}/u);
     assert.match(source, /AGENT_SETUP_COMMAND_FILE: \$\{\{ inputs\.agent_setup_command_file \}\}/u);
     assert.match(source, /if \[ -n "\$\{AGENT_SETUP_COMMAND_FILE:-\}" \]; then/u);
@@ -654,24 +659,10 @@ void test("agent invoke requests merge-conflict resolution with the same agent a
     assert.match(source, /agent: \$\{\{ needs\.invoke\.outputs\.follow_up_agent \}\}/u);
 });
 
-void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
-    const source = await readWorkflowSource("agent-invoke.yml");
-
-    assert.match(source, /Read Node version from \.nvmrc/u);
-    assert.match(source, /echo "version=\$\(cat \.nvmrc\)" >> "\$GITHUB_OUTPUT"/u);
-    assert.match(source, /Read pnpm version from package\.json/u);
-    assert.match(source, /packageManager\.split\('@'\)\[1\]/u);
-    assert.match(source, /version: \$\{\{ steps\.read-pnpm-version\.outputs\.version \}\}/u);
-    assert.match(source, /uses: actions\/setup-node@v6/u);
-    assert.match(source, /node-version: \$\{\{ steps\.read-node-version\.outputs\.version \}\}/u);
-    assert.doesNotMatch(source, /version: 10\.32\.1/u);
-    assert.doesNotMatch(source, /node-version: "22"/u);
-});
-
 void test("GitHub workflows do not hardcode repository Node or pnpm versions", async () => {
     const source = await readAllWorkflowSources();
 
-    assert.doesNotMatch(source, /^\s*version:\s*10\.32\.1\s*$/mu);
-    assert.doesNotMatch(source, /^\s*node-version:\s*["']?22["']?\s*$/mu);
-    assert.doesNotMatch(source, /pnpm@10\.32\.1/u);
+    assert.doesNotMatch(source, /^\s*version:\s.*$/mu);
+    assert.doesNotMatch(source, /^\s*node-version:\s.*$/mu);
+    assert.doesNotMatch(source, /pnpm@.*/u);
 });

@@ -1,5 +1,6 @@
 import type { Rule } from "eslint";
 
+import { normalizeDocParamName } from "../../parameter-utils/index.js";
 import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
 import { findMatchingBraceEndIndex, resolveLocFromIndex } from "../gml/rule-base-helpers.js";
 import type { FeatherManifestEntry } from "./manifest.js";
@@ -92,10 +93,6 @@ function appendLineIfMissing(sourceText: string, lineToAppend: string): string {
 
     const hasTerminalNewline = sourceText.endsWith("\n");
     return `${sourceText}${hasTerminalNewline ? "" : "\n"}${lineToAppend}\n`;
-}
-
-function toDocParameterName(parameterName: string): string {
-    return parameterName.replace(/^_+/u, "");
 }
 
 function extractFunctionParameterNames(parameterListText: string): Array<string> {
@@ -520,7 +517,7 @@ function createGm1012Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                 }
 
                 const docs = parameterNames
-                    .map((parameterName) => `${indentation}/// @param ${toDocParameterName(parameterName)}`)
+                    .map((parameterName) => `${indentation}/// @param ${normalizeDocParamName(parameterName)}`)
                     .join("\n");
                 return `${docs}\n${fullMatch}`;
             }
@@ -1452,7 +1449,7 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                 }
 
                 const parameterDocLines = parameterDocNames.map(
-                    (parameterName) => `${indentation}/// @param ${toDocParameterName(parameterName)}`
+                    (parameterName) => `${indentation}/// @param ${normalizeDocParamName(parameterName)}`
                 );
                 const canonicalDocLines = [...descriptionLines, ...parameterDocLines, ...returnsLines];
                 if (canonicalDocLines.length === 0) {
@@ -1586,7 +1583,7 @@ function createGm1062Rule(entry: FeatherManifestEntry): Rule.RuleModule {
             /^([ \t]*\/\/\/\s*@param\s*)\{([^}]*)\}(\s+)([A-Za-z_][A-Za-z0-9_]*)(.*)$/gm,
             (_fullMatch, prefix: string, typeText: string, spacing: string, parameterName: string, suffix: string) => {
                 const normalizedType = normalizeFeatherDocTypeText(typeText);
-                const normalizedParameterName = toDocParameterName(parameterName);
+                const normalizedParameterName = normalizeDocParamName(parameterName);
                 const normalizedSuffix = suffix.replace(/^\s*-\s*/u, " ");
                 return `${prefix}{${normalizedType}}${spacing}${normalizedParameterName}${normalizedSuffix}`;
             }

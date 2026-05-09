@@ -197,19 +197,37 @@ void test("scheduled workflows declare explicit task category and complexity", a
 
     for (const workflow of config.workflows) {
         assert.ok(TASK_CATEGORIES.has(workflow.category), `${workflow.name} should declare a valid task category.`);
-        assert.equal(Number.isInteger(workflow.complexity), true, `${workflow.name} should declare integer complexity.`);
+        assert.equal(
+            Number.isInteger(workflow.complexity),
+            true,
+            `${workflow.name} should declare integer complexity.`
+        );
         assert.ok(workflow.complexity >= 1 && workflow.complexity <= 3, `${workflow.name} should use complexity 1..3.`);
     }
 
     for (const agent of config.agents) {
         if (agent.minComplexity !== undefined) {
-            assert.equal(Number.isInteger(agent.minComplexity), true, `${agent.name} minComplexity should be an integer.`);
-            assert.ok(agent.minComplexity >= 1 && agent.minComplexity <= 3, `${agent.name} minComplexity should use 1..3.`);
+            assert.equal(
+                Number.isInteger(agent.minComplexity),
+                true,
+                `${agent.name} minComplexity should be an integer.`
+            );
+            assert.ok(
+                agent.minComplexity >= 1 && agent.minComplexity <= 3,
+                `${agent.name} minComplexity should use 1..3.`
+            );
         }
 
         if (agent.maxComplexity !== undefined) {
-            assert.equal(Number.isInteger(agent.maxComplexity), true, `${agent.name} maxComplexity should be an integer.`);
-            assert.ok(agent.maxComplexity >= 1 && agent.maxComplexity <= 3, `${agent.name} maxComplexity should use 1..3.`);
+            assert.equal(
+                Number.isInteger(agent.maxComplexity),
+                true,
+                `${agent.name} maxComplexity should be an integer.`
+            );
+            assert.ok(
+                agent.maxComplexity >= 1 && agent.maxComplexity <= 3,
+                `${agent.name} maxComplexity should use 1..3.`
+            );
         }
     }
 });
@@ -358,7 +376,10 @@ void test("scheduler selects workflow and agent pairs and dispatches the selecte
     assert.match(schedulerWorkflow, /- cron: "\*\/15 \* \* \* \*"/u);
     assert.match(schedulerWorkflow, /const assertComplexityRange = \(value, label\) => \{/u);
     assert.match(schedulerWorkflow, /must be between 1 and 3 inclusive\./u);
-    assert.match(schedulerWorkflow, /const cadenceTicks = rawCadenceTicks === undefined \? 1 : Number\(rawCadenceTicks\);/u);
+    assert.match(
+        schedulerWorkflow,
+        /const cadenceTicks = rawCadenceTicks === undefined \? 1 : Number\(rawCadenceTicks\);/u
+    );
     assert.match(schedulerWorkflow, /runNumber % agent\.cadenceTicks === 0/u);
     assert.match(schedulerWorkflow, /workflow\.weight \* agent\.weight/u);
     assert.match(schedulerWorkflow, /inputs:\s*\{\s*agent: agentName,/u);
@@ -373,7 +394,10 @@ void test("blank manual dispatch keeps explicit manual override and otherwise us
 
     assert.match(openPrWorkflow, /if \(requestedAgent\) \{/u);
     assert.match(openPrWorkflow, /agent: requestedAgent,/u);
-    assert.match(openPrWorkflow, /const cadenceTicks = rawCadenceTicks === undefined \? 1 : Number\(rawCadenceTicks\);/u);
+    assert.match(
+        openPrWorkflow,
+        /const cadenceTicks = rawCadenceTicks === undefined \? 1 : Number\(rawCadenceTicks\);/u
+    );
     assert.match(openPrWorkflow, /No positive-weight scheduled agents are configured for blank manual dispatch\./u);
 });
 

@@ -2,7 +2,11 @@ import * as fs from "node:fs";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { WORKSPACE_EDIT_REVISION_TOKEN } from "@gmloop/refactor";
+import {
+    readExclusiveSemanticLocationIndex,
+    readSemanticLocationIndex,
+    WORKSPACE_EDIT_REVISION_TOKEN
+} from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 
 import { listConstructorRuntimeTypeReferenceRecords } from "./constructor-runtime-type-references.js";
@@ -15,7 +19,6 @@ import {
 } from "./macro-expansion-dependencies.js";
 import { ParsedLocalNamingCategoryResolver } from "./parsed-local-naming-categories.js";
 import { collectResourceSidecarRenames, resolveRenamedSoundFileName } from "./resource-sidecar-renames.js";
-import { readExclusiveSemanticLocationIndex, readSemanticLocationIndex } from "./semantic-index-helpers.js";
 
 type ResourceAssetReferenceRecord = {
     propertyPath: string;

@@ -89,49 +89,27 @@ jobs:
 
       # If the synthetic merge ref doesn't exist, continue so the leg can still upload nothing and be summarized.
       - name: Checkout (${{ matrix.target }})
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.ref.outputs.ref }}
         continue-on-error: ${{ matrix.target == 'merge' }}
 
-      - name: Read Node version from .nvmrc
-        id: node-version
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
-
-      - name: Read pnpm version from package.json
-        id: pnpm-version
-        run: |
-          echo "version=$(grep '"packageManager": "pnpm@' package.json | cut -d@ -f2 | tr -d '\",')" >> "$GITHUB_OUTPUT"
-
       - name: Setup pnpm (${{ matrix.target }})
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
-          version: ${{ steps.pnpm-version.outputs.version }}
-          run_install: false
+          cache: true
 
       - name: Setup Node (${{ matrix.target }})
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.node-version.outputs.version }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
 
-      - name: Install deps (${{ matrix.target }})
-        run: |
-          set -o pipefail
-          install_log="$(mktemp)"
-          if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-            exit 0
-          fi
-
-          if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-            echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-            pnpm install --no-frozen-lockfile
-            exit 0
-          fi
-
-          echo "::error::Dependency install failed for a reason other than outdated lockfile."
-          exit 1
+      - name: Install deps
+        run: pnpm install --frozen-lockfile --recursive
         continue-on-error: ${{ matrix.target == 'merge' }}
 
       - name: Build typescript (${{ matrix.target }})
@@ -225,46 +203,24 @@ jobs:
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
     steps:
       - name: Checkout repo (for scripts)
-        uses: actions/checkout@v5
-
-      - name: Read Node version from .nvmrc
-        id: node-version-summary
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
-
-      - name: Read pnpm version from package.json
-        id: pnpm-version-summary
-        run: |
-          echo "version=$(grep '"packageManager": "pnpm@' package.json | cut -d@ -f2 | tr -d '\",')" >> "$GITHUB_OUTPUT"
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
-          version: ${{ steps.pnpm-version-summary.outputs.version }}
-          run_install: false
+          cache: true
 
-      - name: Setup Node
+      - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.node-version-summary.outputs.version }}
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
 
-      - name: Install deps
-        run: |
-          set -o pipefail
-          install_log="$(mktemp)"
-          if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-            exit 0
-          fi
-
-          if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-            echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-            pnpm install --no-frozen-lockfile
-            exit 0
-          fi
-
-          echo "::error::Dependency install failed for a reason other than outdated lockfile."
-          exit 1
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --recursive
 
       - name: Build typescript
         run: |
@@ -300,6 +256,9 @@ jobs:
           if [ $code -eq 0 ]; then
             echo "all_green=true" >> "$GITHUB_OUTPUT"
             echo "status=clean" >> "$GITHUB_OUTPUT"
+          elif [ $code -eq 11 ]; then
+            echo "all_green=false" >> "$GITHUB_OUTPUT"
+            echo "status=lint_errors" >> "$GITHUB_OUTPUT"
           elif [ $code -eq 10 ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "status=regressions" >> "$GITHUB_OUTPUT"
@@ -345,6 +304,41 @@ jobs:
             // Set output for auto-merge gate
             const allGreen = process.env.REGRESSION_ALL_GREEN === 'true';
             core.setOutput('all_green', allGreen ? 'true' : 'false');
+
+      - name: Request Agent help for lint errors
+        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN != '' }}
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ env.GH_USER_TOKEN }}
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- automerge-pr-lint-agent -->';
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request?.number;
+            if (!number) {
+              core.notice('No PR number; skipping Agent lint comment.');
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
+            const existing = comments.find(comment => comment.body && comment.body.includes(marker));
+            const body = [
+              marker,
+              '',
+              '@mini-max The auto-merge workflow detected lint errors on this PR gate target. Please prioritize lint-error fixes before test regression triage.',
+              '',
+              'Suggested next steps:',
+              '1. Run `pnpm run lint:quiet` and apply deterministic fixes first.',
+              '2. Re-run `pnpm run build:ts` and `pnpm run lint:quiet` until lint errors are fully resolved.',
+              '',
+              `Once done, push fixes to **${pr.head.ref}** on base **${pr.base.ref}** (PR #${number}).`
+            ].join('\n');
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+            }
+            core.notice(`Requested Agent assistance for lint errors on PR #${number}.`);
 
       - name: Request Agent help for regressions
         if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN != '' }}
@@ -555,6 +549,11 @@ jobs:
             }
 
             core.notice(`Requested Agent assistance for regressions on PR #${number}.`);
+
+      - name: Warn when Agent user token missing for lint errors
+        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN == '' }}
+        run: |
+          echo "::warning::GH_USER_TOKEN secret is not configured; skipping Agent lint comment."
 
       - name: Warn when Agent user token missing
         if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN == '' }}

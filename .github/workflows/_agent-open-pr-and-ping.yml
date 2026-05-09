@@ -63,7 +63,7 @@ jobs:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
 
       - name: Checkout (with your token so pushes are yours)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.base_branch }}
           fetch-depth: 0

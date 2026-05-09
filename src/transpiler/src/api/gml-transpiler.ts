@@ -145,13 +145,18 @@ export class GmlTranspiler {
         return parser.parse();
     }
 
-    private resolveProgramAst(request: TranspileScriptRequest | TranspileEventRequest): ProgramNode {
-        const astCandidate = request.ast ?? this.parseProgram(request.sourceText);
-        if (!Core.isObjectLike(astCandidate)) {
+    private resolveProgramAst(
+        request: TranspileScriptRequest | TranspileEventRequest | TranspileClosureRequest
+    ): ProgramNode {
+        if (request.ast === undefined) {
+            return this.parseProgram(request.sourceText);
+        }
+
+        if (!Core.isObjectLike(request.ast)) {
             throw new TypeError("transpile request requires ast to be a Program-like object when provided");
         }
 
-        const astRecord = astCandidate as Record<string, unknown>;
+        const astRecord = request.ast as Record<string, unknown>;
         if (astRecord.type !== "Program") {
             throw new TypeError("transpile request requires ast.type to be 'Program' when ast is provided");
         }
@@ -159,7 +164,7 @@ export class GmlTranspiler {
             throw new TypeError("transpile request requires ast.body to be an array when ast is provided");
         }
 
-        return astCandidate as ProgramNode;
+        return request.ast as ProgramNode;
     }
 
     private emitFunctionParameterUnpacking(func: FunctionDeclarationNode, emitter: GmlToJsEmitter): string {

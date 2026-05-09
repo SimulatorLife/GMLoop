@@ -29,6 +29,7 @@ export interface ParserToken extends Token {
 export type {
     GlobalIdentifierTracker,
     IdentifierRoleApplicator,
+    IdentifierRoleCloner,
     IdentifierRoleContextController,
     IdentifierRoleManager,
     ScopeLifecycle,

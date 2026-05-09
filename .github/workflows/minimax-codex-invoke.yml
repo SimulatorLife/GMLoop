@@ -29,12 +29,11 @@ jobs:
       additional_context: ${{ github.event.comment.body }}
       openai_base_url: 'https://api.minimax.io/v1'
       agent: mini-max-codex
-      agent_package: '@openai/codex@0.80.0'
       agent_command: |
         set -euo pipefail
 
         set +e
-        stdbuf -oL -eL codex exec \
+        stdbuf -oL -eL pnpm --silent dlx @openai/codex@0.80.0 exec \
           --profile=minimax \
           --json \
           - < "${AGENT_PROMPT_FILE}" \

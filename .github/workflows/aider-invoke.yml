@@ -27,7 +27,6 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: aider
-      agent_package: aider-chat
       agent_setup_command: |
         set -euo pipefail
 
