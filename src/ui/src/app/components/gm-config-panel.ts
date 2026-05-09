@@ -105,7 +105,7 @@ export class GmConfigPanel extends LightDomLitElement {
                     Project root ${configCatalog.gmloop.projectRoot} • ${formatEntries.length} format entries •
                     ${lintRules.length} lint rules • ${codemods.length} refactor codemods
                 </p>
-                <div class="config-toggle-row">
+                <div class="config-toggle-row" role="group" aria-label="Configuration view selector">
                     <button
                         id="config-view-rendered"
                         class=${this.#configViewMode === "rendered" ? "top-nav-button active" : "top-nav-button"}

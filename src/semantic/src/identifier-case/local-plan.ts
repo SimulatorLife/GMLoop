@@ -36,6 +36,9 @@ type IdentifierCaseDeclaration = {
 type IdentifierCaseEntry = {
     name?: string | null;
     displayName?: string | null;
+    identifierId?: string | null;
+    id?: string | null;
+    key?: string | null;
     scopeId?: string | null;
     declarations?: IdentifierCaseDeclaration[] | null;
     classifications?: Array<string> | null;
@@ -484,6 +487,41 @@ function planIdentifierRenamesForScope({
     }
 }
 
+function registerTopLevelEntries({
+    collisionTracker,
+    functionEntries,
+    structEntries,
+    macroEntries,
+    globalEntries,
+    instanceEntries
+}: {
+    collisionTracker: ReturnType<typeof createNameCollisionTracker>;
+    functionEntries: IdentifierCaseEntry[];
+    structEntries: IdentifierCaseEntry[];
+    macroEntries: IdentifierCaseEntry[];
+    globalEntries: IdentifierCaseEntry[];
+    instanceEntries: IdentifierCaseEntry[];
+}) {
+    const registerEntries = (scopeType: string, entries: IdentifierCaseEntry[]) => {
+        for (const entry of entries ?? []) {
+            const name = resolveIdentifierEntryName(entry);
+            if (!name) {
+                continue;
+            }
+            const uniqueKey = `${scopeType}:${entry?.identifierId ?? entry?.id ?? entry?.key ?? name}`;
+            collisionTracker.registerExisting(scopeType, uniqueKey, name, {
+                entry,
+                currentName: name
+            });
+        }
+    };
+
+    registerEntries("functions", functionEntries);
+    registerEntries("structs", structEntries);
+    registerEntries("macros", macroEntries);
+    registerEntries("globals", globalEntries);
+    registerEntries("instance", instanceEntries);
+}
 function planTopLevelIdentifierRenames({
     projectIndex,
     styles,
@@ -508,25 +546,14 @@ function planTopLevelIdentifierRenames({
 
     const collisionTracker = createNameCollisionTracker();
 
-    const registerEntries = (scopeType, entries) => {
-        for (const entry of entries ?? []) {
-            const name = resolveIdentifierEntryName(entry);
-            if (!name) {
-                continue;
-            }
-            const uniqueKey = `${scopeType}:${entry?.identifierId ?? entry?.id ?? entry?.key ?? name}`;
-            collisionTracker.registerExisting(scopeType, uniqueKey, name, {
-                entry,
-                currentName: name
-            });
-        }
-    };
-
-    registerEntries("functions", functionEntries);
-    registerEntries("structs", structEntries);
-    registerEntries("macros", macroEntries);
-    registerEntries("globals", globalEntries);
-    registerEntries("instance", instanceEntries);
+    registerTopLevelEntries({
+        collisionTracker,
+        functionEntries,
+        structEntries,
+        macroEntries,
+        globalEntries,
+        instanceEntries
+    });
 
     planIdentifierRenamesForScope({
         scopeType: "functions",
