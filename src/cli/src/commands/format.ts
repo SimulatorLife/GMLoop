@@ -415,7 +415,7 @@ export function createFormatCommand({ name = "prettier-plugin-gml" } = {}) {
         createConfiguredSampleLimitOption({
             flag: "--ignored-directory-sample-limit <count>",
             description: (defaultLimit) =>
-                `Max ignored directories shown in summary. Default: ${defaultLimit}, use 0 to hide`,
+                `Max ignored directories shown in summary. Default: ${defaultLimit}, use 0 to suppress examples`,
             getDefaultLimit: getDefaultSkippedDirectorySampleLimit,
             resolveLimit: resolveSkippedDirectorySampleLimit
         });
@@ -428,7 +428,8 @@ export function createFormatCommand({ name = "prettier-plugin-gml" } = {}) {
 
     const { option: ignoredFileSampleLimitOption } = createConfiguredSampleLimitOption({
         flag: "--ignored-file-sample-limit <count>",
-        description: (defaultLimit) => `Max ignored files shown in summary. Default: ${defaultLimit}, use 0 to hide`,
+        description: (defaultLimit) =>
+            `Max ignored files shown in summary. Default: ${defaultLimit}, use 0 to suppress examples`,
         getDefaultLimit: getDefaultIgnoredFileSampleLimit,
         resolveLimit: resolveIgnoredFileSampleLimit
     });
@@ -436,7 +437,7 @@ export function createFormatCommand({ name = "prettier-plugin-gml" } = {}) {
     const { option: unsupportedExtensionSampleLimitOption } = createConfiguredSampleLimitOption({
         flag: "--unsupported-extension-sample-limit <count>",
         description: (defaultLimit) =>
-            `Max unsupported files shown in summary. Default: ${defaultLimit}, use 0 to hide`,
+            `Max unsupported files shown in summary. Default: ${defaultLimit}, use 0 to suppress examples`,
         getDefaultLimit: getDefaultUnsupportedExtensionSampleLimit,
         resolveLimit: resolveUnsupportedExtensionSampleLimit
     });
