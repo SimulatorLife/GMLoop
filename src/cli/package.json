@@ -18,7 +18,8 @@
     "root_path": "."
   },
   "scripts": {
-    "build:types": "tsc -b tsconfig.json",
+    "build:types": "tsc -b tsconfig.json && pnpm run patch:shebang",
+    "patch:shebang": "node scripts/patch-shebang.ts",
     "clean:types": "rm -rf dist",
     "test": "pnpm run build:types && node --test dist/test/*.test.js"
   },
