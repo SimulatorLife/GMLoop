@@ -245,7 +245,7 @@ export function buildDocumentedParamNameLookup(
             return;
         }
 
-        const orderedNames = [...names].reverse();
+        const orderedNames = names.toReversed();
 
         // Store as Set for compatibility, but keep a stable array for ordered lookups.
         mutableNode._documentedParamNamesOrdered = orderedNames;
