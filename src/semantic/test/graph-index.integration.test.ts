@@ -1323,3 +1323,117 @@ void test("buildGraphIndex projects the project manifest as the connected projec
         await fixture.cleanup();
     }
 });
+
+void test("buildGraphIndex projects object event scopes as readable visualization nodes", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-object-event-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/target_script/target_script.yy",
+            JSON.stringify({ name: "target_script", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/target_script/target_script.gml",
+            ["function target_script() {", "    return 1;", "}", ""].join("\n")
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_player/obj_player.yy",
+            JSON.stringify({
+                name: "obj_player",
+                resourceType: "GMObject",
+                eventList: [
+                    {
+                        eventType: 0,
+                        eventNum: 0,
+                        eventContents: "objects/obj_player/obj_player_Create_0.gml"
+                    }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_player/obj_player_Create_0.gml",
+            ["score = target_script();", ""].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const eventNodeId = "project::scope::scope:object:obj_player::0_0";
+        const objectNodeId = "project::resource::objects/obj_player/obj_player.yy";
+        const eventFileNodeId = "project::file::objects/obj_player/obj_player_Create_0.gml";
+        const targetScriptNodeId = "project::resource::scripts/target_script/target_script.yy";
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const eventNode = database
+                .prepare(
+                    "SELECT id, kind, name, display_name AS displayName, relative_path AS filePath, resource_path AS resourcePath, summary FROM nodes WHERE id = ?"
+                )
+                .get(eventNodeId) as
+                | {
+                      displayName: string;
+                      filePath: string;
+                      id: string;
+                      kind: string;
+                      name: string;
+                      resourcePath: string;
+                      summary: string;
+                  }
+                | undefined;
+
+            assert.ok(eventNode, "expected object event scope to become a graph node");
+            assert.equal(eventNode.kind, "object_event");
+            assert.equal(eventNode.name, "obj_player.0_0");
+            assert.equal(eventNode.displayName, "object.obj_player.0_0");
+            assert.equal(eventNode.filePath, "objects/obj_player/obj_player_Create_0.gml");
+            assert.equal(eventNode.resourcePath, "objects/obj_player/obj_player.yy");
+            assert.match(eventNode.summary, /object event 'obj_player\.0_0'/u);
+
+            const edgeRows = database
+                .prepare("SELECT from_id AS fromId, to_id AS toId, type FROM edges ORDER BY from_id, to_id, type")
+                .all() as Array<{ fromId: string; toId: string; type: string }>;
+            assert.ok(
+                edgeRows.some(
+                    (edge) => edge.fromId === objectNodeId && edge.toId === eventNodeId && edge.type === "contains"
+                ),
+                "expected object resources to contain their event nodes"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) => edge.fromId === eventNodeId && edge.toId === eventFileNodeId && edge.type === "contains"
+                ),
+                "expected object event nodes to contain their backing GML files"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) => edge.fromId === eventNodeId && edge.toId === targetScriptNodeId && edge.type === "calls"
+                ),
+                "expected event-owned calls to originate from the object event node"
+            );
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const visualizationEventNode = visualizationData.nodes.find((node) => node.id === eventNodeId);
+            assert.equal(visualizationEventNode?.kind, "object_event");
+            assert.equal(visualizationEventNode?.displayName, "object.obj_player.0_0");
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) => edge.source === eventNodeId && edge.target === targetScriptNodeId && edge.type === "calls"
+                ),
+                "expected visualization export to preserve event-to-script call ownership"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
