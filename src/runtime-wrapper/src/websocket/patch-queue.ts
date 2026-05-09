@@ -267,6 +267,7 @@ export function deduplicatePatchesById(patches: Array<unknown>): {
         return { patches, duplicateCount: 0 };
     }
 
+    deduplicatedReversed.reverse();
     return { patches: deduplicatedReversed, duplicateCount };
 }
 
