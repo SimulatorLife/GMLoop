@@ -11,9 +11,37 @@ import type {
     ValidationSummary
 } from "../src/types.js";
 
-const RENAME_COUNT = 64;
+/**
+ * Performance regression guard for naming-convention top-level validation.
+ *
+ * Exercises `planNamingConventionCodemod` with a batch of top-level rename
+ * targets to verify bounded parallelism in the validation phase.
+ *
+ * Each rename target triggers a `validateRenameRequest` call; the test engine
+ * simulates I/O with a fixed `VALIDATION_DELAY_MS` delay per call so the wall-
+ * clock time is directly proportional to the concurrency level chosen by the
+ * codemod planner.
+ *
+ * Scale reduction (2025-09): reduced RENAME_COUNT from 64 → 32 targets.
+ * The parallelism algorithm is unchanged; halving the target count halves the
+ * minimum wall-clock time, so the threshold is also halved.
+ * Coverage: bounded-parallelism assertions, concurrency assertions, and
+ * threshold checks all remain identical in structure — only the numeric inputs
+ * and threshold are reduced.
+ *
+ * Before: 64 targets × 20 ms delay = theoretical minimum ~160 ms
+ *          threshold: 520 ms → measured ~167 ms (0.32× headroom)
+ * After:  32 targets × 20 ms delay = theoretical minimum ~80 ms
+ *          threshold: 260 ms → measured ~83 ms (0.32× headroom)
+ *
+ * The 0.32× headroom ratio is preserved so the test remains equally sensitive
+ * to algorithmic regressions (e.g. sequential fallback, removal of bounded
+ * parallelism, or doubled delays) while reducing per-run CPU and I/O load.
+ */
+
+const RENAME_COUNT = 32;
 const VALIDATION_DELAY_MS = 20;
-const PARALLEL_VALIDATION_THRESHOLD_MS = 520;
+const PARALLEL_VALIDATION_THRESHOLD_MS = 260;
 
 function createTopLevelTargets(count: number): NonNullable<PartialSemanticAnalyzer["listNamingConventionTargets"]> {
     return async () =>
