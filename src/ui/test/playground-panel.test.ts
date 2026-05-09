@@ -54,7 +54,9 @@ void test("playground panel renders toggle buttons as accessible <button> elemen
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /button\s+type="button"\s+class="rule-toggle active"\s+aria-pressed=true/u);
-    assert.doesNotMatch(rendered, /class="rule-toggle "\s+aria-pressed=false/u);
+    assert.match(rendered, /button\s+type="button"\s+class="rule-toggle "\s+aria-pressed=false/u);
+    assert.match(rendered, /Patch Transpile/u);
+    assert.match(rendered, /Expression Transpile/u);
 });
 
 /**
@@ -98,6 +100,23 @@ void test("playground panel toggle aria-pressed reflects active state", () => {
 
     const activeToggleMatches = [...rendered.matchAll(/class="rule-toggle active"\s+aria-pressed=true/gu)];
     assert.equal(activeToggleMatches.length, 3);
+    const inactiveToggleMatches = [...rendered.matchAll(/class="rule-toggle "\s+aria-pressed=false/gu)];
+    assert.equal(inactiveToggleMatches.length, 2);
+});
+
+void test("playground panel renders transpile modes off by default while other toggles stay enabled", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Format/);
+    assert.match(rendered, /Lint/);
+    assert.match(rendered, /Refactor/);
+    assert.match(rendered, /Patch Transpile/);
+    assert.match(rendered, /Expression Transpile/);
+    assert.equal([...rendered.matchAll(/class="rule-toggle active"/gu)].length, 3);
+    assert.equal([...rendered.matchAll(/class="rule-toggle "/gu)].length, 2);
 });
 
 void test("playground panel starts with the shared demo sample source", () => {

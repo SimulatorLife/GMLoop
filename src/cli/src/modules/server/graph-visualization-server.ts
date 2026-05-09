@@ -19,7 +19,13 @@ type GraphVisualizationServerOpenProjectTargets = (
 ) => Promise<GraphVisualizationServerRegenerationResult>;
 
 type GraphVisualizationServerProcessPlayground = (
-    input: Readonly<{ gml: string; format: boolean; lint: boolean; refactor: boolean }>
+    input: Readonly<{
+        gml: string;
+        format: boolean;
+        lint: boolean;
+        refactor: boolean;
+        transpileMode: "none" | "patch" | "expression";
+    }>
 ) => Promise<Readonly<{ ast: string; output: string; error: string | null }>>;
 
 export type GraphVisualizationServerOptions = Readonly<{
@@ -124,8 +130,12 @@ export async function startGraphVisualizationServer(
                     const format = parsedBody.format === true;
                     const lint = parsedBody.lint === true;
                     const refactor = parsedBody.refactor === true;
+                    const transpileMode =
+                        parsedBody.transpileMode === "patch" || parsedBody.transpileMode === "expression"
+                            ? parsedBody.transpileMode
+                            : "none";
 
-                    const result = await options.processPlayground({ gml, format, lint, refactor });
+                    const result = await options.processPlayground({ gml, format, lint, refactor, transpileMode });
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ ok: true, payload: result }));
                 } catch (error: unknown) {

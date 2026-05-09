@@ -8,6 +8,7 @@ import { Lint } from "@gmloop/lint";
 import { Parser } from "@gmloop/parser";
 import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
+import { Transpiler } from "@gmloop/transpiler";
 import { UI } from "@gmloop/ui";
 import { Command, Option } from "commander";
 import { ESLint } from "eslint";
@@ -412,7 +413,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
-            processPlayground: async ({ gml, format, lint, refactor }) => {
+            processPlayground: async ({ gml, format, lint, refactor, transpileMode }) => {
                 let ast: string;
                 let output = gml;
                 let error: string | null = null;
@@ -448,6 +449,18 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
                     if (format) {
                         output = await Format.format(output);
+                    }
+
+                    if (transpileMode === "patch") {
+                        const transpiler = new Transpiler.GmlTranspiler();
+                        const patch = transpiler.transpileScript({
+                            sourceText: output,
+                            symbolId: "playground-script"
+                        });
+                        output = patch.js_body;
+                    } else if (transpileMode === "expression") {
+                        const transpiler = new Transpiler.GmlTranspiler();
+                        output = transpiler.transpileExpression(output);
                     }
                 } catch (error_) {
                     error = error_ instanceof Error ? error_.message : String(error_);
