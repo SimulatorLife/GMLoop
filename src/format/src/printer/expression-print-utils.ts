@@ -281,7 +281,7 @@ export function shouldBreakVariableInitializerOnAssignmentLine(node: any): boole
         return false;
     }
 
-    const initializer = unwrapParensForInitializer(node.init);
+    const initializer = Core.unwrapParenthesizedExpression(node.init);
     return initializer?.type === "BinaryExpression" && binaryExpressionContainsString(initializer);
 }
 
@@ -476,14 +476,6 @@ function binaryExpressionContainsString(node: any): boolean {
     }
 
     return expressionIsStringLike(node.left) || expressionIsStringLike(node.right);
-}
-
-function unwrapParensForInitializer(node: any): any {
-    let current = node;
-    while (current?.type === "ParenthesizedExpression") {
-        current = current.expression;
-    }
-    return current;
 }
 
 function unwrapParenthesizedExpression(childPath: any, print: any): any {

@@ -12,16 +12,8 @@ export function buildClauseGroup(doc) {
     return group([indent([ifBreak(line), doc]), ifBreak(line)]);
 }
 
-function unwrapParensForInitializer(node) {
-    let current = node;
-    while (current?.type === "ParenthesizedExpression") {
-        current = current.expression;
-    }
-    return current;
-}
-
 function getInnermostClauseExpression(node) {
-    return unwrapParensForInitializer(node);
+    return Core.unwrapParenthesizedExpression(node);
 }
 
 function wrapInClauseParens(path, print, clauseKey, printWithoutExtraParens) {
@@ -29,7 +21,7 @@ function wrapInClauseParens(path, print, clauseKey, printWithoutExtraParens) {
     const clauseDoc = printWithoutExtraParens(path, print, clauseKey);
     const clauseExpressionNode = getInnermostClauseExpression(clauseNode);
 
-    if (clauseExpressionNode?.type === "CallExpression" && clauseExpressionNode.preserveOriginalCallText) {
+    if (clauseExpressionNode?.type === "CallExpression" && (clauseExpressionNode as any).preserveOriginalCallText) {
         return concat(["(", clauseDoc, ")"]);
     }
 
@@ -122,7 +114,8 @@ export function printSingleClauseStatement(path, options, print, keyword, clause
     const bodyNode = node?.[bodyKey];
     const allowInlineControlFlowBlocks = options?.allowInlineControlFlowBlocks ?? false;
     const clauseIsPreservedCall =
-        clauseExpressionNode?.type === "CallExpression" && clauseExpressionNode.preserveOriginalCallText === true;
+        clauseExpressionNode?.type === "CallExpression" &&
+        (clauseExpressionNode as any).preserveOriginalCallText === true;
 
     const allowCollapsedGuard =
         bodyNode &&
