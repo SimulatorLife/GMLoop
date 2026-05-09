@@ -30,9 +30,6 @@ on:
       agent_setup_command_file:
         type: string
         required: false
-      agent_package:
-        type: string
-        required: false
       openai_base_url:
         type: string
         required: false
@@ -341,25 +338,6 @@ jobs:
 
             sleep 2
           done
-
-      - name: Install agent CLI (from child)
-        if: ${{ inputs.agent_package != '' }}
-        shell: bash
-        env:
-          AGENT_CLI: ${{ inputs.agent }}
-          AGENT_PACKAGE: ${{ inputs.agent_package }}
-        run: |
-          set -euo pipefail
-
-          echo "Checking for CLI: ${AGENT_CLI} (from pnpm package: ${AGENT_PACKAGE})"
-
-          if ! command -v "${AGENT_CLI}" >/dev/null 2>&1; then
-            echo "Not found, installing ${AGENT_PACKAGE} via pnpm..."
-            pnpm add -g "${AGENT_PACKAGE}"
-            echo "Installed ${AGENT_PACKAGE}. CLI location: $(command -v "${AGENT_CLI}")"
-          else
-            echo "${AGENT_CLI} CLI already installed at: $(command -v "${AGENT_CLI}")"
-          fi
 
       - name: Run agent setup command
         if: ${{ inputs.agent_setup_command != '' || inputs.agent_setup_command_file != '' }}

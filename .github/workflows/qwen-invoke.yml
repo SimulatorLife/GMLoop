@@ -52,7 +52,7 @@ jobs:
         set -euo pipefail
 
         set +e
-        stdbuf -oL -eL qwen \
+        stdbuf -oL -eL pnpm --silent dlx @qwen-code/qwen-code@latest \
           --yolo \
           --debug \
           --output-format=stream-json \
