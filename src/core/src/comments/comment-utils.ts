@@ -203,6 +203,53 @@ export function getCommentBoundaryIndex(comment: unknown, boundaryName: "start" 
     return normalizeCommentBoundaryIndex(boundary);
 }
 
+/**
+ * Extracts the raw text of a line comment node with optional source-text lookup.
+ *
+ * When `originalText` is supplied and the comment carries valid boundary indices,
+ * the function slices the source directly—this preserves exact whitespace and
+ * slashes from the original file (including non-standard patterns like `////`).
+ * Without source text it falls back to `leadingText`, then `raw`, and finally
+ * reconstructs `//` + `value` as a baseline.
+ *
+ * This function is primarily used by the formatter and linter to work with
+ * pre-existing comment formatting rather than guessing how to render it.
+ *
+ * @param comment - Line comment node to extract text from.
+ * @param options - Supports `{ originalText?: string }` for source-text slicing.
+ * @returns The raw comment text.
+ */
+export function getLineCommentRawText(comment: unknown, options: { originalText?: string } = {}): string {
+    const commentStart = getCommentBoundaryIndex(comment, "start");
+    const commentEnd = getCommentBoundaryIndex(comment, "end");
+
+    if (options.originalText && commentStart !== null && commentEnd !== null) {
+        return options.originalText.slice(commentStart, commentEnd + 1);
+    }
+
+    if (!isObjectLike(comment)) {
+        return "";
+    }
+
+    const { leadingText, raw, value } = comment as { leadingText?: string; raw?: string; value?: unknown };
+    if (leadingText !== undefined) {
+        return leadingText;
+    }
+
+    if (raw !== undefined) {
+        return raw;
+    }
+
+    // Only reconstruct from value if it's a string; non-string values indicate
+    // malformed input and should not be stringified (which would produce
+    // "[object Object]" noise in the output).
+    if (typeof value !== "string") {
+        return "";
+    }
+
+    return `//${value}`;
+}
+
 type InlineCommentSourceContext = {
     originalText?: string;
     sourceText?: string;
