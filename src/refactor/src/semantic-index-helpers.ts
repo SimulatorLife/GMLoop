@@ -1,13 +1,20 @@
-import { Core } from "@gmloop/core";
-
 /**
- * Extracts a numeric character index from a semantic project-index location value.
+ * Semantic project-index location helpers.
  *
  * Location values in the semantic project index appear in two forms:
  * - A plain number (the index itself, produced by parser AST nodes when
  *   `simplifyLocations: true`).
  * - An object with a numeric `index` property (e.g. `{ index: 42, line: 3,
  *   column: 10 }`), produced when `simplifyLocations: false`.
+ *
+ * These helpers normalize both forms to a numeric index so callers can work
+ * with a consistent representation.
+ */
+
+import { Core } from "@gmloop/core";
+
+/**
+ * Extracts a numeric character index from a semantic project-index location value.
  *
  * Returns `null` when the input matches neither form.
  */

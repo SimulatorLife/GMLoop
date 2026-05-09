@@ -12,10 +12,32 @@ import {
 const { Lint } = LintWorkspace;
 
 /**
+ * Module-level parse cache keyed by source text.
+ *
+ * @remarks
+ * ANTLR parsing involves lexer initialization, token stream creation, and parser
+ * bootstrap that are independent of the input content. Caching parsed ASTs avoids
+ * redundant parse overhead for repeated inputs in the test suite.
+ */
+const parseCache = new Map<string, Record<string, unknown>>();
+
+/**
+ * Clears the parse cache. Useful for memory cleanup or forcing fresh parses in tests.
+ */
+export function clearParseCache(): void {
+    parseCache.clear();
+}
+
+/**
  * Parses GML source text through the lint plugin language parser.
  * Returns `{ type: "Program", body: [] }` when parsing fails.
  */
 export function parseProgramNode(code: string): Record<string, unknown> {
+    const cached = parseCache.get(code);
+    if (cached !== undefined) {
+        return cached;
+    }
+
     const language = Lint.plugin.languages.gml as {
         parse: (
             file: { body: string; path: string; physicalPath: string; bom: boolean },
@@ -35,11 +57,10 @@ export function parseProgramNode(code: string): Record<string, unknown> {
         }
     );
 
-    if (parseResult.ok) {
-        return parseResult.ast;
-    }
+    const result = parseResult.ok ? parseResult.ast : { type: "Program", body: [] };
 
-    return { type: "Program", body: [] };
+    parseCache.set(code, result);
+    return result;
 }
 
 /**

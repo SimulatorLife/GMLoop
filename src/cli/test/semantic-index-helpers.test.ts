@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-    readExclusiveSemanticLocationIndex,
-    readSemanticLocationIndex
-} from "../src/modules/refactor/semantic-index-helpers.js";
+import { readExclusiveSemanticLocationIndex, readSemanticLocationIndex } from "@gmloop/refactor";
 
 void describe("readSemanticLocationIndex", () => {
     void it("returns a plain number directly", () => {
