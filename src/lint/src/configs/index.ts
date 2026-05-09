@@ -1,11 +1,20 @@
 import type { LintPluginShape } from "../contracts/index.js";
 import {
     FEATHER_RULE_LEVELS,
+    LintRuleLevel,
     PERFORMANCE_RULE_LEVELS,
     RECOMMENDED_GML_RULE_LEVELS,
     RECOMMENDED_SAFE_FEATHER_RULE_LEVELS
 } from "./rule-level-presets.js";
 
+export {
+    formatLintRuleLevelList,
+    getLintRuleLevelValues,
+    isLintRuleLevel,
+    LintRuleLevel,
+    normalizeLintRuleLevel,
+    normalizeLintRuleLevelWithFallback
+} from "./lint-rule-level.js";
 export { normalizeLintRulesConfig } from "./project-config.js";
 export { createLintRuleEntriesFromProjectConfig } from "./rule-entries.js";
 
@@ -19,7 +28,7 @@ export type FlatConfig = Readonly<{
     languageOptions?: Readonly<{
         recovery: "none" | "limited";
     }>;
-    rules: Readonly<Record<string, "off" | "warn" | "error">>;
+    rules: Readonly<Record<string, LintRuleLevel>>;
 }>;
 
 export const GML_LINT_FILES_GLOB = Object.freeze(["**/*.gml"]);
