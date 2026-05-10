@@ -94,7 +94,7 @@ type ProjectIndexSnapshot = {
     >;
     identifiers?: Record<string, Record<string, ProjectIndexIdentifierEntry>>;
     relationships?: {
-        assetReferences?: Array<{ fromResourcePath?: string; targetPath?: string }>;
+        assetReferences?: Array<{ fromResourcePath?: string; propertyPath?: string; targetPath?: string }>;
     };
     resources?: Record<string, { gmlFiles?: Array<string>; name?: string; path?: string; resourceType?: string }>;
     scopes?: Record<string, ProjectIndexScopeRecord>;
@@ -1180,11 +1180,21 @@ function projectRelationshipEdges(context: ProjectionContext): void {
         context.edgeRecords.push({
             fromId: createGraphNodeId(context.graphId, "resource", fromResourcePath),
             toId: createGraphNodeId(context.graphId, "resource", targetPath),
-            type: isProjectManifestPath(fromResourcePath) ? "contains" : "references"
+            type: classifyAssetReferenceEdgeType(reference)
         });
     }
 
     projectGlobalVariableReferenceEdges(context);
+}
+
+function classifyAssetReferenceEdgeType(reference: Record<string, unknown>): GraphEdgeType {
+    const propertyPath = getString(reference.propertyPath);
+    if (propertyPath?.endsWith("parentObjectId")) {
+        return "inherits";
+    }
+
+    const fromResourcePath = getString(reference.fromResourcePath);
+    return fromResourcePath && isProjectManifestPath(fromResourcePath) ? "contains" : "references";
 }
 
 function addCrossGraphEdges(

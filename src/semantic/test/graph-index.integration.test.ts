@@ -552,6 +552,89 @@ void test("buildGraphIndex projects structs, variables, functions, and concrete 
     }
 });
 
+void test("buildGraphIndex exports object parent metadata as inherits relationships", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-object-inheritance-");
+
+    try {
+        await fixture.writeProjectFile(
+            "Project.yyp",
+            JSON.stringify({
+                name: "Project",
+                resourceType: "GMProject",
+                resources: [
+                    { id: { name: "obj_parent", path: "objects/obj_parent/obj_parent.yy" } },
+                    { id: { name: "obj_child", path: "objects/obj_child/obj_child.yy" } }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_parent/obj_parent.yy",
+            JSON.stringify({ name: "obj_parent", resourceType: "GMObject" })
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_child/obj_child.yy",
+            JSON.stringify({
+                name: "obj_child",
+                resourceType: "GMObject",
+                parentObjectId: {
+                    name: "obj_parent",
+                    path: "objects/obj_parent/obj_parent.yy"
+                }
+            })
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const inheritanceEdges = database
+                .prepare(
+                    `
+                        SELECT from_id AS fromId, to_id AS toId, type
+                        FROM edges
+                        WHERE type = 'inherits'
+                    `
+                )
+                .all() as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.deepEqual(
+                inheritanceEdges.map((edge) => ({ fromId: edge.fromId, toId: edge.toId, type: edge.type })),
+                [
+                    {
+                        fromId: "project::resource::objects/obj_child/obj_child.yy",
+                        toId: "project::resource::objects/obj_parent/obj_parent.yy",
+                        type: "inherits"
+                    }
+                ]
+            );
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === "project::resource::objects/obj_child/obj_child.yy" &&
+                        edge.target === "project::resource::objects/obj_parent/obj_parent.yy" &&
+                        edge.type === "inherits"
+                ),
+                "expected graph visualization export to preserve object inheritance edge semantics"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
 void test("buildGraphIndex connects macro, global, and local variable symbols to visible owners", async () => {
     const fixture = await createTempProjectWorkspace("graph-index-variable-owners-");
 
