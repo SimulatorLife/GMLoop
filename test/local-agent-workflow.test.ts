@@ -41,12 +41,6 @@ interface GeminiSettings {
     };
 }
 
-async function readGeminiSettings(): Promise<GeminiSettings> {
-    const source = await readFile(path.resolve(process.cwd(), ".gemini/settings.json"), "utf8");
-
-    return JSON.parse(source) as GeminiSettings;
-}
-
 async function readAllWorkflowSources(): Promise<string> {
     const workflowDirectory = path.resolve(process.cwd(), ".github/workflows");
     const directoryEntries = await readdir(workflowDirectory);
@@ -128,41 +122,6 @@ function getRequiredAiderCommand(source: string): string {
     return capturedCommandLines.join("\n");
 }
 
-function getRequiredGeminiCommand(source: string): string {
-    const directCommandStartIndex = source.indexOf("stdbuf -oL -eL gemini \\");
-    const nodeCommandStartIndex = source.indexOf("stdbuf -oL -eL node --max-old-space-size=");
-    const commandStartIndex =
-        directCommandStartIndex === -1
-            ? nodeCommandStartIndex
-            : nodeCommandStartIndex === -1
-              ? directCommandStartIndex
-              : Math.min(directCommandStartIndex, nodeCommandStartIndex);
-
-    assert.notEqual(commandStartIndex, -1, "Gemini workflow must invoke the Gemini CLI with streamed output.");
-
-    const commandTail = source.slice(commandStartIndex);
-    const commandLines = commandTail.split("\n");
-    const capturedCommandLines: string[] = [];
-
-    for (const line of commandLines) {
-        if (capturedCommandLines.length > 0 && line.includes("| tee ")) {
-            capturedCommandLines.push(line);
-            break;
-        }
-        if (
-            capturedCommandLines.length > 0 ||
-            line.includes("stdbuf -oL -eL gemini") ||
-            line.includes("stdbuf -oL -eL node --max-old-space-size=")
-        ) {
-            capturedCommandLines.push(line);
-        }
-    }
-
-    assert.ok(capturedCommandLines.length > 0, "Gemini workflow command block must not be empty.");
-
-    return capturedCommandLines.join("\n");
-}
-
 function assertAiderCommandIncludesRequiredFlags(commandSource: string): void {
     const commandLines = commandSource
         .split("\n")
@@ -205,37 +164,6 @@ function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
     assert.match(prompt, /golden .*\.gml|\.gml fixtures/u);
     assert.match(prompt, /generated files/u);
     assert.match(prompt, /dist files/u);
-}
-
-function assertQwenUsesLocalAgentLoop(source: string, sharedPrompt: string): void {
-    const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
-    const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
-
-    assertWorkflowDispatchesToReusableAgent(source, "qwen");
-    assert.doesNotMatch(source, /agent_cli:/u);
-    assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
-    assert.doesNotMatch(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
-    assert.doesNotMatch(source, /^\s*QWEN_TASK_PROMPT=/mu);
-    assert.doesNotMatch(source, /local-qwen-smoke/u);
-    assert.match(source, /stdbuf -oL -eL qwen \\/u);
-    assert.match(source, /--prompt ""/u);
-    assert.match(source, /< "\$\{AGENT_PROMPT_FILE\}"/u);
-    assert.doesNotMatch(source, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
-    assert.doesNotMatch(source, /QWEN_AGENT_PROMPT/u);
-    assert.match(setupCommand, /pull_qwen_configured_model\(\)/u);
-    assert.match(setupCommand, /\.qwen\/settings\.json/u);
-    assert.match(setupCommand, /ollama pull "\$\{configured_model\}"/u);
-    assert.doesNotMatch(agentCommand, /ollama pull/u);
-    assert.match(agentCommand, /set \+e/u);
-    assert.match(agentCommand, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
-    assert.match(agentCommand, /set -e/u);
-    assert.match(agentCommand, /if \[ "\$\{agent_status\}" -ne 0 \]; then/u);
-    assert.match(agentCommand, /exit "\$\{agent_status\}"/u);
-    assert.match(source, /(--approval-mode yolo|--yolo)/u);
-    assert.doesNotMatch(source, /--append-system-prompt/u);
-    assert.doesNotMatch(source, /--prompt-interactive/u);
-    assert.doesNotMatch(source, /run_shell_command/u);
-    assert.doesNotMatch(source, /edit or write_file tools/u);
 }
 
 void test("qwen invoke uses checked-in settings for local model selection", async () => {
