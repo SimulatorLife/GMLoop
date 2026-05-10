@@ -23,24 +23,6 @@ async function readQwenSettings(): Promise<QwenSettings> {
     return JSON.parse(source) as QwenSettings;
 }
 
-interface GeminiSettings {
-    model: {
-        maxSessionTurns: number;
-    };
-    general: {
-        sessionRetention: {
-            enabled: boolean;
-        };
-    };
-    tools: {
-        core?: string[];
-        useRipgrep: boolean;
-        truncateToolOutputThreshold: number;
-        autoAccept?: boolean;
-        disableLLMCorrection?: boolean;
-    };
-}
-
 async function readAllWorkflowSources(): Promise<string> {
     const workflowDirectory = path.resolve(process.cwd(), ".github/workflows");
     const directoryEntries = await readdir(workflowDirectory);
