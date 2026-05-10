@@ -20,7 +20,7 @@ type DocParamLine = Readonly<{
 }>;
 
 function normalizeIdentifierForMatch(name: string): string {
-    const trimmed = name.replaceAll(/^_+/u, "");
+    const trimmed = name.replaceAll(/^_+/gu, "");
     const withUnderscores = trimmed.replaceAll(/([a-z0-9])([A-Z])/gu, "$1_$2");
     return withUnderscores
         .replaceAll(/[^A-Za-z0-9_]+/gu, "_")
