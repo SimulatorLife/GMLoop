@@ -59,6 +59,7 @@ jobs:
       OPENAI_API_TYPE: openai
       OPENAI_BASE_URL: ${{ inputs.openai_base_url }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'ollama' }}
+      NODE_OPTIONS: --disable-warning=ExperimentalWarning
     permissions:
       contents: write
       issues: write
@@ -263,6 +264,7 @@ jobs:
           if ! pnpm run build:ts; then
             echo "::warning::TypeScript workspace build failed; continuing environment setup."
           fi
+        continue-on-error: true
 
       - name: Start and validate local OpenAI-compatible endpoint
         if: ${{ startsWith(inputs.openai_base_url, 'http://127.0.0.1') || startsWith(inputs.openai_base_url, 'http://localhost') }}

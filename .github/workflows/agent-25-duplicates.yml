@@ -16,6 +16,7 @@ permissions:
 jobs:
   check_duplicates:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     outputs:
       duplicates_found: ${{ steps.run_duplicates.outputs.duplicates_found }}
       duplicates_output: ${{ steps.run_duplicates.outputs.duplicates_output }}

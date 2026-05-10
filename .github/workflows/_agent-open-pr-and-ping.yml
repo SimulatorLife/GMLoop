@@ -43,6 +43,7 @@ jobs:
       pr_number: ${{ fromJSON(steps.pr.outputs.result).number }}
       branch: ${{ env.BRANCH_NAME }}
     env:
+      NODE_OPTIONS: --disable-warning=ExperimentalWarning
       BASE_BRANCH: ${{ inputs.base_branch }}
       REQUESTED_AGENT: ${{ inputs.agent }}
       BRANCH_SUFFIX: ${{ format('task-{0}-{1}', github.run_id, github.run_attempt) }}
