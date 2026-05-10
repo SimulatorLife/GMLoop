@@ -15,6 +15,8 @@ then return here for deeper context.
   config for formatting `.gml` files in a GameMaker project.
 - [Sample `eslint.config.js`](examples/example.eslint.config.js) — Flat ESLint
   config that composes the `@gmloop/lint` presets (without TypeScript requirement)
+- [Sample `gmloop.json`](examples/gmloop.json) — Baseline project config with
+  formatter, lint, and refactor settings
 
 ## Usage & rollout
 
@@ -33,8 +35,8 @@ then return here for deeper context.
 ## Contributor workflow
 
 - [Contributor onboarding checklist](contributor-onboarding.md) — Environment
-  setup, validation commands, and supporting documentation for new
-  contributors.
+  setup, baseline validation (`build:ts`, `lint:quiet`), and supporting
+  documentation for new contributors.
 - [ANTLR regeneration guide](antlr-regeneration.md) — Canonical steps for
   rebuilding the generated parser artifacts with the vendored toolchain plus
   pointers to the extension hooks that keep custom behaviour outside the

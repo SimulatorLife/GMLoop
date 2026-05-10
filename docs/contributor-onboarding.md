@@ -26,7 +26,14 @@ Use `pnpm install` only after verifying the lockfile is current.
 
 ## 3. Validate the workspace
 
-Re-run targeted suites when you touch scoped areas:
+Start with the baseline repository checks used in CI-style local validation:
+
+```bash
+pnpm run build:ts
+pnpm run lint:quiet
+```
+
+Then run targeted suites for the workspace(s) you touched:
 
 ```bash
 pnpm run test:parser
@@ -36,7 +43,6 @@ pnpm run test:cli
 pnpm run test:transpiler
 pnpm run test:runtime-wrapper
 pnpm run test:refactor
-pnpm run lint
 ```
 
 Cross-module integration fixtures under `test/fixtures/integration/` are root-level
