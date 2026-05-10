@@ -13,7 +13,7 @@ void test("MCP workspace scaffold declares the server package and plan", async (
     const readmeText = await readFile(path.join(WORKSPACE_ROOT, "README.md"), "utf8");
 
     assert.match(packageJsonText, /"name": "@gmloop\/mcp"/);
-    assert.match(packageJsonText, /"gmloop-mcp": "\.\/dist\/src\/main\.js"/);
+    assert.match(packageJsonText, /"gmloop-mcp": "\.\/bin\/gmloop-mcp"/);
     assert.match(readmeText, /## Full Implementation Plan/);
     assert.match(readmeText, /registerTool/);
     assert.match(readmeText, /gmloop_graph_search/);

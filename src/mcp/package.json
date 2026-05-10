@@ -9,10 +9,11 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "gmloop-mcp": "./dist/src/main.js"
+    "gmloop-mcp": "./bin/gmloop-mcp"
   },
   "files": [
     "dist",
+    "bin",
     "README.md"
   ],
   "scripts": {

@@ -9,10 +9,11 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "gmloop": "./dist/index.js"
+    "gmloop": "./bin/gmloop"
   },
   "files": [
-    "dist"
+    "dist",
+    "bin"
   ],
   "config": {
     "root_path": "."
