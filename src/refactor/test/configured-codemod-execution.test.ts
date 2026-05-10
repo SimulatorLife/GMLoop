@@ -90,7 +90,7 @@ class InMemoryOverlayStorageBackend implements StorageBackend {
 void test("listRegisteredCodemods returns the v1 configured codemod set", () => {
     assert.deepEqual(
         Refactor.listRegisteredCodemods().map((codemod) => codemod.id),
-        ["globalvarToGlobal", "loopLengthHoisting", "namingConvention"]
+        ["docCommentAlignment", "globalvarToGlobal", "loopLengthHoisting", "namingConvention"]
     );
 });
 
@@ -98,6 +98,14 @@ void test("listConfiguredCodemods reports normalized effective config and select
     assert.deepEqual(
         Refactor.listConfiguredCodemods({ codemods: { loopLengthHoisting: {} } }, ["loopLengthHoisting"]),
         [
+            {
+                id: "docCommentAlignment",
+                description:
+                    "Align function doc-comment @param tags with the function signature (rename, reorder, and mark defaulted params as optional).",
+                configured: false,
+                selected: false,
+                effectiveConfig: null
+            },
             {
                 id: "globalvarToGlobal",
                 description:

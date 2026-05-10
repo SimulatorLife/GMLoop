@@ -6,6 +6,7 @@
 
 import { Core } from "@gmloop/core";
 
+import type { DocCommentAlignmentCodemodOptions } from "./codemods/doc-comment-alignment/types.js";
 import type { GlobalvarToGlobalCodemodOptions } from "./codemods/globalvar-to-global/types.js";
 import type { LoopLengthHoistingCodemodOptions } from "./codemods/loop-length-hoisting/types.js";
 
@@ -84,12 +85,13 @@ export interface NamingConventionPolicy {
 /**
  * Stable identifiers for codemods exposed through project configuration and the CLI.
  */
-export type RefactorCodemodId = "globalvarToGlobal" | "loopLengthHoisting" | "namingConvention";
+export type RefactorCodemodId = "docCommentAlignment" | "globalvarToGlobal" | "loopLengthHoisting" | "namingConvention";
 
 /**
  * Normalized config payloads keyed by registered codemod id.
  */
 export interface RefactorCodemodConfigMap {
+    docCommentAlignment: DocCommentAlignmentCodemodOptions;
     globalvarToGlobal: GlobalvarToGlobalCodemodOptions;
     loopLengthHoisting: LoopLengthHoistingCodemodOptions;
     namingConvention: NamingConventionPolicy;

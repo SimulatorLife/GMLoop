@@ -12,6 +12,7 @@
   },
   "refactor": {
     "codemods": {
+      "docCommentAlignment": {},
       "loopLengthHoisting": {},
       "namingConvention": {
         "rules": {

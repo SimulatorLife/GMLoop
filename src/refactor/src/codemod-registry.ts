@@ -47,6 +47,22 @@ function isNullableString(value: unknown): value is string | null {
 
 const GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS = new Set(["excludeNames"]);
 
+function normalizeDocCommentAlignmentConfig(
+    value: unknown,
+    context: string
+): RefactorCodemodConfigEntry<"docCommentAlignment"> {
+    if (value === false) {
+        return false;
+    }
+
+    if (value === undefined || value === null) {
+        return {};
+    }
+
+    assertRefactorConfigPlainObjectWithAllowedKeys(value, new Set(), context);
+    return {};
+}
+
 function normalizeGlobalvarToGlobalConfig(
     value: unknown,
     context: string
@@ -125,6 +141,50 @@ function normalizeNamingConventionConfig(
 }
 
 const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.freeze({
+    docCommentAlignment: Object.freeze({
+        id: "docCommentAlignment",
+        description:
+            "Align function doc-comment @param tags with the function signature (rename, reorder, and mark defaulted params as optional).",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: normalizeDocCommentAlignmentConfig,
+        async execute(
+            engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest,
+            _effectiveConfig: RefactorCodemodConfigMap["docCommentAlignment"]
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            if (request.gmlFilePaths.length === 0) {
+                return {
+                    appliedFiles: new Map(),
+                    summary: {
+                        id: "docCommentAlignment",
+                        changed: false,
+                        changedFiles: [],
+                        warnings: ["No .gml files were selected for doc-comment alignment."],
+                        errors: []
+                    }
+                };
+            }
+
+            const result = await engine.executeDocCommentAlignmentCodemod({
+                filePaths: request.gmlFilePaths,
+                readFile: request.readFile,
+                writeFile: request.writeFile,
+                options: _effectiveConfig,
+                dryRun: request.dryRun
+            });
+
+            return {
+                appliedFiles: result.applied,
+                summary: {
+                    id: "docCommentAlignment",
+                    changed: result.changedFiles.length > 0,
+                    changedFiles: result.changedFiles.map((entry) => entry.path),
+                    warnings: [],
+                    errors: []
+                }
+            };
+        }
+    }),
     globalvarToGlobal: Object.freeze({
         id: "globalvarToGlobal",
         description:

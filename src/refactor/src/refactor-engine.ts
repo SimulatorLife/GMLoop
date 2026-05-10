@@ -11,6 +11,7 @@ import { Core } from "@gmloop/core";
 
 import { createTempFileStorageBackend, type StorageBackend } from "./backends/index.js";
 import { executeRegisteredCodemods } from "./codemod-registry.js";
+import { applyDocCommentAlignmentCodemod } from "./codemods/doc-comment-alignment/index.js";
 import { applyGlobalvarToGlobalCodemod, collectGlobalvarDeclaredNames } from "./codemods/globalvar-to-global/index.js";
 import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 import { planNamingConventionCodemod } from "./codemods/naming-convention/index.js";
@@ -38,6 +39,8 @@ import {
     type ConflictEntry,
     ConflictType,
     type ExecuteBatchRenameRequest,
+    type ExecuteDocCommentAlignmentCodemodRequest,
+    type ExecuteDocCommentAlignmentCodemodResult,
     type ExecuteGlobalvarToGlobalCodemodRequest,
     type ExecuteGlobalvarToGlobalCodemodResult,
     type ExecuteLoopLengthHoistingCodemodRequest,
@@ -1329,6 +1332,75 @@ export class RefactorEngine {
         if (!dryRun) {
             Core.assertFunction(writeFile, "writeFile", {
                 errorMessage: "executeLoopLengthHoistingCodemod requires a writeFile function"
+            });
+        }
+
+        const applied = await this.applyWorkspaceEdit(workspace, {
+            readFile,
+            sourceTextByPath,
+            writeFile,
+            includeResultContent: dryRun,
+            dryRun
+        });
+
+        return { workspace, applied, changedFiles };
+    }
+
+    /**
+     * Execute the doc-comment alignment codemod across the provided files.
+     *
+     * This codemod is purely source-text based. It stages edits in a single workspace
+     * transaction and applies them atomically via applyWorkspaceEdit.
+     */
+    async executeDocCommentAlignmentCodemod(
+        request: ExecuteDocCommentAlignmentCodemodRequest
+    ): Promise<ExecuteDocCommentAlignmentCodemodResult> {
+        const { filePaths, readFile, writeFile, options, dryRun = false } = request ?? {};
+
+        if (!Array.isArray(filePaths) || filePaths.length === 0) {
+            throw new TypeError("executeDocCommentAlignmentCodemod requires a non-empty filePaths array");
+        }
+
+        Core.assertFunction(readFile, "readFile", {
+            errorMessage: "executeDocCommentAlignmentCodemod requires a readFile function"
+        });
+        const uniqueFilePaths = Core.uniqueArray(filePaths);
+
+        const workspace = new WorkspaceEdit();
+        const sourceTextByPath = new Map<string, string>();
+        const changedFiles: ExecuteDocCommentAlignmentCodemodResult["changedFiles"] = [];
+
+        await Core.runSequentially(uniqueFilePaths, async (filePath) => {
+            Core.assertNonEmptyString(filePath, {
+                errorMessage: "executeDocCommentAlignmentCodemod file paths must be non-empty strings"
+            });
+
+            const sourceText = await readFile(filePath);
+            sourceTextByPath.set(filePath, sourceText);
+            const result = applyDocCommentAlignmentCodemod(sourceText, options);
+
+            if (!result.changed) {
+                return;
+            }
+
+            workspace.addEdit(filePath, 0, sourceText.length, result.outputText);
+            changedFiles.push({
+                path: filePath,
+                appliedEditCount: result.appliedEdits.length
+            });
+        });
+
+        if (workspace.edits.length === 0) {
+            return {
+                workspace,
+                applied: new Map(),
+                changedFiles
+            };
+        }
+
+        if (!dryRun) {
+            Core.assertFunction(writeFile, "writeFile", {
+                errorMessage: "executeDocCommentAlignmentCodemod requires a writeFile function"
             });
         }
 

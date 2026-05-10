@@ -1,4 +1,5 @@
 import type { StorageBackend } from "../backends/storage-backend.js";
+import type { DocCommentAlignmentCodemodOptions } from "../codemods/doc-comment-alignment/types.js";
 import type { GlobalvarToGlobalCodemodOptions } from "../codemods/globalvar-to-global/types.js";
 import type { LoopLengthHoistingCodemodOptions } from "../codemods/loop-length-hoisting/types.js";
 import type {
@@ -100,6 +101,34 @@ export interface ExecuteLoopLengthHoistingCodemodResult {
     workspace: WorkspaceEdit;
     applied: Map<string, string>;
     changedFiles: Array<LoopLengthHoistingFileSummary>;
+}
+
+/**
+ * Parameters for running the doc-comment alignment codemod across multiple files.
+ */
+export interface ExecuteDocCommentAlignmentCodemodRequest {
+    filePaths: Array<string>;
+    readFile: WorkspaceReadFile;
+    writeFile?: WorkspaceWriteFile;
+    options?: DocCommentAlignmentCodemodOptions;
+    dryRun?: boolean;
+}
+
+/**
+ * Summary of doc-comment alignment execution for a single file.
+ */
+export interface DocCommentAlignmentFileSummary {
+    path: string;
+    appliedEditCount: number;
+}
+
+/**
+ * Result payload returned after executing a doc-comment alignment codemod transaction.
+ */
+export interface ExecuteDocCommentAlignmentCodemodResult {
+    workspace: WorkspaceEdit;
+    applied: Map<string, string>;
+    changedFiles: Array<DocCommentAlignmentFileSummary>;
 }
 
 /**
@@ -477,6 +506,9 @@ export interface CodemodTransformExecutor {
     executeGlobalvarToGlobalCodemod(
         request: ExecuteGlobalvarToGlobalCodemodRequest
     ): Promise<ExecuteGlobalvarToGlobalCodemodResult>;
+    executeDocCommentAlignmentCodemod(
+        request: ExecuteDocCommentAlignmentCodemodRequest
+    ): Promise<ExecuteDocCommentAlignmentCodemodResult>;
     executeLoopLengthHoistingCodemod(
         request: ExecuteLoopLengthHoistingCodemodRequest
     ): Promise<ExecuteLoopLengthHoistingCodemodResult>;

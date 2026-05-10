@@ -558,7 +558,6 @@ Current blocker status (as of 2026-03-15):
 2. `pnpm run test:refactor` passes.
 3. `pnpm run test:fixtures:profile` currently fails due to fixture correctness regressions, not budget failures, including:
    - `[format] test-operators` parse error (`unexpected symbol 'myCount'`)
-   - `[integration] test-int-comments-ops` output mismatch
    - `[integration] test-int-logic-flow` output mismatch
 4. `pnpm run test:fixtures:profile:deep-cpu` fails for the same fixture correctness regressions.
 

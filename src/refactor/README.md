@@ -429,7 +429,8 @@ configures the `function` category.
                 "functionSuffixes": {
                     "array_length": "len"
                 }
-            }
+            },
+            "docCommentAlignment": {}
         }
     }
 }
