@@ -383,47 +383,6 @@ void test("failed fixture comparisons preserve the adapter changed flag in profi
     }
 });
 
-void test("runner-owned comparison mode strips doc comment annotations and trims text", async () => {
-    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-comparison-"));
-    await createTextFixtureCase(
-        rootPath,
-        "integration-like",
-        {
-            fixture: {
-                kind: "integration",
-                comparison: "trimmed-strip-doc-comment-annotations"
-            }
-        },
-        "input\n",
-        "/// @desc ignored\nexpected\n"
-    );
-
-    try {
-        const result = await FixtureRunner.runFixtureSuite({
-            fixtureRoot: rootPath,
-            adapter: {
-                workspaceName: "integration",
-                suiteName: "integration fixtures",
-                supports(kind) {
-                    return kind === "integration";
-                },
-                async run({ runProfiledStage }) {
-                    return await runProfiledStage("format", async () => ({
-                        resultKind: "text",
-                        outputText: "expected\n",
-                        changed: true
-                    }));
-                }
-            }
-        });
-
-        assert.equal(result.executionResults.length, 1);
-        assert.deepEqual(result.failures, []);
-    } finally {
-        await rm(rootPath, { recursive: true, force: true });
-    }
-});
-
 void test("fixture cases default to exact comparison", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-lint-comparison-"));
     await createTextFixtureCase(

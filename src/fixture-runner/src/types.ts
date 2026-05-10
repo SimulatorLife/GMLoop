@@ -2,10 +2,7 @@ import type { GmloopProjectConfig } from "@gmloop/core";
 
 export type FixtureKind = "format" | "lint" | "refactor" | "integration";
 export type FixtureAssertion = "transform" | "idempotent" | "project-tree" | "parse-error";
-export type FixtureComparison =
-    | "exact"
-    | "ignore-whitespace-and-line-endings"
-    | "trimmed-strip-doc-comment-annotations";
+export type FixtureComparison = "exact" | "ignore-whitespace-and-line-endings";
 export type FixtureStageName = "load" | "format" | "lint" | "refactor" | "compare" | "total";
 
 type FixtureBudgetMap = Readonly<Partial<Record<FixtureStageName, number>>>;

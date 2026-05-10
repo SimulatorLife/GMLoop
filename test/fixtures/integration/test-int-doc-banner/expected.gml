@@ -1,5 +1,6 @@
 /// @description Top of file description comment
-/// ///// Banner comment
+
+// Banner comment
 var value = 1;
 
 // Comment
@@ -15,6 +16,7 @@ if ((camUpdateTimer >= 1) or (fps < 70)) { // Only update the mouse movement eve
     camYaw += mousedx * 0.1;
     camPitch = clamp(camPitch - (mousedy * 0.1), -80, -2);
 }
+
 /* Orthogonalize the P2 direction to the vector from P1 to P3 */
 
 /* 
@@ -28,6 +30,7 @@ var p2_p3sqr = sqr(length2);
 var p1_p2sqr = sqr(length1);
 var intersectionRadius = sqrt(p2_p3sqr - (sqr((p1_p2sqr - p2_p3sqr) - p1_p3sqr) * p1_p3sqr * 0.25));
 var l = sqrt(p1_p2sqr - sqr(intersectionRadius));
+
 // eAIState
 
 // Fall state

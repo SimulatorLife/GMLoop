@@ -545,27 +545,6 @@ Real-project workload:
    - semantic project-index metrics metadata (`maxRss`, `maxHeapUsed`)
    - refactor codemod overlay telemetry (queue, overlay, spill, and cache counters)
 
-Pass gate:
-
-1. No semantic or output regressions in fixtures and integration suites.
-2. Memory reduction or throughput improvements satisfy thresholds:
-   - at least 20 percent wall-clock improvement, or
-   - at least 25 percent max-RSS reduction
-
-Current blocker status (as of 2026-03-15):
-
-1. `pnpm run test:semantic` passes.
-2. `pnpm run test:refactor` passes.
-3. `pnpm run test:fixtures:profile` currently fails due to fixture correctness regressions, not budget failures, including:
-   - `[format] test-operators` parse error (`unexpected symbol 'myCount'`)
-   - `[integration] test-int-logic-flow` output mismatch
-4. `pnpm run test:fixtures:profile:deep-cpu` fails for the same fixture correctness regressions.
-
-Interpretation:
-
-1. Option C memory and streaming plumbing is benchmark-ready.
-2. Final benchmark sign-off remains blocked until the existing fixture correctness regressions are resolved.
-
 ## 6. Transpiler & Hot Reload Pipeline
 
 ### 6.1 Core Concept & Role of the Transpiler

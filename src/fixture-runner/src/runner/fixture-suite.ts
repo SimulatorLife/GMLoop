@@ -47,10 +47,6 @@ function removeDocCommentAnnotationLines(text: string): string {
 }
 
 function canonicalizeFixtureText(text: string, comparison: FixtureComparison): string {
-    if (comparison === "trimmed-strip-doc-comment-annotations") {
-        return removeDocCommentAnnotationLines(text).trim();
-    }
-
     if (comparison === "ignore-whitespace-and-line-endings") {
         return text.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
     }

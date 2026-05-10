@@ -2,6 +2,7 @@ import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "./rule-definition.js";
 import { createNoAssignmentInConditionRule } from "./rules/no-assignment-in-condition-rule.js";
+import { createNoEmptyCommentsRule } from "./rules/no-empty-comments-rule.js";
 import { createNoEmptyRegionsRule } from "./rules/no-empty-regions-rule.js";
 import { createNoGlobalvarRule } from "./rules/no-globalvar-rule.js";
 import { createNoLegacyApiRule } from "./rules/no-legacy-api-rule.js";
@@ -48,6 +49,7 @@ const gmlRuleFactoriesByShortName = Object.freeze(
         ["prefer-direct-return", createPreferDirectReturnRule],
         ["optimize-logical-flow", createOptimizeLogicalFlowRule],
         ["no-globalvar", createNoGlobalvarRule],
+        ["no-empty-comments", createNoEmptyCommentsRule],
         ["no-empty-regions", createNoEmptyRegionsRule],
         ["no-legacy-api", createNoLegacyApiRule],
         ["no-scientific-notation", createNoScientificNotationRule],

@@ -12,11 +12,7 @@ import type {
 
 const FIXTURE_KIND_VALUES = new Set<FixtureKind>(["format", "lint", "refactor", "integration"]);
 const FIXTURE_ASSERTION_VALUES = new Set<FixtureAssertion>(["transform", "idempotent", "project-tree", "parse-error"]);
-const FIXTURE_COMPARISON_VALUES = new Set<FixtureComparison>([
-    "exact",
-    "ignore-whitespace-and-line-endings",
-    "trimmed-strip-doc-comment-annotations"
-]);
+const FIXTURE_COMPARISON_VALUES = new Set<FixtureComparison>(["exact", "ignore-whitespace-and-line-endings"]);
 const FIXTURE_SECTION_KEYS = new Set(["kind", "assertion", "comparison", "profile"]);
 const FIXTURE_PROFILE_KEYS = new Set(["budgets", "deepCpuProfile"]);
 const FIXTURE_PROFILE_BUDGET_KEYS = new Set(["durationMs", "heapUsedDeltaBytes", "cpuUserMicros", "cpuSystemMicros"]);
