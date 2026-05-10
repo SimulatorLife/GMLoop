@@ -26,14 +26,7 @@ Use `pnpm install` only after verifying the lockfile is current.
 
 ## 3. Validate the workspace
 
-Run the aggregated checks before opening a pull request:
-
-```bash
-pnpm run check
-```
-
-`pnpm run check` runs the formatter audit, CI-mode lint, and the full Node.js test
-suite. Re-run targeted suites when you touch scoped areas:
+Re-run targeted suites when you touch scoped areas:
 
 ```bash
 pnpm run test:parser
@@ -44,7 +37,6 @@ pnpm run test:transpiler
 pnpm run test:runtime-wrapper
 pnpm run test:refactor
 pnpm run lint
-pnpm run format:check
 ```
 
 Cross-module integration fixtures under `test/fixtures/integration/` are root-level
