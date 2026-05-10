@@ -55,11 +55,7 @@ import {
     softline,
     willBreak
 } from "./prettier-doc-builders.js";
-import {
-    isLastStatement,
-    isSkippableSemicolonWhitespace,
-    optionalSemicolon
-} from "./semicolons.js";
+import { isLastStatement, isSkippableSemicolonWhitespace, optionalSemicolon } from "./semicolons.js";
 import { buildClauseGroup, printSingleClauseStatement } from "./single-clause-statement.js";
 import {
     getOriginalTextFromOptions,
@@ -69,9 +65,7 @@ import {
     stripTrailingLineTerminators
 } from "./source-text.js";
 import { shouldAddNewlinesAroundStatement } from "./statement-spacing-policy.js";
-import {
-    handleIntermediateTrailingSpacing,
-    handleTerminalTrailingSpacing} from "./statement-traversal-spacing.js";
+import { handleIntermediateTrailingSpacing, handleTerminalTrailingSpacing } from "./statement-traversal-spacing.js";
 import { isCallbackArgument, isComplexArgumentNode, isInLValueChain, isSimpleCallArgument } from "./type-guards.js";
 import { joinDeclaratorPartsWithCommas } from "./variable-declarator-layout.js";
 
