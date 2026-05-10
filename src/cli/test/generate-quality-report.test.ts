@@ -1232,3 +1232,73 @@ void test("command rejects excess positional arguments", async () => {
         }
     );
 });
+
+void test("readTestResults extracts workspace name from report file paths", () => {
+    const headDir = path.join(workspace, "reports");
+
+    // Write test XML in a structure that mimics workspace layout
+    fs.mkdirSync(path.join(headDir, "src", "cli", "test"), { recursive: true });
+    writeXml(
+        path.join(headDir, "src", "cli", "test"),
+        "tests",
+        '<testsuites><testsuite name="cli"><testcase name="cli test" classname="test" /></testsuite></testsuites>'
+    );
+
+    const result = readTestResults(["reports"], { workspace });
+
+    assert.strictEqual(result.usedDir !== null, true);
+    const cases = (result as { cases: Array<{ workspace: string }> }).cases;
+    assert.strictEqual(cases.length, 1);
+    assert.strictEqual(cases[0].workspace, "cli");
+});
+
+void test("readTestResults extracts workspace names from nested paths", () => {
+    const headDir = path.join(workspace, "reports");
+
+    // Simulate tests from multiple workspaces
+    fs.mkdirSync(path.join(headDir, "src", "core", "test"), { recursive: true });
+    fs.mkdirSync(path.join(headDir, "src", "parser", "test"), { recursive: true });
+    fs.mkdirSync(path.join(headDir, "src", "lint", "test"), { recursive: true });
+
+    writeXml(
+        path.join(headDir, "src", "core", "test"),
+        "tests",
+        '<testsuites><testsuite name="core"><testcase name="core test" classname="test" /></testsuite></testsuites>'
+    );
+    writeXml(
+        path.join(headDir, "src", "parser", "test"),
+        "tests",
+        '<testsuites><testsuite name="parser"><testcase name="parser test" classname="test" /></testsuite></testsuites>'
+    );
+    writeXml(
+        path.join(headDir, "src", "lint", "test"),
+        "tests",
+        '<testsuites><testsuite name="lint"><testcase name="lint test" classname="test" /></testsuite></testsuites>'
+    );
+
+    const result = readTestResults(["reports"], { workspace });
+    const cases = (result as { cases: Array<{ workspace: string }> }).cases;
+
+    assert.strictEqual(cases.length, 3);
+    const workspaces = cases.map((c) => c.workspace).sort();
+    assert.deepEqual(workspaces, ["core", "lint", "parser"]);
+});
+
+void test("readTestResults handles missing workspace info gracefully", () => {
+    const headDir = path.join(workspace, "reports");
+
+    // Write to root-level reports directory without workspace structure
+    fs.mkdirSync(headDir, { recursive: true });
+    writeXml(
+        headDir,
+        "tests",
+        '<testsuites><testsuite name="root"><testcase name="root test" classname="test" /></testsuite></testsuites>'
+    );
+
+    const result = readTestResults(["reports"], { workspace });
+    const cases = (result as { cases: Array<{ workspace: string }> }).cases;
+
+    assert.strictEqual(cases.length, 1);
+    // Should fallback to parent directory name
+    assert.strictEqual(cases[0].workspace, "reports");
+});
