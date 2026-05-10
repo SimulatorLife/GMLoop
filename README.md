@@ -52,13 +52,14 @@ Lint (`lint --write`) does single-file-scoped semantic/content rewrites (rule-ow
 ```bash
 git clone https://github.com/SimulatorLife/GMLoop.git
 cd GMLoop
+git submodule update --init --recursive
 nvm use
 pnpm install
 pnpm run cli -- --help
 ```
 
 Need contributor-focused setup and validation expectations? Continue with [`docs/contributor-onboarding.md`](docs/contributor-onboarding.md).
-If vendor submodules are missing in your local clone, run `git submodule update --init --recursive`.
+For a guided docs tour, start with the [documentation index](docs/README.md).
 
 ### Format from a local clone
 
