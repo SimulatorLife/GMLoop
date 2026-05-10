@@ -181,22 +181,24 @@ export function lintWithRule(
             .filter((selector) => selector.length > 0);
         const parsed: Array<ParsedListenerSelector> = [];
         for (const selector of selectors) {
-            const predicateMatch = /^([A-Za-z_]\w*)\[(\w+)\s*=\s*['"]([^'"]+)['"]\]$/u.exec(selector);
+            const predicateMatch = /^(?<identifier>[A-Za-z_]\w*)\[(?<prop>\w+)\s*=\s*['"](?<val>[^'"]+)['"]\]$/u.exec(
+                selector
+            );
             if (predicateMatch) {
                 parsed.push({
                     selector,
-                    nodeType: predicateMatch[1] ?? "",
-                    property: predicateMatch[2] ?? "",
-                    value: predicateMatch[3] ?? ""
+                    nodeType: predicateMatch.groups?.identifier ?? "",
+                    property: predicateMatch.groups?.prop ?? "",
+                    value: predicateMatch.groups?.val ?? ""
                 });
                 continue;
             }
 
-            const nodeTypeMatch = /^([A-Za-z_]\w*)$/u.exec(selector);
+            const nodeTypeMatch = /^(?<identifier>[A-Za-z_]\w*)$/u.exec(selector);
             if (nodeTypeMatch) {
                 parsed.push({
                     selector,
-                    nodeType: nodeTypeMatch[1] ?? ""
+                    nodeType: nodeTypeMatch.groups?.identifier ?? ""
                 });
             }
         }
