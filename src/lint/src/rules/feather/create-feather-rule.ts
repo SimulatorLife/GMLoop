@@ -1852,7 +1852,7 @@ function createGm2031Rule(entry: FeatherManifestEntry): Rule.RuleModule {
             if (previousNonEmptyLineIndex >= 0 && lines[previousNonEmptyLineIndex].trim() === "file_find_close();") {
                 // A close already precedes this open — skip past it so we keep scanning
                 // for subsequent un-guarded opens rather than stopping immediately.
-                index = previousNonEmptyLineIndex + 1;
+                index += 1;
                 continue;
             }
 
