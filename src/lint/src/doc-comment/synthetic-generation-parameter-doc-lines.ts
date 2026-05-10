@@ -1,5 +1,6 @@
 import { Core } from "@gmloop/core";
 
+import { normalizeParamDocType } from "./index.js";
 import {
     getArgumentIndexFromIdentifier,
     getIdentifierFromParameterNode,
@@ -483,8 +484,8 @@ function appendExplicitParameterDocLines({
 
         const docName = shouldMarkOptional ? `[${baseDocName}]` : baseDocName;
 
-        const normalizedExistingType = Core.normalizeParamDocType(existingMetadata?.type);
-        const normalizedOrdinalType = Core.normalizeParamDocType(ordinalMetadata?.type);
+        const normalizedExistingType = normalizeParamDocType(existingMetadata?.type);
+        const normalizedOrdinalType = normalizeParamDocType(ordinalMetadata?.type);
         const docType = normalizedExistingType ?? normalizedOrdinalType;
 
         const isOrphanedImplicit = implicitName && docName === implicitName && !existingMetadata;

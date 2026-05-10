@@ -1,10 +1,11 @@
 import { Core } from "@gmloop/core";
 
+import { isFunctionLikeNode } from "./index.js";
+
 const {
     getCommentArray,
     getNodeStartIndex,
     isDocCommentLine,
-    isFunctionLikeNode,
     isNode,
     isNonEmptyArray,
     isNonEmptyTrimmedString,

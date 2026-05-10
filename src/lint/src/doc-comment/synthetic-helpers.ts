@@ -1,5 +1,7 @@
 import { Core } from "@gmloop/core";
 
+import { isFunctionLikeNode } from "./index.js";
+
 const {
     getIdentifierText,
     getNodeEndIndex,
@@ -312,7 +314,7 @@ export function gatherImplicitArgumentReferences(functionNode: any) {
             return;
         }
 
-        if (node !== functionNode && Core.isFunctionLikeNode(node)) {
+        if (node !== functionNode && isFunctionLikeNode(node)) {
             return;
         }
 

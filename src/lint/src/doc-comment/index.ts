@@ -1,11 +1,26 @@
-import { Core } from "@gmloop/core";
+/**
+ * Doc-comment namespace for GML lint transformation and metadata modules.
+ *
+ * This module aggregates and re-exports the public API of the doc-comment
+ * subdirectory. High-traffic Core helpers (isFunctionLikeNode,
+ * normalizeParamDocType, hasCommentImmediatelyBefore, isDocLikeLeadingLine) are
+ * obtained from the `docCommentCoreServices` service rather than imported
+ * directly from `@gmloop/core`, keeping the Core dependency surface explicit
+ * and bounded. Callers can destructure these helpers from this namespace or
+ * import them individually from the submodules.
+ */
+import { services } from "../services/index.js";
 
-// Re-export comment utility helpers from Core that are consumed by transform
-// modules. Having them visible at the doc-comment namespace avoids deep Core
-// imports in transform layers. Explicit type annotations ensure portable type
-// references.
-const hasCommentImmediatelyBefore: (text: unknown, index: unknown) => boolean = Core.hasCommentImmediatelyBefore;
-const isDocLikeLeadingLine: (value: unknown) => boolean = Core.isDocLikeLeadingLine;
+type HasCommentImmediatelyBeforeFn = (text: unknown, index: unknown) => boolean;
+type IsDocLikeLeadingLineFn = (value: unknown) => boolean;
+type IsFunctionLikeNodeFn = (node: unknown) => boolean;
+type NormalizeParamDocTypeFn = (typeName: string) => string;
+
+const hasCommentImmediatelyBefore: HasCommentImmediatelyBeforeFn =
+    services.docCommentCoreServices.hasCommentImmediatelyBefore;
+const isDocLikeLeadingLine: IsDocLikeLeadingLineFn = services.docCommentCoreServices.isDocLikeLeadingLine;
+const isFunctionLikeNode: IsFunctionLikeNodeFn = services.docCommentCoreServices.isFunctionLikeNode;
+const normalizeParamDocType: NormalizeParamDocTypeFn = services.docCommentCoreServices.normalizeParamDocType;
 
 export * from "./collection.js";
 export * from "./deprecated.js";
@@ -17,4 +32,4 @@ export * from "./synthetic-generation.js";
 export * from "./synthetic-helpers.js";
 export * from "./synthetic-merge.js";
 
-export { hasCommentImmediatelyBefore, isDocLikeLeadingLine };
+export { hasCommentImmediatelyBefore, isDocLikeLeadingLine, isFunctionLikeNode, normalizeParamDocType };
