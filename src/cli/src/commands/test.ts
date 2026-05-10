@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 
+import { Core } from "@gmloop/core";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
@@ -60,7 +61,7 @@ async function findTestFiles(projectRoot: string, pattern: string | undefined): 
 }
 
 async function collectTestFilePaths(directory: string): Promise<Array<string>> {
-    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    const entries = await Core.safeReaddirDirent({ readDir: readdir }, directory);
     const nestedPaths = await Promise.all(
         entries.map(async (entry) => {
             if (

@@ -1,4 +1,4 @@
-import { readFileSync as fsReadFileSync, writeFileSync as fsWriteFileSync } from "node:fs";
+import { type Dirent, readFileSync as fsReadFileSync, writeFileSync as fsWriteFileSync } from "node:fs";
 import { readFile as fsReadFileAsync, writeFile as fsWriteFileAsync } from "node:fs/promises";
 
 import { createAbortGuard } from "../utils/abort.js";
@@ -136,6 +136,86 @@ export function readTextFile(filePath: string): Promise<string> {
  */
 export function writeTextFileSync(filePath: string, content: string): void {
     fsWriteFileSync(filePath, content, "utf8");
+}
+
+/**
+ * Read directory entries safely, returning an empty array when the directory
+ * does not exist or is inaccessible. Errors other than "not a directory" are
+ * re-thrown so callers can distinguish benign ENOENT/ENOTDIR cases from
+ * permission or I/O failures.
+ *
+ * Mirrors the semantics of {@link listDirectory} for cases where the filesystem
+ * facade is exposed directly rather than abstracted behind the `FileSystem-
+ * DirectoryReader` interface. Callers that already use a `FileSystemDirectory-
+ * Reader` should prefer {@link listDirectory} for consistent abort-signal
+ * handling.
+ *
+ * @param {{ readDir(path: string): Promise<Iterable<string>> }} fsFacade
+ *        Filesystem facade whose `readDir` method mirrors
+ *        `fs.promises.readdir`.
+ * @param {string} directoryPath Absolute or relative directory to read.
+ * @returns {Promise<Array<string>>} Stable array of directory entries,
+ *          ordered according to the underlying iterator.
+ */
+export async function safeReaddir(fsFacade: FileSystemDirectoryReader, directoryPath: string): Promise<Array<string>> {
+    try {
+        return toArrayFromIterable(await fsFacade.readDir(directoryPath));
+    } catch (error) {
+        if (isErrorWithCode(error, "ENOENT", "ENOTDIR")) {
+            return [];
+        }
+        throw error;
+    }
+}
+
+/**
+ * Minimal directory entry shape required by {@link safeReaddirDirent}. Omits
+ * internal `parent` / buffer fields from Node's `Dirent` to keep the interface
+ * lean and portable.
+ */
+type FileDirent = Pick<
+    Dirent,
+    "name" | "isBlockDevice" | "isCharacterDevice" | "isDirectory" | "isFIFO" | "isFile" | "isSocket" | "isSymbolicLink"
+>;
+
+export interface FileSystemDirentReader {
+    readonly readDir: (path: string, options: { withFileTypes: true }) => Promise<FileDirent[]>;
+}
+
+/**
+ * Read directory entries with `withFileTypes: true`, returning an empty array
+ * when the directory does not exist or is inaccessible. Errors other than
+ * "not a directory" are re-thrown so callers can distinguish benign
+ * ENOENT/ENOTDIR cases from permission or I/O failures.
+ *
+ * Provides a canonical, reusable alternative to bare `.catch(() => [])`
+ * handlers that:
+ *   - Documents the intent in the function name rather than relying on
+ *     inline callbacks.
+ *   - Propagates unexpected errors (permission denied, I/O faults) rather
+ *     than silently absorbing them.
+ *   - Keeps error-handling logic centralized in the core fs module so it can
+ *     be audited and updated in one place.
+ *
+ * @param {{ readDir(path: string): Promise<Iterable<string>> }} fsFacade
+ *        Filesystem facade whose `readDir` method mirrors
+ *        `fs.promises.readdir`.
+ * @param {string} directoryPath Absolute or relative directory to read.
+ * @returns {Promise<Array<FileDirent>>} Stable array of directory entries,
+ *          ordered according to the underlying iterator.
+ */
+export async function safeReaddirDirent(
+    fsFacade: FileSystemDirentReader,
+    directoryPath: string
+): Promise<FileDirent[]> {
+    try {
+        return await fsFacade.readDir(directoryPath, { withFileTypes: true });
+    } catch (error) {
+        if (isErrorWithCode(error, "ENOENT", "ENOTDIR")) {
+            return [];
+        }
+        throw error;
+    }
 }
 
 /**
