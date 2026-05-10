@@ -172,6 +172,57 @@ void test("graph visualization module script embeds workspace rule catalogs when
     assert.match(script, /Raw gmloop\.json/u);
 });
 
+void test("graph visualization bundle exposes object inheritance as a readable edge filter and arrow", () => {
+    const bundle = renderGraphVisualizationBundle(
+        {
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            edges: [
+                {
+                    source: "project::resource::objects/obj_child/obj_child.yy",
+                    target: "project::resource::objects/obj_parent/obj_parent.yy",
+                    type: "inherits"
+                }
+            ],
+            nodes: [
+                {
+                    displayName: "obj_child",
+                    filePath: null,
+                    graphId: "project",
+                    id: "project::resource::objects/obj_child/obj_child.yy",
+                    kind: "object",
+                    name: "obj_child",
+                    resourcePath: "objects/obj_child/obj_child.yy",
+                    snippet: "",
+                    summary: "Object 'obj_child'."
+                },
+                {
+                    displayName: "obj_parent",
+                    filePath: null,
+                    graphId: "project",
+                    id: "project::resource::objects/obj_parent/obj_parent.yy",
+                    kind: "object",
+                    name: "obj_parent",
+                    resourcePath: "objects/obj_parent/obj_parent.yy",
+                    snippet: "",
+                    summary: "Object 'obj_parent'."
+                }
+            ],
+            projectRoot: "/tmp/project"
+        },
+        { title: "Inheritance Graph" }
+    );
+
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+    const script = readBundleFileText(bundle, "assets/graph-visualization.js");
+
+    assert.match(html, /id="arrow-inherits"/u);
+    assert.match(script, /"type":"inherits"/u);
+    assert.match(script, /`filter-edge-\$\{edgeType\}`/u);
+    assert.match(script, /formatLabel\(edgeType\)/u);
+    assert.match(script, /edgeType === "inherits"/u);
+});
+
 void test("graph visualization css asset preserves core visual affordances", () => {
     const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "Styles Test" });
     const css = readBundleFileText(bundle, "assets/graph-visualization.css");
