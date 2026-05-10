@@ -111,7 +111,13 @@ function resolveProvenAccessorForMemberIndex(
     }
 
     const trackedAccessor = explicitConstructorAccessorsByIdentifier.get(identifierName);
-    if (trackedAccessor === "[?" || trackedAccessor === "[|") {
+    // Return the tracked accessor for all DS types. The multi-coordinate guard above
+    // handles the grid case by returning "[#" early when property count > 1. For
+    // single-coordinate access, we return whatever accessor the variable was last
+    // assigned from a constructor call, even if it's "[#". This means a grid variable
+    // accessed with [| or [? (which is a misuse) will be normalized to [# to match
+    // the constructor's declared accessor.
+    if (trackedAccessor) {
         return trackedAccessor;
     }
 
