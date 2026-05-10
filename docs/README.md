@@ -15,6 +15,8 @@ then return here for deeper context.
   config for formatting `.gml` files in a GameMaker project.
 - [Sample `eslint.config.js`](examples/example.eslint.config.js) — Flat ESLint
   config that composes the `@gmloop/lint` presets (without TypeScript requirement)
+- [Sample `gmloop.json`](examples/gmloop.json) — Baseline project config with
+  formatter, lint, and refactor settings
 
 ## Usage & rollout
 
