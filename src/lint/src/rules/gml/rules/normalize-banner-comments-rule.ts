@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, reportFullTextRewrite } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const DECORATIVE_BANNER_RUN_PATTERN = /[/\\_*#<>|:~-]{6,}/u;
 const DECORATIVE_CHARACTER_PATTERN = /^[\s/\\_*#<>|:~-]+$/u;

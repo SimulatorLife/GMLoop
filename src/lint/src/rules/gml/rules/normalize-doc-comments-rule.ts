@@ -3,6 +3,7 @@ import type { Rule } from "eslint";
 
 import { normalizeDocParamName } from "../../../parameter-utils/index.js";
 import { gmlRuleDocCommentServices } from "../gml-rule-services.js";
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeWithType,
     computeLineStartOffsets,
@@ -11,7 +12,6 @@ import {
     reportFullTextRewrite,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const {
     convertLegacyReturnsDescriptionLinesToMetadata,

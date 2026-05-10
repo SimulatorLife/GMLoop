@@ -2,6 +2,7 @@ import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { gmlRuleAutofixServices } from "../gml-rule-services.js";
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeRecord,
     createMeta,
@@ -9,7 +10,6 @@ import {
     isAstNodeWithType,
     shouldReportUnsafe
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { unwrapParenthesizedExpression } = Core;
 type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
