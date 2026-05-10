@@ -206,4 +206,104 @@ void describe("gml/simplify-real-calls", () => {
             "Expected gml/simplify-real-calls to be in the recommended config"
         );
     });
+
+    void it("reports real() with scientific notation (positive exponent)", () => {
+        const source = 'var x = real("1e+5");';
+        const node = buildRealCallNode("real", '"1e+5"', 8);
+        const { context, messages } = createContext(source);
+
+        const visitor = rule.create(context as any);
+        visitor.Program?.({ type: "Program", body: [node] } as any);
+
+        assert.strictEqual(messages.length, 1);
+        assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
+        assert.strictEqual(messages[0]?.fix?.text, "1e+5");
+    });
+
+    void it("reports real() with scientific notation (negative exponent)", () => {
+        const source = 'var x = real("1e-5");';
+        const node = buildRealCallNode("real", '"1e-5"', 8);
+        const { context, messages } = createContext(source);
+
+        const visitor = rule.create(context as any);
+        visitor.Program?.({ type: "Program", body: [node] } as any);
+
+        assert.strictEqual(messages.length, 1);
+        assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
+        assert.strictEqual(messages[0]?.fix?.text, "1e-5");
+    });
+
+    void it("reports real() with decimal and positive exponent", () => {
+        const source = 'var x = real("1.5e+5");';
+        const node = buildRealCallNode("real", '"1.5e+5"', 8);
+        const { context, messages } = createContext(source);
+
+        const visitor = rule.create(context as any);
+        visitor.Program?.({ type: "Program", body: [node] } as any);
+
+        assert.strictEqual(messages.length, 1);
+        assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
+        assert.strictEqual(messages[0]?.fix?.text, "1.5e+5");
+    });
+
+    void it("reports real() with decimal and negative exponent", () => {
+        const source = 'var x = real("1.5e-5");';
+        const node = buildRealCallNode("real", '"1.5e-5"', 8);
+        const { context, messages } = createContext(source);
+
+        const visitor = rule.create(context as any);
+        visitor.Program?.({ type: "Program", body: [node] } as any);
+
+        assert.strictEqual(messages.length, 1);
+        assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
+        assert.strictEqual(messages[0]?.fix?.text, "1.5e-5");
+    });
+
+    void it("reports real() with leading plus and positive exponent", () => {
+        const source = 'var x = real("+1e+5");';
+        const node = buildRealCallNode("real", '"+1e+5"', 8);
+        const { context, messages } = createContext(source);
+
+        const visitor = rule.create(context as any);
+        visitor.Program?.({ type: "Program", body: [node] } as any);
+
+        assert.strictEqual(messages.length, 1);
+        assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
+        assert.strictEqual(messages[0]?.fix?.text, "+1e+5");
+    });
+
+    void it("reports real() with leading minus and positive exponent", () => {
+        const source = 'var x = real("-1e+5");';
+        const node = buildRealCallNode("real", '"-1e+5"', 8);
+        const { context, messages } = createContext(source);
+
+        const visitor = rule.create(context as any);
+        visitor.Program?.({ type: "Program", body: [node] } as any);
+
+        assert.strictEqual(messages.length, 1);
+        assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
+        assert.strictEqual(messages[0]?.fix?.text, "-1e+5");
+    });
+
+    void it("does not report real() with invalid scientific notation (missing exponent digits)", () => {
+        const source = 'var x = real("1e+");';
+        const node = buildRealCallNode("real", '"1e+"', 8);
+        const { context, messages } = createContext(source);
+
+        const visitor = rule.create(context as any);
+        visitor.Program?.({ type: "Program", body: [node] } as any);
+
+        assert.strictEqual(messages.length, 0);
+    });
+
+    void it("does not report real() with invalid scientific notation (missing exponent)", () => {
+        const source = 'var x = real("1e");';
+        const node = buildRealCallNode("real", '"1e"', 8);
+        const { context, messages } = createContext(source);
+
+        const visitor = rule.create(context as any);
+        visitor.Program?.({ type: "Program", body: [node] } as any);
+
+        assert.strictEqual(messages.length, 0);
+    });
 });
