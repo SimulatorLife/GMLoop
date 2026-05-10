@@ -577,6 +577,26 @@ void test("normalize-data-structure-accessors does not keep stale constructor in
     const result = lintWithRule("normalize-data-structure-accessors", input, {});
     assertEquals(result.output, input);
 });
+void test("normalize-data-structure-accessors rewrites single-coordinate grid access with wrong accessor token", () => {
+    // A grid created via ds_grid_create() should always be accessed with "[#".
+    // When code mistakenly uses "[?" or "[|" for a single-coordinate grid access
+    // (i.e., a misuse that compiles but is incorrect), the rule should normalize
+    // it to the tracked "[#" accessor so it matches the constructor's declaration.
+
+    // Grid accessed with "[?" (should be "[#")
+    const inputMapStyle = ["var level_grid = ds_grid_create();", "var cell = level_grid[? 5];", ""].join("\n");
+    const expectedMapStyle = ["var level_grid = ds_grid_create();", "var cell = level_grid[# 5];", ""].join("\n");
+
+    const resultMapStyle = lintWithRule("normalize-data-structure-accessors", inputMapStyle, {});
+    assertEquals(resultMapStyle.output, expectedMapStyle);
+
+    // Grid accessed with "[|" (should be "[#")
+    const inputListStyle = ["var game_grid = ds_grid_create();", "var val = game_grid[| 3];", ""].join("\n");
+    const expectedListStyle = ["var game_grid = ds_grid_create();", "var val = game_grid[# 3];", ""].join("\n");
+
+    const resultListStyle = lintWithRule("normalize-data-structure-accessors", inputListStyle, {});
+    assertEquals(resultListStyle.output, expectedListStyle);
+});
 
 void test("normalize-data-structure-accessors ignores malformed identifier metadata without throwing", () => {
     const sourceText = 'var value = my_map[| "key"];\n';
