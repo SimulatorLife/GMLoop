@@ -37,15 +37,6 @@ async function snapshotDirectoryTree(rootPath: string): Promise<Map<string, stri
     return new Map(files);
 }
 
-const DOC_COMMENT_PATTERN = /^\s*\/\/\/\s*(?:\/\s*)?@/iu;
-
-function removeDocCommentAnnotationLines(text: string): string {
-    return text
-        .split(/\r?\n/u)
-        .filter((line) => !DOC_COMMENT_PATTERN.test(line))
-        .join("\n");
-}
-
 function canonicalizeFixtureText(text: string, comparison: FixtureComparison): string {
     if (comparison === "ignore-whitespace-and-line-endings") {
         return text.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
