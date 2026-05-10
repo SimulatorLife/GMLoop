@@ -5,13 +5,13 @@ import { Command } from "commander";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
-    ensurePlannedSurfaceGraphIndex,
-    type PlannedSurfaceSharedOptions,
-    printPlannedSurfacePayload,
-    resolvePlannedSurfaceProjectContext
-} from "./planned-ai-surface-shared.js";
+    ensureProjectGraphIndex,
+    printProjectPayload,
+    type SharedProjectContextOptions
+} from "../workflow/project-context.js";
+import { resolveCommandProjectContext } from "../workflow/project-root.js";
 
-type RoomCommandSharedOptions = PlannedSurfaceSharedOptions &
+type RoomCommandSharedOptions = SharedProjectContextOptions &
     Readonly<{
         newName?: string;
         write?: boolean;
@@ -29,7 +29,7 @@ function addRoomSharedOptions(command: Command): Command {
 }
 
 function printRoomPayload(payload: unknown): void {
-    printPlannedSurfacePayload(payload);
+    printProjectPayload(payload);
 }
 
 function mapMutationResult(result: ProjectResourceMutationResult): {
@@ -57,7 +57,7 @@ async function runRoomResourceMutation(
     options: RoomCommandSharedOptions,
     runMutation: (projectRoot: string) => Promise<ProjectResourceMutationResult>
 ): Promise<void> {
-    const context = await resolvePlannedSurfaceProjectContext(options);
+    const context = await resolveCommandProjectContext(options);
     const result = await runMutation(context.projectRoot);
 
     printRoomPayload({
@@ -69,7 +69,7 @@ async function runRoomResourceMutation(
 
 function emitRoomUnavailableLeaf(
     commandName: string,
-    options: PlannedSurfaceSharedOptions,
+    options: SharedProjectContextOptions,
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
@@ -90,7 +90,7 @@ export function createRoomCommand(): Command {
     const list = addRoomSharedOptions(applyStandardCommandOptions(new Command("list")).description("List rooms."));
     list.action(async function roomListAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const context = await ensureProjectGraphIndex(options);
         const rooms = Semantic.searchGraphIndex({
             databasePath: options.databasePath,
             projectConfig: context.projectConfig,
@@ -108,7 +108,7 @@ export function createRoomCommand(): Command {
     );
     inspect.action(async function roomInspectAction(roomNameOrId: string) {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const context = await ensureProjectGraphIndex(options);
         const resolvedId = roomNameOrId.includes("::")
             ? roomNameOrId
             : (Semantic.searchGraphIndex({
@@ -138,7 +138,7 @@ export function createRoomCommand(): Command {
     );
     query.action(async function roomQueryAction(text?: string) {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const context = await ensureProjectGraphIndex(options);
         const normalizedQuery = typeof text === "string" ? text : "";
         const payload = Semantic.searchGraphIndex({
             databasePath: options.databasePath,
@@ -156,7 +156,7 @@ export function createRoomCommand(): Command {
     );
     validate.action(async function roomValidateAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const context = await ensureProjectGraphIndex(options);
         const rooms = Semantic.searchGraphIndex({
             databasePath: options.databasePath,
             projectConfig: context.projectConfig,
@@ -180,7 +180,7 @@ export function createRoomCommand(): Command {
     );
     preview.action(async function roomPreviewAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const context = await ensureProjectGraphIndex(options);
         const rooms = Semantic.searchGraphIndex({
             databasePath: options.databasePath,
             projectConfig: context.projectConfig,
@@ -204,7 +204,7 @@ export function createRoomCommand(): Command {
     );
     summary.action(async function roomSummaryAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const context = await ensureProjectGraphIndex(options);
         const rooms = Semantic.searchGraphIndex({
             databasePath: options.databasePath,
             projectConfig: context.projectConfig,

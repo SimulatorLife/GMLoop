@@ -4,10 +4,10 @@ import { Command } from "commander";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
 import {
-    ensurePlannedSurfaceGraphIndex,
-    type PlannedSurfaceSharedOptions,
-    printPlannedSurfacePayload
-} from "./planned-ai-surface-shared.js";
+    ensureProjectGraphIndex,
+    printProjectPayload,
+    type SharedProjectContextOptions
+} from "../workflow/project-context.js";
 
 function addObjectSharedOptions(command: Command): Command {
     return command
@@ -20,12 +20,12 @@ function addObjectSharedOptions(command: Command): Command {
 }
 
 function printObjectPayload(payload: unknown): void {
-    printPlannedSurfacePayload(payload);
+    printProjectPayload(payload);
 }
 
 function emitObjectUnavailableLeaf(
     commandName: string,
-    options: PlannedSurfaceSharedOptions,
+    options: SharedProjectContextOptions,
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
@@ -49,8 +49,8 @@ export function createObjectCommand(): Command {
         applyStandardCommandOptions(new Command("list")).description("List object resources.")
     );
     list.action(async function objectListAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const options = this.opts<SharedProjectContextOptions>();
+        const context = await ensureProjectGraphIndex(options);
         const payload = Semantic.searchGraphIndex({
             databasePath: options.databasePath,
             projectConfig: context.projectConfig,
@@ -67,8 +67,8 @@ export function createObjectCommand(): Command {
             .argument("<object>", "Object name or graph node id.")
     );
     inspect.action(async function objectInspectAction(objectNameOrId: string) {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const options = this.opts<SharedProjectContextOptions>();
+        const context = await ensureProjectGraphIndex(options);
         const resolvedId = objectNameOrId.includes("::")
             ? objectNameOrId
             : (Semantic.searchGraphIndex({
@@ -97,7 +97,7 @@ export function createObjectCommand(): Command {
             .argument("<object>", "Object name")
     );
     update.action(function objectUpdateAction(objectName: string) {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
+        const options = this.opts<SharedProjectContextOptions>();
         emitObjectUnavailableLeaf("object update", options, "object_property_mutation", { object: objectName });
     });
 
@@ -105,8 +105,8 @@ export function createObjectCommand(): Command {
         applyStandardCommandOptions(new Command("validate")).description("Validate object metadata.")
     );
     validate.action(async function objectValidateAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const options = this.opts<SharedProjectContextOptions>();
+        const context = await ensureProjectGraphIndex(options);
         const objects = Semantic.searchGraphIndex({
             databasePath: options.databasePath,
             projectConfig: context.projectConfig,
@@ -130,7 +130,7 @@ export function createObjectCommand(): Command {
             applyStandardCommandOptions(new Command(eventLeaf)).description(`Object event ${eventLeaf}.`)
         );
         nested.action(function objectEventLeafAction() {
-            const options = this.opts<PlannedSurfaceSharedOptions>();
+            const options = this.opts<SharedProjectContextOptions>();
             emitObjectUnavailableLeaf(`object event ${eventLeaf}`, options, "object_event_mutation");
         });
         event.addCommand(nested);

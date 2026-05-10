@@ -3,18 +3,15 @@ import { Command } from "commander";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
 import * as UI from "../modules/ui/index.js";
-import {
-    type PlannedSurfaceSharedOptions,
-    printPlannedSurfacePayload,
-    resolvePlannedSurfaceProjectContext
-} from "./planned-ai-surface-shared.js";
+import { printProjectPayload, type SharedProjectContextOptions } from "../workflow/project-context.js";
+import { resolveCommandProjectContext } from "../workflow/project-root.js";
 
 function addUiSharedOptions(command: Command): Command {
     return command.addOption(createPathOption()).addOption(createConfigOption()).option("--json", "Emit JSON output.");
 }
 
 function printUiPayload(payload: unknown): void {
-    printPlannedSurfacePayload(payload);
+    printProjectPayload(payload);
 }
 
 export function createUiCommand(): Command {
@@ -26,8 +23,8 @@ export function createUiCommand(): Command {
         applyStandardCommandOptions(new Command("inspect")).description("Inspect UI configuration catalog.")
     );
     inspect.action(async function uiInspectAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        const context = await resolvePlannedSurfaceProjectContext(options).catch(() => null);
+        const options = this.opts<SharedProjectContextOptions>();
+        const context = await resolveCommandProjectContext(options).catch(() => null);
         const payload = await UI.createGraphVisualizationProjectConfigurationCatalog(context, {
             config: options.config
         });
