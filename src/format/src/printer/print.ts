@@ -1374,12 +1374,13 @@ function printElements(path, print, listKey, delimiter, lineBreak, maxElementsPe
 }
 
 function countLeadingSimpleCallArguments(node) {
-    if (!node || !Array.isArray(node.arguments)) {
+    const args = node?.arguments;
+    if (!Array.isArray(args) || args.length === 0) {
         return 0;
     }
 
     let count = 0;
-    for (const argument of node.arguments) {
+    for (const argument of args) {
         if (!isSimpleCallArgument(argument)) {
             break;
         }
@@ -1392,14 +1393,25 @@ function countLeadingSimpleCallArguments(node) {
 
 function buildCallbackArgumentsWithSimplePrefix(path, print, simplePrefixLength) {
     const node = path.getValue();
-    const args = Core.asArray(node?.arguments);
+    const args = node?.arguments;
+
+    if (!Array.isArray(args) || args.length === 0) {
+        return group(["(", softline, softline, ")"]);
+    }
+
     const parts: any[] = [];
-    const trailingArguments = args.slice(simplePrefixLength);
-    const firstCallbackIndex = trailingArguments.findIndex(isCallbackArgument);
-    const hasTrailingNonCallbackArgument =
-        firstCallbackIndex !== -1 &&
-        trailingArguments.slice(firstCallbackIndex + 1).some((argument) => !isCallbackArgument(argument));
-    const shouldForcePrefixBreaks = simplePrefixLength > 1 && hasTrailingNonCallbackArgument;
+    // Short-circuit: if simplePrefixLength <= 1 or there are no trailing args,
+    // we know shouldForcePrefixBreaks will be false and can skip the array operations.
+    const trailingArgsStart = simplePrefixLength < args.length ? simplePrefixLength : -1;
+    let shouldForcePrefixBreaks = false;
+
+    if (simplePrefixLength > 1 && trailingArgsStart !== -1) {
+        const trailingArguments = args.slice(trailingArgsStart);
+        const firstCallbackIndex = trailingArguments.findIndex(isCallbackArgument);
+        shouldForcePrefixBreaks =
+            firstCallbackIndex !== -1 &&
+            trailingArguments.slice(firstCallbackIndex + 1).some((argument) => !isCallbackArgument(argument));
+    }
 
     for (let index = 0; index < args.length; index++) {
         parts.push(path.call(print, "arguments", index));
