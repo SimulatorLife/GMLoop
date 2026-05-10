@@ -24,7 +24,7 @@ const { applyJsDocTagAliasReplacements } = Core;
 const { getNodeStartIndex } = Core;
 
 function normalizeDocCommentPrefixLine(line: string): string {
-    // support the legacy "// /" notation used by some fixtures/legacy code
+    // support the "// /" notation used by some fixtures code
     // but avoid matching "// //" which is just a normal comment starting with two
     // slashes. we only want the single-slash variant.
     const docSlashMatch = /^(\s*)\/\/\s*\/(?!\/)(.*)$/u.exec(line);

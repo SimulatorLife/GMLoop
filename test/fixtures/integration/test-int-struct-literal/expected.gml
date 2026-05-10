@@ -9,13 +9,13 @@ function child_struct(_foo, _value) : my_custom_struct(_value) constructor {
     self.foo = _foo;
     value = 0;
 
-    /// @description Print a debug message showing foo value
+    /// @desc Print a debug message showing foo value
     /// @returns {undefined}
     static print = function () {
         show_debug_message($"My foo is {self.foo}");
     };
 
-    /// @description Each time this is called, create new map
+    /// @desc Each time this is called, create new map
     /// @returns {undefined}
     static generate = function () {
         points = poisson_disk_sample(width, height, point_space);
@@ -23,7 +23,7 @@ function child_struct(_foo, _value) : my_custom_struct(_value) constructor {
         remove_ellipse();
     };
 
-    /// @description Remove all nodes outside of ellipse
+    /// @desc Remove all nodes outside of ellipse
     /// @returns {undefined}
     static remove_ellipse = function () {
         var len = array_length(nodes);
@@ -34,7 +34,7 @@ function child_struct(_foo, _value) : my_custom_struct(_value) constructor {
         }
     };
 
-    /// @description Draw points in array for debugging
+    /// @desc Draw points in array for debugging
     /// @returns {undefined}
     static draw_points = function () {
         var num_points = array_length(points);
@@ -109,14 +109,14 @@ function reuse_struct() {
     do_something(instance);
 }
 
-/// @description This function has a sideffect of defining an instance variable 'data' that must be preserved
+/// @desc This function has a sideffect of defining an instance variable 'data' that must be preserved
 /// @returns {Struct}
 function assign_then_extend() {
     data = {label: "ok", value: 123};
     return data;
 }
 
-/// @description Input for a keyboard key
+/// @desc Input for a keyboard key
 /// @param {real} button
 function InputButtonKeyboard(button) : AbstractInputButton(button, eInputType.keyboard) constructor {
     // Keyboard input handling goes here

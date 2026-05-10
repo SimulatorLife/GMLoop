@@ -11,9 +11,9 @@ import {
 
 void test("convertLegacyReturnsDescriptionLinesToMetadata ignores non-return descriptions with hyphens", () => {
     const input = [
-        "/// @description Base class for all shapes. Shapes can be solid or not solid.",
-        "///              Solid shapes will collide with other solid shapes, and",
-        "///              non-solid shapes will not collide with anything."
+        "/// @desc Base class for all shapes. Shapes can be solid or not solid.",
+        "///       Solid shapes will collide with other solid shapes, and",
+        "///       non-solid shapes will not collide with anything."
     ];
 
     const output = convertLegacyReturnsDescriptionLinesToMetadata(input);
