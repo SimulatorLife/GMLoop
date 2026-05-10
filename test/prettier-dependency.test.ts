@@ -25,7 +25,7 @@ const TARGET_WORKSPACES: Array<WorkspacePolicy> = [
 ];
 
 const NO_PRETTIER_SECTIONS = ["dependencies", "devDependencies", "optionalDependencies"] as const;
-const FORMATTING_DEPENDENCIES = new Set(["prettier", "eslint-config-prettier", "@prettier/plugin-xml"]);
+const FORMATTING_DEPENDENCIES = new Set(["prettier", "eslint-config-prettier"]);
 
 type DependencyMap = Record<string, string>;
 type PackageJsonShape = {
