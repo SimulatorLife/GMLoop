@@ -35,8 +35,8 @@ then return here for deeper context.
 ## Contributor workflow
 
 - [Contributor onboarding checklist](contributor-onboarding.md) — Environment
-  setup, validation commands, and supporting documentation for new
-  contributors.
+  setup, baseline validation (`build:ts`, `lint:quiet`), and supporting
+  documentation for new contributors.
 - [ANTLR regeneration guide](antlr-regeneration.md) — Canonical steps for
   rebuilding the generated parser artifacts with the vendored toolchain plus
   pointers to the extension hooks that keep custom behaviour outside the

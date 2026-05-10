@@ -2,11 +2,13 @@
 
 Command-line interface for the GMLoop toolchain. Provides utilities for formatting GameMaker Language files, watching for changes, generating metadata, and coordinating the hot-reload development pipeline.
 
+If you are just getting started, begin with the [repository quick start](../../README.md#quick-start), then use this guide as the command reference.
+
 ## Formatter/Linter/Refactor contract
 
 - Run `refactor` to execute global transactions (Codemods), atomic cross-file edits (e.g. rename transactions), and metadata updates via a native Collection API through `@gmloop/refactor`.
 - Run `parse` to inspect `.gml` parser AST output through `@gmloop/parser`.
-- Run `lint` for and syntax repairs/rewrites (applies local single-file ESLint diagnostics/fixes through `@gmloop/lint`).
+- Run `lint` for syntax diagnostics and single-file repairs/rewrites (applies local ESLint diagnostics/fixes through `@gmloop/lint`).
 - Run `format` for layout-only formatting (formatter-only AST normalization + printing through `@gmloop/format`).
 - Run `fix` to execute all three in one pass: project codemods, lint autofixes, and formatting.
 
