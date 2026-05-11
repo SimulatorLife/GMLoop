@@ -1,6 +1,3 @@
-// import { Format } from "@gmloop/format";
-// import { Parser } from "@gmloop/parser";
-// import { Refactor } from "@gmloop/refactor";
 import { Core } from "@gmloop/core";
 import { html, type PropertyValues } from "lit";
 
