@@ -41,10 +41,12 @@ These constants are used throughout the format workspace to ensure consistent be
 
 The format workspace owns formatting and parser-to-printer orchestration _only_ (semicolons, whitespaces, line breaks, indentation, etc.).
 
-- `@gmloop/format` is formatter-only.
-- Any file-scoped semantic/content rewrites belongs to `@gmloop/lint` rules and is applied via `lint --write`. Project-aware transformations and rewrites (e.g. function doc-comment generation/fixing, legacy annotation normalization, `globalvar` rewrite) are the responsibility of the `@gmloop/refactor` module, which is a 'codemod' module.
+- `@gmloop/format` is formatter-only. **The formatter never repairs invalid syntax and only formats valid AST.**
+- Any file-scoped semantic/content rewrites belongs to `@gmloop/lint` rules and is applied via `lint --write`. **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).** This includes fixing/generating function doc-comments and legacy annotation normalization.
+- Project-aware transformations and rewrites (e.g. **globalvar rewrite**, cross-file renames) are the responsibility of the `@gmloop/refactor` module, which is a 'codemod' module. **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 - This Prettier formatter workspace **must not** depend directly on `@gmloop/semantic`, `@gmloop/refactor`, or `@gmloop/lint`.
-- Semantic/content rewrites, project-aware transformations, and 'fixes' (fixing/generating function doc-comments, transforming legacy `globalvar` declarations to use the `global` keyword, etc.) are lint auto-fix responsibilities in `@gmloop/lint`.
+- Semantic/content rewrites and 'fixes' (fixing/generating function doc-comments, etc.) are lint auto-fix responsibilities in `@gmloop/lint`, provided they are single-file and do not require project-wide knowledge. Project-aware transformations (like the `globalvar` rewrite) always belong in `@gmloop/refactor`.
+
 
 Formatter doc-comment boundary guarantees:
 

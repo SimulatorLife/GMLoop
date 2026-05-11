@@ -6,12 +6,12 @@ It owns lint diagnostics and semantic/content rewrites (via lint rules and `--wr
 
 - Owns:
     - ESLint language wiring for GML (`language: "gml/gml"`)
-    - Lint rules and single-file-safe autofix behavior
+    - Lint rules and single-file-safe autofix behavior. **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
 - Does not own:
-    - Prettier formatting behavior (should not directly manipulate whitespace, semicolons, line breaks, indentation, etc.) Should NOT depend on `@gmloop/format` or its internal APIs.
+    - Prettier formatting behavior (should not directly manipulate whitespace, semicolons, line breaks, indentation, etc.). **The formatter never repairs invalid syntax and only formats valid AST.** Should NOT depend on `@gmloop/format` or its internal APIs.
     - Parser internals/grammar ownership
     - Project-wide identifier indexing, rename safety, or hoist-name generation
-    - Refactor transaction planning/execution
+    - Refactor transaction planning/execution. **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 
 See [../../docs/target-state.md](../../docs/target-state.md) for the split contract.
 
@@ -154,13 +154,13 @@ comment-bearing statement spans.
 
 `no-legacy-api` reports deprecated built-ins and auto-fixes safe local direct
 renames, including deprecated replacements that were historically surfaced
-through Feather parity rules. Structural or project-aware migrations remain
+through Feather parity rules. Structural or project-wide migrations remain
 report-only and continue to belong in lint diagnostics or explicit refactor
 commands rather than unsafe autofixes.
 
 `normalize-banner-comments` canonicalizes decorative banner comments (line and block forms) and rewrites method-list `///` banner lines (outside of function declarations) to plain `//` comments.
 
-`normalize-doc-comments` canonicalizes doc tags/content, including removing `@param` separator hyphens (for example, `@param value - desc` to `@param value desc`). It synthesizes missing tags for declaration/assignment-style function docs. Constructors, including for inherited constructors (`function X(...) : Parent(...) constructor`). For struct/object literal property functions, the rule synthesizes docs, including `@returns`. Canonical ordering keeps non-param metadata tags before the param block, but preserves custom tags interleaved between `@param` lines when intentionally authored that way.
+`normalize-doc-comments` canonicalizes doc tags/content within a single file, including removing `@param` separator hyphens (for example, `@param value - desc` to `@param value desc`). It synthesizes missing tags for declaration/assignment-style function docs. Constructors, including for inherited constructors (`function X(...) : Parent(...) constructor`). For struct/object literal property functions, the rule synthesizes docs, including `@returns`. Canonical ordering keeps non-param metadata tags before the param block, but preserves custom tags interleaved between `@param` lines when intentionally authored that way.
 
 `normalize-data-structure-accessors` only applies repairs when the syntax or surrounding code provides enough evidence. Multi-coordinate structured access is normalized to `[# ...]`, because grids are the only GameMaker data structure that support more than one coordinate. The rule intentionally does not guess list/map accessors from variable naming conventions, and any constructor-based accessor provenance is cleared immediately when the tracked variable is reassigned.
 
@@ -184,10 +184,7 @@ pnpm --filter @gmloop/lint run build:types
 pnpm --filter @gmloop/lint run test
 ```
 
-Performance-sensitive autofix rules also have dedicated regression coverage under
-[`test/rules/optimized-autofix-performance.test.ts`](test/rules/optimized-autofix-performance.test.ts).
-Those tests run as part of the normal compiled Node test suite, so CI enforces
-both fix correctness and the current runtime budgets for the measured hot paths.
+Performance-sensitive autofix rules also have dedicated regression coverage under [`test/rules/optimized-autofix-performance.test.ts`](test/rules/optimized-autofix-performance.test.ts). Those tests run as part of the normal compiled Node test suite, so CI enforces both fix correctness and the current runtime budgets for the measured hot paths.
 
 ## TODO
 

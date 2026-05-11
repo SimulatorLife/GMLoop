@@ -29,16 +29,17 @@ The formatter owns:
 - semicolon and delimiter rendering
 - comment placement and formatting when text content is unchanged
 - formatter-owned lexical canonicalization explicitly allowed by the target state
+- **The formatter never repairs invalid syntax and only formats valid AST.**
 
 The formatter does not own:
 
 - lint diagnostics
-- doc-comment promotion or tag synthesis
+- doc-comment promotion or tag synthesis. **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
 - semantic interpretation
 - cross-file edits
 - project metadata updates
 - AST transformations that change program meaning
-- syntax recovery or repair for invalid GML
+- syntax recovery or repair for invalid GML. **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 
 If the behavior changes source content based on meaning, move it to lint or refactor.
 
@@ -131,6 +132,7 @@ Before finishing formatter work, verify:
 ## Prohibited Patterns
 
 - Semantic or content rewrites in printer code.
+- **Content-aware normalization or synthesis of doc-comments (owned by lint).**
 - Fallback printers for malformed syntax.
 - Broad formatter options that allow multiple contradictory house styles.
 - Embedded source templates as large string literals.

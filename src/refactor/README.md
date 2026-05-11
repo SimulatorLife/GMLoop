@@ -10,11 +10,12 @@ This package powers GML-native codemods and semantic refactoring transactions, a
 - Owns atomic cross-file edits, metadata updates, and structural migrations.
 - Implements a jscodeshift-like Collection API for GML ASTs.
 - Is the ONLY layer that should decide whether a rename requires cross-file edits or metadata changes.
+- **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 
 It does not replace lint or formatter domains:
 
-- `@gmloop/lint` owns **Diagnostic Reporting** and **Local Repairs** (single-file fixes).
-- `@gmloop/format` is **Formatter-only** (layout/canonical rendering) and does not own refactor transactions.
+- `@gmloop/lint` owns **Diagnostic Reporting** and **Local Repairs** (single-file fixes). **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
+- `@gmloop/format` is **Formatter-only** (layout/canonical rendering) and does not own refactor transactions. **The formatter never repairs invalid syntax and only formats valid AST.**
 - `@gmloop/cli` is the composition root that invokes refactor workflows through the `refactor` command.
 
 ## Responsibilities
