@@ -3,7 +3,7 @@ import { type Doc, doc } from "prettier";
 const { builders, utils } = doc;
 const rawJoin = builders.join;
 const { willBreak } = utils;
-const { breakParent, line, hardline, softline, lineSuffixBoundary, fill: fillBuilder, align: alignBuilder } = builders;
+const { breakParent, line, hardline, softline, lineSuffixBoundary } = builders;
 
 /**
  * Normalized child shape accepted by the Prettier doc builder helpers.
@@ -70,17 +70,6 @@ export function join(separator: Doc, parts: DocChild | DocChild[]): Doc {
 }
 
 /**
- * Align a list of docs using Prettier's fill algorithm.
- */
-export function fill(parts: DocChild | DocChild[]): Doc {
-    if (!Array.isArray(parts)) {
-        return sanitizeDocChild(parts);
-    }
-
-    return fillBuilder(sanitizeArray(parts));
-}
-
-/**
  * Wrap a doc fragment in a Prettier group after sanitizing its children.
  */
 export function group(parts: DocChild, opts?: Record<string, unknown>): Doc {
@@ -113,13 +102,6 @@ export function ifBreak(breakContents: DocChild, flatContents?: DocChild, opts?:
  */
 export function lineSuffix(parts: DocChild): Doc {
     return builders.lineSuffix(sanitizeDocChild(parts));
-}
-
-/**
- * Align a doc fragment using a specific indentation or string.
- */
-export function align(widthOrString: number | string, parts: DocChild): Doc {
-    return alignBuilder(widthOrString, sanitizeDocChild(parts));
 }
 
 export { breakParent, hardline, line, lineSuffixBoundary, softline, willBreak };
