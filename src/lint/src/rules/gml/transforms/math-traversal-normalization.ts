@@ -381,8 +381,19 @@ function combineLengthdirScalarAssignments(ast) {
 
     /**
      * Merge consecutive lengthdir scalar assignments into their declaration so the AST represents simplified math patterns.
+     *
+     * This loop iterates over `body` while also mutating it via `body.splice()`, so we use a while-loop
+     * rather than a for-loop to safely re-evaluate the termination condition after each mutation.
+     * If this were a standard for-loop, `body.splice(index + 1, 1)` would remove the element at
+     * `index + 1`, shifting subsequent elements down by one; on the next iteration, the loop would
+     * increment index and look at `body[index + 1]`, which is now the element originally at
+     * `index + 2` — effectively skipping `index + 2`.
+     *
+     * Using `while (index < body.length - 1)` and re-checking `body.length` after each splice
+     * ensures the loop terminates correctly and processes all consecutive pairs.
      */
-    for (let index = 0; index < body.length - 1; index += 1) {
+    let index = 0;
+    while (index < body.length - 1) {
         const declaration = body[index];
         const next = body[index + 1];
 
@@ -393,15 +404,18 @@ function combineLengthdirScalarAssignments(ast) {
             declaration.declarations.length !== 1 ||
             Core.hasComment(declaration)
         ) {
+            index += 1;
             continue;
         }
 
         const [declarator] = declaration.declarations;
         if (!declarator || Core.hasComment(declarator) || !declarator.init || Core.hasComment(declarator.init)) {
+            index += 1;
             continue;
         }
 
         if (!next) {
+            index += 1;
             continue;
         }
 
@@ -413,22 +427,26 @@ function combineLengthdirScalarAssignments(ast) {
             Core.hasComment(next) ||
             Core.hasComment(assignment)
         ) {
+            index += 1;
             continue;
         }
 
         const baseName = Core.getUnwrappedIdentifierName(declarator.id);
         if (!baseName || Core.getUnwrappedIdentifierName(assignment.left) !== baseName) {
+            index += 1;
             continue;
         }
 
         const match = matchLengthdirReassignment(assignment.right, baseName);
 
         if (!match) {
+            index += 1;
             continue;
         }
 
         const initClone = Core.cloneAstNode(declarator.init);
         if (!initClone) {
+            index += 1;
             continue;
         }
 
@@ -437,11 +455,13 @@ function combineLengthdirScalarAssignments(ast) {
         if (!scaleNumericLiteralCoefficient(baseTimesFactor, match.factor)) {
             const normalizedFactor = normalizeNumericCoefficient(match.factor);
             if (normalizedFactor === null) {
+                index += 1;
                 continue;
             }
 
             const factorLiteral = createNumericLiteral(normalizedFactor, match.factorNode);
             if (!factorLiteral) {
+                index += 1;
                 continue;
             }
 
@@ -451,6 +471,7 @@ function combineLengthdirScalarAssignments(ast) {
         const callOneLiteral = createNumericLiteral("1", assignment.right);
         const differenceOneLiteral = createNumericLiteral("1", assignment.right);
         if (!callOneLiteral || !differenceOneLiteral) {
+            index += 1;
             continue;
         }
 
@@ -460,6 +481,7 @@ function combineLengthdirScalarAssignments(ast) {
             match.callExpression
         );
         if (!lengthdirCall) {
+            index += 1;
             continue;
         }
 
@@ -467,6 +489,7 @@ function combineLengthdirScalarAssignments(ast) {
 
         const parenthesizedDifference = createParenthesizedExpressionNode(difference, assignment.right);
         if (!parenthesizedDifference) {
+            index += 1;
             continue;
         }
 
@@ -481,7 +504,9 @@ function combineLengthdirScalarAssignments(ast) {
 
         declarator.init = finalExpression;
         body.splice(index + 1, 1);
-        index -= 1;
+        // Do NOT increment index — the element that just shifted into body[index + 1]
+        // is the next candidate and must be checked against body[index] before advancing.
+        continue;
     }
 
     for (const element of body) {

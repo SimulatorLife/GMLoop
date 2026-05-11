@@ -1268,6 +1268,35 @@ void test("optimize-math-expressions folds lengthdir_x half-subtraction pattern 
     assertEquals(result.output, expected);
 });
 
+void test("optimize-math-expressions merges three consecutive lengthdir scalar assignment patterns", () => {
+    // Regression test: the original for-loop with "index -= 1" after splice+1 caused the loop
+    // to make zero net progress (splice shrinks body by 1, then index -= 1, then loop increments
+    // index += 1, so net: index += 0). This skipped every other element, so three consecutive
+    // merges would only merge the first and second, leaving the third untouched.
+    // The while-loop fix ensures each merge is attempted and no pattern is skipped.
+    const input = [
+        "var speed = 1.0;",
+        "speed = speed - speed / 2 - lengthdir_x(speed / 2, angle);",
+        "speed = speed - speed / 2 - lengthdir_y(speed / 2, angle);",
+        "speed = speed - speed / 2 - lengthdir_x(speed / 2, angle);",
+        ""
+    ].join("\n");
+    // With the while-loop fix, all three assignment statements are individually condensed.
+    // Each assignment is transformed from "speed - speed / 2 - lengthdir_(speed / 2, angle)"
+    // to "speed * 0.5 * (1 - lengthdir_(1, angle))". All three are processed correctly,
+    // whereas the buggy for-loop would have skipped one or more assignments.
+    const expected = [
+        "var speed = 1.0;",
+        "speed = speed * 0.5 * (1 - lengthdir_x(1, angle));",
+        "speed = speed * 0.5 * (1 - lengthdir_y(1, angle));",
+        "speed = speed * 0.5 * (1 - lengthdir_x(1, angle));",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("optimize-math-expressions", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("optimize-math-expressions does not force the lengthdir half-difference canonicalization on unrelated subtraction patterns", () => {
     const input = ["var s = size * 0.104;", "s = s * 0.5 - lengthdir_x(1, swim_rot);", ""].join("\n");
     const result = lintWithRule("optimize-math-expressions", input, {});
