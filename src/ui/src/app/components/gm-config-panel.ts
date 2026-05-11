@@ -108,6 +108,7 @@ export class GmConfigPanel extends LightDomLitElement {
                 <div class="config-toggle-row" role="group" aria-label="Configuration view selector">
                     <button
                         id="config-view-rendered"
+                        aria-pressed=${this.#configViewMode === "rendered"}
                         class=${this.#configViewMode === "rendered" ? "top-nav-button active" : "top-nav-button"}
                         @click=${() => this.#setConfigViewMode("rendered")}
                     >
@@ -115,6 +116,7 @@ export class GmConfigPanel extends LightDomLitElement {
                     </button>
                     <button
                         id="config-view-raw"
+                        aria-pressed=${this.#configViewMode === "raw"}
                         class=${this.#configViewMode === "raw" ? "top-nav-button active" : "top-nav-button"}
                         @click=${() => this.#setConfigViewMode("raw")}
                     >
