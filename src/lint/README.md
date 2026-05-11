@@ -128,9 +128,7 @@ Built-in `gml/*` rule short names:
 
 `prefer-compound-assignments` rewrites safe self-assignment forms
 `x = x <op> y` to `x <op>= y` for arithmetic/bitwise operators that GML
-actually supports in compound form, plus `??`.
-It must never rewrite `x = x << y` or `x = x >> y`, because GML has no `<<=`
-or `>>=` operator.
+actually supports in compound form, plus `??`. It never rewrites `x = x << y` or `x = x >> y`, because GML has no `<<=` or `>>=` operator.
 
 `prefer-array-push` rewrites direct append assignments of the form
 `array[array_length(array)] = value;` to `array_push(array, value);` when the
@@ -138,13 +136,11 @@ array receiver is side-effect-free and the replacement would stay within a
 single standalone statement.
 
 `prefer-increment-decrement-operators` rewrites standalone `+= 1` / `-= 1`
-statements to `++` / `--` when the increment amount is a numeric literal equal
-to one. It intentionally skips `for` header update expressions and
+statements to `++` / `--` when the increment amount is a numeric literal equal to one. It intentionally skips `for` header update expressions and
 comment-bearing statement spans.
 
 `prefer-direct-return` rewrites adjacent local-return boilerplate from
-`var value = expression; return value;` to `return expression;` when no comments
-would be dropped and the initializer does not reference the declared identifier.
+`var value = expression; return value;` to `return expression;` when no comments would be dropped and the initializer does not reference the declared identifier.
 
 `require-control-flow-braces` reports and autofixes unbraced control-flow statements by inserting structural `{ ... }` blocks. It does not depend on the formatter for that rewrite; the formatter remains responsible only for subsequent layout/canonical rendering.
 
@@ -162,9 +158,9 @@ through Feather parity rules. Structural or project-aware migrations remain
 report-only and continue to belong in lint diagnostics or explicit refactor
 commands rather than unsafe autofixes.
 
-`normalize-banner-comments` canonicalizes decorative banner comments (line and block forms) and rewrites method-list `///` banner lines to plain `//` comments.
+`normalize-banner-comments` canonicalizes decorative banner comments (line and block forms) and rewrites method-list `///` banner lines (outside of function declarations) to plain `//` comments.
 
-`normalize-doc-comments` canonicalizes doc tags/content, including removing `@param` separator hyphens (for example, `@param value - desc` to `@param value desc`). It synthesizes missing tags for declaration/assignment-style function docs. Non-inherited constructors and struct-function declarations strip/suppress synthetic `@returns`, while inherited constructors (`function X(...) : Parent(...) constructor`) synthesize `@returns {undefined}`. For struct/object literal property functions, the rule synthesizes docs when parameters exist, but suppresses synthetic `@returns` on undocumented no-parameter property functions to avoid noisy inline docs. Canonical ordering keeps non-param metadata tags before the param block, but preserves custom tags interleaved between `@param` lines when intentionally authored that way.
+`normalize-doc-comments` canonicalizes doc tags/content, including removing `@param` separator hyphens (for example, `@param value - desc` to `@param value desc`). It synthesizes missing tags for declaration/assignment-style function docs. Constructors, including for inherited constructors (`function X(...) : Parent(...) constructor`). For struct/object literal property functions, the rule synthesizes docs, including `@returns`. Canonical ordering keeps non-param metadata tags before the param block, but preserves custom tags interleaved between `@param` lines when intentionally authored that way.
 
 `normalize-data-structure-accessors` only applies repairs when the syntax or surrounding code provides enough evidence. Multi-coordinate structured access is normalized to `[# ...]`, because grids are the only GameMaker data structure that support more than one coordinate. The rule intentionally does not guess list/map accessors from variable naming conventions, and any constructor-based accessor provenance is cleared immediately when the tracked variable is reassigned.
 
@@ -172,9 +168,10 @@ commands rather than unsafe autofixes.
 Logical operator style normalization (`&&`/`||`/`^^` vs `and`/`or`/`xor`) belongs to the formatter (`@gmloop/format`, `logicalOperatorsStyle`), so lint does not rewrite those forms.
 
 `optimize-logical-flow` condenses boolean passthrough branches (for example `if (cond) return true; return false;`) into direct returns and rewrites undefined guard assignments (`if (is_undefined(x)) x = y;` / `if (x == undefined) x = y;`) into `x ??= y;` when it is safe. Comment-bearing ranges are intentionally skipped so autofixes never strip authored comments while optimizing nearby comment-free logic.
-`optimize-logical-flow` and `optimize-math-expressions` now clone candidate AST fragments using a traversal-link-stripping helper (skipping `parent`/context pointers) so autofix performance remains stable on very large scripts.
+`optimize-logical-flow` and `optimize-math-expressions` clone candidate AST fragments using a traversal-link-stripping helper (skipping `parent`/context pointers) so autofix performance remains stable on very large scripts.
 `prefer-loop-invariant-expressions` memoizes subtree hoistability checks per loop, caches normalized in-scope identifier names across loop iterations, reuses a single replacement target set for equivalent invariant expressions, and uses indexed comment-token range checks so large loop-heavy files avoid repeated full-source rescans.
 `optimize-math-expressions` only performs reciprocal-term cancellation on side-effect-free operands (identifiers/member accesses/literals). Call-expression operands are intentionally excluded from that cancellation path.
+`simplify-real-calls` detects calls to GML's built-in `real()` function that take a single string literal argument whose content is a valid numeric literal, and replaces the entire call expression with just the numeric literal. E.g. `real("0.5")` → `0.5`. This is a safe rewrite because the behavior of `real()` with a string literal argument is deterministic and does not have side effects.
 
 Feather rules are exposed as `feather/gm####` and sourced from `Lint.services.featherManifest`. All feather-namespace lint rules follow the naming pattern `feather/gm####`, where the lint rule diagnoses/fixes specificy/only the issue for the associated Feather rule/diagnostic. For example, lint rule `feather/gm1000` identifies and fixes the specific issue described in Feather rule `gm1000`: "No enclosing loop from which to break" This creates a clear, traceable link between each Feather rule and its corresponding lint rule(s), and allows us to easily add new lint rules for new Feather rules as they are added to the manifest.
 
