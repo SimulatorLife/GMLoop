@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
 import type { GraphVisualizationDocumentationCatalogs } from "../src/graph/types.js";
-import { renderTemplateValue } from "./render-template-helpers.js";
+import { createButtonAriaPressedPattern, renderTemplateValue } from "./render-template-helpers.js";
 
 class TestableGmDocsPanel extends GmDocsPanel {
     public renderForTest(): unknown {
@@ -75,8 +75,8 @@ void test("GmDocsPanel renders the Rules subview and workspace rule catalog cont
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /docs-view-rules/u);
-    assert.match(rendered, /id="docs-view-rules"[\s\S]*aria-pressed=true/u);
-    assert.match(rendered, /id="docs-view-cli"[\s\S]*aria-pressed=false/u);
+    assert.match(rendered, createButtonAriaPressedPattern("docs-view-rules", true));
+    assert.match(rendered, createButtonAriaPressedPattern("docs-view-cli", false));
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /Lint Rules/u);
     assert.match(rendered, /Refactor Codemods/u);
@@ -115,6 +115,6 @@ void test("GmDocsPanel renders an empty rules state when workspace rule catalogs
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /docs-view-rules/u);
-    assert.match(rendered, /id="docs-view-rules"[\s\S]*aria-pressed=true/u);
+    assert.match(rendered, createButtonAriaPressedPattern("docs-view-rules", true));
     assert.match(rendered, /No workspace rule catalog entries were provided by the host\./u);
 });

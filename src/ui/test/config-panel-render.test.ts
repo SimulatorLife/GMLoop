@@ -4,7 +4,7 @@ import test from "node:test";
 import { GmConfigPanel } from "../src/app/components/gm-config-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
-import { renderTemplateValue } from "./render-template-helpers.js";
+import { createButtonAriaPressedPattern, renderTemplateValue } from "./render-template-helpers.js";
 
 class TestableGmConfigPanel extends GmConfigPanel {
     public renderForTest(): unknown {
@@ -95,8 +95,8 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
 
     assert.match(rendered, /id="config-view-rendered"/u);
     assert.match(rendered, /id="config-view-raw"/u);
-    assert.match(rendered, /id="config-view-rendered"[\s\S]*aria-pressed=true/u);
-    assert.match(rendered, /id="config-view-raw"[\s\S]*aria-pressed=false/u);
+    assert.match(rendered, createButtonAriaPressedPattern("config-view-rendered", true));
+    assert.match(rendered, createButtonAriaPressedPattern("config-view-raw", false));
     assert.match(rendered, /Project Metadata/u);
     assert.match(rendered, /Lint Rules/u);
     assert.match(rendered, /Refactor Codemods/u);
