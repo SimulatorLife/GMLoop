@@ -88,6 +88,7 @@ export class GmDocsPanel extends LightDomLitElement {
                 <div class="docs-toggle-row" role="group" aria-label="Documentation view selector">
                     <button
                         id="docs-view-cli"
+                        aria-pressed=${this.state.activeDocsView === "cli"}
                         class=${this.state.activeDocsView === "cli" ? "top-nav-button active" : "top-nav-button"}
                         @click=${() => this.#emitDocsView("cli")}
                     >
@@ -95,6 +96,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     </button>
                     <button
                         id="docs-view-mcp"
+                        aria-pressed=${this.state.activeDocsView === "mcp"}
                         class=${this.state.activeDocsView === "mcp" ? "top-nav-button active" : "top-nav-button"}
                         @click=${() => this.#emitDocsView("mcp")}
                     >
@@ -102,6 +104,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     </button>
                     <button
                         id="docs-view-rules"
+                        aria-pressed=${this.state.activeDocsView === "rules"}
                         class=${this.state.activeDocsView === "rules" ? "top-nav-button active" : "top-nav-button"}
                         @click=${() => this.#emitDocsView("rules")}
                     >

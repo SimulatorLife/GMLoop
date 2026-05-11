@@ -95,6 +95,8 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
 
     assert.match(rendered, /id="config-view-rendered"/u);
     assert.match(rendered, /id="config-view-raw"/u);
+    assert.match(rendered, /id="config-view-rendered"[\s\S]*aria-pressed=true/u);
+    assert.match(rendered, /id="config-view-raw"[\s\S]*aria-pressed=false/u);
     assert.match(rendered, /Project Metadata/u);
     assert.match(rendered, /Lint Rules/u);
     assert.match(rendered, /Refactor Codemods/u);

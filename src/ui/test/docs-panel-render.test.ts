@@ -75,6 +75,8 @@ void test("GmDocsPanel renders the Rules subview and workspace rule catalog cont
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /docs-view-rules/u);
+    assert.match(rendered, /id="docs-view-rules"[\s\S]*aria-pressed=true/u);
+    assert.match(rendered, /id="docs-view-cli"[\s\S]*aria-pressed=false/u);
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /Lint Rules/u);
     assert.match(rendered, /Refactor Codemods/u);
@@ -113,5 +115,6 @@ void test("GmDocsPanel renders an empty rules state when workspace rule catalogs
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /docs-view-rules/u);
+    assert.match(rendered, /id="docs-view-rules"[\s\S]*aria-pressed=true/u);
     assert.match(rendered, /No workspace rule catalog entries were provided by the host\./u);
 });
