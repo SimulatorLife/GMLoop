@@ -1200,6 +1200,14 @@ function shouldForceInlineFunctionParameters(path, options) {
         return false;
     }
 
+    // Defensive: verify params array has at least one element before accessing.
+    // The isNonEmptyArray guard above should catch empty arrays, but a malformed
+    // node with an empty params array would cause TypeError when accessing
+    // node.params[0] or node.params.at(-1) below.
+    if (node.params.length === 0) {
+        return false;
+    }
+
     if (node.params.some((param) => Core.hasComment(param))) {
         return false;
     }
