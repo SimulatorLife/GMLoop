@@ -10,7 +10,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
-import type { EventPatch, ScriptPatch, Transpiler } from "@gmloop/transpiler";
+import { type EventPatch, type ScriptPatch, type Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
 
 import { formatCliError } from "../../cli-core/index.js";
 import type { PatchBroadcaster } from "../websocket/server.js";
@@ -98,6 +98,15 @@ function resolveSyntaxRecoveryHint(message: string): string | undefined {
     return undefined;
 }
 
+/**
+ * Classifies a transpilation error using structured error codes when available,
+ * falling back to string-based heuristics for backward compatibility.
+ *
+ * This function first checks for a TranspilerError with a known error code
+ * (PARSE_ERROR, VALIDATION_ERROR, REQUEST_ERROR, INTERNAL_ERROR). If found,
+ * the error is classified based on the code directly. If not, it falls back
+ * to the original string-matching logic for errors from other sources.
+ */
 function classifyTranspilationError(error: unknown): {
     category: ErrorCategory;
     message: string;
@@ -111,18 +120,81 @@ function classifyTranspilationError(error: unknown): {
         targetError = error.cause;
     }
 
+    // Classify using structured error codes when available.
+    // This avoids fragile string matching and provides reliable categorization
+    // for errors thrown by the transpiler workspace.
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.PARSE_ERROR)) {
+        // Extract line/column from the cause if it's a GML parse error.
+        if (Core.isGmlParseError(targetError)) {
+            return {
+                category: "syntax",
+                message: targetError.message,
+                line: targetError.line,
+                column: targetError.column,
+                recoveryHint: resolveSyntaxRecoveryHint(targetError.message)
+            };
+        }
+        // Fallback: parse error without location info.
+        return {
+            category: "syntax",
+            message: Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error),
+            recoveryHint: "Check for syntax errors in the GML source."
+        };
+    }
+
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.VALIDATION_ERROR)) {
+        return {
+            category: "validation",
+            message: Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error),
+            recoveryHint:
+                "The transpiler produced invalid output. This may indicate an internal issue. Try simplifying the code."
+        };
+    }
+
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.REQUEST_ERROR)) {
+        return {
+            category: "validation",
+            message: Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error),
+            recoveryHint: "Ensure the file is a valid GML source file."
+        };
+    }
+
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.INTERNAL_ERROR)) {
+        // If the cause is a GML parse error, classify as syntax error.
+        // This handles the common case where the transpiler wraps a parse error.
+        if (Core.isGmlParseError(targetError)) {
+            return {
+                category: "syntax",
+                message: targetError.message,
+                line: targetError.line,
+                column: targetError.column,
+                recoveryHint: resolveSyntaxRecoveryHint(targetError.message)
+            };
+        }
+        // Extract inner message if this is a transpiler-wrapped error.
+        const message = Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error);
+        const causeMatch = /Failed to transpile (?:script|event|closure|expression) [^:]+: (?<inner>.+)$/u.exec(
+            message
+        );
+        const innerMessage = causeMatch?.groups?.inner ?? message;
+        return {
+            category: "internal",
+            message: innerMessage,
+            recoveryHint:
+                "An internal transpilation error occurred. This may be a bug. Check for unsupported GML features."
+        };
+    }
+
+    // Fallback: string-based classification for errors without structured codes.
+    // This handles errors from external sources or pre-structured-error code.
     if (Core.isGmlParseError(targetError)) {
         const syntaxError = targetError;
-        const line = syntaxError.line;
-        const column = syntaxError.column;
-        const recoveryHint = resolveSyntaxRecoveryHint(syntaxError.message);
-
         return {
             category: "syntax",
             message: syntaxError.message,
-            line,
-            column,
-            recoveryHint
+            line: syntaxError.line,
+            column: syntaxError.column,
+            recoveryHint: resolveSyntaxRecoveryHint(syntaxError.message)
         };
     }
 

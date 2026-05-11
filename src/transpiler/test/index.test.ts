@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Transpiler } from "../index.js";
+import { TranspilerError, TranspilerErrorCode } from "../src/api/errors.js";
 
 type TranspilerInstance = InstanceType<typeof Transpiler.GmlTranspiler>;
 type TranspileScriptArgs = Parameters<TranspilerInstance["transpileScript"]>[0];
@@ -201,4 +202,107 @@ await test("transpileScript preserves the original error as cause", () => {
         assert.ok(error instanceof Error);
         assert.ok(error.cause instanceof Error);
     }
+});
+
+await test("transpileScript throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
+    const transpiler = new Transpiler.GmlTranspiler();
+
+    let caughtError: unknown;
+    try {
+        transpiler.transpileScript({
+            sourceText: "invalid syntax %%%%",
+            symbolId: "gml/script/test"
+        });
+    } catch (error) {
+        caughtError = error;
+    }
+
+    if (!(caughtError instanceof Error)) {
+        assert.fail("Expected transpileScript to throw an Error");
+    }
+    if (!(caughtError instanceof TranspilerError)) {
+        assert.fail(`Expected error to be a TranspilerError, got: ${caughtError.constructor.name}`);
+    }
+    assert.equal(caughtError.code, TranspilerErrorCode.INTERNAL_ERROR, "Should have INTERNAL_ERROR code");
+    assert.ok(caughtError.cause instanceof Error, "Should preserve the original error as cause");
+    assert.ok(caughtError.message.includes("Failed to transpile script"), "Message should include context");
+});
+
+await test("transpileExpression throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
+    const transpiler = new Transpiler.GmlTranspiler();
+
+    let caughtError: unknown;
+    try {
+        transpiler.transpileExpression("invalid syntax %%%%");
+    } catch (error) {
+        caughtError = error;
+    }
+
+    if (!(caughtError instanceof TranspilerError)) {
+        assert.fail(`Expected error to be a TranspilerError, got: ${caughtError.constructor.name}`);
+    }
+    assert.equal(caughtError.code, TranspilerErrorCode.INTERNAL_ERROR);
+    assert.ok(caughtError.message.includes("Failed to transpile expression"));
+});
+
+await test("transpileEvent throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
+    const transpiler = new Transpiler.GmlTranspiler();
+
+    let caughtError: unknown;
+    try {
+        transpiler.transpileEvent({
+            sourceText: "invalid syntax %%%%",
+            symbolId: "gml/event/obj_player/create"
+        });
+    } catch (error) {
+        caughtError = error;
+    }
+
+    assert.ok(caughtError instanceof TranspilerError, "Should be a TranspilerError");
+    assert.equal(caughtError.code, TranspilerErrorCode.INTERNAL_ERROR);
+    assert.ok(caughtError.message.includes("Failed to transpile event"));
+});
+
+await test("transpileClosure throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
+    const transpiler = new Transpiler.GmlTranspiler();
+
+    let caughtError: unknown;
+    try {
+        transpiler.transpileClosure({
+            sourceText: "invalid syntax %%%%",
+            symbolId: "gml/closure/scr_helper"
+        });
+    } catch (error) {
+        caughtError = error;
+    }
+
+    assert.ok(caughtError instanceof TranspilerError, "Should be a TranspilerError");
+    assert.equal(caughtError.code, TranspilerErrorCode.INTERNAL_ERROR);
+    assert.ok(caughtError.message.includes("Failed to transpile closure"));
+});
+
+await test("TranspilerError has correct properties", () => {
+    const error = new TranspilerError("Test error message", TranspilerErrorCode.VALIDATION_ERROR, {
+        cause: new Error("Original cause")
+    });
+
+    assert.equal(error.name, "TranspilerError");
+    assert.equal(error.message, "Test error message");
+    assert.equal(error.code, TranspilerErrorCode.VALIDATION_ERROR);
+    assert.ok(error.cause instanceof Error);
+    assert.ok(error.cause?.message.includes("Original cause"));
+});
+
+await test("TranspilerErrorCode enum has all expected values", () => {
+    assert.equal(typeof TranspilerErrorCode.PARSE_ERROR, "string");
+    assert.equal(TranspilerErrorCode.PARSE_ERROR, "PARSE_ERROR");
+
+    assert.equal(typeof TranspilerErrorCode.VALIDATION_ERROR, "string");
+    assert.equal(TranspilerErrorCode.VALIDATION_ERROR, "VALIDATION_ERROR");
+
+    assert.equal(typeof TranspilerErrorCode.REQUEST_ERROR, "string");
+    assert.equal(TranspilerErrorCode.REQUEST_ERROR, "REQUEST_ERROR");
+
+    assert.equal(typeof TranspilerErrorCode.INTERNAL_ERROR, "string");
+    assert.equal(TranspilerErrorCode.INTERNAL_ERROR, "INTERNAL_ERROR");
 });

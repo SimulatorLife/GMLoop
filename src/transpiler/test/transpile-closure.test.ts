@@ -223,7 +223,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
                         symbolId: "gml/closure/scr/f",
                         ast: { type: "BlockStatement", body: [] }
                     }),
-                { name: "Error" }
+                { name: "TranspilerError" }
             );
         });
     });
