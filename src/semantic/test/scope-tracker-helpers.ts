@@ -11,6 +11,28 @@ export type SourceRange = {
 };
 
 /**
+ * Clone a source location defensively.
+ *
+ * The implementation mirrors `Core.cloneLocation` but is used in test helpers
+ * where the SourceLocation type is the simpler test-domain shape. This avoids
+ * duplicating the shape-conversion logic that would otherwise be needed at each
+ * call site.
+ */
+export function cloneLocation(location: SourceLocation): SourceLocation {
+    return { line: location.line, index: location.index };
+}
+
+/**
+ * Clone a source range by cloning both boundaries.
+ */
+export function cloneRange(range: SourceRange): SourceRange {
+    return {
+        start: cloneLocation(range.start),
+        end: cloneLocation(range.end)
+    };
+}
+
+/**
  * Wraps a ScopeTracker instance with a spy on {@link normalizeTrackedPath} that
  * records how many times each path string is presented for normalization.
  * Callers use the returned `repeatedPathNormalizations` counter to assert that
