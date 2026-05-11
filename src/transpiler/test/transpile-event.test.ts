@@ -269,7 +269,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
                             body: []
                         }
                     }),
-                { name: "Error", message: /ast\.type to be 'Program'/ }
+                { name: "TranspilerError", message: /ast\.type to be 'Program'/ }
             );
         });
     });
