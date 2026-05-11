@@ -106,6 +106,11 @@ void describe("areAstValuesEquivalentIgnoringParentheses", () => {
         assert.ok(!areAstValuesEquivalentIgnoringParentheses(left, right));
     });
 
+    void it("rejects array and non-array comparisons", () => {
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses([{ type: "A" }], { type: "A" }));
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses({ type: "A" }, [{ type: "A" }]));
+    });
+
     void it("handles deeply nested structures", () => {
         const left = {
             type: "BinaryExpression",

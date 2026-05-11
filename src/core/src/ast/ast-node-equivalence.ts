@@ -25,6 +25,20 @@ import type { GameMakerAstNode } from "./types.js";
  */
 export const IGNORED_AST_METADATA_KEYS = new Set(["start", "end", "range", "loc", "parent", "comments", "tokens"]);
 
+function areArrayValuesEquivalentIgnoringParentheses(left: unknown, right: unknown): boolean {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+        return false;
+    }
+
+    for (const [index, element] of left.entries()) {
+        if (!areExpressionNodesEquivalentIgnoringParentheses(element, right[index])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 /**
  * Deep-compares two raw AST values for structural equivalence, recursively
  * descending into objects and arrays while skipping metadata keys listed in
@@ -44,17 +58,7 @@ export function areAstValuesEquivalentIgnoringParentheses(left: unknown, right: 
     }
 
     if (Array.isArray(left) || Array.isArray(right)) {
-        if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
-            return false;
-        }
-
-        for (const [index, element] of left.entries()) {
-            if (!areExpressionNodesEquivalentIgnoringParentheses(element, right[index])) {
-                return false;
-            }
-        }
-
-        return true;
+        return areArrayValuesEquivalentIgnoringParentheses(left, right);
     }
 
     if (typeof left !== typeof right) {
