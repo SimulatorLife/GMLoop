@@ -101,6 +101,9 @@ class DefaultSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyzer {
             case "other_field": {
                 return null;
             }
+            default: {
+                return null;
+            }
         }
     }
 
@@ -119,6 +122,9 @@ class DefaultSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyzer {
             }
             case "builtin": {
                 return `gml/macro/${node.object.name}`;
+            }
+            default: {
+                return null;
             }
         }
     }
