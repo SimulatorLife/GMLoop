@@ -1,10 +1,10 @@
 import { Core } from "@gmloop/core";
 
+import { applyDocCommentAlignmentCodemod } from "./codemods/doc-comment-alignment/index.js";
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
+import { applyScientificNotationCodemod } from "./codemods/scientific-notation/index.js";
 import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
-import {
-    assertRefactorConfigPlainObjectWithAllowedKeys
-} from "./refactor-config-assertions.js";
+import { assertRefactorConfigPlainObjectWithAllowedKeys } from "./refactor-config-assertions.js";
 import type {
     CodemodEngine,
     ConfiguredCodemodRunRequest,
@@ -40,11 +40,76 @@ type ConfiguredCodemodExecutionResult = {
     summary: ConfiguredCodemodSummary;
 };
 
-function isNullableString(value: unknown): value is string | null {
-    return typeof value === "string" || value === null;
-}
+const EMPTY_ALLOWED_KEYS = new Set<string>();
 
 const GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS = new Set(["excludeNames"]);
+
+function normalizeEmptyObjectConfig<T extends "docCommentAlignment" | "scientificNotation">(
+    value: unknown,
+    context: string
+): RefactorCodemodConfigEntry<T> {
+    if (value === false) {
+        return false;
+    }
+    assertRefactorConfigPlainObjectWithAllowedKeys(value, EMPTY_ALLOWED_KEYS, context);
+    return {};
+}
+
+async function executeSingleFileTextCodemod(
+    request: ConfiguredCodemodRunRequest,
+    codemodId: "docCommentAlignment" | "scientificNotation",
+    warningMessage: string,
+    transform: (sourceText: string) => Readonly<{ changed: boolean; outputText: string }>
+): Promise<ConfiguredCodemodExecutionResult> {
+    if (request.gmlFilePaths.length === 0) {
+        return {
+            appliedFiles: new Map(),
+            summary: {
+                id: codemodId,
+                changed: false,
+                changedFiles: [],
+                warnings: [warningMessage],
+                errors: []
+            }
+        };
+    }
+
+    if (request.dryRun === false) {
+        Core.assertFunction(request.writeFile, "writeFile", {
+            errorMessage: `${codemodId} codemod requires writeFile when dryRun is false`
+        });
+    }
+
+    const appliedFiles = new Map<string, string>();
+    const changedFiles: Array<string> = [];
+    await Core.runSequentially(request.gmlFilePaths, async (filePath) => {
+        const sourceText = await request.readFile(filePath);
+        const result = transform(sourceText);
+        if (!result.changed) {
+            return;
+        }
+
+        changedFiles.push(filePath);
+        if (request.dryRun === false && request.writeFile) {
+            await request.writeFile(filePath, result.outputText);
+            appliedFiles.set(filePath, "");
+            return;
+        }
+
+        appliedFiles.set(filePath, result.outputText);
+    });
+
+    return {
+        appliedFiles,
+        summary: {
+            id: codemodId,
+            changed: changedFiles.length > 0,
+            changedFiles,
+            warnings: [],
+            errors: []
+        }
+    };
+}
 
 function normalizeGlobalvarToGlobalConfig(
     value: unknown,
@@ -86,6 +151,41 @@ function normalizeNamingConventionConfig(
 }
 
 const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.freeze({
+    docCommentAlignment: Object.freeze({
+        id: "docCommentAlignment",
+        description:
+            "Align function doc-comment @param tags with the function signature (rename, reorder, and mark defaulted params as optional).",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        async execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return await executeSingleFileTextCodemod(
+                request,
+                "docCommentAlignment",
+                "No .gml files were selected for doc-comment alignment.",
+                applyDocCommentAlignmentCodemod
+            );
+        }
+    }),
+    scientificNotation: Object.freeze({
+        id: "scientificNotation",
+        description: "Expand unsupported scientific-notation number literals into plain decimal literals.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        async execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return await executeSingleFileTextCodemod(
+                request,
+                "scientificNotation",
+                "No .gml files were selected for scientific-notation migration.",
+                applyScientificNotationCodemod
+            );
+        }
+    }),
     globalvarToGlobal: Object.freeze({
         id: "globalvarToGlobal",
         description:

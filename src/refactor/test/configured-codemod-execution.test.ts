@@ -90,7 +90,7 @@ class InMemoryOverlayStorageBackend implements StorageBackend {
 void test("listRegisteredCodemods returns the v1 configured codemod set", () => {
     assert.deepEqual(
         Refactor.listRegisteredCodemods().map((codemod) => codemod.id),
-        ["docCommentAlignment", "globalvarToGlobal", "globalvarToGlobal", "namingConvention"]
+        ["docCommentAlignment", "scientificNotation", "globalvarToGlobal", "namingConvention"]
     );
 });
 
@@ -105,16 +105,16 @@ void test("listConfiguredCodemods reports normalized effective config and select
             effectiveConfig: null
         },
         {
-            id: "globalvarToGlobal",
-            description:
-                "Remove legacy `globalvar` declarations and replace all bare identifier references with `global.<name>`.",
+            id: "scientificNotation",
+            description: "Expand unsupported scientific-notation number literals into plain decimal literals.",
             configured: false,
             selected: false,
             effectiveConfig: null
         },
         {
             id: "globalvarToGlobal",
-            description: "Hoist repeated loop-length helper calls out of for-loop test expressions.",
+            description:
+                "Remove legacy `globalvar` declarations and replace all bare identifier references with `global.<name>`.",
             configured: true,
             selected: true,
             effectiveConfig: {}
@@ -129,8 +129,8 @@ void test("listConfiguredCodemods reports normalized effective config and select
     ]);
 });
 
-void test("executeConfiguredCodemods defaults to dry-run for loop-length hoisting", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+void test("executeConfiguredCodemods defaults to dry-run for configured codemods", async () => {
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const result = await engine.executeConfiguredCodemods({
         projectRoot: "/project",
@@ -154,11 +154,11 @@ void test("executeConfiguredCodemods defaults to dry-run for loop-length hoistin
             errors: []
         }
     ]);
-    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
 });
 
 void test("executeConfiguredCodemods deduplicates repeated target and gml file paths", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const reads = new Map<string, number>();
 
@@ -187,11 +187,11 @@ void test("executeConfiguredCodemods deduplicates repeated target and gml file p
             errors: []
         }
     ]);
-    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
 });
 
 void test("executeConfiguredCodemods reuses read-through cache across codemod passes", async () => {
-    const sourceText = "function sample_script() {\n    return 1;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     let readCount = 0;
 
@@ -210,12 +210,12 @@ void test("executeConfiguredCodemods reuses read-through cache across codemod pa
         }
     });
 
-    assert.equal(result.summaries.length, 2);
+    assert.equal(result.summaries.length, 1);
     assert.equal(readCount, 1);
 });
 
 void test("executeConfiguredCodemods avoids retaining full file content in write mode", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const writes = new Map<string, string>();
     const engine = new Refactor.RefactorEngine();
 
@@ -237,11 +237,11 @@ void test("executeConfiguredCodemods avoids retaining full file content in write
 
     assert.equal(result.dryRun, false);
     assert.equal(result.appliedFiles.get("scripts/example.gml"), "");
-    assert.match(writes.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(writes.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
 });
 
 void test("executeConfiguredCodemods reports overlay telemetry and emits callback", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const telemetrySnapshots: Array<CodemodExecutionTelemetry> = [];
 
@@ -269,7 +269,7 @@ void test("executeConfiguredCodemods reports overlay telemetry and emits callbac
 });
 
 void test("executeConfiguredCodemods spills dry-run overlay when threshold is exceeded", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
 
     const result = await engine.executeConfiguredCodemods({
@@ -289,11 +289,11 @@ void test("executeConfiguredCodemods spills dry-run overlay when threshold is ex
     assert.ok(result.telemetry);
     assert.ok((result.telemetry?.overlaySpillWrites ?? 0) > 0);
     assert.ok((result.telemetry?.overlayEntryCount ?? 0) >= (result.telemetry?.overlaySpilledEntries ?? 0));
-    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
 });
 
 void test("executeConfiguredCodemods uses injected dry-run overlay backend and disposes it", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const backend = new InMemoryOverlayStorageBackend();
 

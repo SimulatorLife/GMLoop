@@ -426,11 +426,7 @@ configures the `function` category.
                     "rm_": "roomResourceName"
                 }
             },
-            "loopLengthHoisting": {
-                "functionSuffixes": {
-                    "array_length": "len"
-                }
-            },
+            "scientificNotation": {},
             "docCommentAlignment": {}
         }
     }

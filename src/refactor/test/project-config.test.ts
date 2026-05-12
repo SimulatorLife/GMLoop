@@ -27,11 +27,8 @@ void test("normalizeRefactorProjectConfig accepts a populated refactor section",
                         }
                     }
                 },
-                loopLengthHoisting: {
-                    functionSuffixes: {
-                        array_length: "len"
-                    }
-                }
+                scientificNotation: {},
+                docCommentAlignment: {}
             }
         }
     });
@@ -48,11 +45,8 @@ void test("normalizeRefactorProjectConfig accepts a populated refactor section",
                         }
                     }
                 },
-                loopLengthHoisting: {
-                    functionSuffixes: {
-                        array_length: "len"
-                    }
-                }
+                scientificNotation: {},
+                docCommentAlignment: {}
             }
         });
     } finally {
