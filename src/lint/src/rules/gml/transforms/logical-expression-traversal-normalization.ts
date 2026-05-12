@@ -115,9 +115,9 @@ function simplifyBooleanLiteralComparison(node: any): boolean {
 }
 
 function readBooleanLiteralComparisonOperands(
-    leftOperand: any,
-    rightOperand: any
-): Readonly<{ comparedBoolean: boolean; comparedExpression: any }> | null {
+    leftOperand: MutableGameMakerAstNode | null | undefined,
+    rightOperand: MutableGameMakerAstNode | null | undefined
+): Readonly<{ comparedBoolean: boolean; comparedExpression: MutableGameMakerAstNode | null | undefined }> | null {
     const leftBoolean = getBooleanValue(leftOperand);
     const rightBoolean = getBooleanValue(rightOperand);
 
