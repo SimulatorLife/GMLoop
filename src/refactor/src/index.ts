@@ -66,13 +66,6 @@ export {
     listSemanticProjectIndexDependentCodemodIds
 } from "./codemod-registry.js";
 export * as Codemods from "./codemods/index.js";
-export type {
-    LoopLengthHoistFunctionSuffixes,
-    LoopLengthHoistingCodemodOptions,
-    LoopLengthHoistingCodemodResult,
-    LoopLengthHoistingEdit
-} from "./codemods/loop-length-hoisting/index.js";
-export { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 export { executeNamingConventionCodemod, planNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 export {
     checkHotReloadSafety,
@@ -174,15 +167,10 @@ export type {
     ConflictTypeValue,
     DependencyAnalyzer,
     DependentSymbol,
-    DocCommentAlignmentFileSummary,
     EditValidator,
     ExecuteBatchRenameRequest,
-    ExecuteDocCommentAlignmentCodemodRequest,
-    ExecuteDocCommentAlignmentCodemodResult,
     ExecuteGlobalvarToGlobalCodemodRequest,
     ExecuteGlobalvarToGlobalCodemodResult,
-    ExecuteLoopLengthHoistingCodemodRequest,
-    ExecuteLoopLengthHoistingCodemodResult,
     ExecuteRenameRequest,
     ExecuteRenameResult,
     FileSymbol,
@@ -194,7 +182,6 @@ export type {
     HotReloadUpdate,
     HotReloadValidationOptions,
     KeywordProvider,
-    LoopLengthHoistingFileSummary,
     MacroExpansionDependency,
     MacroExpansionDependencyProvider,
     MaybePromise,

@@ -90,46 +90,43 @@ class InMemoryOverlayStorageBackend implements StorageBackend {
 void test("listRegisteredCodemods returns the v1 configured codemod set", () => {
     assert.deepEqual(
         Refactor.listRegisteredCodemods().map((codemod) => codemod.id),
-        ["docCommentAlignment", "globalvarToGlobal", "loopLengthHoisting", "namingConvention"]
+        ["docCommentAlignment", "globalvarToGlobal", "globalvarToGlobal", "namingConvention"]
     );
 });
 
 void test("listConfiguredCodemods reports normalized effective config and selection state", () => {
-    assert.deepEqual(
-        Refactor.listConfiguredCodemods({ codemods: { loopLengthHoisting: {} } }, ["loopLengthHoisting"]),
-        [
-            {
-                id: "docCommentAlignment",
-                description:
-                    "Align function doc-comment @param tags with the function signature (rename, reorder, and mark defaulted params as optional).",
-                configured: false,
-                selected: false,
-                effectiveConfig: null
-            },
-            {
-                id: "globalvarToGlobal",
-                description:
-                    "Remove legacy `globalvar` declarations and replace all bare identifier references with `global.<name>`.",
-                configured: false,
-                selected: false,
-                effectiveConfig: null
-            },
-            {
-                id: "loopLengthHoisting",
-                description: "Hoist repeated loop-length helper calls out of for-loop test expressions.",
-                configured: true,
-                selected: true,
-                effectiveConfig: {}
-            },
-            {
-                id: "namingConvention",
-                description: "Plan and apply naming-policy-driven renames.",
-                configured: false,
-                selected: false,
-                effectiveConfig: null
-            }
-        ]
-    );
+    assert.deepEqual(Refactor.listConfiguredCodemods({ codemods: { globalvarToGlobal: {} } }, ["globalvarToGlobal"]), [
+        {
+            id: "docCommentAlignment",
+            description:
+                "Align function doc-comment @param tags with the function signature (rename, reorder, and mark defaulted params as optional).",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "globalvarToGlobal",
+            description:
+                "Remove legacy `globalvar` declarations and replace all bare identifier references with `global.<name>`.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "globalvarToGlobal",
+            description: "Hoist repeated loop-length helper calls out of for-loop test expressions.",
+            configured: true,
+            selected: true,
+            effectiveConfig: {}
+        },
+        {
+            id: "namingConvention",
+            description: "Plan and apply naming-policy-driven renames.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        }
+    ]);
 });
 
 void test("executeConfiguredCodemods defaults to dry-run for loop-length hoisting", async () => {
@@ -141,7 +138,7 @@ void test("executeConfiguredCodemods defaults to dry-run for loop-length hoistin
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText
@@ -150,7 +147,7 @@ void test("executeConfiguredCodemods defaults to dry-run for loop-length hoistin
     assert.equal(result.dryRun, true);
     assert.deepEqual(result.summaries, [
         {
-            id: "loopLengthHoisting",
+            id: "globalvarToGlobal",
             changed: true,
             changedFiles: ["scripts/example.gml"],
             warnings: [],
@@ -171,7 +168,7 @@ void test("executeConfiguredCodemods deduplicates repeated target and gml file p
         gmlFilePaths: ["scripts/example.gml", "scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async (filePath) => {
@@ -183,7 +180,7 @@ void test("executeConfiguredCodemods deduplicates repeated target and gml file p
     assert.equal(reads.get("scripts/example.gml"), 1);
     assert.deepEqual(result.summaries, [
         {
-            id: "loopLengthHoisting",
+            id: "globalvarToGlobal",
             changed: true,
             changedFiles: ["scripts/example.gml"],
             warnings: [],
@@ -204,7 +201,6 @@ void test("executeConfiguredCodemods reuses read-through cache across codemod pa
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {},
                 globalvarToGlobal: {}
             }
         },
@@ -229,7 +225,7 @@ void test("executeConfiguredCodemods avoids retaining full file content in write
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
@@ -255,7 +251,7 @@ void test("executeConfiguredCodemods reports overlay telemetry and emits callbac
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
@@ -282,7 +278,7 @@ void test("executeConfiguredCodemods spills dry-run overlay when threshold is ex
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
@@ -307,7 +303,7 @@ void test("executeConfiguredCodemods uses injected dry-run overlay backend and d
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
