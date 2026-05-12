@@ -104,10 +104,6 @@ function simplifyBooleanLiteralComparison(node: any): boolean {
     }
 
     const { comparedBoolean, comparedExpression } = comparedOperands;
-    if (!comparedExpression) {
-        return false;
-    }
-
     const shouldNegate = operator === "==" ? comparedBoolean === false : comparedBoolean === true;
     const replacement = shouldNegate ? negateNode(comparedExpression) : comparedExpression;
     replaceNode(node, replacement);
@@ -117,7 +113,11 @@ function simplifyBooleanLiteralComparison(node: any): boolean {
 function readBooleanLiteralComparisonOperands(
     leftOperand: MutableGameMakerAstNode | null | undefined,
     rightOperand: MutableGameMakerAstNode | null | undefined
-): Readonly<{ comparedBoolean: boolean; comparedExpression: MutableGameMakerAstNode | null | undefined }> | null {
+): Readonly<{ comparedBoolean: boolean; comparedExpression: MutableGameMakerAstNode }> | null {
+    if (leftOperand == null || rightOperand == null) {
+        return null;
+    }
+
     const leftBoolean = getBooleanValue(leftOperand);
     const rightBoolean = getBooleanValue(rightOperand);
 
