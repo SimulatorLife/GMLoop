@@ -1,6 +1,4 @@
-import { Core } from "@gmloop/core";
-
-const MEMBER_INDEX_ACCESSORS = new Set(["[", "[|", "[?", "[#", "[@", "[$"]);
+import { Core, isMemberAccessor } from "@gmloop/core";
 
 function getLogicalPrecedence(operator: string): number {
     switch (operator) {
@@ -131,8 +129,7 @@ export function printExpression(node: any, sourceText: string): string {
         }
         case "MemberIndexExpression": {
             const object = printExpression(node.object, sourceText);
-            const accessor =
-                typeof node.accessor === "string" && MEMBER_INDEX_ACCESSORS.has(node.accessor) ? node.accessor : "[";
+            const accessor = isMemberAccessor(node.accessor) ? node.accessor : "[";
             let index: string;
             if (Array.isArray(node.property)) {
                 index = node.property.map((entry: any) => printExpression(entry, sourceText)).join(", ");

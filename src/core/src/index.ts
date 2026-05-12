@@ -77,3 +77,18 @@ export type { StringCommentScanState } from "./text/string-comment-scan.js";
 export type { EmptyTransformOptions, ParserTransform } from "./transforms/parser-transform.js";
 export type { AbortSignalLike } from "./utils/abort.js";
 export type { DebouncedFunction } from "./utils/function.js";
+
+// Member-index accessor constants — centralises the finite set of valid `[…` prefixes
+// for MemberIndexExpressionNode.accessor so call sites can use typed constants.
+export type { MemberAccessor } from "./ast/member-accessors.js";
+export {
+    isMemberAccessor,
+    MEMBER_ACCESSOR_ARRAY,
+    MEMBER_ACCESSOR_GRID,
+    MEMBER_ACCESSOR_LIST,
+    MEMBER_ACCESSOR_MAP,
+    MEMBER_ACCESSOR_PRIORITY_QUEUE,
+    MEMBER_ACCESSOR_STACK,
+    MEMBER_ACCESSOR_VALUES,
+    MEMBER_INDEX_ACCESSORS
+} from "./ast/member-accessors.js";
