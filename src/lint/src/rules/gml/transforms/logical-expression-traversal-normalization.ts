@@ -98,18 +98,13 @@ function simplifyBooleanLiteralComparison(node: any): boolean {
         return false;
     }
 
-    const leftBoolean = getBooleanValue(node.left);
-    const rightBoolean = getBooleanValue(node.right);
-    const hasLeftBoolean = leftBoolean !== undefined;
-    const hasRightBoolean = rightBoolean !== undefined;
-
-    if (hasLeftBoolean === hasRightBoolean) {
+    const comparedOperands = readBooleanLiteralComparisonOperands(node.left, node.right);
+    if (comparedOperands === null) {
         return false;
     }
 
-    const comparedBoolean = hasLeftBoolean ? leftBoolean : rightBoolean;
-    const comparedExpression = hasLeftBoolean ? node.right : node.left;
-    if (comparedBoolean === undefined || !comparedExpression) {
+    const { comparedBoolean, comparedExpression } = comparedOperands;
+    if (!comparedExpression) {
         return false;
     }
 
@@ -117,6 +112,32 @@ function simplifyBooleanLiteralComparison(node: any): boolean {
     const replacement = shouldNegate ? negateNode(comparedExpression) : comparedExpression;
     replaceNode(node, replacement);
     return true;
+}
+
+function readBooleanLiteralComparisonOperands(
+    leftOperand: any,
+    rightOperand: any
+): Readonly<{ comparedBoolean: boolean; comparedExpression: any }> | null {
+    const leftBoolean = getBooleanValue(leftOperand);
+    const rightBoolean = getBooleanValue(rightOperand);
+
+    if (leftBoolean !== undefined && rightBoolean !== undefined) {
+        return null;
+    }
+
+    if (leftBoolean === undefined && rightBoolean === undefined) {
+        return null;
+    }
+
+    if (leftBoolean !== undefined) {
+        return Object.freeze({ comparedBoolean: leftBoolean, comparedExpression: rightOperand });
+    }
+
+    if (rightBoolean !== undefined) {
+        return Object.freeze({ comparedBoolean: rightBoolean, comparedExpression: leftOperand });
+    }
+
+    return null;
 }
 
 function isLogicalOperator(operator: unknown): boolean {

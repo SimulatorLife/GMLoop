@@ -1721,8 +1721,10 @@ void test("optimize-logical-flow rewrites both undefined guard forms to ??=", ()
 void test("optimize-logical-flow simplifies boolean literal comparisons in if conditions", () => {
     const input = [
         "if (xinput == true) { return move_horizontal(); }",
+        "if (true == xinput) { return move_horizontal(); }",
         "if (xinput != false) { return move_horizontal(); }",
         "if (yinput == false) { return move_vertical(); }",
+        "if (false == yinput) { return move_vertical(); }",
         "if (yinput != true) { return move_vertical(); }",
         ""
     ].join("\n");
@@ -1730,6 +1732,8 @@ void test("optimize-logical-flow simplifies boolean literal comparisons in if co
     const expected = [
         "if (xinput) { return move_horizontal(); }",
         "if (xinput) { return move_horizontal(); }",
+        "if (xinput) { return move_horizontal(); }",
+        "if (!yinput) { return move_vertical(); }",
         "if (!yinput) { return move_vertical(); }",
         "if (!yinput) { return move_vertical(); }",
         ""
