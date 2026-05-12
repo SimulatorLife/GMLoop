@@ -81,6 +81,60 @@ function parseRuntimeValue(value: string): unknown {
     }
 }
 
+/**
+ * Validate that a value extracted from the runtime state store has a serializable
+ * type expected by the GML runtime variable system.
+ *
+ * Returns `true` if the value is a primitive (boolean, null, number, string) or
+ * an array containing only serializable values. Returns `false` for any other shape,
+ * including plain objects, nested non-serializable structures, symbols, or functions.
+ *
+ * Note: `null` is considered serializable because it is a valid GML runtime value
+ * and round-trips correctly through JSON. Arrays containing `null` elements are also
+ * allowed because `[null]` round-trips as-is. Arrays containing `undefined` are
+ * rejected because `JSON.stringify([undefined])` produces `"[]"`, causing silent
+ * data loss on write.
+ */
+function isSerializableRuntimeValue(value: unknown): boolean {
+    if (value === null) {
+        return true;
+    }
+    if (value === undefined) {
+        return false;
+    }
+    if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+        return true;
+    }
+    if (Array.isArray(value)) {
+        return value.every((item) => isSerializableRuntimeValue(item));
+    }
+    return false;
+}
+
+/**
+ * Guard the value stored in the runtime state store so that callers who read it
+ * back can rely on the type contract without additional runtime checks.
+ *
+ * When a non-serializable value is detected, it is replaced with `null` and a
+ * warning is emitted so the state file remains loadable rather than corrupting
+ * downstream consumers that expect primitives.
+ */
+function sanitizeRuntimeValue(path: string, value: unknown): unknown {
+    if (isSerializableRuntimeValue(value)) {
+        return value;
+    }
+
+    const description =
+        typeof value === "object" && value !== null
+            ? `object with keys [${Object.keys(value as Record<string, unknown>).join(", ")}]`
+            : typeof value;
+    console.warn(
+        `runtime set: value at "${path}" is ${description}; ` +
+            "storing null to prevent type corruption in runtime state."
+    );
+    return null;
+}
+
 function printRuntimePayload(command: string, payload: unknown): void {
     console.log(
         JSON.stringify(
@@ -141,7 +195,7 @@ async function runRuntimeSetAction(options: RuntimeOptions): Promise<void> {
     const parsedValue = parseRuntimeValue(rawValue);
     const runtimeState = readRuntimeProjectState(projectRoot);
     const scopeStore = resolveRuntimeScopeStore(runtimeState, options);
-    scopeStore[propertyPath] = parsedValue;
+    scopeStore[propertyPath] = sanitizeRuntimeValue(propertyPath, parsedValue);
     const nextState = appendRuntimeLog(runtimeState, `Set ${options.scope ?? "instance"}:${propertyPath}`);
     writeRuntimeProjectState(projectRoot, nextState);
     printRuntimePayload("runtime set", {
@@ -150,6 +204,21 @@ async function runRuntimeSetAction(options: RuntimeOptions): Promise<void> {
         scope: options.scope ?? "instance",
         value: parsedValue
     });
+}
+
+/**
+ * Guard the arguments payload for a runtime method call so that callers receive
+ * an array regardless of what the user supplied.
+ *
+ * When a non-array JSON value (object, primitive) is provided via `--args`, it is
+ * wrapped in a single-element array rather than being passed as-is, which prevents
+ * runtime methods from receiving unexpected shapes.
+ */
+function sanitizeCallArguments(argsPayload: unknown): Array<unknown> {
+    if (Array.isArray(argsPayload)) {
+        return argsPayload;
+    }
+    return [argsPayload];
 }
 
 async function runRuntimeCallAction(options: RuntimeOptions): Promise<void> {
@@ -163,6 +232,7 @@ async function runRuntimeCallAction(options: RuntimeOptions): Promise<void> {
             argsPayload = [options.args];
         }
     }
+    argsPayload = sanitizeCallArguments(argsPayload);
     const runtimeState = readRuntimeProjectState(projectRoot);
     writeRuntimeProjectState(projectRoot, appendRuntimeLog(runtimeState, `Call ${method}`));
     printRuntimePayload("runtime call", {
@@ -319,3 +389,14 @@ export function createRuntimeCommand(): Command {
 
     return command;
 }
+
+export const __runtimeTestHelpers__ = Object.freeze({
+    isSerializableRuntimeValue,
+    sanitizeRuntimeValue,
+    sanitizeCallArguments
+});
+
+// `parseRuntimeValue` is exported separately (not via `__test__`) to avoid
+// a naming conflict with `format.js` in the barrel re-export at
+// `./commands/index.ts`.
+export { parseRuntimeValue };

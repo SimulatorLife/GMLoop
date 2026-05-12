@@ -45,7 +45,11 @@ import { createReplayCommand } from "./commands/replay.js";
 import { createResourceCommand } from "./commands/resource.js";
 import { createRoomCommand } from "./commands/room.js";
 import { createRunnerCommand } from "./commands/runner.js";
-import { createRuntimeCommand } from "./commands/runtime.js";
+import {
+    __runtimeTestHelpers__ as __runtimeTest__,
+    createRuntimeCommand,
+    parseRuntimeValue
+} from "./commands/runtime.js";
 import { createSymbolCommand } from "./commands/symbol.js";
 import { createTestCommand } from "./commands/test.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
@@ -402,10 +406,12 @@ export function getMcpToolCatalogEntries(): ReadonlyArray<McpToolCatalogEntry> {
 
 export const __test__ = Object.freeze({
     ...__formatTest__,
+    ...__runtimeTest__,
     getMcpToolCatalogEntries,
     getCliCommandCatalog,
     isNodeTestRunnerProcess,
     normalizeCommandLineArguments,
+    parseRuntimeValue,
     shouldAutoRunCliProcess
 });
 
