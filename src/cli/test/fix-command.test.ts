@@ -192,17 +192,13 @@ void test("fix --path accepts a single .gml target and scopes workflow stages to
     }
 });
 
-void test("fix surfaces missing gmloop config errors as actionable usage guidance", async () => {
+void test("fix reports non-existent path as an actionable error", async () => {
     const result = await runCliTestCommand({
         argv: ["fix", "--path", "/tmp/does-not-exist"]
     });
 
     assert.equal(result.exitCode, 1);
-    assert.match(result.stderr, /Could not find gmloop config file/);
-    assert.match(
-        result.stderr,
-        /Run this command from a project directory containing gmloop\.json or pass --config <path-to-gmloop\.json>\./
-    );
+    assert.match(result.stderr, /Target path does not exist or cannot be accessed: \/tmp\/does-not-exist/);
     assert.match(result.stderr, /Usage: gmloop fix \[options\]/);
     assert.doesNotMatch(result.stderr, /\bat .*\/fix\.js/);
 });
