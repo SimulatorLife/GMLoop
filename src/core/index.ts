@@ -21,4 +21,16 @@ export type {
     StringCommentScanState,
     StripCommentsTransformOptions
 } from "./src/index.js";
+export type { MemberAccessor } from "./src/index.js";
 export { Core } from "./src/index.js";
+export {
+    isMemberAccessor,
+    MEMBER_ACCESSOR_ARRAY,
+    MEMBER_ACCESSOR_GRID,
+    MEMBER_ACCESSOR_LIST,
+    MEMBER_ACCESSOR_MAP,
+    MEMBER_ACCESSOR_PRIORITY_QUEUE,
+    MEMBER_ACCESSOR_STACK,
+    MEMBER_ACCESSOR_VALUES,
+    MEMBER_INDEX_ACCESSORS
+} from "./src/index.js";

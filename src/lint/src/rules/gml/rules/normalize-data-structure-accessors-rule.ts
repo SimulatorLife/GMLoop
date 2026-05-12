@@ -1,4 +1,10 @@
-import { Core } from "@gmloop/core";
+import {
+    Core,
+    MEMBER_ACCESSOR_GRID,
+    MEMBER_ACCESSOR_LIST,
+    MEMBER_ACCESSOR_MAP,
+    type MemberAccessor
+} from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import {
@@ -16,14 +22,12 @@ import {
 } from "../rule-base-helpers.js";
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
-type ProvenAccessorToken = "[#" | "[?" | "[|";
-
 type AccessorEventNode = AssignmentExpressionNode | MemberIndexExpressionNode | VariableDeclaratorNode;
 
-const EXPLICIT_DATA_STRUCTURE_CONSTRUCTOR_ACCESSORS = new Map<string, ProvenAccessorToken>([
-    ["ds_grid_create", "[#"],
-    ["ds_list_create", "[|"],
-    ["ds_map_create", "[?"]
+const EXPLICIT_DATA_STRUCTURE_CONSTRUCTOR_ACCESSORS = new Map<string, MemberAccessor>([
+    ["ds_grid_create", MEMBER_ACCESSOR_GRID],
+    ["ds_list_create", MEMBER_ACCESSOR_LIST],
+    ["ds_map_create", MEMBER_ACCESSOR_MAP]
 ]);
 
 function getPropertyCount(node: MemberIndexExpressionNode): number {
@@ -47,7 +51,7 @@ function getNormalizedIdentifierName(node: unknown): string | null {
     return identifierName.toLowerCase();
 }
 
-function resolveExplicitConstructorAccessor(node: unknown): ProvenAccessorToken | null {
+function resolveExplicitConstructorAccessor(node: unknown): MemberAccessor | null {
     const callIdentifierName = Core.getCallExpressionIdentifierName(node as never);
     if (!callIdentifierName) {
         return null;
@@ -95,8 +99,8 @@ function collectAccessorEventNodes(programNode: unknown): Array<AccessorEventNod
 
 function resolveProvenAccessorForMemberIndex(
     node: MemberIndexExpressionNode,
-    explicitConstructorAccessorsByIdentifier: ReadonlyMap<string, ProvenAccessorToken>
-): ProvenAccessorToken | null {
+    explicitConstructorAccessorsByIdentifier: ReadonlyMap<string, MemberAccessor>
+): MemberAccessor | null {
     if (shouldNormalizeMemberIndexAccessorToGrid(node)) {
         return "[#";
     }
@@ -158,7 +162,7 @@ export function createNormalizeDataStructureAccessorsRule(definition: GmlRuleDef
                 Program(programNode: unknown) {
                     const sourceText = context.sourceCode.text;
                     const edits: Array<{ start: number; end: number; text: string }> = [];
-                    const explicitConstructorAccessorsByIdentifier = new Map<string, ProvenAccessorToken>();
+                    const explicitConstructorAccessorsByIdentifier = new Map<string, MemberAccessor>();
 
                     for (const node of collectAccessorEventNodes(programNode)) {
                         if (isVariableDeclaratorNode(node) || isAssignmentExpressionNode(node)) {

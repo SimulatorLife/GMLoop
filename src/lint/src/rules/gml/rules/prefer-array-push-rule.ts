@@ -1,4 +1,4 @@
-import { Core } from "@gmloop/core";
+import { Core, MEMBER_ACCESSOR_ARRAY } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import {
@@ -89,7 +89,7 @@ function tryGetPreferArrayPushCandidate(node: unknown, sourceText: string): Pref
         return null;
     }
 
-    if (!isMemberIndexExpressionNode(node.left) || node.left.accessor !== "[") {
+    if (!isMemberIndexExpressionNode(node.left) || node.left.accessor !== MEMBER_ACCESSOR_ARRAY) {
         return null;
     }
 
