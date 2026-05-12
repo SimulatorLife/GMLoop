@@ -345,6 +345,26 @@ export interface ScriptRegistry {
 }
 
 /**
+ * Metrics snapshot for display purposes.
+ *
+ * Provides a read-only view of transpilation metrics without coupling to
+ * patch history, error tracking, or broadcasting operations.
+ */
+export interface MetricsSnapshot {
+    readonly metrics: ReadonlyArray<TranspilationMetrics>;
+}
+
+/**
+ * Errors snapshot for display purposes.
+ *
+ * Provides a read-only view of transpilation errors without coupling to
+ * metrics, patch history, or broadcasting operations.
+ */
+export interface ErrorsSnapshot {
+    readonly errors: ReadonlyArray<TranspilationError>;
+}
+
+/**
  * Complete transpilation context interface.
  *
  * Combines all role-focused interfaces for consumers that need full
@@ -748,10 +768,7 @@ export function transpileFile(
  * Displays transpilation and error statistics.
  */
 export function displayTranspilationStatistics(
-    context: {
-        metrics: ReadonlyArray<TranspilationMetrics>;
-        errors: ReadonlyArray<TranspilationError>;
-    },
+    context: MetricsSnapshot & ErrorsSnapshot,
     verbose: boolean,
     quiet: boolean
 ): void {
