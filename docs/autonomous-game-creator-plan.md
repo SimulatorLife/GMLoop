@@ -452,7 +452,7 @@ Give agents durable, repo-local guidance for designing and building complete gam
 .agents/skills/gamemaker-resources/SKILL.md
 .agents/skills/gml-tests/SKILL.md
 .agents/skills/game-debugging/SKILL.md
-.agents/skills/game-polish/SKILL.md
+.agents/skills/game-polish-and-juice/SKILL.md
 .agents/skills/prototype-to-vertical-slice/SKILL.md
 ```
 
@@ -476,6 +476,10 @@ testability
 minimum playable slice
 accessibility
 balancing assumptions
+simplicity of controls
+bloat reduction
+simplifying the core loop
+juice and feedback opportunities
 ```
 
 ### `gml-gameplay` Skill Topics
