@@ -137,6 +137,58 @@ void describe("areAstValuesEquivalentIgnoringParentheses", () => {
         assert.ok(areAstValuesEquivalentIgnoringParentheses("a", "a"));
         assert.ok(areAstValuesEquivalentIgnoringParentheses(42, 42));
     });
+
+    void it("considers numerically equivalent floats equal (epsilon tolerance)", () => {
+        // 0.1 + 0.2 in IEEE 754 binary does not equal exactly 0.3.
+        // The difference is ~2.22e-16, well within 4× EPSILON (≈ 8.88e-16).
+        assert.ok(areAstValuesEquivalentIgnoringParentheses(0.1 + 0.2, 0.3));
+        // Symmetry: the value computed two different ways should still match.
+        assert.ok(areAstValuesEquivalentIgnoringParentheses(0.1, 0.3 - 0.2));
+        assert.ok(areAstValuesEquivalentIgnoringParentheses(0.1 + 0.2, 0.1 + 0.2));
+        assert.ok(areAstValuesEquivalentIgnoringParentheses(0.2 + 0.1, 0.3));
+    });
+
+    void it("rejects floats that differ by more than epsilon tolerance", () => {
+        // 0.1 and 0.4 are well-separated; diff ≈ 0.3 > 4× EPSILON.
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses(0.1 + 0.2, 0.4));
+        // Very different values should never be considered equal.
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses(1e10, 1e10 + 1));
+    });
+
+    void it("considers numerically equivalent floats equal at large magnitudes", () => {
+        // Large values accumulate larger absolute rounding errors, but the
+        // relative comparison using max(|a|,|b|,1) keeps the tolerance scaled.
+        const large = 1e12;
+        assert.ok(areAstValuesEquivalentIgnoringParentheses(large, large));
+        assert.ok(areAstValuesEquivalentIgnoringParentheses(large + 1e-4, large));
+    });
+
+    void it("compares numeric literals inside AST nodes with epsilon tolerance", () => {
+        const left = {
+            type: "BinaryExpression",
+            operator: "+",
+            left: { type: "Literal", value: 0.1 },
+            right: { type: "Literal", value: 0.2 }
+        };
+        // Numerically identical — even though the AST is structurally identical,
+        // this test verifies the numeric value comparison inside objects.
+        assert.ok(areAstValuesEquivalentIgnoringParentheses(left, left));
+        // Different numeric values in the same structure.
+        const right = {
+            type: "BinaryExpression",
+            operator: "+",
+            left: { type: "Literal", value: 0.1 },
+            right: { type: "Literal", value: 0.4 }
+        };
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses(left, right));
+    });
+
+    void it("compares string and boolean values by strict equality (no epsilon)", () => {
+        assert.ok(areAstValuesEquivalentIgnoringParentheses("hello", "hello"));
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses("hello", "world"));
+        assert.ok(areAstValuesEquivalentIgnoringParentheses(true, true));
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses(true, false));
+    });
 });
 
 void describe("areExpressionNodesEquivalentIgnoringParentheses", () => {
