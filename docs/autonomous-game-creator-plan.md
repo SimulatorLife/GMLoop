@@ -11,7 +11,7 @@ The existing monorepo already provides a strong technical base:
 - `@gmloop/parser` for GML parsing.
 - `@gmloop/format` for deterministic GML formatting.
 - `@gmloop/lint` for diagnostics and autofixes.
-- `@gmloop/refactor` for project-aware codemods and cross-file edits.
+- `@gmloop/refactor` for project-aware codemods, cross-file edits, and existing project-resource mutations.
 - `@gmloop/semantic` for project indexing, symbols, graph queries, and context retrieval.
 - `@gmloop/transpiler` for GML-to-JavaScript emission.
 - `@gmloop/runtime-wrapper` for hot-reload and HTML5 runtime integration.
@@ -20,22 +20,24 @@ The existing monorepo already provides a strong technical base:
 - `@gmloop/mcp` as the existing agent exposure layer for CLI-backed tools and graph resources.
 - GitHub Actions agent workflows for PR-comment-driven agent execution.
 
-The remaining gap is the product layer above those pieces: a reusable game-creation operating system with project mutation APIs, build/run/test loops, game-design skills, task orchestration, helper libraries, and scheduled autonomous improvement flows.
+The remaining gap is the product layer above those pieces: a reusable game-creation operating system with richer project mutation APIs, build/run/test loops, game-design skills, task orchestration, helper libraries, and scheduled autonomous improvement flows.
 
 ## 2. Existing MCP Role and Architectural Boundary
 
-`@gmloop/mcp` should be treated as the agent-facing transport and exposure layer, not as the owner of GameMaker creation behavior.
+`@gmloop/mcp` is already the agent-facing transport and exposure layer. It should not be treated as missing infrastructure that needs to be reinvented.
 
-The intended layering is:
+The current and target layering is:
 
 ```text
-GameMaker domain model / project mutation logic
-  -> CLI commands and structured JSON output
+GameMaker domain behavior and project/resource mutation logic
+  -> CLI commands and structured output
     -> MCP tool exposure derived from the CLI catalog
       -> agent clients and scheduled workflows
 ```
 
-This means new autonomous-game capabilities should generally be implemented in domain workspaces or modules first, then surfaced through `@gmloop/cli`. Once the CLI command is in the catalog, the existing MCP server should expose it to agents without duplicating command behavior inside `@gmloop/mcp`.
+This means new autonomous-game capabilities should generally extend existing domain behavior and CLI commands first. Once the CLI command is in the catalog, the existing MCP server should expose it to agents without duplicating command behavior inside `@gmloop/mcp`.
+
+Important nuance: MCP can and should expose high-level tools such as "add a resource" or "create a room". In that sense, agents using MCP do not need to know how `.yyp` or `.yy` files are edited. The lower-level `.yyp` / `.yy` mutation is already abstracted by the CLI/refactor/resource command layer for supported operations.
 
 MCP-specific work should be limited to:
 
@@ -43,51 +45,99 @@ MCP-specific work should be limited to:
 - improving schema generation where CLI metadata is insufficient
 - returning structured command results clearly to agents
 - exposing read-only resources such as graph/context resources
-- testing that new CLI commands appear correctly in the MCP catalog
+- testing that supported CLI commands appear correctly in the MCP catalog
 
-MCP should not own:
+MCP should not duplicate domain implementations that already belong below the CLI boundary. For example, if `resource add` creates a GameMaker resource and updates the manifest, MCP should expose that capability by calling the CLI-backed tool, not by separately editing `.yyp` / `.yy` files.
 
-- `.yyp` / `.yy` mutation logic
-- GameMaker resource modeling
-- build provider behavior
-- test harness generation
-- helper-library import logic
-- task graph state transitions
+## 3. Grounded Current Capability Snapshot
 
-Those capabilities should live in the appropriate domain layer and become MCP tools only through the CLI.
+The plan should build on what the codebase already does, not assume a blank slate.
 
-## 3. Guiding Principles
+### Already Present
+
+- The CLI command index already includes command modules for `object`, `project`, `resource`, `room`, `runner`, and `test`.
+- `resource add`, `resource remove`, `resource rename`, `resource duplicate`, and `resource move` already delegate to `@gmloop/refactor` project-resource mutation APIs.
+- `room create`, `room duplicate`, `room rename`, and `room delete` already delegate to `@gmloop/refactor` resource mutation APIs.
+- `object list`, `object inspect`, and `object validate` already use the semantic graph/index path for object inspection.
+- `room list`, `room inspect`, `room query`, `room validate`, `room preview`, and `room summary` already use graph-backed room inspection paths.
+- `test list`, `test run`, and `test results` already exist for Node test discovery/execution and persisted test artifacts.
+- The MCP server already exposes CLI-backed tools by reading the CLI command catalog.
+
+### Partially Present / Stubbed
+
+- `object update` currently reports `object_property_mutation` as `not_available`.
+- `object event list/inspect/add/update/delete` currently report `object_event_mutation` as `not_available`.
+- `room update` and `room repair` currently report unavailable capabilities.
+- `room instance add/update/delete` currently report `room_instance_mutation` as `not_available`.
+- `room layer list/inspect/create/update/delete/reorder/move-resource` currently report `room_layer_mutation` as `not_available`.
+- `room camera list/inspect/update/frame` currently report `room_camera_mutation` as `not_available`.
+- `test case create` and `test case update` currently return `not_implemented`.
+
+### Target State
+
+The next phase should fill the stubbed command leaves and improve structured JSON output/catalog metadata, rather than creating a parallel MCP-only abstraction.
+
+## 4. Guiding Principles
 
 1. **Agents should use high-level GameMaker operations, not raw file edits.**
-   Editing `.yyp` and `.yy` files directly is fragile. Agents need resource-aware APIs that understand scripts, objects, events, rooms, folders, UUIDs, layers, and metadata.
+   Editing `.yyp` and `.yy` files directly is fragile. Agents should call high-level commands such as resource, object, room, test, and build operations. The command implementation should handle the underlying GameMaker metadata safely.
 
-2. **CLI is the source of truth for agent tools.**
+2. **Use and extend existing abstractions first.**
+   Before adding a new workspace or API, check whether the capability belongs in the existing `resource`, `object`, `room`, `project`, `runner`, `test`, `refactor`, or `semantic` paths.
+
+3. **CLI is the source of truth for agent tools.**
    New autonomous-game behavior should be added as CLI commands with structured output. MCP should expose those commands by deriving tools from the CLI command catalog, not by defining parallel MCP-only tools.
 
-3. **MCP is already the right exposure layer.**
-   The plan should extend what MCP can expose by adding real capabilities underneath it, not by inventing a second agent API.
+4. **MCP is already the right exposure layer.**
+   The plan should extend what MCP can expose by filling real capabilities underneath it, not by inventing a second agent API.
 
-4. **Validation must close the loop.**
+5. **Validation must close the loop.**
    The system must be able to format, lint, test, build, run, inspect logs, and iterate from failures. Autonomous game creation is not reliable without an automated proof step.
 
-5. **Reusable building blocks beat repeated invention.**
+6. **Reusable building blocks beat repeated invention.**
    Agents should compose known-good helpers, systems, templates, and prefabs instead of inventing new state machines, input systems, cameras, and UI primitives every time.
 
-6. **Task graphs should coordinate agents.**
+7. **Task graphs should coordinate agents.**
    Scheduled agents and subagents need a machine-readable plan, not just freeform prompts. Work should be split, claimed, blocked, completed, and reviewed through explicit task metadata.
 
-7. **Game design context is as important as code context.**
+8. **Game design context is as important as code context.**
    Agents need skills and prompts for core loops, player agency, feedback, juice, scope, loss/win criteria, progression, balancing, and vertical-slice planning.
 
-## 4. Milestone 1: Resource-Aware GameMaker Project Mutation
+## 5. Milestone 1: Complete Resource-Aware GameMaker Project Mutation
 
 ### Goal
 
-Allow agents to safely inspect and mutate real GameMaker projects through structured CLI-backed commands instead of ad-hoc file edits.
+Allow agents to safely inspect and mutate real GameMaker projects through the existing CLI/MCP abstraction rather than ad-hoc file edits.
 
-### Proposed Domain Layer
+### Current Base
 
-Add a new domain layer, either as a new workspace or a clearly bounded module inside an existing workspace:
+This milestone is not starting from scratch. The existing `resource` and `room` commands already perform some project-resource mutations through `@gmloop/refactor`. The `object` and `room` command suites already provide graph-backed inspection and validation. The first high-impact work should complete the missing command leaves and make their structured outputs consistently useful to MCP clients.
+
+### Priority Capability Gaps
+
+Fill these existing stubs first:
+
+```text
+gmloop object update
+gmloop object event add
+gmloop object event update
+gmloop object event delete
+gmloop room instance add
+gmloop room instance update
+gmloop room instance delete
+gmloop room layer create
+gmloop room layer update
+gmloop room layer delete
+gmloop room camera update
+gmloop test case create
+gmloop test case update
+```
+
+Do not add separate MCP-only commands for these. Implement the underlying behavior in the relevant command/domain/refactor layer, then let MCP expose the command catalog.
+
+### Optional New Domain Layer
+
+A new domain layer may still make sense if the existing refactor/resource code becomes too broad:
 
 ```text
 src/gamemaker-project
@@ -99,65 +149,30 @@ or:
 src/core/src/gamemaker-project
 ```
 
-Use a separate workspace if the API becomes large enough to own `.yyp` and `.yy` resource modeling, validation, and mutation independently.
-
-### Capabilities
-
-Add domain APIs and CLI commands for:
-
-```text
-gmloop project inspect
-gmloop project validate
-gmloop resource list
-gmloop resource create
-gmloop resource rename
-gmloop script create
-gmloop script update
-gmloop object create
-gmloop object event set-code
-gmloop room create
-gmloop room layer create
-gmloop room instance place
-gmloop sprite import
-gmloop folder create
-```
-
-The existing MCP server should then expose derived tools such as:
-
-```text
-gmloop_project_inspect
-gmloop_resource_create
-gmloop_script_create
-gmloop_object_create
-gmloop_object_event_set_code
-gmloop_room_instance_place
-```
-
-These MCP tools should be generated from CLI metadata, not manually reimplemented in `@gmloop/mcp`.
+But this should be justified by real duplication or missing shared modeling. Prefer extending existing `@gmloop/refactor` project-resource mutation APIs when the change is a natural continuation of current code.
 
 ### Required Behavior
 
 - Preserve valid `.yyp` and `.yy` structure.
-- Generate stable resource IDs where required.
+- Reuse existing `@gmloop/refactor` resource mutation paths where applicable.
+- Generate or preserve stable resource IDs where required.
 - Keep folders and resource metadata consistent.
-- Support dry-run previews.
+- Support dry-run previews where mutations can write.
 - Emit structured JSON summaries for CLI and MCP consumers.
 - Include fixture tests for each supported resource mutation.
 - Include CLI catalog / MCP catalog tests proving the commands are exposed to agents.
 
 ### First Work Slice
 
-Start with scripts and objects before rooms:
+The first implementation slice should be one of the existing unavailable leaves, not a brand-new parallel surface. Best candidates:
 
-1. Read a `.yyp` project.
-2. List existing scripts and objects.
-3. Create a script resource with `.gml` contents.
-4. Create an object resource.
-5. Set code for a Create or Step event.
-6. Validate that project metadata remains consistent.
-7. Verify the new CLI commands appear in the MCP tool catalog automatically.
+1. Implement `object event add/update/delete` for a minimal event type such as Create or Step.
+2. Or implement `room instance add/update/delete` for basic object placement.
+3. Or implement `test case create/update` to connect the existing `test` command to a real test-authoring flow.
 
-## 5. Milestone 2: Reusable GML Helper Library and Templates
+The recommended first slice is `object event update`, because it directly enables agents to create a resource with `resource add object ...` and then put behavior into it through an existing command family.
+
+## 6. Milestone 2: Reusable GML Helper Library and Templates
 
 ### Goal
 
@@ -175,7 +190,7 @@ This package should contain importable GameMaker assets and metadata, not just T
 
 Organize the kit into three layers.
 
-#### 5.1 Primitives
+#### 6.1 Primitives
 
 Small, dependency-light scripts:
 
@@ -192,7 +207,7 @@ struct helpers
 save-data helpers
 ```
 
-#### 5.2 Systems
+#### 6.2 Systems
 
 Multi-resource systems:
 
@@ -210,7 +225,7 @@ unit-test bootstrap
 room transition controller
 ```
 
-#### 5.3 Templates
+#### 6.3 Templates
 
 Composable project slices:
 
@@ -271,11 +286,15 @@ scr_clamp01
 
 Keep the initial kit small and heavily tested.
 
-## 6. Milestone 3: GML Unit-Test Authoring and Execution
+## 7. Milestone 3: GML Unit-Test Authoring and Execution
 
 ### Goal
 
 Allow agents to define, inject, run, and collect GML unit tests quickly, ideally without manual GameMaker IDE interaction.
+
+### Current Base
+
+The `test` command already supports Node test discovery/execution and persisted result artifacts through `test list`, `test run`, and `test results`. The missing part is GameMaker/GML test-case authoring and execution integration.
 
 ### Context
 
@@ -283,27 +302,17 @@ A separate GameMaker unit-test framework already exists, but it currently has to
 
 ### CLI-First Test Workflow
 
-Add CLI commands:
+Extend the existing `test` command family rather than creating a new tool family:
 
 ```text
+gmloop test case create
+gmloop test case update
 gmloop test scaffold
-gmloop test add
-gmloop test list
-gmloop test run
 gmloop test parse-results
 gmloop test report
 ```
 
-The existing MCP command-catalog integration should expose derived tools such as:
-
-```text
-gmloop_test_scaffold
-gmloop_test_add
-gmloop_test_run
-gmloop_test_report
-```
-
-Do not implement a separate MCP-only test runner.
+The existing MCP command-catalog integration should expose derived tools for these CLI commands. Do not implement a separate MCP-only test runner.
 
 ### Phase 1: IDE-Compatible Test Generation
 
@@ -320,7 +329,7 @@ Requirements:
 Example command:
 
 ```text
-gmloop test add --path MyGame/MyGame.yyp --target scr_damage_enemy --name kills_enemy_at_zero_hp
+gmloop test case create --path MyGame/MyGame.yyp --target scr_damage_enemy --name kills_enemy_at_zero_hp
 ```
 
 ### Phase 2: Runtime Test Execution
@@ -345,19 +354,25 @@ Later, add a fast path for pure script tests by transpiling constrained GML to J
 ### First Work Slice
 
 1. Define a test manifest format.
-2. Add `gmloop test scaffold` to install or validate the test harness resources.
-3. Add `gmloop test add` for simple function-style tests.
+2. Implement the existing `test case create` stub for simple function-style tests.
+3. Implement the existing `test case update` stub.
 4. Add fixture tests proving the generated GameMaker resources are stable.
-5. Add `gmloop test parse-results` for a sample result file.
+5. Add result parsing for a sample GameMaker test result file.
 6. Add CLI catalog / MCP catalog tests for the new commands.
 
-## 7. Milestone 4: GameMaker Build, Run, and Log Loop
+## 8. Milestone 4: GameMaker Build, Run, and Log Loop
 
 ### Goal
 
 Allow agents to prove that a generated or modified GameMaker game actually builds and, where possible, runs.
 
-### Proposed Workspace
+### Current Base
+
+The CLI already has a `runner` command module. The next step should inspect and extend that existing surface before adding a new build workspace. If the current runner surface is not enough for GameMaker build/check/run workflows, introduce a provider-backed build layer behind the existing or expanded CLI command family.
+
+### Possible Workspace
+
+Only add a new workspace if needed:
 
 ```text
 src/build
@@ -369,9 +384,11 @@ or:
 src/gamemaker-build
 ```
 
-This workspace should expose a provider-backed build facade rather than hardcoding one build mechanism.
+This workspace would expose a provider-backed build facade rather than hardcoding one build mechanism.
 
 ### CLI Commands
+
+Target command shape:
 
 ```text
 gmloop game build --path MyGame/MyGame.yyp --target windows
@@ -381,6 +398,8 @@ gmloop game run --path MyGame/MyGame.yyp
 gmloop game logs --path MyGame/MyGame.yyp
 gmloop game smoke-test --path MyGame/MyGame.yyp
 ```
+
+If the existing `runner` command is the better home, adapt the naming to fit the current CLI architecture rather than creating unnecessary overlap.
 
 MCP should expose these commands through the normal CLI-derived catalog. Build providers should not be implemented directly in `@gmloop/mcp`.
 
@@ -396,7 +415,7 @@ html5-export
 mock-fixture
 ```
 
-The CLI and MCP surface should not expose provider-specific details unless necessary. Agents should call `gmloop game build`; GMLoop can decide whether that means a local Igor invocation, an existing GitHub Action, a Stitch-backed action, or a fixture-mode build.
+The CLI and MCP surface should not expose provider-specific details unless necessary. Agents should call the high-level build/run/check command; GMLoop can decide whether that means a local Igor invocation, an existing GitHub Action, a Stitch-backed action, or a fixture-mode build.
 
 ### Stitch / Open-Source Action Direction
 
@@ -412,13 +431,14 @@ There appears to be an open-source Stitch GitHub Action that can test whether a 
 
 ### First Work Slice
 
-1. Add `gmloop game check-build` with a mock provider and documented provider contract.
-2. Add log parsing for representative GameMaker build failures.
-3. Add CI fixture tests around log parsing.
-4. Add a real provider once local/CI credentials and platform constraints are known.
-5. Verify MCP catalog exposure comes from the CLI command.
+1. Audit the existing `runner` command and decide whether build/check/run belongs there or in a new `game` command family.
+2. Add a mock provider and documented provider contract.
+3. Add log parsing for representative GameMaker build failures.
+4. Add CI fixture tests around log parsing.
+5. Add a real provider once local/CI credentials and platform constraints are known.
+6. Verify MCP catalog exposure comes from the CLI command.
 
-## 8. Milestone 5: Game Design and Game-Building Agent Skills
+## 9. Milestone 5: Game Design and Game-Building Agent Skills
 
 ### Goal
 
@@ -488,7 +508,7 @@ how to report test results
 
 Add `game-design/SKILL.md` and `gamemaker-resources/SKILL.md` first. Those two skills should immediately improve agent behavior for project creation and resource edits.
 
-## 9. Milestone 6: Task Graph and Agent Work Queue
+## 10. Milestone 6: Task Graph and Agent Work Queue
 
 ### Goal
 
@@ -578,7 +598,7 @@ Task graph transition logic should not live inside `@gmloop/mcp`.
 4. Add fixture tests.
 5. Add CLI catalog / MCP catalog tests proving the commands are exposed.
 
-## 10. Milestone 7: Scheduled Agentic Game Improvement Flow
+## 11. Milestone 7: Scheduled Agentic Game Improvement Flow
 
 ### Goal
 
@@ -607,7 +627,7 @@ scheduled helper-library expansion
 
 ### Relationship to MCP
 
-Scheduled workflows may invoke CLI commands directly or through MCP-enabled agent clients. The workflow should not bypass the same capability boundaries: domain logic remains in domain workspaces, CLI commands remain the canonical tool surface, and MCP remains an optional agent transport over those commands.
+Scheduled workflows may invoke CLI commands directly or through MCP-enabled agent clients. The workflow should not bypass the same capability boundaries: domain behavior remains below the CLI surface, CLI commands remain the canonical tool surface, and MCP remains an optional agent transport over those commands.
 
 ### Required Behavior
 
@@ -629,7 +649,7 @@ agent-game-plan.yml
 
 It should inspect the task graph and propose the next implementation task without mutating game resources yet.
 
-## 11. Milestone 8: Subagent Orchestration
+## 12. Milestone 8: Subagent Orchestration
 
 ### Goal
 
@@ -684,7 +704,7 @@ Add role prompt files and a sequential parent workflow before attempting paralle
 .agents/roles/game-reviewer.md
 ```
 
-## 12. End-to-End Target Workflow
+## 13. End-to-End Target Workflow
 
 The long-term autonomous creation loop should look like this:
 
@@ -694,30 +714,30 @@ The long-term autonomous creation loop should look like this:
 3. Agent splits the design into tasks.
 4. Agent selects the next ready task.
 5. Agent imports helpers/templates from gml-kit when applicable.
-6. Agent mutates GameMaker resources through CLI-backed structured commands.
-7. MCP exposes those commands to agent clients when used through an MCP host.
-8. Agent formats and lints GML.
-9. Agent generates or updates tests.
-10. Agent builds/runs/tests the GameMaker project.
-11. Agent inspects logs and structured diagnostics.
-12. Agent fixes failures.
-13. Agent commits or opens a PR.
-14. Scheduled agents continue from the task graph.
+6. Agent mutates GameMaker resources through existing CLI/MCP-backed structured commands.
+7. Agent formats and lints GML.
+8. Agent generates or updates tests.
+9. Agent builds/runs/tests the GameMaker project.
+10. Agent inspects logs and structured diagnostics.
+11. Agent fixes failures.
+12. Agent commits or opens a PR.
+13. Scheduled agents continue from the task graph.
 ```
 
-## 13. Recommended Implementation Order
+## 14. Recommended Implementation Order
 
-### Phase 1: Safe GameMaker Mutation
+### Phase 1: Complete Existing GameMaker Mutation Surfaces
 
 Deliver:
 
 ```text
-GameMaker project/resource model
-script creation
-object creation
-event code editing
+object event editing
+room instance editing
+room layer editing
+room camera editing
+test case create/update
 fixture tests
-CLI commands
+structured JSON output improvements
 CLI catalog tests
 MCP catalog exposure tests
 ```
@@ -735,25 +755,25 @@ fixture import tests
 CLI/MCP catalog coverage
 ```
 
-### Phase 3: Unit-Test Adapter
+### Phase 3: GameMaker Unit-Test Adapter
 
 Deliver:
 
 ```text
 test manifest format
-test scaffold command
-test add command
+test case create/update implementation
 sample generated tests
 result parser
 JUnit output
 CLI/MCP catalog coverage
 ```
 
-### Phase 4: Build Facade
+### Phase 4: Build / Runner Facade
 
 Deliver:
 
 ```text
+runner/build command audit
 provider contract
 mock provider
 log parser
@@ -786,24 +806,24 @@ task graph updates
 validation-gated PR flow
 ```
 
-## 14. Highest-Leverage Immediate PRs
+## 15. Highest-Leverage Immediate PRs
 
-1. **Add GameMaker project/resource mutation layer.**
-   Focus on scripts, objects, and object event code first. This should be domain logic, not MCP-specific logic.
+1. **Implement one existing unavailable mutation command.**
+   Best first target: `object event update`, because resource creation already exists and agents need a way to put behavior into objects.
 
-2. **Add CLI commands for resource creation and editing.**
-   Keep CLI as the source of truth for agent-callable tools.
+2. **Improve structured JSON output for resource mutations.**
+   Some mutation commands currently print human-readable summaries. Agent/MCP usage benefits from consistent JSON payloads.
 
-3. **Add MCP catalog tests for the new commands.**
+3. **Add MCP catalog tests for existing and newly completed commands.**
    Verify the existing MCP server exposes the CLI-backed tools automatically.
 
-4. **Add a minimal `gml-kit` helper library.**
+4. **Implement `test case create/update`.**
+   This connects the existing `test` command family to real test authoring.
+
+5. **Add a minimal `gml-kit` helper library.**
    Start with a small manifest-driven library rather than a large prefab system.
 
-5. **Add a unit-test adapter spec.**
-   Define how GMLoop scaffolds tests for the existing GameMaker unit-test framework.
-
-6. **Add a build facade.**
+6. **Audit and extend the existing runner/build surface.**
    Start with provider contracts and log parsing before committing to a specific backend.
 
 7. **Add game-design and GameMaker-resource agent skills.**
@@ -812,7 +832,7 @@ validation-gated PR flow
 8. **Add a task graph.**
    Enable scheduled agents and subagents to coordinate through explicit state.
 
-## 15. Open Questions
+## 16. Open Questions
 
 1. Which GameMaker versions and runtimes should the first build provider support?
 2. Can the open-source Stitch GitHub Action reliably build the target project types in CI?
@@ -824,13 +844,14 @@ validation-gated PR flow
 8. What subagent roles should run in parallel versus sequentially?
 9. Is the current CLI metadata rich enough for all future autonomous-game MCP schemas, or does the CLI catalog need additional option/argument annotations?
 10. Should MCP expose any additional read-only GameMaker project resources beyond CLI tools, such as `gm://project/overview` or `gm://resource/<name>`?
+11. Should currently human-readable mutation commands support `--json` consistently before agents rely on them heavily?
 
-## 16. Summary
+## 17. Summary
 
 The next stage for GMLoop is to become a GameMaker autonomous development platform, not only a set of GML code tools. The core unlocks are:
 
 ```text
-resource-aware project mutation
+completion of existing resource/object/room/test command surfaces
 CLI-backed agent tool commands
 existing MCP exposure through the CLI catalog
 reusable GML helper systems
@@ -841,4 +862,4 @@ task graph orchestration
 scheduled and subagent workflows
 ```
 
-The first priority should be safe, structured GameMaker resource mutation exposed through CLI commands. The existing MCP server should then surface those commands to agents through its CLI-derived tool catalog. Once agents can reliably create scripts, objects, events, and rooms through high-level commands, the rest of the autonomous loop can build on a stable foundation.
+The first priority should be completing the existing high-level GameMaker mutation commands that are already exposed conceptually but still return `not_available` or `not_implemented`. The MCP server should then surface those completed commands to agents through its CLI-derived tool catalog. Once agents can reliably create resources, edit object events, place room instances, and author tests through high-level commands, the rest of the autonomous loop can build on the existing abstraction instead of adding a parallel one.
