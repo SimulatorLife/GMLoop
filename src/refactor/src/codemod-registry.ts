@@ -3,7 +3,6 @@ import { Core } from "@gmloop/core";
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
 import {
-    assertRefactorConfigPlainObject,
     assertRefactorConfigPlainObjectWithAllowedKeys
 } from "./refactor-config-assertions.js";
 import type {
@@ -47,22 +46,6 @@ function isNullableString(value: unknown): value is string | null {
 
 const GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS = new Set(["excludeNames"]);
 
-function normalizeDocCommentAlignmentConfig(
-    value: unknown,
-    context: string
-): RefactorCodemodConfigEntry<"docCommentAlignment"> {
-    if (value === false) {
-        return false;
-    }
-
-    if (value === undefined || value === null) {
-        return {};
-    }
-
-    assertRefactorConfigPlainObjectWithAllowedKeys(value, new Set(), context);
-    return {};
-}
-
 function normalizeGlobalvarToGlobalConfig(
     value: unknown,
     context: string
@@ -92,44 +75,6 @@ function normalizeGlobalvarToGlobalConfig(
     return { excludeNames };
 }
 
-const LOOP_LENGTH_HOISTING_ALLOWED_KEYS = new Set(["functionSuffixes"]);
-
-function normalizeLoopLengthHoistingConfig(
-    value: unknown,
-    context: string
-): RefactorCodemodConfigEntry<"loopLengthHoisting"> {
-    if (value === false) {
-        return false;
-    }
-
-    const object = assertRefactorConfigPlainObjectWithAllowedKeys(value, LOOP_LENGTH_HOISTING_ALLOWED_KEYS, context);
-
-    if (object.functionSuffixes === undefined) {
-        return {};
-    }
-
-    const functionSuffixesObject = assertRefactorConfigPlainObject(
-        object.functionSuffixes,
-        `${context}.functionSuffixes`
-    );
-    const functionSuffixes: Record<string, string | null> = {};
-
-    for (const [functionName, suffixValue] of Object.entries(functionSuffixesObject)) {
-        if (isNullableString(suffixValue)) {
-            functionSuffixes[functionName] = suffixValue;
-            continue;
-        }
-
-        throw new TypeError(
-            `${context}.functionSuffixes.${functionName} must be a string or null, received ${typeof suffixValue}`
-        );
-    }
-
-    return {
-        functionSuffixes
-    };
-}
-
 function normalizeNamingConventionConfig(
     value: unknown,
     context: string
@@ -141,50 +86,6 @@ function normalizeNamingConventionConfig(
 }
 
 const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.freeze({
-    docCommentAlignment: Object.freeze({
-        id: "docCommentAlignment",
-        description:
-            "Align function doc-comment @param tags with the function signature (rename, reorder, and mark defaulted params as optional).",
-        requiresSemanticProjectIndex: false,
-        normalizeConfig: normalizeDocCommentAlignmentConfig,
-        async execute(
-            engine: CodemodEngine,
-            request: ConfiguredCodemodRunRequest,
-            _effectiveConfig: RefactorCodemodConfigMap["docCommentAlignment"]
-        ): Promise<ConfiguredCodemodExecutionResult> {
-            if (request.gmlFilePaths.length === 0) {
-                return {
-                    appliedFiles: new Map(),
-                    summary: {
-                        id: "docCommentAlignment",
-                        changed: false,
-                        changedFiles: [],
-                        warnings: ["No .gml files were selected for doc-comment alignment."],
-                        errors: []
-                    }
-                };
-            }
-
-            const result = await engine.executeDocCommentAlignmentCodemod({
-                filePaths: request.gmlFilePaths,
-                readFile: request.readFile,
-                writeFile: request.writeFile,
-                options: _effectiveConfig,
-                dryRun: request.dryRun
-            });
-
-            return {
-                appliedFiles: result.applied,
-                summary: {
-                    id: "docCommentAlignment",
-                    changed: result.changedFiles.length > 0,
-                    changedFiles: result.changedFiles.map((entry) => entry.path),
-                    warnings: [],
-                    errors: []
-                }
-            };
-        }
-    }),
     globalvarToGlobal: Object.freeze({
         id: "globalvarToGlobal",
         description:
@@ -221,49 +122,6 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
                 appliedFiles: result.applied,
                 summary: {
                     id: "globalvarToGlobal",
-                    changed: result.changedFiles.length > 0,
-                    changedFiles: result.changedFiles.map((entry) => entry.path),
-                    warnings: [],
-                    errors: []
-                }
-            };
-        }
-    }),
-    loopLengthHoisting: Object.freeze({
-        id: "loopLengthHoisting",
-        description: "Hoist repeated loop-length helper calls out of for-loop test expressions.",
-        requiresSemanticProjectIndex: false,
-        normalizeConfig: normalizeLoopLengthHoistingConfig,
-        async execute(
-            engine: CodemodEngine,
-            request: ConfiguredCodemodRunRequest,
-            effectiveConfig: RefactorCodemodConfigMap["loopLengthHoisting"]
-        ): Promise<ConfiguredCodemodExecutionResult> {
-            if (request.gmlFilePaths.length === 0) {
-                return {
-                    appliedFiles: new Map(),
-                    summary: {
-                        id: "loopLengthHoisting",
-                        changed: false,
-                        changedFiles: [],
-                        warnings: ["No .gml files were selected for loop-length hoisting."],
-                        errors: []
-                    }
-                };
-            }
-
-            const result = await engine.executeLoopLengthHoistingCodemod({
-                filePaths: request.gmlFilePaths,
-                readFile: request.readFile,
-                writeFile: request.writeFile,
-                options: effectiveConfig,
-                dryRun: request.dryRun
-            });
-
-            return {
-                appliedFiles: result.applied,
-                summary: {
-                    id: "loopLengthHoisting",
                     changed: result.changedFiles.length > 0,
                     changedFiles: result.changedFiles.map((entry) => entry.path),
                     warnings: [],

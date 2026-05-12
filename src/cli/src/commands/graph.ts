@@ -431,8 +431,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     );
 
                     if (refactor) {
-                        const codemodResult = Refactor.LoopLengthHoisting.applyLoopLengthHoistingCodemod(output);
-                        output = codemodResult.outputText;
+                        // Codemod execution in the playground is no longer supported
                     }
 
                     if (lint) {
