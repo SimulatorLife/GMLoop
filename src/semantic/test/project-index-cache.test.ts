@@ -608,6 +608,88 @@ async function assertCoordinatorMaxSizeScenario({
 // to assertions that intermittently observed a mutated baseline. Running them
 // sequentially keeps the shared state deterministic without relying on timing
 // quirks or the test scheduler's execution order.
+void test("saveProjectIndexCache cleans up temp file when rename fails", async () => {
+    const unlinkCalls: string[] = [];
+    let writeFileCalled = false;
+
+    const mockFsFacade = {
+        readFile: async () => {
+            throw new Error("not used");
+        },
+        writeFile: async () => {
+            writeFileCalled = true;
+        },
+        rename: async () => {
+            throw new Error("rename failed");
+        },
+        unlink: async (_filePath: string) => {
+            unlinkCalls.push(_filePath);
+        },
+        mkdir: async () => {}
+    };
+
+    const projectIndex = createProjectIndex("/project");
+
+    await assert.rejects(
+        saveProjectIndexCache(
+            {
+                projectRoot: "/project",
+                formatterVersion: "1.0.0",
+                pluginVersion: "0.1.0",
+                manifestMtimes: {},
+                sourceMtimes: {},
+                projectIndex
+            },
+            mockFsFacade as any
+        ),
+        /rename failed/
+    );
+
+    assert.equal(writeFileCalled, true, "writeFile should have been called before rename failed");
+    assert.equal(unlinkCalls.length, 1, "unlink should have been called exactly once to clean up temp file");
+    assert.match(unlinkCalls[0], /\.tmp$/, "unlink should target the temp file path");
+});
+
+void test("saveProjectIndexCache cleans up temp file when writeFile fails", async () => {
+    const unlinkCalls: string[] = [];
+
+    const mockFsFacade = {
+        readFile: async () => {
+            throw new Error("not used");
+        },
+        writeFile: async () => {
+            throw new Error("writeFile failed");
+        },
+        rename: async () => {
+            throw new Error("rename should not be called");
+        },
+        unlink: async (_filePath: string) => {
+            unlinkCalls.push(_filePath);
+        },
+        mkdir: async () => {}
+    };
+
+    const projectIndex = createProjectIndex("/project");
+
+    await assert.rejects(
+        saveProjectIndexCache(
+            {
+                projectRoot: "/project",
+                formatterVersion: "1.0.0",
+                pluginVersion: "0.1.0",
+                manifestMtimes: {},
+                sourceMtimes: {},
+                projectIndex
+            },
+            mockFsFacade as any
+        ),
+        /writeFile failed/
+    );
+
+    assert.equal(unlinkCalls.length, 1, "unlink should have been called even when writeFile fails");
+    assert.match(unlinkCalls[0], /\.tmp$/, "unlink should target the temp file path");
+});
+
 void test.describe("project index cache default size overrides", { concurrency: false }, () => {
     void test("project index cache max size can be tuned programmatically", () => {
         const originalMax = getDefaultProjectIndexCacheMaxSize();

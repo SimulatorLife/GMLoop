@@ -377,6 +377,9 @@ export async function saveProjectIndexCache(
     const uniqueSuffix = randomUUID();
     const tempFilePath = `${cacheFilePath}.${uniqueSuffix}.tmp`;
 
+    let tempFileCleanedUp = false;
+    let pendingError: unknown = null;
+
     try {
         await fsFacade.writeFile(tempFilePath, serialized, "utf8");
         ensureNotAborted();
@@ -384,17 +387,38 @@ export async function saveProjectIndexCache(
         await fsFacade.rename(tempFilePath, cacheFilePath);
         ensureNotAborted();
     } catch (error) {
-        try {
-            await fsFacade.unlink(tempFilePath);
-        } catch {
-            // The rename failure above is the actionable error for callers; a
-            // secondary failure while deleting the uniquely named temp file is
-            // best-effort hygiene. Dropping that error preserves the original
-            // stack trace while still leaving a breadcrumb that the write was
-            // attempted—the random suffix prevents future writes from
-            // colliding even if the orphaned file lingers.
+        // Capture the error from the try block so we can re-throw it after cleanup.
+        // JavaScript's finally-block-replaces-error behavior means we must capture
+        // the original error here rather than relying on implicit re-throw.
+        pendingError = error;
+    } finally {
+        // Always attempt cleanup of the temp file, even when the abort signal fires
+        // during the async rename or ensureNotAborted() calls. Without the finally block,
+        // an aborted abort signal between writeFile and the catch block would leave the
+        // temp file orphaned — the catch block's unlink would throw (signal already
+        // aborted), and the error would propagate without cleanup.
+        if (!tempFileCleanedUp) {
+            try {
+                await fsFacade.unlink(tempFilePath);
+                tempFileCleanedUp = true;
+            } catch {
+                // Best-effort hygiene. The primary error (writeFile failure, rename
+                // failure, or abort) is the actionable one for callers and is propagated
+                // below. Dropping the cleanup error here preserves the original stack
+                // trace and keeps the function's error surface stable. The uniquely-named
+                // temp file prevents collision with future writes even if it lingers
+                // temporarily.
+            }
         }
-        throw error;
+    }
+
+    // Re-throw the captured error, if any. This must be done after the finally block
+    // because in JavaScript, a `finally` block that throws replaces any error that was
+    // propagating from the `try` block — we capture the original error in `pendingError`
+    // and explicitly re-throw it here so the abort or write/rename error takes priority
+    // over a spurious unlink failure.
+    if (pendingError !== null) {
+        throw pendingError;
     }
 
     return createCacheResult(ProjectIndexCacheStatus.WRITTEN, {
