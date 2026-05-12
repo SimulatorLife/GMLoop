@@ -176,7 +176,11 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
                 return result;
             }
         }
-        // Fall through to equality check for comparison operators in the map that return null
+        // Numeric operators (`+ - * /`, etc.) are dispatched via `NUMERIC_OPERATORS`.
+        // Comparison operators (`< <= > >=`) in that same map return null when
+        // their operands don't satisfy the comparison (e.g., `1 < 0` → null),
+        // so we fall through to `evaluateEqualityOperator` for every non-null
+        // result — including ordinary equality checks like `1 === 1`.
         const equalityResult = evaluateEqualityOperator(op, leftNumber, rightNumber);
         if (equalityResult !== null) {
             return equalityResult;
@@ -185,9 +189,12 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
 
     // String operations.
     // The GML parser stores string literal values with their surrounding
-    // double quotes (e.g., the GML literal "hello" has `value === '"hello"'`).
-    // We must strip those parser quotes before folding so that the emitter's
-    // `JSON.stringify` re-wraps the result correctly.
+    // double quotes preserved in the token text (e.g., the GML literal "hello"
+    // is lexed as the token sequence `"` `hello` `"`, and the Literal node's
+    // `value` field holds `'"hello"'`). `normalizeStructKeyText` strips the
+    // leading and trailing quote so we can perform the actual string operation.
+    // The emitter then re-wraps the result in `JSON.stringify`, restoring the
+    // correct GML syntax for the transpiled output.
     if (typeof left === "string" && typeof right === "string") {
         if (op === "+") {
             return normalizeStructKeyText(left) + normalizeStructKeyText(right);
@@ -214,7 +221,10 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
             }
             return leftBoolean || rightBoolean;
         }
-        // Fall through to equality check
+        // Comparison operators on boolean literals are handled here.
+        // If both sides are boolean literals the equality check is meaningful;
+        // otherwise evaluateEqualityOperator returns null and the whole fold is
+        // aborted so we never produce incorrect results from mixed-type operands.
         const equalityResult = evaluateEqualityOperator(op, leftBoolean, rightBoolean);
         if (equalityResult !== null) {
             return equalityResult;
