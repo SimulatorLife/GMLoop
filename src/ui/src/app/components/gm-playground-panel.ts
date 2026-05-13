@@ -27,12 +27,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #viewMode: "code" | "ast" = "code";
 
-    #isFormatEnabled = true;
-
-    #isLintEnabled = true;
-
-    #isRefactorEnabled = true;
-
     #transpileMode: "none" | "patch" | "expression" = "none";
 
     #error: string | null = null;
@@ -50,6 +44,12 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     #showLintDetails = false;
 
     #showCodemodDetails = false;
+
+    #formatSearchQuery = "";
+
+    #lintSearchQuery = "";
+
+    #codemodSearchQuery = "";
 
     public disconnectedCallback(): void {
         if (this.#debounceTimer !== null) {
@@ -112,6 +112,45 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
+    #setFormatSearchQuery(value: string): void {
+        this.#formatSearchQuery = value.trim().toLowerCase();
+        this.requestUpdate();
+    }
+
+    #setLintSearchQuery(value: string): void {
+        this.#lintSearchQuery = value.trim().toLowerCase();
+        this.requestUpdate();
+    }
+
+    #setCodemodSearchQuery(value: string): void {
+        this.#codemodSearchQuery = value.trim().toLowerCase();
+        this.requestUpdate();
+    }
+
+    #setAllFormatOptionsEnabled(enabled: boolean, entries: ReadonlyArray<{ name: string }>): void {
+        for (const entry of entries) {
+            this.#enabledFormatOptions.set(entry.name, enabled);
+        }
+        void this.#processInput();
+        this.requestUpdate();
+    }
+
+    #setAllLintRulesEnabled(enabled: boolean, entries: ReadonlyArray<{ ruleId: string }>): void {
+        for (const entry of entries) {
+            this.#enabledLintRules.set(entry.ruleId, enabled);
+        }
+        void this.#processInput();
+        this.requestUpdate();
+    }
+
+    #setAllCodemodsEnabled(enabled: boolean, entries: ReadonlyArray<{ id: string }>): void {
+        for (const entry of entries) {
+            this.#enabledCodemods.set(entry.id, enabled);
+        }
+        void this.#processInput();
+        this.requestUpdate();
+    }
+
     readonly #onInputChange = (e: Event): void => {
         const target = e.target as HTMLTextAreaElement;
         this.#gmlInput = target.value;
@@ -150,11 +189,11 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     gml: this.#gmlInput,
-                    format: this.#isFormatEnabled,
+                    format: enabledFormatOptionNames.length > 0,
                     formatOptionNames: enabledFormatOptionNames,
-                    lint: this.#isLintEnabled,
+                    lint: enabledLintRuleIds.length > 0,
                     lintRuleIds: enabledLintRuleIds,
-                    refactor: this.#isRefactorEnabled,
+                    refactor: enabledCodemodIds.length > 0,
                     codemodIds: enabledCodemodIds,
                     transpileMode: this.#transpileMode
                 })
@@ -185,17 +224,32 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #resolveFormatOptions(): ReadonlyArray<{ description: string; name: string }> {
         const workspaceRules = this.model?.documentationCatalogs?.workspaceRules;
-        return this.model?.projectConfigurationCatalog?.format.entries ?? workspaceRules?.formatOptions ?? [];
+        const configuredEntries = this.model?.projectConfigurationCatalog?.format.entries;
+        if (configuredEntries && configuredEntries.length > 0) {
+            return configuredEntries.map((entry) => ({ description: entry.description, name: entry.name }));
+        }
+        return (workspaceRules?.formatOptions ?? []).map((entry) => ({
+            description: entry.description,
+            name: entry.name
+        }));
     }
 
     #resolveLintRules(): ReadonlyArray<{ description: string; ruleId: string }> {
         const workspaceRules = this.model?.documentationCatalogs?.workspaceRules;
-        return this.model?.projectConfigurationCatalog?.lint.rules ?? workspaceRules?.lintRules ?? [];
+        const configuredRules = this.model?.projectConfigurationCatalog?.lint.rules;
+        if (configuredRules && configuredRules.length > 0) {
+            return configuredRules;
+        }
+        return workspaceRules?.lintRules ?? [];
     }
 
     #resolveCodemods(): ReadonlyArray<{ description: string; id: string }> {
         const workspaceRules = this.model?.documentationCatalogs?.workspaceRules;
-        return this.model?.projectConfigurationCatalog?.refactor.codemods ?? workspaceRules?.refactorCodemods ?? [];
+        const configuredCodemods = this.model?.projectConfigurationCatalog?.refactor.codemods;
+        if (configuredCodemods && configuredCodemods.length > 0) {
+            return configuredCodemods;
+        }
+        return workspaceRules?.refactorCodemods ?? [];
     }
 
     #resolveEnabledFormatOptionNames(
@@ -216,24 +270,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         return codemods.filter((codemod) => this.#enabledCodemods.get(codemod.id) ?? true).map((codemod) => codemod.id);
     }
 
-    #toggleFormat(): void {
-        this.#isFormatEnabled = !this.#isFormatEnabled;
-        void this.#processInput();
-        this.requestUpdate();
-    }
-
-    #toggleLint(): void {
-        this.#isLintEnabled = !this.#isLintEnabled;
-        void this.#processInput();
-        this.requestUpdate();
-    }
-
-    #toggleRefactor(): void {
-        this.#isRefactorEnabled = !this.#isRefactorEnabled;
-        void this.#processInput();
-        this.requestUpdate();
-    }
-
     #setTranspileMode(mode: "patch" | "expression"): void {
         this.#transpileMode = this.#transpileMode === mode ? "none" : mode;
         void this.#processInput();
@@ -245,48 +281,85 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
-    #renderFormatOptionToggle(formatOption: { description: string; name: string }) {
-        const isEnabled = this.#enabledFormatOptions.get(formatOption.name) ?? true;
+    #renderRuleRow(parameters: { description: string; keyText: string; onToggle: () => void; selected: boolean }) {
         return html`
-            <button
-                type="button"
-                class="rule-toggle ${isEnabled ? "active" : ""}"
-                aria-pressed=${isEnabled}
-                title=${formatOption.description}
-                @click=${() => this.#toggleFormatOption(formatOption.name)}
-            >
-                ${formatOption.name}
-            </button>
+            <label class="rule-details-item" title=${parameters.description}>
+                <input type="checkbox" .checked=${parameters.selected} @change=${parameters.onToggle} />
+                <span class="rule-details-item-key">${parameters.keyText}</span>
+                <span class="rule-details-item-description">${parameters.description}</span>
+            </label>
         `;
     }
 
-    #renderLintRuleToggle(rule: { ruleId: string; description: string }) {
-        const isEnabled = this.#enabledLintRules.get(rule.ruleId) ?? true;
-        return html`
-            <button
-                type="button"
-                class="rule-toggle ${isEnabled ? "active" : ""}"
-                aria-pressed=${isEnabled}
-                title=${rule.description}
-                @click=${() => this.#toggleLintRule(rule.ruleId)}
-            >
-                ${rule.ruleId}
-            </button>
-        `;
-    }
+    #renderRuleSection(parameters: {
+        entries: ReadonlyArray<{ description: string; keyText: string; onToggle: () => void; selected: boolean }>;
+        expanded: boolean;
+        label: string;
+        searchQuery: string;
+        setAllSelected: (selected: boolean) => void;
+        setExpanded: () => void;
+        setSearchQuery: (value: string) => void;
+    }) {
+        const filteredEntries =
+            parameters.searchQuery.length === 0
+                ? parameters.entries
+                : parameters.entries.filter(
+                      (entry) =>
+                          entry.keyText.toLowerCase().includes(parameters.searchQuery) ||
+                          entry.description.toLowerCase().includes(parameters.searchQuery)
+                  );
+        const selectedCount = parameters.entries.filter((entry) => entry.selected).length;
 
-    #renderCodemodToggle(codemod: { description: string; id: string }) {
-        const isEnabled = this.#enabledCodemods.get(codemod.id) ?? true;
         return html`
-            <button
-                type="button"
-                class="rule-toggle ${isEnabled ? "active" : ""}"
-                aria-pressed=${isEnabled}
-                title=${codemod.description}
-                @click=${() => this.#toggleCodemod(codemod.id)}
-            >
-                ${codemod.id}
-            </button>
+            <div class="rule-details-section">
+                <button
+                    type="button"
+                    class="rule-details-header ${parameters.expanded ? "expanded" : ""}"
+                    @click=${parameters.setExpanded}
+                >
+                    <span class="rule-details-header-icon">${parameters.expanded ? "▾" : "▸"}</span>
+                    <span class="rule-details-header-label">${parameters.label}</span>
+                    <span class="rule-details-count">${selectedCount}/${parameters.entries.length} enabled</span>
+                </button>
+                ${parameters.expanded
+                    ? html`
+                          <div class="rule-details-controls">
+                              <input
+                                  class="rule-details-search"
+                                  type="text"
+                                  placeholder="Search ${parameters.label.toLowerCase()}..."
+                                  .value=${parameters.searchQuery}
+                                  @input=${(event: Event) => {
+                                      const target = event.target as HTMLInputElement;
+                                      parameters.setSearchQuery(target.value);
+                                  }}
+                              />
+                              <button
+                                  type="button"
+                                  class="rule-details-bulk-action"
+                                  @click=${() => parameters.setAllSelected(true)}
+                              >
+                                  Enable all
+                              </button>
+                              <button
+                                  type="button"
+                                  class="rule-details-bulk-action"
+                                  @click=${() => parameters.setAllSelected(false)}
+                              >
+                                  Disable all
+                              </button>
+                          </div>
+                          <div class="rule-details-list">
+                              ${filteredEntries.map((entry) => this.#renderRuleRow(entry))}
+                          </div>
+                          <div class="rule-details-footer">
+                              ${filteredEntries.length === parameters.entries.length
+                                  ? `${parameters.entries.length} items`
+                                  : `${filteredEntries.length} of ${parameters.entries.length} items`}
+                          </div>
+                      `
+                    : null}
+            </div>
         `;
     }
 
@@ -300,71 +373,53 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
         return html`
             <div class="rule-details">
-                ${this.#isFormatEnabled && formatOptions.length > 0
-                    ? html`
-                          <div class="rule-details-section">
-                              <button
-                                  type="button"
-                                  class="rule-details-header ${this.#showFormatDetails ? "expanded" : ""}"
-                                  @click=${() => this.#toggleFormatDetails()}
-                              >
-                                  <span class="rule-details-header-icon">${this.#showFormatDetails ? "▾" : "▸"}</span>
-                                  <span class="rule-details-header-label">Format Options</span>
-                                  <span class="rule-details-count">${formatOptions.length}</span>
-                              </button>
-                              ${this.#showFormatDetails
-                                  ? html`
-                                        <div class="rule-details-content">
-                                            ${formatOptions.map((option) => this.#renderFormatOptionToggle(option))}
-                                        </div>
-                                    `
-                                  : null}
-                          </div>
-                      `
+                ${formatOptions.length > 0
+                    ? this.#renderRuleSection({
+                          entries: formatOptions.map((option) => ({
+                              description: option.description,
+                              keyText: option.name,
+                              onToggle: () => this.#toggleFormatOption(option.name),
+                              selected: this.#enabledFormatOptions.get(option.name) ?? true
+                          })),
+                          expanded: this.#showFormatDetails,
+                          label: "Format Options",
+                          searchQuery: this.#formatSearchQuery,
+                          setAllSelected: (enabled) => this.#setAllFormatOptionsEnabled(enabled, formatOptions),
+                          setExpanded: () => this.#toggleFormatDetails(),
+                          setSearchQuery: (value) => this.#setFormatSearchQuery(value)
+                      })
                     : null}
-                ${this.#isLintEnabled && lintRules.length > 0
-                    ? html`
-                          <div class="rule-details-section">
-                              <button
-                                  type="button"
-                                  class="rule-details-header ${this.#showLintDetails ? "expanded" : ""}"
-                                  @click=${() => this.#toggleLintDetails()}
-                              >
-                                  <span class="rule-details-header-icon">${this.#showLintDetails ? "▾" : "▸"}</span>
-                                  <span class="rule-details-header-label">Lint Rules</span>
-                                  <span class="rule-details-count">${lintRules.length}</span>
-                              </button>
-                              ${this.#showLintDetails
-                                  ? html`
-                                        <div class="rule-details-content">
-                                            ${lintRules.map((rule) => this.#renderLintRuleToggle(rule))}
-                                        </div>
-                                    `
-                                  : null}
-                          </div>
-                      `
+                ${lintRules.length > 0
+                    ? this.#renderRuleSection({
+                          entries: lintRules.map((rule) => ({
+                              description: rule.description,
+                              keyText: rule.ruleId,
+                              onToggle: () => this.#toggleLintRule(rule.ruleId),
+                              selected: this.#enabledLintRules.get(rule.ruleId) ?? true
+                          })),
+                          expanded: this.#showLintDetails,
+                          label: "Lint Rules",
+                          searchQuery: this.#lintSearchQuery,
+                          setAllSelected: (enabled) => this.#setAllLintRulesEnabled(enabled, lintRules),
+                          setExpanded: () => this.#toggleLintDetails(),
+                          setSearchQuery: (value) => this.#setLintSearchQuery(value)
+                      })
                     : null}
-                ${this.#isRefactorEnabled && codemods.length > 0
-                    ? html`
-                          <div class="rule-details-section">
-                              <button
-                                  type="button"
-                                  class="rule-details-header ${this.#showCodemodDetails ? "expanded" : ""}"
-                                  @click=${() => this.#toggleCodemodDetails()}
-                              >
-                                  <span class="rule-details-header-icon">${this.#showCodemodDetails ? "▾" : "▸"}</span>
-                                  <span class="rule-details-header-label">Codemods</span>
-                                  <span class="rule-details-count">${codemods.length}</span>
-                              </button>
-                              ${this.#showCodemodDetails
-                                  ? html`
-                                        <div class="rule-details-content">
-                                            ${codemods.map((codemod) => this.#renderCodemodToggle(codemod))}
-                                        </div>
-                                    `
-                                  : null}
-                          </div>
-                      `
+                ${codemods.length > 0
+                    ? this.#renderRuleSection({
+                          entries: codemods.map((codemod) => ({
+                              description: codemod.description,
+                              keyText: codemod.id,
+                              onToggle: () => this.#toggleCodemod(codemod.id),
+                              selected: this.#enabledCodemods.get(codemod.id) ?? true
+                          })),
+                          expanded: this.#showCodemodDetails,
+                          label: "Codemods",
+                          searchQuery: this.#codemodSearchQuery,
+                          setAllSelected: (enabled) => this.#setAllCodemodsEnabled(enabled, codemods),
+                          setExpanded: () => this.#toggleCodemodDetails(),
+                          setSearchQuery: (value) => this.#setCodemodSearchQuery(value)
+                      })
                     : null}
             </div>
         `;
@@ -381,30 +436,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             <section id="playground-page" class=${activeClassName}>
                 <div class="playground-toolbar">
                     <div class="rule-toggles">
-                        <button
-                            type="button"
-                            class="rule-toggle ${this.#isFormatEnabled ? "active" : ""}"
-                            aria-pressed=${this.#isFormatEnabled}
-                            @click=${() => this.#toggleFormat()}
-                        >
-                            Format
-                        </button>
-                        <button
-                            type="button"
-                            class="rule-toggle ${this.#isLintEnabled ? "active" : ""}"
-                            aria-pressed=${this.#isLintEnabled}
-                            @click=${() => this.#toggleLint()}
-                        >
-                            Lint
-                        </button>
-                        <button
-                            type="button"
-                            class="rule-toggle ${this.#isRefactorEnabled ? "active" : ""}"
-                            aria-pressed=${this.#isRefactorEnabled}
-                            @click=${() => this.#toggleRefactor()}
-                        >
-                            Refactor
-                        </button>
+                        ${this.#renderRuleDetails()}
                         <button
                             type="button"
                             class="rule-toggle ${this.#transpileMode === "patch" ? "active" : ""}"
@@ -442,8 +474,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </button>
                     </div>
                 </div>
-
-                ${this.#renderRuleDetails()}
                 <div class="playground-main">
                     <div class="editor-pane">
                         <div class="pane-header">

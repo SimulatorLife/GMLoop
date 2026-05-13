@@ -51,3 +51,10 @@ void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported n
     assert.equal(parsed.labelMode, "always");
     assert.equal(parsed.searchQuery, "enemy ship");
 });
+
+void test("parseGraphVisualizationUiStateFromUrlSearch accepts the mcp top-level page", () => {
+    const state = parseGraphVisualizationUiStateFromUrlSearch("?page=mcp&docs=mcp");
+
+    assert.equal(state.activePage, "mcp");
+    assert.equal(state.activeDocsView, "mcp");
+});

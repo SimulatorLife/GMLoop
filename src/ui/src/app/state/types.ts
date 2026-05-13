@@ -1,7 +1,7 @@
 /**
  * Top-level page surfaces in the graph visualization UI.
  */
-export type GraphVisualizationUiPage = "graph" | "docs" | "config" | "playground";
+export type GraphVisualizationUiPage = "graph" | "docs" | "config" | "playground" | "mcp";
 
 /**
  * Graph presentation modes in the graph surface.

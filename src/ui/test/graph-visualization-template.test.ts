@@ -56,8 +56,9 @@ void test("graph visualization entry html references local assets and avoids CDN
     assert.match(html, /aria-label="Open GMLoop GitHub repository"/u);
     assert.match(html, /class="github-link-icon"/u);
     assert.doesNotMatch(html, />GitHub Repo</u);
-    assert.match(html, /id="toggle-lint" class="rule-toggle active"/u);
-    assert.match(html, /id="toggle-refactor" class="rule-toggle active"/u);
+    assert.match(html, /id="playground-rule-toolbar" class="rule-details"/u);
+    assert.doesNotMatch(html, /id="toggle-lint"/u);
+    assert.doesNotMatch(html, /id="toggle-refactor"/u);
 });
 
 void test("graph visualization entry html keeps project opening inside the project context card", () => {

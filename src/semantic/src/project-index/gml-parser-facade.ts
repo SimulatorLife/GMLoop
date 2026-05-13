@@ -28,21 +28,18 @@ import { formatProjectIndexSyntaxError } from "./parsing/syntax-error-formatter.
  * no longer requires semantic imports.
  */
 type ParserNamespace = typeof Parser.Parser;
-type ProjectIndexParser = (sourceText: string, context?: unknown) => unknown;
 
 let parserNamespace: ParserNamespace | null = null;
-const defaultProjectIndexParser: ProjectIndexParser = (sourceText: string, context = {}) =>
-    parseProjectIndexSource(sourceText, context);
+function defaultProjectIndexParser(sourceText: string, context = {}) {
+    return parseProjectIndexSource(sourceText, context);
+}
+const createProjectIndexScopeCoordinator = () => new SemanticScopeCoordinator();
 
 export function setProjectIndexParserNamespace(parser: ParserNamespace): void {
     parserNamespace = parser;
 }
 
-function resolveParserNamespace(parser?: ParserNamespace): ParserNamespace {
-    if (parser) {
-        return parser;
-    }
-
+function resolveParserNamespace(): ParserNamespace {
     if (!parserNamespace && Parser.Parser) {
         parserNamespace = Parser.Parser;
     }
@@ -54,8 +51,8 @@ function resolveParserNamespace(parser?: ParserNamespace): ParserNamespace {
     throw new Error("Parser namespace is not initialized; call setProjectIndexParserNamespace first.");
 }
 
-function parseProjectIndexSource(sourceText: string, context = {}, parser: ParserNamespace | null = null) {
-    const parserApi = resolveParserNamespace(parser);
+function parseProjectIndexSource(sourceText: string, context = {}) {
+    const parserApi = resolveParserNamespace();
 
     try {
         // WORKAROUND: Type-cast to 'any' to bypass ParserOptions type mismatches
@@ -86,7 +83,7 @@ function parseProjectIndexSource(sourceText: string, context = {}, parser: Parse
             scopeTrackerOptions: {
                 enabled: true,
                 getIdentifierMetadata: true,
-                createScopeTracker: () => new SemanticScopeCoordinator()
+                createScopeTracker: createProjectIndexScopeCoordinator
             }
         } as any);
     } catch (error) {
@@ -98,19 +95,19 @@ function parseProjectIndexSource(sourceText: string, context = {}, parser: Parse
     }
 }
 
-export function getDefaultProjectIndexParser(parser: ParserNamespace | null = null) {
-    return (sourceText: string, context = {}) => parseProjectIndexSource(sourceText, context, parser);
+export function getDefaultProjectIndexParser() {
+    return defaultProjectIndexParser;
 }
 
-export function getProjectIndexParserOverride(options) {
+function resolveProjectIndexParserOverride(options): ((sourceText: string, context?: unknown) => unknown) | null {
     if (!Core.isObjectLike(options)) {
         return null;
     }
 
     const parse = options.parseGml;
-    return typeof parse === "function" ? { parse } : null;
+    return typeof parse === "function" ? parse : null;
 }
 
 export function resolveProjectIndexParser(options) {
-    return getProjectIndexParserOverride(options)?.parse ?? defaultProjectIndexParser;
+    return resolveProjectIndexParserOverride(options) ?? defaultProjectIndexParser;
 }

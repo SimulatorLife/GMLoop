@@ -35,6 +35,7 @@ type GraphVisualizationServerProcessPlayground = (
 export type GraphVisualizationServerOptions = Readonly<{
     host?: string;
     port?: number;
+    getUiRevision?: () => number;
     regenerate: GraphVisualizationServerRegenerate;
     renderBundle: GraphVisualizationServerRenderBundle;
     openProjectTargets?: GraphVisualizationServerOpenProjectTargets;
@@ -70,6 +71,12 @@ export async function startGraphVisualizationServer(
 
     const server = http.createServer((request, response) => {
         void (async () => {
+            if (request.method === "GET" && request.url === "/api/ui-revision") {
+                response.writeHead(200, { "Content-Type": "application/json" });
+                response.end(JSON.stringify({ revision: options.getUiRevision ? options.getUiRevision() : 0 }));
+                return;
+            }
+
             if (request.method === "GET") {
                 try {
                     const file = await resolveStaticGraphVisualizationFileForRequest(options, request.url);
@@ -102,7 +109,7 @@ export async function startGraphVisualizationServer(
             if (request.method === "POST" && request.url === "/api/open" && options.openProjectTargets) {
                 try {
                     const requestBody = await readRequestBody(request);
-                    const parsedBody = tryParseJsonPayload(requestBody);
+                    const parsedBody = requestBody.trim().length === 0 ? {} : tryParseJsonPayload(requestBody);
                     if (parsedBody === null) {
                         response.writeHead(400, { "Content-Type": "application/json" });
                         response.end(JSON.stringify({ error: "Invalid JSON or non-object payload" }));

@@ -8,6 +8,7 @@ import {
     GmDocsPanel,
     GmGraphPanel,
     GmGraphToolbar,
+    GmMcpPanel,
     GmPlaygroundPanel
 } from "../app/components/index.js";
 
@@ -30,5 +31,6 @@ export function registerGraphVisualizationCustomElements(): void {
     defineCustomElementOnce("gm-playground-panel", GmPlaygroundPanel);
     defineCustomElementOnce("gm-docs-panel", GmDocsPanel);
     defineCustomElementOnce("gm-config-panel", GmConfigPanel);
+    defineCustomElementOnce("gm-mcp-panel", GmMcpPanel);
     defineCustomElementOnce("gm-app-shell", GmAppShell);
 }

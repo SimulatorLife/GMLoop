@@ -316,6 +316,36 @@ void test("graph visualization server rejects non-object JSON on /api/playground
     }
 });
 
+void test("graph visualization server serves UI revision for hot-reload polling", async (testContext) => {
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            getUiRevision: () => 7,
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/ui-revision`);
+        assert.equal(response.status, 200);
+        const payload = (await response.json()) as { revision: number };
+        assert.equal(payload.revision, 7);
+    } finally {
+        await handle.stop();
+    }
+});
+
 void test("graph visualization server forwards sanitized lint rule ids for playground processing", async (testContext) => {
     let receivedLintRuleIds: ReadonlyArray<string> = [];
     let receivedFormatOptionNames: ReadonlyArray<string> = [];

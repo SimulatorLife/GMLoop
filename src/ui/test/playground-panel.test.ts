@@ -46,16 +46,15 @@ function createMockState(): GraphVisualizationUiState {
 }
 
 /**
- * Verify that the playground panel's toggle buttons render with semantic
+ * Verify that playground toolbar mode buttons render with semantic
  * button elements and proper accessibility attributes.
  */
-void test("playground panel renders toggle buttons as accessible <button> elements", () => {
+void test("playground panel renders toolbar mode buttons as accessible <button> elements", () => {
     const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /button\s+type="button"\s+class="rule-toggle active"\s+aria-pressed=true/u);
     assert.match(rendered, /button\s+type="button"\s+class="rule-toggle "\s+aria-pressed=false/u);
     assert.match(rendered, /Patch Transpile/u);
     assert.match(rendered, /Expression Transpile/u);
@@ -92,32 +91,29 @@ void test("playground panel clears debounce timer on disconnect", () => {
 });
 
 /**
- * Verify that toggle state changes reflect in aria-pressed values.
+ * Verify that only transpile mode buttons exist in the toolbar toggle row.
  */
-void test("playground panel toggle aria-pressed reflects active state", () => {
+void test("playground panel toolbar omits redundant format/lint/refactor buttons", () => {
     const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    const activeToggleMatches = [...rendered.matchAll(/class="rule-toggle active"\s+aria-pressed=true/gu)];
-    assert.equal(activeToggleMatches.length, 3);
-    const inactiveToggleMatches = [...rendered.matchAll(/class="rule-toggle "\s+aria-pressed=false/gu)];
-    assert.equal(inactiveToggleMatches.length, 2);
+    assert.doesNotMatch(rendered, />\s*Format\s*</u);
+    assert.doesNotMatch(rendered, />\s*Lint\s*</u);
+    assert.doesNotMatch(rendered, />\s*Refactor\s*</u);
+    assert.equal([...rendered.matchAll(/class="rule-toggle "\s+aria-pressed=false/gu)].length, 2);
 });
 
-void test("playground panel renders transpile modes off by default while other toggles stay enabled", () => {
+void test("playground panel renders transpile modes off by default", () => {
     const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Format/);
-    assert.match(rendered, /Lint/);
-    assert.match(rendered, /Refactor/);
     assert.match(rendered, /Patch Transpile/);
     assert.match(rendered, /Expression Transpile/);
-    assert.equal([...rendered.matchAll(/class="rule-toggle active"/gu)].length, 3);
+    assert.equal([...rendered.matchAll(/class="rule-toggle active"/gu)].length, 0);
     assert.equal([...rendered.matchAll(/class="rule-toggle "/gu)].length, 2);
 });
 
@@ -181,6 +177,60 @@ void test("playground panel renders format/lint/codemod detail sections", () => 
                     }
                 ]
             }
+        }
+    };
+    panel.state = createMockState();
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Format Options/u);
+    assert.match(rendered, /Lint Rules/u);
+    assert.match(rendered, /Codemods/u);
+});
+
+void test("playground panel falls back to workspace catalogs when project config entries are empty", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = {
+        ...createMockModel(),
+        documentationCatalogs: {
+            cliCommands: [],
+            mcpServer: { name: "gmloop-mcp", version: "0.0.1" },
+            mcpTools: [],
+            workspaceRules: {
+                formatOptions: [
+                    {
+                        defaultValue: 100,
+                        description: "Preferred maximum line width for formatting decisions.",
+                        name: "printWidth"
+                    }
+                ],
+                lintRules: [
+                    {
+                        description: "Rule for noGlobalvar.",
+                        fixable: null,
+                        ruleId: "gml/no-globalvar"
+                    }
+                ],
+                refactorCodemods: [
+                    {
+                        description:
+                            "Expand unsupported scientific-notation number literals into plain decimal literals.",
+                        id: "scientificNotation",
+                        requiresSemanticProjectIndex: false
+                    }
+                ]
+            }
+        },
+        projectConfigurationCatalog: {
+            format: { entries: [] },
+            githubRepositoryUrl: "",
+            gmloop: {
+                configPath: null,
+                exists: false,
+                projectRoot: "/tmp/test",
+                rawConfig: {}
+            },
+            lint: { rules: [], ruleset: null },
+            refactor: { codemods: [] }
         }
     };
     panel.state = createMockState();

@@ -198,7 +198,7 @@ function readGraphNodePathLabel(nodeValue: GraphVisualizationNodeRecord): string
 }
 
 function createCurrentGraphVisualizationUiStateSnapshot(
-    activePage: "config" | "docs" | "graph" | "playground",
+    activePage: "config" | "docs" | "graph" | "playground" | "mcp",
     activeDocsView: "cli" | "mcp" | "rules",
     activeGraphView: "json" | "visual",
     labelMode: "auto" | "off" | "on",
@@ -598,7 +598,7 @@ function updateDocsViewState(
 function wirePageNavigation(
     state: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph" | "playground";
+        activePage: "config" | "docs" | "graph" | "playground" | "mcp";
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;
@@ -611,7 +611,7 @@ function wirePageNavigation(
         const button = document.getElementById(`tab-${pageValue}`);
         if (button instanceof HTMLButtonElement) {
             button.addEventListener("click", () => {
-                state.activePage = pageValue as "config" | "docs" | "graph" | "playground";
+                state.activePage = pageValue as "config" | "docs" | "graph" | "playground" | "mcp";
                 applyPageState();
                 syncUrlState();
             });
@@ -828,7 +828,7 @@ function updateGraphViewMode(
 
 function updatePageState(
     state: Readonly<{
-        activePage: "config" | "docs" | "graph" | "playground";
+        activePage: "config" | "docs" | "graph" | "playground" | "mcp";
         graphRuntime: typeof d3;
         jsonView: GraphSelectionApi;
         svg: GraphSelectionApi;
@@ -900,7 +900,7 @@ type GraphVisualizationSurfaceInitializer = Readonly<{
     hasGraphData: boolean;
     navigationState: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph" | "playground";
+        activePage: "config" | "docs" | "graph" | "playground" | "mcp";
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;
@@ -971,7 +971,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let activeGraphView: "json" | "visual" = initialUiState.activeGraphView;
     const navigationState: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph" | "playground";
+        activePage: "config" | "docs" | "graph" | "playground" | "mcp";
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;
@@ -988,6 +988,33 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let activeConfigViewMode: ConfigViewMode = "rendered";
     let nodesRaw = cloneGraphNodes(allNodes);
     let linksRaw = cloneGraphEdges(dependencies.data.edges);
+
+    if (dependencies.isServerMode) {
+        let knownUiRevision: number | null = null;
+        globalThis.setInterval(() => {
+            void (async () => {
+                try {
+                    const response = await fetch("/api/ui-revision", { cache: "no-store" });
+                    if (!response.ok) {
+                        return;
+                    }
+                    const payload = (await response.json()) as { revision?: unknown };
+                    if (typeof payload.revision !== "number") {
+                        return;
+                    }
+                    if (knownUiRevision === null) {
+                        knownUiRevision = payload.revision;
+                        return;
+                    }
+                    if (payload.revision !== knownUiRevision) {
+                        globalThis.location.reload();
+                    }
+                } catch {
+                    // Ignore transient polling failures (server restart/network hiccups).
+                }
+            })();
+        }, 1500);
+    }
     let link: d3.Selection<SVGPathElement, MutableGraphEdgeRecord, SVGGElement, unknown> = container
         .append("g")
         .selectAll<SVGPathElement, MutableGraphEdgeRecord>(".link");
@@ -2185,12 +2212,14 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     }
 
     function wirePlaygroundControls(): void {
+        type PlaygroundFormatOptionEntry = Readonly<{ description: string; name: string }>;
+        type PlaygroundLintRuleEntry = Readonly<{ description: string; ruleId: string }>;
+        type PlaygroundCodemodEntry = Readonly<{ description: string; id: string }>;
+
         const input = document.getElementById("playground-input") as HTMLTextAreaElement | null;
         const output = document.getElementById("playground-output");
         const outputTitle = document.getElementById("playground-output-title");
-        const formatBtn = document.getElementById("toggle-format");
-        const lintBtn = document.getElementById("toggle-lint");
-        const refactorBtn = document.getElementById("toggle-refactor");
+        const ruleToolbar = document.getElementById("playground-rule-toolbar");
         const patchTranspileBtn = document.getElementById("toggle-transpile-patch");
         const expressionTranspileBtn = document.getElementById("toggle-transpile-expression");
         const codeViewBtn = document.getElementById("view-mode-code");
@@ -2200,9 +2229,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             !input ||
             !output ||
             !outputTitle ||
-            !formatBtn ||
-            !lintBtn ||
-            !refactorBtn ||
+            !ruleToolbar ||
             !patchTranspileBtn ||
             !expressionTranspileBtn ||
             !codeViewBtn ||
@@ -2211,14 +2238,281 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             return;
         }
 
-        let isFormatEnabled = true;
-        let isLintEnabled = true;
-        let isRefactorEnabled = true;
         let transpileMode: "none" | "patch" | "expression" = "none";
         let viewMode: "code" | "ast" = "code";
         let lastAst = "{}";
         let lastOutput = "";
         let debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+        const enabledFormatOptions = new Map<string, boolean>();
+        const enabledLintRules = new Map<string, boolean>();
+        const enabledCodemods = new Map<string, boolean>();
+        let showFormatDetails = false;
+        let showLintDetails = false;
+        let showCodemodDetails = false;
+        let formatSearchQuery = "";
+        let lintSearchQuery = "";
+        let codemodSearchQuery = "";
+
+        const workspaceRules = dependencies.documentationCatalogs?.workspaceRules;
+        const configuredFormatEntries = currentProjectConfiguration?.format.entries;
+        const formatOptions: ReadonlyArray<PlaygroundFormatOptionEntry> =
+            configuredFormatEntries && configuredFormatEntries.length > 0
+                ? configuredFormatEntries.map((entry) => ({ description: entry.description, name: entry.name }))
+                : (workspaceRules?.formatOptions ?? []).map((entry) => ({
+                      description: entry.description,
+                      name: entry.name
+                  }));
+        const lintRules: ReadonlyArray<PlaygroundLintRuleEntry> =
+            currentProjectConfiguration?.lint.rules && currentProjectConfiguration.lint.rules.length > 0
+                ? currentProjectConfiguration.lint.rules
+                : (workspaceRules?.lintRules ?? []);
+        const codemods: ReadonlyArray<PlaygroundCodemodEntry> =
+            currentProjectConfiguration?.refactor.codemods && currentProjectConfiguration.refactor.codemods.length > 0
+                ? currentProjectConfiguration.refactor.codemods
+                : (workspaceRules?.refactorCodemods ?? []);
+
+        function renderPlaygroundRuleDetails(): void {
+            ruleToolbar.replaceChildren();
+
+            const hasAnyEntries = formatOptions.length > 0 || lintRules.length > 0 || codemods.length > 0;
+            if (!hasAnyEntries) {
+                return;
+            }
+
+            const ruleDetailsRoot = document.createElement("div");
+            ruleDetailsRoot.className = "rule-details";
+
+            const createDetailSection = (parameters: {
+                count: number;
+                entries: ReadonlyArray<{
+                    description: string;
+                    key: string;
+                    selected: boolean;
+                    onToggleEntry: () => void;
+                }>;
+                expanded: boolean;
+                label: string;
+                onToggleExpanded: () => void;
+                searchQuery: string;
+                selectedCount: number;
+                setAllEntriesSelected: (selected: boolean) => void;
+                setSearchQuery: (value: string) => void;
+            }): HTMLElement => {
+                const section = document.createElement("div");
+                section.className = "rule-details-section";
+
+                const headerButton = document.createElement("button");
+                headerButton.type = "button";
+                headerButton.className = `rule-details-header ${parameters.expanded ? "expanded" : ""}`;
+                headerButton.addEventListener("click", () => {
+                    parameters.onToggleExpanded();
+                    renderPlaygroundRuleDetails();
+                });
+
+                const icon = document.createElement("span");
+                icon.className = "rule-details-header-icon";
+                icon.textContent = parameters.expanded ? "▾" : "▸";
+                const headerLabel = document.createElement("span");
+                headerLabel.className = "rule-details-header-label";
+                headerLabel.textContent = parameters.label;
+                const headerCount = document.createElement("span");
+                headerCount.className = "rule-details-count";
+                headerCount.textContent = `${String(parameters.selectedCount)}/${String(parameters.count)} enabled`;
+
+                headerButton.append(icon, headerLabel, headerCount);
+                section.append(headerButton);
+
+                if (!parameters.expanded) {
+                    return section;
+                }
+
+                const controls = document.createElement("div");
+                controls.className = "rule-details-controls";
+
+                const searchInput = document.createElement("input");
+                searchInput.className = "rule-details-search";
+                searchInput.placeholder = `Search ${parameters.label.toLowerCase()}...`;
+                searchInput.value = parameters.searchQuery;
+                searchInput.addEventListener("input", () => {
+                    parameters.setSearchQuery(searchInput.value.trim().toLowerCase());
+                    renderPlaygroundRuleDetails();
+                });
+                controls.append(searchInput);
+
+                const enableAllButton = document.createElement("button");
+                enableAllButton.type = "button";
+                enableAllButton.className = "rule-details-bulk-action";
+                enableAllButton.textContent = "Enable all";
+                enableAllButton.addEventListener("click", () => {
+                    parameters.setAllEntriesSelected(true);
+                    void processPlaygroundInput();
+                    renderPlaygroundRuleDetails();
+                });
+                controls.append(enableAllButton);
+
+                const disableAllButton = document.createElement("button");
+                disableAllButton.type = "button";
+                disableAllButton.className = "rule-details-bulk-action";
+                disableAllButton.textContent = "Disable all";
+                disableAllButton.addEventListener("click", () => {
+                    parameters.setAllEntriesSelected(false);
+                    void processPlaygroundInput();
+                    renderPlaygroundRuleDetails();
+                });
+                controls.append(disableAllButton);
+                section.append(controls);
+
+                const filteredEntries =
+                    parameters.searchQuery.length === 0
+                        ? parameters.entries
+                        : parameters.entries.filter(
+                              (entry) =>
+                                  entry.key.toLowerCase().includes(parameters.searchQuery) ||
+                                  entry.description.toLowerCase().includes(parameters.searchQuery)
+                          );
+
+                const content = document.createElement("div");
+                content.className = "rule-details-list";
+                for (const entry of filteredEntries) {
+                    const row = document.createElement("label");
+                    row.className = "rule-details-item";
+                    row.title = entry.description;
+
+                    const checkbox = document.createElement("input");
+                    checkbox.type = "checkbox";
+                    checkbox.checked = entry.selected;
+                    checkbox.addEventListener("change", () => {
+                        entry.onToggleEntry();
+                        void processPlaygroundInput();
+                        renderPlaygroundRuleDetails();
+                    });
+                    row.append(checkbox);
+
+                    const keyText = document.createElement("span");
+                    keyText.className = "rule-details-item-key";
+                    keyText.textContent = entry.key;
+                    row.append(keyText);
+
+                    const descriptionText = document.createElement("span");
+                    descriptionText.className = "rule-details-item-description";
+                    descriptionText.textContent = entry.description;
+                    row.append(descriptionText);
+
+                    content.append(row);
+                }
+
+                section.append(content);
+
+                const footer = document.createElement("div");
+                footer.className = "rule-details-footer";
+                footer.textContent =
+                    filteredEntries.length === parameters.entries.length
+                        ? `${String(parameters.entries.length)} items`
+                        : `${String(filteredEntries.length)} of ${String(parameters.entries.length)} items`;
+                section.append(footer);
+
+                return section;
+            };
+
+            if (formatOptions.length > 0) {
+                ruleDetailsRoot.append(
+                    createDetailSection({
+                        count: formatOptions.length,
+                        entries: formatOptions.map((entry) => ({
+                            description: entry.description,
+                            key: entry.name,
+                            selected: enabledFormatOptions.get(entry.name) ?? true,
+                            onToggleEntry: () => {
+                                const current = enabledFormatOptions.get(entry.name) ?? true;
+                                enabledFormatOptions.set(entry.name, !current);
+                            }
+                        })),
+                        expanded: showFormatDetails,
+                        label: "Format Options",
+                        onToggleExpanded: () => {
+                            showFormatDetails = !showFormatDetails;
+                        },
+                        searchQuery: formatSearchQuery,
+                        selectedCount: formatOptions.filter((entry) => enabledFormatOptions.get(entry.name) ?? true)
+                            .length,
+                        setAllEntriesSelected: (selected) => {
+                            for (const entry of formatOptions) {
+                                enabledFormatOptions.set(entry.name, selected);
+                            }
+                        },
+                        setSearchQuery: (value) => {
+                            formatSearchQuery = value;
+                        }
+                    })
+                );
+            }
+
+            if (lintRules.length > 0) {
+                ruleDetailsRoot.append(
+                    createDetailSection({
+                        count: lintRules.length,
+                        entries: lintRules.map((entry) => ({
+                            description: entry.description,
+                            key: entry.ruleId,
+                            selected: enabledLintRules.get(entry.ruleId) ?? true,
+                            onToggleEntry: () => {
+                                const current = enabledLintRules.get(entry.ruleId) ?? true;
+                                enabledLintRules.set(entry.ruleId, !current);
+                            }
+                        })),
+                        expanded: showLintDetails,
+                        label: "Lint Rules",
+                        onToggleExpanded: () => {
+                            showLintDetails = !showLintDetails;
+                        },
+                        searchQuery: lintSearchQuery,
+                        selectedCount: lintRules.filter((entry) => enabledLintRules.get(entry.ruleId) ?? true).length,
+                        setAllEntriesSelected: (selected) => {
+                            for (const entry of lintRules) {
+                                enabledLintRules.set(entry.ruleId, selected);
+                            }
+                        },
+                        setSearchQuery: (value) => {
+                            lintSearchQuery = value;
+                        }
+                    })
+                );
+            }
+
+            if (codemods.length > 0) {
+                ruleDetailsRoot.append(
+                    createDetailSection({
+                        count: codemods.length,
+                        entries: codemods.map((entry) => ({
+                            description: entry.description,
+                            key: entry.id,
+                            selected: enabledCodemods.get(entry.id) ?? true,
+                            onToggleEntry: () => {
+                                const current = enabledCodemods.get(entry.id) ?? true;
+                                enabledCodemods.set(entry.id, !current);
+                            }
+                        })),
+                        expanded: showCodemodDetails,
+                        label: "Codemods",
+                        onToggleExpanded: () => {
+                            showCodemodDetails = !showCodemodDetails;
+                        },
+                        searchQuery: codemodSearchQuery,
+                        selectedCount: codemods.filter((entry) => enabledCodemods.get(entry.id) ?? true).length,
+                        setAllEntriesSelected: (selected) => {
+                            for (const entry of codemods) {
+                                enabledCodemods.set(entry.id, selected);
+                            }
+                        },
+                        setSearchQuery: (value) => {
+                            codemodSearchQuery = value;
+                        }
+                    })
+                );
+            }
+
+            ruleToolbar.append(ruleDetailsRoot);
+        }
 
         function updateTranspileButtonState(): void {
             patchTranspileBtn.classList.toggle("active", transpileMode === "patch");
@@ -2248,6 +2542,15 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
         async function processPlaygroundInput() {
             const gml = input.value;
+            const formatOptionNames = formatOptions
+                .filter((option) => enabledFormatOptions.get(option.name) ?? true)
+                .map((option) => option.name);
+            const lintRuleIds = lintRules
+                .filter((rule) => enabledLintRules.get(rule.ruleId) ?? true)
+                .map((rule) => rule.ruleId);
+            const codemodIds = codemods
+                .filter((codemod) => enabledCodemods.get(codemod.id) ?? true)
+                .map((codemod) => codemod.id);
             if (!gml.trim()) {
                 lastOutput = "";
                 lastAst = "";
@@ -2261,9 +2564,12 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         gml,
-                        format: isFormatEnabled,
-                        lint: isLintEnabled,
-                        refactor: isRefactorEnabled,
+                        format: formatOptionNames.length > 0,
+                        formatOptionNames,
+                        lint: lintRuleIds.length > 0,
+                        lintRuleIds,
+                        refactor: codemodIds.length > 0,
+                        codemodIds,
                         transpileMode
                     })
                 });
@@ -2300,24 +2606,6 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             }, 300);
         });
 
-        formatBtn.addEventListener("click", () => {
-            isFormatEnabled = !isFormatEnabled;
-            formatBtn.classList.toggle("active", isFormatEnabled);
-            void processPlaygroundInput();
-        });
-
-        lintBtn.addEventListener("click", () => {
-            isLintEnabled = !isLintEnabled;
-            lintBtn.classList.toggle("active", isLintEnabled);
-            void processPlaygroundInput();
-        });
-
-        refactorBtn.addEventListener("click", () => {
-            isRefactorEnabled = !isRefactorEnabled;
-            refactorBtn.classList.toggle("active", isRefactorEnabled);
-            void processPlaygroundInput();
-        });
-
         patchTranspileBtn.addEventListener("click", () => {
             transpileMode = transpileMode === "patch" ? "none" : "patch";
             updateTranspileButtonState();
@@ -2339,5 +2627,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             viewMode = "ast";
             updateView();
         });
+
+        renderPlaygroundRuleDetails();
     }
 }

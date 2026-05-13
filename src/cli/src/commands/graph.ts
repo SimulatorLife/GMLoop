@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { watch } from "node:fs";
 import { access, constants, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -37,6 +38,7 @@ type GraphCommandSharedOptions = {
     open?: boolean;
     output?: string;
     serve?: boolean;
+    liveReload?: boolean;
 };
 
 type GraphResolutionContext = Readonly<{
@@ -195,6 +197,18 @@ async function runOsaScript(lines: ReadonlyArray<string>): Promise<OsaScriptExec
                     stdout
                 })
             );
+        });
+    });
+}
+
+async function runUiWorkspaceTypeBuildForServe(): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+        execFile("pnpm", ["--filter", "@gmloop/ui", "run", "build:types"], (error) => {
+            if (error) {
+                reject(error instanceof Error ? error : new Error("Failed to build @gmloop/ui workspace."));
+                return;
+            }
+            resolve();
         });
     });
 }
@@ -463,8 +477,59 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
     if (options.serve === true) {
         const documentationCatalogs = createDocumentationCatalogs();
+        let uiRevision = 0;
+        let uiWatchRebuildInProgress = false;
+        let uiWatchRebuildPending = false;
+
+        const runUiBundleRebuildCycle = async (): Promise<void> => {
+            uiWatchRebuildPending = false;
+            try {
+                await runUiWorkspaceTypeBuildForServe();
+                uiRevision += 1;
+                console.log(`[graph visualize] UI source changed. Reload revision: ${String(uiRevision)}`);
+            } catch (error) {
+                console.error(
+                    `[graph visualize] UI rebuild failed: ${Core.getErrorMessage(error, {
+                        fallback: "Unknown build failure"
+                    })}`
+                );
+            }
+
+            if (uiWatchRebuildPending) {
+                await runUiBundleRebuildCycle();
+                return;
+            }
+
+            uiWatchRebuildInProgress = false;
+        };
+
+        const triggerUiBundleRebuild = (): void => {
+            uiWatchRebuildPending = true;
+            if (uiWatchRebuildInProgress) {
+                return;
+            }
+            uiWatchRebuildInProgress = true;
+            void runUiBundleRebuildCycle();
+        };
+
+        let uiWatchDebounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+        const uiSourceWatcher =
+            options.liveReload === false
+                ? null
+                : watch(path.resolve(process.cwd(), "src/ui/src"), { recursive: true }, (_eventType, fileName) => {
+                      if (!fileName || (!fileName.endsWith(".ts") && !fileName.endsWith(".css"))) {
+                          return;
+                      }
+                      if (uiWatchDebounceTimer !== null) {
+                          globalThis.clearTimeout(uiWatchDebounceTimer);
+                      }
+                      uiWatchDebounceTimer = globalThis.setTimeout(() => {
+                          triggerUiBundleRebuild();
+                      }, 300);
+                  });
 
         const server = await startGraphVisualizationServer({
+            getUiRevision: () => uiRevision,
             regenerate: async () => {
                 const previousPayloadString = safeStringifyVisualizationPayload();
                 if (!activeContext) {
@@ -603,6 +668,11 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             openUrlInDefaultBrowser(server.url);
         }
 
+        if (uiSourceWatcher) {
+            process.once("SIGINT", () => uiSourceWatcher.close());
+            process.once("SIGTERM", () => uiSourceWatcher.close());
+        }
+
         return;
     }
 
@@ -734,6 +804,9 @@ export function createGraphCommand(): Command {
         .addOption(new Option("--open", "Open the generated file in your default browser").default(true))
         .addOption(new Option("--no-open", "Do not open the generated file").default(false))
         .addOption(new Option("--serve", "Serve dynamically rather than writing an output file").default(false))
+        .addOption(
+            new Option("--live-reload", "Auto-rebuild and auto-reload served UI when src/ui/src changes").default(true)
+        )
         .action(async function graphVisualizeCommandAction() {
             await runGraphCommandAction(async () => {
                 await runGraphVisualizeAction(this.opts<GraphCommandSharedOptions>());
