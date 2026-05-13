@@ -1,4 +1,5 @@
 import * as http from "node:http";
+import type { Socket } from "node:net";
 
 import { Core } from "@gmloop/core";
 
@@ -62,7 +63,7 @@ export async function startGraphVisualizationServer(
 ): Promise<GraphVisualizationServerHandle> {
     const host = options.host ?? "127.0.0.1";
     const port = options.port ?? 0;
-    const activeSockets = new Set<import("node:net").Socket>();
+    const activeSockets = new Set<Socket>();
 
     const server = http.createServer((request, response) => {
         void (async () => {
