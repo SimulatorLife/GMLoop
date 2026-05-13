@@ -293,22 +293,22 @@ void describe("watch command integration", () => {
     });
 });
 
-void describe("watch command help consistency", () => {
+void describe("live-reload dev command help consistency", () => {
     void it("shows 'Show this help message.' for --help flag, matching all other commands", async () => {
-        const { stdout } = await runCliTestCommand({ argv: ["watch", "--help"] });
+        const { stdout } = await runCliTestCommand({ argv: ["live-reload", "dev", "--help"] });
 
         assert.match(stdout, /--help.*Show this help message\./);
     });
 
     void it("shows help hint on unknown option, matching the pattern of lint and format", async () => {
-        const { stdout, stderr } = await runCliTestCommand({ argv: ["watch", "--unknown-flag-xyz"] });
+        const { stdout, stderr } = await runCliTestCommand({ argv: ["live-reload", "dev", "--unknown-flag-xyz"] });
 
         const combined = stdout + stderr;
         assert.match(combined, /add --help for usage information/);
     });
 
     void it("exits non-zero when an unknown option is passed", async () => {
-        const { exitCode } = await runCliTestCommand({ argv: ["watch", "--unknown-flag-xyz"] });
+        const { exitCode } = await runCliTestCommand({ argv: ["live-reload", "dev", "--unknown-flag-xyz"] });
 
         assert.notEqual(exitCode, 0);
     });

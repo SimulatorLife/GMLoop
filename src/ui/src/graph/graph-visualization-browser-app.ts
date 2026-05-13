@@ -560,7 +560,7 @@ function updateDocsViewState(
     }>
 ): void {
     const cliPage = document.getElementById("cli-page");
-    const mcpPage = document.getElementById("mcp-page");
+    const mcpPage = document.getElementById("docs-mcp-page");
     const rulesPage = document.getElementById("rules-page");
     const cliButton = document.getElementById("docs-view-cli");
     const mcpButton = document.getElementById("docs-view-mcp");
@@ -607,7 +607,7 @@ function wirePageNavigation(
     updateDocsViewStateFn: () => void,
     syncUrlState: () => void
 ): void {
-    ["graph", "docs", "config", "playground"].forEach((pageValue) => {
+    ["graph", "docs", "config", "playground", "mcp"].forEach((pageValue) => {
         const button = document.getElementById(`tab-${pageValue}`);
         if (button instanceof HTMLButtonElement) {
             button.addEventListener("click", () => {
@@ -655,13 +655,17 @@ function renderDocumentationCatalog(
 ): void {
     const docsMetaElement = document.getElementById("docs-meta");
     const cliContentElement = document.getElementById("cli-content");
-    const mcpContentElement = document.getElementById("mcp-content");
+    const mcpContentElement = document.getElementById("docs-mcp-content");
+    const mcpPageMetaElement = document.getElementById("mcp-meta");
+    const mcpRuntimeContentElement = document.getElementById("mcp-runtime-content");
     const rulesContentElement = document.getElementById("rules-content");
     if (
         !(docsMetaElement instanceof HTMLElement) ||
         !(cliContentElement instanceof HTMLElement) ||
         !(mcpContentElement instanceof HTMLElement) ||
-        !(rulesContentElement instanceof HTMLElement)
+        !(rulesContentElement instanceof HTMLElement) ||
+        !(mcpPageMetaElement instanceof HTMLElement) ||
+        !(mcpRuntimeContentElement instanceof HTMLElement)
     ) {
         return;
     }
@@ -669,6 +673,7 @@ function renderDocumentationCatalog(
     cliContentElement.innerHTML = "";
     mcpContentElement.innerHTML = "";
     rulesContentElement.innerHTML = "";
+    mcpRuntimeContentElement.innerHTML = "";
 
     if (dependencies.documentationCatalogs === null) {
         metaState.cliMetaText = "No CLI catalog metadata is available for this view.";
@@ -680,6 +685,8 @@ function renderDocumentationCatalog(
         cliContentElement.append(emptyState.cloneNode(true));
         mcpContentElement.append(emptyState.cloneNode(true));
         rulesContentElement.append(emptyState);
+        mcpPageMetaElement.textContent = "No MCP server catalog metadata is available for this view.";
+        mcpRuntimeContentElement.append(emptyState.cloneNode(true));
         updateDocsViewStateFn();
         return;
     }
@@ -738,6 +745,41 @@ function renderDocumentationCatalog(
         });
         mcpContentElement.append(createCatalogCard(entry.toolName, entry.description, entry.commandDisplayName, rows));
     });
+
+    mcpPageMetaElement.textContent = `${mcpServer.name} v${mcpServer.version} | ${String(
+        dependencies.documentationCatalogs.mcpTools.length
+    )} MCP tools available.`;
+    mcpRuntimeContentElement.append(
+        createCatalogCard(
+            "Runtime Status",
+            dependencies.isServerMode
+                ? "Graph UI server mode is active and ready to host MCP-backed interactions."
+                : "Standalone mode is active; MCP runtime status is informational only.",
+            "",
+            [createCatalogItemRow("status", dependencies.isServerMode ? "running" : "not-started")]
+        )
+    );
+    mcpRuntimeContentElement.append(
+        createCatalogCard(
+            "Tool Call Feed",
+            "Live tool-call feed wiring is not exposed in this template yet. This section is reserved for streaming events.",
+            "",
+            []
+        )
+    );
+    mcpRuntimeContentElement.append(
+        createCatalogCard(
+            "Tool Catalog",
+            "MCP tool entries exposed by the active workspace catalog.",
+            "",
+            dependencies.documentationCatalogs.mcpTools.map((entry) =>
+                createCatalogItemRow(
+                    entry.toolName,
+                    `${entry.commandDisplayName} (${String(entry.fields.length)} fields)`
+                )
+            )
+        )
+    );
 
     const workspaceRules = dependencies.documentationCatalogs.workspaceRules;
     metaState.rulesMetaText = `${String(workspaceRules.formatOptions.length)} format options, ${String(
@@ -839,7 +881,8 @@ function updatePageState(
         { buttonId: "tab-graph", pageId: "graph-page", pageValue: "graph" },
         { buttonId: "tab-docs", pageId: "docs-page", pageValue: "docs" },
         { buttonId: "tab-config", pageId: "config-page", pageValue: "config" },
-        { buttonId: "tab-playground", pageId: "playground-page", pageValue: "playground" }
+        { buttonId: "tab-playground", pageId: "playground-page", pageValue: "playground" },
+        { buttonId: "tab-mcp", pageId: "mcp-page", pageValue: "mcp" }
     ].forEach((entry) => {
         const button = document.getElementById(entry.buttonId);
         const page = document.getElementById(entry.pageId);
@@ -878,6 +921,10 @@ function updatePageState(
         toolbarHeading.textContent = "Docs";
         toolbarSubheading.textContent =
             "Live CLI, MCP, and workspace rule catalogs are combined in a single Docs view.";
+    } else if (state.activePage === "mcp") {
+        toolbarHeading.textContent = "MCP";
+        toolbarSubheading.textContent =
+            "MCP runtime status, host-feed placeholder, and tool catalog details for the active workspace.";
     } else {
         toolbarHeading.textContent = "Config";
         toolbarSubheading.textContent =

@@ -32,7 +32,8 @@ import { Command, Option } from "commander";
 import { createMinimumValueValidator, portValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { formatCliError } from "../cli-core/errors.js";
-import { DEFAULT_GM_TEMP_ROOT, prepareHotReloadInjection } from "../modules/hot-reload/inject-runtime.js";
+import { createStatusUrl, createWebSocketUrl, DEFAULT_GM_TEMP_ROOT } from "../modules/live-reload/config.js";
+import { prepareLiveReload } from "../modules/live-reload/session.js";
 import {
     type RuntimeStaticServerHandle,
     type RuntimeStaticServerInstance,
@@ -192,6 +193,8 @@ interface WatchCommandOptions
         HotReloadConfig,
         InfrastructureConfig {}
 
+export type { WatchCommandOptions };
+
 /**
  * Core transpilation capabilities required for processing file changes.
  * Focuses on the essential dependencies needed to transpile GML files.
@@ -335,11 +338,14 @@ async function runAutoInjectHotReload(
     }
 
     try {
-        const websocketUrl = `ws://${websocketHost}:${websocketPort}`;
-        const injectionResult = await prepareHotReloadInjection({
+        const injectionResult = await prepareLiveReload({
             html5OutputRoot: html5Output,
             gmTempRoot,
-            websocketUrl,
+            bootstrapConfig: {
+                websocketUrl: createWebSocketUrl(websocketHost, websocketPort),
+                statusUrl: createStatusUrl(),
+                logLevel: quiet ? "quiet" : verbose ? "debug" : "normal"
+            },
             force: false
         });
 
@@ -349,10 +355,10 @@ async function runAutoInjectHotReload(
                 : "Hot-reload snippet already present in HTML5 output.";
             console.log(injectedMessage);
             if (verbose) {
-                console.log(`  HTML5 output: ${injectionResult.outputRoot}`);
-                console.log(`  Index file: ${injectionResult.indexPath}`);
-                console.log(`  Runtime wrapper: ${injectionResult.runtimeWrapperTargetRoot}`);
-                console.log(`  WebSocket URL: ${injectionResult.websocketUrl}`);
+                console.log(`  HTML5 output: ${injectionResult.target.outputRoot}`);
+                console.log(`  Index file: ${injectionResult.target.indexHtmlPath}`);
+                console.log(`  Runtime wrapper: ${injectionResult.assets.targetRoot}`);
+                console.log(`  WebSocket URL: ${createWebSocketUrl(websocketHost, websocketPort)}`);
             }
         }
     } catch (error) {

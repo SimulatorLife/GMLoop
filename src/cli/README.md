@@ -203,33 +203,29 @@ Slowest transpilation: 5.67ms (complex_script.gml)
 -------------------------------
 ```
 
-**Automatic Hot-Reload Setup:**
+**Live-Reload Workflow:**
 
-The `--auto-inject` flag streamlines the development workflow by automatically preparing the hot-reload environment before starting the watcher. This eliminates the need to manually run `prepare-hot-reload` as a separate step:
+Use the dedicated `live-reload` command group instead of mixing manual injection with `watch`:
 
 ```bash
-# Traditional two-step workflow (still supported):
-pnpm run cli -- prepare-hot-reload --html5-output /path/to/output
-pnpm run cli -- watch /path/to/project
+# Prepare an HTML5 output explicitly
+pnpm run cli -- live-reload prepare --html5-output /path/to/output
 
-# Streamlined one-step workflow with --auto-inject:
-pnpm run cli -- watch /path/to/project --auto-inject
+# Start the full live-reload dev session
+pnpm run cli -- live-reload dev /path/to/project --html5-output /path/to/output
 
-# Specify custom HTML5 output directory:
-pnpm run cli -- watch /path/to/project --auto-inject --html5-output /path/to/output
-
-# Use custom WebSocket port for both injection and server:
-pnpm run cli -- watch /path/to/project --auto-inject --websocket-port 18000
+# Query the running status server
+pnpm run cli -- live-reload status
 ```
 
-When `--auto-inject` is enabled, the watch command will:
+The `live-reload dev` command will:
 
 1. Locate the most recent GameMaker HTML5 output (or use the path specified with `--html5-output`)
-2. Copy the runtime wrapper assets into the output directory
-3. Inject the WebSocket client bootstrap snippet into `index.html`
-4. Start the file watcher and WebSocket server
+2. Copy the browser bootstrap assets into the output directory
+3. Inject a single module bootstrap tag into `index.html`
+4. Start the file watcher and patch/status servers
 
-The WebSocket URL injected into the HTML5 output will match the `--websocket-host` and `--websocket-port` options, ensuring seamless connectivity between the game and the watcher.
+The injected bootstrap uses the configured `--websocket-host`, `--websocket-port`, `--status-host`, and `--status-port` values so the running game can connect deterministically to the live-reload services.
 
 **Debouncing File Changes:**
 
@@ -474,29 +470,27 @@ The watch command includes robust error handling to maintain stability:
 ✅ **Transpilation metrics tracking** ✨
 ✅ **Performance statistics on watch stop** ✨
 
-### `prepare-hot-reload` - Inject Runtime Wrapper
-
-Injects the hot-reload runtime wrapper into the most recent GameMaker HTML5 output
-so the running game connects to the patch server automatically.
+### `live-reload prepare` - Sync Bootstrap Assets
 
 ```bash
-# Inject into the latest HTML5 output
-pnpm run cli -- prepare-hot-reload
+# Prepare the latest detected HTML5 output
+pnpm run cli -- live-reload prepare
 
-# Inject into a specific HTML5 output directory
-pnpm run cli -- prepare-hot-reload --html5-output /path/to/html5/output
+# Prepare a specific HTML5 output directory
+pnpm run cli -- live-reload prepare --html5-output /path/to/html5/output
 ```
 
 **Options:**
 
 - `--html5-output <path>` - Path to the HTML5 output directory
 - `--gm-temp-root <path>` - Root directory for GameMaker HTML5 temp outputs
-- `--websocket-url <url>` - WebSocket URL for hot-reload patches
+- `--websocket-host <host>` - WebSocket host for hot-reload patches
+- `--websocket-port <port>` - WebSocket port for hot-reload patches
+- `--status-host <host>` - Status server host embedded in the bootstrap config
+- `--status-port <port>` - Status server port embedded in the bootstrap config
 - `--force` - Re-inject even if snippet already exists
 - `--quiet` - Suppress informational output
 
-When GameMaker is running the HTML5 server, the command auto-detects the active
-`-root` folder from the GMWebServ process and targets that output first.
 ✅ **Configurable patch history limit** ✨
 ✅ **Error recovery and graceful degradation** ✨
 ✅ **Patch validation before broadcast** ✨
@@ -514,28 +508,28 @@ When GameMaker is running the HTML5 server, the command auto-detects the active
 - Event transpilation (not just scripts)
 - Shader and asset hot-reloading
 
-### `watch-status` - Query Watch Command Status
+### `live-reload status` - Query Live-Reload Status
 
-Queries the running watch command's status server for real-time metrics and diagnostics without interrupting the watcher. This provides a convenient human-friendly interface to the watch command's HTTP status server.
+Queries the running live-reload status server for real-time metrics and diagnostics without interrupting the watcher.
 
 ```bash
 # Query full status with metrics and recent patches
-pnpm run cli -- watch-status
+pnpm run cli -- live-reload status
 
 # Get health check information
-pnpm run cli -- watch-status --endpoint health
+pnpm run cli -- live-reload status --endpoint health
 
-# Check if watch command is running (lightweight ping)
-pnpm run cli -- watch-status --endpoint ping
+# Check if live reload is running (lightweight ping)
+pnpm run cli -- live-reload status --endpoint ping
 
 # Query readiness status (for Kubernetes/orchestration)
-pnpm run cli -- watch-status --endpoint ready
+pnpm run cli -- live-reload status --endpoint ready
 
 # Get JSON output for scripting/automation
-pnpm run cli -- watch-status --format json
+pnpm run cli -- live-reload status --format json
 
 # Query custom host/port
-pnpm run cli -- watch-status --status-host 127.0.0.1 --status-port 18000
+pnpm run cli -- live-reload status --status-host 127.0.0.1 --status-port 18000
 ```
 
 **Options:**
@@ -548,8 +542,8 @@ pnpm run cli -- watch-status --status-host 127.0.0.1 --status-port 18000
 **Example Output:**
 
 ```
-$ pnpm run cli -- watch-status
-=== Watch Command Status ===
+$ pnpm run cli -- live-reload status
+=== Live Reload Status ===
 
 Uptime: 2h 15m 43s
 Total patches: 42

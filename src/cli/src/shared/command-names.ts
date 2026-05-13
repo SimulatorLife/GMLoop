@@ -17,6 +17,7 @@ export const CLI_COMMAND_NAMES = Object.freeze(
         "fix",
         "graph",
         "lint",
+        "live-reload",
         "lookup-gml-identifier",
         "object",
         "parse",
@@ -25,7 +26,6 @@ export const CLI_COMMAND_NAMES = Object.freeze(
         "generate-quality-report",
         "collect-stats",
         "generate-feather-metadata",
-        "prepare-hot-reload",
         "project",
         "replay",
         "refactor",
@@ -38,8 +38,6 @@ export const CLI_COMMAND_NAMES = Object.freeze(
         "transpile",
         "ui",
         "validate",
-        "watch",
-        "watch-status",
         "help"
     ])
 );

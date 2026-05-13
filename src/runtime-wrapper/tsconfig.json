@@ -17,6 +17,6 @@
     }
   },
   "references": [{ "path": "../core" }],
-  "include": ["*.ts", "src/**/*.ts", "test/**/*.ts"],
+  "include": ["*.ts", "browser/**/*.ts", "src/**/*.ts", "test/**/*.ts"],
   "exclude": ["dist"]
 }

@@ -8,10 +8,10 @@ import { createGenerateIdentifiersCommand, runGenerateGmlIdentifiers } from "./c
 import { createGenerateQualityReportCommand, runGenerateQualityReport } from "./commands/generate-quality-report.js";
 import { createGraphCommand } from "./commands/graph.js";
 import { createLintCommand, runLintCommand } from "./commands/lint.js";
+import { createLiveReloadCommand } from "./commands/live-reload.js";
 import { createLookupGmlIdentifierCommand, runLookupGmlIdentifierCommand } from "./commands/lookup-gml-identifier.js";
 import { createObjectCommand } from "./commands/object.js";
 import { createParseCommand, runParseCommand } from "./commands/parse.js";
-import { createPrepareHotReloadCommand, runPrepareHotReloadCommand } from "./commands/prepare-hot-reload.js";
 import { createProfileCommand } from "./commands/profile.js";
 import { createProjectCommand } from "./commands/project.js";
 import { createRefactorCommand, runRefactorCommand } from "./commands/refactor.js";
@@ -25,8 +25,6 @@ import { createTestCommand } from "./commands/test.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
 import { createUiCommand } from "./commands/ui.js";
 import { createValidateCommand } from "./commands/validate.js";
-import { createWatchCommand, runWatchCommand } from "./commands/watch.js";
-import { createWatchStatusCommand, runWatchStatusCommand } from "./commands/watch/status.js";
 
 type CliCommandRegistrationEnvironment = Readonly<{
     defaultCommandName: string;
@@ -173,11 +171,10 @@ function registerGenerationCommands({ env, registry }: CliCommandEnvironmentRegi
 
 function registerProjectWorkflowCommands({ registry }: CliCommandRegistryContext): void {
     registry.registerCommand({
-        command: createPrepareHotReloadCommand(),
-        run: ({ command }) => runPrepareHotReloadCommand(command),
+        command: createLiveReloadCommand(),
         onError: (error) =>
             handleCliError(error, {
-                prefix: "Failed to prepare hot-reload injection.",
+                prefix: "Live-reload command failed.",
                 exitCode: 1
             })
     });
@@ -308,26 +305,6 @@ function registerUtilityCommands({ registry }: CliCommandRegistryContext): void 
         onError: (error) =>
             handleCliError(error, {
                 prefix: "Transpile command failed.",
-                exitCode: 1
-            })
-    });
-
-    registry.registerCommand({
-        command: createWatchCommand(),
-        run: ({ command }) => runWatchCommand(command.args[0], command.opts()),
-        onError: (error) =>
-            handleCliError(error, {
-                prefix: "Failed to start watch mode.",
-                exitCode: 1
-            })
-    });
-
-    registry.registerCommand({
-        command: createWatchStatusCommand(),
-        run: ({ command }) => runWatchStatusCommand(command.opts()),
-        onError: (error) =>
-            handleCliError(error, {
-                prefix: "Failed to query watch status.",
                 exitCode: 1
             })
     });

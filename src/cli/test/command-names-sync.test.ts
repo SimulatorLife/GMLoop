@@ -17,6 +17,7 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
         "fix",
         "graph",
         "lint",
+        "live-reload",
         "lookup-gml-identifier",
         "object",
         "parse",
@@ -25,7 +26,6 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
         "generate-quality-report",
         "collect-stats",
         "generate-feather-metadata",
-        "prepare-hot-reload",
         "project",
         "replay",
         "refactor",
@@ -37,8 +37,6 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
         "transpile",
         "ui",
         "validate",
-        "watch",
-        "watch-status",
         "help"
     ];
 

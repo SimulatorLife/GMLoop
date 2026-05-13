@@ -1,16 +1,12 @@
 /**
- * Watch status command for querying the watch command's status server.
+ * Live-reload status command support for querying the status server.
  *
- * Provides a human-friendly interface to the watch command's HTTP status
+ * Provides a human-friendly interface to the live-reload HTTP status
  * server, displaying metrics, recent patches, and error information without
  * interrupting the running watcher.
  */
 
 import { Core } from "@gmloop/core";
-import { Command, Option } from "commander";
-
-import { portValidator } from "../../cli-core/command-parsing.js";
-import { applyStandardCommandOptions } from "../../cli-core/command-standard-options.js";
 
 const { getErrorMessage } = Core;
 
@@ -98,19 +94,19 @@ async function fetchStatus(host: string, port: number, endpoint: string): Promis
  */
 function displayPretty(data: unknown, endpoint: string): void {
     if (endpoint === "ping") {
-        console.log("✓ Watch command is running");
+        console.log("✓ Live-reload dev session is running");
         return;
     }
 
     if (endpoint === "ready") {
         const readyData = data as { ready: boolean; uptime?: number };
         if (readyData.ready) {
-            console.log("✓ Watch command is ready");
+            console.log("✓ Live-reload dev session is ready");
             if (readyData.uptime !== undefined) {
                 console.log(`  Uptime: ${formatUptime(readyData.uptime)}`);
             }
         } else {
-            console.log("✗ Watch command is not ready");
+            console.log("✗ Live-reload dev session is not ready");
         }
         return;
     }
@@ -179,7 +175,7 @@ function displayPretty(data: unknown, endpoint: string): void {
 }
 
 /**
- * Executes the watch-status command.
+ * Executes the live-reload status query.
  *
  * @param {object} options - Command options
  * @param {string} [options.statusHost] - Status server host
@@ -206,58 +202,15 @@ export async function runWatchStatusCommand(options: WatchStatusCommandOptions =
         if (message.includes("ECONNREFUSED") || message.includes("fetch failed")) {
             console.error(
                 [
-                    `Failed to connect to watch status server at ${statusHost}:${statusPort}.`,
-                    "Is the watch command running?",
-                    "Start it with: pnpm run cli -- watch",
-                    `If watch uses a custom status server address, query with: pnpm run cli -- watch-status --status-host ${statusHost} --status-port ${statusPort}`
+                    `Failed to connect to live-reload status server at ${statusHost}:${statusPort}.`,
+                    "Is the live-reload dev command running?",
+                    "Start it with: pnpm run cli -- live-reload dev",
+                    `If live reload uses a custom status server address, query with: pnpm run cli -- live-reload status --status-host ${statusHost} --status-port ${statusPort}`
                 ].join("\n")
             );
         } else {
-            console.error(`Error querying watch status: ${message}`);
+            console.error(`Error querying live-reload status: ${message}`);
         }
         process.exit(1);
     }
-}
-
-/**
- * Creates the watch-status command.
- *
- * @returns {Command} Commander command instance
- */
-export function createWatchStatusCommand(): Command {
-    const command = new Command("watch-status");
-
-    applyStandardCommandOptions(command);
-
-    command
-        .description("Query the running watch command's status server for metrics and diagnostics")
-        .addOption(
-            new Option("--status-host <host>", "Status server host").default("127.0.0.1").env("WATCH_STATUS_HOST")
-        )
-        .addOption(
-            new Option("--status-port <port>", "Status server port")
-                .argParser(portValidator)
-                .default(17_891)
-                .env("WATCH_STATUS_PORT")
-        )
-        .addOption(
-            new Option("--format <format>", "Output format").choices(["pretty", "json"] as const).default("pretty")
-        )
-        .addOption(
-            new Option("--endpoint <endpoint>", "Endpoint to query")
-                .choices(["status", "health", "ping", "ready"] as const)
-                .default("status")
-        )
-        .addHelpText(
-            "after",
-            `
-Examples:
-  pnpm run cli watch-status
-  pnpm run cli watch-status --status-port 18000
-  pnpm run cli watch-status --endpoint health
-  pnpm run cli watch-status --format json`
-        )
-        .action((options: WatchStatusCommandOptions) => runWatchStatusCommand(options));
-
-    return command;
 }
