@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -151,6 +151,28 @@ void test("lint clean-run summary uses plural 'files' for more than one file", a
 
         assert.equal(result.exitCode, 0);
         assert.match(result.stdout, /✓ 2 files checked, no problems found\./);
+    } finally {
+        await rm(temporaryDirectory, { recursive: true, force: true });
+    }
+});
+
+void test("lint discovers .gml files in nested subdirectories", async () => {
+    const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-cli-lint-nested-"));
+
+    try {
+        // Create a nested directory structure to exercise directory traversal.
+        await mkdir(path.join(temporaryDirectory, "subdir", "deeply"), { recursive: true });
+        await writeFile(path.join(temporaryDirectory, "clean.gml"), "var x = 1;\n", "utf8");
+        await writeFile(path.join(temporaryDirectory, "subdir", "nested.gml"), "var y = 2;\n", "utf8");
+        await writeFile(path.join(temporaryDirectory, "subdir", "deeply", "deeper.gml"), "var z = 3;\n", "utf8");
+
+        const result = await runCliTestCommand({
+            argv: ["lint", "--no-default-config", temporaryDirectory]
+        });
+
+        // Both the root-level and deeply-nested .gml files should be discovered and linted.
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout, /✓ 3 files checked, no problems found\./);
     } finally {
         await rm(temporaryDirectory, { recursive: true, force: true });
     }
