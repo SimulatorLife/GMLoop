@@ -27,6 +27,8 @@ import {
 import {
     attemptConvertLengthDir,
     isIdentityReplacementSafeExpression,
+    isSafeOperand,
+    isSafeReciprocalCancellationOperand,
     matchLengthdirReassignment,
     matchScaledOperand
 } from "./math-lengthdir-transforms.js";
@@ -2932,55 +2934,6 @@ function compareIndexProperties(a, b) {
     return true;
 }
 
-function isSafeOperand(node) {
-    const expression = Core.unwrapParenthesizedExpression(node);
-    if (!expression) {
-        return false;
-    }
-
-    switch (expression.type) {
-        case IDENTIFIER: {
-            return typeof expression.name === "string";
-        }
-        case MEMBER_DOT_EXPRESSION:
-        case MEMBER_INDEX_EXPRESSION: {
-            return (
-                isSafeOperand(expression.object) &&
-                (expression.type === MEMBER_DOT_EXPRESSION
-                    ? isSafeOperand(expression.property)
-                    : areAllSafe(expression.property))
-            );
-        }
-        case LITERAL: {
-            return true;
-        }
-        default: {
-            return false;
-        }
-    }
-}
-
-function isSafeReciprocalCancellationOperand(node) {
-    const expression = Core.unwrapParenthesizedExpression(node);
-    if (!expression) {
-        return false;
-    }
-
-    if (expression.type === UNARY_EXPRESSION && expression.operator === "-") {
-        return isSafeReciprocalCancellationOperand(expression.argument);
-    }
-
-    return isSafeOperand(expression);
-}
-
-function areAllSafe(nodes) {
-    if (!Array.isArray(nodes)) {
-        return false;
-    }
-
-    return nodes.every((node) => isSafeOperand(node));
-}
-
 function recordManualMathOriginalAssignment(context, node, originalExpression) {
     if (!isObjectLike(context)) {
         return;
@@ -3548,4 +3501,5 @@ export {
 
 export { replaceNodeWith } from "./math-ast-builders.js";
 export { isIdentityReplacementSafeExpression } from "./math-lengthdir-transforms.js";
+export { areAllSafeOperands, isSafeOperand, isSafeReciprocalCancellationOperand } from "./math-lengthdir-transforms.js";
 export { attemptConvertDegreesToRadians, matchDegreesToRadians } from "./math-trig-conversions.js";
