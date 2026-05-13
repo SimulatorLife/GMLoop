@@ -66,7 +66,7 @@ import {
     getRuntimePathSegments,
     resolveScriptFileNameFromSegments
 } from "../modules/transpilation/runtime-identifiers.js";
-import { extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
+import { extractReferencesFromAst, extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
@@ -535,10 +535,15 @@ async function performInitialScan(
             ensureScriptNameRegistered(fullPath, runtimeContext.scriptNames);
 
             // Transpile the file (quietly unless verbose mode is on)
+            // Pass cached symbols and references when available to skip a second
+            // full AST traversal in transpileFile (one already happened during
+            // collectScriptNames). This halves AST-walk overhead during startup.
             const result = transpileFile(runtimeContext, fullPath, content, lines, {
                 verbose: false,
                 quiet: true,
-                cachedAst
+                cachedAst,
+                cachedSymbols: cached?.symbols,
+                cachedReferences: cached?.references
             });
 
             // Track symbols and references
@@ -1933,10 +1938,12 @@ async function addScriptNamesFromFile(
         const content = await readFile(filePath, "utf8");
         const parser = new Parser.GMLParser(content, {});
         const ast = parser.parse();
-        registerScriptNamesFromSymbols(extractSymbolsFromAst(ast, filePath), scriptNames);
-        // Cache the content and AST so performInitialScan can reuse them without
-        // re-reading from disk or re-parsing the GML source.
-        fileDataCache.set(filePath, { content, ast });
+        // Extract both symbols and references from the AST in a single traversal.
+        // This saves a second walk during transpileFile when the cache is reused.
+        const symbols = extractSymbolsFromAst(ast, filePath);
+        const references = extractReferencesFromAst(ast);
+        registerScriptNamesFromSymbols(symbols, scriptNames);
+        fileDataCache.set(filePath, { content, ast, symbols, references });
     } catch {
         // Ignore parse errors; fallback to file-name based script
     }
