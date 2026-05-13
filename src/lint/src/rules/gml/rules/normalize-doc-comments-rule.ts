@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { normalizeDocParamName } from "../../../parameter-utils/index.js";
+import { Lint } from "../../../../index.js";
 import { gmlRuleDocCommentServices } from "../gml-rule-services.js";
 import {
     type AstNodeWithType,
@@ -22,6 +22,8 @@ const {
 const { applyJsDocTagAliasReplacements } = Core;
 
 const { getNodeStartIndex } = Core;
+
+const { normalizeDocParamName } = Lint;
 
 function normalizeDocCommentPrefixLine(line: string): string {
     // support the "// /" notation used by some fixtures code

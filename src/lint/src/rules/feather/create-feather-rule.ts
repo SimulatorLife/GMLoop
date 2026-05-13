@@ -1,9 +1,11 @@
 import type { Rule } from "eslint";
 
-import { normalizeDocParamName } from "../../parameter-utils/index.js";
+import { Lint } from "../../../index.js";
 import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
 import { findMatchingBraceEndIndex, resolveLocFromIndex } from "../gml/rule-base-helpers.js";
 import type { FeatherManifestEntry } from "./manifest.js";
+
+const { normalizeDocParamName } = Lint;
 
 type EnumBlockMatch = {
     start: number;
