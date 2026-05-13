@@ -29,22 +29,10 @@ import * as Text from "./text/index.js";
 import * as Transforms from "./transforms/index.js";
 import * as Utils from "./utils/index.js";
 
-// Define the Core namespace type from existing module types
-type CoreNamespace = typeof AST &
-    typeof Text &
-    typeof Utils &
-    typeof FS &
-    typeof ProjectConfig &
-    typeof Resources &
-    typeof Reporting &
-    typeof IdentifierMetadata &
-    typeof Comments &
-    typeof Transforms;
-
 // Public namespace flattening mirrors the monorepo convention: expose each
 // helper directly flattened into the Core namespace so consumers always
 // import from a single entry point without deep paths or re-export shims.
-export const Core: CoreNamespace = Object.freeze({
+export const Core = Object.freeze({
     ...AST,
     ...Comments,
     ...FS,
@@ -55,7 +43,16 @@ export const Core: CoreNamespace = Object.freeze({
     ...Text,
     ...Transforms,
     ...Utils
-});
+}) as typeof AST &
+    typeof Comments &
+    typeof FS &
+    typeof IdentifierMetadata &
+    typeof ProjectConfig &
+    typeof Reporting &
+    typeof Resources &
+    typeof Text &
+    typeof Transforms &
+    typeof Utils;
 
 // Publicly export key AST types at the package root for other packages to
 // import without deep imports. This is the preferred path for type imports
