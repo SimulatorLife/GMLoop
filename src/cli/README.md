@@ -221,7 +221,7 @@ pnpm run cli -- live-reload status
 The `live-reload dev` command will:
 
 1. Locate the most recent GameMaker HTML5 output (or use the path specified with `--html5-output`)
-2. Copy the browser bootstrap assets into the output directory
+2. Copy the self-contained `@gmloop/runtime-wrapper/dist/browser` asset tree into the output directory
 3. Inject a single module bootstrap tag into `index.html`
 4. Start the file watcher and patch/status servers
 

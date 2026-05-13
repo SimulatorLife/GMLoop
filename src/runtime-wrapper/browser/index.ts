@@ -1,6 +1,6 @@
-import { createRuntimeWrapper, installScriptCallAdapter } from "../src/runtime/index.js";
-import { createWebSocketClient } from "../src/websocket/index.js";
 import { type LiveReloadBootstrapConfig, liveReloadBootstrapConfig } from "./config.js";
+import { createRuntimeWrapper, installScriptCallAdapter } from "./runtime/index.js";
+import { createWebSocketClient } from "./websocket/index.js";
 
 type BrowserGlobalScope = Record<string, unknown>;
 

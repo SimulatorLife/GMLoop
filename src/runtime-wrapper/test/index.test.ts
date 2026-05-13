@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { PatchHistoryReader, PatchUndoController } from "../browser/runtime/types.js";
 import { RuntimeWrapper } from "../index.js";
-import type { PatchHistoryReader, PatchUndoController } from "../src/runtime/types.js";
 
 void test("runtime wrapper exposes timing helpers through the dedicated timing namespace", () => {
     assert.strictEqual(typeof RuntimeWrapper.Timing.getHighResolutionTime, "function");

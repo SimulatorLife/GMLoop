@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveRuntimeReadiness } from "../src/websocket/runtime-readiness.js";
+import { resolveRuntimeReadiness } from "../browser/websocket/runtime-readiness.js";
 
 type JsonGameSnapshot = {
     ScriptNames?: Array<string>;

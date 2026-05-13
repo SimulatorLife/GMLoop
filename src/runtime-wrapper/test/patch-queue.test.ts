@@ -1,8 +1,8 @@
 import assert from "node:assert";
 import { test } from "node:test";
 
+import { deduplicatePatchesById } from "../browser/websocket/patch-queue.js";
 import { Clients, Runtime } from "../src/index.js";
-import { deduplicatePatchesById } from "../src/websocket/patch-queue.js";
 
 const { createRuntimeWrapper } = Runtime;
 const { createWebSocketClient } = Clients;

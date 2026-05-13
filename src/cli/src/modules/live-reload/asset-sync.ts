@@ -27,14 +27,9 @@ interface RuntimeWrapperAssetManifest {
     entries: ReadonlyArray<RuntimeWrapperAssetManifestEntry>;
 }
 
-const HOT_RELOAD_ASSET_MANIFEST_VERSION = 2;
+const HOT_RELOAD_ASSET_MANIFEST_VERSION = 3;
 const DEFAULT_RUNTIME_WRAPPER_DIST_ROOT = resolveFromRepoRoot("src", "runtime-wrapper", "dist");
-const PUBLIC_RUNTIME_WRAPPER_ASSET_DIRECTORIES = Object.freeze([
-    "browser",
-    path.posix.join("src", "runtime"),
-    path.posix.join("src", "timing"),
-    path.posix.join("src", "websocket")
-]);
+const PUBLIC_RUNTIME_WRAPPER_ASSET_DIRECTORIES = Object.freeze(["browser"]);
 
 export interface SyncLiveReloadAssetsOptions {
     outputRoot: string;

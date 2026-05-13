@@ -1,9 +1,9 @@
 import { strict as assert } from "node:assert";
 import { describe, test } from "node:test";
 
-import { validateBatchPatchDependencies, validatePatchDependencies } from "../src/runtime/patch-utils.js";
-import { createRuntimeWrapper } from "../src/runtime/runtime-wrapper.js";
-import type { Patch, RuntimeRegistry } from "../src/runtime/types.js";
+import { validateBatchPatchDependencies, validatePatchDependencies } from "../browser/runtime/patch-utils.js";
+import { createRuntimeWrapper } from "../browser/runtime/runtime-wrapper.js";
+import type { Patch, RuntimeRegistry } from "../browser/runtime/types.js";
 
 void describe("Dependency Validation", () => {
     // Strict assertion helpers replace deprecated assert.equal usage.

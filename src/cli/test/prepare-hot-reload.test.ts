@@ -23,24 +23,41 @@ async function createTempDir(prefix: string): Promise<string> {
 
 async function createRuntimeWrapperRoot(root: string): Promise<string> {
     const runtimeRoot = path.join(root, "runtime-wrapper-dist");
-    await fs.mkdir(path.join(runtimeRoot, "browser"), { recursive: true });
-    await fs.mkdir(path.join(runtimeRoot, "src", "runtime"), { recursive: true });
-    await fs.mkdir(path.join(runtimeRoot, "src", "timing"), { recursive: true });
-    await fs.mkdir(path.join(runtimeRoot, "src", "websocket"), { recursive: true });
-    await fs.writeFile(path.join(runtimeRoot, "browser", "index.js"), "export const browserEntry = true;\n", "utf8");
+    await fs.mkdir(path.join(runtimeRoot, "browser", "runtime"), { recursive: true });
+    await fs.mkdir(path.join(runtimeRoot, "browser", "timing"), { recursive: true });
+    await fs.mkdir(path.join(runtimeRoot, "browser", "websocket"), { recursive: true });
+    await fs.writeFile(
+        path.join(runtimeRoot, "browser", "index.js"),
+        [
+            'import { createRuntimeWrapper, installScriptCallAdapter } from "./runtime/index.js";',
+            'import { createWebSocketClient } from "./websocket/index.js";',
+            "export function initializeLiveReload() {",
+            "  const wrapper = createRuntimeWrapper();",
+            "  installScriptCallAdapter(wrapper);",
+            '  createWebSocketClient({ wrapper, url: "ws://127.0.0.1:17890" });',
+            "  return wrapper;",
+            "}",
+            ""
+        ].join("\n"),
+        "utf8"
+    );
     await fs.writeFile(
         path.join(runtimeRoot, "browser", "config.js"),
         "export const liveReloadBootstrapConfig = {};\n",
         "utf8"
     );
     await fs.writeFile(
-        path.join(runtimeRoot, "src", "runtime", "index.js"),
+        path.join(runtimeRoot, "browser", "runtime", "index.js"),
         "export const createRuntimeWrapper = () => ({});\nexport const installScriptCallAdapter = () => {};\n",
         "utf8"
     );
-    await fs.writeFile(path.join(runtimeRoot, "src", "timing", "index.js"), "export const Timing = true;\n", "utf8");
     await fs.writeFile(
-        path.join(runtimeRoot, "src", "websocket", "index.js"),
+        path.join(runtimeRoot, "browser", "timing", "index.js"),
+        "export const Timing = true;\n",
+        "utf8"
+    );
+    await fs.writeFile(
+        path.join(runtimeRoot, "browser", "websocket", "index.js"),
         "export const createWebSocketClient = () => {};\n",
         "utf8"
     );
@@ -83,6 +100,14 @@ void describe("prepareLiveReload", () => {
 
         const runtimeEntryStats = await fs.stat(result.assets.bootstrapEntryPath);
         assert.equal(runtimeEntryStats.isFile(), true);
+        const browserRuntimeStats = await fs.stat(
+            path.join(outputRoot, ".gml-hot-reload", "runtime-wrapper", "browser", "runtime", "index.js")
+        );
+        assert.equal(browserRuntimeStats.isFile(), true);
+        await assert.rejects(
+            () => fs.stat(path.join(outputRoot, ".gml-hot-reload", "runtime-wrapper", "src")),
+            /ENOENT/u
+        );
 
         const generatedConfigPath = path.join(
             outputRoot,
@@ -183,7 +208,7 @@ void describe("prepareLiveReload", () => {
 void describe("runtime wrapper asset manifest parsing", () => {
     void it("returns cloned entry objects so parsed manifests cannot mutate the original JSON payload", () => {
         const manifestPayload = {
-            version: 2,
+            version: 3,
             entries: [{ relativePath: "browser/index.js", size: 12, mtimeMs: 1234 }]
         };
 
