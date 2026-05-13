@@ -1,0 +1,97 @@
+{
+	"$schema": "https://app.kilo.ai/config.json",
+	"skills": {
+		"paths": [
+			".agents/skills"
+		]
+	},
+	"model": "minimax/MiniMax-M2.7",
+	"provider": {
+		"minimax": {
+			"npm": "@ai-sdk/openai-compatible",
+			"name": "MiniMax",
+			"options": {
+				"baseURL": "https://api.minimax.io/v1",
+				"apiKey": "{env:MINIMAX_API_KEY}",
+				"timeout": 600000,
+				"chunkTimeout": 120000
+			},
+			"models": {
+				"MiniMax-M2.7": {
+					"name": "MiniMax M2.7",
+					"limit": {
+						"context": 204800,
+						"output": 8192
+					}
+				}
+			}
+		}
+	},
+	"permission": {
+		"read": "allow",
+		"glob": "allow",
+		"grep": "allow",
+		"edit": "allow",
+		"bash": {
+			"*": "allow"
+		},
+		"task": {
+			"*": "allow"
+		}
+	},
+	"instructions": [
+		"AGENTS.md",
+		".agents/skills/**/*.md"
+	],
+	"mcp": {
+		"gmloop": {
+			"type": "local",
+			"command": [
+				"pnpm",
+				"--filter",
+				"@gmloop/mcp",
+				"start"
+			],
+			"enabled": true
+		}
+	},
+	"agent": {
+		"code": {
+			"description": "Default GMLoop implementation agent. Attacks each task from multiple angles using subagents, then integrates the best result.",
+			"mode": "primary",
+			"model": "minimax/MiniMax-M2.7",
+			"prompt": "You are the default GMLoop autonomous coding agent. At the start of every user task, before editing files or running validation, you must invoke the Task tool five times using the gmloop-code-worker subagent. Use the subagents to attack the problem from multiple angles and split the work. Give each subagent an explicit assignment and ask each to return concise findings, relevant files, recommended changes, risks, and a summary of any/all changes it made. After all subagents return, synthesize their findings, reconcile divergent/duplicate changes, choose the best plan or reconcile conflicts, run relevant validation, and summarize what changed. Preserve GMLoop conventions, prefer existing abstractions, avoid unrelated rewrites, and keep changes scoped. If subagent spawning fails or the Task tool is unavailable, explicitly say that the multi-agent step could not be performed and exit/stop immediately. Aim to maintain a swarm of up to five subagents working in parallel at all times, and do not spawn new subagents until the current ones finish and return their findings.",
+			"permission": {
+				"read": "allow",
+				"glob": "allow",
+				"grep": "allow",
+				"edit": "allow",
+				"bash": {
+					"*": "allow"
+				},
+				"task": {
+					"*": "allow"
+				}
+			}
+		},
+
+		"gmloop-code-worker": {
+			"description": "General-purpose GMLoop coding subagent. Use multiple instances of this agent to analyze or implement different aspects of the same task in isolation.",
+			"mode": "subagent",
+			"model": "minimax/MiniMax-M2.7",
+			"prompt": "You are a focused GMLoop code worker running as an isolated subagent. Complete only the assignment given by the parent. Inspect relevant files, use existing abstractions, preserve repo conventions, and avoid unrelated work. Return concise findings, relevant files, recommended changes, risks, and validation suggestions. If asked to edit, keep changes narrow and summarize exactly what changed. Do not spawn additional subagents.",
+			"permission": {
+				"read": "allow",
+				"glob": "allow",
+				"grep": "allow",
+				"edit": "allow",
+				"bash": {
+					"*": "allow"
+				},
+				"task": {
+					"*": "deny"
+				}
+			}
+		}
+	},
+}

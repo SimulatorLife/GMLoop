@@ -1,0 +1,109 @@
+name: "🔒 Private Qwen MiniMax Swarm"
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Target pull request number"
+        required: true
+        type: string
+      swarm_task:
+        description: "Task for the swarm to complete"
+        required: true
+        type: string
+      swarm_size:
+        description: "Desired number of subagents"
+        required: false
+        default: "12"
+        type: string
+      min_subagents:
+        description: "Minimum number of parallel subagents required"
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: "${{ github.workflow }}-${{ inputs.pr_number }}"
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: "bash"
+
+jobs:
+  deny-non-owner:
+    if: ${{ github.actor != 'henrykirk' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deny non-owner invocation
+        run: |
+          echo "This workflow is restricted to henrykirk."
+          exit 1
+
+  invoke:
+    if: ${{ github.actor == 'henrykirk' }}
+    uses: ./.github/workflows/agent-invoke.yml
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+    with:
+      pr_number: ${{ inputs.pr_number }}
+      agent: private-qwen-minimax-swarm
+      openai_base_url: "https://api.minimax.io/v1"
+      additional_context: >-
+        @private-qwen-minimax-swarm
+        You are the swarm orchestrator. You MUST run the task using at least ${{ inputs.min_subagents }} parallel subagents (target: ${{ inputs.swarm_size }}). Do not execute as a single-agent flow.
+
+        REQUIRED SWARM PROTOCOL:
+        1) Build a machine-readable task board first (id, scope, owner-subagent, dependencies, status).
+        2) Split work into narrowly scoped, non-overlapping shards so each subagent owns distinct files or concerns.
+        3) Launch all independent shards concurrently.
+        4) Wait for all subagents to complete, then integrate in dependency order.
+        5) Resolve conflicts explicitly and produce one coherent final change set.
+
+        PREFERRED INVOCATION PATH (if MCP task tooling is available):
+        - Spawn one background subagent per shard using the task/subagent tool.
+        - Use mode=background and start all shard subagents before waiting.
+        - Subagent prompt template must include:
+          - shard id and exact scope boundaries
+          - explicit allowed file paths
+          - forbidden overlap with sibling shards
+          - expected output contract (changed files + summary + risks)
+        - After launching all shards, block on completion and collect every result before integration.
+
+        FALLBACK INVOCATION PATH (if task/subagent tooling is unavailable):
+        - Launch local workers directly with qwen-code CLI + MiniMax in parallel, one per shard.
+        - Required worker command pattern:
+          pnpm --silent dlx @qwen-code/qwen-code@latest --yolo --model=MiniMax-M2.7 --output-format=stream-json --prompt "" < shard-prompt.txt
+        - Run workers concurrently (at least ${{ inputs.min_subagents }}), capture each worker stream/log separately, then integrate outputs.
+
+        EXECUTION GUARDS:
+        - Keep subagents focused; no duplicate file ownership.
+        - Do not let one subagent rewrite another shard's files.
+        - Merge only after all required shard outputs are available.
+        - If one shard fails, retry that shard only; do not restart the whole swarm.
+        - Final response must include shard table, completion status, and integrated outcome.
+
+        Swarm size target: ${{ inputs.swarm_size }}
+        Primary task: ${{ inputs.swarm_task }}
+      agent_command: |
+        set -euo pipefail
+
+        set +e
+        stdbuf -oL -eL pnpm --silent dlx @qwen-code/qwen-code@latest \
+          --yolo \
+          --model=MiniMax-M2.7 \
+          --output-format=stream-json \
+          --prompt "" < "${AGENT_PROMPT_FILE}" \
+          2>&1 | tee "$RUNNER_TEMP/agent-stream.jsonl"
+        agent_status="${PIPESTATUS[0]}"
+        set -e
+
+        if [ "${agent_status}" -ne 0 ]; then
+          exit "${agent_status}"
+        fi

@@ -2680,11 +2680,11 @@
         "analytics_event",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Web/analytics_event",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "analytics_event_ext": {
       "type": "function",
@@ -2696,11 +2696,11 @@
         "analytics_event_ext",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Web/analytics_event_ext",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "and": {
       "type": "keyword",
@@ -27663,7 +27663,7 @@
         "facebook_accesstoken",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_accesstoken",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27679,7 +27679,7 @@
         "facebook_check_permission",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_check_permission",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27695,7 +27695,7 @@
         "facebook_dialog",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_dialog",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27711,7 +27711,7 @@
         "facebook_graph_request",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_graph_request",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27727,7 +27727,7 @@
         "facebook_init",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_init",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27743,7 +27743,7 @@
         "facebook_launch_offerwall",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_launch_offerwall",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27759,7 +27759,7 @@
         "facebook_login",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_login",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27775,7 +27775,7 @@
         "facebook_logout",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_logout",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27791,7 +27791,7 @@
         "facebook_post_message",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_post_message",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27807,7 +27807,7 @@
         "facebook_request_publish_permissions",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_request_publish_permissions",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27823,7 +27823,7 @@
         "facebook_request_read_permissions",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_request_read_permissions",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27839,7 +27839,7 @@
         "facebook_send_invite",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_send_invite",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27855,7 +27855,7 @@
         "facebook_status",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_status",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -27871,7 +27871,7 @@
         "facebook_user_id",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Asynchronous Functions/Facebook/facebook_user_id",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
@@ -31639,11 +31639,11 @@
         "iap_ev_purchase",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/In App Purchases/iap_acquire",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "iap_activate": {
       "type": "function",
@@ -31656,11 +31656,11 @@
         "iap_ev_product",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/In App Purchases/iap_activate",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "iap_available": {
       "type": "literal",
@@ -31709,11 +31709,11 @@
         "iap_ev_consume",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/In App Purchases/iap_consume",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "iap_data": {
       "type": "function",
@@ -31740,11 +31740,11 @@
         "iap_enumerate_products",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/In App Purchases/iap_enumerate_products",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "iap_ev_consume": {
       "type": "literal",
@@ -31874,11 +31874,11 @@
         "iap_product_details",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/In App Purchases/iap_product_details",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "iap_product_files": {
       "type": "function",
@@ -31923,11 +31923,11 @@
         "iap_refunded",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/In App Purchases/iap_purchase_details",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "iap_purchased": {
       "type": "literal",
@@ -31975,11 +31975,11 @@
         "iap_restore_all",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/In App Purchases/iap_restore_all",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "iap_status": {
       "type": "function",
@@ -31997,11 +31997,11 @@
         "iap_status_uninitialised",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/In App Purchases/iap_status",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "3rd Party Support",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "iap_status_available": {
       "type": "literal",
@@ -32957,11 +32957,11 @@
         "is_matrix",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/3_GML_Overview/Checking_Data_Types/is_matrix",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "Vectors and Matrices",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call-or-identifier"
     },
     "is_ptr": {
       "type": "unknown",
@@ -33021,11 +33021,11 @@
         "is_vec3",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/3_GML_Overview/Checking_Data_Types/is_vec3",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "Vectors and Matrices",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call-or-identifier"
     },
     "is_vec4": {
       "type": "variable",
@@ -33037,11 +33037,11 @@
         "is_vec4",
         "obsolete_functions"
       ],
-      "manualPath": "3_Scripting/3_GML_Overview/Checking_Data_Types/is_vec4",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "Vectors and Matrices",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call-or-identifier"
     },
     "JOHAB_CHARSET": {
       "type": "literal",
@@ -43622,11 +43622,11 @@
         "obsolete_functions",
         "room_set_background_colour"
       ],
-      "manualPath": "3_Scripting/4_GML_Reference/Rooms/General/room_set_background_colour",
+      "manualPath": "Additional_Information/Obsolete_Functions",
       "deprecated": true,
       "replacementKind": "manual-migration",
       "legacyCategory": "Backgrounds",
-      "legacyUsage": "identifier"
+      "legacyUsage": "call"
     },
     "room_set_camera": {
       "type": "unknown",

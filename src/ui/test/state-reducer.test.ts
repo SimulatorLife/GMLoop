@@ -13,6 +13,7 @@ void test("reset-defaults restores visual view, auto labels, and clears search q
             isOpenProjectPending: false,
             isRegeneratePending: false,
             labelMode: "always",
+            mcpServerStatus: "not-started",
             searchQuery: "player object"
         },
         { type: "reset-defaults" }

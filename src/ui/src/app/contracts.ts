@@ -2,6 +2,7 @@ import type {
     GraphVisualizationData,
     GraphVisualizationDocumentationCatalogs,
     GraphVisualizationLoadedTarget,
+    GraphVisualizationMcpServerStatus,
     GraphVisualizationProjectConfigurationCatalog,
     GraphVisualizationRenderOptions
 } from "../graph/types.js";
@@ -14,6 +15,7 @@ export type GraphVisualizationUiModel = Readonly<{
     documentationCatalogs: GraphVisualizationDocumentationCatalogs | null;
     isServerMode: boolean;
     loadedTarget: GraphVisualizationLoadedTarget | null;
+    mcpServerStatus: GraphVisualizationMcpServerStatus;
     projectConfigurationCatalog: GraphVisualizationProjectConfigurationCatalog | null;
     title: string;
 }>;
@@ -38,6 +40,7 @@ export function createGraphVisualizationUiModel(
         documentationCatalogs: options.documentationCatalogs ?? null,
         isServerMode: options.isServerMode ?? false,
         loadedTarget: options.loadedTarget ?? null,
+        mcpServerStatus: options.mcpServerStatus ?? "not-started",
         projectConfigurationCatalog: options.projectConfigurationCatalog ?? null,
         title: options.title
     };

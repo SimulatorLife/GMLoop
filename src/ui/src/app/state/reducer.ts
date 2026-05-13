@@ -12,6 +12,7 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        mcpServerStatus: "not-started",
         searchQuery: ""
     };
 }
@@ -46,6 +47,12 @@ export function reduceGraphVisualizationUiState(
             return {
                 ...state,
                 activeDocsView: action.docsView
+            };
+        }
+        case "set-mcp-server-status": {
+            return {
+                ...state,
+                mcpServerStatus: action.mcpServerStatus
             };
         }
         case "set-search-query": {

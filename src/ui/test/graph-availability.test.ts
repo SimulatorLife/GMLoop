@@ -16,6 +16,7 @@ function createUiModel(): GraphVisualizationUiModel {
         documentationCatalogs: null,
         isServerMode: true,
         loadedTarget: null,
+        mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
         title: "Test GMLoop"
     };

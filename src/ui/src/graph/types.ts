@@ -4,6 +4,11 @@
 export type GraphVisualizationScope = "project" | "toolset";
 
 /**
+ * MCP server connection status for the local GMLoop MCP server.
+ */
+export type GraphVisualizationMcpServerStatus = "not-started" | "running" | "stopped";
+
+/**
  * Node kinds rendered by the graph-index visualization UI.
  */
 export type GraphVisualizationNodeKind =
@@ -103,6 +108,7 @@ export type GraphVisualizationRenderOptions = Readonly<{
     documentationCatalogs?: GraphVisualizationDocumentationCatalogs;
     isServerMode?: boolean;
     loadedTarget?: GraphVisualizationLoadedTarget;
+    mcpServerStatus?: GraphVisualizationMcpServerStatus;
     projectConfigurationCatalog?: GraphVisualizationProjectConfigurationCatalog;
     title: string;
 }>;

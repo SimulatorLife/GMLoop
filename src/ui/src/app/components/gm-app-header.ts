@@ -25,6 +25,16 @@ export class GmAppHeader extends LightDomLitElement {
 
     static readonly #TOP_NAV_BUTTON_BASE_CLASS = "top-nav-button";
 
+    #getMcpStatusLabel(status: GraphVisualizationUiState["mcpServerStatus"]): string {
+        if (status === "running") {
+            return "MCP Running";
+        }
+        if (status === "stopped") {
+            return "MCP Stopped";
+        }
+        return "MCP Not Started";
+    }
+
     #emitNavigatePage(page: GraphVisualizationUiPage): void {
         if (!this.model) {
             return;
@@ -66,6 +76,13 @@ export class GmAppHeader extends LightDomLitElement {
             selectedPaths.length === 0
                 ? "None"
                 : `${String(selectedPaths.length)} item${selectedPaths.length === 1 ? "" : "s"}`;
+        const mcpStatusLabel = this.#getMcpStatusLabel(this.model.mcpServerStatus);
+        const mcpStatusClass =
+            this.model.mcpServerStatus === "running"
+                ? "mcp-status-badge running"
+                : this.model.mcpServerStatus === "stopped"
+                  ? "mcp-status-badge stopped"
+                  : "mcp-status-badge not-started";
 
         return html`
             <header id="app-header" class="app-header">
@@ -82,6 +99,10 @@ export class GmAppHeader extends LightDomLitElement {
                                 </div>
                             </div>
                             <div class="header-actions">
+                                <div class=${mcpStatusClass} role="status" aria-label="MCP server status">
+                                    <span class="mcp-status-dot" aria-hidden="true"></span>
+                                    <span class="mcp-status-label">${mcpStatusLabel}</span>
+                                </div>
                                 <a
                                     id="github-link"
                                     class="github-link"

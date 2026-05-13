@@ -39,6 +39,7 @@ void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported n
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "always",
+        mcpServerStatus: "not-started",
         searchQuery: "enemy ship"
     });
 

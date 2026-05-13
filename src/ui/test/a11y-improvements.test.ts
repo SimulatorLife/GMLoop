@@ -38,6 +38,7 @@ function createMockModel(): GraphVisualizationUiModel {
         documentationCatalogs: null,
         isServerMode: false,
         loadedTarget: null,
+        mcpServerStatus: "not-started",
         projectConfigurationCatalog: {
             format: { entries: [] },
             githubRepositoryUrl: "https://github.com/SimulatorLife/GMLoop",
@@ -63,6 +64,7 @@ function createMockState(): GraphVisualizationUiState {
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        mcpServerStatus: "not-started",
         searchQuery: ""
     };
 }

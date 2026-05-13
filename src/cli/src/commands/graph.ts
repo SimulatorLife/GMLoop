@@ -481,6 +481,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     documentationCatalogs,
                     isServerMode,
                     loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
+                    mcpServerStatus: "not-started",
                     projectConfigurationCatalog,
                     title: activeContext?.projectRoot ?? "No project loaded"
                 });
@@ -519,6 +520,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     const bundleArtifact = UI.renderGraphVisualizationBundle(payload, {
         documentationCatalogs,
         loadedTarget: createLoadedTarget(),
+        mcpServerStatus: "not-started",
         projectConfigurationCatalog,
         title: activeConfig.projectRoot
     });

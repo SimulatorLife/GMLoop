@@ -58,6 +58,7 @@ void test("GmDocsPanel renders the Rules subview and workspace rule catalog cont
         documentationCatalogs: createDocumentationCatalogs(),
         isServerMode: false,
         loadedTarget: null,
+        mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
         title: "Rules Catalog"
     };
@@ -69,6 +70,7 @@ void test("GmDocsPanel renders the Rules subview and workspace rule catalog cont
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        mcpServerStatus: "not-started",
         searchQuery: ""
     };
 
@@ -98,6 +100,7 @@ void test("GmDocsPanel renders an empty rules state when workspace rule catalogs
         documentationCatalogs: null,
         isServerMode: false,
         loadedTarget: null,
+        mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
         title: "Rules Empty State"
     };
@@ -109,6 +112,7 @@ void test("GmDocsPanel renders an empty rules state when workspace rule catalogs
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        mcpServerStatus: "not-started",
         searchQuery: ""
     };
 

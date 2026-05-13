@@ -208,6 +208,7 @@ function createCurrentGraphVisualizationUiStateSnapshot(
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: mapBrowserLabelModeToUiLabelMode(labelMode),
+        mcpServerStatus: "not-started",
         searchQuery
     };
 }
