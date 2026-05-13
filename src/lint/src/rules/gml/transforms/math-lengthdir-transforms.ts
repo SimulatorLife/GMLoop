@@ -140,7 +140,7 @@ export function isSafeOperand(node: any): boolean {
 
     switch (node.type) {
         case IDENTIFIER:
-        case CALL_EXPRESSION:
+        case LITERAL:
         case MEMBER_DOT_EXPRESSION:
         case MEMBER_INDEX_EXPRESSION: {
             return true;
@@ -152,6 +152,36 @@ export function isSafeOperand(node: any): boolean {
             return false;
         }
     }
+}
+
+/**
+ * True when `node` represents an operand that can be safely used in reciprocal-cancellation
+ * transforms. Unary `-` is allowed since negating does not affect zero-checks.
+ * Delegates to `isSafeOperand` for all other cases.
+ */
+export function isSafeReciprocalCancellationOperand(node: any): boolean {
+    const expression = Core.unwrapParenthesizedExpression(node);
+    if (!expression) {
+        return false;
+    }
+
+    if (expression.type === UNARY_EXPRESSION && expression.operator === "-") {
+        return isSafeReciprocalCancellationOperand(expression.argument);
+    }
+
+    return isSafeOperand(expression);
+}
+
+/**
+ * True when every element of `nodes` is a safe operand for math transforms.
+ * Returns `false` for non-array inputs.
+ */
+export function areAllSafeOperands(nodes: unknown): boolean {
+    if (!Array.isArray(nodes)) {
+        return false;
+    }
+
+    return nodes.every((node) => isSafeOperand(node));
 }
 
 export function matchScaledOperand(rawExpression: any, context: ConvertManualMathTransformOptions | null) {
