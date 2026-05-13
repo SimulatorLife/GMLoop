@@ -16,23 +16,38 @@
       "**/dist/**": "deny",
       "node_modules/**": "deny",
       "**/node_modules/**": "deny",
-      ".agents/**": "deny",
       ".git/**": "deny",
       ".codex/**": "deny",
+      ".gmloop/**": "deny",
       ".qwen/**": "deny",
       "opencode.jsonc": "deny",
-      "**/*.gml": "deny",
+      ".editorconfig": "deny",
+      ".aider.conf.yml": "deny",
       ".nvmrc": "deny",
       "pnpm-lock.yaml": "deny",
-      "AGENTS.md": "deny",
-      ".gitmodules/**": "deny",
+      ".gitmodules": "deny",
       ".vscode/**": "deny",
       ".husky/**": "deny",
       ".pnpm-store/**": "deny",
       ".github/**": "deny",
       ".gemini/**": "deny",
-      "scripts/**": "deny"
-    }
+      ".prettier*": "deny",
+      ".aiexclude": "deny",
+      "scripts/**": "deny",
+      "**/*.js": "deny",
+      "resources/antlr/**": "deny"
+    },
+    "edit": {
+      "vendor/**": "deny",
+      "AGENTS.md": "deny",
+      "eslint.config.js": "deny",
+      "**/*.gml": "deny",
+      "resources/**": "deny",
+      ".agents/**": "deny",
+      "src/parser/generated/**": "deny"
+    },
+    "glob": "allow",
+    "grep": "allow"
   },
 
 	"provider": {
@@ -54,6 +69,8 @@
 			"npm": "@ai-sdk/openai-compatible",
 			"name": "MiniMax",
 			"options": {
+        "reasoningEffort": "low",
+        "textVerbosity": "low",
 				"baseURL": "https://api.minimax.io/v1",
 				"apiKey": "{env:MINIMAX_API_KEY}",
 				"timeout": 600000,
@@ -97,8 +114,6 @@
 			"prompt": "You are the orchestration coding agent for GMLoop. For any and all reading, edits, etc. you must invoke the Task tool with 5 parallel gmloop-code-worker subagents to delegate the work. Use the subagents to attack the problem from multiple angles and split the work. Give each subagent an explicit assignment and ask each to return concise findings, relevant files, recommended changes, risks, and a summary of any/all changes it made. After all subagents return, synthesize their findings, reconcile divergent/duplicate changes, choose the best plan or reconcile conflicts, run relevant validation, and summarize what changed. Preserve GMLoop conventions, prefer existing abstractions, avoid unrelated rewrites, and keep changes scoped. Aim to maintain a swarm of up to five subagents working in parallel at all times, and do not spawn new subagents until the current ones finish and return their findings. You cannot read or write, so you MUST delegate to subagents for all file access and edits.",
 			"permission": {
 				"read": "deny",
-				"glob": "allow",
-				"grep": "allow",
 				"edit": "deny",
 				"bash": {
 					"*": "deny"
@@ -113,38 +128,11 @@
 			"description": "General-purpose GMLoop coding subagent. Use multiple instances of this agent to analyze or implement different aspects of the same task in isolation.",
 			"mode": "subagent",
 			"model": "minimax/MiniMax-M2.7",
-			"prompt": "You are a focused GMLoop code worker running as an isolated subagent. Complete only the specific assignment given by the parent and then stop. Inspect relevant files, use existing abstractions, preserve repo conventions, and avoid unrelated work. Return concise findings, relevant files, recommended changes, risks, and validation suggestions. If asked to edit, keep changes narrow and summarize exactly what changed. Do not spawn additional subagents.",
-			"permission": {
-				"read": {
-          "*": "allow",
-          "**/dist/**": "deny",
-          "**/node_modules/**": "deny",
-          ".agents/**": "deny",
-          ".git/**": "deny",
-          ".codex/**": "deny",
-          ".qwen/**": "deny",
-        },
-				"glob": "allow",
-				"grep": "allow",
-				"edit": {
-          "*": "allow",
-          "**/dist/**": "deny",
-          "**/node_modules/**": "deny",
-          ".agents/**": "deny",
-          ".git/**": "deny",
-          ".codex/**": "deny",
-          ".qwen/**": "deny",
-          "opencode.jsonc": "deny",
-          "**/*.gml": "deny",
-          ".nvmrc": "deny",
-          "pnpm-lock.yaml": "deny",
-          "AGENTS.md": "deny",
-          ".gitmodules/**": "deny",
-          "scripts/**": "deny"
-        },
-				"bash": {
-					"*": "allow"
-				},
+			"prompt": "You are a quick, focused GMLoop code worker running as an isolated subagent to do a specific task. Complete only the specific assignment given by the parent and then stop. Inspect only relevant files, use existing abstractions, preserve repo conventions, and avoid all unrelated work. Return concise findings, relevant files, recommended changes, risks, and validation suggestions as applicable based on the assignment. If asked to edit, keep changes narrow and summarize exactly what changed. Do not spawn additional subagents.",
+			"steps": 30,
+      "hidden": true,
+      "temperature": 0.1,
+      "permission": {
 				"task": {
 					"*": "deny"
 				}
