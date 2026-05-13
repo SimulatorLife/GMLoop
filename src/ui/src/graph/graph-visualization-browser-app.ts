@@ -1,3 +1,4 @@
+import { Core } from "@gmloop/core";
 import type {
     D3DragEvent,
     D3ZoomEvent,
@@ -78,7 +79,10 @@ type ConfigViewMode = "raw" | "rendered";
 const CONFIG_LIST_CLASS_NAME = "config-list";
 
 function readErrorName(errorValue: unknown): string {
-    if (errorValue instanceof Error) {
+    // Use a capability probe rather than `instanceof Error` so that cross-realm
+    // error objects (e.g. from iframes, workers, or sandboxed code) are handled
+    // consistently even when their prototype chain differs from the local realm.
+    if (Core.isErrorLike(errorValue)) {
         return errorValue.name;
     }
     if (typeof errorValue === "object" && errorValue !== null && "name" in errorValue) {
@@ -2278,7 +2282,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                     lastAst = data.payload.ast;
                 }
             } catch (error) {
-                lastOutput = error instanceof Error ? error.message : String(error);
+                // Use a capability probe rather than `instanceof Error` so that
+                // cross-realm errors from sandboxed code are handled consistently.
+                lastOutput = Core.isErrorLike(error) ? error.message : String(error);
                 lastAst = "";
             }
             updateView();
