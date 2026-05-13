@@ -135,3 +135,58 @@ void test("playground panel starts with the shared demo sample source", () => {
     assert.match(DEFAULT_PLAYGROUND_GML_SOURCE, /function demo_inventory_total\( playerName , inventory \)/u);
     assert.match(DEFAULT_PLAYGROUND_GML_SOURCE, /inventory \[ i \]/u);
 });
+
+void test("playground panel renders format/lint/codemod detail sections", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = {
+        ...createMockModel(),
+        projectConfigurationCatalog: {
+            format: {
+                entries: [
+                    {
+                        description: "Preferred maximum line width for formatting decisions.",
+                        name: "printWidth",
+                        source: "default",
+                        value: 100
+                    }
+                ]
+            },
+            githubRepositoryUrl: "",
+            gmloop: {
+                configPath: null,
+                exists: false,
+                projectRoot: "/tmp/test",
+                rawConfig: {}
+            },
+            lint: {
+                rules: [
+                    {
+                        description: "No constructor assignment.",
+                        fixable: "code",
+                        level: "error",
+                        options: {},
+                        ruleId: "@gmloop/no-constructor-assignment"
+                    }
+                ],
+                ruleset: null
+            },
+            refactor: {
+                codemods: [
+                    {
+                        config: {},
+                        description: "Legacy test codemod",
+                        enabled: true,
+                        id: "legacy-codemod",
+                        requiresSemanticProjectIndex: false
+                    }
+                ]
+            }
+        }
+    };
+    panel.state = createMockState();
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Format Options/u);
+    assert.match(rendered, /Lint Rules/u);
+    assert.match(rendered, /Codemods/u);
+});

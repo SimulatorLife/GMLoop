@@ -316,6 +316,58 @@ void test("graph visualization server rejects non-object JSON on /api/playground
     }
 });
 
+void test("graph visualization server forwards sanitized lint rule ids for playground processing", async (testContext) => {
+    let receivedLintRuleIds: ReadonlyArray<string> = [];
+    let receivedFormatOptionNames: ReadonlyArray<string> = [];
+    let receivedCodemodIds: ReadonlyArray<string> = [];
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            processPlayground: async (input) => {
+                receivedFormatOptionNames = input.formatOptionNames;
+                receivedLintRuleIds = input.lintRuleIds;
+                receivedCodemodIds = input.codemodIds;
+                return { ast: "", output: "", error: null };
+            }
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/playground/process`, {
+            body: JSON.stringify({
+                format: true,
+                formatOptionNames: ["printWidth", "  ", 42, "useTabs"],
+                gml: "show_debug_message('x');",
+                lint: true,
+                lintRuleIds: ["@gmloop/no-constructor-assignment", 42, "", "no-undef"],
+                refactor: false,
+                codemodIds: ["docCommentAlignment", "", 123, "scientificNotation"],
+                transpileMode: "none"
+            }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
+        assert.equal(response.status, 200);
+        assert.deepEqual(receivedFormatOptionNames, ["printWidth", "useTabs"]);
+        assert.deepEqual(receivedLintRuleIds, ["@gmloop/no-constructor-assignment", "no-undef"]);
+        assert.deepEqual(receivedCodemodIds, ["docCommentAlignment", "scientificNotation"]);
+    } finally {
+        await handle.stop();
+    }
+});
+
 /**
  * Verify that the server's error reporting uses the capability probe contract
  * (`Core.isErrorLike`) rather than `instanceof Error`, so that cross-realm error

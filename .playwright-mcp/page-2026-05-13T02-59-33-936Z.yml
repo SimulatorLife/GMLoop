@@ -1,0 +1,48 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]:
+          - generic [ref=e7]:
+            - generic [ref=e8]: GM
+            - generic [ref=e9]:
+              - heading "GMLoop" [level=1] [ref=e10]
+              - generic [ref=e11]: Workspace UI driven directly from live CLI and MCP catalogs.
+          - link "Open GMLoop GitHub repository" [ref=e13] [cursor=pointer]:
+            - /url: https://github.com/SimulatorLife/GMLoop
+            - img [ref=e14]
+        - navigation "Primary" [ref=e17]:
+          - button "Graph Index" [ref=e18] [cursor=pointer]
+          - button "Docs" [ref=e19] [cursor=pointer]
+          - button "Config" [ref=e20] [cursor=pointer]
+          - button "Playground" [ref=e21] [cursor=pointer]
+      - generic [ref=e23]:
+        - button "Open..." [ref=e25] [cursor=pointer]:
+          - generic [ref=e27]: Open...
+        - generic [ref=e28]:
+          - generic [ref=e29]: Loaded Project
+          - generic [ref=e30]: No project loaded
+        - generic [ref=e31]: Use Open... to load a GameMaker project.
+    - generic [ref=e32]:
+      - generic [ref=e33]:
+        - strong [ref=e34]: Graph Index
+        - generic [ref=e35]: Interactive graph exploration controls for the current graph index.
+      - generic [ref=e36]:
+        - searchbox "Search nodes…" [disabled] [ref=e38]
+        - generic [ref=e39]:
+          - button "JSON" [disabled]
+          - 'button "Labels: Auto" [disabled]'
+        - generic [ref=e40]:
+          - button "Reset" [disabled]
+          - button "Regenerate" [disabled]:
+            - generic:
+              - generic: Regenerate
+  - main [ref=e41]:
+    - generic [ref=e42]:
+      - img [ref=e43]
+      - status [ref=e44]:
+        - strong [ref=e45]: Open a GameMaker project to start exploring the graph.
+        - paragraph [ref=e46]: Use Open... to load a project, then return here for graph search, filters, and visualization controls.
+      - complementary [ref=e47]:
+        - strong [ref=e49] [cursor=pointer]: Nodes
+        - strong [ref=e51] [cursor=pointer]: Edges

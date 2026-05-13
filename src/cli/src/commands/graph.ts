@@ -6,7 +6,7 @@ import { Core } from "@gmloop/core";
 import { Format } from "@gmloop/format";
 import { Lint } from "@gmloop/lint";
 import { Parser } from "@gmloop/parser";
-import { Refactor } from "@gmloop/refactor";
+import { Refactor, type RefactorCodemodId } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Transpiler } from "@gmloop/transpiler";
 import { UI } from "@gmloop/ui";
@@ -18,6 +18,7 @@ import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
+import { GmlParserBridge, GmlSemanticBridge, GmlTranspilerBridge } from "../modules/refactor/index.js";
 import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
 import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
 import { createGraphVisualizationProjectConfigurationCatalog } from "../modules/ui/index.js";
@@ -73,13 +74,94 @@ type OsaScriptExecutionResult = Readonly<{
     stdout: string;
 }>;
 
-function createMutableGraphPlaygroundLintConfig(): Array<Record<string, unknown>> {
-    return Lint.configs.recommended.map((config) => ({
-        ...config,
-        files: Array.isArray(config.files) ? [...config.files] : config.files,
-        plugins: config.plugins ? { ...config.plugins } : undefined,
-        rules: config.rules ? { ...config.rules } : undefined
-    }));
+function createMutableGraphPlaygroundLintConfig(enabledRuleIds: ReadonlyArray<string>): Array<Record<string, unknown>> {
+    const enabledRules = new Set(enabledRuleIds);
+    const enforceRuleFilter = enabledRules.size > 0;
+    return Lint.configs.recommended.map((config) => {
+        const nextConfig = {
+            ...config,
+            files: Array.isArray(config.files) ? [...config.files] : config.files,
+            plugins: config.plugins ? { ...config.plugins } : undefined,
+            rules: config.rules ? { ...config.rules } : undefined
+        };
+
+        if (enforceRuleFilter && nextConfig.rules && typeof nextConfig.rules === "object") {
+            for (const ruleId of Object.keys(nextConfig.rules)) {
+                if (!enabledRules.has(ruleId)) {
+                    nextConfig.rules[ruleId] = "off";
+                }
+            }
+        }
+
+        return nextConfig;
+    });
+}
+
+function createGraphPlaygroundFormatOptions(
+    selectedOptionNames: ReadonlyArray<string>,
+    activeProjectConfig: Record<string, unknown> | null
+): Record<string, unknown> {
+    const configuredFormatOptions = Format.extractProjectFormatOptions(activeProjectConfig ?? {});
+    const selectedOptionNameSet = new Set(selectedOptionNames);
+    if (selectedOptionNameSet.size === 0) {
+        return {};
+    }
+    return Object.fromEntries(
+        Object.entries(configuredFormatOptions).filter(([optionName]) => selectedOptionNameSet.has(optionName))
+    );
+}
+
+function createRefactorEngineForPlayground(activeProjectRoot: string) {
+    return new Refactor.RefactorEngine({
+        formatter: new GmlTranspilerBridge(),
+        parser: new GmlParserBridge(),
+        semantic: new GmlSemanticBridge({}, activeProjectRoot)
+    });
+}
+
+async function applySelectedPlaygroundCodemods(
+    sourceText: string,
+    selectedCodemodIds: ReadonlyArray<string>,
+    activeProjectRoot: string,
+    activeProjectConfig: Record<string, unknown> | null
+): Promise<string> {
+    if (selectedCodemodIds.length === 0) {
+        return sourceText;
+    }
+
+    const registeredCodemodIds = new Set(Refactor.listRegisteredCodemods().map((codemod) => codemod.id));
+    const onlyCodemods = selectedCodemodIds.filter((codemodId): codemodId is RefactorCodemodId =>
+        registeredCodemodIds.has(codemodId as RefactorCodemodId)
+    );
+    if (onlyCodemods.length === 0) {
+        return sourceText;
+    }
+
+    const normalizedRefactorConfig = Refactor.normalizeRefactorProjectConfig(activeProjectConfig?.refactor);
+    const rawCodemodConfig: Record<string, unknown> = { ...normalizedRefactorConfig.codemods };
+    for (const codemodId of onlyCodemods) {
+        if (rawCodemodConfig[codemodId] !== undefined) {
+            continue;
+        }
+        rawCodemodConfig[codemodId] = codemodId === "namingConvention" ? { rules: {} } : {};
+    }
+    const config = Refactor.normalizeRefactorProjectConfig({ codemods: rawCodemodConfig });
+
+    const engine = createRefactorEngineForPlayground(activeProjectRoot);
+    const virtualFilePath = "graph-visualization-playground.gml";
+    const nextOutput = sourceText;
+    const result = await engine.executeConfiguredCodemods({
+        config,
+        dryRun: true,
+        gmlFilePaths: [virtualFilePath],
+        onlyCodemods,
+        projectRoot: activeProjectRoot,
+        readFile: () => nextOutput,
+        targetPaths: [virtualFilePath]
+    });
+
+    const updatedOutput = result.appliedFiles.get(virtualFilePath);
+    return updatedOutput ?? nextOutput;
 }
 
 function isMacOsDialogCancellationError(error: unknown, stderr: string): boolean {
@@ -413,7 +495,16 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const nextPayloadString = JSON.stringify(exportVisualizationPayload());
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
-            processPlayground: async ({ gml, format, lint, refactor, transpileMode }) => {
+            processPlayground: async ({
+                gml,
+                formatOptionNames,
+                format,
+                lint,
+                lintRuleIds,
+                refactor,
+                codemodIds,
+                transpileMode
+            }) => {
                 let ast: string;
                 let output = gml;
                 let error: string | null = null;
@@ -424,21 +515,26 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     ast = JSON.stringify(
                         program,
                         (key, value) => {
-                            if (key === "parent" || key === "sourceRange") return undefined;
+                            if (key === "parent" || key === "sourceRange") return;
                             return value;
                         },
                         2
                     );
 
                     if (refactor) {
-                        // Codemod execution in the playground is no longer supported
+                        output = await applySelectedPlaygroundCodemods(
+                            output,
+                            codemodIds,
+                            activeContext?.projectRoot ?? process.cwd(),
+                            activeContext?.projectConfig ?? null
+                        );
                     }
 
                     if (lint) {
                         const eslint = new ESLint({
                             overrideConfigFile: true,
                             fix: true,
-                            overrideConfig: createMutableGraphPlaygroundLintConfig()
+                            overrideConfig: createMutableGraphPlaygroundLintConfig(lintRuleIds)
                         });
                         const [result] = await eslint.lintText(output, {
                             filePath: "graph-visualization-playground.gml"
@@ -447,7 +543,10 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     }
 
                     if (format) {
-                        output = await Format.format(output);
+                        output = await Format.format(
+                            output,
+                            createGraphPlaygroundFormatOptions(formatOptionNames, activeContext?.projectConfig ?? null)
+                        );
                     }
 
                     if (transpileMode === "patch") {

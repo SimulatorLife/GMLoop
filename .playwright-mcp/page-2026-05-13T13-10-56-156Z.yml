@@ -1,0 +1,49 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]:
+          - generic [ref=e7]:
+            - generic [ref=e8]: GM
+            - generic [ref=e9]:
+              - heading "GMLoop" [level=1] [ref=e10]
+              - generic [ref=e11]: Workspace UI driven directly from live CLI and MCP catalogs.
+          - link "Open GMLoop GitHub repository" [ref=e13] [cursor=pointer]:
+            - /url: https://github.com/SimulatorLife/GMLoop
+            - img [ref=e14]
+        - navigation "Primary" [ref=e17]:
+          - button "Graph Index" [ref=e18] [cursor=pointer]
+          - button "Docs" [ref=e19] [cursor=pointer]
+          - button "Config" [ref=e20] [cursor=pointer]
+          - button "Playground" [ref=e21] [cursor=pointer]
+      - generic [ref=e23]:
+        - button "Open..." [ref=e25] [cursor=pointer]:
+          - generic [ref=e27]: Open...
+        - generic [ref=e28]:
+          - generic [ref=e29]: Loaded Project
+          - generic [ref=e30]: No project loaded
+        - generic [ref=e31]: Use Open... to load a GameMaker project.
+    - generic [ref=e33]:
+      - strong [ref=e34]: Playground
+      - generic [ref=e35]: Interactive GML playground for parsing, formatting, and rule experiments.
+  - main [ref=e36]:
+    - generic [ref=e37]:
+      - generic [ref=e38]:
+        - generic [ref=e39]:
+          - button "Format" [ref=e40] [cursor=pointer]
+          - button "Lint" [ref=e41] [cursor=pointer]
+          - button "Refactor" [ref=e42] [cursor=pointer]
+          - button "Patch Transpile" [ref=e43] [cursor=pointer]
+          - button "Expression Transpile" [ref=e44] [cursor=pointer]
+        - generic [ref=e45]:
+          - button "Output Code" [ref=e46] [cursor=pointer]
+          - button "AST View" [ref=e47] [cursor=pointer]
+      - generic [ref=e48]:
+        - generic [ref=e49]:
+          - generic [ref=e50]:
+            - generic [ref=e51]: Input GML
+            - generic [ref=e52]: Writable
+          - textbox "Paste or write GML code here..." [ref=e53]: "function demo_inventory_total( playerName , inventory ) { var flags = fa_readonly + fa_archive; var total = real(\"5\"); if (array_length(inventory) > 0) show_debug_message( \"processing \" + playerName ); for( var i = 0; i < array_length(inventory); i += 1 ){ total += inventory [ i ]; } show_debug_message( \"inventory total: \" + string(total) ); return total; }"
+        - generic [ref=e55]:
+          - generic [ref=e56]: Processed Result
+          - generic [ref=e57]: Read-only

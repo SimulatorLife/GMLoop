@@ -22,9 +22,12 @@ type GraphVisualizationServerOpenProjectTargets = (
 type GraphVisualizationServerProcessPlayground = (
     input: Readonly<{
         gml: string;
+        formatOptionNames: ReadonlyArray<string>;
         format: boolean;
         lint: boolean;
+        lintRuleIds: ReadonlyArray<string>;
         refactor: boolean;
+        codemodIds: ReadonlyArray<string>;
         transpileMode: "none" | "patch" | "expression";
     }>
 ) => Promise<Readonly<{ ast: string; output: string; error: string | null }>>;
@@ -128,15 +131,42 @@ export async function startGraphVisualizationServer(
                         return;
                     }
                     const gml = typeof parsedBody.gml === "string" ? parsedBody.gml : "";
+                    const formatOptionNames = Array.isArray(parsedBody.formatOptionNames)
+                        ? parsedBody.formatOptionNames
+                              .filter((optionName): optionName is string => typeof optionName === "string")
+                              .map((optionName) => optionName.trim())
+                              .filter((optionName) => optionName.length > 0)
+                        : [];
                     const format = parsedBody.format === true;
                     const lint = parsedBody.lint === true;
+                    const lintRuleIds = Array.isArray(parsedBody.lintRuleIds)
+                        ? parsedBody.lintRuleIds
+                              .filter((ruleId): ruleId is string => typeof ruleId === "string")
+                              .map((ruleId) => ruleId.trim())
+                              .filter((ruleId) => ruleId.length > 0)
+                        : [];
                     const refactor = parsedBody.refactor === true;
+                    const codemodIds = Array.isArray(parsedBody.codemodIds)
+                        ? parsedBody.codemodIds
+                              .filter((codemodId): codemodId is string => typeof codemodId === "string")
+                              .map((codemodId) => codemodId.trim())
+                              .filter((codemodId) => codemodId.length > 0)
+                        : [];
                     const transpileMode =
                         parsedBody.transpileMode === "patch" || parsedBody.transpileMode === "expression"
                             ? parsedBody.transpileMode
                             : "none";
 
-                    const result = await options.processPlayground({ gml, format, lint, refactor, transpileMode });
+                    const result = await options.processPlayground({
+                        gml,
+                        formatOptionNames,
+                        format,
+                        lint,
+                        lintRuleIds,
+                        refactor,
+                        codemodIds,
+                        transpileMode
+                    });
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ ok: true, payload: result }));
                 } catch (error: unknown) {
