@@ -238,6 +238,12 @@ export function computeHotReloadLatencyStats(
 export interface InitialFileData {
     content: string;
     ast: unknown;
+    /** Cached symbol definitions extracted during the startup scan.
+     *  Reusing them avoids a second AST traversal in transpileFile. */
+    symbols: Array<string>;
+    /** Cached symbol references extracted during the startup scan.
+     *  Reusing them avoids a second AST traversal in transpileFile. */
+    references: Array<string>;
 }
 
 /**

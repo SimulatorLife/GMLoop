@@ -390,6 +390,18 @@ export interface TranspilationOptions {
      */
     cachedAst?: unknown;
     /**
+     * Pre-extracted symbol definitions to reuse instead of re-traversing the AST.
+     * When provided alongside `cachedAst`, the symbol walker is skipped entirely,
+     * saving a second full AST traversal during the initial scan.
+     */
+    cachedSymbols?: ReadonlyArray<string>;
+    /**
+     * Pre-extracted symbol references to reuse instead of re-traversing the AST.
+     * When provided alongside `cachedAst`, the reference walker is skipped entirely,
+     * saving a second full AST traversal during the initial scan.
+     */
+    cachedReferences?: ReadonlyArray<string>;
+    /**
      * Wall-clock timestamp (Date.now()) recorded when the filesystem change event
      * was first detected. When provided, the transpiler records the end-to-end
      * hot-reload latency (detection → broadcast) in {@link TranspilationMetrics.hotReloadLatencyMs}.
@@ -428,13 +440,16 @@ function addToBoundedCollection<T>(collection: Array<T>, item: T, maxSize: numbe
 
 /**
  * Parses GML content and extracts symbols/references when parsing succeeds.
- * Accepts an optional pre-parsed AST to skip the parse step when the caller
- * has already produced the AST (e.g., during the initial file cache build).
+ * Accepts pre-parsed AST and pre-extracted symbols/references to skip redundant
+ * work when the caller has already produced them (e.g., during the initial
+ * startup scan).
  */
 function parseAstAndExtractMetadata(
     content: string,
     filePath: string,
-    preParseAst?: unknown
+    preParseAst?: unknown,
+    preExtractedSymbols?: ReadonlyArray<string>,
+    preExtractedReferences?: ReadonlyArray<string>
 ): ParsedAstExtractionResult {
     try {
         let ast: unknown;
@@ -444,11 +459,18 @@ function parseAstAndExtractMetadata(
         } else {
             ast = preParseAst;
         }
+
+        // Reuse pre-extracted values when available to avoid a second full AST walk.
+        const parsedSymbols =
+            preExtractedSymbols === undefined ? extractSymbolsFromAst(ast, filePath) : Array.from(preExtractedSymbols);
+        const parsedReferences =
+            preExtractedReferences === undefined ? extractReferencesFromAst(ast) : Array.from(preExtractedReferences);
+
         return {
             ast,
             parseError: null,
-            parsedSymbols: extractSymbolsFromAst(ast, filePath),
-            parsedReferences: extractReferencesFromAst(ast)
+            parsedSymbols,
+            parsedReferences
         };
     } catch (error) {
         return {
@@ -585,7 +607,7 @@ export function transpileFile(
     lines: number,
     options: TranspilationOptions
 ): TranspilationResult {
-    const { verbose, quiet, cachedAst, fileChangeDetectedAt } = options;
+    const { verbose, quiet, cachedAst, cachedSymbols, cachedReferences, fileChangeDetectedAt } = options;
     const startTime = performance.now();
 
     try {
@@ -593,7 +615,9 @@ export function transpileFile(
         const { ast, parseError, parsedSymbols, parsedReferences } = parseAstAndExtractMetadata(
             content,
             filePath,
-            cachedAst
+            cachedAst,
+            cachedSymbols,
+            cachedReferences
         );
 
         let patch: RuntimeTranspilerPatch;
