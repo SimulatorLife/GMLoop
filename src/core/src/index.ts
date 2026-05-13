@@ -70,7 +70,7 @@ export type {
     DeprecatedIdentifierReplacementKind
 } from "./resources/gml-identifier-loading.js";
 export type { ProjectMetadataSchemaName } from "./resources/project-metadata.js";
-export type { StringCommentScanState } from "./text/string-comment-scan.js";
+export type { StringCommentScanState } from "./text/source-text.js";
 export type { EmptyTransformOptions, ParserTransform } from "./transforms/parser-transform.js";
 export type { AbortSignalLike } from "./utils/abort.js";
 export type { DebouncedFunction } from "./utils/function.js";
