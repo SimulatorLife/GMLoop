@@ -35,8 +35,8 @@ import {
 } from "./watch/constants.js";
 import {
     runWatchStatusCommand,
-    WATCH_STATUS_OUTPUT_FORMAT,
-    WATCH_STATUS_OUTPUT_FORMAT_VALUES
+    WATCH_STATUS_OUTPUT_FORMAT_VALUES,
+    WATCH_STATUS_OUTPUT_FORMATS
 } from "./watch/status.js";
 
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
@@ -307,7 +307,7 @@ function createLiveReloadStatusSubcommand(): Command {
         .addOption(
             new Option("--format <format>", "Output format")
                 .choices([...WATCH_STATUS_OUTPUT_FORMAT_VALUES])
-                .default(WATCH_STATUS_OUTPUT_FORMAT.PRETTY)
+                .default(WATCH_STATUS_OUTPUT_FORMATS.PRETTY)
         )
         .addOption(
             new Option("--endpoint <endpoint>", "Endpoint to query")

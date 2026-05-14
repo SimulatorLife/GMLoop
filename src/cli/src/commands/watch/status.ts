@@ -10,32 +10,25 @@ import { Core } from "@gmloop/core";
 
 const { getErrorMessage } = Core;
 
-export const WATCH_STATUS_OUTPUT_FORMAT = Object.freeze({
-    JSON: "json",
-    PRETTY: "pretty"
+export const WATCH_STATUS_OUTPUT_FORMATS = Object.freeze({
+    PRETTY: "pretty",
+    JSON: "json"
 } as const);
 
-export type WatchStatusOutputFormat = (typeof WATCH_STATUS_OUTPUT_FORMAT)[keyof typeof WATCH_STATUS_OUTPUT_FORMAT];
+export type WatchStatusOutputFormat = (typeof WATCH_STATUS_OUTPUT_FORMATS)[keyof typeof WATCH_STATUS_OUTPUT_FORMATS];
 
-export const WATCH_STATUS_OUTPUT_FORMAT_VALUES = Object.freeze([
-    WATCH_STATUS_OUTPUT_FORMAT.PRETTY,
-    WATCH_STATUS_OUTPUT_FORMAT.JSON
-] as const);
+export const WATCH_STATUS_OUTPUT_FORMAT_VALUES = Object.freeze(Object.values(WATCH_STATUS_OUTPUT_FORMATS));
 
 interface WatchStatusCommandOptions {
     statusHost?: string;
     statusPort?: number;
-    format?: WatchStatusOutputFormat;
+    format?: string;
     endpoint?: "status" | "health" | "ping" | "ready";
 }
 
-function isWatchStatusOutputFormat(value: string): value is WatchStatusOutputFormat {
-    return (WATCH_STATUS_OUTPUT_FORMAT_VALUES as ReadonlyArray<string>).includes(value);
-}
-
 function parseWatchStatusOutputFormat(value: string | undefined): WatchStatusOutputFormat {
-    const candidate = value ?? WATCH_STATUS_OUTPUT_FORMAT.PRETTY;
-    if (isWatchStatusOutputFormat(candidate)) {
+    const candidate = value ?? WATCH_STATUS_OUTPUT_FORMATS.PRETTY;
+    if (candidate === WATCH_STATUS_OUTPUT_FORMATS.PRETTY || candidate === WATCH_STATUS_OUTPUT_FORMATS.JSON) {
         return candidate;
     }
     throw new Error(
@@ -216,7 +209,7 @@ export async function runWatchStatusCommand(options: WatchStatusCommandOptions =
     try {
         const data = await fetchStatus(statusHost, statusPort, endpoint);
 
-        if (format === WATCH_STATUS_OUTPUT_FORMAT.JSON) {
+        if (format === WATCH_STATUS_OUTPUT_FORMATS.JSON) {
             console.log(JSON.stringify(data, null, 2));
         } else {
             displayPretty(data, endpoint);

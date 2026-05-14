@@ -102,9 +102,9 @@ void describe("live-reload status command", () => {
                     async () => {
                         await assert.rejects(
                             runWatchStatusCommand({
-                                format: "yaml" as unknown as "json"
+                                format: "yaml"
                             }),
-                            /Invalid live-reload status format "yaml"\. Expected one of: pretty, json/u
+                            /Invalid live-reload status format "yaml"\. Expected one of: pretty, json/
                         );
                     }
                 )
