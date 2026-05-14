@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 
 import { applyDocCommentAlignmentCodemod } from "./codemods/doc-comment-alignment/index.js";
+import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import { applyScientificNotationCodemod } from "./codemods/scientific-notation/index.js";
 import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
@@ -44,7 +45,7 @@ const EMPTY_ALLOWED_KEYS = new Set<string>();
 
 const GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS = new Set(["excludeNames"]);
 
-function normalizeEmptyObjectConfig<T extends "docCommentAlignment" | "scientificNotation">(
+function normalizeEmptyObjectConfig<T extends "docCommentAlignment" | "scientificNotation" | "loopLengthHoisting">(
     value: unknown,
     context: string
 ): RefactorCodemodConfigEntry<T> {
@@ -57,7 +58,7 @@ function normalizeEmptyObjectConfig<T extends "docCommentAlignment" | "scientifi
 
 async function executeSingleFileTextCodemod(
     request: ConfiguredCodemodRunRequest,
-    codemodId: "docCommentAlignment" | "scientificNotation",
+    codemodId: "docCommentAlignment" | "scientificNotation" | "loopLengthHoisting",
     warningMessage: string,
     transform: (sourceText: string) => Readonly<{ changed: boolean; outputText: string }>
 ): Promise<ConfiguredCodemodExecutionResult> {
@@ -228,6 +229,24 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
                     errors: []
                 }
             };
+        }
+    }),
+
+    loopLengthHoisting: Object.freeze({
+        id: "loopLengthHoisting",
+        description: "Hoist array_length(...) calls from safe for-loop conditions into local length variables.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        async execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return await executeSingleFileTextCodemod(
+                request,
+                "loopLengthHoisting",
+                "No .gml files were selected for loop-length hoisting.",
+                applyLoopLengthHoistingCodemod
+            );
         }
     }),
     namingConvention: Object.freeze({
