@@ -410,7 +410,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     const initialSelectedPath = resolveExplicitWorkflowTargetPath(options.path);
     let activeContext: GraphResolutionContext | null = null;
     let activeSelectedPaths = initialSelectedPath ? [initialSelectedPath] : [];
-    let activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
+    const activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
 
     if (options.serve === true) {
         if (initialSelectedPath) {
