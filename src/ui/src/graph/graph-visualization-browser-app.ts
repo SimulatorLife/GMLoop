@@ -13,7 +13,11 @@ import type {
 import * as d3 from "d3";
 
 import { resolveInitialPlaygroundGmlSource } from "../app/playground-default-gml.js";
-import type { GraphVisualizationUiLabelMode, GraphVisualizationUiState } from "../app/state/types.js";
+import type {
+    GraphVisualizationUiLabelMode,
+    GraphVisualizationUiPage,
+    GraphVisualizationUiState
+} from "../app/state/types.js";
 import {
     readGraphVisualizationUiStateFromCurrentUrl,
     replaceGraphVisualizationUiStateInCurrentUrl
@@ -198,7 +202,7 @@ function readGraphNodePathLabel(nodeValue: GraphVisualizationNodeRecord): string
 }
 
 function createCurrentGraphVisualizationUiStateSnapshot(
-    activePage: "config" | "docs" | "graph" | "playground" | "mcp",
+    activePage: GraphVisualizationUiPage,
     activeDocsView: "cli" | "mcp" | "rules",
     activeGraphView: "json" | "visual",
     labelMode: "auto" | "off" | "on",
@@ -209,9 +213,12 @@ function createCurrentGraphVisualizationUiStateSnapshot(
         activeGraphView,
         activePage,
         errorMessage: null,
+        isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: mapBrowserLabelModeToUiLabelMode(labelMode),
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         searchQuery
     };
@@ -598,7 +605,7 @@ function updateDocsViewState(
 function wirePageNavigation(
     state: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph" | "playground" | "mcp";
+        activePage: GraphVisualizationUiPage;
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;
@@ -607,11 +614,11 @@ function wirePageNavigation(
     updateDocsViewStateFn: () => void,
     syncUrlState: () => void
 ): void {
-    ["graph", "docs", "config", "playground", "mcp"].forEach((pageValue) => {
+    ["graph", "docs", "config", "playground", "mcp", "live-reload"].forEach((pageValue) => {
         const button = document.getElementById(`tab-${pageValue}`);
         if (button instanceof HTMLButtonElement) {
             button.addEventListener("click", () => {
-                state.activePage = pageValue as "config" | "docs" | "graph" | "playground" | "mcp";
+                state.activePage = pageValue as GraphVisualizationUiPage;
                 applyPageState();
                 syncUrlState();
             });
@@ -870,7 +877,7 @@ function updateGraphViewMode(
 
 function updatePageState(
     state: Readonly<{
-        activePage: "config" | "docs" | "graph" | "playground" | "mcp";
+        activePage: GraphVisualizationUiPage;
         graphRuntime: typeof d3;
         jsonView: GraphSelectionApi;
         svg: GraphSelectionApi;
@@ -882,7 +889,8 @@ function updatePageState(
         { buttonId: "tab-docs", pageId: "docs-page", pageValue: "docs" },
         { buttonId: "tab-config", pageId: "config-page", pageValue: "config" },
         { buttonId: "tab-playground", pageId: "playground-page", pageValue: "playground" },
-        { buttonId: "tab-mcp", pageId: "mcp-page", pageValue: "mcp" }
+        { buttonId: "tab-mcp", pageId: "mcp-page", pageValue: "mcp" },
+        { buttonId: "tab-live-reload", pageId: "live-reload-page", pageValue: "live-reload" }
     ].forEach((entry) => {
         const button = document.getElementById(entry.buttonId);
         const page = document.getElementById(entry.pageId);
@@ -925,6 +933,9 @@ function updatePageState(
         toolbarHeading.textContent = "MCP";
         toolbarSubheading.textContent =
             "MCP runtime status, host-feed placeholder, and tool catalog details for the active workspace.";
+    } else if (state.activePage === "live-reload") {
+        toolbarHeading.textContent = "Live Reload";
+        toolbarSubheading.textContent = "Hot-reload watcher, patch streaming, and runtime-wrapper observability.";
     } else {
         toolbarHeading.textContent = "Config";
         toolbarSubheading.textContent =
@@ -947,7 +958,7 @@ type GraphVisualizationSurfaceInitializer = Readonly<{
     hasGraphData: boolean;
     navigationState: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph" | "playground" | "mcp";
+        activePage: GraphVisualizationUiPage;
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;
@@ -1018,7 +1029,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let activeGraphView: "json" | "visual" = initialUiState.activeGraphView;
     const navigationState: {
         activeDocsView: "cli" | "mcp" | "rules";
-        activePage: "config" | "docs" | "graph" | "playground" | "mcp";
+        activePage: GraphVisualizationUiPage;
         cliMetaText: string;
         mcpMetaText: string;
         rulesMetaText: string;

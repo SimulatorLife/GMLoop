@@ -36,9 +36,12 @@ void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported n
         activeGraphView: "json",
         activePage: "config",
         errorMessage: null,
+        isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "always",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         searchQuery: "enemy ship"
     });

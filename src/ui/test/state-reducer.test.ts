@@ -10,9 +10,12 @@ void test("reset-defaults restores visual view, auto labels, and clears search q
             activeGraphView: "json",
             activePage: "graph",
             errorMessage: "something went wrong",
+            isLiveReloadRefreshPending: false,
             isOpenProjectPending: false,
             isRegeneratePending: false,
             labelMode: "always",
+            liveReloadErrorMessage: null,
+            liveReloadStatus: null,
             mcpServerStatus: "not-started",
             searchQuery: "player object"
         },

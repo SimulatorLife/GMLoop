@@ -1,6 +1,8 @@
 import type {
     GraphVisualizationData,
     GraphVisualizationDocumentationCatalogs,
+    GraphVisualizationLiveReloadModel,
+    GraphVisualizationLiveReloadStatusSnapshot,
     GraphVisualizationLoadedTarget,
     GraphVisualizationMcpServerStatus,
     GraphVisualizationProjectConfigurationCatalog,
@@ -15,6 +17,7 @@ export type GraphVisualizationUiModel = Readonly<{
     documentationCatalogs: GraphVisualizationDocumentationCatalogs | null;
     isServerMode: boolean;
     loadedTarget: GraphVisualizationLoadedTarget | null;
+    liveReload: GraphVisualizationLiveReloadModel | null;
     mcpServerStatus: GraphVisualizationMcpServerStatus;
     projectConfigurationCatalog: GraphVisualizationProjectConfigurationCatalog | null;
     title: string;
@@ -26,6 +29,10 @@ export type GraphVisualizationUiModel = Readonly<{
 export type GraphVisualizationUiCallbacks = Readonly<{
     onOpenProject: () => void | Promise<void>;
     onRegenerate: () => void | Promise<void>;
+    onRefreshLiveReloadStatus: () =>
+        | GraphVisualizationLiveReloadStatusSnapshot
+        | null
+        | Promise<GraphVisualizationLiveReloadStatusSnapshot | null>;
 }>;
 
 /**
@@ -40,6 +47,7 @@ export function createGraphVisualizationUiModel(
         documentationCatalogs: options.documentationCatalogs ?? null,
         isServerMode: options.isServerMode ?? false,
         loadedTarget: options.loadedTarget ?? null,
+        liveReload: options.liveReload ?? null,
         mcpServerStatus: options.mcpServerStatus ?? "not-started",
         projectConfigurationCatalog: options.projectConfigurationCatalog ?? null,
         title: options.title
@@ -52,6 +60,7 @@ export function createGraphVisualizationUiModel(
 export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiCallbacks {
     return {
         onOpenProject: () => {},
-        onRegenerate: () => {}
+        onRegenerate: () => {},
+        onRefreshLiveReloadStatus: () => null
     };
 }

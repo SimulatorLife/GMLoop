@@ -2,6 +2,7 @@ import { bootstrapGraphVisualizationLitApp } from "../app/bootstrap.js";
 import type {
     GraphVisualizationData,
     GraphVisualizationDocumentationCatalogs,
+    GraphVisualizationLiveReloadModel,
     GraphVisualizationLoadedTarget,
     GraphVisualizationProjectConfigurationCatalog,
     GraphVisualizationRenderOptions
@@ -22,6 +23,7 @@ declare global {
         __GMLOOP_GRAPH_VISUALIZATION_DATA__?: GraphVisualizationData;
         __GMLOOP_GRAPH_VISUALIZATION_OPTIONS__?: GraphVisualizationRenderOptions;
         __GMLOOP_LOADED_TARGET__?: GraphVisualizationLoadedTarget;
+        __GMLOOP_LIVE_RELOAD__?: GraphVisualizationLiveReloadModel;
         __GMLOOP_PROJECT_CONFIGURATION__?: GraphVisualizationProjectConfigurationCatalog;
     }
 }
@@ -43,6 +45,7 @@ function readGraphVisualizationWebBootstrapPayload(): GraphVisualizationWebBoots
             ...optionPayload,
             documentationCatalogs: optionPayload.documentationCatalogs ?? globalThis.__GMLOOP_DOCUMENTATION_CATALOGS__,
             loadedTarget: optionPayload.loadedTarget ?? globalThis.__GMLOOP_LOADED_TARGET__,
+            liveReload: optionPayload.liveReload ?? globalThis.__GMLOOP_LIVE_RELOAD__,
             projectConfigurationCatalog:
                 optionPayload.projectConfigurationCatalog ?? globalThis.__GMLOOP_PROJECT_CONFIGURATION__
         }

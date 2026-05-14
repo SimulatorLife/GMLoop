@@ -167,6 +167,16 @@ export class GmAppHeader extends LightDomLitElement {
                                 >
                                     MCP
                                 </button>
+                                <button
+                                    id="tab-live-reload"
+                                    aria-pressed=${this.state.activePage === "live-reload"}
+                                    class=${this.state.activePage === "live-reload"
+                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    @click=${() => this.#emitNavigatePage("live-reload")}
+                                >
+                                    Live Reload
+                                </button>
                             </nav>
                         </div>
                     </div>

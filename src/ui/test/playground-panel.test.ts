@@ -25,6 +25,7 @@ function createMockModel(): GraphVisualizationUiModel {
         documentationCatalogs: null,
         isServerMode: false,
         loadedTarget: { activePath: "/test", projectRoot: "/tmp/test", selectedPaths: [], source: "working-directory" },
+        liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
         title: "Test GMLoop"
@@ -36,12 +37,15 @@ function createMockState(): GraphVisualizationUiState {
         activePage: "playground",
         activeGraphView: "visual",
         activeDocsView: "cli",
-        labelMode: "auto",
-        searchQuery: "",
-        isRegeneratePending: false,
-        isOpenProjectPending: false,
         errorMessage: null,
-        mcpServerStatus: "not-started"
+        isLiveReloadRefreshPending: false,
+        isOpenProjectPending: false,
+        isRegeneratePending: false,
+        labelMode: "auto",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
+        mcpServerStatus: "not-started",
+        searchQuery: ""
     };
 }
 

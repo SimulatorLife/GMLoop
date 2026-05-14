@@ -24,6 +24,7 @@ function createMockModel(): GraphVisualizationUiModel {
         documentationCatalogs: null,
         isServerMode: false,
         loadedTarget: null,
+        liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: {
             format: {
@@ -80,9 +81,12 @@ function createMockState(): GraphVisualizationUiState {
         activeGraphView: "visual",
         activePage: "config",
         errorMessage: null,
+        isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         searchQuery: ""
     };

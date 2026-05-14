@@ -56,6 +56,7 @@ function createMockModel(): GraphVisualizationUiModel {
             selectedPaths: [],
             source: "working-directory"
         },
+        liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
         title: "Test GMLoop"
@@ -74,6 +75,7 @@ function createEmptyGraphModel(): GraphVisualizationUiModel {
         documentationCatalogs: null,
         isServerMode: true,
         loadedTarget: null,
+        liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
         title: "Test GMLoop"
@@ -86,9 +88,12 @@ function createMockState(activePage: GraphVisualizationUiState["activePage"]): G
         activeGraphView: "visual",
         activePage,
         errorMessage: null,
+        isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         searchQuery: "enemy"
     };

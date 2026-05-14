@@ -1,0 +1,13 @@
+{
+  "command": "/Users/henrykirk/.nvm/versions/node/v25.0.0/bin/node --test test/parser.test.ts",
+  "exitCode": 1,
+  "failed": 0,
+  "files": [
+    "test/parser.test.ts"
+  ],
+  "passed": 0,
+  "skipped": 0,
+  "startedAt": "2026-05-13T23:55:17.099Z",
+  "stderr": "",
+  "stdout": "node:internal/modules/esm/resolve:274\n    throw new ERR_MODULE_NOT_FOUND(\n          ^\n\nError [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/henrykirk/GMLoop/src/parser/src/ast/gml-ast-builder.js' imported from /Users/henrykirk/GMLoop/src/parser/test/parser.test.ts\n    at finalizeResolution (node:internal/modules/esm/resolve:274:11)\n    at moduleResolve (node:internal/modules/esm/resolve:864:10)\n    at defaultResolve (node:internal/modules/esm/resolve:990:11)\n    at #cachedDefaultResolve (node:internal/modules/esm/loader:757:20)\n    at ModuleLoader.resolve (node:internal/modules/esm/loader:734:38)\n    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:317:38)\n    at #link (node:internal/modules/esm/module_job:208:49) {\n  code: 'ERR_MODULE_NOT_FOUND',\n  url: 'file:///Users/henrykirk/GMLoop/src/parser/src/ast/gml-ast-builder.js'\n}\n\nNode.js v25.0.0\n✖ test/parser.test.ts (185.298167ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 190.088083\n\n✖ failing tests:\n\ntest at test/parser.test.ts:1:1\n✖ test/parser.test.ts (185.298167ms)\n  'test failed'\n"
+}

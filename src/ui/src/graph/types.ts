@@ -9,6 +9,16 @@ export type GraphVisualizationScope = "project" | "toolset";
 export type GraphVisualizationMcpServerStatus = "not-started" | "running" | "stopped";
 
 /**
+ * High-level live-reload watcher state rendered by the UI.
+ */
+export type GraphVisualizationLiveReloadWatcherStatus = "inactive" | "offline" | "scanning" | "running" | "error";
+
+/**
+ * Runtime wrapper readiness state rendered by the UI.
+ */
+export type GraphVisualizationLiveReloadRuntimeStatus = "unknown" | "ready" | "not-ready" | "error";
+
+/**
  * Node kinds rendered by the graph-index visualization UI.
  */
 export type GraphVisualizationNodeKind =
@@ -108,6 +118,7 @@ export type GraphVisualizationRenderOptions = Readonly<{
     documentationCatalogs?: GraphVisualizationDocumentationCatalogs;
     isServerMode?: boolean;
     loadedTarget?: GraphVisualizationLoadedTarget;
+    liveReload?: GraphVisualizationLiveReloadModel;
     mcpServerStatus?: GraphVisualizationMcpServerStatus;
     projectConfigurationCatalog?: GraphVisualizationProjectConfigurationCatalog;
     title: string;
@@ -138,6 +149,79 @@ export type GraphVisualizationLoadedTarget = Readonly<{
     projectRoot: string;
     selectedPaths: ReadonlyArray<string>;
     source: "cli-path" | "finder-open" | "working-directory";
+}>;
+
+/**
+ * Endpoint configuration for the UI's live-reload observability surface.
+ */
+export type GraphVisualizationLiveReloadEndpointConfig = Readonly<{
+    runtimeUrl: string | null;
+    statusUrl: string | null;
+    websocketUrl: string | null;
+}>;
+
+/**
+ * Recent patch summary rendered by the live-reload UI.
+ */
+export type GraphVisualizationLiveReloadRecentPatch = Readonly<{
+    durationMs: number;
+    filePath: string;
+    hotReloadLatencyMs: number | null;
+    id: string;
+    timestamp: number;
+}>;
+
+/**
+ * Recent hot-reload error summary rendered by the live-reload UI.
+ */
+export type GraphVisualizationLiveReloadRecentError = Readonly<{
+    error: string;
+    filePath: string;
+    recoveryHint: string | null;
+    timestamp: number;
+}>;
+
+/**
+ * CLI watcher status snapshot rendered by the live-reload UI.
+ */
+export type GraphVisualizationLiveReloadStatusSnapshot = Readonly<{
+    avgHotReloadLatencyMs: number | null;
+    errorCount: number;
+    maxPatchHistory: number | null;
+    patchCount: number;
+    patchHistorySize: number | null;
+    p95HotReloadLatencyMs: number | null;
+    recentErrors: ReadonlyArray<GraphVisualizationLiveReloadRecentError>;
+    recentPatches: ReadonlyArray<GraphVisualizationLiveReloadRecentPatch>;
+    scanComplete: boolean;
+    totalPatchCount: number | null;
+    uptimeMs: number;
+    watcherStatus: GraphVisualizationLiveReloadWatcherStatus;
+    websocketClients: number;
+}>;
+
+/**
+ * Runtime-wrapper health snapshot rendered by the live-reload UI.
+ */
+export type GraphVisualizationLiveReloadRuntimeHealth = Readonly<{
+    appliedPatches: number;
+    closureCount: number;
+    eventCount: number;
+    failedPatches: number;
+    patchQueueDepth: number;
+    registryVersion: number;
+    runtimeStatus: GraphVisualizationLiveReloadRuntimeStatus;
+    scriptCount: number;
+}>;
+
+/**
+ * UI-owned presentation model for live-reload observability.
+ */
+export type GraphVisualizationLiveReloadModel = Readonly<{
+    endpoints: GraphVisualizationLiveReloadEndpointConfig;
+    pollIntervalMs: number;
+    runtimeHealth: GraphVisualizationLiveReloadRuntimeHealth | null;
+    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot | null;
 }>;
 
 export type GraphVisualizationCliCatalogArgument = Readonly<{

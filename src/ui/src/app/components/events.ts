@@ -7,6 +7,7 @@ export const GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW = "gmloop-toggle-graph-view";
 export const GRAPH_UI_EVENT_CYCLE_LABEL_MODE = "gmloop-cycle-label-mode";
 export const GRAPH_UI_EVENT_TRIGGER_REGENERATE = "gmloop-trigger-regenerate";
 export const GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT = "gmloop-trigger-open-project";
+export const GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD = "gmloop-trigger-refresh-live-reload";
 export const GRAPH_UI_EVENT_RESET_DEFAULTS = "gmloop-reset-defaults";
 
 export type GraphUiNavigatePageDetail = Readonly<{ page: GraphVisualizationUiPage }>;

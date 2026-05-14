@@ -58,6 +58,7 @@ void test("GmDocsPanel renders the Rules subview and workspace rule catalog cont
         documentationCatalogs: createDocumentationCatalogs(),
         isServerMode: false,
         loadedTarget: null,
+        liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
         title: "Rules Catalog"
@@ -67,9 +68,12 @@ void test("GmDocsPanel renders the Rules subview and workspace rule catalog cont
         activeGraphView: "visual",
         activePage: "docs",
         errorMessage: null,
+        isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         searchQuery: ""
     };
@@ -100,6 +104,7 @@ void test("GmDocsPanel renders an empty rules state when workspace rule catalogs
         documentationCatalogs: null,
         isServerMode: false,
         loadedTarget: null,
+        liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
         title: "Rules Empty State"
@@ -109,9 +114,12 @@ void test("GmDocsPanel renders an empty rules state when workspace rule catalogs
         activeGraphView: "visual",
         activePage: "docs",
         errorMessage: null,
+        isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         searchQuery: ""
     };

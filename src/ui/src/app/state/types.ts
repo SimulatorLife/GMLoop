@@ -1,7 +1,9 @@
+import type { GraphVisualizationLiveReloadStatusSnapshot } from "../../graph/types.js";
+
 /**
  * Top-level page surfaces in the graph visualization UI.
  */
-export type GraphVisualizationUiPage = "graph" | "docs" | "config" | "playground" | "mcp";
+export type GraphVisualizationUiPage = "graph" | "docs" | "config" | "playground" | "mcp" | "live-reload";
 
 /**
  * Graph presentation modes in the graph surface.
@@ -31,9 +33,12 @@ export type GraphVisualizationUiState = Readonly<{
     activeGraphView: GraphVisualizationUiGraphView;
     activePage: GraphVisualizationUiPage;
     errorMessage: string | null;
+    isLiveReloadRefreshPending: boolean;
     isOpenProjectPending: boolean;
     isRegeneratePending: boolean;
     labelMode: GraphVisualizationUiLabelMode;
+    liveReloadErrorMessage: string | null;
+    liveReloadStatus: GraphVisualizationLiveReloadStatusSnapshot | null;
     mcpServerStatus: GraphVisualizationUiMcpServerStatus;
     searchQuery: string;
 }>;
@@ -50,5 +55,8 @@ export type GraphVisualizationUiAction =
     | Readonly<{ type: "cycle-label-mode" }>
     | Readonly<{ pending: boolean; type: "set-regenerate-pending" }>
     | Readonly<{ pending: boolean; type: "set-open-project-pending" }>
+    | Readonly<{ pending: boolean; type: "set-live-reload-refresh-pending" }>
+    | Readonly<{ errorMessage: string | null; type: "set-live-reload-error" }>
+    | Readonly<{ status: GraphVisualizationLiveReloadStatusSnapshot | null; type: "set-live-reload-status" }>
     | Readonly<{ errorMessage: string | null; type: "set-error" }>
     | Readonly<{ type: "reset-defaults" }>;

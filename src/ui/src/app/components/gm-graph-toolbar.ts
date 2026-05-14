@@ -112,6 +112,11 @@ export class GmGraphToolbar extends LightDomLitElement {
                 this.#emitNavigatePage("mcp");
                 break;
             }
+            case "6": {
+                event.preventDefault();
+                this.#emitNavigatePage("live-reload");
+                break;
+            }
         }
     };
 
@@ -228,7 +233,9 @@ export class GmGraphToolbar extends LightDomLitElement {
                     ? "Config"
                     : this.state.activePage === "playground"
                       ? "Playground"
-                      : "MCP";
+                      : this.state.activePage === "mcp"
+                        ? "MCP"
+                        : "Live Reload";
         const subheading =
             this.state.activePage === "graph"
                 ? "Interactive graph exploration controls for the current graph index."
@@ -238,7 +245,9 @@ export class GmGraphToolbar extends LightDomLitElement {
                     ? "Project and tooling configuration metadata loaded for the active root."
                     : this.state.activePage === "playground"
                       ? "Interactive GML playground for parsing, formatting, and rule experiments."
-                      : "MCP server health, catalog, and tool-field visibility for host integrations.";
+                      : this.state.activePage === "mcp"
+                        ? "MCP server health, catalog, and tool-field visibility for host integrations."
+                        : "Hot-reload watcher, patch streaming, and runtime-wrapper observability.";
         const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const hasLoadedProject = hasLoadedGraphProject(this.model);
 

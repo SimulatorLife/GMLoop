@@ -9,9 +9,12 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         activeGraphView: "visual",
         activePage: "graph",
         errorMessage: null,
+        isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         searchQuery: ""
     };
@@ -83,6 +86,25 @@ export function reduceGraphVisualizationUiState(
             return {
                 ...state,
                 isOpenProjectPending: action.pending
+            };
+        }
+        case "set-live-reload-refresh-pending": {
+            return {
+                ...state,
+                isLiveReloadRefreshPending: action.pending
+            };
+        }
+        case "set-live-reload-error": {
+            return {
+                ...state,
+                liveReloadErrorMessage: action.errorMessage
+            };
+        }
+        case "set-live-reload-status": {
+            return {
+                ...state,
+                liveReloadErrorMessage: null,
+                liveReloadStatus: action.status
             };
         }
         case "set-error": {

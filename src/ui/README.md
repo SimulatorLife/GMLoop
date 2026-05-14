@@ -9,6 +9,7 @@ The workspace exists to keep UI code separate from domain logic. The long-term s
 - CLI documentation views
 - MCP tool browsers
 - formatter, lint, and refactor rule explorers
+- live-reload observability
 - other cross-workspace dashboards and inspectors
 
 The implemented v1 contract is now:
@@ -45,6 +46,8 @@ The implemented v1 contract is now:
 - CLI command parsing
 - HTTP server lifecycle
 - MCP tool discovery or execution
+- runtime-wrapper patch application
+- hot-reload watch, transpile, or WebSocket server lifecycle
 
 That logic must remain in the existing functional workspaces.
 
@@ -80,9 +83,10 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - `renderGraphVisualizationHtml(data, options)` remains as a thin convenience wrapper that reads the bundle entry HTML
 - CLI host code is responsible for obtaining payloads and writing/serving the emitted bundle artifact
 - graph/docs/config tabs are rendered from live workspace-fed catalogs
+- the Live Reload surface renders watcher, WebSocket, patch, latency, error, and optional runtime-wrapper health snapshots from UI-owned DTOs
 - the Docs surface includes `CLI`, `MCP`, and `Rules` subviews for command, tool, and workspace rule catalogs
 - loaded project state is shown in one canonical header location and reflects the active graph/config context
-- graph/docs/config page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
+- graph/docs/config/playground/MCP/live-reload page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
 
 ## Design Rules
 
@@ -144,6 +148,16 @@ The graph visualization surface is split as:
 
 That separation is intentional and should be preserved as more UI surfaces are added.
 
+## Live Reload Surface
+
+The Live Reload surface is observability-only. It displays data from the CLI status server and host-provided runtime-wrapper summaries without owning the hot-reload pipeline itself.
+
+- `@gmloop/cli` owns file watching, transpilation orchestration, WebSocket patch streaming, and `/status`.
+- `@gmloop/runtime-wrapper` owns browser-side patch application, queueing, rollback, registry state, and runtime diagnostics.
+- `@gmloop/ui` owns the presentation model, polling display, refresh event, cards, recent patch/error lists, and optional runtime health rendering.
+
+Hosts can provide live-reload data through `GraphVisualizationRenderOptions.liveReload`, the `window.__GMLOOP_LIVE_RELOAD__` bootstrap payload, or the `onRefreshLiveReloadStatus` callback.
+
 ## Serve Host Contract
 
 `@gmloop/ui` does not invoke native dialogs or perform local filesystem selection itself. The host workspace provides that behavior and passes loaded-target metadata into the renderer.
@@ -164,6 +178,8 @@ The canonical current and planned top-level UI surfaces are tracked in code thro
 - `graph`: implemented
 - `ast`: planned
 - `docs`: implemented
+- `live-reload`: implemented
+- `playground`: implemented
 - `rules`: planned
 
 New top-level UI additions should:

@@ -26,6 +26,7 @@ import {
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
+    GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE
 } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -52,7 +53,7 @@ export class GmAppShell extends LightDomLitElement {
     #store: GraphVisualizationUiStore;
 
     /**
-     * Manages the lifecycle of 8 event listeners for UI interactions.
+     * Manages the lifecycle of event listeners for UI interactions.
      * Initialized in the constructor; connected on `connectedCallback`
      * and torn down on `disconnectedCallback`.
      */
@@ -136,6 +137,10 @@ export class GmAppShell extends LightDomLitElement {
         void this.#runHostActionWithPendingState("set-regenerate-pending", this.callbacks.onRegenerate);
     };
 
+    #onTriggerRefreshLiveReload = (): void => {
+        void this.#refreshLiveReloadStatus();
+    };
+
     public constructor() {
         super();
         this.#store = new GraphVisualizationUiStore(readGraphVisualizationUiStateFromCurrentUrl());
@@ -149,7 +154,8 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_CYCLE_LABEL_MODE, handler: this.#onCycleLabelMode },
             { event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults },
             { event: GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, handler: this.#onTriggerOpenProject },
-            { event: GRAPH_UI_EVENT_TRIGGER_REGENERATE, handler: this.#onTriggerRegenerate }
+            { event: GRAPH_UI_EVENT_TRIGGER_REGENERATE, handler: this.#onTriggerRegenerate },
+            { event: GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, handler: this.#onTriggerRefreshLiveReload }
         ]);
 
         // Subscribe to store and persist URL state on changes
@@ -189,6 +195,20 @@ export class GmAppShell extends LightDomLitElement {
         }
     }
 
+    async #refreshLiveReloadStatus(): Promise<void> {
+        try {
+            this.#store.dispatch({ pending: true, type: "set-live-reload-refresh-pending" });
+            this.#store.dispatch({ errorMessage: null, type: "set-live-reload-error" });
+            const status = await this.callbacks.onRefreshLiveReloadStatus();
+            this.#store.dispatch({ status, type: "set-live-reload-status" });
+        } catch (error) {
+            const message = Core.getErrorMessage(error, { fallback: "Unknown live-reload status error" });
+            this.#store.dispatch({ errorMessage: message, type: "set-live-reload-error" });
+        } finally {
+            this.#store.dispatch({ pending: false, type: "set-live-reload-refresh-pending" });
+        }
+    }
+
     protected override render() {
         if (!this.model) {
             return html``;
@@ -208,6 +228,7 @@ export class GmAppShell extends LightDomLitElement {
                     <gm-docs-panel .model=${this.model} .state=${this.#state}></gm-docs-panel>
                     <gm-config-panel .model=${this.model} .state=${this.#state}></gm-config-panel>
                     <gm-mcp-panel .model=${this.model} .state=${this.#state}></gm-mcp-panel>
+                    <gm-live-reload-panel .model=${this.model} .state=${this.#state}></gm-live-reload-panel>
                 </main>
             </div>
         `;
