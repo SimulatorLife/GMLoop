@@ -52,6 +52,9 @@ void test("graph visualization entry html references local assets and avoids CDN
     assert.doesNotMatch(html, /<link[^>]+href="https?:\/\//u);
     assert.match(html, /id="docs-view-rules"/u);
     assert.match(html, /id="loaded-target-details"/u);
+    assert.match(html, /id="tab-live-reload"/u);
+    assert.match(html, /id="live-reload-page"/u);
+    assert.match(html, /Pipeline Overview/u);
     assert.match(html, /class="project-context"/u);
     assert.match(html, /aria-label="Open GMLoop GitHub repository"/u);
     assert.match(html, /class="github-link-icon"/u);
@@ -236,6 +239,8 @@ void test("graph visualization css asset preserves core visual affordances", () 
     assert.match(css, /button:disabled:hover \{ background: rgba\(255,255,255,0\.055\);/u);
     assert.match(css, /\.top-nav-button\.active:disabled \{/u);
     assert.match(css, /\.filter-item:has\(input:disabled\) \{ cursor: not-allowed; opacity: 0\.45; \}/u);
+    assert.match(css, /\.live-reload-pipeline/u);
+    assert.match(css, /\.live-reload-status-chip/u);
 });
 
 void test("graph visualization server-mode html includes regenerate affordance", () => {

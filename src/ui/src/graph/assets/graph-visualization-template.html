@@ -35,6 +35,7 @@
             <button id="tab-config" class="top-nav-button">Config</button>
             <button id="tab-playground" class="top-nav-button">Playground</button>
             <button id="tab-mcp" class="top-nav-button">MCP</button>
+            <button id="tab-live-reload" class="top-nav-button">Live Reload</button>
           </nav>
         </div>
       </div>
@@ -142,6 +143,64 @@
     <section id="mcp-page" class="page docs-page">
       <p id="mcp-meta" class="docs-meta"></p>
       <div id="mcp-runtime-content" class="docs-grid"></div>
+    </section>
+    <section id="live-reload-page" class="page docs-page">
+      <div class="live-reload-header-row">
+        <p id="live-reload-meta" class="docs-meta">
+          Live-reload endpoints were not provided by this graph visualization host.
+        </p>
+        <button id="refresh-live-reload" class="top-nav-button" disabled>Refresh Status</button>
+      </div>
+      <div class="live-reload-stack" aria-live="polite">
+        <div class="catalog-card live-reload-panel-card">
+          <h3>Pipeline Overview</h3>
+          <ol class="live-reload-pipeline" aria-label="Live reload pipeline">
+            <li><span class="live-reload-pipeline-node">File Watcher</span></li>
+            <li><span class="live-reload-pipeline-node">Transpiler</span></li>
+            <li><span class="live-reload-pipeline-node">WebSocket Server</span></li>
+            <li><span class="live-reload-pipeline-node">Runtime Wrapper</span></li>
+            <li><span class="live-reload-pipeline-node">Game Runtime</span></li>
+          </ol>
+        </div>
+        <div class="live-reload-grid">
+          <div class="catalog-card live-reload-panel-card">
+            <h3>Watcher</h3>
+            <span class="live-reload-status-chip inactive"><span class="live-reload-status-dot" aria-hidden="true"></span>Inactive</span>
+            <p>No watcher status has been received yet.</p>
+          </div>
+          <div class="catalog-card live-reload-panel-card">
+            <h3>Patch Stream</h3>
+            <strong class="live-reload-metric-value">n/a</strong>
+            <p>Connected WebSocket clients.</p>
+            <code>No WebSocket URL configured</code>
+          </div>
+          <div class="catalog-card live-reload-panel-card">
+            <h3>Runtime</h3>
+            <p>No runtime endpoint configured.</p>
+            <code>Runtime URL unavailable</code>
+          </div>
+        </div>
+        <div class="live-reload-metric-grid">
+          <div class="catalog-card live-reload-metric-card"><h3>Total Patches</h3><strong class="live-reload-metric-value">n/a</strong><p>Cumulative patches broadcast by the watcher.</p></div>
+          <div class="catalog-card live-reload-metric-card"><h3>Retained History</h3><strong class="live-reload-metric-value">n/a / n/a</strong><p>Bounded patch history currently retained by the status server.</p></div>
+          <div class="catalog-card live-reload-metric-card"><h3>Average Latency</h3><strong class="live-reload-metric-value">n/a</strong><p>Mean file-change to broadcast latency for the current metrics window.</p></div>
+          <div class="catalog-card live-reload-metric-card"><h3>P95 Latency</h3><strong class="live-reload-metric-value">n/a</strong><p>95th percentile hot-reload latency for recent patches.</p></div>
+        </div>
+        <div class="live-reload-grid">
+          <div class="catalog-card live-reload-panel-card">
+            <h3>Recent Patches</h3>
+            <p class="catalog-empty">No patches have been broadcast yet.</p>
+          </div>
+          <div class="catalog-card live-reload-panel-card">
+            <h3>Recent Errors</h3>
+            <p class="catalog-empty">No hot-reload errors reported.</p>
+          </div>
+          <div class="catalog-card live-reload-panel-card">
+            <h3>Runtime Health</h3>
+            <p class="catalog-empty">Runtime-wrapper diagnostics are not available from the host.</p>
+          </div>
+        </div>
+      </div>
     </section>
   </main>
 </div>

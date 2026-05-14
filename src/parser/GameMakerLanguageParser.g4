@@ -310,6 +310,7 @@ lValueStartExpression
     | newExpression # NewLValue
     | Dot identifier # ImplicitMemberDotLValue
     | OpenParen expression CloseParen # ParenthesizedLValue
+    | structLiteral # StructLiteralLValue
     ;
 
 lValueExpression

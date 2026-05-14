@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { watch } from "node:fs";
+import { existsSync, watch } from "node:fs";
 import { access, constants, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -211,6 +211,19 @@ async function runUiWorkspaceTypeBuildForServe(): Promise<void> {
             resolve();
         });
     });
+}
+
+function isGraphVisualizationUiSourceReloadCandidate(fileName: string | null): boolean {
+    return fileName !== null && (fileName.endsWith(".ts") || fileName.endsWith(".css") || fileName.endsWith(".html"));
+}
+
+function resolveGraphVisualizationUiSourceWatchRoot(): string | null {
+    const sourceRoot = path.resolve(process.cwd(), "src/ui/src");
+    if (!existsSync(sourceRoot)) {
+        return null;
+    }
+
+    return sourceRoot;
 }
 
 async function pickProjectPathUsingNativeDialog(): Promise<string | null> {
@@ -513,11 +526,12 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         };
 
         let uiWatchDebounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+        const uiSourceWatchRoot = resolveGraphVisualizationUiSourceWatchRoot();
         const uiSourceWatcher =
-            options.liveReload === false
+            options.liveReload === false || uiSourceWatchRoot === null
                 ? null
-                : watch(path.resolve(process.cwd(), "src/ui/src"), { recursive: true }, (_eventType, fileName) => {
-                      if (!fileName || (!fileName.endsWith(".ts") && !fileName.endsWith(".css"))) {
+                : watch(uiSourceWatchRoot, { recursive: true }, (_eventType, fileName) => {
+                      if (!isGraphVisualizationUiSourceReloadCandidate(fileName)) {
                           return;
                       }
                       if (uiWatchDebounceTimer !== null) {
@@ -820,6 +834,11 @@ export function createGraphCommand(): Command {
 
     return graphCommand;
 }
+
+export const __graphCommandTest__ = Object.freeze({
+    isGraphVisualizationUiSourceReloadCandidate,
+    resolveGraphVisualizationUiSourceWatchRoot
+});
 function createDocumentationCatalogs() {
     const cliCommands = getCliCommandCatalog();
     const lintCatalogEntryById = new Map(

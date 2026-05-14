@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { createGraphCommand } from "../src/commands/graph.js";
+import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
 
 const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
 const SKIP_CLI_ENV_VALUE = "1";
@@ -416,6 +416,39 @@ void test("graph visualize --serve boots without a project path and waits for UI
     } finally {
         serveProcess?.kill("SIGTERM");
         await fs.rm(emptyWorkingDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("graph visualize UI source reload candidate includes template html assets", () => {
+    assert.equal(
+        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-template.ts"),
+        true
+    );
+    assert.equal(
+        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-template.css"),
+        true
+    );
+    assert.equal(
+        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-template.html"),
+        true
+    );
+    assert.equal(
+        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-template.gml"),
+        false
+    );
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate(null), false);
+});
+
+void test("graph visualize UI source watcher is disabled outside the repository source tree", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-ui-watch-root-"));
+    const previousWorkingDirectory = process.cwd();
+
+    try {
+        process.chdir(temporaryDirectory);
+        assert.equal(__graphCommandTest__.resolveGraphVisualizationUiSourceWatchRoot(), null);
+    } finally {
+        process.chdir(previousWorkingDirectory);
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
     }
 });
 
