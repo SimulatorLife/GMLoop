@@ -18,3 +18,4 @@ export type {
     WebSocketMetricsCollector,
     WebSocketPatchQueueManager
 } from "./types.js";
+export { DEFAULT_READINESS_POLL_INTERVAL_MS } from "./websocket-constants.js";

@@ -25,10 +25,10 @@ import type {
     WebSocketClientState,
     WebSocketConnectionMetrics
 } from "./types.js";
+import { DEFAULT_READINESS_POLL_INTERVAL_MS } from "./websocket-constants.js";
 
 const DEFAULT_MAX_QUEUE_SIZE = 100;
 const DEFAULT_FLUSH_INTERVAL_MS = 50;
-const READINESS_POLL_INTERVAL_MS = 50;
 const noopListenerTeardown = (): void => {};
 const MIN_PATCH_QUEUE_SIZE = 1;
 const MIN_PATCH_QUEUE_FLUSH_INTERVAL_MS = 1;
@@ -220,7 +220,7 @@ export function createWebSocketClient({
             if (runtimeReady) {
                 flushPendingPatches();
             }
-        }, READINESS_POLL_INTERVAL_MS);
+        }, DEFAULT_READINESS_POLL_INTERVAL_MS);
     };
 
     const queuePendingPatch = (patch: unknown): void => {
