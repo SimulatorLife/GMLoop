@@ -6,6 +6,8 @@ import { Format } from "@gmloop/format";
 import { Lint } from "@gmloop/lint";
 import { Refactor } from "@gmloop/refactor";
 
+const { createLintRuleEntriesFromProjectConfigOrNull } = Lint.configs;
+
 type ConfigurationSource = "configured" | "default";
 
 type GraphProjectConfigurationContext = Readonly<{
@@ -107,7 +109,16 @@ function createLintConfigurationEntries(projectConfig: Readonly<Record<string, u
     const lintRuleCatalogById = new Map(
         Lint.listLintRuleCatalogEntries().map((entry) => [entry.ruleId, entry] as const)
     );
-    const lintRuleEntries = Lint.configs.createLintRuleEntriesFromProjectConfig(projectConfig);
+    const lintRuleEntriesOrNull = createLintRuleEntriesFromProjectConfigOrNull(projectConfig);
+    if (lintRuleEntriesOrNull === null) {
+        // Invalid `lintRules` or `lintRuleset` in gmloop.json; return an empty
+        // rules list rather than crashing the UI during project-open.
+        return Object.freeze({
+            rules: [],
+            ruleset: null
+        });
+    }
+    const lintRuleEntries = lintRuleEntriesOrNull;
     const rules = Object.entries(lintRuleEntries)
         .map(([ruleId, value]) => {
             const catalogEntry = lintRuleCatalogById.get(ruleId);
@@ -131,7 +142,13 @@ function createLintConfigurationEntries(projectConfig: Readonly<Record<string, u
 function createRefactorConfigurationEntries(
     projectConfig: Readonly<Record<string, unknown>>
 ): ReadonlyArray<ProjectConfigurationRefactorCodemodEntry> {
-    const normalizedRefactorConfig = Refactor.normalizeRefactorProjectConfig(projectConfig.refactor);
+    const rawRefactor = projectConfig.refactor;
+    const normalizedRefactorConfig = Refactor.normalizeRefactorProjectConfigOrNull(rawRefactor);
+    if (normalizedRefactorConfig === null) {
+        // Unknown keys or invalid codemod entries in gmloop.json; return an empty
+        // codemod list rather than crashing the UI during project-open.
+        return [];
+    }
     const configuredCodemods = normalizedRefactorConfig.codemods ?? {};
     const semanticIndexDependentCodemodIds = new Set(Refactor.listSemanticProjectIndexDependentCodemodIds());
 

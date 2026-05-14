@@ -141,6 +141,10 @@ export class GmAppShell extends LightDomLitElement {
         void this.#refreshLiveReloadStatus();
     };
 
+    #onDismissErrorBanner = (): void => {
+        this.#store.dispatch({ type: "clear-error" });
+    };
+
     public constructor() {
         super();
         this.#store = new GraphVisualizationUiStore(readGraphVisualizationUiStateFromCurrentUrl());
@@ -155,7 +159,8 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults },
             { event: GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, handler: this.#onTriggerOpenProject },
             { event: GRAPH_UI_EVENT_TRIGGER_REGENERATE, handler: this.#onTriggerRegenerate },
-            { event: GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, handler: this.#onTriggerRefreshLiveReload }
+            { event: GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, handler: this.#onTriggerRefreshLiveReload },
+            { event: "dismiss", handler: this.#onDismissErrorBanner }
         ]);
 
         // Subscribe to store and persist URL state on changes
@@ -220,7 +225,10 @@ export class GmAppShell extends LightDomLitElement {
                 <gm-app-header .model=${this.model} .state=${this.#state}></gm-app-header>
                 <gm-graph-toolbar .model=${this.model} .state=${this.#state}></gm-graph-toolbar>
                 ${this.#state.errorMessage
-                    ? html`<div class="error-banner" role="alert" tabindex="-1">${this.#state.errorMessage}</div>`
+                    ? html`<gm-error-banner
+                          .message=${this.#state.errorMessage}
+                          @gm-error-banner-dismiss=${this.#onDismissErrorBanner}
+                      ></gm-error-banner>`
                     : null}
                 <main>
                     <gm-graph-panel .model=${this.model} .state=${this.#state}></gm-graph-panel>

@@ -91,7 +91,7 @@ export {
     groupOccurrencesByFile
 } from "./occurrence-analysis.js";
 export { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
-export { normalizeRefactorProjectConfig } from "./project-config.js";
+export { normalizeRefactorProjectConfig, normalizeRefactorProjectConfigOrNull } from "./project-config.js";
 export type {
     AddProjectResourceRequest,
     DuplicateProjectResourceRequest,

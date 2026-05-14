@@ -58,3 +58,32 @@ void test("reset-defaults on a state already at defaults is a no-op identity", (
     assert.equal(afterReset.labelMode, defaults.labelMode);
     assert.equal(afterReset.searchQuery, defaults.searchQuery);
 });
+
+void test("clear-error sets errorMessage to null regardless of prior value", () => {
+    const stateWithError = reduceGraphVisualizationUiState(
+        {
+            activeDocsView: "cli",
+            activeGraphView: "visual",
+            activePage: "graph",
+            errorMessage: "Project open failed: invalid path",
+            isLiveReloadRefreshPending: false,
+            isOpenProjectPending: false,
+            isRegeneratePending: false,
+            labelMode: "auto",
+            liveReloadErrorMessage: null,
+            liveReloadStatus: null,
+            mcpServerStatus: "not-started",
+            searchQuery: ""
+        },
+        { type: "clear-error" }
+    );
+
+    assert.equal(stateWithError.errorMessage, null);
+});
+
+void test("clear-error on a state already with null errorMessage remains null", () => {
+    const initial = createInitialGraphVisualizationUiState();
+    const afterClear = reduceGraphVisualizationUiState(initial, { type: "clear-error" });
+
+    assert.equal(afterClear.errorMessage, null);
+});

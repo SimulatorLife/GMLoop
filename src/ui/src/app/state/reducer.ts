@@ -113,6 +113,12 @@ export function reduceGraphVisualizationUiState(
                 errorMessage: action.errorMessage
             };
         }
+        case "clear-error": {
+            return {
+                ...state,
+                errorMessage: null
+            };
+        }
         case "reset-defaults": {
             return {
                 ...state,

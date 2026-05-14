@@ -59,4 +59,5 @@ export type GraphVisualizationUiAction =
     | Readonly<{ errorMessage: string | null; type: "set-live-reload-error" }>
     | Readonly<{ status: GraphVisualizationLiveReloadStatusSnapshot | null; type: "set-live-reload-status" }>
     | Readonly<{ errorMessage: string | null; type: "set-error" }>
+    | Readonly<{ type: "clear-error" }>
     | Readonly<{ type: "reset-defaults" }>;

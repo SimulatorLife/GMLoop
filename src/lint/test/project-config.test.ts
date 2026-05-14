@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createLintRuleEntriesFromProjectConfig, normalizeLintRulesConfig } from "../src/configs/index.js";
+import {
+    createLintRuleEntriesFromProjectConfig,
+    createLintRuleEntriesFromProjectConfigOrNull,
+    normalizeLintRulesConfig,
+    normalizeLintRulesConfigOrNull
+} from "../src/configs/index.js";
 
 void test("normalizeLintRulesConfig validates and returns rule overrides", () => {
     const rules = normalizeLintRulesConfig({
@@ -118,5 +123,52 @@ void test("createLintRuleEntriesFromProjectConfig ignores top-level options for 
 
     assert.deepEqual(unknownRuleEntries, {
         "unknown/some-rule": "warn"
+    });
+});
+
+void test("normalizeLintRulesConfigOrNull returns null for malformed lintRules", () => {
+    const result = normalizeLintRulesConfigOrNull({ lintRules: [] });
+    assert.equal(result, null);
+});
+
+void test("normalizeLintRulesConfigOrNull returns null for invalid lintRuleset", () => {
+    const result = normalizeLintRulesConfigOrNull({ lintRuleset: "all" });
+    assert.equal(result, null);
+});
+
+void test("normalizeLintRulesConfigOrNull returns null for non-string lintRuleset", () => {
+    const result = normalizeLintRulesConfigOrNull({ lintRuleset: 123 as unknown as string });
+    assert.equal(result, null);
+});
+
+void test("normalizeLintRulesConfigOrNull returns valid rules for correct config", () => {
+    const result = normalizeLintRulesConfigOrNull({
+        lintRules: {
+            "gml/no-globalvar": "error"
+        }
+    });
+    assert.deepEqual(result, {
+        "gml/no-globalvar": "error"
+    });
+});
+
+void test("createLintRuleEntriesFromProjectConfigOrNull returns null for malformed lintRules", () => {
+    const result = createLintRuleEntriesFromProjectConfigOrNull({ lintRules: [] });
+    assert.equal(result, null);
+});
+
+void test("createLintRuleEntriesFromProjectConfigOrNull returns null for invalid lintRuleset", () => {
+    const result = createLintRuleEntriesFromProjectConfigOrNull({ lintRuleset: "all" });
+    assert.equal(result, null);
+});
+
+void test("createLintRuleEntriesFromProjectConfigOrNull returns valid entries for correct config", () => {
+    const result = createLintRuleEntriesFromProjectConfigOrNull({
+        lintRules: {
+            "gml/no-globalvar": "error"
+        }
+    });
+    assert.deepEqual(result, {
+        "gml/no-globalvar": "error"
     });
 });

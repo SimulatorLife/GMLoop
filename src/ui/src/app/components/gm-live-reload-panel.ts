@@ -163,13 +163,19 @@ export class GmLiveReloadPanel extends LightDomLitElement {
 
     #lastStatusUrl: string | null = null;
 
+    #onDismissErrorBanner = (): void => {
+        this.#pollErrorMessage = null;
+    };
+
     public connectedCallback(): void {
         super.connectedCallback();
+        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
         this.#restartPollingIfNeeded();
     }
 
     public disconnectedCallback(): void {
         this.#stopPolling();
+        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
         super.disconnectedCallback();
     }
 
@@ -473,7 +479,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                         ${this.state.isLiveReloadRefreshPending ? "Refreshing..." : "Refresh Status"}
                     </button>
                 </div>
-                ${errorMessage ? html`<div class="error-banner" role="alert">${errorMessage}</div>` : null}
+                ${errorMessage ? html`<gm-error-banner .message=${errorMessage}></gm-error-banner>` : null}
                 <div class="live-reload-stack" aria-live="polite">
                     ${this.#renderPipeline()} ${this.#renderConnectionCards(status)} ${this.#renderPatchMetrics(status)}
                     <div class="live-reload-grid">

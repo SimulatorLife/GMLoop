@@ -22,6 +22,9 @@ tools/
 !**/*/README.md
 !.github/copilot-instructions.md
 
+.gmloop
+**/.gmloop
+
 # TypeScript
 *.tsbuildinfo
 *.d.ts
