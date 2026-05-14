@@ -1,9 +1,29 @@
+/**
+ * @gmloop/semantic
+ *
+ * Identifier sink backed by temporary JSONL spill files.
+ *
+ * ## Policy vs. mechanism
+ *
+ * This module implements the **mechanism** — file I/O, in-memory maps, and
+ * cache promotion.  Policy decisions (threshold defaults, normalization,
+ * and read-cache LRU eviction) are delegated to `identifier-sink-policy.ts`.
+ * Keeping the two layers separate allows callers to test policy logic in
+ * isolation without any I/O.
+ */
+
 import { createHash } from "node:crypto";
 import { appendFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
+
+import {
+    evaluateReadCacheEvictionPolicy,
+    type NormalizedSinkThresholds,
+    normalizeSinkThresholds
+} from "./identifier-sink-policy.js";
 
 export type IdentifierSinkRole = "declarations" | "references";
 
@@ -28,32 +48,20 @@ export interface IdentifierSink {
     dispose(): void;
 }
 
-type LruCacheEntry = {
+export type LruCacheEntry = {
     records: Array<unknown>;
 };
 
-type TempFileIdentifierSinkOptions = {
+type TempFileIdentifierSinkOptions = Readonly<{
     enabled?: boolean;
-    flushThreshold?: number;
-    retainedEntriesPerKey?: number;
-    readCacheMaxEntries?: number;
+    flushThreshold?: unknown;
+    retainedEntriesPerKey?: unknown;
+    readCacheMaxEntries?: unknown;
     tempDirectoryPrefix?: string;
-};
-
-const DEFAULT_FLUSH_THRESHOLD = 128;
-const DEFAULT_RETAINED_ENTRIES_PER_KEY = 32;
-const DEFAULT_READ_CACHE_MAX_ENTRIES = 32;
+}>;
 
 function createRecordKey(collection: string, key: string, role: IdentifierSinkRole): string {
     return `${collection}\u0000${key}\u0000${role}`;
-}
-
-function normalizeCount(value: unknown, fallback: number): number {
-    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-        return fallback;
-    }
-
-    return Math.floor(value);
 }
 
 function escapeKeySegment(value: string): string {
@@ -94,9 +102,7 @@ function parseJsonLines(rawContents: string): Array<unknown> {
  */
 export class TempFileIdentifierSink implements IdentifierSink {
     private readonly enabled: boolean;
-    private readonly flushThreshold: number;
-    private readonly retainedEntriesPerKey: number;
-    private readonly readCacheMaxEntries: number;
+    private readonly thresholds: NormalizedSinkThresholds;
     private readonly tempRootPath: string | null;
     private readonly inMemoryTailByKey = new Map<string, Array<unknown>>();
     private readonly filePathByKey = new Map<string, string>();
@@ -111,9 +117,7 @@ export class TempFileIdentifierSink implements IdentifierSink {
 
     constructor(options: TempFileIdentifierSinkOptions = {}) {
         this.enabled = options.enabled ?? false;
-        this.flushThreshold = normalizeCount(options.flushThreshold, DEFAULT_FLUSH_THRESHOLD);
-        this.retainedEntriesPerKey = normalizeCount(options.retainedEntriesPerKey, DEFAULT_RETAINED_ENTRIES_PER_KEY);
-        this.readCacheMaxEntries = normalizeCount(options.readCacheMaxEntries, DEFAULT_READ_CACHE_MAX_ENTRIES);
+        this.thresholds = normalizeSinkThresholds(options);
 
         if (this.enabled) {
             const prefix = options.tempDirectoryPrefix ?? "gmloop-identifier-sink-";
@@ -134,11 +138,11 @@ export class TempFileIdentifierSink implements IdentifierSink {
         tail.push(record.payload);
         this.recordsAppended += 1;
 
-        if (tail.length < this.flushThreshold) {
+        if (tail.length < this.thresholds.flushThreshold) {
             return;
         }
 
-        const spillCount = Math.max(0, tail.length - this.retainedEntriesPerKey);
+        const spillCount = Math.max(0, tail.length - this.thresholds.retainedEntriesPerKey);
         if (spillCount === 0) {
             return;
         }
@@ -169,7 +173,7 @@ export class TempFileIdentifierSink implements IdentifierSink {
     }
 
     getRetainedEntriesPerKey(): number {
-        return this.retainedEntriesPerKey;
+        return this.thresholds.retainedEntriesPerKey;
     }
 
     getStats() {
@@ -249,17 +253,33 @@ export class TempFileIdentifierSink implements IdentifierSink {
     }
 
     private promoteReadCacheEntry(cacheKey: string, entry: LruCacheEntry): void {
+        const keyWasPresent = this.parsedReadCacheByPath.has(cacheKey);
+
+        // Step 1 — remove the entry (if it was present) to place the cache in its
+        // pre-insertion state.  For an already-present key this also moves the
+        // entry from its old position to MRU (via the re-insert in step 4).
         this.parsedReadCacheByPath.delete(cacheKey);
-        this.parsedReadCacheByPath.set(cacheKey, entry);
 
-        while (this.parsedReadCacheByPath.size > this.readCacheMaxEntries) {
-            const oldestKey = this.parsedReadCacheByPath.keys().next().value;
-            if (!oldestKey) {
-                break;
-            }
+        // Step 2 — delegate the eviction decision to the pure policy evaluator.
+        // The evaluator receives the cache in its post-deletion state and uses
+        // `keyWasPresent` to predict whether the subsequent re-insertion will
+        // overflow maxEntries, computing exactly how many oldest entries to
+        // evict so the promoted entry is never itself removed.
+        const decision = evaluateReadCacheEvictionPolicy({
+            currentCache: this.parsedReadCacheByPath,
+            promotedKey: cacheKey,
+            promotedKeyWasAlreadyPresent: keyWasPresent,
+            maxEntries: this.thresholds.readCacheMaxEntries
+        });
 
-            this.parsedReadCacheByPath.delete(oldestKey);
+        // Step 3 — apply the policy decision before re-insertion so the promoted
+        // entry lands in the cache at MRU position after the eviction pass.
+        for (const key of decision.evictKeys) {
+            this.parsedReadCacheByPath.delete(key);
         }
+
+        // Step 4 — re-insert the promoted entry as the most-recently-used entry.
+        this.parsedReadCacheByPath.set(cacheKey, entry);
     }
 }
 

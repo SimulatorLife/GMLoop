@@ -10,6 +10,7 @@ export * from "./fs-facade.js";
 export * from "./gml-parser-facade.js";
 export * from "./identifier-roles.js";
 export * from "./identifier-sink.js";
+export * from "./identifier-sink-policy.js";
 export * from "./metrics.js";
 export * from "./parsing/index.js";
 export * from "./path-info.js";
