@@ -162,6 +162,24 @@ pnpm run cli -- lint /path/to/project --write
 # refactor
 pnpm run cli -- refactor --old-name old_name --new-name newName
 
+# refactor codemod (list configured codemods)
+pnpm run cli -- refactor codemod --list
+
+# fix (project-wide: refactor codemods + lint autofixes + format)
+pnpm run cli -- fix --path /path/to/project
+pnpm run cli -- fix --path /path/to/project --write
+
+# graph index (build dual-root semantic graph index)
+pnpm run cli -- graph index
+pnpm run cli -- graph index --path /path/to/project --force
+
+# graph search (query the graph index)
+pnpm run cli -- graph search "player"
+pnpm run cli -- graph search "player" --path /path/to/project
+
+# graph doctor (validate graph index health)
+pnpm run cli -- graph doctor --path /path/to/project
+
 # transpile
 pnpm run cli -- transpile --write --path /path/to/project
 
@@ -169,8 +187,8 @@ pnpm run cli -- transpile --write --path /path/to/project
 pnpm run cli -- watch /path/to/project --verbose
 
 # query the watch status server (--status-port and --status-host mirror watch's flags)
-pnpm run cli -- watch-status
-pnpm run cli -- watch-status --status-port 18000 --endpoint health
+pnpm run cli -- live-reload status
+pnpm run cli -- live-reload status --status-port 18000 --endpoint health
 ```
 
 ## CLI wrapper environment knobs
