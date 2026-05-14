@@ -168,6 +168,12 @@ void test("playground panel renders format/lint/codemod detail sections", () => 
                         ruleId: "@gmloop/no-constructor-assignment"
                     }
                 ],
+                rulesets: [
+                    {
+                        name: "recommended",
+                        ruleIds: ["@gmloop/no-constructor-assignment"]
+                    }
+                ],
                 ruleset: null
             },
             refactor: {
@@ -233,7 +239,7 @@ void test("playground panel falls back to workspace catalogs when project config
                 projectRoot: "/tmp/test",
                 rawConfig: {}
             },
-            lint: { rules: [], ruleset: null },
+            lint: { rules: [], rulesets: [], ruleset: null },
             refactor: { codemods: [] }
         }
     };

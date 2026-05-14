@@ -49,7 +49,7 @@ function createMockModel(): GraphVisualizationUiModel {
                 projectRoot: "/tmp/test",
                 rawConfig: {}
             },
-            lint: { rules: [], ruleset: null },
+            lint: { rules: [], rulesets: [], ruleset: null },
             refactor: { codemods: [] }
         },
         title: "Test"

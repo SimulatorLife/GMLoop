@@ -452,6 +452,22 @@ void test("graph visualize UI source watcher is disabled outside the repository 
     }
 });
 
+void test("graph visualize serve defaults to the bundled 3DSpider demo from the repository root", () => {
+    const demoProjectRoot = __graphCommandTest__.resolveDefaultGraphVisualizationServeTargetPath(REPO_ROOT);
+
+    assert.equal(demoProjectRoot, path.join(REPO_ROOT, "vendor", "3DSpider"));
+});
+
+void test("graph visualize serve has no bundled demo fallback outside the repository tree", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-demo-fallback-"));
+
+    try {
+        assert.equal(__graphCommandTest__.resolveDefaultGraphVisualizationServeTargetPath(temporaryDirectory), null);
+    } finally {
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
+});
+
 void test("graph command options validate minimum values for depth and limit", async () => {
     const cliModule = await loadCliModule();
     const fixture = await createDualRootFixture();

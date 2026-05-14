@@ -55,6 +55,23 @@ function createMockModel(): GraphVisualizationUiModel {
                         level: "warn",
                         options: {},
                         ruleId: "gml/no-globalvar"
+                    },
+                    {
+                        description: "Require matching regions.",
+                        fixable: null,
+                        level: "error",
+                        options: {},
+                        ruleId: "gml/require-region-pairs"
+                    }
+                ],
+                rulesets: [
+                    {
+                        name: "recommended",
+                        ruleIds: ["gml/no-globalvar", "gml/require-region-pairs"]
+                    },
+                    {
+                        name: "performance",
+                        ruleIds: ["gml/no-globalvar"]
                     }
                 ],
                 ruleset: "recommended"
@@ -104,7 +121,12 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
     assert.match(rendered, createButtonAriaPressedPattern("config-view-rendered", true));
     assert.match(rendered, createButtonAriaPressedPattern("config-view-raw", false));
     assert.match(rendered, /Project Metadata/u);
-    assert.match(rendered, /Lint Rules/u);
-    assert.match(rendered, /Refactor Codemods/u);
+    assert.match(rendered, /Format \(1\)/u);
+    assert.match(rendered, /Lint \(2\)/u);
+    assert.match(rendered, /Refactor \(1\)/u);
+    assert.match(rendered, /All Rules/u);
+    assert.match(rendered, /All Levels/u);
+    assert.match(rendered, /class="?config-severity-badge warn"?/u);
+    assert.match(rendered, /class="?config-severity-badge error"?/u);
     assert.doesNotMatch(rendered, /class="config-raw"/u);
 });

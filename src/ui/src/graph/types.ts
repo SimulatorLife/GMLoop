@@ -148,7 +148,7 @@ export type GraphVisualizationLoadedTarget = Readonly<{
     activePath: string;
     projectRoot: string;
     selectedPaths: ReadonlyArray<string>;
-    source: "cli-path" | "finder-open" | "working-directory";
+    source: "cli-path" | "demo-project" | "finder-open" | "working-directory";
 }>;
 
 /**
@@ -312,9 +312,14 @@ export type GraphVisualizationProjectConfigurationEntry = Readonly<{
 export type GraphVisualizationProjectConfigurationLintRuleEntry = Readonly<{
     description: string;
     fixable: "code" | "whitespace" | null;
-    level: string;
+    level: "error" | "off" | "warn";
     options: Readonly<Record<string, unknown>>;
     ruleId: string;
+}>;
+
+export type GraphVisualizationProjectConfigurationLintRulesetEntry = Readonly<{
+    name: string;
+    ruleIds: ReadonlyArray<string>;
 }>;
 
 export type GraphVisualizationProjectConfigurationRefactorCodemodEntry = Readonly<{
@@ -338,6 +343,7 @@ export type GraphVisualizationProjectConfigurationCatalog = Readonly<{
     }>;
     lint: Readonly<{
         rules: ReadonlyArray<GraphVisualizationProjectConfigurationLintRuleEntry>;
+        rulesets: ReadonlyArray<GraphVisualizationProjectConfigurationLintRulesetEntry>;
         ruleset: string | null;
     }>;
     refactor: Readonly<{

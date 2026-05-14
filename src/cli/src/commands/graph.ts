@@ -23,6 +23,7 @@ import { GmlParserBridge, GmlSemanticBridge, GmlTranspilerBridge } from "../modu
 import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
 import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
 import { createGraphVisualizationProjectConfigurationCatalog } from "../modules/ui/index.js";
+import { findRepoRootSync } from "../shared/repo-root.js";
 import { discoverProjectRoot, resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 
 type GraphCommandSharedOptions = {
@@ -71,10 +72,28 @@ type GraphVisualizationBundleArtifact = Readonly<{
     files: ReadonlyArray<GraphVisualizationBundleFile>;
 }>;
 
+type GraphServeSource = "cli-path" | "demo-project" | "finder-open" | "working-directory";
+
+type GraphVisualizedLoadedTarget = Readonly<{
+    activePath: string;
+    projectRoot: string;
+    selectedPaths: ReadonlyArray<string>;
+    source: GraphServeSource;
+}>;
+
+type GraphVisualizationStartupState = Readonly<{
+    context: GraphResolutionContext | null;
+    selectedPaths: Array<string>;
+    source: GraphServeSource;
+}>;
+
 type OsaScriptExecutionResult = Readonly<{
     stderr: string;
     stdout: string;
 }>;
+
+const DEMO_PROJECT_DIRECTORY = path.join("vendor", "3DSpider");
+const DEMO_PROJECT_MANIFEST = "3D-ish spider thing 2.yyp";
 
 function createMutableGraphPlaygroundLintConfig(enabledRuleIds: ReadonlyArray<string>): Array<Record<string, unknown>> {
     const enabledRules = new Set(enabledRuleIds);
@@ -224,6 +243,63 @@ function resolveGraphVisualizationUiSourceWatchRoot(): string | null {
     }
 
     return sourceRoot;
+}
+
+function resolveDefaultGraphVisualizationServeTargetPath(startDirectory: string = process.cwd()): string | null {
+    try {
+        const repoRoot = findRepoRootSync(startDirectory);
+        const demoProjectRoot = path.join(repoRoot, DEMO_PROJECT_DIRECTORY);
+        const demoProjectManifest = path.join(demoProjectRoot, DEMO_PROJECT_MANIFEST);
+        return existsSync(demoProjectManifest) ? demoProjectRoot : null;
+    } catch {
+        return null;
+    }
+}
+
+async function resolveGraphVisualizationServeStartupState(
+    options: GraphCommandSharedOptions,
+    initialSelectedPath: string | null
+): Promise<GraphVisualizationStartupState> {
+    if (initialSelectedPath !== null) {
+        const context = await resolveGraphContext(options);
+        await ensureGraphIndexForQuery(options, context);
+        return {
+            context,
+            selectedPaths: [initialSelectedPath],
+            source: "cli-path"
+        };
+    }
+
+    try {
+        const context = await resolveGraphContext(options);
+        await ensureGraphIndexForQuery(options, context);
+        return {
+            context,
+            selectedPaths: [context.projectRoot],
+            source: "working-directory"
+        };
+    } catch {
+        const defaultServeTargetPath = resolveDefaultGraphVisualizationServeTargetPath();
+        if (defaultServeTargetPath === null) {
+            return {
+                context: null,
+                selectedPaths: [],
+                source: "working-directory"
+            };
+        }
+
+        const nextOptions = {
+            ...options,
+            path: defaultServeTargetPath
+        };
+        const context = await resolveGraphContext(nextOptions);
+        await ensureGraphIndexForQuery(nextOptions, context);
+        return {
+            context,
+            selectedPaths: [defaultServeTargetPath],
+            source: "demo-project"
+        };
+    }
 }
 
 async function pickProjectPathUsingNativeDialog(): Promise<string | null> {
@@ -399,33 +475,16 @@ async function runGraphDoctorAction(options: GraphCommandSharedOptions): Promise
 }
 
 async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Promise<void> {
-    type GraphServeSource = "cli-path" | "finder-open" | "working-directory";
-    type GraphVisualizedLoadedTarget = Readonly<{
-        activePath: string;
-        projectRoot: string;
-        selectedPaths: ReadonlyArray<string>;
-        source: GraphServeSource;
-    }>;
-
     const initialSelectedPath = resolveExplicitWorkflowTargetPath(options.path);
     let activeContext: GraphResolutionContext | null = null;
     let activeSelectedPaths = initialSelectedPath ? [initialSelectedPath] : [];
     let activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
 
     if (options.serve === true) {
-        if (initialSelectedPath) {
-            activeContext = await resolveGraphContext(options);
-            await ensureGraphIndexForQuery(options, activeContext);
-        } else {
-            try {
-                activeContext = await resolveGraphContext(options);
-                await ensureGraphIndexForQuery(options, activeContext);
-                activeSelectedPaths = [activeContext.projectRoot];
-            } catch {
-                activeContext = null;
-                activeSelectedPaths = [];
-            }
-        }
+        const startupState = await resolveGraphVisualizationServeStartupState(options, initialSelectedPath);
+        activeContext = startupState.context;
+        activeSelectedPaths = startupState.selectedPaths;
+        activeSource = startupState.source;
     } else {
         activeContext = await resolveGraphContext(options);
         await ensureGraphIndexForQuery(options, activeContext);
@@ -837,6 +896,7 @@ export function createGraphCommand(): Command {
 
 export const __graphCommandTest__ = Object.freeze({
     isGraphVisualizationUiSourceReloadCandidate,
+    resolveDefaultGraphVisualizationServeTargetPath,
     resolveGraphVisualizationUiSourceWatchRoot
 });
 function createDocumentationCatalogs() {

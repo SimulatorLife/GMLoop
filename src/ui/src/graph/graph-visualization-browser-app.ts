@@ -79,6 +79,7 @@ type MutableGraphEdgeRecord = Omit<GraphVisualizationEdgeRecord, "source" | "tar
     }>;
 
 type ConfigViewMode = "raw" | "rendered";
+type ConfigLintLevelFilter = "all" | "error" | "off" | "warn";
 
 const CONFIG_LIST_CLASS_NAME = "config-list";
 
@@ -349,22 +350,23 @@ function createConfigItem(
     heading.textContent = title;
     titleRow.append(heading);
     if (descriptionText.length > 0) {
-        const help = document.createElement("span");
+        const help = document.createElement("details");
         help.className = "config-help";
-        help.title = descriptionText;
-        help.textContent = "?";
+        const helpSummary = document.createElement("summary");
+        helpSummary.setAttribute("aria-label", descriptionText);
+        helpSummary.textContent = "?";
+        const helpBody = document.createElement("p");
+        helpBody.textContent = descriptionText;
+        help.append(helpSummary, helpBody);
         titleRow.append(help);
     }
     item.append(titleRow);
-    if (descriptionText.length > 0) {
-        const description = document.createElement("span");
-        description.textContent = descriptionText;
-        item.append(description);
-    }
     if (badges.length > 0) {
         const badgeRow = document.createElement("div");
         badgeRow.className = "config-badge-row";
-        badges.forEach((badgeText) => badgeRow.append(createBadge(badgeText)));
+        badges.forEach((badgeText) => {
+            badgeRow.append(isConfigSeverityLevel(badgeText) ? createSeverityBadge(badgeText) : createBadge(badgeText));
+        });
         item.append(badgeRow);
     }
     if (valueText.length > 0) {
@@ -454,6 +456,56 @@ function createBadge(labelText: string): HTMLSpanElement {
     badge.className = "config-badge";
     badge.textContent = labelText;
     return badge;
+}
+
+function isConfigSeverityLevel(value: string): value is Exclude<ConfigLintLevelFilter, "all"> {
+    return value === "error" || value === "off" || value === "warn";
+}
+
+function createSeverityBadge(level: Exclude<ConfigLintLevelFilter, "all">): HTMLSpanElement {
+    const badge = document.createElement("span");
+    badge.className = `config-severity-badge ${level}`;
+    badge.textContent = level === "error" ? "Error" : level === "warn" ? "Warn" : "Off";
+    return badge;
+}
+
+function createConfigFilterField(
+    labelText: string,
+    helpText: string,
+    options: ReadonlyArray<Readonly<{ label: string; value: string }>>,
+    selectedValue: string,
+    onChange: (value: string) => void
+): HTMLLabelElement {
+    const field = document.createElement("label");
+    field.className = "config-filter-field";
+
+    const label = document.createElement("span");
+    label.textContent = labelText;
+    const help = document.createElement("details");
+    help.className = "config-help";
+    const helpSummary = document.createElement("summary");
+    helpSummary.setAttribute("aria-label", `${labelText} filter help`);
+    helpSummary.textContent = "?";
+    const helpBody = document.createElement("p");
+    helpBody.textContent = helpText;
+    help.append(helpSummary, helpBody);
+    label.append(help);
+    field.append(label);
+
+    const select = document.createElement("select");
+    options.forEach((option) => {
+        const element = document.createElement("option");
+        element.value = option.value;
+        element.textContent = option.label;
+        element.selected = option.value === selectedValue;
+        select.append(element);
+    });
+    select.addEventListener("change", () => {
+        onChange(select.value);
+    });
+    field.append(select);
+
+    return field;
 }
 
 function formatLabel(textValue: string): string {
@@ -1044,6 +1096,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let activeFilters = new Set(edgeTypes);
     let activeNodeFilters = new Set(defaultEnabledNodeKinds);
     let activeConfigViewMode: ConfigViewMode = "rendered";
+    let activeConfigLintLevelFilter: ConfigLintLevelFilter = "all";
+    let activeConfigLintRulesetFilter = "all";
     let nodesRaw = cloneGraphNodes(allNodes);
     let linksRaw = cloneGraphEdges(dependencies.data.edges);
 
@@ -1399,7 +1453,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                               projectRoot: "",
                               rawConfig: {}
                           },
-                          lint: { rules: [], ruleset: null },
+                          lint: { rules: [], rulesets: [], ruleset: null },
                           refactor: { codemods: [] }
                       }),
                       gmloop: {
@@ -1443,20 +1497,21 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         summaryMetrics.className = "config-summary-metrics";
         summaryMetrics.append(
             createConfigSummaryMetric("gmloop.json", gmloopConfig.exists ? "Loaded" : "Defaults", "accent"),
-            createConfigSummaryMetric("Project Root", gmloopConfig.projectRoot || "(none)"),
-            createConfigSummaryMetric("Format Entries", String(effectiveConfiguration.format.entries.length)),
-            createConfigSummaryMetric("Lint Rules", String(effectiveConfiguration.lint.rules.length)),
-            createConfigSummaryMetric("Codemods", String(effectiveConfiguration.refactor.codemods.length))
+            createConfigSummaryMetric("Project Root", gmloopConfig.projectRoot || "(none)")
         );
         summaryPanel.append(summaryMetrics);
         configContentElement.append(summaryPanel);
 
         const configToggleRow = document.createElement("div");
-        configToggleRow.className = "config-toggle-row";
+        configToggleRow.className = "config-view-selector view-selector";
+        configToggleRow.setAttribute("role", "group");
+        configToggleRow.setAttribute("aria-label", "Configuration view selector");
 
         const renderedButton = document.createElement("button");
         renderedButton.id = "config-view-rendered";
-        renderedButton.className = activeConfigViewMode === "rendered" ? "top-nav-button active" : "top-nav-button";
+        renderedButton.type = "button";
+        renderedButton.className = activeConfigViewMode === "rendered" ? "view-option active" : "view-option";
+        renderedButton.setAttribute("aria-pressed", activeConfigViewMode === "rendered" ? "true" : "false");
         renderedButton.textContent = "Rendered";
         renderedButton.addEventListener("click", () => {
             activeConfigViewMode = "rendered";
@@ -1466,7 +1521,9 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
         const rawButton = document.createElement("button");
         rawButton.id = "config-view-raw";
-        rawButton.className = activeConfigViewMode === "raw" ? "top-nav-button active" : "top-nav-button";
+        rawButton.type = "button";
+        rawButton.className = activeConfigViewMode === "raw" ? "view-option active" : "view-option";
+        rawButton.setAttribute("aria-pressed", activeConfigViewMode === "raw" ? "true" : "false");
         rawButton.textContent = "Raw gmloop.json";
         rawButton.addEventListener("click", () => {
             activeConfigViewMode = "raw";
@@ -1497,29 +1554,89 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         const resolvedWorkspaceGrid = document.createElement("div");
         resolvedWorkspaceGrid.className = "config-grid config-grid-wide";
         resolvedWorkspaceGrid.append(
-            createConfigCard("Format / Prettier", "Formatter-owned options sourced from the format workspace.", [
-                formatList
-            ])
+            createConfigCard(
+                `Format (${String(effectiveConfiguration.format.entries.length)})`,
+                "Formatter-owned options sourced from the format workspace.",
+                [formatList]
+            )
+        );
+
+        const lintRulesets = effectiveConfiguration.lint.rulesets ?? [];
+        const selectedRuleset = lintRulesets.find((ruleset) => ruleset.name === activeConfigLintRulesetFilter);
+        const rulesetRuleIds =
+            activeConfigLintRulesetFilter === "all" || selectedRuleset === undefined
+                ? null
+                : new Set(selectedRuleset.ruleIds);
+        const filteredLintRules = effectiveConfiguration.lint.rules.filter((entry) => {
+            const matchesRuleset = rulesetRuleIds === null || rulesetRuleIds.has(entry.ruleId);
+            const matchesLevel = activeConfigLintLevelFilter === "all" || entry.level === activeConfigLintLevelFilter;
+            return matchesRuleset && matchesLevel;
+        });
+
+        const lintFilterRow = document.createElement("div");
+        lintFilterRow.className = "config-filter-row";
+        lintFilterRow.append(
+            createConfigFilterField(
+                "Ruleset",
+                "Filter the lint list to rules included by one ruleset. All rules is the default catalog view.",
+                [
+                    { label: "All Rules", value: "all" },
+                    ...lintRulesets.map((ruleset) => ({ label: ruleset.name, value: ruleset.name }))
+                ],
+                activeConfigLintRulesetFilter,
+                (value) => {
+                    activeConfigLintRulesetFilter = value.length > 0 ? value : "all";
+                    renderProjectConfigurationCatalog();
+                }
+            ),
+            createConfigFilterField(
+                "Level",
+                "Filter by the effective lint severity after gmloop.json ruleset and rule overrides are applied.",
+                [
+                    { label: "All Levels", value: "all" },
+                    { label: "Error", value: "error" },
+                    { label: "Warn", value: "warn" },
+                    { label: "Off", value: "off" }
+                ],
+                activeConfigLintLevelFilter,
+                (value) => {
+                    if (value === "all" || value === "error" || value === "off" || value === "warn") {
+                        activeConfigLintLevelFilter = value;
+                        renderProjectConfigurationCatalog();
+                    }
+                }
+            )
         );
 
         const lintList = document.createElement("ul");
         lintList.className = CONFIG_LIST_CLASS_NAME;
-        effectiveConfiguration.lint.rules.forEach((entry) => {
-            const badges = [entry.level];
+        filteredLintRules.forEach((entry) => {
+            const badges: Array<string> = [entry.level];
             if (entry.fixable !== null) {
                 badges.push(`fixable:${entry.fixable}`);
             }
             lintList.append(
-                createConfigItem(entry.ruleId, entry.description, JSON.stringify(entry.options, null, 2), badges)
+                createConfigItem(
+                    entry.ruleId,
+                    entry.description,
+                    Object.keys(entry.options).length > 0 ? JSON.stringify(entry.options, null, 2) : "",
+                    badges
+                )
             );
         });
+        if (filteredLintRules.length === 0) {
+            const emptyItem = document.createElement("li");
+            emptyItem.className = "config-empty";
+            emptyItem.textContent = "No lint rules match these filters.";
+            lintList.append(emptyItem);
+        }
         resolvedWorkspaceGrid.append(
             createConfigCard(
-                "Lint",
+                `Lint (${String(filteredLintRules.length)})`,
                 effectiveConfiguration.lint.ruleset === null
                     ? "Resolved lint rules for the active project configuration."
                     : `Resolved lint rules for the active gmloop lintRuleset: ${effectiveConfiguration.lint.ruleset}`,
-                [lintList]
+                [lintFilterRow, lintList]
             )
         );
 
@@ -1535,9 +1652,11 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             );
         });
         resolvedWorkspaceGrid.append(
-            createConfigCard("Refactor", "Registered codemods and the active project-level codemod configuration.", [
-                refactorList
-            ])
+            createConfigCard(
+                `Refactor (${String(effectiveConfiguration.refactor.codemods.length)})`,
+                "Registered codemods and the active project-level codemod configuration.",
+                [refactorList]
+            )
         );
         const projectMetadataList = document.createElement("ul");
         projectMetadataList.className = CONFIG_LIST_CLASS_NAME;

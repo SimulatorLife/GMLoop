@@ -134,7 +134,7 @@
     "cli:compiled": "node --disable-warning=ExperimentalWarning ./src/cli/dist/index.js",
     "serve": "pnpm run cli -- graph visualize --serve",
 
-    "link:global": "pnpm run ensure:cli && cd src/cli && pnpm link --global",
+    "link:global": "bash -lc 'pnpm run ensure:cli && entry=\"$PWD/src/cli/dist/index.js\" && pnpm_bin_output=\"$(pnpm bin -g 2>/dev/null || true)\" && global_bin=\"$(printf \"%s\\n\" \"$pnpm_bin_output\" | grep \"^/\" | tail -n 1)\" && if [ -z \"$global_bin\" ]; then global_bin=\"${PNPM_HOME:-$HOME/Library/pnpm}/bin\"; fi && mkdir -p \"$global_bin\" && chmod +x \"$entry\" && ln -sf \"$entry\" \"$global_bin/gmloop\" && echo \"Linked gmloop -> $entry\"'",
     "postinstall": "pnpm run submodules && patch-package && pnpm run link:global || true",
     "commit": "bash -lc 'msg=${BUMP_COMMIT_MESSAGE:-${npm_config_commit_message:-\"chore: formatting\"}}; if [ $# -gt 0 ]; then msg=\"$*\"; fi; if [ -n \"$(git status --porcelain)\" ]; then if [ -z \"${SKIP_FORMAT:-}\" ]; then pnpm run format:quiet; fi && (pnpm run lint:fix || true) && git add . && git commit --no-verify -m \"$msg\"; fi && git pull --rebase && git push' --",
     "prepare": "husky",

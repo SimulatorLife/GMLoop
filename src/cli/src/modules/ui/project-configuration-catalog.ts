@@ -25,10 +25,21 @@ type ProjectConfigurationEntry = Readonly<{
 type ProjectConfigurationLintRuleEntry = Readonly<{
     description: string;
     fixable: "code" | "whitespace" | null;
-    level: string;
+    level: "error" | "off" | "warn";
     options: Readonly<Record<string, unknown>>;
     ruleId: string;
 }>;
+
+type ProjectConfigurationLintRulesetEntry = Readonly<{
+    name: string;
+    ruleIds: ReadonlyArray<string>;
+}>;
+
+type LintConfigRuleList = ReadonlyArray<
+    Readonly<{
+        rules: Readonly<Record<string, unknown>>;
+    }>
+>;
 
 type ProjectConfigurationRefactorCodemodEntry = Readonly<{
     config: unknown;
@@ -51,6 +62,7 @@ export type GraphVisualizationProjectConfigurationCatalog = Readonly<{
     }>;
     lint: Readonly<{
         rules: ReadonlyArray<ProjectConfigurationLintRuleEntry>;
+        rulesets: ReadonlyArray<ProjectConfigurationLintRulesetEntry>;
         ruleset: string | null;
     }>;
     refactor: Readonly<{
@@ -104,39 +116,69 @@ function createFormatConfigurationEntries(
 
 function createLintConfigurationEntries(projectConfig: Readonly<Record<string, unknown>>): Readonly<{
     rules: ReadonlyArray<ProjectConfigurationLintRuleEntry>;
+    rulesets: ReadonlyArray<ProjectConfigurationLintRulesetEntry>;
     ruleset: string | null;
 }> {
-    const lintRuleCatalogById = new Map(
-        Lint.listLintRuleCatalogEntries().map((entry) => [entry.ruleId, entry] as const)
-    );
-    const lintRuleEntriesOrNull = createLintRuleEntriesFromProjectConfigOrNull(projectConfig);
-    if (lintRuleEntriesOrNull === null) {
+    const lintRulesets = createLintRulesetEntries();
+    const normalizedRulesOrNull = Lint.configs.normalizeLintRulesConfigOrNull(projectConfig);
+    if (normalizedRulesOrNull === null) {
         // Invalid `lintRules` or `lintRuleset` in gmloop.json; return an empty
         // rules list rather than crashing the UI during project-open.
         return Object.freeze({
             rules: [],
+            rulesets: lintRulesets,
             ruleset: null
         });
     }
-    const lintRuleEntries = lintRuleEntriesOrNull;
-    const rules = Object.entries(lintRuleEntries)
-        .map(([ruleId, value]) => {
-            const catalogEntry = lintRuleCatalogById.get(ruleId);
-            const level = Array.isArray(value) ? value[0] : value;
+    const lintRuleEntries = createLintRuleEntriesFromProjectConfigOrNull(projectConfig) ?? {};
+    const rules = Lint.listLintRuleCatalogEntries()
+        .map((catalogEntry) => {
+            const ruleEntry = lintRuleEntries[catalogEntry.ruleId];
             return Object.freeze({
-                description: catalogEntry?.description ?? "No rule description is available.",
-                fixable: catalogEntry?.fixable ?? null,
-                level: String(level),
-                options: normalizeLintRuleOptions(value),
-                ruleId
+                description: catalogEntry.description,
+                fixable: catalogEntry.fixable,
+                level: normalizedRulesOrNull[catalogEntry.ruleId] ?? "off",
+                options: normalizeLintRuleOptions(ruleEntry),
+                ruleId: catalogEntry.ruleId
             });
         })
         .sort((leftEntry, rightEntry) => leftEntry.ruleId.localeCompare(rightEntry.ruleId));
 
     return Object.freeze({
         rules,
+        rulesets: lintRulesets,
         ruleset: typeof projectConfig.lintRuleset === "string" ? projectConfig.lintRuleset : null
     });
+}
+
+function createLintRulesetEntries(): ReadonlyArray<ProjectConfigurationLintRulesetEntry> {
+    return Object.entries(Lint.configs)
+        .flatMap(([name, configEntries]) => {
+            if (!isLintConfigRuleList(configEntries)) {
+                return [];
+            }
+
+            return [
+                Object.freeze({
+                    name,
+                    ruleIds: Object.freeze(
+                        [...new Set(configEntries.flatMap((configEntry) => Object.keys(configEntry.rules)))].sort(
+                            (leftRuleId, rightRuleId) => leftRuleId.localeCompare(rightRuleId)
+                        )
+                    )
+                })
+            ];
+        })
+        .sort((leftEntry, rightEntry) => leftEntry.name.localeCompare(rightEntry.name));
+}
+
+function isLintConfigRuleList(value: unknown): value is LintConfigRuleList {
+    return (
+        Array.isArray(value) &&
+        value.every(
+            (entry) => Core.isObjectLike(entry) && Core.isObjectLike((entry as Readonly<Record<string, unknown>>).rules)
+        )
+    );
 }
 
 function createRefactorConfigurationEntries(
@@ -186,6 +228,7 @@ export async function createGraphVisualizationProjectConfigurationCatalog(
             }),
             lint: Object.freeze({
                 rules: [],
+                rulesets: createLintRulesetEntries(),
                 ruleset: null
             }),
             refactor: Object.freeze({
