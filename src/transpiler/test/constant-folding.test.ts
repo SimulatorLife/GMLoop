@@ -104,45 +104,37 @@ void test("constant folding: power", () => {
 // String operations
 // ---------------------------------------------------------------------------
 
-// Unquoted strings (hand-crafted AST without parser quoting).
+// String equality and inequality: both unquoted (hand-crafted) and parser-quoted
+// ASTs (as produced by the GML parser, where value includes surrounding quotes)
+// must fold identically. A single table-driven test covers all variants.
 
-void test("constant folding: string concatenation", () => {
+void test("constant folding: string equality and inequality for all quoting styles", () => {
+    // (operator, left, right, expected)
+    const cases: Array<[string, string, string, boolean | string]> = [
+        // Unquoted strings
+        ["==", "player", "player", true],
+        ["!=", "hello", "world", true],
+        // Parser-quoted strings (value includes surrounding double-quote chars)
+        ["==", '"player"', '"player"', true],
+        ["!=", '"hello"', '"world"', true],
+        // Mixed quoting: parser-quoted left operand, unquoted right
+        ["+", '"hello"', " suffix", "hello suffix"],
+        // Same-string inequality is false
+        ["==", '"hello"', '"world"', false]
+    ];
+
+    for (const [op, left, right, expected] of cases) {
+        assert.strictEqual(tryFoldConstantExpression(binary(op, left, right)), expected);
+    }
+});
+
+// Unquoted string concatenation is verified with the general table above.
+// This standalone test documents the "unquoted" pattern explicitly for clarity
+// in the arithmetic section, which is the primary focus of the test file.
+
+void test("constant folding: string concatenation (unquoted)", () => {
     const ast = binary("+", "hello", " world");
     assert.strictEqual(tryFoldConstantExpression(ast), "hello world");
-});
-
-void test("constant folding: string equality", () => {
-    const ast = binary("==", "player", "player");
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: string inequality", () => {
-    const ast = binary("!==", "hello", "world");
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-// Parser-quoted strings (value includes surrounding double-quote characters,
-// as produced by the GML parser).
-
-void test("constant folding: parser-quoted string concatenation", () => {
-    // verify that parser quotes are stripped before concatenating.
-    const ast = binary("+", '"hello"', '" world"');
-    assert.strictEqual(tryFoldConstantExpression(ast), "hello world");
-});
-
-void test("constant folding: parser-quoted string equality", () => {
-    const ast = binary("==", '"player"', '"player"');
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: parser-quoted string inequality", () => {
-    const ast = binary("!=", '"hello"', '"world"');
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: mixed parser-quoted and unquoted concatenation", () => {
-    const ast = binary("+", '"hello"', " suffix");
-    assert.strictEqual(tryFoldConstantExpression(ast), "hello suffix");
 });
 
 // ---------------------------------------------------------------------------
