@@ -8,6 +8,7 @@ import { Core } from "@gmloop/core";
 
 import type { DocCommentAlignmentCodemodOptions } from "./codemods/doc-comment-alignment/types.js";
 import type { GlobalvarToGlobalCodemodOptions } from "./codemods/globalvar-to-global/types.js";
+import type { LoopLengthHoistingCodemodOptions } from "./codemods/loop-length-hoisting/types.js";
 import type { ScientificNotationCodemodOptions } from "./codemods/scientific-notation/types.js";
 
 export type MaybePromise<T> = T | Promise<T>;
@@ -85,7 +86,12 @@ export interface NamingConventionPolicy {
 /**
  * Stable identifiers for codemods exposed through project configuration and the CLI.
  */
-export type RefactorCodemodId = "docCommentAlignment" | "scientificNotation" | "globalvarToGlobal" | "namingConvention";
+export type RefactorCodemodId =
+    | "docCommentAlignment"
+    | "scientificNotation"
+    | "globalvarToGlobal"
+    | "loopLengthHoisting"
+    | "namingConvention";
 
 /**
  * Normalized config payloads keyed by registered codemod id.
@@ -94,6 +100,7 @@ export interface RefactorCodemodConfigMap {
     docCommentAlignment: DocCommentAlignmentCodemodOptions;
     scientificNotation: ScientificNotationCodemodOptions;
     globalvarToGlobal: GlobalvarToGlobalCodemodOptions;
+    loopLengthHoisting: LoopLengthHoistingCodemodOptions;
     namingConvention: NamingConventionPolicy;
 }
 
