@@ -19,6 +19,7 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
         "lint",
         "live-reload",
         "lookup-gml-identifier",
+        "mcp",
         "object",
         "parse",
         "profile",

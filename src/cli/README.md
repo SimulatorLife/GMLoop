@@ -124,6 +124,18 @@ pnpm run cli -- fix --only namingConvention
 
 `fix` is intentionally project-scoped and write-only. It runs the configured codemod set first so cross-file/project-aware edits happen before single-file lint fixes and final formatting normalization.
 
+### `mcp` - Start MCP Stdio Server
+
+Starts the GMLoop MCP server (`@gmloop/mcp`) over stdio so MCP clients can
+invoke CLI-derived tools through a single `gmloop` entrypoint.
+
+```bash
+pnpm run cli -- mcp
+```
+
+This command is intended to be launched by an MCP host process, not from the
+in-process CLI test/capture runner.
+
 ### `watch` - Monitor Files for Hot-Reload Pipeline
 
 **NEW**: Now integrated with the transpiler to generate JavaScript patches when GML files change.

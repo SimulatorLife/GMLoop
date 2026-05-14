@@ -32,7 +32,11 @@ type GraphVisualizationServerProcessPlayground = (
     }>
 ) => Promise<Readonly<{ ast: string; output: string; error: string | null }>>;
 
-type GraphVisualizationServerStartLiveReload = () => Promise<unknown>;
+type GraphVisualizationServerStartLiveReload = (
+    input: Readonly<{
+        restart: boolean;
+    }>
+) => Promise<unknown>;
 
 export type GraphVisualizationServerOptions = Readonly<{
     host?: string;
@@ -188,7 +192,16 @@ export async function startGraphVisualizationServer(
 
             if (request.method === "POST" && request.url === "/api/live-reload/start" && options.startLiveReload) {
                 try {
-                    const result = await options.startLiveReload();
+                    const requestBody = await readRequestBody(request);
+                    const parsedBody = requestBody.trim().length === 0 ? {} : tryParseJsonPayload(requestBody);
+                    if (parsedBody === null) {
+                        response.writeHead(400, { "Content-Type": "application/json" });
+                        response.end(JSON.stringify({ error: "Invalid JSON or non-object payload" }));
+                        return;
+                    }
+                    const result = await options.startLiveReload({
+                        restart: parsedBody.restart === true
+                    });
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ liveReload: result, ok: true }));
                 } catch (error: unknown) {

@@ -5,10 +5,10 @@
       "args": [
         "--dir",
         "/absolute/path/to/GMLoop",
-        "--filter",
-        "@gmloop/mcp",
         "run",
-        "start"
+        "cli",
+        "--",
+        "mcp"
       ]
     }
   }

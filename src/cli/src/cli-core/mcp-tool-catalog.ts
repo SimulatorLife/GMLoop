@@ -81,14 +81,16 @@ export function createMcpToolCatalogEntries(
     cliCatalog: ReadonlyArray<CliCatalogEntry>
 ): ReadonlyArray<McpToolCatalogEntry> {
     return Object.freeze(
-        cliCatalog.map((entry) =>
-            Object.freeze({
-                commandDisplayName: entry.displayName,
-                commandPath: entry.commandPath,
-                description: entry.description,
-                fields: createMcpCatalogFields(entry),
-                toolName: normalizeMcpToolName(entry.commandPath)
-            })
-        )
+        cliCatalog
+            .filter((entry) => !entry.excludeFromMcp)
+            .map((entry) =>
+                Object.freeze({
+                    commandDisplayName: entry.displayName,
+                    commandPath: entry.commandPath,
+                    description: entry.description,
+                    fields: createMcpCatalogFields(entry),
+                    toolName: normalizeMcpToolName(entry.commandPath)
+                })
+            )
     );
 }

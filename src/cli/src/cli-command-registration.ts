@@ -10,6 +10,7 @@ import { createGraphCommand } from "./commands/graph.js";
 import { createLintCommand, runLintCommand } from "./commands/lint.js";
 import { createLiveReloadCommand } from "./commands/live-reload.js";
 import { createLookupGmlIdentifierCommand, runLookupGmlIdentifierCommand } from "./commands/lookup-gml-identifier.js";
+import { createMcpCommand } from "./commands/mcp.js";
 import { createObjectCommand } from "./commands/object.js";
 import { createParseCommand, runParseCommand } from "./commands/parse.js";
 import { createProfileCommand } from "./commands/profile.js";
@@ -227,6 +228,15 @@ function registerProjectWorkflowCommands({ registry }: CliCommandRegistryContext
 }
 
 function registerUtilityCommands({ registry }: CliCommandRegistryContext): void {
+    registry.registerCommand({
+        command: createMcpCommand(),
+        onError: (error) =>
+            handleCliError(error, {
+                prefix: "MCP command failed.",
+                exitCode: 1
+            })
+    });
+
     registry.registerCommand({
         command: createUiCommand(),
         onError: (error) =>

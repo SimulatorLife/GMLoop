@@ -346,6 +346,88 @@ void test("graph visualization server serves UI revision for hot-reload polling"
     }
 });
 
+void test("graph visualization server forwards restart intent to /api/live-reload/start", async (testContext) => {
+    const receivedRestartFlags: Array<boolean> = [];
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            startLiveReload: async ({ restart }) => {
+                receivedRestartFlags.push(restart);
+                return {
+                    endpoints: {
+                        runtimeUrl: null,
+                        statusUrl: "http://127.0.0.1:9100/status",
+                        websocketUrl: "ws://127.0.0.1:9101"
+                    },
+                    pollIntervalMs: 2000,
+                    runtimeHealth: null,
+                    statusSnapshot: null
+                };
+            }
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const defaultStartResponse = await fetch(`${handle.url}/api/live-reload/start`, { method: "POST" });
+        assert.equal(defaultStartResponse.status, 200);
+        const restartStartResponse = await fetch(`${handle.url}/api/live-reload/start`, {
+            body: JSON.stringify({ restart: true }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
+        assert.equal(restartStartResponse.status, 200);
+        assert.deepEqual(receivedRestartFlags, [false, true]);
+    } finally {
+        await handle.stop();
+    }
+});
+
+void test("graph visualization server rejects malformed JSON on /api/live-reload/start with 400", async (testContext) => {
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            startLiveReload: async () => ({ ok: true })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/live-reload/start`, {
+            body: "{ invalid json",
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
+        assert.equal(response.status, 400);
+        const payload = (await response.json()) as { error: string };
+        assert.equal(payload.error, "Invalid JSON or non-object payload");
+    } finally {
+        await handle.stop();
+    }
+});
+
 void test("graph visualization server forwards sanitized lint rule ids for playground processing", async (testContext) => {
     let receivedLintRuleIds: ReadonlyArray<string> = [];
     let receivedFormatOptionNames: ReadonlyArray<string> = [];

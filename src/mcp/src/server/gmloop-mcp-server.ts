@@ -217,18 +217,20 @@ export function listGmloopMcpToolCatalogEntries(): ReadonlyArray<McpToolCatalogE
 }
 
 function registerCliTools(server: McpServer): void {
-    const toolCatalogByCommandDisplayName = new Map(
-        listGmloopMcpToolCatalogEntries().map((entry) => [entry.commandDisplayName, entry.toolName])
+    const cliCatalogByCommandDisplayName = new Map(
+        CLI.getCliCommandCatalog().map((entry) => [entry.displayName, entry])
     );
 
-    for (const entry of CLI.getCliCommandCatalog()) {
-        const toolName = toolCatalogByCommandDisplayName.get(entry.displayName);
-        if (!toolName) {
-            throw new Error(`Missing MCP tool catalog entry for CLI command '${entry.displayName}'.`);
+    for (const toolCatalogEntry of listGmloopMcpToolCatalogEntries()) {
+        const entry = cliCatalogByCommandDisplayName.get(toolCatalogEntry.commandDisplayName);
+        if (!entry) {
+            throw new Error(
+                `Missing CLI command catalog entry for MCP command '${toolCatalogEntry.commandDisplayName}'.`
+            );
         }
 
         server.registerTool(
-            toolName,
+            toolCatalogEntry.toolName,
             {
                 description: entry.description,
                 inputSchema: createToolInputSchema(entry)

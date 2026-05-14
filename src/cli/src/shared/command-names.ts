@@ -19,6 +19,7 @@ export const CLI_COMMAND_NAMES = Object.freeze(
         "lint",
         "live-reload",
         "lookup-gml-identifier",
+        "mcp",
         "object",
         "parse",
         "profile",

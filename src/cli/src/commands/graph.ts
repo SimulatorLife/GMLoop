@@ -1,4 +1,4 @@
-import { type ChildProcessWithoutNullStreams,execFile, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { existsSync, watch } from "node:fs";
 import { access, constants, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -262,6 +262,59 @@ function setActiveGraphVisualizationLiveReloadModel(
 ): GraphVisualizationLiveReloadModel {
     sessionState.model = model;
     return model;
+}
+
+function setActiveGraphVisualizationLiveReloadStartupPromise(
+    sessionState: GraphVisualizationLiveReloadSessionState,
+    startupPromise: Promise<GraphVisualizationLiveReloadModel>
+): Promise<GraphVisualizationLiveReloadModel> {
+    sessionState.startupPromise = startupPromise;
+    return startupPromise;
+}
+
+function clearActiveGraphVisualizationLiveReloadStartupPromise(
+    sessionState: GraphVisualizationLiveReloadSessionState
+): void {
+    sessionState.startupPromise = null;
+}
+
+function resetGraphVisualizationLiveReloadSessionForRestart(
+    sessionState: GraphVisualizationLiveReloadSessionState
+): void {
+    sessionState.childStderrBuffer = [];
+    sessionState.model = null;
+}
+
+async function stopGraphVisualizationLiveReloadChildProcess(
+    sessionState: GraphVisualizationLiveReloadSessionState
+): Promise<void> {
+    const activeChildProcess = sessionState.childProcess;
+    if (activeChildProcess === null || activeChildProcess.killed) {
+        sessionState.childProcess = null;
+        return;
+    }
+    sessionState.childProcess = null;
+
+    await new Promise<void>((resolve) => {
+        let settled = false;
+        const settle = (): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            resolve();
+        };
+
+        const timeoutHandle = globalThis.setTimeout(() => {
+            activeChildProcess.removeListener("exit", settle);
+            settle();
+        }, 1500);
+        activeChildProcess.once("exit", () => {
+            globalThis.clearTimeout(timeoutHandle);
+            settle();
+        });
+        activeChildProcess.kill("SIGTERM");
+    });
 }
 
 function createMutableGraphPlaygroundLintConfig(enabledRuleIds: ReadonlyArray<string>): Array<Record<string, unknown>> {
@@ -734,23 +787,43 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
         const runtimeUrl = runtimeMatch[1] ?? null;
         const previousSnapshot = activeLiveReloadSession.model?.statusSnapshot ?? null;
-        activeLiveReloadSession.model = createGraphVisualizationLiveReloadModel(runtimeUrl, previousSnapshot);
+        setActiveGraphVisualizationLiveReloadModel(
+            activeLiveReloadSession,
+            createGraphVisualizationLiveReloadModel(runtimeUrl, previousSnapshot)
+        );
     }
 
-    async function ensureLiveReloadSessionStarted(): Promise<GraphVisualizationLiveReloadModel> {
+    async function ensureLiveReloadSessionStarted(
+        input: Readonly<{ restart: boolean }>
+    ): Promise<GraphVisualizationLiveReloadModel> {
         if (activeContext === null) {
             throw new Error("Open a project before starting live reload.");
         }
 
         if (activeLiveReloadSession.startupPromise !== null) {
-            return activeLiveReloadSession.startupPromise;
+            if (input.restart === false) {
+                return activeLiveReloadSession.startupPromise;
+            }
+            try {
+                await activeLiveReloadSession.startupPromise;
+            } catch {
+                // Ignore startup failures when a restart is explicitly requested.
+            }
         }
 
-        const existingStatusSnapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot();
-        if (existingStatusSnapshot !== null) {
-            const model = createGraphVisualizationLiveReloadModel(null, existingStatusSnapshot);
-            activeLiveReloadSession.model = model;
-            return model;
+        if (input.restart) {
+            resetGraphVisualizationLiveReloadSessionForRestart(activeLiveReloadSession);
+            await stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession);
+        }
+
+        if (input.restart === false) {
+            const existingStatusSnapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot();
+            if (existingStatusSnapshot !== null) {
+                return setActiveGraphVisualizationLiveReloadModel(
+                    activeLiveReloadSession,
+                    createGraphVisualizationLiveReloadModel(null, existingStatusSnapshot)
+                );
+            }
         }
 
         const startupPromise = (async () => {
@@ -770,7 +843,10 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
             activeLiveReloadSession.childProcess = childProcess;
             activeLiveReloadSession.childStderrBuffer = [];
-            activeLiveReloadSession.model = createGraphVisualizationLiveReloadModel(null);
+            setActiveGraphVisualizationLiveReloadModel(
+                activeLiveReloadSession,
+                createGraphVisualizationLiveReloadModel(null)
+            );
 
             childProcess.stdout.on("data", (chunk: Buffer | string) => {
                 updateLiveReloadRuntimeUrlFromProcessOutput(String(chunk));
@@ -819,9 +895,12 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     if (snapshot !== null) {
                         cleanup();
                         const runtimeUrl = activeLiveReloadSession.model?.endpoints.runtimeUrl ?? null;
-                        const model = createGraphVisualizationLiveReloadModel(runtimeUrl, snapshot);
-                        activeLiveReloadSession.model = model;
-                        resolve(model);
+                        resolve(
+                            setActiveGraphVisualizationLiveReloadModel(
+                                activeLiveReloadSession,
+                                createGraphVisualizationLiveReloadModel(runtimeUrl, snapshot)
+                            )
+                        );
                         return;
                     }
 
@@ -840,11 +919,14 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             });
         })();
 
-        activeLiveReloadSession.startupPromise = startupPromise;
+        const activeStartupPromise = setActiveGraphVisualizationLiveReloadStartupPromise(
+            activeLiveReloadSession,
+            startupPromise
+        );
         try {
-            return await startupPromise;
+            return await activeStartupPromise;
         } finally {
-            activeLiveReloadSession.startupPromise = null;
+            clearActiveGraphVisualizationLiveReloadStartupPromise(activeLiveReloadSession);
         }
     }
 
@@ -1007,9 +1089,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
                 return Object.freeze({ ast, output, error });
             },
-            startLiveReload: async () => {
-                return ensureLiveReloadSessionStarted();
-            },
+            startLiveReload: (input) => ensureLiveReloadSessionStarted(input),
             renderBundle: async (isServerMode) => {
                 const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(
                     activeContext,
@@ -1052,9 +1132,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         }
 
         const stopLiveReloadChildProcess = (): void => {
-            if (activeLiveReloadSession.childProcess && activeLiveReloadSession.childProcess.killed === false) {
-                activeLiveReloadSession.childProcess.kill("SIGTERM");
-            }
+            void stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession);
         };
         process.once("SIGINT", stopLiveReloadChildProcess);
         process.once("SIGTERM", stopLiveReloadChildProcess);

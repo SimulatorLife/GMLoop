@@ -60,6 +60,7 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
     assert.ok(toolNames.includes("gmloop_runner_clear_logs"));
     assert.ok(toolNames.includes("gmloop_runner_room_set"));
     assert.ok(toolNames.includes("gmloop_runner_room_current"));
+    assert.ok(!toolNames.includes("gmloop_mcp"));
 
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_graph_search"));
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_resource_add"));

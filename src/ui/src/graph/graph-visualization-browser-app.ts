@@ -91,6 +91,10 @@ type ConfigLintLevelFilter = "all" | "error" | "off" | "warn";
 const CONFIG_LIST_CLASS_NAME = "config-list";
 const DEFAULT_LIVE_RELOAD_POLL_INTERVAL_MS = 2000;
 const MIN_LIVE_RELOAD_POLL_INTERVAL_MS = 500;
+const START_LIVE_RELOAD_BUTTON_ID = "start-live-reload";
+const START_LIVE_RELOAD_BUTTON_LABEL = "Start Live Reload";
+const RESTART_LIVE_RELOAD_BUTTON_LABEL = "Restart Live Reload";
+const STARTING_LIVE_RELOAD_BUTTON_LABEL = "Starting...";
 
 function readErrorName(errorValue: unknown): string {
     // Use a capability probe rather than `instanceof Error` so that cross-realm
@@ -235,6 +239,387 @@ function formatLiveReloadUptime(uptimeMs: number): string {
     return `${String(minutes)}m ${String(seconds).padStart(2, "0")}s`;
 }
 
+function startUiRevisionPollingWhenServing(isServerMode: boolean): void {
+    if (!isServerMode) {
+        return;
+    }
+
+    let knownUiRevision: number | null = null;
+    globalThis.setInterval(() => {
+        void (async () => {
+            try {
+                const response = await fetch("/api/ui-revision", { cache: "no-store" });
+                if (!response.ok) {
+                    return;
+                }
+                const payload = (await response.json()) as { revision?: unknown };
+                if (typeof payload.revision !== "number") {
+                    return;
+                }
+                if (knownUiRevision === null) {
+                    knownUiRevision = payload.revision;
+                    return;
+                }
+                if (payload.revision !== knownUiRevision) {
+                    globalThis.location.reload();
+                }
+            } catch {
+                // Ignore transient polling failures (server restart/network hiccups).
+            }
+        })();
+    }, 1500);
+}
+
+type LiveReloadBrowserSurfaceState = {
+    currentLiveReload: GraphVisualizationLiveReloadModel | null;
+    currentLiveReloadErrorMessage: string | null;
+    currentLiveReloadStatus: GraphVisualizationLiveReloadStatusSnapshot | null;
+    isStarting: boolean;
+    liveReloadPollTimer: ReturnType<typeof globalThis.setInterval> | null;
+};
+
+type LiveReloadBrowserSurfaceController = Readonly<{
+    stopPolling: () => void;
+    wireControls: () => void;
+}>;
+
+function setLiveReloadSurfaceStatus(
+    state: LiveReloadBrowserSurfaceState,
+    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot | null,
+    errorMessage: string | null
+): void {
+    state.currentLiveReloadStatus = statusSnapshot;
+    state.currentLiveReloadErrorMessage = errorMessage;
+}
+
+function setLiveReloadSurfaceModel(
+    state: LiveReloadBrowserSurfaceState,
+    liveReloadModel: GraphVisualizationLiveReloadModel | null
+): void {
+    state.currentLiveReload = liveReloadModel;
+    state.currentLiveReloadStatus = liveReloadModel?.statusSnapshot ?? null;
+}
+
+function createLiveReloadBrowserSurfaceController(
+    parameters: Readonly<{
+        dependencies: BrowserAppDependencies;
+        getLoadedTarget: () => GraphVisualizationLoadedTarget | null;
+        state: LiveReloadBrowserSurfaceState;
+    }>
+): LiveReloadBrowserSurfaceController {
+    const { dependencies, getLoadedTarget, state } = parameters;
+
+    const renderPanel = (): void => {
+        const metaElement = document.getElementById("live-reload-meta");
+        const contentElement = document.getElementById("live-reload-content");
+        const refreshButton = document.getElementById("refresh-live-reload");
+        const startButton = document.getElementById(START_LIVE_RELOAD_BUTTON_ID);
+
+        if (
+            !(metaElement instanceof HTMLElement) ||
+            !(contentElement instanceof HTMLElement) ||
+            !(refreshButton instanceof HTMLButtonElement) ||
+            !(startButton instanceof HTMLButtonElement)
+        ) {
+            return;
+        }
+
+        const endpoints = state.currentLiveReload?.endpoints ?? null;
+        const status = state.currentLiveReloadStatus;
+        const watcherStatus = status?.watcherStatus ?? (endpoints?.statusUrl ? "offline" : "inactive");
+        const watcherStatusLabel =
+            watcherStatus === "running"
+                ? "Running"
+                : watcherStatus === "scanning"
+                  ? "Scanning"
+                  : watcherStatus === "offline"
+                    ? "Offline"
+                    : watcherStatus === "error"
+                      ? "Error"
+                      : "Inactive";
+
+        metaElement.innerHTML =
+            endpoints === null
+                ? "Start live reload to prepare the HTML5 runtime wrapper, launch the watcher, and expose patch status for the active project."
+                : `Status <code>${escapeHtmlText(endpoints.statusUrl ?? "not configured")}</code> • WebSocket <code>${escapeHtmlText(endpoints.websocketUrl ?? "not configured")}</code>`;
+
+        refreshButton.disabled = endpoints?.statusUrl === null || endpoints === null || state.isStarting;
+        startButton.disabled = dependencies.isServerMode === false || getLoadedTarget() === null;
+        startButton.textContent =
+            endpoints?.statusUrl === null || endpoints === null
+                ? START_LIVE_RELOAD_BUTTON_LABEL
+                : RESTART_LIVE_RELOAD_BUTTON_LABEL;
+        startButton.style.display = dependencies.isServerMode ? "" : "none";
+
+        const recentPatchesMarkup =
+            status && status.recentPatches.length > 0
+                ? `<ul class="live-reload-event-list">${status.recentPatches
+                      .map(
+                          (patch) =>
+                              `<li><strong>${escapeHtmlText(patch.filePath)}</strong><span>${escapeHtmlText(
+                                  `${patch.id} • ${formatLiveReloadTimestamp(patch.timestamp)} • ${formatLiveReloadDurationMs(
+                                      patch.hotReloadLatencyMs
+                                  )}`
+                              )}</span></li>`
+                      )
+                      .join("")}</ul>`
+                : `<p class="catalog-empty">No patches have been broadcast yet.</p>`;
+        const recentErrorsMarkup =
+            status && status.recentErrors.length > 0
+                ? `<ul class="live-reload-event-list">${status.recentErrors
+                      .map(
+                          (entry) =>
+                              `<li class="live-reload-error-item"><strong>${escapeHtmlText(
+                                  entry.filePath
+                              )}</strong><span>${escapeHtmlText(
+                                  `${formatLiveReloadTimestamp(entry.timestamp)} • ${entry.error}`
+                              )}</span></li>`
+                      )
+                      .join("")}</ul>`
+                : `<p class="catalog-empty">No hot-reload errors reported.</p>`;
+        const runtimeHealthMarkup =
+            state.currentLiveReload?.runtimeHealth === null || state.currentLiveReload?.runtimeHealth === undefined
+                ? `<p class="catalog-empty">Runtime-wrapper diagnostics are not available from the host.</p>`
+                : `<dl class="live-reload-health-list">
+                      <div><dt>Runtime Status</dt><dd>${escapeHtmlText(state.currentLiveReload.runtimeHealth.runtimeStatus)}</dd></div>
+                      <div><dt>Registry Version</dt><dd>${String(state.currentLiveReload.runtimeHealth.registryVersion)}</dd></div>
+                      <div><dt>Scripts / Events / Closures</dt><dd>${String(state.currentLiveReload.runtimeHealth.scriptCount)} / ${String(state.currentLiveReload.runtimeHealth.eventCount)} / ${String(state.currentLiveReload.runtimeHealth.closureCount)}</dd></div>
+                      <div><dt>Patch Queue Depth</dt><dd>${String(state.currentLiveReload.runtimeHealth.patchQueueDepth)}</dd></div>
+                      <div><dt>Applied / Failed</dt><dd>${String(state.currentLiveReload.runtimeHealth.appliedPatches)} / ${String(state.currentLiveReload.runtimeHealth.failedPatches)}</dd></div>
+                  </dl>`;
+        const errorBannerMarkup =
+            state.currentLiveReloadErrorMessage === null
+                ? ""
+                : `<div class="catalog-card live-reload-panel-card" role="alert"><h3>Refresh Status</h3><p>${escapeHtmlText(state.currentLiveReloadErrorMessage)}</p></div>`;
+        const startBannerMarkup = state.isStarting
+            ? `<div class="catalog-card live-reload-panel-card"><h3>Live Reload</h3><p>Restarting live reload pipeline. Waiting for watcher status...</p></div>`
+            : "";
+
+        contentElement.innerHTML = `
+            ${startBannerMarkup}
+            ${errorBannerMarkup}
+            <div class="catalog-card live-reload-panel-card">
+              <h3>Pipeline Overview</h3>
+              <ol class="live-reload-pipeline" aria-label="Live reload pipeline">
+                <li><span class="live-reload-pipeline-node">File Watcher</span></li>
+                <li><span class="live-reload-pipeline-node">Transpiler</span></li>
+                <li><span class="live-reload-pipeline-node">WebSocket Server</span></li>
+                <li><span class="live-reload-pipeline-node">Runtime Wrapper</span></li>
+                <li><span class="live-reload-pipeline-node">Game Runtime</span></li>
+              </ol>
+            </div>
+            <div class="live-reload-grid">
+              <div class="catalog-card live-reload-panel-card">
+                <h3>Watcher</h3>
+                <span class="live-reload-status-chip ${watcherStatus}"><span class="live-reload-status-dot" aria-hidden="true"></span>${watcherStatusLabel}</span>
+                <p>${status ? `Recent scan uptime ${escapeHtmlText(formatLiveReloadUptime(status.uptimeMs))}.` : "No watcher status has been received yet."}</p>
+              </div>
+              <div class="catalog-card live-reload-panel-card">
+                <h3>Patch Stream</h3>
+                <strong class="live-reload-metric-value">${formatLiveReloadInteger(status?.websocketClients ?? null)}</strong>
+                <p>Connected WebSocket clients.</p>
+                <code>${escapeHtmlText(endpoints?.websocketUrl ?? "No WebSocket URL configured")}</code>
+              </div>
+              <div class="catalog-card live-reload-panel-card">
+                <h3>Runtime</h3>
+                <p>${endpoints?.runtimeUrl ? "Game runtime endpoint is configured." : "No runtime endpoint configured."}</p>
+                <code>${escapeHtmlText(endpoints?.runtimeUrl ?? "Runtime URL unavailable")}</code>
+              </div>
+            </div>
+            <div class="live-reload-metric-grid">
+              <div class="catalog-card live-reload-metric-card"><h3>Total Patches</h3><strong class="live-reload-metric-value">${formatLiveReloadInteger(status?.totalPatchCount ?? null)}</strong><p>Cumulative patches broadcast by the watcher.</p></div>
+              <div class="catalog-card live-reload-metric-card"><h3>Retained History</h3><strong class="live-reload-metric-value">${status ? `${formatLiveReloadInteger(status.patchHistorySize)} / ${formatLiveReloadInteger(status.maxPatchHistory)}` : "n/a / n/a"}</strong><p>Bounded patch history currently retained by the status server.</p></div>
+              <div class="catalog-card live-reload-metric-card"><h3>Average Latency</h3><strong class="live-reload-metric-value">${formatLiveReloadDurationMs(status?.avgHotReloadLatencyMs ?? null)}</strong><p>Mean file-change to broadcast latency for the current metrics window.</p></div>
+              <div class="catalog-card live-reload-metric-card"><h3>P95 Latency</h3><strong class="live-reload-metric-value">${formatLiveReloadDurationMs(status?.p95HotReloadLatencyMs ?? null)}</strong><p>95th percentile hot-reload latency for recent patches.</p></div>
+            </div>
+            <div class="live-reload-grid">
+              <div class="catalog-card live-reload-panel-card">
+                <h3>Recent Patches</h3>
+                ${recentPatchesMarkup}
+              </div>
+              <div class="catalog-card live-reload-panel-card">
+                <h3>Recent Errors</h3>
+                ${recentErrorsMarkup}
+              </div>
+              <div class="catalog-card live-reload-panel-card">
+                <h3>Runtime Health</h3>
+                ${runtimeHealthMarkup}
+              </div>
+            </div>`;
+    };
+
+    const stopPolling = (): void => {
+        if (state.liveReloadPollTimer !== null) {
+            globalThis.clearInterval(state.liveReloadPollTimer);
+            state.liveReloadPollTimer = null;
+        }
+    };
+
+    const pollStatusOnce = async (): Promise<void> => {
+        const statusUrl = state.currentLiveReload?.endpoints.statusUrl ?? null;
+        if (statusUrl === null) {
+            setLiveReloadSurfaceStatus(state, null, null);
+            renderPanel();
+            return;
+        }
+
+        try {
+            const response = await fetch(statusUrl, {
+                headers: { Accept: "application/json" }
+            });
+            if (!response.ok) {
+                throw new Error(`Status request failed with HTTP ${String(response.status)}`);
+            }
+
+            const payload = await response.json();
+            const snapshot = normalizeLiveReloadStatusSnapshot(payload, true);
+            if (snapshot === null) {
+                throw new Error("Status response did not match the expected live-reload snapshot shape.");
+            }
+
+            setLiveReloadSurfaceStatus(state, snapshot, null);
+        } catch (error) {
+            setLiveReloadSurfaceStatus(
+                state,
+                state.currentLiveReloadStatus,
+                Core.getErrorMessage(error, {
+                    fallback: "Failed to refresh live-reload status."
+                })
+            );
+        }
+
+        renderPanel();
+    };
+
+    const restartPolling = (): void => {
+        stopPolling();
+
+        const statusUrl = state.currentLiveReload?.endpoints.statusUrl ?? null;
+        if (statusUrl === null) {
+            renderPanel();
+            return;
+        }
+
+        void pollStatusOnce();
+        const pollIntervalMs = Math.max(
+            state.currentLiveReload?.pollIntervalMs ?? DEFAULT_LIVE_RELOAD_POLL_INTERVAL_MS,
+            MIN_LIVE_RELOAD_POLL_INTERVAL_MS
+        );
+        state.liveReloadPollTimer = globalThis.setInterval(() => {
+            void pollStatusOnce();
+        }, pollIntervalMs);
+    };
+
+    const startFromHost = async (): Promise<void> => {
+        if (!dependencies.isServerMode) {
+            return;
+        }
+
+        const liveReloadState = state;
+        const startButton = document.getElementById(START_LIVE_RELOAD_BUTTON_ID);
+        if (!(startButton instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        startButton.disabled = true;
+        startButton.textContent = STARTING_LIVE_RELOAD_BUTTON_LABEL;
+        liveReloadState.isStarting = true;
+        renderPanel();
+
+        try {
+            const shouldRestart =
+                liveReloadState.currentLiveReload !== null &&
+                liveReloadState.currentLiveReload.endpoints.statusUrl !== null;
+            const response = await fetch("/api/live-reload/start", {
+                body: JSON.stringify({ restart: shouldRestart }),
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                method: "POST"
+            });
+            const responsePayload = (await response.json()) as Readonly<{ error?: string; liveReload?: unknown }>;
+            if (!response.ok) {
+                throw new Error(
+                    typeof responsePayload.error === "string" ? responsePayload.error : "Failed to start live reload."
+                );
+            }
+
+            if (!isUnknownRecord(responsePayload.liveReload)) {
+                throw new Error("Live-reload start response did not include endpoint configuration.");
+            }
+
+            const liveReloadRecord = responsePayload.liveReload;
+            const endpointRecord = isUnknownRecord(liveReloadRecord.endpoints) ? liveReloadRecord.endpoints : null;
+            const nextLiveReloadModel: GraphVisualizationLiveReloadModel = {
+                endpoints: {
+                    runtimeUrl: endpointRecord ? readString(endpointRecord, "runtimeUrl") : null,
+                    statusUrl: endpointRecord ? readString(endpointRecord, "statusUrl") : null,
+                    websocketUrl: endpointRecord ? readString(endpointRecord, "websocketUrl") : null
+                },
+                pollIntervalMs: readNumber(liveReloadRecord, "pollIntervalMs") ?? DEFAULT_LIVE_RELOAD_POLL_INTERVAL_MS,
+                runtimeHealth: null as GraphVisualizationLiveReloadRuntimeHealth | null,
+                statusSnapshot:
+                    normalizeLiveReloadStatusSnapshot(
+                        isUnknownRecord(liveReloadRecord.statusSnapshot) ? liveReloadRecord.statusSnapshot : null,
+                        true
+                    ) ?? null
+            };
+            if (state !== liveReloadState) {
+                return;
+            }
+
+            setLiveReloadSurfaceModel(liveReloadState, nextLiveReloadModel);
+            setLiveReloadSurfaceStatus(liveReloadState, nextLiveReloadModel.statusSnapshot, null);
+            renderPanel();
+            restartPolling();
+        } catch (error) {
+            if (state !== liveReloadState) {
+                return;
+            }
+
+            setLiveReloadSurfaceStatus(
+                liveReloadState,
+                liveReloadState.currentLiveReloadStatus,
+                Core.getErrorMessage(error, {
+                    fallback: "Failed to start live reload."
+                })
+            );
+            renderPanel();
+        } finally {
+            liveReloadState.isStarting = false;
+            const currentStartButton = document.getElementById(START_LIVE_RELOAD_BUTTON_ID);
+            if (currentStartButton instanceof HTMLButtonElement) {
+                currentStartButton.disabled = false;
+                currentStartButton.textContent =
+                    liveReloadState.currentLiveReload?.endpoints.statusUrl === null ||
+                    liveReloadState.currentLiveReload === null
+                        ? START_LIVE_RELOAD_BUTTON_LABEL
+                        : RESTART_LIVE_RELOAD_BUTTON_LABEL;
+            }
+        }
+    };
+
+    return Object.freeze({
+        stopPolling,
+        wireControls: () => {
+            const refreshButton = document.getElementById("refresh-live-reload");
+            const startButton = document.getElementById(START_LIVE_RELOAD_BUTTON_ID);
+            if (!(refreshButton instanceof HTMLButtonElement) || !(startButton instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            refreshButton.addEventListener("click", () => {
+                void pollStatusOnce();
+            });
+            startButton.addEventListener("click", () => {
+                void startFromHost();
+            });
+            renderPanel();
+            restartPolling();
+        }
+    });
+}
+
 type GraphSelectionApi<ElementType extends d3.BaseType = d3.BaseType, Datum = unknown> = d3.Selection<
     ElementType,
     Datum,
@@ -247,6 +632,35 @@ type GraphSimulationApi = Simulation<MutableGraphNodeRecord, MutableGraphEdgeRec
 type GraphDragBehavior = DragBehavior<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>;
 
 type GraphZoomBehavior = ZoomBehavior<SVGSVGElement, unknown>;
+
+/**
+ * Compute the viewport transform needed to center a node while preserving the current zoom level.
+ */
+export function computeViewportTransformCenteredOnNode(
+    input: Readonly<{
+        currentScale: number;
+        targetX: number;
+        targetY: number;
+        viewportHeight: number;
+        viewportWidth: number;
+    }>
+): Readonly<{ k: number; x: number; y: number }> | null {
+    if (
+        !Number.isFinite(input.targetX) ||
+        !Number.isFinite(input.targetY) ||
+        !Number.isFinite(input.viewportWidth) ||
+        !Number.isFinite(input.viewportHeight)
+    ) {
+        return null;
+    }
+
+    const normalizedScale = Number.isFinite(input.currentScale) && input.currentScale > 0 ? input.currentScale : 1;
+    return {
+        k: normalizedScale,
+        x: input.viewportWidth / 2 - input.targetX * normalizedScale,
+        y: input.viewportHeight / 2 - input.targetY * normalizedScale
+    };
+}
 
 type TooltipMouseEvent = MouseEvent &
     Readonly<{
@@ -1155,6 +1569,7 @@ type GraphVisualizationSurfaceInitializer = Readonly<{
     };
     renderLegend: () => void;
     renderProjectConfigurationCatalog: () => void;
+    requestProjectNodeViewportCenter: () => void;
     syncUrlState: () => void;
     updateDocsViewState: () => void;
     updateGraph: () => void;
@@ -1184,6 +1599,7 @@ function initializeGraphVisualizationSurface(state: GraphVisualizationSurfaceIni
     state.wireLiveReloadControls();
     state.applyPageState();
     state.updateGraph();
+    state.requestProjectNodeViewportCenter();
     state.applySearchQuery(state.currentSearchQuery, false);
 }
 
@@ -1214,11 +1630,11 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             kindValue !== "enum_member"
     );
 
-    let currentLoadedTarget = dependencies.loadedTarget;
     const currentProjectConfiguration = dependencies.projectConfigurationCatalog;
-    let selectedProjectConfiguration: LoadedProjectConfiguration | null = null;
-    let labelMode: "auto" | "off" | "on" = mapUiLabelModeToBrowserLabelMode(initialUiState.labelMode);
-    let activeGraphView: "json" | "visual" = initialUiState.activeGraphView;
+    let currentLoadedTarget = dependencies.loadedTarget,
+        selectedProjectConfiguration: LoadedProjectConfiguration | null = null,
+        labelMode: "auto" | "off" | "on" = mapUiLabelModeToBrowserLabelMode(initialUiState.labelMode),
+        activeGraphView: "json" | "visual" = initialUiState.activeGraphView;
     const navigationState: {
         activeDocsView: "cli" | "mcp" | "rules";
         activePage: GraphVisualizationUiPage;
@@ -1232,45 +1648,28 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         mcpMetaText: "",
         rulesMetaText: ""
     };
-    let searchQuery = initialUiState.searchQuery;
-    let activeFilters = new Set(edgeTypes);
-    let activeNodeFilters = new Set(defaultEnabledNodeKinds);
-    let activeConfigViewMode: ConfigViewMode = "rendered";
-    let activeConfigLintLevelFilter: ConfigLintLevelFilter = "all";
-    let activeConfigLintRulesetFilter = "all";
-    let currentLiveReload = dependencies.liveReload;
-    let currentLiveReloadStatus = currentLiveReload?.statusSnapshot ?? null;
-    let currentLiveReloadErrorMessage: string | null = null;
-    let liveReloadPollTimer: ReturnType<typeof globalThis.setInterval> | null = null;
-    let nodesRaw = cloneGraphNodes(allNodes);
-    let linksRaw = cloneGraphEdges(dependencies.data.edges);
+    let searchQuery = initialUiState.searchQuery,
+        activeFilters = new Set(edgeTypes),
+        activeNodeFilters = new Set(defaultEnabledNodeKinds),
+        activeConfigViewMode: ConfigViewMode = "rendered",
+        activeConfigLintLevelFilter: ConfigLintLevelFilter = "all",
+        activeConfigLintRulesetFilter = "all",
+        nodesRaw = cloneGraphNodes(allNodes),
+        linksRaw = cloneGraphEdges(dependencies.data.edges);
+    const liveReloadState: LiveReloadBrowserSurfaceState = {
+        currentLiveReload: dependencies.liveReload,
+        currentLiveReloadErrorMessage: null,
+        currentLiveReloadStatus: dependencies.liveReload?.statusSnapshot ?? null,
+        isStarting: false,
+        liveReloadPollTimer: null
+    };
+    const liveReloadController = createLiveReloadBrowserSurfaceController({
+        dependencies,
+        getLoadedTarget: () => currentLoadedTarget,
+        state: liveReloadState
+    });
 
-    if (dependencies.isServerMode) {
-        let knownUiRevision: number | null = null;
-        globalThis.setInterval(() => {
-            void (async () => {
-                try {
-                    const response = await fetch("/api/ui-revision", { cache: "no-store" });
-                    if (!response.ok) {
-                        return;
-                    }
-                    const payload = (await response.json()) as { revision?: unknown };
-                    if (typeof payload.revision !== "number") {
-                        return;
-                    }
-                    if (knownUiRevision === null) {
-                        knownUiRevision = payload.revision;
-                        return;
-                    }
-                    if (payload.revision !== knownUiRevision) {
-                        globalThis.location.reload();
-                    }
-                } catch {
-                    // Ignore transient polling failures (server restart/network hiccups).
-                }
-            })();
-        }, 1500);
-    }
+    startUiRevisionPollingWhenServing(dependencies.isServerMode);
     let link: d3.Selection<SVGPathElement, MutableGraphEdgeRecord, SVGGElement, unknown> = container
         .append("g")
         .selectAll<SVGPathElement, MutableGraphEdgeRecord>(".link");
@@ -1282,10 +1681,11 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
     let nodeLabels: d3.Selection<SVGTextElement, MutableGraphNodeRecord, SVGGElement, unknown> =
         nodeGroup.select<SVGTextElement>("text");
     const searchHighlightNodeIds = new Set<string>();
-    let focusNodeId: string | null = null;
-    let pinnedTooltipNodeId: string | null = null;
-    let resourceCheckbox: GraphSelectionApi | undefined;
-    let enumCheckbox: GraphSelectionApi | undefined;
+    let focusNodeId: string | null = null,
+        pinnedTooltipNodeId: string | null = null,
+        resourceCheckbox: GraphSelectionApi | undefined,
+        enumCheckbox: GraphSelectionApi | undefined,
+        shouldCenterViewportOnProjectNode = false;
 
     const graphIndexes = {
         incomingCount: new Map<string, number>(),
@@ -1380,17 +1780,18 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         syncUrlState,
         updateDocsViewState: () => updateDocsViewState(navigationState),
         updateGraph,
-        wireLiveReloadControls,
+        wireLiveReloadControls: liveReloadController.wireControls,
         wireOpenProjectButton,
         wireRegenerateButton,
         wireViewControls,
-        wirePlaygroundControls
+        wirePlaygroundControls,
+        requestProjectNodeViewportCenter
     });
 
     globalThis.addEventListener(
         "beforeunload",
         () => {
-            stopLiveReloadPolling();
+            liveReloadController.stopPolling();
         },
         { once: true }
     );
@@ -1429,12 +1830,10 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         }
 
         graphRuntime.select("#reset-default").on("click", () => {
-            svg.transition().call((selection) => {
-                zoomBehavior.transform(selection, graphRuntime.zoomIdentity);
-            });
             resetGraphStateToDefaults();
             applyGraphViewMode();
             updateGraph();
+            requestProjectNodeViewportCenter();
             syncUrlState();
         });
 
@@ -2219,6 +2618,46 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         simulation.alpha(0.3).restart();
         applyCurrentLabelMode();
         applyHighlights();
+        tryCenterViewportOnProjectNode();
+    }
+
+    function requestProjectNodeViewportCenter(): void {
+        shouldCenterViewportOnProjectNode = true;
+        tryCenterViewportOnProjectNode();
+    }
+
+    function tryCenterViewportOnProjectNode(): void {
+        if (!shouldCenterViewportOnProjectNode) {
+            return;
+        }
+
+        const projectNode =
+            nodesRaw.find((nodeValue) => nodeValue.kind === "project" && nodeValue.graphId === "project") ??
+            nodesRaw.find((nodeValue) => nodeValue.kind === "project");
+        if (projectNode === undefined) {
+            shouldCenterViewportOnProjectNode = false;
+            return;
+        }
+
+        const currentTransform = graphRuntime.zoomTransform(svg.node());
+        const centeredTransform = computeViewportTransformCenteredOnNode({
+            currentScale: currentTransform.k,
+            targetX: projectNode.x,
+            targetY: projectNode.y,
+            viewportHeight: height,
+            viewportWidth: width
+        });
+        if (centeredTransform === null) {
+            return;
+        }
+
+        shouldCenterViewportOnProjectNode = false;
+        svg.call((selection) =>
+            zoomBehavior.transform(
+                selection,
+                graphRuntime.zoomIdentity.translate(centeredTransform.x, centeredTransform.y).scale(centeredTransform.k)
+            )
+        );
     }
 
     function renderNodeShape(nodeValue: MutableGraphNodeRecord): string {
@@ -2249,6 +2688,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             const nodeValue = datumValue;
             return `translate(${nodeValue.x},${nodeValue.y})`;
         });
+        tryCenterViewportOnProjectNode();
     }
 
     function dragStarted(eventValue: D3DragEvent<SVGGElement, MutableGraphNodeRecord, MutableGraphNodeRecord>): void {
@@ -2422,281 +2862,6 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             }
             return !highlightIds.has(sourceId) || !highlightIds.has(targetId);
         });
-    }
-
-    function stopLiveReloadPolling(): void {
-        if (liveReloadPollTimer !== null) {
-            globalThis.clearInterval(liveReloadPollTimer);
-            liveReloadPollTimer = null;
-        }
-    }
-
-    async function pollLiveReloadStatusOnce(): Promise<void> {
-        const statusUrl = currentLiveReload?.endpoints.statusUrl ?? null;
-        if (statusUrl === null) {
-            currentLiveReloadStatus = null;
-            currentLiveReloadErrorMessage = null;
-            renderLiveReloadPanel();
-            return;
-        }
-
-        try {
-            const response = await fetch(statusUrl, {
-                headers: { Accept: "application/json" }
-            });
-            if (!response.ok) {
-                throw new Error(`Status request failed with HTTP ${String(response.status)}`);
-            }
-
-            const payload = await response.json();
-            const snapshot = normalizeLiveReloadStatusSnapshot(payload, true);
-            if (snapshot === null) {
-                throw new Error("Status response did not match the expected live-reload snapshot shape.");
-            }
-
-            currentLiveReloadStatus = snapshot;
-            currentLiveReloadErrorMessage = null;
-        } catch (error) {
-            currentLiveReloadErrorMessage = Core.getErrorMessage(error, {
-                fallback: "Failed to refresh live-reload status."
-            });
-        }
-
-        renderLiveReloadPanel();
-    }
-
-    function restartLiveReloadPolling(): void {
-        stopLiveReloadPolling();
-
-        const statusUrl = currentLiveReload?.endpoints.statusUrl ?? null;
-        if (statusUrl === null) {
-            renderLiveReloadPanel();
-            return;
-        }
-
-        void pollLiveReloadStatusOnce();
-        const pollIntervalMs = Math.max(
-            currentLiveReload?.pollIntervalMs ?? DEFAULT_LIVE_RELOAD_POLL_INTERVAL_MS,
-            MIN_LIVE_RELOAD_POLL_INTERVAL_MS
-        );
-        liveReloadPollTimer = globalThis.setInterval(() => {
-            void pollLiveReloadStatusOnce();
-        }, pollIntervalMs);
-    }
-
-    async function startLiveReloadFromHost(): Promise<void> {
-        if (!dependencies.isServerMode) {
-            return;
-        }
-
-        const startButton = document.getElementById("start-live-reload");
-        if (!(startButton instanceof HTMLButtonElement)) {
-            return;
-        }
-
-        startButton.disabled = true;
-        startButton.textContent = "Starting...";
-
-        try {
-            const response = await fetch("/api/live-reload/start", {
-                method: "POST"
-            });
-            const responsePayload = (await response.json()) as Readonly<{ error?: string; liveReload?: unknown }>;
-            if (!response.ok) {
-                throw new Error(
-                    typeof responsePayload.error === "string" ? responsePayload.error : "Failed to start live reload."
-                );
-            }
-
-            if (!isUnknownRecord(responsePayload.liveReload)) {
-                throw new Error("Live-reload start response did not include endpoint configuration.");
-            }
-
-            const liveReloadRecord = responsePayload.liveReload;
-            const endpointRecord = isUnknownRecord(liveReloadRecord.endpoints) ? liveReloadRecord.endpoints : null;
-            currentLiveReload = {
-                endpoints: {
-                    runtimeUrl: endpointRecord ? readString(endpointRecord, "runtimeUrl") : null,
-                    statusUrl: endpointRecord ? readString(endpointRecord, "statusUrl") : null,
-                    websocketUrl: endpointRecord ? readString(endpointRecord, "websocketUrl") : null
-                },
-                pollIntervalMs: readNumber(liveReloadRecord, "pollIntervalMs") ?? DEFAULT_LIVE_RELOAD_POLL_INTERVAL_MS,
-                runtimeHealth: null as GraphVisualizationLiveReloadRuntimeHealth | null,
-                statusSnapshot:
-                    normalizeLiveReloadStatusSnapshot(
-                        isUnknownRecord(liveReloadRecord.statusSnapshot) ? liveReloadRecord.statusSnapshot : null,
-                        true
-                    ) ?? null
-            };
-            currentLiveReloadStatus = currentLiveReload.statusSnapshot;
-            currentLiveReloadErrorMessage = null;
-            renderLiveReloadPanel();
-            restartLiveReloadPolling();
-        } catch (error) {
-            currentLiveReloadErrorMessage = Core.getErrorMessage(error, {
-                fallback: "Failed to start live reload."
-            });
-            renderLiveReloadPanel();
-        } finally {
-            const currentStartButton = document.getElementById("start-live-reload");
-            if (currentStartButton instanceof HTMLButtonElement) {
-                currentStartButton.disabled = false;
-                currentStartButton.textContent =
-                    currentLiveReload?.endpoints.statusUrl === null || currentLiveReload === null
-                        ? "Start Live Reload"
-                        : "Restart Live Reload";
-            }
-        }
-    }
-
-    function renderLiveReloadPanel(): void {
-        const metaElement = document.getElementById("live-reload-meta");
-        const contentElement = document.getElementById("live-reload-content");
-        const refreshButton = document.getElementById("refresh-live-reload");
-        const startButton = document.getElementById("start-live-reload");
-
-        if (
-            !(metaElement instanceof HTMLElement) ||
-            !(contentElement instanceof HTMLElement) ||
-            !(refreshButton instanceof HTMLButtonElement) ||
-            !(startButton instanceof HTMLButtonElement)
-        ) {
-            return;
-        }
-
-        const endpoints = currentLiveReload?.endpoints ?? null;
-        const status = currentLiveReloadStatus;
-        const watcherStatus = status?.watcherStatus ?? (endpoints?.statusUrl ? "offline" : "inactive");
-        const watcherStatusLabel =
-            watcherStatus === "running"
-                ? "Running"
-                : watcherStatus === "scanning"
-                  ? "Scanning"
-                  : watcherStatus === "offline"
-                    ? "Offline"
-                    : watcherStatus === "error"
-                      ? "Error"
-                      : "Inactive";
-
-        metaElement.innerHTML =
-            endpoints === null
-                ? "Start live reload to prepare the HTML5 runtime wrapper, launch the watcher, and expose patch status for the active project."
-                : `Status <code>${escapeHtmlText(endpoints.statusUrl ?? "not configured")}</code> • WebSocket <code>${escapeHtmlText(endpoints.websocketUrl ?? "not configured")}</code>`;
-
-        refreshButton.disabled = endpoints?.statusUrl === null || endpoints === null;
-        startButton.disabled = dependencies.isServerMode === false || currentLoadedTarget === null;
-        startButton.textContent =
-            endpoints?.statusUrl === null || endpoints === null ? "Start Live Reload" : "Restart Live Reload";
-        startButton.style.display = dependencies.isServerMode ? "" : "none";
-
-        const recentPatchesMarkup =
-            status && status.recentPatches.length > 0
-                ? `<ul class="live-reload-event-list">${status.recentPatches
-                      .map(
-                          (patch) =>
-                              `<li><strong>${escapeHtmlText(patch.filePath)}</strong><span>${escapeHtmlText(
-                                  `${patch.id} • ${formatLiveReloadTimestamp(patch.timestamp)} • ${formatLiveReloadDurationMs(
-                                      patch.hotReloadLatencyMs
-                                  )}`
-                              )}</span></li>`
-                      )
-                      .join("")}</ul>`
-                : `<p class="catalog-empty">No patches have been broadcast yet.</p>`;
-        const recentErrorsMarkup =
-            status && status.recentErrors.length > 0
-                ? `<ul class="live-reload-event-list">${status.recentErrors
-                      .map(
-                          (entry) =>
-                              `<li class="live-reload-error-item"><strong>${escapeHtmlText(
-                                  entry.filePath
-                              )}</strong><span>${escapeHtmlText(
-                                  `${formatLiveReloadTimestamp(entry.timestamp)} • ${entry.error}`
-                              )}</span></li>`
-                      )
-                      .join("")}</ul>`
-                : `<p class="catalog-empty">No hot-reload errors reported.</p>`;
-        const runtimeHealthMarkup =
-            currentLiveReload?.runtimeHealth === null || currentLiveReload?.runtimeHealth === undefined
-                ? `<p class="catalog-empty">Runtime-wrapper diagnostics are not available from the host.</p>`
-                : `<dl class="live-reload-health-list">
-                      <div><dt>Runtime Status</dt><dd>${escapeHtmlText(currentLiveReload.runtimeHealth.runtimeStatus)}</dd></div>
-                      <div><dt>Registry Version</dt><dd>${String(currentLiveReload.runtimeHealth.registryVersion)}</dd></div>
-                      <div><dt>Scripts / Events / Closures</dt><dd>${String(currentLiveReload.runtimeHealth.scriptCount)} / ${String(currentLiveReload.runtimeHealth.eventCount)} / ${String(currentLiveReload.runtimeHealth.closureCount)}</dd></div>
-                      <div><dt>Patch Queue Depth</dt><dd>${String(currentLiveReload.runtimeHealth.patchQueueDepth)}</dd></div>
-                      <div><dt>Applied / Failed</dt><dd>${String(currentLiveReload.runtimeHealth.appliedPatches)} / ${String(currentLiveReload.runtimeHealth.failedPatches)}</dd></div>
-                  </dl>`;
-        const errorBannerMarkup =
-            currentLiveReloadErrorMessage === null
-                ? ""
-                : `<div class="catalog-card live-reload-panel-card" role="alert"><h3>Refresh Status</h3><p>${escapeHtmlText(currentLiveReloadErrorMessage)}</p></div>`;
-
-        contentElement.innerHTML = `
-            ${errorBannerMarkup}
-            <div class="catalog-card live-reload-panel-card">
-              <h3>Pipeline Overview</h3>
-              <ol class="live-reload-pipeline" aria-label="Live reload pipeline">
-                <li><span class="live-reload-pipeline-node">File Watcher</span></li>
-                <li><span class="live-reload-pipeline-node">Transpiler</span></li>
-                <li><span class="live-reload-pipeline-node">WebSocket Server</span></li>
-                <li><span class="live-reload-pipeline-node">Runtime Wrapper</span></li>
-                <li><span class="live-reload-pipeline-node">Game Runtime</span></li>
-              </ol>
-            </div>
-            <div class="live-reload-grid">
-              <div class="catalog-card live-reload-panel-card">
-                <h3>Watcher</h3>
-                <span class="live-reload-status-chip ${watcherStatus}"><span class="live-reload-status-dot" aria-hidden="true"></span>${watcherStatusLabel}</span>
-                <p>${status ? `Recent scan uptime ${escapeHtmlText(formatLiveReloadUptime(status.uptimeMs))}.` : "No watcher status has been received yet."}</p>
-              </div>
-              <div class="catalog-card live-reload-panel-card">
-                <h3>Patch Stream</h3>
-                <strong class="live-reload-metric-value">${formatLiveReloadInteger(status?.websocketClients ?? null)}</strong>
-                <p>Connected WebSocket clients.</p>
-                <code>${escapeHtmlText(endpoints?.websocketUrl ?? "No WebSocket URL configured")}</code>
-              </div>
-              <div class="catalog-card live-reload-panel-card">
-                <h3>Runtime</h3>
-                <p>${endpoints?.runtimeUrl ? "Game runtime endpoint is configured." : "No runtime endpoint configured."}</p>
-                <code>${escapeHtmlText(endpoints?.runtimeUrl ?? "Runtime URL unavailable")}</code>
-              </div>
-            </div>
-            <div class="live-reload-metric-grid">
-              <div class="catalog-card live-reload-metric-card"><h3>Total Patches</h3><strong class="live-reload-metric-value">${formatLiveReloadInteger(status?.totalPatchCount ?? null)}</strong><p>Cumulative patches broadcast by the watcher.</p></div>
-              <div class="catalog-card live-reload-metric-card"><h3>Retained History</h3><strong class="live-reload-metric-value">${status ? `${formatLiveReloadInteger(status.patchHistorySize)} / ${formatLiveReloadInteger(status.maxPatchHistory)}` : "n/a / n/a"}</strong><p>Bounded patch history currently retained by the status server.</p></div>
-              <div class="catalog-card live-reload-metric-card"><h3>Average Latency</h3><strong class="live-reload-metric-value">${formatLiveReloadDurationMs(status?.avgHotReloadLatencyMs ?? null)}</strong><p>Mean file-change to broadcast latency for the current metrics window.</p></div>
-              <div class="catalog-card live-reload-metric-card"><h3>P95 Latency</h3><strong class="live-reload-metric-value">${formatLiveReloadDurationMs(status?.p95HotReloadLatencyMs ?? null)}</strong><p>95th percentile hot-reload latency for recent patches.</p></div>
-            </div>
-            <div class="live-reload-grid">
-              <div class="catalog-card live-reload-panel-card">
-                <h3>Recent Patches</h3>
-                ${recentPatchesMarkup}
-              </div>
-              <div class="catalog-card live-reload-panel-card">
-                <h3>Recent Errors</h3>
-                ${recentErrorsMarkup}
-              </div>
-              <div class="catalog-card live-reload-panel-card">
-                <h3>Runtime Health</h3>
-                ${runtimeHealthMarkup}
-              </div>
-            </div>`;
-    }
-
-    function wireLiveReloadControls(): void {
-        const refreshButton = document.getElementById("refresh-live-reload");
-        const startButton = document.getElementById("start-live-reload");
-        if (!(refreshButton instanceof HTMLButtonElement) || !(startButton instanceof HTMLButtonElement)) {
-            return;
-        }
-
-        refreshButton.addEventListener("click", () => {
-            void pollLiveReloadStatusOnce();
-        });
-        startButton.addEventListener("click", () => {
-            void startLiveReloadFromHost();
-        });
-        renderLiveReloadPanel();
-        restartLiveReloadPolling();
     }
 
     function wireOpenProjectButton(): void {

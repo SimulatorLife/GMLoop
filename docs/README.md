@@ -21,7 +21,8 @@ then return here for deeper context.
   Flat ESLint config that composes the `@gmloop/lint` presets (without TypeScript
   requirement).
 - [`examples/example.mcp.json`](examples/example.mcp.json) — MCP client config
-  example that starts the local `@gmloop/mcp` stdio server through `pnpm`.
+  example that starts the MCP stdio server via the `gmloop mcp` CLI command
+  through `pnpm`.
 - [`examples/gmloop.json`](examples/gmloop.json) *(planned)* — Baseline project config
   with formatter, lint, and refactor settings.
 
