@@ -151,7 +151,7 @@ void test("GmLiveReloadPanel renders live-reload error state from UI state", () 
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /role="alert"/u);
+    assert.match(rendered, /gm-error-banner/u);
     assert.match(rendered, /Status server is offline\./u);
 });
 

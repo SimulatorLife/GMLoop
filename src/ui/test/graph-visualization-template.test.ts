@@ -54,6 +54,8 @@ void test("graph visualization entry html references local assets and avoids CDN
     assert.match(html, /id="loaded-target-details"/u);
     assert.match(html, /id="tab-live-reload"/u);
     assert.match(html, /id="live-reload-page"/u);
+    assert.match(html, /id="start-live-reload"/u);
+    assert.match(html, /id="live-reload-content"/u);
     assert.match(html, /Pipeline Overview/u);
     assert.match(html, /class="project-context"/u);
     assert.match(html, /aria-label="Open GMLoop GitHub repository"/u);
@@ -109,6 +111,7 @@ void test("graph visualization module script embeds serialized graph payload and
     const script = readBundleFileText(bundle, "assets/graph-visualization.js");
 
     assert.match(script, /const graphVisualizationData = /u);
+    assert.match(script, /const graphVisualizationLiveReload = null;/u);
     assert.match(script, /InterplanetaryFootball/u);
     assert.match(script, /resourcePath":"InterplanetaryFootball\.yyp/u);
     assert.match(script, /function readGraphNodePathLabel/u);
@@ -116,6 +119,7 @@ void test("graph visualization module script embeds serialized graph payload and
     assert.match(script, /const DEFAULT_PLAYGROUND_GML_SOURCE = \[/u);
     assert.match(script, /function resolveInitialPlaygroundGmlSource/u);
     assert.match(script, /bootstrapGraphVisualizationApp\(\{/u);
+    assert.match(script, /window\.__GMLOOP_LIVE_RELOAD__ = graphVisualizationLiveReload;/u);
     assert.match(script, /import \{ fileOpen, directoryOpen \} from "\.\/vendor\/browser-fs-access\.js";/u);
 });
 

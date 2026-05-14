@@ -88,6 +88,7 @@ function readGraphVisualizationUiReducerModuleSource(): string {
 export function renderGraphVisualizationClientScript(
     serializedData: string,
     serializedDocumentationCatalogs: string,
+    serializedLiveReload: string,
     serializedLoadedTarget: string,
     serializedProjectConfigurationCatalog: string,
     isServerMode: boolean
@@ -95,6 +96,7 @@ export function renderGraphVisualizationClientScript(
     const scriptLines = [
         `const graphVisualizationData = ${serializedData};`,
         `const graphVisualizationDocumentationCatalogs = ${serializedDocumentationCatalogs};`,
+        `const graphVisualizationLiveReload = ${serializedLiveReload};`,
         `const graphVisualizationLoadedTarget = ${serializedLoadedTarget};`,
         `const graphVisualizationProjectConfigurationCatalog = ${serializedProjectConfigurationCatalog};`,
         `const graphVisualizationServerMode = ${isServerMode ? "true" : "false"};`,
@@ -102,6 +104,7 @@ export function renderGraphVisualizationClientScript(
         `const NODE_VISUAL_STYLES = ${JSON.stringify(NODE_VISUAL_STYLES)};`,
         "",
         "window.__GMLOOP_DOCUMENTATION_CATALOGS__ = graphVisualizationDocumentationCatalogs;",
+        "window.__GMLOOP_LIVE_RELOAD__ = graphVisualizationLiveReload;",
         "window.__GMLOOP_LOADED_TARGET__ = graphVisualizationLoadedTarget;",
         "window.__GMLOOP_PROJECT_CONFIGURATION__ = graphVisualizationProjectConfigurationCatalog;",
         "",
@@ -119,6 +122,7 @@ export function renderGraphVisualizationClientScript(
         "    documentationCatalogs: graphVisualizationDocumentationCatalogs,",
         "    fileOpen,",
         "    isServerMode: graphVisualizationServerMode,",
+        "    liveReload: graphVisualizationLiveReload,",
         "    loadedTarget: graphVisualizationLoadedTarget,",
         "    projectConfigurationCatalog: graphVisualizationProjectConfigurationCatalog",
         "});"

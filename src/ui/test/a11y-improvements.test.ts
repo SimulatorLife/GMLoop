@@ -98,12 +98,15 @@ void test("GmDocsPanel renders docs-toggle-row with aria-label group context", (
     assert.match(rendered, /<div class="docs-toggle-row" role="group" aria-label="Documentation view selector">/u);
 });
 
-void test("GmConfigPanel renders config-toggle-row with aria-label group context", () => {
+void test("GmConfigPanel renders shared view-selector with aria-label group context", () => {
     const panel = new TestableGmConfigPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /<div class="config-toggle-row" role="group" aria-label="Configuration view selector">/u);
+    assert.match(
+        rendered,
+        /<div class="config-view-selector view-selector" role="group" aria-label="Configuration view selector">/u
+    );
 });

@@ -108,6 +108,7 @@
     .config-summary-metric-accent { border-color: rgba(89,195,195,0.28); background: linear-gradient(180deg, rgba(89,195,195,0.12), rgba(255,255,255,0.03)); }
     .config-summary-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #90abc8; }
     .config-summary-value { font-size: 14px; color: #f6fbff; overflow-wrap: anywhere; }
+    .config-view-selector { width: max-content; max-width: 100%; margin-bottom: 18px; }
     .config-section { display: flex; flex-direction: column; gap: 14px; }
     .config-section-header { display: flex; flex-direction: column; gap: 4px; max-width: 760px; }
     .config-section-eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #8ed1fc; }
@@ -146,6 +147,7 @@
     .filter-section strong { display: block; margin-bottom: 7px; cursor: pointer; }
     .sub-filter { margin-left: 15px; }
     .live-reload-header-row { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: start; margin-bottom: 18px; }
+    .live-reload-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
     .live-reload-stack { display: flex; flex-direction: column; gap: 20px; }
     .live-reload-grid, .live-reload-metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
     .live-reload-panel-card code { display: block; margin-top: 10px; padding: 9px 10px; border: 1px solid rgba(143,181,255,0.12); border-radius: 12px; background: rgba(5,12,22,0.74); color: #73c8ff; font-size: 12px; overflow-wrap: anywhere; }

@@ -1,7 +1,8 @@
-import { execFile } from "node:child_process";
+import { type ChildProcessWithoutNullStreams,execFile, spawn } from "node:child_process";
 import { existsSync, watch } from "node:fs";
 import { access, constants, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
 import { Format } from "@gmloop/format";
@@ -19,6 +20,16 @@ import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
+import {
+    createStatusUrl,
+    createWebSocketUrl,
+    DEFAULT_GM_TEMP_ROOT,
+    DEFAULT_LIVE_RELOAD_STATUS_HOST,
+    DEFAULT_LIVE_RELOAD_STATUS_PORT,
+    DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
+    DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT
+} from "../modules/live-reload/config.js";
+import { resolveLiveReloadTarget } from "../modules/live-reload/target-resolution.js";
 import { GmlParserBridge, GmlSemanticBridge, GmlTranspilerBridge } from "../modules/refactor/index.js";
 import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
 import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
@@ -87,6 +98,55 @@ type GraphVisualizationStartupState = Readonly<{
     source: GraphServeSource;
 }>;
 
+type GraphVisualizationLiveReloadStatusSnapshot = Readonly<{
+    avgHotReloadLatencyMs: number | null;
+    errorCount: number;
+    maxPatchHistory: number | null;
+    patchCount: number;
+    patchHistorySize: number | null;
+    p95HotReloadLatencyMs: number | null;
+    recentErrors: ReadonlyArray<
+        Readonly<{
+            error: string;
+            filePath: string;
+            recoveryHint: string | null;
+            timestamp: number;
+        }>
+    >;
+    recentPatches: ReadonlyArray<
+        Readonly<{
+            durationMs: number;
+            filePath: string;
+            hotReloadLatencyMs: number | null;
+            id: string;
+            timestamp: number;
+        }>
+    >;
+    scanComplete: boolean;
+    totalPatchCount: number | null;
+    uptimeMs: number;
+    watcherStatus: "inactive" | "offline" | "scanning" | "running" | "error";
+    websocketClients: number;
+}>;
+
+type GraphVisualizationLiveReloadModel = Readonly<{
+    endpoints: Readonly<{
+        runtimeUrl: string | null;
+        statusUrl: string | null;
+        websocketUrl: string | null;
+    }>;
+    pollIntervalMs: number;
+    runtimeHealth: null;
+    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot | null;
+}>;
+
+type GraphVisualizationLiveReloadSessionState = {
+    childProcess: ChildProcessWithoutNullStreams | null;
+    childStderrBuffer: Array<string>;
+    model: GraphVisualizationLiveReloadModel | null;
+    startupPromise: Promise<GraphVisualizationLiveReloadModel> | null;
+};
+
 type OsaScriptExecutionResult = Readonly<{
     stderr: string;
     stdout: string;
@@ -94,6 +154,115 @@ type OsaScriptExecutionResult = Readonly<{
 
 const DEMO_PROJECT_DIRECTORY = path.join("vendor", "3DSpider");
 const DEMO_PROJECT_MANIFEST = "3D-ish spider thing 2.yyp";
+const GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS = 4000;
+const GRAPH_VISUALIZATION_LIVE_RELOAD_POLL_INTERVAL_MS = 2000;
+
+function createGraphVisualizationLiveReloadModel(
+    runtimeUrl: string | null,
+    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot | null = null
+): GraphVisualizationLiveReloadModel {
+    return Object.freeze({
+        endpoints: Object.freeze({
+            runtimeUrl,
+            statusUrl: createStatusUrl(DEFAULT_LIVE_RELOAD_STATUS_HOST, DEFAULT_LIVE_RELOAD_STATUS_PORT),
+            websocketUrl: createWebSocketUrl(DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST, DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT)
+        }),
+        pollIntervalMs: GRAPH_VISUALIZATION_LIVE_RELOAD_POLL_INTERVAL_MS,
+        runtimeHealth: null,
+        statusSnapshot
+    });
+}
+
+function resolveGraphVisualizationCliEntrypointPath(): string {
+    const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+    const candidatePaths = [
+        path.resolve(moduleDirectory, "../../dist/index.js"),
+        path.resolve(moduleDirectory, "../../index.js")
+    ];
+
+    for (const candidatePath of candidatePaths) {
+        if (existsSync(candidatePath)) {
+            return candidatePath;
+        }
+    }
+
+    throw new Error("Could not locate the CLI entrypoint required to start live reload.");
+}
+
+async function tryFetchGraphVisualizationLiveReloadStatusSnapshot(): Promise<GraphVisualizationLiveReloadStatusSnapshot | null> {
+    const statusUrl = createStatusUrl(DEFAULT_LIVE_RELOAD_STATUS_HOST, DEFAULT_LIVE_RELOAD_STATUS_PORT);
+
+    try {
+        const response = await fetch(statusUrl, {
+            headers: { Accept: "application/json" }
+        });
+        if (!response.ok) {
+            return null;
+        }
+
+        const payload = (await response.json()) as Record<string, unknown>;
+        const patchCount = typeof payload.patchCount === "number" ? payload.patchCount : 0;
+        const totalPatchCount = typeof payload.totalPatchCount === "number" ? payload.totalPatchCount : null;
+        const patchHistorySize = typeof payload.patchHistorySize === "number" ? payload.patchHistorySize : null;
+        const maxPatchHistory = typeof payload.maxPatchHistory === "number" ? payload.maxPatchHistory : null;
+        const errorCount = typeof payload.errorCount === "number" ? payload.errorCount : 0;
+        const scanComplete = payload.scanComplete === true;
+        const websocketClients = typeof payload.websocketClients === "number" ? payload.websocketClients : 0;
+        const uptimeMs = typeof payload.uptime === "number" ? payload.uptime : 0;
+
+        return Object.freeze({
+            avgHotReloadLatencyMs:
+                typeof payload.avgHotReloadLatencyMs === "number" ? payload.avgHotReloadLatencyMs : null,
+            errorCount,
+            maxPatchHistory,
+            patchCount,
+            patchHistorySize,
+            p95HotReloadLatencyMs:
+                typeof payload.p95HotReloadLatencyMs === "number" ? payload.p95HotReloadLatencyMs : null,
+            recentErrors: Array.isArray(payload.recentErrors)
+                ? payload.recentErrors
+                      .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+                      .map((entry) =>
+                          Object.freeze({
+                              error: typeof entry.error === "string" ? entry.error : "Unknown error",
+                              filePath: typeof entry.filePath === "string" ? entry.filePath : "unknown",
+                              recoveryHint: typeof entry.recoveryHint === "string" ? entry.recoveryHint : null,
+                              timestamp: typeof entry.timestamp === "number" ? entry.timestamp : 0
+                          })
+                      )
+                : [],
+            recentPatches: Array.isArray(payload.recentPatches)
+                ? payload.recentPatches
+                      .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+                      .map((entry) =>
+                          Object.freeze({
+                              durationMs: typeof entry.durationMs === "number" ? entry.durationMs : 0,
+                              filePath: typeof entry.filePath === "string" ? entry.filePath : "unknown",
+                              hotReloadLatencyMs:
+                                  typeof entry.hotReloadLatencyMs === "number" ? entry.hotReloadLatencyMs : null,
+                              id: typeof entry.id === "string" ? entry.id : "unknown",
+                              timestamp: typeof entry.timestamp === "number" ? entry.timestamp : 0
+                          })
+                      )
+                : [],
+            scanComplete,
+            totalPatchCount,
+            uptimeMs,
+            watcherStatus: errorCount > 0 && scanComplete === false ? "error" : scanComplete ? "running" : "scanning",
+            websocketClients
+        });
+    } catch {
+        return null;
+    }
+}
+
+function setActiveGraphVisualizationLiveReloadModel(
+    sessionState: GraphVisualizationLiveReloadSessionState,
+    model: GraphVisualizationLiveReloadModel
+): GraphVisualizationLiveReloadModel {
+    sessionState.model = model;
+    return model;
+}
 
 function createMutableGraphPlaygroundLintConfig(enabledRuleIds: ReadonlyArray<string>): Array<Record<string, unknown>> {
     const enabledRules = new Set(enabledRuleIds);
@@ -479,12 +648,22 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     let activeContext: GraphResolutionContext | null = null;
     let activeSelectedPaths = initialSelectedPath ? [initialSelectedPath] : [];
     let activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
+    const activeLiveReloadSession: GraphVisualizationLiveReloadSessionState = {
+        childProcess: null,
+        childStderrBuffer: [],
+        model: null,
+        startupPromise: null
+    };
 
     if (options.serve === true) {
         const startupState = await resolveGraphVisualizationServeStartupState(options, initialSelectedPath);
         activeContext = startupState.context;
         activeSelectedPaths = startupState.selectedPaths;
         activeSource = startupState.source;
+        const initialLiveReloadStatus = await tryFetchGraphVisualizationLiveReloadStatusSnapshot();
+        if (initialLiveReloadStatus !== null) {
+            activeLiveReloadSession.model = createGraphVisualizationLiveReloadModel(null, initialLiveReloadStatus);
+        }
     } else {
         activeContext = await resolveGraphContext(options);
         await ensureGraphIndexForQuery(options, activeContext);
@@ -544,6 +723,128 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             return JSON.stringify(exportVisualizationPayload());
         } catch {
             return "";
+        }
+    }
+
+    function updateLiveReloadRuntimeUrlFromProcessOutput(outputChunk: string): void {
+        const runtimeMatch = outputChunk.match(/Runtime static server ready at (\S+)/u);
+        if (!runtimeMatch) {
+            return;
+        }
+
+        const runtimeUrl = runtimeMatch[1] ?? null;
+        const previousSnapshot = activeLiveReloadSession.model?.statusSnapshot ?? null;
+        activeLiveReloadSession.model = createGraphVisualizationLiveReloadModel(runtimeUrl, previousSnapshot);
+    }
+
+    async function ensureLiveReloadSessionStarted(): Promise<GraphVisualizationLiveReloadModel> {
+        if (activeContext === null) {
+            throw new Error("Open a project before starting live reload.");
+        }
+
+        if (activeLiveReloadSession.startupPromise !== null) {
+            return activeLiveReloadSession.startupPromise;
+        }
+
+        const existingStatusSnapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot();
+        if (existingStatusSnapshot !== null) {
+            const model = createGraphVisualizationLiveReloadModel(null, existingStatusSnapshot);
+            activeLiveReloadSession.model = model;
+            return model;
+        }
+
+        const startupPromise = (async () => {
+            await resolveLiveReloadTarget({
+                gmTempRoot: DEFAULT_GM_TEMP_ROOT
+            });
+
+            const cliEntrypointPath = resolveGraphVisualizationCliEntrypointPath();
+            const childProcess = spawn(
+                process.execPath,
+                [cliEntrypointPath, "live-reload", "dev", activeContext.projectRoot, "--quiet"],
+                {
+                    cwd: process.cwd(),
+                    stdio: ["ignore", "pipe", "pipe"]
+                }
+            );
+
+            activeLiveReloadSession.childProcess = childProcess;
+            activeLiveReloadSession.childStderrBuffer = [];
+            activeLiveReloadSession.model = createGraphVisualizationLiveReloadModel(null);
+
+            childProcess.stdout.on("data", (chunk: Buffer | string) => {
+                updateLiveReloadRuntimeUrlFromProcessOutput(String(chunk));
+            });
+            childProcess.stderr.on("data", (chunk: Buffer | string) => {
+                const message = String(chunk).trim();
+                if (message.length === 0) {
+                    return;
+                }
+                activeLiveReloadSession.childStderrBuffer.push(message);
+                if (activeLiveReloadSession.childStderrBuffer.length > 10) {
+                    activeLiveReloadSession.childStderrBuffer.shift();
+                }
+            });
+            childProcess.once("exit", () => {
+                activeLiveReloadSession.childProcess = null;
+            });
+
+            return await new Promise<GraphVisualizationLiveReloadModel>((resolve, reject) => {
+                const timeoutHandle = globalThis.setTimeout(() => {
+                    cleanup();
+                    resolve(activeLiveReloadSession.model ?? createGraphVisualizationLiveReloadModel(null));
+                }, GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS);
+
+                const cleanup = (): void => {
+                    globalThis.clearTimeout(timeoutHandle);
+                    childProcess.off("exit", handleExit);
+                };
+
+                const handleExit = (code: number | null): void => {
+                    cleanup();
+                    const stderrMessage = activeLiveReloadSession.childStderrBuffer.join("\n").trim();
+                    reject(
+                        new Error(
+                            stderrMessage.length > 0
+                                ? stderrMessage
+                                : `Live reload exited before it became ready (exit code ${String(code ?? "unknown")}).`
+                        )
+                    );
+                };
+
+                childProcess.once("exit", handleExit);
+
+                const pollStatus = async (): Promise<void> => {
+                    const snapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot();
+                    if (snapshot !== null) {
+                        cleanup();
+                        const runtimeUrl = activeLiveReloadSession.model?.endpoints.runtimeUrl ?? null;
+                        const model = createGraphVisualizationLiveReloadModel(runtimeUrl, snapshot);
+                        activeLiveReloadSession.model = model;
+                        resolve(model);
+                        return;
+                    }
+
+                    if (activeLiveReloadSession.childProcess === null) {
+                        cleanup();
+                        reject(new Error("Live reload stopped before the status server became available."));
+                        return;
+                    }
+
+                    globalThis.setTimeout(() => {
+                        void pollStatus();
+                    }, 200);
+                };
+
+                void pollStatus();
+            });
+        })();
+
+        activeLiveReloadSession.startupPromise = startupPromise;
+        try {
+            return await startupPromise;
+        } finally {
+            activeLiveReloadSession.startupPromise = null;
         }
     }
 
@@ -706,6 +1007,9 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
                 return Object.freeze({ ast, output, error });
             },
+            startLiveReload: async () => {
+                return ensureLiveReloadSessionStarted();
+            },
             renderBundle: async (isServerMode) => {
                 const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(
                     activeContext,
@@ -717,6 +1021,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 return UI.renderGraphVisualizationBundle(exportVisualizationPayload(), {
                     documentationCatalogs,
                     isServerMode,
+                    liveReload: activeLiveReloadSession.model ?? undefined,
                     loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
                     mcpServerStatus: "not-started",
                     projectConfigurationCatalog,
@@ -745,6 +1050,15 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             process.once("SIGINT", () => uiSourceWatcher.close());
             process.once("SIGTERM", () => uiSourceWatcher.close());
         }
+
+        const stopLiveReloadChildProcess = (): void => {
+            if (activeLiveReloadSession.childProcess && activeLiveReloadSession.childProcess.killed === false) {
+                activeLiveReloadSession.childProcess.kill("SIGTERM");
+            }
+        };
+        process.once("SIGINT", stopLiveReloadChildProcess);
+        process.once("SIGTERM", stopLiveReloadChildProcess);
+        process.once("exit", stopLiveReloadChildProcess);
 
         return;
     }

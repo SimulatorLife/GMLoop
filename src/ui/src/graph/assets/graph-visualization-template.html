@@ -149,9 +149,12 @@
         <p id="live-reload-meta" class="docs-meta">
           Live-reload endpoints were not provided by this graph visualization host.
         </p>
-        <button id="refresh-live-reload" class="top-nav-button" disabled>Refresh Status</button>
+        <div class="live-reload-actions">
+          <button id="start-live-reload" class="top-nav-button" disabled>Start Live Reload</button>
+          <button id="refresh-live-reload" class="top-nav-button" disabled>Refresh Status</button>
+        </div>
       </div>
-      <div class="live-reload-stack" aria-live="polite">
+      <div id="live-reload-content" class="live-reload-stack" aria-live="polite">
         <div class="catalog-card live-reload-panel-card">
           <h3>Pipeline Overview</h3>
           <ol class="live-reload-pipeline" aria-label="Live reload pipeline">

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "gmloop": {
+      "command": "pnpm",
+      "args": [
+        "--dir",
+        "/absolute/path/to/GMLoop",
+        "--filter",
+        "@gmloop/mcp",
+        "run",
+        "start"
+      ]
+    }
+  }
+}

@@ -32,6 +32,8 @@ type GraphVisualizationServerProcessPlayground = (
     }>
 ) => Promise<Readonly<{ ast: string; output: string; error: string | null }>>;
 
+type GraphVisualizationServerStartLiveReload = () => Promise<unknown>;
+
 export type GraphVisualizationServerOptions = Readonly<{
     host?: string;
     port?: number;
@@ -40,6 +42,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     renderBundle: GraphVisualizationServerRenderBundle;
     openProjectTargets?: GraphVisualizationServerOpenProjectTargets;
     processPlayground?: GraphVisualizationServerProcessPlayground;
+    startLiveReload?: GraphVisualizationServerStartLiveReload;
 }>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
@@ -176,6 +179,18 @@ export async function startGraphVisualizationServer(
                     });
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ ok: true, payload: result }));
+                } catch (error: unknown) {
+                    response.writeHead(500, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
+                }
+                return;
+            }
+
+            if (request.method === "POST" && request.url === "/api/live-reload/start" && options.startLiveReload) {
+                try {
+                    const result = await options.startLiveReload();
+                    response.writeHead(200, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ liveReload: result, ok: true }));
                 } catch (error: unknown) {
                     response.writeHead(500, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ error: resolveErrorMessage(error) }));

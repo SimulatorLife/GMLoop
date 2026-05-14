@@ -7,6 +7,7 @@ import {
     renderGraphVisualizationDocumentTitle,
     serializeGraphVisualizationDataForInlineScript,
     serializeGraphVisualizationDocumentationCatalogsForInlineScript,
+    serializeGraphVisualizationLiveReloadForInlineScript,
     serializeGraphVisualizationLoadedTargetForInlineScript,
     serializeGraphVisualizationProjectConfigurationCatalogForInlineScript
 } from "./graph-visualization-inline-data.js";
@@ -104,11 +105,13 @@ export function renderGraphVisualizationBundle(
     const serializedProjectConfigurationCatalog = serializeGraphVisualizationProjectConfigurationCatalogForInlineScript(
         options.projectConfigurationCatalog ?? null
     );
+    const serializedLiveReload = serializeGraphVisualizationLiveReloadForInlineScript(options.liveReload ?? null);
     const documentTitle = renderGraphVisualizationDocumentTitle(options.title);
     const isServerMode = options.isServerMode === true;
     const clientScriptBody = renderGraphVisualizationClientScript(
         serializedData,
         serializedDocumentationCatalogs,
+        serializedLiveReload,
         serializedLoadedTarget,
         serializedProjectConfigurationCatalog,
         isServerMode
