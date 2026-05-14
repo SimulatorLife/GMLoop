@@ -10,11 +10,37 @@ import { Core } from "@gmloop/core";
 
 const { getErrorMessage } = Core;
 
+export const WATCH_STATUS_OUTPUT_FORMAT = Object.freeze({
+    JSON: "json",
+    PRETTY: "pretty"
+} as const);
+
+export type WatchStatusOutputFormat = (typeof WATCH_STATUS_OUTPUT_FORMAT)[keyof typeof WATCH_STATUS_OUTPUT_FORMAT];
+
+export const WATCH_STATUS_OUTPUT_FORMAT_VALUES = Object.freeze([
+    WATCH_STATUS_OUTPUT_FORMAT.PRETTY,
+    WATCH_STATUS_OUTPUT_FORMAT.JSON
+] as const);
+
 interface WatchStatusCommandOptions {
     statusHost?: string;
     statusPort?: number;
-    format?: "pretty" | "json";
+    format?: WatchStatusOutputFormat;
     endpoint?: "status" | "health" | "ping" | "ready";
+}
+
+function isWatchStatusOutputFormat(value: string): value is WatchStatusOutputFormat {
+    return (WATCH_STATUS_OUTPUT_FORMAT_VALUES as ReadonlyArray<string>).includes(value);
+}
+
+function parseWatchStatusOutputFormat(value: string | undefined): WatchStatusOutputFormat {
+    const candidate = value ?? WATCH_STATUS_OUTPUT_FORMAT.PRETTY;
+    if (isWatchStatusOutputFormat(candidate)) {
+        return candidate;
+    }
+    throw new Error(
+        `Invalid live-reload status format "${candidate}". Expected one of: ${WATCH_STATUS_OUTPUT_FORMAT_VALUES.join(", ")}`
+    );
 }
 
 /**
@@ -184,12 +210,13 @@ function displayPretty(data: unknown, endpoint: string): void {
  * @param {string} [options.endpoint] - Endpoint to query
  */
 export async function runWatchStatusCommand(options: WatchStatusCommandOptions = {}): Promise<void> {
-    const { statusHost = "127.0.0.1", statusPort = 17_891, format = "pretty", endpoint = "status" } = options;
+    const { statusHost = "127.0.0.1", statusPort = 17_891, endpoint = "status" } = options;
+    const format = parseWatchStatusOutputFormat(options.format);
 
     try {
         const data = await fetchStatus(statusHost, statusPort, endpoint);
 
-        if (format === "json") {
+        if (format === WATCH_STATUS_OUTPUT_FORMAT.JSON) {
             console.log(JSON.stringify(data, null, 2));
         } else {
             displayPretty(data, endpoint);

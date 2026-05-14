@@ -80,6 +80,66 @@ void describe("live-reload status command", () => {
         assert.deepStrictEqual(formatOption?.argChoices, ["pretty", "json"]);
     });
 
+    void it("fails fast when format is not a supported value", async () => {
+        let processExitCalled = false;
+        let fetchCalled = false;
+
+        await withTemporaryProperty(
+            globalThis,
+            "fetch",
+            (async () => {
+                fetchCalled = true;
+                throw new Error("fetch should not be called for invalid format");
+            }) as typeof fetch,
+            () =>
+                withTemporaryProperty(
+                    process,
+                    "exit",
+                    ((code?: number) => {
+                        processExitCalled = true;
+                        throw new Error(`Process exit: ${code ?? 0}`);
+                    }) as typeof process.exit,
+                    async () => {
+                        await assert.rejects(
+                            runWatchStatusCommand({
+                                format: "yaml" as unknown as "json"
+                            }),
+                            /Invalid live-reload status format "yaml"\. Expected one of: pretty, json/u
+                        );
+                    }
+                )
+        );
+
+        assert.equal(processExitCalled, false);
+        assert.equal(fetchCalled, false);
+    });
+
+    void it("keeps valid json format behavior unchanged", async () => {
+        const logMessages: Array<string> = [];
+
+        await withTemporaryProperty(
+            globalThis,
+            "fetch",
+            (async () => Response.json({ status: "ok" }, { status: 200 })) as typeof fetch,
+            () =>
+                withTemporaryProperty(
+                    console,
+                    "log",
+                    (...args: Array<unknown>) => {
+                        logMessages.push(args.map(String).join(" "));
+                    },
+                    async () => {
+                        await runWatchStatusCommand({
+                            endpoint: "ping",
+                            format: "json"
+                        });
+                    }
+                )
+        );
+
+        assert.deepStrictEqual(logMessages, ['{\n  "status": "ok"\n}']);
+    });
+
     void it("should accept endpoint option", () => {
         const command = createLiveReloadStatusCommand();
         const endpointOption = command.options.find((opt) => opt.long === "--endpoint");

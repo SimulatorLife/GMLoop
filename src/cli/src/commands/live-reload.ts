@@ -33,7 +33,11 @@ import {
     DEFAULT_WATCH_MAX_PATCH_HISTORY,
     DEFAULT_WATCH_POLLING_INTERVAL_MS
 } from "./watch/constants.js";
-import { runWatchStatusCommand } from "./watch/status.js";
+import {
+    runWatchStatusCommand,
+    WATCH_STATUS_OUTPUT_FORMAT,
+    WATCH_STATUS_OUTPUT_FORMAT_VALUES
+} from "./watch/status.js";
 
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
 
@@ -301,7 +305,9 @@ function createLiveReloadStatusSubcommand(): Command {
                 .env("WATCH_STATUS_PORT")
         )
         .addOption(
-            new Option("--format <format>", "Output format").choices(["pretty", "json"] as const).default("pretty")
+            new Option("--format <format>", "Output format")
+                .choices([...WATCH_STATUS_OUTPUT_FORMAT_VALUES])
+                .default(WATCH_STATUS_OUTPUT_FORMAT.PRETTY)
         )
         .addOption(
             new Option("--endpoint <endpoint>", "Endpoint to query")
