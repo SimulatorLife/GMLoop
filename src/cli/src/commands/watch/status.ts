@@ -10,11 +10,30 @@ import { Core } from "@gmloop/core";
 
 const { getErrorMessage } = Core;
 
+export const WATCH_STATUS_OUTPUT_FORMATS = Object.freeze({
+    PRETTY: "pretty",
+    JSON: "json"
+} as const);
+
+export type WatchStatusOutputFormat = (typeof WATCH_STATUS_OUTPUT_FORMATS)[keyof typeof WATCH_STATUS_OUTPUT_FORMATS];
+
+export const WATCH_STATUS_OUTPUT_FORMAT_VALUES = Object.freeze(Object.values(WATCH_STATUS_OUTPUT_FORMATS));
+
 interface WatchStatusCommandOptions {
     statusHost?: string;
     statusPort?: number;
-    format?: "pretty" | "json";
+    format?: string;
     endpoint?: "status" | "health" | "ping" | "ready";
+}
+
+function parseWatchStatusOutputFormat(value: string | undefined): WatchStatusOutputFormat {
+    const candidate = value ?? WATCH_STATUS_OUTPUT_FORMATS.PRETTY;
+    if (candidate === WATCH_STATUS_OUTPUT_FORMATS.PRETTY || candidate === WATCH_STATUS_OUTPUT_FORMATS.JSON) {
+        return candidate;
+    }
+    throw new Error(
+        `Invalid live-reload status format "${candidate}". Expected one of: ${WATCH_STATUS_OUTPUT_FORMAT_VALUES.join(", ")}`
+    );
 }
 
 /**
@@ -184,12 +203,13 @@ function displayPretty(data: unknown, endpoint: string): void {
  * @param {string} [options.endpoint] - Endpoint to query
  */
 export async function runWatchStatusCommand(options: WatchStatusCommandOptions = {}): Promise<void> {
-    const { statusHost = "127.0.0.1", statusPort = 17_891, format = "pretty", endpoint = "status" } = options;
+    const { statusHost = "127.0.0.1", statusPort = 17_891, endpoint = "status" } = options;
+    const format = parseWatchStatusOutputFormat(options.format);
 
     try {
         const data = await fetchStatus(statusHost, statusPort, endpoint);
 
-        if (format === "json") {
+        if (format === WATCH_STATUS_OUTPUT_FORMATS.JSON) {
             console.log(JSON.stringify(data, null, 2));
         } else {
             displayPretty(data, endpoint);
