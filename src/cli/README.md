@@ -713,6 +713,72 @@ Generates Feather metadata for GameMaker's static analysis.
 pnpm run cli -- generate-feather-metadata
 ```
 
+### `graph` - Build and Query the Dual-Root Semantic Graph Index
+
+Manages the SQLite-backed dual-root graph index for symbol search, node inspection,
+and project analysis.
+
+```bash
+# Build / rebuild the graph index
+pnpm run cli -- graph index
+pnpm run cli -- graph index --path path/to/project --force
+
+# Search the index
+pnpm run cli -- graph search "player"
+pnpm run cli -- graph search "player" --path path/to/project --database-path .gmloop/graph.db
+
+# Inspect a node by graph id
+pnpm run cli -- graph symbol project::gml/script/scr_player
+pnpm run cli -- graph symbol --path path/to/project scr_player
+
+# Get context around a node (declaration + neighbors)
+pnpm run cli -- graph context project::gml/script/scr_player --depth 3
+
+# Get neighboring nodes
+pnpm run cli -- graph neighbors project::gml/script/scr_player --depth 2
+
+# Find all usages of a symbol
+pnpm run cli -- graph usages project::gml/script/scr_player
+
+# Validate graph index health
+pnpm run cli -- graph doctor --path path/to/project
+
+# Visualize the graph index in the browser
+pnpm run cli -- graph visualize --path path/to/project
+pnpm run cli -- graph visualize --port 7890
+
+# Export graph visualization as a standalone bundle
+pnpm run cli -- graph visualize --path path/to/project --output ./graph-output
+```
+
+**Options:**
+
+- `--path <path>` - Project root or `.yyp` file path
+- `--toolset-root <path>` - Optional toolset root for dual-root indexing
+- `--database-path <path>` - Override the SQLite database path (default:
+  `.gmloop/graph.db` under the project root)
+- `--force` - Force full rebuild even when a database already exists
+- `--json` - Return machine-readable JSON envelope
+- `--config <path>` - Path to `gmloop.json` for graph config
+
+**JSON envelope format:**
+
+All `--json` commands return a stable envelope:
+
+```json
+{
+  "command": "graph search",
+  "projectRoot": "/path/to/project",
+  "databasePath": "/path/to/project/.gmloop/graph.db",
+  "graphIds": ["project"],
+  "payload": { ... }
+}
+```
+
+**Ownership note:** The graph index is a semantic analysis and retrieval surface.
+It does not perform refactoring, formatting, or linting. It is backed by
+`@gmloop/semantic` and exposed through the CLI for human and agent use.
+
 ## Architecture
 
 The CLI package serves as the orchestration layer for the hot-reload development pipeline:

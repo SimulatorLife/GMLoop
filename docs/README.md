@@ -9,14 +9,19 @@ then return here for deeper context.
 
 ## Reference guides
 
-- [Sample `.prettierignore`](examples/example.prettierignore) — Baseline ignore
-  file tuned for common GameMaker metadata folders.
-- [Sample `.prettierrc`](examples/example.prettierrc) — Baseline Prettier
-  config for formatting `.gml` files in a GameMaker project.
-- [Sample `eslint.config.js`](examples/example.eslint.config.js) — Flat ESLint
-  config that composes the `@gmloop/lint` presets (without TypeScript requirement)
-- [Sample `gmloop.json`](examples/gmloop.json) — Baseline project config with
-  formatter, lint, and refactor settings
+> **Note:** The following sample config files are documented but not yet
+> committed. Each link describes the target; create the file when adding that
+> surface.
+
+- [`examples/example.prettierignore`](examples/example.prettierignore) *(planned)* — Baseline
+  ignore file tuned for common GameMaker metadata folders.
+- [`examples/example.prettierrc`](examples/example.prettierrc) *(planned)* — Baseline
+  Prettier config for formatting `.gml` files in a GameMaker project.
+- [`examples/example.eslint.config.js`](examples/example.eslint.config.js) *(planned)* —
+  Flat ESLint config that composes the `@gmloop/lint` presets (without TypeScript
+  requirement).
+- [`examples/gmloop.json`](examples/gmloop.json) *(planned)* — Baseline project config
+  with formatter, lint, and refactor settings.
 
 ## Usage & rollout
 
