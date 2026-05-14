@@ -199,6 +199,37 @@ function dropRedundantTextEditsForMetadataRewrites(workspace: WorkspaceEdit): Wo
     return normalizedWorkspace;
 }
 
+function collectTextEditValidationErrors(
+    filePath: string,
+    edits: ReadonlyArray<Pick<TextEdit, "end" | "newText" | "start">>
+): Array<string> {
+    const errors: Array<string> = [];
+
+    if (!Core.isNonEmptyString(filePath)) {
+        errors.push("Text edit path must be a non-empty string");
+    }
+
+    for (const edit of edits) {
+        if (!Number.isInteger(edit.start) || edit.start < 0) {
+            errors.push(`Text edit for ${filePath} must have a non-negative integer start offset`);
+        }
+
+        if (!Number.isInteger(edit.end) || edit.end < 0) {
+            errors.push(`Text edit for ${filePath} must have a non-negative integer end offset`);
+        }
+
+        if (Number.isInteger(edit.start) && Number.isInteger(edit.end) && edit.end < edit.start) {
+            errors.push(`Text edit for ${filePath} must not end before it starts`);
+        }
+
+        if (typeof edit.newText !== "string") {
+            errors.push(`Text edit for ${filePath} must replace with a string`);
+        }
+    }
+
+    return errors;
+}
+
 function applyGroupedTextEditsToContent(
     originalContent: string,
     edits: ReadonlyArray<Pick<TextEdit, "end" | "newText" | "start">>
@@ -783,6 +814,8 @@ export class RefactorEngine {
         // start position. Overlaps indicate that two edits target overlapping or
         // adjacent text spans, which would corrupt the output if applied naively.
         for (const [filePath, edits] of grouped.entries()) {
+            errors.push(...collectTextEditValidationErrors(filePath, edits));
+
             for (let i = 0; i < edits.length - 1; i++) {
                 const current = edits[i];
                 const next = edits[i + 1];

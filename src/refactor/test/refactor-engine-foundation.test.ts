@@ -393,6 +393,21 @@ void test("validateRename detects overlapping edits", async () => {
     assert.ok(result.errors.some((e) => e.includes("Overlapping")));
 });
 
+void test("validateRename rejects malformed text edit ranges", async () => {
+    const engine = new RefactorEngineClass();
+    const ws = new WorkspaceEditFactory();
+    ws.addEdit("", 0, 1, "missingPath");
+    ws.addEdit("scripts/example.gml", -1, 1, "negativeStart");
+    ws.addEdit("scripts/example.gml", 8, 4, "reversedRange");
+
+    const result = await engine.validateRename(ws);
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.includes("Text edit path must be a non-empty string")));
+    assert.ok(result.errors.some((error) => error.includes("non-negative integer start offset")));
+    assert.ok(result.errors.some((error) => error.includes("must not end before it starts")));
+});
+
 void test("validateRename warns about large refactorings", async () => {
     const engine = new RefactorEngineClass();
     const ws = new WorkspaceEditFactory();
@@ -742,6 +757,30 @@ void test("applyWorkspaceEdit rejects invalid edits", async () => {
     await assert.rejects(() => engine.applyWorkspaceEdit(ws, { readFile, dryRun: true }), {
         message: /Overlapping edits/
     });
+});
+
+void test("applyWorkspaceEdit rejects malformed text edit ranges before writing", async () => {
+    const engine = new RefactorEngineClass();
+    const ws = new WorkspaceEditFactory();
+    ws.addEdit("scripts/example.gml", 12, 3, "badRange");
+
+    let writeCount = 0;
+
+    await assert.rejects(
+        () =>
+            engine.applyWorkspaceEdit(ws, {
+                readFile: async () => "show_debug_message(name);",
+                writeFile: async () => {
+                    writeCount += 1;
+                },
+                dryRun: false
+            }),
+        {
+            message: /must not end before it starts/
+        }
+    );
+
+    assert.equal(writeCount, 0);
 });
 
 void test("executeRename validates required parameters", async () => {
