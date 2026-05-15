@@ -25,12 +25,23 @@ export type ConfiguredGameMakerCliMcpServer = Readonly<{
 export async function discoverConfiguredGameMakerCliMcpServer(
     projectRoot: string | null
 ): Promise<ConfiguredGameMakerCliMcpServer | null> {
-    for (const candidatePath of createMcpConfigurationCandidatePaths(projectRoot)) {
-        if (!(await isReadableFile(candidatePath))) {
-            continue;
-        }
+    const candidatePaths = createMcpConfigurationCandidatePaths(projectRoot);
+    const readableCandidates = await Promise.all(
+        candidatePaths.map(async (candidatePath) => ({
+            candidatePath,
+            readable: await isReadableFile(candidatePath)
+        }))
+    );
+    const readableCandidatePaths = readableCandidates
+        .filter((entry) => entry.readable)
+        .map((entry) => entry.candidatePath);
+    const loadedServers = await Promise.all(
+        readableCandidatePaths.map(
+            async (candidatePath) => await loadConfiguredGameMakerCliMcpServerFromPath(candidatePath)
+        )
+    );
 
-        const configuredServer = await loadConfiguredGameMakerCliMcpServerFromPath(candidatePath);
+    for (const configuredServer of loadedServers) {
         if (configuredServer !== null) {
             return configuredServer;
         }
@@ -73,7 +84,7 @@ async function loadConfiguredGameMakerCliMcpServerFromPath(
 
 function createMcpConfigurationCandidatePaths(projectRoot: string | null): ReadonlyArray<string> {
     const candidates = new Set<string>();
-    const roots = [process.cwd(), projectRoot].filter((value): value is string => value !== null);
+    const roots = [projectRoot, process.cwd()].filter((value): value is string => value !== null);
 
     for (const rootPath of roots) {
         candidates.add(path.join(rootPath, ".codex", "config.toml"));
@@ -152,7 +163,7 @@ function parseCodexTomlMcpServerEntries(configurationText: string): Record<strin
             continue;
         }
 
-        const sectionMatch = trimmedLine.match(/^\[\s*mcp_servers\.([A-Za-z0-9_-]+)(?:\.(env))?\s*]$/u);
+        const sectionMatch = trimmedLine.match(/^\[\s*mcp_servers\.([A-Za-z0-9_-]+)(?:\.(env))?\s*\]$/u);
         if (sectionMatch !== null) {
             activeServerId = sectionMatch[1] ?? null;
             activeSection = sectionMatch[2] === "env" ? "env" : "server";
@@ -258,7 +269,7 @@ function parseTomlString(rawValue: string): string | null {
 
 function parseTomlStringArray(rawValue: string): Array<string> {
     const trimmedValue = rawValue.trim();
-    const match = trimmedValue.match(/^\[(.*)]$/u);
+    const match = trimmedValue.match(/^\[(.*)\]$/u);
     if (match === null) {
         return [];
     }

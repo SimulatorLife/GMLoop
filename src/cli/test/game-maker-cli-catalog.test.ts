@@ -160,6 +160,7 @@ void test("loadGameMakerCliCompanionCatalog parses live help output and MCP tool
                 projectRoot
             },
             {
+                discoverConfiguredMcpServer: async () => null,
                 executeCommand: async (invocation) => {
                     if (invocation.command === "gm-cli") {
                         const error = new Error("missing gm-cli") as NodeJS.ErrnoException;
@@ -233,6 +234,68 @@ void test("loadGameMakerCliCompanionCatalog parses live help output and MCP tool
         assert.equal(catalog.mcpTools.length, 1);
         assert.equal(catalog.mcpTools[0]?.name, "status");
         assert.equal(catalog.mcpTools[0]?.fields[0]?.valueType, "boolean");
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("loadGameMakerCliCompanionCatalog prefers the configured external MCP server when available", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-gm-cli-external-mcp-"));
+
+    const helpByDisplayName = new Map<string, string>([
+        ["gm-cli --version", "1.3.0\n"],
+        ["gm-cli --help", ["USAGE", "  gm-cli resourcetool", "", "The GameMaker command-line interface"].join("\n")]
+    ]);
+
+    try {
+        const catalog = await loadGameMakerCliCompanionCatalog(
+            {
+                projectRoot
+            },
+            {
+                discoverConfiguredMcpServer: async () => ({
+                    args: Object.freeze(["@gamemaker/gm-cli@latest", "resourcetool", "mcp"]),
+                    command: "npx",
+                    displayName: "npx @gamemaker/gm-cli@latest resourcetool mcp",
+                    env: Object.freeze({}),
+                    serverId: "gamemaker-resource-tool",
+                    sourcePath: path.join(projectRoot, ".mcp.json")
+                }),
+                executeCommand: async (invocation) => {
+                    const key = `${invocation.command} ${invocation.args.join(" ")}`.trim();
+                    const stdout = helpByDisplayName.get(key);
+                    if (stdout === undefined) {
+                        throw new Error(`Unexpected gm-cli command: ${key}`);
+                    }
+
+                    return {
+                        exitCode: 0,
+                        stderr: "",
+                        stdout
+                    };
+                },
+                probeConfiguredMcpServer: async (options) => {
+                    assert.deepEqual(options.args, ["@gamemaker/gm-cli@latest", "resourcetool", "mcp"]);
+                    return {
+                        serverName: "ResourceTool",
+                        serverVersion: "2024.14.15",
+                        tools: [
+                            {
+                                description: "Read the current room list",
+                                inputSchema: { properties: {}, required: [], type: "object" },
+                                name: "room.list"
+                            }
+                        ]
+                    };
+                }
+            }
+        );
+
+        assert.equal(catalog.mcpServer.available, true);
+        assert.equal(catalog.mcpServer.projectPath, null);
+        assert.equal(catalog.mcpServer.serverId, "gamemaker-resource-tool");
+        assert.equal(catalog.mcpServer.sourcePath, path.join(projectRoot, ".mcp.json"));
+        assert.equal(catalog.mcpTools[0]?.name, "room.list");
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

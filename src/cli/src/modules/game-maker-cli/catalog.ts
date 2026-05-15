@@ -36,9 +36,7 @@ type GameMakerCliMcpProbeResult = Readonly<{
 }>;
 
 type GameMakerCliCatalogDependencies = Readonly<{
-    discoverConfiguredMcpServer?: (
-        projectRoot: string | null
-    ) => Promise<ConfiguredGameMakerCliMcpServer | null>;
+    discoverConfiguredMcpServer?: (projectRoot: string | null) => Promise<ConfiguredGameMakerCliMcpServer | null>;
     executeCommand?: (
         invocation: GameMakerCliInvocation,
         options: GameMakerCliCommandExecutionOptions
@@ -166,7 +164,8 @@ export async function loadGameMakerCliCompanionCatalog(
         cwd: options.projectRoot ?? process.cwd(),
         toolPath: options.toolPath ?? null
     });
-    const discoverConfiguredMcpServer = dependencies.discoverConfiguredMcpServer ?? discoverConfiguredGameMakerCliMcpServer;
+    const discoverConfiguredMcpServer =
+        dependencies.discoverConfiguredMcpServer ?? discoverConfiguredGameMakerCliMcpServer;
     const executeCommand = dependencies.executeCommand ?? executeGameMakerCliCommand;
     const probeConfiguredMcpServer = dependencies.probeConfiguredMcpServer ?? probeStdioMcpServer;
     const probeMcpServer = dependencies.probeMcpServer ?? probeGameMakerCliMcpServer;
@@ -193,7 +192,7 @@ export async function loadGameMakerCliCompanionCatalog(
     const resolvedProjectPath = await resolveSingleProjectManifestPathOrNull(options.projectRoot);
     const configuredExternalMcpServer = await discoverConfiguredMcpServer(options.projectRoot);
 
-    if (resolvedProjectPath === null) {
+    if (resolvedProjectPath === null && configuredExternalMcpServer === null) {
         return Object.freeze({
             available: true,
             cliCommands,
@@ -219,7 +218,7 @@ export async function loadGameMakerCliCompanionCatalog(
     try {
         const mcpProbeResult =
             configuredExternalMcpServer === null
-                ? await runGameMakerCliMcpProbe(resolvedProjectPath, executionOptions, probeMcpServer)
+                ? await runGameMakerCliMcpProbe(resolvedProjectPath ?? "", executionOptions, probeMcpServer)
                 : await probeConfiguredExternalGameMakerCliMcpServer(
                       configuredExternalMcpServer,
                       resolvedProjectPath,
@@ -565,7 +564,7 @@ async function probeConfiguredExternalGameMakerCliMcpServer(
         displayName: string;
         env: Readonly<Record<string, string>>;
     }>,
-    projectPath: string,
+    projectPath: string | null,
     cwd: string,
     probeConfiguredMcpServer: (options: {
         args: ReadonlyArray<string>;
@@ -576,9 +575,12 @@ async function probeConfiguredExternalGameMakerCliMcpServer(
         timeoutMs?: number;
     }) => Promise<StdioMcpServerProbeResult>
 ): Promise<GameMakerCliMcpProbeResult> {
+    const hasProjectArgument =
+        projectPath !== null &&
+        (configuredServer.args.some((entry) => entry.toLowerCase().endsWith(".yyp")) ||
+            configuredServer.args.some((entry) => path.resolve(cwd, entry) === projectPath));
     const args =
-        configuredServer.args.some((entry) => entry.toLowerCase().endsWith(".yyp")) ||
-        configuredServer.args.some((entry) => path.resolve(cwd, entry) === projectPath)
+        projectPath === null || hasProjectArgument
             ? [...configuredServer.args]
             : [...configuredServer.args, projectPath];
 

@@ -66,6 +66,8 @@ function createMockModel(): GraphVisualizationUiModel {
                     error: null,
                     name: "ResourceTool",
                     projectPath: "/tmp/test/Game.yyp",
+                    serverId: "gamemaker-resource-tool",
+                    sourcePath: "/tmp/test/.mcp.json",
                     version: "2024.14.15"
                 },
                 mcpTools: [
@@ -170,6 +172,7 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
     assert.match(rendered, /GameMaker MCP \(1\)/u);
     assert.match(rendered, /manual read/u);
     assert.match(rendered, /ResourceTool v2024\.14\.15/u);
+    assert.match(rendered, /configured MCP server "gamemaker-resource-tool"/u);
     assert.match(rendered, /All Rules/u);
     assert.match(rendered, /All Levels/u);
     assert.match(rendered, /class="?config-severity-badge warn"?/u);

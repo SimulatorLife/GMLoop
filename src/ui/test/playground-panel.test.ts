@@ -161,6 +161,8 @@ void test("playground panel renders format/lint/codemod detail sections", () => 
                     error: null,
                     name: null,
                     projectPath: null,
+                    serverId: null,
+                    sourcePath: null,
                     version: null
                 },
                 mcpTools: [],
@@ -257,6 +259,8 @@ void test("playground panel falls back to workspace catalogs when project config
                     error: null,
                     name: null,
                     projectPath: null,
+                    serverId: null,
+                    sourcePath: null,
                     version: null
                 },
                 mcpTools: [],

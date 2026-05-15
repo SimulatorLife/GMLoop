@@ -52,6 +52,8 @@ function createMockModel(): GraphVisualizationUiModel {
                     error: null,
                     name: null,
                     projectPath: null,
+                    serverId: null,
+                    sourcePath: null,
                     version: null
                 },
                 mcpTools: [],

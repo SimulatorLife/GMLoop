@@ -155,6 +155,11 @@ GMLoop keeps its own graph-backed read/query commands such as `resource list`,
 GameMaker-native mutation/manual/MCP command surfaces that already live in
 `gm-cli`.
 
+When the graph visualization Config page is open, GMLoop inspects the
+configured external `gm-cli` ResourceTool MCP server definition from the local
+MCP config files and renders the live `tools/list` catalog directly from that
+server instead of hardcoding a mirrored tool list.
+
 ### `watch` - Monitor Files for Hot-Reload Pipeline
 
 **NEW**: Now integrated with the transpiler to generate JavaScript patches when GML files change.

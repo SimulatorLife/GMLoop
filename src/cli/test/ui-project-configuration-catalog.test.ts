@@ -29,6 +29,8 @@ void test("project configuration catalog exposes all lint rules and available ru
                     error: null,
                     name: "ResourceTool",
                     projectPath: "/tmp/gmloop-ui-catalog/Game.yyp",
+                    serverId: "gamemaker-resource-tool",
+                    sourcePath: "/tmp/gmloop-ui-catalog/.mcp.json",
                     version: "2024.14.15"
                 },
                 mcpTools: [
@@ -55,4 +57,5 @@ void test("project configuration catalog exposes all lint rules and available ru
     assert.equal(catalog.gameMakerCli.available, true);
     assert.equal(catalog.gameMakerCli.cliCommands[0]?.displayName, "manual read");
     assert.equal(catalog.gameMakerCli.mcpTools[0]?.name, "status");
+    assert.equal(catalog.gameMakerCli.mcpServer.serverId, "gamemaker-resource-tool");
 });
