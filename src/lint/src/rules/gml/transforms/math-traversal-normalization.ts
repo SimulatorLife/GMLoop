@@ -3,13 +3,16 @@
  * This includes simplifications, constant conversions, and traversal-safe replacements so the printer emits consistent expressions.
  *
  * Implementation is split across several focused modules:
- *   - math-numeric-utils.ts   – pure numeric/literal evaluation helpers
- *   - math-ast-builders.ts    – AST node creation and mutation helpers
+ *   - math-numeric-utils.ts    – pure numeric/literal evaluation helpers
+ *   - math-ast-builders.ts     – AST node creation and mutation helpers
  *   - math-trig-conversions.ts – trigonometric and angle-conversion simplifiers
+ *   - math-ast-mutation.ts     – AST tree-walking, node-lookup, and structural mutation helpers
+ *                               (original-expression cloning, alias removal, blank-line preservation,
+ *                               zero-division simplification)
  */
-import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
-import { findFirstAstNodeBy } from "../rule-base-helpers.js";
+import { Core } from "@gmloop/core";
+
 import {
     cloneMultiplicativeTerms,
     createBinaryExpressionNode,
@@ -24,6 +27,10 @@ import {
     replaceNode,
     replaceNodeWith as replaceNodeByMutation
 } from "./math-ast-builders.js";
+import type { ConvertManualMathTransformOptions } from "./math-ast-mutation.js";
+// Also import as a namespace so the module body can use the helpers internally
+// (export* does not make symbols available within the module performing the re-export).
+import * as AST from "./math-ast-mutation.js";
 import {
     attemptConvertLengthDir,
     isIdentityReplacementSafeExpression,
@@ -37,7 +44,6 @@ import {
     collectProductOperands,
     computeIntegerGcd,
     computeNumericTolerance,
-    evaluateNumericExpression,
     evaluateOneMinusNumeric,
     isEulerLiteral,
     isHalfExponentLiteral,
@@ -55,6 +61,10 @@ import {
     attemptSimplifyTrigonometricCall
 } from "./math-trig-conversions.js";
 
+// Re-export the entire public API of math-ast-mutation.ts so callers importing
+// from this module get all mutation helpers transparently.
+export * from "./math-ast-mutation.js";
+
 const {
     ASSIGNMENT_EXPRESSION,
     BINARY_EXPRESSION,
@@ -70,12 +80,6 @@ const {
     isObjectLike
 } = Core;
 
-export type ConvertManualMathTransformOptions = {
-    sourceText?: string;
-    originalText?: string;
-    astRoot?: MutableGameMakerAstNode;
-};
-
 const MIN_SAFE_DIVISOR = 1e-10;
 const MAX_SAFE_RECIPROCAL = 1e10;
 
@@ -84,7 +88,7 @@ export function applyManualMathNormalization(ast: any, context: ConvertManualMat
         return ast;
     }
 
-    const traversalContext = normalizeTraversalContext(ast, context);
+    const traversalContext = AST.normalizeTraversalContext(ast, context);
 
     traverse(ast, new Set(), traversalContext);
     combineLengthdirScalarAssignments(ast);
@@ -125,7 +129,7 @@ const CALL_SIMPLIFIERS: SimplificationHandler[] = [
     attemptSimplifyTrigonometricCall
 ];
 
-const SCALAR_CONDENSING_SIMPLIFIERS: SimplificationHandler[] = [
+const _SCALAR_CONDENSING_SIMPLIFIERS: SimplificationHandler[] = [
     attemptCondenseSimpleScalarProduct,
     attemptCondenseScalarProduct,
     attemptCondenseNumericChainWithMultipleBases,
@@ -502,7 +506,7 @@ function combineLengthdirScalarAssignments(ast) {
             assignment.right
         );
 
-        applyScalarCondensing(finalExpression);
+        AST.applyScalarCondensing(finalExpression);
 
         declarator.init = finalExpression;
         body.splice(index + 1, 1);
@@ -618,7 +622,7 @@ function attemptCondenseSimpleScalarProduct(node, context) {
         }
 
         node.__fromMultiplicativeIdentity = true;
-        recordManualMathOriginalAssignment(context, node, originalExpression);
+        AST.recordManualMathOriginalAssignment(context, node, originalExpression);
 
         return true;
     }
@@ -831,7 +835,7 @@ function replaceMultiplicationWithZeroOperand(node, key, otherKey, context) {
 
     replaceNode(node, zeroLiteral);
     Core.suppressTrailingLineComment(node, parentLine, context?.astRoot);
-    removeSimplifiedAliasDeclaration(context, node);
+    AST.removeSimplifiedAliasDeclaration(context, node);
 
     return true;
 }
@@ -917,18 +921,18 @@ function removeAdditiveIdentityOperand(node, key, otherKey, context) {
     }
 
     const parentLine = node?.end?.line;
-    const trailingCommentValue = captureTrailingLineCommentValue(parentLine, context);
+    const trailingCommentValue = AST.captureTrailingLineCommentValue(parentLine, context);
 
     if (!replaceNodeByMutation(node, other)) {
         return false;
     }
 
     if (trailingCommentValue) {
-        attachTrailingCommentToStatement(node, trailingCommentValue);
+        AST.attachTrailingCommentToStatement(node, trailingCommentValue);
     }
 
     Core.suppressTrailingLineComment(node, parentLine, context?.astRoot);
-    removeSimplifiedAliasDeclaration(context, node);
+    AST.removeSimplifiedAliasDeclaration(context, node);
 
     return true;
 }
@@ -982,8 +986,8 @@ function attemptRemoveMultiplicativeIdentityAssignment(node, context) {
         return false;
     }
 
-    const paddedNode = markPreviousSiblingForBlankLine(root, removalTarget, context);
-    const removed = removeNodeFromAst(root, removalTarget);
+    const paddedNode = AST.markPreviousSiblingForBlankLine(root, removalTarget, context);
+    const removed = AST.removeNodeFromAst(root, removalTarget);
     if (!removed) {
         if (paddedNode && typeof paddedNode === "object") {
             delete paddedNode._gmlForceFollowingEmptyLine;
@@ -1441,7 +1445,7 @@ function attemptCondenseScalarProduct(node, context) {
         return false;
     }
 
-    if (hasOriginalComment(node, context)) {
+    if (AST.hasOriginalComment(node, context)) {
         return false;
     }
 
@@ -2628,7 +2632,7 @@ function promoteLengthdirHalfDifference(
         return;
     }
 
-    const assignment = findAssignmentExpressionForRight(root, expressionNode);
+    const assignment = AST.findAssignmentExpressionForRight(root, expressionNode);
     if (!assignment) {
         return;
     }
@@ -2637,7 +2641,7 @@ function promoteLengthdirHalfDifference(
         return;
     }
 
-    const declaration = findVariableDeclarationByName(root, identifierName);
+    const declaration = AST.findVariableDeclarationByName(root, identifierName);
     const declarator = Array.isArray(declaration?.declarations) ? declaration.declarations[0] : null;
 
     if (!declarator || !declarator.init) {
@@ -2700,8 +2704,8 @@ function promoteLengthdirHalfDifference(
     attemptCondenseNumericChainWithMultipleBases(newInit, context);
     attemptCollectDistributedScalars(newInit, context);
 
-    markPreviousSiblingForBlankLine(root, assignment, context);
-    removeNodeFromAst(root, assignment);
+    AST.markPreviousSiblingForBlankLine(root, assignment, context);
+    AST.removeNodeFromAst(root, assignment);
 }
 
 function collectMultiplicativeChain(node, output, includeInDenominator, context) {
@@ -2934,557 +2938,9 @@ function compareIndexProperties(a, b) {
     return true;
 }
 
-function recordManualMathOriginalAssignment(context, node, originalExpression) {
-    if (!isObjectLike(context)) {
-        return;
-    }
-
-    const root = context.astRoot;
-    if (!isObjectLike(root)) {
-        return;
-    }
-
-    if (!isObjectLike(originalExpression)) {
-        return;
-    }
-
-    const declarator = findVariableDeclaratorForInit(root, node);
-    if (!declarator) {
-        return;
-    }
-
-    const baseName = Core.getUnwrappedIdentifierName(declarator.id);
-    if (typeof baseName !== "string" || baseName.length === 0) {
-        return;
-    }
-
-    const declaration = findVariableDeclarationByName(root, baseName);
-    if (!declaration || declaration._gmlManualMathOriginalRecorded === true) {
-        return;
-    }
-
-    const originalDeclaration = Core.cloneAstNode(declaration);
-    if (!Core.isNode(originalDeclaration)) {
-        return;
-    }
-
-    const clonedDeclaration = originalDeclaration as MutableGameMakerAstNode;
-
-    const declarators = Array.isArray(clonedDeclaration.declarations) ? clonedDeclaration.declarations : null;
-    if (!declarators || declarators.length === 0) {
-        return;
-    }
-
-    const [originalDeclarator] = declarators;
-    originalDeclarator.init = Core.cloneAstNode(originalExpression) ?? originalExpression;
-
-    clonedDeclaration._gmlManualMathOriginal = true;
-    clonedDeclaration._gmlManualMathOriginalComment = "original";
-    if (clonedDeclaration._gmlForceFollowingEmptyLine === true) {
-        delete clonedDeclaration._gmlForceFollowingEmptyLine;
-    }
-    clonedDeclaration._gmlSuppressFollowingEmptyLine = true;
-
-    if (!insertNodeBefore(root, declaration, clonedDeclaration)) {
-        return;
-    }
-
-    declaration._gmlManualMathOriginalRecorded = true;
-    if (declaration._gmlForceFollowingEmptyLine === true) {
-        delete declaration._gmlForceFollowingEmptyLine;
-    }
-}
-
-function removeSimplifiedAliasDeclaration(context, simplifiedNode) {
-    if (!isObjectLike(context)) {
-        return;
-    }
-
-    const root = context.astRoot;
-    if (!isObjectLike(root)) {
-        return;
-    }
-
-    const declarator = findVariableDeclaratorForInit(root, simplifiedNode);
-    const baseName = Core.getUnwrappedIdentifierName(declarator?.id);
-
-    if (typeof baseName !== "string" || baseName.length === 0) {
-        return;
-    }
-
-    const aliasName = `${baseName}_simplified`;
-    const aliasDeclaration = findVariableDeclarationByName(root, aliasName);
-
-    if (!aliasDeclaration) {
-        return;
-    }
-
-    const aliasDeclarator = Array.isArray(aliasDeclaration.declarations) ? aliasDeclaration.declarations[0] : null;
-
-    if (!aliasDeclarator || !areNodesEquivalent(aliasDeclarator.init, simplifiedNode)) {
-        return;
-    }
-
-    const paddedNode = markPreviousSiblingForBlankLine(root, aliasDeclaration, context);
-
-    if (!removeNodeFromAst(root, aliasDeclaration)) {
-        if (paddedNode && typeof paddedNode === "object") {
-            delete paddedNode._gmlForceFollowingEmptyLine;
-        }
-        return;
-    }
-
-    Core.suppressTrailingLineComment(simplifiedNode, aliasDeclaration?.end?.line, context?.astRoot);
-}
-
-function insertNodeBefore(root, target, statement) {
-    if (!isObjectLike(root) || !target || !statement) {
-        return false;
-    }
-
-    const targetEntry = findTargetArrayEntry(root, target, "forward");
-    if (!targetEntry) {
-        return false;
-    }
-
-    targetEntry.nodeArray.splice(targetEntry.targetIndex, 0, statement);
-    return true;
-}
-
-function markPreviousSiblingForBlankLine(root, target, context) {
-    if (!isObjectLike(root) || !target) {
-        return null;
-    }
-
-    const sourceText = getSourceTextFromContext(context);
-    const targetEntry = findTargetArrayEntry(root, target, "forward");
-    if (!targetEntry) {
-        return null;
-    }
-
-    return preserveBlankLineIfNeeded(targetEntry.nodeArray, targetEntry.targetIndex, target, sourceText);
-}
-
-function preserveBlankLineIfNeeded(nodeArray: Array<any>, index: number, target: any, sourceText: string | null) {
-    const previous = nodeArray[index - 1];
-    const next = nodeArray[index + 1];
-
-    if (previous && typeof previous === "object" && shouldPreserveRemovedBlankLine(target, next, sourceText)) {
-        previous._gmlForceFollowingEmptyLine = true;
-        return previous;
-    }
-
-    return null;
-}
-
-function shouldPreserveRemovedBlankLine(removedNode, nextNode, sourceText) {
-    if (!isObjectLike(nextNode)) {
-        return false;
-    }
-
-    if (typeof sourceText !== "string" || sourceText.length === 0) {
-        return false;
-    }
-
-    const removedEnd = Core.getNodeEndIndex(removedNode);
-    const nextStart = Core.getNodeStartIndex(nextNode);
-
-    if (removedEnd == undefined || nextStart == undefined || nextStart <= removedEnd || nextStart > sourceText.length) {
-        return false;
-    }
-
-    const between = sourceText.slice(removedEnd, nextStart);
-
-    if (between.length === 0) {
-        return false;
-    }
-
-    const normalizedBetween = between.replaceAll("\r", "").replaceAll(/[ \t\f\v]/g, "");
-
-    return normalizedBetween.includes("\n\n");
-}
-
-function getSourceTextFromContext(context) {
-    if (!isObjectLike(context)) {
-        return null;
-    }
-
-    const { originalText, sourceText } = context;
-
-    if (Core.isNonEmptyString(originalText)) {
-        return originalText;
-    }
-
-    if (Core.isNonEmptyString(sourceText)) {
-        return sourceText;
-    }
-
-    return null;
-}
-
-function captureTrailingLineCommentValue(targetLine, context) {
-    if (!Number.isFinite(targetLine) || targetLine <= 0) {
-        return null;
-    }
-
-    const sourceText = getSourceTextFromContext(context);
-    if (typeof sourceText !== "string" || sourceText.length === 0) {
-        return null;
-    }
-
-    const sanitizedText = sourceText.replaceAll("\r", "");
-    const lines = sanitizedText.split("\n");
-    const lineIndex = targetLine - 1;
-    if (lineIndex < 0 || lineIndex >= lines.length) {
-        return null;
-    }
-
-    const lineText = lines[lineIndex];
-    if (typeof lineText !== "string") {
-        return null;
-    }
-
-    const commentIndex = lineText.indexOf("//");
-    if (commentIndex === -1) {
-        return null;
-    }
-
-    const commentValue = lineText.slice(commentIndex + 2).trim();
-    if (commentValue.length === 0) {
-        return null;
-    }
-
-    return commentValue;
-}
-
-function attachTrailingCommentToStatement(node, commentValue) {
-    if (!commentValue || typeof commentValue !== "string") {
-        return;
-    }
-
-    const statement = findStatementAncestor(node);
-    if (!statement) {
-        return;
-    }
-
-    if (
-        typeof statement._gmlManualMathOriginalComment === "string" &&
-        statement._gmlManualMathOriginalComment.length > 0
-    ) {
-        return;
-    }
-
-    statement._gmlManualMathOriginalComment = commentValue;
-}
-
-function findStatementAncestor(node) {
-    let current = node?.parent ?? null;
-    while (current && typeof current === "object") {
-        const type = typeof current.type === "string" ? current.type : null;
-        if (type && (type.endsWith("Statement") || type === "VariableDeclaration")) {
-            return current;
-        }
-
-        current = current.parent ?? null;
-    }
-
-    return null;
-}
-
-function findAssignmentExpressionForRight(root: any, target: any): any {
-    if (!isObjectLike(root) || !target) {
-        return null;
-    }
-
-    return findFirstAstNodeBy(root, (node) => node.type === ASSIGNMENT_EXPRESSION && node.right === target);
-}
-
-function findVariableDeclaratorForInit(root: any, target: any): any {
-    if (!isObjectLike(root) || !target) {
-        return null;
-    }
-
-    return findFirstAstNodeBy(root, (node) => node.type === "VariableDeclarator" && node.init === target);
-}
-
-function findVariableDeclarationByName(root: any, identifierName: string): any {
-    if (!isObjectLike(root) || typeof identifierName !== "string") {
-        return null;
-    }
-
-    return findFirstAstNodeBy(root, (node) => {
-        if (node.type !== VARIABLE_DECLARATION || !Array.isArray(node.declarations) || node.declarations.length !== 1) {
-            return false;
-        }
-
-        const [declarator] = node.declarations;
-        return Core.getUnwrappedIdentifierName(declarator?.id) === identifierName;
-    });
-}
-
-function removeNodeFromAst(root, target) {
-    if (!isObjectLike(root) || !target) {
-        return false;
-    }
-
-    const targetEntry = findTargetArrayEntry(root, target, "reverse");
-    if (!targetEntry) {
-        return false;
-    }
-
-    targetEntry.nodeArray.splice(targetEntry.targetIndex, 1);
-    return true;
-}
-
-type TargetArraySearchDirection = "forward" | "reverse";
-type TargetArrayEntry = {
-    nodeArray: Array<any>;
-    targetIndex: number;
-};
-
-function findTargetArrayEntry(root: any, target: any, direction: TargetArraySearchDirection): TargetArrayEntry | null {
-    if (!isObjectLike(root) || !target) {
-        return null;
-    }
-
-    const stack = [root];
-    const visited = new Set();
-
-    while (stack.length > 0) {
-        const node = stack.pop();
-        if (!isObjectLike(node) || visited.has(node)) {
-            continue;
-        }
-
-        visited.add(node);
-
-        if (Array.isArray(node)) {
-            const targetIndex = findTargetIndexInArray(node, target, direction);
-            if (targetIndex !== -1) {
-                return { nodeArray: node, targetIndex };
-            }
-
-            for (const element of node) {
-                stack.push(element);
-            }
-            continue;
-        }
-
-        for (const key of Object.keys(node)) {
-            if (key === "parent") continue;
-            const value = node[key];
-            if (value && typeof value === "object") {
-                stack.push(value);
-            }
-        }
-    }
-
-    return null;
-}
-
-function findTargetIndexInArray(arrayNode: Array<any>, target: any, direction: TargetArraySearchDirection): number {
-    if (direction === "reverse") {
-        for (let index = arrayNode.length - 1; index >= 0; index -= 1) {
-            if (arrayNode[index] === target) {
-                return index;
-            }
-        }
-
-        return -1;
-    }
-
-    for (const [index, value] of arrayNode.entries()) {
-        if (value === target) {
-            return index;
-        }
-    }
-
-    return -1;
-}
-
-function normalizeTraversalContext(ast, context) {
-    if (context && typeof context === "object") {
-        if (context.astRoot && typeof context.astRoot === "object") {
-            return context;
-        }
-
-        return { ...context, astRoot: ast };
-    }
-
-    return { astRoot: ast };
-}
-
-function simplifyZeroDivisionNumerators(ast, context = null) {
-    if (!isObjectLike(ast)) {
-        return;
-    }
-
-    const traversalContext = normalizeTraversalContext(ast, context);
-    traverseZeroDivisionNumerators(ast, traversalContext);
-}
-
-function traverseZeroDivisionNumerators(node, context) {
-    if (!isObjectLike(node)) {
-        return;
-    }
-
-    if (Array.isArray(node)) {
-        for (const element of node) {
-            traverseZeroDivisionNumerators(element, context);
-        }
-        return;
-    }
-
-    if (node.type === BINARY_EXPRESSION && node.operator === "/" && trySimplifyZeroDivision(node, context)) {
-        return;
-    }
-
-    for (const key of Object.keys(node)) {
-        if (key === "parent") {
-            continue;
-        }
-
-        const value = node[key];
-        if (value && typeof value === "object") {
-            traverseZeroDivisionNumerators(value, context);
-        }
-    }
-}
-
-function trySimplifyZeroDivision(node, context) {
-    if (!isObjectLike(node) || node.operator !== "/" || !node.left || !node.right) {
-        return false;
-    }
-
-    if (Core.hasComment(node) || Core.hasComment(node.left) || Core.hasComment(node.right)) {
-        return false;
-    }
-
-    if (Core.hasInlineCommentBetween(node.left, node.right, context)) {
-        return false;
-    }
-
-    const numeratorValue = evaluateNumericExpression(node.left);
-    if (numeratorValue === null) {
-        return false;
-    }
-
-    if (Math.abs(numeratorValue) > computeNumericTolerance(0)) {
-        return false;
-    }
-
-    const denominatorValue = evaluateNumericExpression(node.right);
-    if (denominatorValue !== null && Math.abs(denominatorValue) <= computeNumericTolerance(0)) {
-        return false;
-    }
-
-    const zeroLiteral = createNumericLiteral("0", node);
-    if (!zeroLiteral) {
-        return false;
-    }
-
-    const parentLine = node?.end?.line;
-    replaceNode(node, zeroLiteral);
-    Core.suppressTrailingLineComment(node, parentLine, context?.astRoot);
-    removeSimplifiedAliasDeclaration(context, node);
-
-    return true;
-}
-
-function hasOriginalComment(node, context) {
-    let current = node;
-    while (current) {
-        if (current.comments && Array.isArray(current.comments)) {
-            for (const comment of current.comments) {
-                if (comment.value && comment.value.includes("original")) {
-                    return true;
-                }
-            }
-        }
-
-        if (context && context.sourceText && typeof current.end === "number") {
-            const text = context.sourceText;
-            const limit = Math.min(text.length, current.end + 200);
-            const snippet = text.slice(current.end, limit);
-            const firstLine = snippet.split(/\r?\n/)[0];
-            if (firstLine && firstLine.includes("original") && (firstLine.includes("//") || firstLine.includes("/*"))) {
-                return true;
-            }
-        }
-
-        current = current.parent;
-        if (current && (current.type === "FunctionDeclaration" || current.type === "Program")) {
-            break;
-        }
-    }
-    return false;
-}
-
-type ScalarCondensingTarget = MutableGameMakerAstNode | Array<unknown>;
-
-function applyScalarCondensing(
-    ast: unknown,
-    _context: ConvertManualMathTransformOptions | null = null
-): ScalarCondensingTarget {
-    if (!Core.isNode(ast)) {
-        return ast as ScalarCondensingTarget;
-    }
-
-    const traversalContext = normalizeTraversalContext(ast, _context);
-    const seen = new WeakSet<object>();
-
-    const visit = (node: unknown, parent: unknown): void => {
-        if (!isObjectLike(node)) {
-            return;
-        }
-
-        if (Array.isArray(node)) {
-            for (const element of node) {
-                visit(element, parent);
-            }
-            return;
-        }
-
-        const objectNode = node as object;
-        if (seen.has(objectNode)) {
-            return;
-        }
-        seen.add(objectNode);
-
-        if (parent && !(node as { parent?: unknown }).parent) {
-            Object.defineProperty(node, "parent", {
-                value: parent,
-                enumerable: false,
-                configurable: true
-            });
-        }
-
-        if ((node as { type?: string }).type === BINARY_EXPRESSION) {
-            let changed = true;
-            let iterationCount = 0;
-            while (changed && iterationCount < 1000) {
-                iterationCount += 1;
-                changed = applySimplifiers(node, traversalContext, SCALAR_CONDENSING_SIMPLIFIERS);
-            }
-        }
-
-        const nodeRecord = node as Record<string, unknown>;
-        for (const key of Object.keys(nodeRecord)) {
-            if (key === "parent") {
-                continue;
-            }
-
-            visit(nodeRecord[key], node);
-        }
-    };
-
-    visit(ast, null);
-
-    return ast as MutableGameMakerAstNode;
-}
-
+// Remaining module-specific exports (all other symbols from math-ast-mutation.ts
+// are already re-exported at the top of this file).
 export {
-    applyScalarCondensing,
     attemptCancelReciprocalRatios,
     attemptCollectDistributedScalars,
     attemptCondenseNumericChainWithMultipleBases,
@@ -3494,9 +2950,7 @@ export {
     attemptRemoveMultiplicativeIdentity,
     attemptSimplifyDivisionByReciprocal,
     attemptSimplifyNegativeDivisionProduct,
-    attemptSimplifyOneMinusFactor,
-    normalizeTraversalContext,
-    simplifyZeroDivisionNumerators
+    attemptSimplifyOneMinusFactor
 };
 
 export { replaceNodeWith } from "./math-ast-builders.js";
