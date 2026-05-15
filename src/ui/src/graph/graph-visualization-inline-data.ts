@@ -3,7 +3,8 @@ import type {
     GraphVisualizationDocumentationCatalogs,
     GraphVisualizationLiveReloadModel,
     GraphVisualizationLoadedTarget,
-    GraphVisualizationProjectConfigurationCatalog
+    GraphVisualizationProjectConfigurationCatalog,
+    GraphVisualizationStartupState
 } from "./types.js";
 
 function escapeHtmlText(value: string): string {
@@ -65,6 +66,17 @@ export function serializeGraphVisualizationLiveReloadForInlineScript(
     liveReload: GraphVisualizationLiveReloadModel | null
 ): string {
     return JSON.stringify(liveReload)
+        .replaceAll("<", String.raw`\u003c`)
+        .replaceAll(">", String.raw`\u003e`)
+        .replaceAll("&", String.raw`\u0026`)
+        .replaceAll("\u2028", String.raw`\u2028`)
+        .replaceAll("\u2029", String.raw`\u2029`);
+}
+
+export function serializeGraphVisualizationStartupStateForInlineScript(
+    startupState: GraphVisualizationStartupState | null
+): string {
+    return JSON.stringify(startupState)
         .replaceAll("<", String.raw`\u003c`)
         .replaceAll(">", String.raw`\u003e`)
         .replaceAll("&", String.raw`\u0026`)

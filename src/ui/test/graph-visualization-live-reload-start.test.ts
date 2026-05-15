@@ -242,7 +242,8 @@ void test("graph visualization start live reload button shows spinner and surfac
                 selectedPaths: ["/tmp/project"],
                 source: "working-directory"
             },
-            projectConfigurationCatalog: null
+            projectConfigurationCatalog: null,
+            startupState: null
         });
 
         const startButton = document.getElementById("start-live-reload");

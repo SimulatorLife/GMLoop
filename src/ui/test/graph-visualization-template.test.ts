@@ -273,7 +273,27 @@ void test("graph visualization bundle includes a graph empty state for no-projec
     const html = readBundleFileText(bundle, bundle.entryHtmlPath);
 
     assert.match(html, /id="graph-empty-state"/u);
+    assert.match(html, /id="graph-empty-state-indicator"/u);
     assert.match(html, /Open a GameMaker project to start exploring the graph/u);
+});
+
+void test("graph visualization bundle includes startup-loading shell affordances", () => {
+    const bundle = renderGraphVisualizationBundle(createBaseData(), {
+        startupState: {
+            detail: "Project discovery and index checks continue without blocking first paint.",
+            message: "Resolving the project and checking the graph index in the background.",
+            phase: "loading"
+        },
+        title: "Startup Loading"
+    });
+
+    const script = readBundleFileText(bundle, "assets/graph-visualization.js");
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.match(script, /const graphVisualizationStartupState = /u);
+    assert.match(script, /Resolving the project and checking the graph index in the background\./u);
+    assert.match(script, /Loading the graph UI first\. Project work continues in the background\./u);
+    assert.match(html, /Loading project data…/u);
 });
 
 void test("renderGraphVisualizationHtml returns the bundle entry html", () => {

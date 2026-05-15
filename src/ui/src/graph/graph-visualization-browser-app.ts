@@ -35,7 +35,8 @@ import type {
     GraphVisualizationLoadedTarget,
     GraphVisualizationNodeKind,
     GraphVisualizationNodeRecord,
-    GraphVisualizationProjectConfigurationCatalog
+    GraphVisualizationProjectConfigurationCatalog,
+    GraphVisualizationStartupState
 } from "./types.js";
 
 export type BrowserFileHandle = Readonly<{
@@ -55,6 +56,7 @@ export type BrowserAppDependencies = Readonly<{
     liveReload: GraphVisualizationLiveReloadModel | null;
     loadedTarget: GraphVisualizationLoadedTarget | null;
     projectConfigurationCatalog: GraphVisualizationProjectConfigurationCatalog | null;
+    startupState: GraphVisualizationStartupState | null;
 }>;
 
 type LoadedProjectConfiguration = Readonly<{
@@ -88,6 +90,7 @@ type ConfigViewMode = "raw" | "rendered";
 type ConfigLintLevelFilter = "all" | "error" | "off" | "warn";
 
 const CONFIG_LIST_CLASS_NAME = "config-list";
+const ARIA_HIDDEN_ATTRIBUTE_NAME = "aria-hidden";
 const DEFAULT_LIVE_RELOAD_POLL_INTERVAL_MS = 2000;
 const MIN_LIVE_RELOAD_POLL_INTERVAL_MS = 500;
 const START_LIVE_RELOAD_BUTTON_ID = "start-live-reload";
@@ -1152,7 +1155,10 @@ function dragMoved(eventValue: D3DragEvent<SVGGElement, MutableGraphNodeRecord, 
     nodeValue.fy = eventValue.y;
 }
 
-function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoadedTarget | null): void {
+function renderLoadedTargetSummary(
+    currentLoadedTarget: GraphVisualizationLoadedTarget | null,
+    startupState: GraphVisualizationStartupState | null
+): void {
     const loadedTargetElement = document.getElementById("loaded-target");
     const loadedTargetDetailsElement = document.getElementById("loaded-target-details");
     if (!(loadedTargetElement instanceof HTMLElement) || !(loadedTargetDetailsElement instanceof HTMLElement)) {
@@ -1166,6 +1172,18 @@ function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoaded
 
     loadedTargetLabel.textContent = "Loaded Project";
     if (currentLoadedTarget === null) {
+        if (startupState?.phase === "loading") {
+            loadedTargetValue.textContent = "Loading project…";
+            loadedTargetDetailsElement.textContent = startupState.message;
+            return;
+        }
+
+        if (startupState?.phase === "error") {
+            loadedTargetValue.textContent = "Project load failed";
+            loadedTargetDetailsElement.textContent = startupState.message;
+            return;
+        }
+
         loadedTargetValue.textContent = "No project loaded";
         loadedTargetDetailsElement.textContent = "Use Open... to load a GameMaker project.";
         return;
@@ -1186,7 +1204,8 @@ function renderLoadedTargetSummary(currentLoadedTarget: GraphVisualizationLoaded
 function updateGraphInteractionAvailability(
     hasGraphData: boolean,
     hasLoadedProject: boolean,
-    isServerMode: boolean
+    isServerMode: boolean,
+    startupState: GraphVisualizationStartupState | null
 ): void {
     const searchInput = document.getElementById("search");
     const toggleViewButton = document.getElementById("toggle-view");
@@ -1194,12 +1213,14 @@ function updateGraphInteractionAvailability(
     const resetDefaultButton = document.getElementById("reset-default");
     const regenerateButton = document.getElementById("regenerate");
     const emptyStateElement = document.getElementById("graph-empty-state");
+    const emptyStateIndicatorElement = document.getElementById("graph-empty-state-indicator");
     if (
         !(searchInput instanceof HTMLInputElement) ||
         !(toggleViewButton instanceof HTMLButtonElement) ||
         !(toggleLabelsButton instanceof HTMLButtonElement) ||
         !(resetDefaultButton instanceof HTMLButtonElement) ||
-        !(emptyStateElement instanceof HTMLElement)
+        !(emptyStateElement instanceof HTMLElement) ||
+        !(emptyStateIndicatorElement instanceof HTMLElement)
     ) {
         return;
     }
@@ -1220,7 +1241,7 @@ function updateGraphInteractionAvailability(
 
     if (hasGraphData) {
         emptyStateElement.classList.add("hidden");
-        emptyStateElement.setAttribute("aria-hidden", "true");
+        emptyStateElement.setAttribute(ARIA_HIDDEN_ATTRIBUTE_NAME, "true");
         return;
     }
 
@@ -1230,18 +1251,32 @@ function updateGraphInteractionAvailability(
         return;
     }
 
-    if (hasLoadedProject) {
+    if (startupState?.phase === "loading") {
+        titleElement.textContent = "Loading the graph UI first. Project work continues in the background.";
+        descriptionElement.textContent = startupState.detail ?? startupState.message;
+        emptyStateIndicatorElement.classList.remove("hidden");
+        emptyStateIndicatorElement.setAttribute(ARIA_HIDDEN_ATTRIBUTE_NAME, "false");
+    } else if (startupState?.phase === "error") {
+        titleElement.textContent = "Project startup failed.";
+        descriptionElement.textContent = startupState.detail ?? startupState.message;
+        emptyStateIndicatorElement.classList.add("hidden");
+        emptyStateIndicatorElement.setAttribute(ARIA_HIDDEN_ATTRIBUTE_NAME, "true");
+    } else if (hasLoadedProject) {
         titleElement.textContent = "No graph nodes are available for the current project.";
         descriptionElement.textContent =
             "Rebuild the graph index or load a different target to inspect semantic graph data here.";
+        emptyStateIndicatorElement.classList.add("hidden");
+        emptyStateIndicatorElement.setAttribute(ARIA_HIDDEN_ATTRIBUTE_NAME, "true");
     } else {
         titleElement.textContent = "Open a GameMaker project to start exploring the graph.";
         descriptionElement.textContent =
             "Use Open... to load a project, then return here for graph search, filters, and visualization controls.";
+        emptyStateIndicatorElement.classList.add("hidden");
+        emptyStateIndicatorElement.setAttribute(ARIA_HIDDEN_ATTRIBUTE_NAME, "true");
     }
 
     emptyStateElement.classList.remove("hidden");
-    emptyStateElement.setAttribute("aria-hidden", "false");
+    emptyStateElement.setAttribute(ARIA_HIDDEN_ATTRIBUTE_NAME, "false");
 }
 
 function updateDocsViewState(
@@ -1639,6 +1674,7 @@ type GraphVisualizationSurfaceInitializer = Readonly<{
     applyPageState: () => void;
     applySearchQuery: (nextSearchQuery: string, shouldSyncUrlState: boolean) => void;
     currentLoadedTarget: GraphVisualizationLoadedTarget | null;
+    currentStartupState: GraphVisualizationStartupState | null;
     currentSearchQuery: string;
     dependencies: BrowserAppDependencies;
     hasGraphData: boolean;
@@ -1663,11 +1699,12 @@ type GraphVisualizationSurfaceInitializer = Readonly<{
 }>;
 
 function initializeGraphVisualizationSurface(state: GraphVisualizationSurfaceInitializer): void {
-    renderLoadedTargetSummary(state.currentLoadedTarget);
+    renderLoadedTargetSummary(state.currentLoadedTarget, state.currentStartupState);
     updateGraphInteractionAvailability(
         state.hasGraphData,
         state.currentLoadedTarget !== null,
-        state.dependencies.isServerMode
+        state.dependencies.isServerMode,
+        state.currentStartupState
     );
     renderDocumentationCatalog(state.dependencies, state.updateDocsViewState, state.navigationState);
     state.renderProjectConfigurationCatalog();
@@ -1714,6 +1751,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
 
     const currentProjectConfiguration = dependencies.projectConfigurationCatalog;
     let currentLoadedTarget = dependencies.loadedTarget,
+        currentStartupState = dependencies.startupState,
         selectedProjectConfiguration: LoadedProjectConfiguration | null = null,
         labelMode: "auto" | "off" | "on" = mapUiLabelModeToBrowserLabelMode(initialUiState.labelMode),
         activeGraphView: "json" | "visual" = initialUiState.activeGraphView;
@@ -1853,6 +1891,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         applyPageState,
         applySearchQuery,
         currentLoadedTarget,
+        currentStartupState,
         currentSearchQuery: searchQuery,
         dependencies,
         hasGraphData: nodesRaw.length > 0,
@@ -2483,7 +2522,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         updateGraphInteractionAvailability(
             nodesRaw.length > 0,
             currentLoadedTarget !== null,
-            dependencies.isServerMode
+            dependencies.isServerMode,
+            currentStartupState
         );
     }
 
@@ -3030,12 +3070,14 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                         selectedPaths,
                         source: "finder-open"
                     });
+                    currentStartupState = null;
                     selectedProjectConfiguration = await loadProjectConfigurationFromFiles(selectedFiles);
-                    renderLoadedTargetSummary(currentLoadedTarget);
+                    renderLoadedTargetSummary(currentLoadedTarget, currentStartupState);
                     updateGraphInteractionAvailability(
                         nodesRaw.length > 0,
                         currentLoadedTarget !== null,
-                        dependencies.isServerMode
+                        dependencies.isServerMode,
+                        currentStartupState
                     );
                     renderProjectConfigurationCatalog();
                     button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);

@@ -9,7 +9,8 @@ import {
     serializeGraphVisualizationDocumentationCatalogsForInlineScript,
     serializeGraphVisualizationLiveReloadForInlineScript,
     serializeGraphVisualizationLoadedTargetForInlineScript,
-    serializeGraphVisualizationProjectConfigurationCatalogForInlineScript
+    serializeGraphVisualizationProjectConfigurationCatalogForInlineScript,
+    serializeGraphVisualizationStartupStateForInlineScript
 } from "./graph-visualization-inline-data.js";
 import {
     getEdgeLineColor,
@@ -106,6 +107,7 @@ export function renderGraphVisualizationBundle(
         options.projectConfigurationCatalog ?? null
     );
     const serializedLiveReload = serializeGraphVisualizationLiveReloadForInlineScript(options.liveReload ?? null);
+    const serializedStartupState = serializeGraphVisualizationStartupStateForInlineScript(options.startupState ?? null);
     const documentTitle = renderGraphVisualizationDocumentTitle(options.title);
     const isServerMode = options.isServerMode === true;
     const clientScriptBody = renderGraphVisualizationClientScript(
@@ -114,6 +116,7 @@ export function renderGraphVisualizationBundle(
         serializedLiveReload,
         serializedLoadedTarget,
         serializedProjectConfigurationCatalog,
+        serializedStartupState,
         isServerMode
     );
     const moduleScript = [

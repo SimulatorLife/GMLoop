@@ -91,6 +91,7 @@ export function renderGraphVisualizationClientScript(
     serializedLiveReload: string,
     serializedLoadedTarget: string,
     serializedProjectConfigurationCatalog: string,
+    serializedStartupState: string,
     isServerMode: boolean
 ): string {
     const scriptLines = [
@@ -99,6 +100,7 @@ export function renderGraphVisualizationClientScript(
         `const graphVisualizationLiveReload = ${serializedLiveReload};`,
         `const graphVisualizationLoadedTarget = ${serializedLoadedTarget};`,
         `const graphVisualizationProjectConfigurationCatalog = ${serializedProjectConfigurationCatalog};`,
+        `const graphVisualizationStartupState = ${serializedStartupState};`,
         `const graphVisualizationServerMode = ${isServerMode ? "true" : "false"};`,
         `const EDGE_LINE_VISUAL_STYLES = ${JSON.stringify(EDGE_LINE_VISUAL_STYLES)};`,
         `const NODE_VISUAL_STYLES = ${JSON.stringify(NODE_VISUAL_STYLES)};`,
@@ -124,7 +126,8 @@ export function renderGraphVisualizationClientScript(
         "    isServerMode: graphVisualizationServerMode,",
         "    liveReload: graphVisualizationLiveReload,",
         "    loadedTarget: graphVisualizationLoadedTarget,",
-        "    projectConfigurationCatalog: graphVisualizationProjectConfigurationCatalog",
+        "    projectConfigurationCatalog: graphVisualizationProjectConfigurationCatalog,",
+        "    startupState: graphVisualizationStartupState",
         "});"
     ];
 

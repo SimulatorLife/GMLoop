@@ -112,6 +112,16 @@ export type GraphVisualizationData = Readonly<{
 }>;
 
 /**
+ * Startup lifecycle state exposed to the graph shell while project loading
+ * and indexing continue in the background.
+ */
+export type GraphVisualizationStartupState = Readonly<{
+    detail: string | null;
+    message: string;
+    phase: "error" | "loading";
+}>;
+
+/**
  * Options that control how the graph-index visualization HTML document is rendered.
  */
 export type GraphVisualizationRenderOptions = Readonly<{
@@ -121,6 +131,7 @@ export type GraphVisualizationRenderOptions = Readonly<{
     liveReload?: GraphVisualizationLiveReloadModel;
     mcpServerStatus?: GraphVisualizationMcpServerStatus;
     projectConfigurationCatalog?: GraphVisualizationProjectConfigurationCatalog;
+    startupState?: GraphVisualizationStartupState;
     title: string;
 }>;
 

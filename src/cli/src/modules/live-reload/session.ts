@@ -148,13 +148,22 @@ export async function startLiveReloadDevSession({
         effectiveHtml5OutputRoot = buildResult.outputRoot;
     }
 
-    const preparation = await prepareRunner({
-        html5OutputRoot: effectiveHtml5OutputRoot,
-        gmTempRoot: effectiveGmTempRoot,
-        bootstrapConfig,
-        runtimeWrapperDistRoot,
-        force: false
-    });
+    let preparation;
+    try {
+        preparation = await prepareRunner({
+            html5OutputRoot: effectiveHtml5OutputRoot,
+            gmTempRoot: effectiveGmTempRoot,
+            bootstrapConfig,
+            runtimeWrapperDistRoot,
+            force: false
+        });
+    } catch (error) {
+        throw createLiveReloadPreparationError({
+            configuredHtml5OutputRoot,
+            error,
+            requestedHtml5OutputRoot
+        });
+    }
 
     await watchRunner(targetPath, {
         ...watchOptions,
@@ -164,4 +173,48 @@ export async function startLiveReloadDevSession({
 
 function resolveRequestedPath(inputPath: string): string {
     return path.resolve(inputPath);
+}
+
+function createLiveReloadPreparationError({
+    configuredHtml5OutputRoot,
+    error,
+    requestedHtml5OutputRoot
+}: Readonly<{
+    configuredHtml5OutputRoot: string | null;
+    error: unknown;
+    requestedHtml5OutputRoot: string | null;
+}>): Error {
+    if (
+        requestedHtml5OutputRoot === null &&
+        configuredHtml5OutputRoot === null &&
+        isMissingAutoDetectedHtml5OutputError(error)
+    ) {
+        return new Error(
+            `${extractErrorMessage(error)} ` +
+                "Configure runtime.liveReload.build plus runtime.liveReload.html5Output in gmloop.json " +
+                "to let GMLoop build the HTML5 export via Igor/gm-cli automatically, run an HTML5 build once, " +
+                "or pass --html5-output explicitly."
+        );
+    }
+
+    return error instanceof Error ? error : new Error(extractErrorMessage(error));
+}
+
+function isMissingAutoDetectedHtml5OutputError(error: unknown): boolean {
+    const message = extractErrorMessage(error);
+    return (
+        message.includes("GameMaker HTML5 temporary output root") || message.includes("No HTML5 index.html found under")
+    );
+}
+
+function extractErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    if (typeof error === "string") {
+        return error;
+    }
+
+    return "Unknown live-reload preparation failure.";
 }

@@ -430,3 +430,41 @@ void test("startLiveReloadDevSession uses configured temp-root fallback when no 
         }
     ]);
 });
+
+void test("startLiveReloadDevSession explains how to enable automatic HTML5 builds when autodetection has no export", async () => {
+    await assert.rejects(
+        () =>
+            startLiveReloadDevSession({
+                targetPath: "/tmp/project",
+                bootstrapConfig: {
+                    websocketUrl: "ws://127.0.0.1:17890"
+                },
+                prepareRunner: async () => {
+                    throw new Error(
+                        "GameMaker HTML5 temporary output root '/private/tmp/GameMakerStudio2/GMS2TEMP' was not found. Run the HTML5 build once or pass --html5-output explicitly."
+                    );
+                },
+                projectContextResolver: async () =>
+                    Object.freeze({
+                        projectConfig: {},
+                        projectRoot: "/tmp/project"
+                    }),
+                settingsResolver: async () =>
+                    Object.freeze({
+                        buildConfig: null,
+                        gmTempRoot: "/private/tmp/GameMakerStudio2/GMS2TEMP",
+                        html5OutputRoot: null
+                    }),
+                watchRunner: async () => {
+                    throw new Error("watchRunner should not be reached when preparation fails.");
+                }
+            }),
+        (error) => {
+            assert.ok(error instanceof Error);
+            assert.match(error.message, /runtime\.liveReload\.build/u);
+            assert.match(error.message, /runtime\.liveReload\.html5Output/u);
+            assert.match(error.message, /Igor\/gm-cli automatically/u);
+            return true;
+        }
+    );
+});
