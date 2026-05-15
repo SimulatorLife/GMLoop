@@ -7,6 +7,14 @@ import { services } from "./services/index.js";
 
 const { performanceOverrideRuleIds } = services;
 
+// Re-export scientific-notation helpers so they are available as named
+// exports from the @gmloop/lint package entry point.
+export {
+    forEachScientificNotationToken,
+    toPlainDecimalFromScientificLiteral,
+    trimInsignificantFractionalZeros
+} from "./malformed/index.js";
+
 /**
  * Flattened lint namespace that exposes frequently-accessed properties directly
  * alongside the nested namespaces (plugin, configs, services).
