@@ -156,7 +156,7 @@ const program = applyStandardCommandOptions(new Command())
     .usage("[command] [options]")
     .description(
         `Utilities for working with the GMLoop toolchain.
-Provides formatting, benchmarking, and manual data generation commands.
+Provides formatting, linting, refactoring, transpiling, graph analysis, runtime workflows, and report generation commands.
 ${
     resolveDefaultAction() === FORMAT_ACTION
         ? `Defaults to running the ${FORMAT_ACTION} command when no command is provided.`
