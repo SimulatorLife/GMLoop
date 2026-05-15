@@ -80,6 +80,6 @@ void test("resource command help points edits at gm-cli resourcetool", async () 
             cwd: projectRoot
         });
         assert.equal(helpResult.exitCode, 0);
-        assert.match(helpResult.stdout, /gm-cli resourcetool eval/u);
+        assert.match(helpResult.stdout, /@gamemaker\/gm-cli@latest resourcetool eval/u);
     });
 });

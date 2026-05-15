@@ -3,7 +3,6 @@ export * from "./format.js";
 export * from "./generate-feather-metadata.js";
 export * from "./generate-gml-identifiers.js";
 export * from "./generate-quality-report.js";
-export * from "./gm-cli.js";
 export * from "./graph.js";
 export * from "./lint.js";
 export * from "./live-reload.js";

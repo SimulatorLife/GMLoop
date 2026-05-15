@@ -1,6 +1,9 @@
 import { html } from "lit";
 
 import type {
+    GraphVisualizationExternalToolParameter,
+    GraphVisualizationGameMakerCliCommandEntry,
+    GraphVisualizationGameMakerCliMcpToolEntry,
     GraphVisualizationProjectConfigurationEntry,
     GraphVisualizationProjectConfigurationLintRuleEntry,
     GraphVisualizationProjectConfigurationLintRulesetEntry,
@@ -79,6 +82,50 @@ function renderCodemodEntry(entry: GraphVisualizationProjectConfigurationRefacto
                 ></gm-badge>
             </div>
             <pre class="config-value">${serializeConfigurationValue(entry.config)}</pre>
+        </li>
+    `;
+}
+
+function renderExternalToolParameter(entry: GraphVisualizationExternalToolParameter) {
+    return html`
+        <li class="config-item">
+            <strong>${entry.syntax}</strong>
+            <span>${entry.description || "No description provided by the source tool."}</span>
+            <div class="config-badge-row">
+                <gm-badge .label=${entry.kind}></gm-badge>
+                <gm-badge .label=${entry.required ? "required" : "optional"}></gm-badge>
+                <gm-badge .label=${entry.multiple ? "multiple" : entry.valueType}></gm-badge>
+                ${entry.choices.map((choice) => html`<gm-badge .label=${`choice:${choice}`}></gm-badge>`)}
+            </div>
+        </li>
+    `;
+}
+
+function renderGameMakerCliCommandEntry(entry: GraphVisualizationGameMakerCliCommandEntry) {
+    return html`
+        <li class="config-item">
+            <strong>${entry.displayName}</strong>
+            <span>${entry.description || "No description provided by gm-cli."}</span>
+            <pre class="config-value">${entry.usageLines.join("\n")}</pre>
+            ${entry.parameters.length === 0
+                ? null
+                : html`<ul class="config-list">
+                      ${entry.parameters.map((parameter) => renderExternalToolParameter(parameter))}
+                  </ul>`}
+        </li>
+    `;
+}
+
+function renderGameMakerCliMcpToolEntry(entry: GraphVisualizationGameMakerCliMcpToolEntry) {
+    return html`
+        <li class="config-item">
+            <strong>${entry.name}</strong>
+            <span>${entry.description || "No description provided by ResourceTool MCP."}</span>
+            ${entry.fields.length === 0
+                ? html`<div class="config-badge-row"><gm-badge .label=${"no-input-fields"}></gm-badge></div>`
+                : html`<ul class="config-list">
+                      ${entry.fields.map((field) => renderExternalToolParameter(field))}
+                  </ul>`}
         </li>
     `;
 }
@@ -206,6 +253,7 @@ export class GmConfigPanel extends LightDomLitElement {
         }
 
         const formatEntries = configCatalog.format.entries;
+        const gameMakerCliCatalog = configCatalog.gameMakerCli;
         const lintRules = configCatalog.lint.rules;
         const lintRulesets = configCatalog.lint.rulesets;
         const filteredLintRules = this.#filterLintRules(lintRules, lintRulesets);
@@ -284,6 +332,55 @@ ${serializeConfigurationValue(configCatalog.gmloop.rawConfig)}</pre
                                   <ul class="config-list">
                                       ${codemods.map((entry) => renderCodemodEntry(entry))}
                                   </ul>
+                              </gm-card>
+                              <gm-card
+                                  class="config-card"
+                                  .heading=${`GameMaker CLI (${String(gameMakerCliCatalog.cliCommands.length)})`}
+                              >
+                                  <p>
+                                      ${gameMakerCliCatalog.available
+                                          ? `Live gm-cli metadata sourced directly from ${gameMakerCliCatalog.invocation ?? "the detected gm-cli executable"}${gameMakerCliCatalog.version ? ` (v${gameMakerCliCatalog.version})` : ""}.`
+                                          : (gameMakerCliCatalog.error ?? "gm-cli metadata is unavailable.")}
+                                  </p>
+                                  ${gameMakerCliCatalog.available
+                                      ? html`
+                                            <ul class="config-list">
+                                                <li class="config-item">
+                                                    <strong>Invocation</strong>
+                                                    <span>${gameMakerCliCatalog.invocation ?? "Unavailable"}</span>
+                                                </li>
+                                                <li class="config-item">
+                                                    <strong>Version</strong>
+                                                    <span>${gameMakerCliCatalog.version ?? "Unknown"}</span>
+                                                </li>
+                                            </ul>
+                                            <ul class="config-list">
+                                                ${gameMakerCliCatalog.cliCommands.map((entry) =>
+                                                    renderGameMakerCliCommandEntry(entry)
+                                                )}
+                                            </ul>
+                                        `
+                                      : null}
+                              </gm-card>
+                              <gm-card
+                                  class="config-card"
+                                  .heading=${`GameMaker MCP (${String(gameMakerCliCatalog.mcpTools.length)})`}
+                              >
+                                  <p>
+                                      ${gameMakerCliCatalog.mcpServer.available
+                                          ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} tool metadata sourced directly from gm-cli resourcetool mcp${gameMakerCliCatalog.mcpServer.projectPath ? ` for ${gameMakerCliCatalog.mcpServer.projectPath}` : ""}.`
+                                          : (gameMakerCliCatalog.mcpServer.error ??
+                                            "ResourceTool MCP metadata is unavailable.")}
+                                  </p>
+                                  ${gameMakerCliCatalog.mcpServer.available
+                                      ? html`
+                                            <ul class="config-list">
+                                                ${gameMakerCliCatalog.mcpTools.map((entry) =>
+                                                    renderGameMakerCliMcpToolEntry(entry)
+                                                )}
+                                            </ul>
+                                        `
+                                      : null}
                               </gm-card>
                           `}
                 </div>

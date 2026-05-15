@@ -6,6 +6,8 @@ import { Format } from "@gmloop/format";
 import { Lint } from "@gmloop/lint";
 import { Refactor } from "@gmloop/refactor";
 
+import { type GameMakerCliCompanionCatalog, loadGameMakerCliCompanionCatalog } from "../game-maker-cli/index.js";
+
 const { createLintRuleEntriesFromProjectConfigOrNull } = Lint.configs;
 
 type ConfigurationSource = "configured" | "default";
@@ -49,9 +51,49 @@ type ProjectConfigurationRefactorCodemodEntry = Readonly<{
     requiresSemanticProjectIndex: boolean;
 }>;
 
+type ProjectConfigurationExternalToolParameter = Readonly<{
+    choices: ReadonlyArray<string>;
+    description: string;
+    kind: "argument" | "flag";
+    multiple: boolean;
+    name: string;
+    required: boolean;
+    syntax: string;
+    valueType: "boolean" | "string";
+}>;
+
+type ProjectConfigurationGameMakerCliCommandEntry = Readonly<{
+    commandPath: ReadonlyArray<string>;
+    description: string;
+    displayName: string;
+    parameters: ReadonlyArray<ProjectConfigurationExternalToolParameter>;
+    usageLines: ReadonlyArray<string>;
+}>;
+
+type ProjectConfigurationGameMakerCliMcpToolEntry = Readonly<{
+    description: string;
+    fields: ReadonlyArray<ProjectConfigurationExternalToolParameter>;
+    name: string;
+}>;
+
 export type GraphVisualizationProjectConfigurationCatalog = Readonly<{
     format: Readonly<{
         entries: ReadonlyArray<ProjectConfigurationEntry>;
+    }>;
+    gameMakerCli: Readonly<{
+        available: boolean;
+        cliCommands: ReadonlyArray<ProjectConfigurationGameMakerCliCommandEntry>;
+        error: string | null;
+        invocation: string | null;
+        mcpServer: Readonly<{
+            available: boolean;
+            error: string | null;
+            name: string | null;
+            projectPath: string | null;
+            version: string | null;
+        }>;
+        mcpTools: ReadonlyArray<ProjectConfigurationGameMakerCliMcpToolEntry>;
+        version: string | null;
     }>;
     githubRepositoryUrl: string;
     gmloop: Readonly<{
@@ -84,6 +126,24 @@ async function resolveExistingConfigPath(
     } catch {
         return null;
     }
+}
+
+function createEmptyGameMakerCliCatalog(error: string | null = null): GameMakerCliCompanionCatalog {
+    return Object.freeze({
+        available: false,
+        cliCommands: [],
+        error,
+        invocation: null,
+        mcpServer: Object.freeze({
+            available: false,
+            error,
+            name: null,
+            projectPath: null,
+            version: null
+        }),
+        mcpTools: [],
+        version: null
+    });
 }
 
 function normalizeLintRuleOptions(value: unknown): Readonly<Record<string, unknown>> {
@@ -214,11 +274,21 @@ export async function createGraphVisualizationProjectConfigurationCatalog(
     context: GraphProjectConfigurationContext | null,
     options: Readonly<{
         config?: string;
-    }>
+    }>,
+    dependencies: Readonly<{
+        loadGameMakerCliCatalog?: typeof loadGameMakerCliCompanionCatalog;
+    }> = {}
 ): Promise<GraphVisualizationProjectConfigurationCatalog> {
+    const loadGameMakerCliCatalog = dependencies.loadGameMakerCliCatalog ?? loadGameMakerCliCompanionCatalog;
+
     if (context === null) {
+        const gameMakerCliCatalog = await loadGameMakerCliCatalog({
+            projectRoot: null
+        }).catch((error) => createEmptyGameMakerCliCatalog(error instanceof Error ? error.message : String(error)));
+
         return Object.freeze({
             format: Object.freeze({ entries: [] }),
+            gameMakerCli: gameMakerCliCatalog,
             githubRepositoryUrl: GITHUB_REPOSITORY_URL,
             gmloop: Object.freeze({
                 configPath: null,
@@ -239,11 +309,15 @@ export async function createGraphVisualizationProjectConfigurationCatalog(
 
     const configPath = await resolveExistingConfigPath(context.projectRoot, options.config);
     const projectConfig = Core.isObjectLike(context.projectConfig) ? context.projectConfig : {};
+    const gameMakerCliCatalog = await loadGameMakerCliCatalog({
+        projectRoot: context.projectRoot
+    }).catch((error) => createEmptyGameMakerCliCatalog(error instanceof Error ? error.message : String(error)));
 
     return Object.freeze({
         format: Object.freeze({
             entries: createFormatConfigurationEntries(projectConfig)
         }),
+        gameMakerCli: gameMakerCliCatalog,
         githubRepositoryUrl: GITHUB_REPOSITORY_URL,
         gmloop: Object.freeze({
             configPath,

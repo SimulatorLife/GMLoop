@@ -151,6 +151,21 @@ void test("playground panel renders format/lint/codemod detail sections", () => 
                     }
                 ]
             },
+            gameMakerCli: {
+                available: false,
+                cliCommands: [],
+                error: null,
+                invocation: null,
+                mcpServer: {
+                    available: false,
+                    error: null,
+                    name: null,
+                    projectPath: null,
+                    version: null
+                },
+                mcpTools: [],
+                version: null
+            },
             githubRepositoryUrl: "",
             gmloop: {
                 configPath: null,
@@ -232,6 +247,21 @@ void test("playground panel falls back to workspace catalogs when project config
         },
         projectConfigurationCatalog: {
             format: { entries: [] },
+            gameMakerCli: {
+                available: false,
+                cliCommands: [],
+                error: null,
+                invocation: null,
+                mcpServer: {
+                    available: false,
+                    error: null,
+                    name: null,
+                    projectPath: null,
+                    version: null
+                },
+                mcpTools: [],
+                version: null
+            },
             githubRepositoryUrl: "",
             gmloop: {
                 configPath: null,

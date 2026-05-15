@@ -136,27 +136,24 @@ pnpm run cli -- mcp
 This command is intended to be launched by an MCP host process, not from the
 in-process CLI test/capture runner.
 
-### `gm-cli` - Delegate to the Official GameMaker CLI
+### Official `gm-cli`
 
-Delegates directly to YoYo Games' official `gm-cli` instead of re-implementing
-GameMaker-native workflows inside GMLoop.
+GMLoop does not wrap or mirror the official GameMaker CLI. Use `gm-cli`
+directly for GameMaker-native workflows such as manual lookup, ResourceTool
+project edits, compile/package/run, and ResourceTool MCP hosting.
 
 ```bash
-pnpm run cli -- gm-cli manual read "data structures"
-pnpm run cli -- gm-cli resourcetool eval "resource list"
-pnpm run cli -- gm-cli compile --target=html5
+npx @gamemaker/gm-cli@latest manual read "data structures"
+npx @gamemaker/gm-cli@latest resourcetool eval "resource list"
+npx @gamemaker/gm-cli@latest resourcetool mcp path/to/project.yyp
+npx @gamemaker/gm-cli@latest compile --target=html5
+npx @gamemaker/gm-cli@latest init --name="TestGame" --ai --actions --no-interactive --template "Blank Pixel Game"
 ```
 
-Use this command for:
-
-- Manual lookup/search (`manual read`, `manual open`)
-- Project editing through `resourcetool`
-- GameMaker compile/package/run flows that should stay owned by `gm-cli`
-
-GMLoop keeps its graph-backed read/query commands such as `resource list`,
-`resource inspect`, `room list`, and `room inspect`, but no longer owns bespoke
-resource or room mutation commands. Use `gmloop gm-cli resourcetool ...` for
-those edits.
+GMLoop keeps its own graph-backed read/query commands such as `resource list`,
+`resource inspect`, `room list`, and `room inspect`, but it does not own
+GameMaker-native mutation/manual/MCP command surfaces that already live in
+`gm-cli`.
 
 ### `watch` - Monitor Files for Hot-Reload Pipeline
 
@@ -801,7 +798,7 @@ Generates GML identifier metadata from the GameMaker manual repository.
 pnpm run cli -- generate-gml-identifiers
 ```
 
-For interactive manual lookup/search, use `gmloop gm-cli manual read <query>` or `gmloop gm-cli manual open <query>` instead of a GMLoop-specific manual-search implementation.
+For interactive manual lookup/search, use `gm-cli manual read <query>` or `gm-cli manual open <query>` instead of a GMLoop-specific manual-search implementation.
 
 ### `generate-feather-metadata` - Generate Feather Metadata
 

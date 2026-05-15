@@ -42,6 +42,21 @@ function createMockModel(): GraphVisualizationUiModel {
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: {
             format: { entries: [] },
+            gameMakerCli: {
+                available: false,
+                cliCommands: [],
+                error: null,
+                invocation: null,
+                mcpServer: {
+                    available: false,
+                    error: null,
+                    name: null,
+                    projectPath: null,
+                    version: null
+                },
+                mcpTools: [],
+                version: null
+            },
             githubRepositoryUrl: "https://github.com/SimulatorLife/GMLoop",
             gmloop: {
                 configPath: "/tmp/.gmloop.json",

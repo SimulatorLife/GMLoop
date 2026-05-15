@@ -1,1 +1,1 @@
-export * from "./delegate-game-maker-cli-command.js";
+export * from "./catalog.js";

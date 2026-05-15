@@ -15,7 +15,6 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
     const expectedCommands = [
         "format",
         "fix",
-        "gm-cli",
         "graph",
         "lint",
         "live-reload",

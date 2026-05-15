@@ -22,7 +22,7 @@ void describe("Resource command", () => {
         const command = createResourceCommand();
         const helpText = command.description();
 
-        assert.match(helpText, /gmloop gm-cli resourcetool/u);
+        assert.match(helpText, /gm-cli resourcetool/u);
         assert.doesNotMatch(helpText, /resource add/u);
         assert.doesNotMatch(helpText, /resource remove/u);
     });

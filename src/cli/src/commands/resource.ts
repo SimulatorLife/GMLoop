@@ -103,7 +103,7 @@ async function runDependentsResourceAction(nameOrId: string, options: ResourceCo
  */
 export function createResourceCommand(): Command {
     const command = applyStandardCommandOptions(new Command("resource")).description(
-        "Inspect project resources. Use `gmloop gm-cli resourcetool ...` for resource edits."
+        "Inspect project resources. Use `gm-cli resourcetool ...` for resource edits."
     );
 
     const listCommand = addSharedOptions(
@@ -207,7 +207,7 @@ export function createResourceCommand(): Command {
             "Examples:",
             "  pnpm dlx gmloop resource list --path path/to/project",
             "  pnpm dlx gmloop resource inspect scr_player --path path/to/project",
-            '  pnpm dlx gmloop gm-cli resourcetool eval "resource list"'
+            '  pnpm dlx @gamemaker/gm-cli@latest resourcetool eval "resource list"'
         ].join("\n")
     );
 

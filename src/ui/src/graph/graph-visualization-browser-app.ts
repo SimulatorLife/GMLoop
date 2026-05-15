@@ -1006,6 +1006,85 @@ function createConfigSummaryMetric(
     return metric;
 }
 
+function appendGameMakerCliConfigurationCards(
+    resolvedWorkspaceGrid: HTMLElement,
+    gameMakerCliCatalog: GraphVisualizationProjectConfigurationCatalog["gameMakerCli"]
+): void {
+    const gameMakerCliCommandList = document.createElement("ul");
+    gameMakerCliCommandList.className = CONFIG_LIST_CLASS_NAME;
+    gameMakerCliCatalog.cliCommands.forEach((entry) => {
+        const parameterList = entry.parameters
+            .map((parameter) => `${parameter.syntax}: ${parameter.description || "No description provided."}`)
+            .join("\n");
+        gameMakerCliCommandList.append(
+            createConfigItem(
+                entry.displayName,
+                entry.description || "No description provided by gm-cli.",
+                [entry.usageLines.join("\n"), parameterList].filter((value) => value.length > 0).join("\n\n"),
+                []
+            )
+        );
+    });
+    if (gameMakerCliCatalog.cliCommands.length === 0) {
+        const emptyItem = document.createElement("li");
+        emptyItem.className = "config-empty";
+        emptyItem.textContent = gameMakerCliCatalog.error ?? "No gm-cli command metadata is available.";
+        gameMakerCliCommandList.append(emptyItem);
+    }
+    resolvedWorkspaceGrid.append(
+        createConfigCard(
+            `GameMaker CLI (${String(gameMakerCliCatalog.cliCommands.length)})`,
+            gameMakerCliCatalog.available
+                ? `Live gm-cli command metadata sourced directly from ${gameMakerCliCatalog.invocation ?? "the detected gm-cli executable"}${gameMakerCliCatalog.version ? ` (v${gameMakerCliCatalog.version})` : ""}.`
+                : (gameMakerCliCatalog.error ?? "gm-cli metadata is unavailable."),
+            [gameMakerCliCommandList]
+        )
+    );
+
+    const gameMakerMcpList = document.createElement("ul");
+    gameMakerMcpList.className = CONFIG_LIST_CLASS_NAME;
+    gameMakerCliCatalog.mcpTools.forEach((entry) => {
+        const fieldSummary = entry.fields
+            .map((field) => `${field.syntax}: ${field.description || "No description provided."}`)
+            .join("\n");
+        gameMakerMcpList.append(
+            createConfigItem(
+                entry.name,
+                entry.description || "No description provided by ResourceTool MCP.",
+                fieldSummary,
+                []
+            )
+        );
+    });
+    if (gameMakerCliCatalog.mcpTools.length === 0) {
+        const emptyItem = document.createElement("li");
+        emptyItem.className = "config-empty";
+        emptyItem.textContent =
+            gameMakerCliCatalog.mcpServer.error ?? "No ResourceTool MCP metadata is available for this project.";
+        gameMakerMcpList.append(emptyItem);
+    }
+    resolvedWorkspaceGrid.append(
+        createConfigCard(
+            `GameMaker MCP (${String(gameMakerCliCatalog.mcpTools.length)})`,
+            gameMakerCliCatalog.mcpServer.available
+                ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} tool metadata sourced directly from gm-cli resourcetool mcp${gameMakerCliCatalog.mcpServer.projectPath ? ` for ${gameMakerCliCatalog.mcpServer.projectPath}` : ""}.`
+                : (gameMakerCliCatalog.mcpServer.error ?? "ResourceTool MCP metadata is unavailable."),
+            [gameMakerMcpList]
+        )
+    );
+}
+
+function renderMissingProjectConfigurationState(
+    configMetaElement: HTMLElement,
+    configContentElement: HTMLElement
+): void {
+    configMetaElement.textContent = "No project configuration is available for this view.";
+    const emptyState = document.createElement("div");
+    emptyState.className = "catalog-empty";
+    emptyState.textContent = "Load a project to inspect gmloop, lint, format, refactor, and gm-cli configuration.";
+    configContentElement.append(emptyState);
+}
+
 function createBadge(labelText: string): HTMLSpanElement {
     const badge = document.createElement("span");
     badge.className = "config-badge";
@@ -1987,11 +2066,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         configContentElement.innerHTML = "";
 
         if (currentProjectConfiguration === null && selectedProjectConfiguration === null) {
-            configMetaElement.textContent = "No project configuration is available for this view.";
-            const emptyState = document.createElement("div");
-            emptyState.className = "catalog-empty";
-            emptyState.textContent = "Load a project to inspect gmloop, lint, format, and refactor configuration.";
-            configContentElement.append(emptyState);
+            renderMissingProjectConfigurationState(configMetaElement, configContentElement);
             return;
         }
 
@@ -2001,6 +2076,21 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 : {
                       ...(currentProjectConfiguration ?? {
                           format: { entries: [] },
+                          gameMakerCli: {
+                              available: false,
+                              cliCommands: [],
+                              error: null,
+                              invocation: null,
+                              mcpServer: {
+                                  available: false,
+                                  error: null,
+                                  name: null,
+                                  projectPath: null,
+                                  version: null
+                              },
+                              mcpTools: [],
+                              version: null
+                          },
                           githubRepositoryUrl: "https://github.com/SimulatorLife/GMLoop",
                           gmloop: {
                               configPath: null,
@@ -2043,8 +2133,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         summaryDescription.className = "config-summary-description";
         summaryDescription.textContent =
             selectedProjectConfiguration === null
-                ? "The Config page combines the active project file, repository context, and the workspace-resolved format, lint, and refactor views."
-                : "The Config page combines the selected project file contents with workspace-resolved format, lint, and refactor views.";
+                ? "The Config page combines the active project file, repository context, workspace-resolved format/lint/refactor views, and live gm-cli companion metadata."
+                : "The Config page combines the selected project file contents with workspace-resolved format/lint/refactor views and live gm-cli companion metadata.";
         summaryHeader.append(summaryDescription);
         summaryPanel.append(summaryHeader);
 
@@ -2052,7 +2142,13 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         summaryMetrics.className = "config-summary-metrics";
         summaryMetrics.append(
             createConfigSummaryMetric("gmloop.json", gmloopConfig.exists ? "Loaded" : "Defaults", "accent"),
-            createConfigSummaryMetric("Project Root", gmloopConfig.projectRoot || "(none)")
+            createConfigSummaryMetric("Project Root", gmloopConfig.projectRoot || "(none)"),
+            createConfigSummaryMetric(
+                "gm-cli",
+                effectiveConfiguration.gameMakerCli.available
+                    ? (effectiveConfiguration.gameMakerCli.version ?? "Available")
+                    : "Unavailable"
+            )
         );
         summaryPanel.append(summaryMetrics);
         configContentElement.append(summaryPanel);
@@ -2213,6 +2309,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 [refactorList]
             )
         );
+        appendGameMakerCliConfigurationCards(resolvedWorkspaceGrid, effectiveConfiguration.gameMakerCli);
         const projectMetadataList = document.createElement("ul");
         projectMetadataList.className = CONFIG_LIST_CLASS_NAME;
         projectMetadataList.append(

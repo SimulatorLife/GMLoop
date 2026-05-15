@@ -6,7 +6,6 @@ import { createFormatCommand, runFormatCommand } from "./commands/format.js";
 import { createFeatherMetadataCommand, runGenerateFeatherMetadata } from "./commands/generate-feather-metadata.js";
 import { createGenerateIdentifiersCommand, runGenerateGmlIdentifiers } from "./commands/generate-gml-identifiers.js";
 import { createGenerateQualityReportCommand, runGenerateQualityReport } from "./commands/generate-quality-report.js";
-import { createGameMakerCliCommand } from "./commands/gm-cli.js";
 import { createGraphCommand } from "./commands/graph.js";
 import { createLintCommand, runLintCommand } from "./commands/lint.js";
 import { createLiveReloadCommand } from "./commands/live-reload.js";
@@ -161,15 +160,6 @@ function registerGenerationCommands({ env, registry }: CliCommandEnvironmentRegi
 }
 
 function registerProjectWorkflowCommands({ registry }: CliCommandRegistryContext): void {
-    registry.registerCommand({
-        command: createGameMakerCliCommand(),
-        onError: (error) =>
-            handleCliError(error, {
-                prefix: "GameMaker CLI command failed.",
-                exitCode: 1
-            })
-    });
-
     registry.registerCommand({
         command: createLiveReloadCommand(),
         onError: (error) =>

@@ -37,6 +37,46 @@ function createMockModel(): GraphVisualizationUiModel {
                     }
                 ]
             },
+            gameMakerCli: {
+                available: true,
+                cliCommands: [
+                    {
+                        commandPath: ["manual", "read"],
+                        description: "Query the GameMaker manual",
+                        displayName: "manual read",
+                        parameters: [
+                            {
+                                choices: [],
+                                description: "Query",
+                                kind: "argument",
+                                multiple: false,
+                                name: "query",
+                                required: true,
+                                syntax: "query",
+                                valueType: "string"
+                            }
+                        ],
+                        usageLines: ["gm-cli manual read <query>"]
+                    }
+                ],
+                error: null,
+                invocation: "npx @gamemaker/gm-cli@latest",
+                mcpServer: {
+                    available: true,
+                    error: null,
+                    name: "ResourceTool",
+                    projectPath: "/tmp/test/Game.yyp",
+                    version: "2024.14.15"
+                },
+                mcpTools: [
+                    {
+                        description: "Checks the Status of the current Project",
+                        fields: [],
+                        name: "status"
+                    }
+                ],
+                version: "1.3.0"
+            },
             githubRepositoryUrl: "https://github.com/SimulatorLife/GMLoop",
             gmloop: {
                 configPath: "/tmp/test/gmloop.json",
@@ -126,6 +166,10 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
     assert.match(rendered, /Format \(1\)/u);
     assert.match(rendered, /Lint \(2\)/u);
     assert.match(rendered, /Refactor \(1\)/u);
+    assert.match(rendered, /GameMaker CLI \(1\)/u);
+    assert.match(rendered, /GameMaker MCP \(1\)/u);
+    assert.match(rendered, /manual read/u);
+    assert.match(rendered, /ResourceTool v2024\.14\.15/u);
     assert.match(rendered, /All Rules/u);
     assert.match(rendered, /All Levels/u);
     assert.match(rendered, /class="?config-severity-badge warn"?/u);

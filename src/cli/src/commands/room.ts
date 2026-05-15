@@ -44,7 +44,7 @@ function emitRoomUnavailableLeaf(
 
 export function createRoomCommand(): Command {
     const command = applyStandardCommandOptions(new Command("room")).description(
-        "Inspect room resources. Use `gmloop gm-cli resourcetool ...` for room edits."
+        "Inspect room resources. Use `gm-cli resourcetool ...` for room edits."
     );
 
     const list = addRoomSharedOptions(applyStandardCommandOptions(new Command("list")).description("List rooms."));

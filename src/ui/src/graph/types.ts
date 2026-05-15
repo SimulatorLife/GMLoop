@@ -330,9 +330,49 @@ export type GraphVisualizationProjectConfigurationRefactorCodemodEntry = Readonl
     requiresSemanticProjectIndex: boolean;
 }>;
 
+export type GraphVisualizationExternalToolParameter = Readonly<{
+    choices: ReadonlyArray<string>;
+    description: string;
+    kind: "argument" | "flag";
+    multiple: boolean;
+    name: string;
+    required: boolean;
+    syntax: string;
+    valueType: "boolean" | "string";
+}>;
+
+export type GraphVisualizationGameMakerCliCommandEntry = Readonly<{
+    commandPath: ReadonlyArray<string>;
+    description: string;
+    displayName: string;
+    parameters: ReadonlyArray<GraphVisualizationExternalToolParameter>;
+    usageLines: ReadonlyArray<string>;
+}>;
+
+export type GraphVisualizationGameMakerCliMcpToolEntry = Readonly<{
+    description: string;
+    fields: ReadonlyArray<GraphVisualizationExternalToolParameter>;
+    name: string;
+}>;
+
 export type GraphVisualizationProjectConfigurationCatalog = Readonly<{
     format: Readonly<{
         entries: ReadonlyArray<GraphVisualizationProjectConfigurationEntry>;
+    }>;
+    gameMakerCli: Readonly<{
+        available: boolean;
+        cliCommands: ReadonlyArray<GraphVisualizationGameMakerCliCommandEntry>;
+        error: string | null;
+        invocation: string | null;
+        mcpServer: Readonly<{
+            available: boolean;
+            error: string | null;
+            name: string | null;
+            projectPath: string | null;
+            version: string | null;
+        }>;
+        mcpTools: ReadonlyArray<GraphVisualizationGameMakerCliMcpToolEntry>;
+        version: string | null;
     }>;
     githubRepositoryUrl: string;
     gmloop: Readonly<{
