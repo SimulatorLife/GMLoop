@@ -29,6 +29,7 @@ import {
     GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE
 } from "./events.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
@@ -58,12 +59,6 @@ export class GmAppShell extends LightDomLitElement {
      * and torn down on `disconnectedCallback`.
      */
     #eventBus: EventBusManager;
-
-    /**
-     * Store subscription handle for URL persistence. Populated in the
-     * constructor and cleaned up when the element disconnects.
-     */
-    #unsubscribeStore: (() => void) | null = null;
 
     // ─── Private handlers (access #state and #store via closure) ───────────────
 
@@ -164,24 +159,16 @@ export class GmAppShell extends LightDomLitElement {
         ]);
 
         // Subscribe to store and persist URL state on changes
-        this.#unsubscribeStore = this.#store.subscribe((nextState) => {
+        const unsubscribeStore = this.#store.subscribe((nextState) => {
             this.#state = nextState;
             replaceGraphVisualizationUiStateInCurrentUrl(nextState);
             this.requestUpdate();
         });
-    }
 
-    public override connectedCallback(): void {
-        super.connectedCallback();
-        this.#eventBus.connect();
-    }
-
-    public override disconnectedCallback(): void {
-        this.#eventBus.disconnect();
-        this.#unsubscribeStore?.();
-        this.#unsubscribeStore = null;
-
-        super.disconnectedCallback();
+        new LifecycleParticipantsController(this, [
+            createStoreUnsubscribeParticipant(unsubscribeStore),
+            this.#eventBus
+        ]);
     }
 
     async #runHostActionWithPendingState(
@@ -241,4 +228,17 @@ export class GmAppShell extends LightDomLitElement {
             </div>
         `;
     }
+}
+
+function createStoreUnsubscribeParticipant(unsubscribe: () => void) {
+    let activeUnsubscribe: (() => void) | null = unsubscribe;
+    return Object.freeze({
+        connect(): void {
+            // Store subscription is intentionally created in the constructor.
+        },
+        disconnect(): void {
+            activeUnsubscribe?.();
+            activeUnsubscribe = null;
+        }
+    });
 }
