@@ -439,6 +439,118 @@ void test("graph visualize UI source reload candidate includes template html ass
     assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate(null), false);
 });
 
+/**
+ * Resource-leak regression test: uiWatchDebounceTimer cleanup during signal shutdown.
+ *
+ * **The leak**:
+ * `uiWatchDebounceTimer` is a setTimeout created inside the `uiSourceWatcher` callback
+ * in `runGraphVisualizationServe()`. When SIGINT/SIGTERM arrives, only
+ * `uiSourceWatcher.close()` was registered — the pending timer was not cleared.
+ * A timer whose callback fires after the watcher is closed can trigger a rebuild cycle
+ * with an unstable filesystem state (files may have been deleted/moved during shutdown),
+ * or keep the Node.js event loop alive longer than necessary.
+ *
+ * **The fix**:
+ * The SIGINT/SIGTERM handler now clears `uiWatchDebounceTimer` before calling
+ * `uiSourceWatcher.close()`, discarding pending debounced work rather than executing it.
+ *
+ * **Follow-up considerations**:
+ * - The `triggerUiBundleRebuild()` path could itself throw if `runUiBundleRebuildCycle()`
+ *   runs during shutdown. That error would be unhandled. If graceful shutdown is needed,
+ *   `runUiBundleRebuildCycle()` should be made idempotent or wrapped with a guard that
+ *   detects a shutting-down state.
+ * - The 300 ms debounce delay could be tuned independently of the watch command's
+ *   `debounceDelay` if users ever want different settling behaviour for UI source rebuilds.
+ */
+void test("graph visualize serve clears uiWatchDebounceTimer on SIGTERM shutdown", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-ui-watch-timer-"));
+    const previousWorkingDirectory = process.cwd();
+
+    // Create a UI source file so the watcher fires when we modify it.
+    const uiFilePath = path.join(temporaryDirectory, "src", "ui", "src", "graph", "graph-visualization-template.ts");
+    await fs.mkdir(path.dirname(uiFilePath), { recursive: true });
+    await fs.writeFile(uiFilePath, "// placeholder\n", "utf8");
+
+    // Track all setTimeout handles created in the test process. After SIGTERM is
+    // delivered, any timer created by the graph serve child process is isolated
+    // (a separate process), so `trackedTimers` only records timers created in this
+    // process — specifically the 300 ms debounce timer from the uiSourceWatcher
+    // callback registered in runGraphVisualizationServe().
+    const trackedTimers: Array<ReturnType<typeof globalThis.setTimeout>> = [];
+    // Snapshot the globalThis reference and setTimeout before patching to keep
+    // the restore path stable and avoid require-atomic-updates false positives.
+    const globals = globalThis;
+    const baseSetTimeout = globals.setTimeout;
+    globals.setTimeout = ((
+        handler: (...args: unknown[]) => void,
+        delay?: number,
+        ...rest: unknown[]
+    ): ReturnType<typeof baseSetTimeout> => {
+        const handle = baseSetTimeout(handler, delay, ...rest);
+        trackedTimers.push(handle);
+        return handle;
+    }) as typeof globals.setTimeout;
+
+    try {
+        process.chdir(temporaryDirectory);
+
+        const cliPath = path.resolve(REPO_ROOT, "src/cli/dist/index.js");
+        const serveProcess = spawn(
+            "node",
+            [cliPath, "graph", "visualize", "--serve", "--json", "--no-open", "--quiet"],
+            {
+                stdio: ["ignore", "pipe", "pipe"]
+            }
+        );
+
+        // Wait for the server to start so the uiSourceWatcher has been registered.
+        await new Promise<void>((resolve) => {
+            baseSetTimeout(resolve, 500);
+        });
+
+        // Modify the UI source file to trigger the watcher callback. The callback
+        // sets uiWatchDebounceTimer = setTimeout(..., 300) if one is not already pending.
+        await fs.writeFile(uiFilePath, "// updated\n", "utf8");
+
+        // Wait less than the 300 ms debounce delay so the timer is still pending.
+        // After SIGTERM, the fix clears this timer; without the fix it would fire later.
+        await new Promise<void>((resolve) => {
+            baseSetTimeout(resolve, 100);
+        });
+
+        // Deliver SIGTERM to this process. This triggers the closeWatcher handler
+        // registered in runGraphVisualizationServe() which must clear the pending timer.
+        process.emit("SIGTERM");
+
+        // Wait for the serve child process to exit.
+        const exitCode = await new Promise<number | null>((resolve) => {
+            serveProcess.on("exit", (code) => resolve(code));
+        });
+
+        // Allow any leaked async work to settle before we read the counter.
+        await new Promise<void>((resolve) => {
+            baseSetTimeout(resolve, 200);
+        });
+
+        // Assert: serve process must exit cleanly on SIGTERM (exit code 0).
+        assert.equal(exitCode, 0, "Serve process must exit cleanly on SIGTERM");
+
+        // Assert: exactly one timer should be in trackedTimers — the 300 ms debounce
+        // scheduled above. If the timer was NOT cleared before uiSourceWatcher.close(),
+        // the pending callback would have fired and potentially scheduled a second timer.
+        // With the fix, the timer is cleared and no additional timers are created.
+        assert.equal(
+            trackedTimers.length,
+            1,
+            `uiWatchDebounceTimer must be cleared before watcher close (found ${trackedTimers.length} timers)`
+        );
+    } finally {
+        globals.setTimeout = baseSetTimeout;
+        process.chdir(previousWorkingDirectory);
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
+});
+
 void test("graph visualize UI source watcher is disabled outside the repository source tree", async () => {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-ui-watch-root-"));
     const previousWorkingDirectory = process.cwd();

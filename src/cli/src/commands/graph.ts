@@ -1127,8 +1127,17 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         }
 
         if (uiSourceWatcher) {
-            process.once("SIGINT", () => uiSourceWatcher.close());
-            process.once("SIGTERM", () => uiSourceWatcher.close());
+            // Clear the debounce timer before closing the watcher so that no
+            // pending setTimeout fires after the watcher is already closed.
+            const closeWatcher = (): void => {
+                if (uiWatchDebounceTimer !== null) {
+                    globalThis.clearTimeout(uiWatchDebounceTimer);
+                    uiWatchDebounceTimer = null;
+                }
+                uiSourceWatcher.close();
+            };
+            process.once("SIGINT", closeWatcher);
+            process.once("SIGTERM", closeWatcher);
         }
 
         const stopLiveReloadChildProcess = (): void => {
