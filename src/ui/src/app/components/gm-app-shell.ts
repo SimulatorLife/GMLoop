@@ -231,14 +231,14 @@ export class GmAppShell extends LightDomLitElement {
 }
 
 function createStoreUnsubscribeParticipant(unsubscribe: () => void) {
-    let activeUnsubscribe: (() => void) | null = unsubscribe;
+    let unsubscribeCallback: (() => void) | null = unsubscribe;
     return Object.freeze({
         connect(): void {
             // Store subscription is intentionally created in the constructor.
         },
         disconnect(): void {
-            activeUnsubscribe?.();
-            activeUnsubscribe = null;
+            unsubscribeCallback?.();
+            unsubscribeCallback = null;
         }
     });
 }

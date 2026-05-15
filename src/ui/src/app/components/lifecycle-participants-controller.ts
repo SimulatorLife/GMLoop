@@ -15,7 +15,7 @@ export class LifecycleParticipantsController implements ReactiveController {
     #participants: readonly LifecycleParticipant[];
 
     public constructor(host: ReactiveControllerHost, participants: readonly LifecycleParticipant[]) {
-        this.#participants = [...participants];
+        this.#participants = participants;
         host.addController(this);
     }
 
