@@ -45,7 +45,7 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
     };
 }
 
-void test("GmDocsPanel renders the Rules subview and workspace rule catalog content", () => {
+void test("GmDocsPanel renders the Rules subview and project-facing rule content", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
         data: {
@@ -91,7 +91,7 @@ void test("GmDocsPanel renders the Rules subview and workspace rule catalog cont
     assert.match(rendered, /refactor\/globalvar-to-global/u);
 });
 
-void test("GmDocsPanel renders an empty rules state when workspace rule catalogs are missing", () => {
+void test("GmDocsPanel renders an empty rules state when rule data is unavailable", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
         data: {
@@ -128,5 +128,5 @@ void test("GmDocsPanel renders an empty rules state when workspace rule catalogs
 
     assert.match(rendered, /docs-view-rules/u);
     assert.match(rendered, createButtonAriaPressedPattern("docs-view-rules", true));
-    assert.match(rendered, /No workspace rule catalog entries were provided by the host\./u);
+    assert.match(rendered, /Rules and code actions are not available right now\./u);
 });

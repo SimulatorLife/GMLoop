@@ -336,22 +336,22 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                 ${this.#renderMetricCard(
                     "Total Patches",
                     formatInteger(status?.totalPatchCount ?? status?.patchCount ?? null),
-                    "Cumulative runtime patch payloads generated for replay or connected clients."
+                    "Total live updates prepared during this session."
                 )}
                 ${this.#renderMetricCard(
                     "Retained History",
                     `${formatInteger(status?.patchHistorySize ?? null)} / ${formatInteger(status?.maxPatchHistory ?? null)}`,
-                    "Bounded patch history currently retained by the status server."
+                    "Recent update history currently kept for review."
                 )}
                 ${this.#renderMetricCard(
                     "Average Latency",
                     formatDurationMs(status?.avgHotReloadLatencyMs ?? null),
-                    "Mean file-change to broadcast latency for the current metrics window."
+                    "Average time between a file change and the live update becoming available."
                 )}
                 ${this.#renderMetricCard(
                     "P95 Latency",
                     formatDurationMs(status?.p95HotReloadLatencyMs ?? null),
-                    "95th percentile hot-reload latency for recent patches."
+                    "Typical worst-case live-update delay across recent changes."
                 )}
             </div>
         `;
@@ -361,7 +361,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Recent Patches"}>
                 ${patches.length === 0
-                    ? html`<p class="catalog-empty">No runtime patch payloads have been generated yet.</p>`
+                    ? html`<p class="catalog-empty">No live updates have been prepared yet.</p>`
                     : html`
                           <ul class="live-reload-event-list">
                               ${patches.map(
@@ -414,7 +414,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Runtime Health"}>
                 ${runtimeHealth === null
-                    ? html`<p class="catalog-empty">Runtime-wrapper diagnostics are not available from the host.</p>`
+                    ? html`<p class="catalog-empty">Game runtime details are not available right now.</p>`
                     : html`
                           <dl class="live-reload-health-list">
                               <div>
@@ -467,7 +467,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                                   Status <code>${liveReload.endpoints.statusUrl ?? "not configured"}</code> • WebSocket
                                   <code>${liveReload.endpoints.websocketUrl ?? "not configured"}</code>
                               `
-                            : "Live-reload endpoints were not provided by the host."}
+                            : "Live reload is not connected right now."}
                     </p>
                     <button
                         id="refresh-live-reload"

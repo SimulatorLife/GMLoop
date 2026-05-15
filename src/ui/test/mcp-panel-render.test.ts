@@ -88,13 +88,13 @@ void test("GmMcpPanel renders running status and tool catalog summary", () => {
     assert.match(rendered, /id="mcp-page"[\s\S]*class=page docs-page active/u);
     assert.match(rendered, /Runtime Status/u);
     assert.match(rendered, /Tool Call Feed/u);
-    assert.match(rendered, /Tool Catalog/u);
+    assert.match(rendered, /Available Tools/u);
     assert.match(rendered, /Graph Visualize/u);
-    assert.match(rendered, /gmloop-mcp/u);
+    assert.match(rendered, /1 connected tool available/u);
     assert.match(rendered, /mcp-runtime-status-chip running/u);
 });
 
-void test("GmMcpPanel renders empty host-catalog fallback", () => {
+void test("GmMcpPanel renders empty tool fallback copy", () => {
     const panel = new TestableGmMcpPanel();
     panel.model = {
         ...createMockModel(),
@@ -108,6 +108,6 @@ void test("GmMcpPanel renders empty host-catalog fallback", () => {
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /No MCP server catalog was provided by the host\./u);
-    assert.match(rendered, /No MCP tool catalog entries found\./u);
+    assert.match(rendered, /Connected tool details are not available right now\./u);
+    assert.match(rendered, /No tools are available right now\./u);
 });

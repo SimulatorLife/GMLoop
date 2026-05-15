@@ -57,4 +57,53 @@ void describe("project-index/project-tree", () => {
             }
         ]);
     });
+
+    void it("skips generated cache and dependency directories while traversing the project tree", async () => {
+        const projectRoot = "/project";
+        const directories = new Map<string, Array<string>>([
+            [projectRoot, [".gmcache", "node_modules", "scripts"]],
+            [path.join(projectRoot, ".gmcache"), ["generated.gml", "generated.yy"]],
+            [path.join(projectRoot, "node_modules"), ["dependency.gml", "dependency.yy"]],
+            [path.join(projectRoot, "scripts"), ["player.gml", "player.yy"]]
+        ]);
+
+        const scannedDirectories: Array<string> = [];
+
+        const facade = {
+            async readDir(directoryPath: string): Promise<Array<string>> {
+                scannedDirectories.push(directoryPath);
+                const entries = directories.get(directoryPath);
+                if (!entries) {
+                    throw Object.assign(new Error(`Missing directory: ${directoryPath}`), { code: "ENOENT" });
+                }
+
+                return entries;
+            },
+            async stat(entryPath: string): Promise<{ isDirectory(): boolean; mtimeMs: number }> {
+                const isDirectory = directories.has(entryPath);
+                return {
+                    mtimeMs: 0,
+                    isDirectory() {
+                        return isDirectory;
+                    }
+                };
+            }
+        };
+
+        const result = await scanProjectTree(projectRoot, facade);
+
+        assert.deepStrictEqual(result.gmlFiles, [
+            {
+                absolutePath: path.join(projectRoot, "scripts", "player.gml"),
+                relativePath: "scripts/player.gml"
+            }
+        ]);
+        assert.deepStrictEqual(result.yyFiles, [
+            {
+                absolutePath: path.join(projectRoot, "scripts", "player.yy"),
+                relativePath: "scripts/player.yy"
+            }
+        ]);
+        assert.deepStrictEqual(scannedDirectories, [projectRoot, path.join(projectRoot, "scripts")]);
+    });
 });

@@ -113,6 +113,9 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.match(rendered, /class="loaded-target-actions"/u);
     assert.equal(Array.from(rendered.matchAll(/id="open-project"/gu)).length, 1);
     assert.match(rendered, /id="open-project"[\s\S]*class="open-button"/u);
+    assert.match(rendered, /id="manual-link"[\s\S]*href="https:\/\/manual\.gamemaker\.io\/"/u);
+    assert.match(rendered, /id="manual-link"[\s\S]*class="header-icon-link"/u);
+    assert.match(rendered, /id="github-link"[\s\S]*class="header-icon-link"/u);
     assert.match(rendered, /class="loaded-path-label">Active<\/span>/u);
     assert.match(rendered, /class="loaded-path-label">Selected<\/span>/u);
     assert.match(rendered, /loaded-path-value is-empty/u);
@@ -175,4 +178,16 @@ void test("playground panel source uses class-based error rendering instead of i
 
     assert.match(source, /class="playground-output is-error"/u);
     assert.doesNotMatch(source, /style="color: #ff8080/u);
+});
+
+void test("toolbar stylesheet keeps graph toolbar controls in a full-width horizontal flow", () => {
+    const source = readFileSync(new URL("../../src/web/styles/toolbar.css", import.meta.url), "utf8");
+
+    assert.match(source, /\.page-toolbar\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/u);
+    assert.match(
+        source,
+        /\.toolbar-controls\s*\{[\s\S]*align-items:\s*center;[\s\S]*justify-content:\s*flex-start;[\s\S]*width:\s*100%;/u
+    );
+    assert.match(source, /\.toolbar-control-group\s*\{[\s\S]*flex-wrap:\s*nowrap;/u);
+    assert.match(source, /\.toolbar-search-group\s*\{[\s\S]*flex:\s*1 1 220px;[\s\S]*max-width:\s*360px;/u);
 });

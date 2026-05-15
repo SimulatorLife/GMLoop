@@ -41,11 +41,11 @@ export function createGraphVisualizationDocsPanelContent(
     if (catalogs === null) {
         return Object.freeze({
             cliEntries: [],
-            cliMetaText: "No CLI command catalog metadata is available for this view.",
+            cliMetaText: "Command help is not available right now.",
             mcpEntries: [],
-            mcpMetaText: "No MCP tool catalog metadata is available for this view.",
-            rulesEmptyMessage: "No workspace rule catalog entries were provided by the host.",
-            rulesMetaText: "No workspace rules metadata is available for this view.",
+            mcpMetaText: "Tool details are not available right now.",
+            rulesEmptyMessage: "Rules and code actions are not available right now.",
+            rulesMetaText: "Rules and code actions are not available right now.",
             rulesSections: []
         });
     }
@@ -53,7 +53,7 @@ export function createGraphVisualizationDocsPanelContent(
     const rulesCatalog = catalogs.workspaceRules;
     const rulesSections = [
         Object.freeze({
-            description: "Live formatter option catalog sourced from @gmloop/format.",
+            description: "Formatting options that shape how GMLoop rewrites code layout.",
             items: rulesCatalog.formatOptions.map((entry) =>
                 createRulesSectionItem(
                     entry.name,
@@ -64,7 +64,7 @@ export function createGraphVisualizationDocsPanelContent(
             title: "Format Options"
         }),
         Object.freeze({
-            description: "Live lint rule catalog sourced from @gmloop/lint.",
+            description: "Checks that spot common issues and can often fix them for you.",
             items: rulesCatalog.lintRules.map((entry) =>
                 createRulesSectionItem(entry.ruleId, entry.description, [
                     entry.fixable === null ? "not-fixable" : `fixable:${entry.fixable}`
@@ -73,7 +73,7 @@ export function createGraphVisualizationDocsPanelContent(
             title: "Lint Rules"
         }),
         Object.freeze({
-            description: "Live codemod catalog sourced from @gmloop/refactor.",
+            description: "Project-wide refactors for larger cleanup and migration tasks.",
             items: rulesCatalog.refactorCodemods.map((entry) =>
                 createRulesSectionItem(entry.id, entry.description, [
                     entry.requiresSemanticProjectIndex ? "needs-semantic" : "semantic-optional"
@@ -85,15 +85,15 @@ export function createGraphVisualizationDocsPanelContent(
 
     return Object.freeze({
         cliEntries: catalogs.cliCommands,
-        cliMetaText: `${String(catalogs.cliCommands.length)} CLI command entries sourced directly from the Commander command catalog.`,
+        cliMetaText: `${String(catalogs.cliCommands.length)} command${catalogs.cliCommands.length === 1 ? "" : "s"} available for working with your project.`,
         mcpEntries: catalogs.mcpTools,
-        mcpMetaText: `${catalogs.mcpServer.name} v${catalogs.mcpServer.version} | ${String(catalogs.mcpTools.length)} MCP tools derived from the CLI catalog.`,
+        mcpMetaText: `${String(catalogs.mcpTools.length)} tool${catalogs.mcpTools.length === 1 ? "" : "s"} available for connected workflows.`,
         rulesEmptyMessage: rulesSections.every((section) => section.items.length === 0)
-            ? "No workspace rule catalog entries were provided by the host."
+            ? "Rules and code actions are not available right now."
             : null,
         rulesMetaText: `${String(rulesCatalog.formatOptions.length)} format options, ${String(
             rulesCatalog.lintRules.length
-        )} lint rules, ${String(rulesCatalog.refactorCodemods.length)} refactor codemods loaded directly from workspace registries.`,
+        )} lint rules, and ${String(rulesCatalog.refactorCodemods.length)} refactor tools available for this project.`,
         rulesSections
     });
 }

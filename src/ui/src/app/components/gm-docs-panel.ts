@@ -119,7 +119,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     >
                         <div id="cli-content" class="docs-grid">
                             ${docsPanelContent.cliEntries.length === 0
-                                ? html`<p class="catalog-empty">No CLI command catalog entries found.</p>`
+                                ? html`<p class="catalog-empty">No commands are available right now.</p>`
                                 : docsPanelContent.cliEntries.map((entry) => this.#renderCliCard(entry))}
                         </div>
                     </div>
@@ -129,7 +129,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     >
                         <div id="mcp-content" class="docs-grid">
                             ${docsPanelContent.mcpEntries.length === 0
-                                ? html`<p class="catalog-empty">No MCP tool catalog entries found.</p>`
+                                ? html`<p class="catalog-empty">No tools are available right now.</p>`
                                 : docsPanelContent.mcpEntries.map((entry) => this.#renderMcpCard(entry))}
                         </div>
                     </div>

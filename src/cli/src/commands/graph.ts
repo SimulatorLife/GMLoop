@@ -845,12 +845,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         ReturnType<typeof createGraphVisualizationProjectConfigurationCatalog>
     > | null = null;
     let activeStartupState: GraphVisualizationServeBackgroundState | null =
-        options.serve === true
-            ? createGraphVisualizationServeLoadingState(
-                  "Resolving the project and checking the graph index in the background.",
-                  "The shell is available immediately while project discovery and indexing continue."
-              )
-            : null;
+        options.serve === true ? createGraphVisualizationServeLoadingState("Loading project data…", null) : null;
     let activeServeStartupGeneration = 0;
     let activeServeRevision = 0;
     let activeServeBundleCache: GraphVisualizationServeBundleCache | null = null;

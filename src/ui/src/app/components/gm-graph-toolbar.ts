@@ -238,16 +238,16 @@ export class GmGraphToolbar extends LightDomLitElement {
                         : "Live Reload";
         const subheading =
             this.state.activePage === "graph"
-                ? "Interactive graph exploration controls for the current graph index."
+                ? "Explore relationships across scripts, objects, events, and other project resources."
                 : this.state.activePage === "docs"
-                  ? "CLI, MCP, and workspace rule catalogs generated from the active workspace."
+                  ? "Browse commands, tools, and rules that can help with your project."
                   : this.state.activePage === "config"
-                    ? "Project and tooling configuration metadata loaded for the active root."
+                    ? "Review the project settings and tool options currently in use."
                     : this.state.activePage === "playground"
                       ? "Interactive GML playground for parsing, formatting, and rule experiments."
                       : this.state.activePage === "mcp"
-                        ? "MCP server health, catalog, and tool-field visibility for host integrations."
-                        : "Hot-reload watcher, patch streaming, and runtime-wrapper observability.";
+                        ? "Check tool access and connection status for integrations."
+                        : "Track live-update activity and recent reload problems.";
         const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const hasLoadedProject = hasLoadedGraphProject(this.model);
 

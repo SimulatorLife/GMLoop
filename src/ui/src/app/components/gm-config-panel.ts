@@ -246,7 +246,7 @@ export class GmConfigPanel extends LightDomLitElement {
         if (!configCatalog) {
             return html`
                 <section id="config-page" class=${configPageClassName}>
-                    <p id="config-meta" class="docs-meta">No project configuration catalog was provided by the host.</p>
+                    <p id="config-meta" class="docs-meta">Project settings are not available right now.</p>
                     <div id="config-content" class="config-stack"></div>
                 </section>
             `;

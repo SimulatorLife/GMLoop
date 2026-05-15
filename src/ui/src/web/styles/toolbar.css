@@ -1,8 +1,8 @@
 .page-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, auto);
+  display: flex;
+  flex-direction: column;
   gap: var(--gm-space-related);
-  align-items: start;
+  align-items: stretch;
   padding: 14px 18px;
   margin: 0 22px;
   border: 1px solid var(--gm-border);
@@ -31,24 +31,28 @@
 .toolbar-controls {
   display: flex;
   gap: var(--gm-space-related);
-  align-items: start;
+  align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  width: 100%;
 }
 
 .toolbar-control-group {
   display: flex;
   gap: 8px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .toolbar-search-group {
-  min-width: min(100%, 260px);
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 360px;
 }
 
 #search {
-  min-width: 240px;
+  min-width: 0;
+  width: 100%;
   padding: 9px 12px;
   border: 1px solid var(--gm-border);
   border-radius: 14px;

@@ -403,7 +403,7 @@ function createLiveReloadBrowserSurfaceController(
                 : `<p class="catalog-empty">No hot-reload errors reported.</p>`;
         const runtimeHealthMarkup =
             state.currentLiveReload?.runtimeHealth === null || state.currentLiveReload?.runtimeHealth === undefined
-                ? `<p class="catalog-empty">Runtime-wrapper diagnostics are not available from the host.</p>`
+                ? `<p class="catalog-empty">Game runtime details are not available right now.</p>`
                 : `<dl class="live-reload-health-list">
                       <div><dt>Runtime Status</dt><dd>${escapeHtmlText(state.currentLiveReload.runtimeHealth.runtimeStatus)}</dd></div>
                       <div><dt>Registry Version</dt><dd>${String(state.currentLiveReload.runtimeHealth.registryVersion)}</dd></div>
@@ -843,6 +843,20 @@ function rebuildGraphIndexes(
     });
 }
 
+function readGraphViewportDimensions(
+    svgSelection: Readonly<{ node(): SVGSVGElement | null }>
+): Readonly<{ height: number; width: number }> {
+    const bounds = svgSelection.node()?.getBoundingClientRect();
+    const width = bounds && Number.isFinite(bounds.width) && bounds.width > 0 ? bounds.width : globalThis.innerWidth;
+    const height =
+        bounds && Number.isFinite(bounds.height) && bounds.height > 0 ? bounds.height : globalThis.innerHeight;
+
+    return Object.freeze({
+        height,
+        width
+    });
+}
+
 function getRadius(
     nodeValue: MutableGraphNodeRecord,
     incomingCount: Map<string, number>,
@@ -1252,19 +1266,18 @@ function updateGraphInteractionAvailability(
     }
 
     if (startupState?.phase === "loading") {
-        titleElement.textContent = "Loading the graph UI first. Project work continues in the background.";
-        descriptionElement.textContent = startupState.detail ?? startupState.message;
+        titleElement.textContent = "";
+        descriptionElement.textContent = "";
         emptyStateIndicatorElement.classList.remove("hidden");
         emptyStateIndicatorElement.setAttribute(ARIA_HIDDEN_ATTRIBUTE_NAME, "false");
     } else if (startupState?.phase === "error") {
-        titleElement.textContent = "Project startup failed.";
+        titleElement.textContent = "Couldn't load this project.";
         descriptionElement.textContent = startupState.detail ?? startupState.message;
         emptyStateIndicatorElement.classList.add("hidden");
         emptyStateIndicatorElement.setAttribute(ARIA_HIDDEN_ATTRIBUTE_NAME, "true");
     } else if (hasLoadedProject) {
         titleElement.textContent = "No graph nodes are available for the current project.";
-        descriptionElement.textContent =
-            "Rebuild the graph index or load a different target to inspect semantic graph data here.";
+        descriptionElement.textContent = "Rebuild the graph data or open another project to keep exploring here.";
         emptyStateIndicatorElement.classList.add("hidden");
         emptyStateIndicatorElement.setAttribute(ARIA_HIDDEN_ATTRIBUTE_NAME, "true");
     } else {
@@ -1404,24 +1417,24 @@ function renderDocumentationCatalog(
     mcpRuntimeContentElement.innerHTML = "";
 
     if (dependencies.documentationCatalogs === null) {
-        metaState.cliMetaText = "No CLI catalog metadata is available for this view.";
-        metaState.mcpMetaText = "No MCP catalog metadata is available for this view.";
-        metaState.rulesMetaText = "No workspace rules metadata is available for this view.";
+        metaState.cliMetaText = "Command help is not available right now.";
+        metaState.mcpMetaText = "Tool details are not available right now.";
+        metaState.rulesMetaText = "Rules and code actions are not available right now.";
         const emptyState = document.createElement("div");
         emptyState.className = "catalog-empty";
-        emptyState.textContent = "Documentation catalogs are not available.";
+        emptyState.textContent = "This information is not available right now.";
         cliContentElement.append(emptyState.cloneNode(true));
         mcpContentElement.append(emptyState.cloneNode(true));
         rulesContentElement.append(emptyState);
-        mcpPageMetaElement.textContent = "No MCP server catalog metadata is available for this view.";
+        mcpPageMetaElement.textContent = "Connected tool details are not available right now.";
         mcpRuntimeContentElement.append(emptyState.cloneNode(true));
         updateDocsViewStateFn();
         return;
     }
 
-    metaState.cliMetaText = `${String(
-        dependencies.documentationCatalogs.cliCommands.length
-    )} CLI command entries sourced directly from the Commander command catalog.`;
+    metaState.cliMetaText = `${String(dependencies.documentationCatalogs.cliCommands.length)} command${
+        dependencies.documentationCatalogs.cliCommands.length === 1 ? "" : "s"
+    } available for working with your project.`;
     dependencies.documentationCatalogs.cliCommands.forEach((entry) => {
         const rows: Array<HTMLLIElement> = [];
         entry.arguments.forEach((argument) => {
@@ -1453,10 +1466,9 @@ function renderDocumentationCatalog(
         cliContentElement.append(createCatalogCard(entry.displayName, entry.description, entry.usage, rows));
     });
 
-    const mcpServer = dependencies.documentationCatalogs.mcpServer;
-    metaState.mcpMetaText = `${mcpServer.name} v${mcpServer.version} | ${String(
-        dependencies.documentationCatalogs.mcpTools.length
-    )} MCP tools derived from the CLI catalog.`;
+    metaState.mcpMetaText = `${String(dependencies.documentationCatalogs.mcpTools.length)} tool${
+        dependencies.documentationCatalogs.mcpTools.length === 1 ? "" : "s"
+    } available for connected workflows.`;
     dependencies.documentationCatalogs.mcpTools.forEach((entry) => {
         const rows = entry.fields.map((field) => {
             const detailParts = [field.kind, field.required ? "required" : "optional"];
@@ -1474,31 +1486,26 @@ function renderDocumentationCatalog(
         mcpContentElement.append(createCatalogCard(entry.toolName, entry.description, entry.commandDisplayName, rows));
     });
 
-    mcpPageMetaElement.textContent = `${mcpServer.name} v${mcpServer.version} | ${String(
-        dependencies.documentationCatalogs.mcpTools.length
-    )} MCP tools available.`;
+    mcpPageMetaElement.textContent = `${String(dependencies.documentationCatalogs.mcpTools.length)} connected tool${
+        dependencies.documentationCatalogs.mcpTools.length === 1 ? "" : "s"
+    } available.`;
     mcpRuntimeContentElement.append(
         createCatalogCard(
             "Runtime Status",
             dependencies.isServerMode
-                ? "Graph UI server mode is active and ready to host MCP-backed interactions."
-                : "Standalone mode is active; MCP runtime status is informational only.",
+                ? "Connected tools are ready to use."
+                : "Connected tools are not active in this view.",
             "",
             [createCatalogItemRow("status", dependencies.isServerMode ? "running" : "not-started")]
         )
     );
     mcpRuntimeContentElement.append(
-        createCatalogCard(
-            "Tool Call Feed",
-            "Live tool-call feed wiring is not exposed in this template yet. This section is reserved for streaming events.",
-            "",
-            []
-        )
+        createCatalogCard("Tool Call Feed", "Recent tool activity is not shown here yet.", "", [])
     );
     mcpRuntimeContentElement.append(
         createCatalogCard(
-            "Tool Catalog",
-            "MCP tool entries exposed by the active workspace catalog.",
+            "Available Tools",
+            "Connected tools available in this workspace.",
             "",
             dependencies.documentationCatalogs.mcpTools.map((entry) =>
                 createCatalogItemRow(
@@ -1512,7 +1519,7 @@ function renderDocumentationCatalog(
     const workspaceRules = dependencies.documentationCatalogs.workspaceRules;
     metaState.rulesMetaText = `${String(workspaceRules.formatOptions.length)} format options, ${String(
         workspaceRules.lintRules.length
-    )} lint rules, ${String(workspaceRules.refactorCodemods.length)} refactor codemods loaded directly from workspace registries.`;
+    )} lint rules, and ${String(workspaceRules.refactorCodemods.length)} refactor tools available for this project.`;
 
     const formatRows = workspaceRules.formatOptions.map((entry) =>
         createCatalogItemRow(entry.name, `${entry.description} (default: ${JSON.stringify(entry.defaultValue)})`)
@@ -1520,8 +1527,8 @@ function renderDocumentationCatalog(
     rulesContentElement.append(
         createCatalogCard(
             "Prettier / Format Options",
-            "Live formatter option catalog sourced from @gmloop/format.",
-            "Format.listProjectFormatOptionCatalogEntries()",
+            "Formatting options that shape how GMLoop rewrites code layout.",
+            "",
             formatRows
         )
     );
@@ -1533,12 +1540,7 @@ function renderDocumentationCatalog(
         )
     );
     rulesContentElement.append(
-        createCatalogCard(
-            "Lint Rules",
-            "Live lint rule catalog sourced from @gmloop/lint.",
-            "Lint.listLintRuleCatalogEntries()",
-            lintRows
-        )
+        createCatalogCard("Lint Rules", "Checks that spot common issues and can often fix them for you.", "", lintRows)
     );
 
     const refactorRows = workspaceRules.refactorCodemods.map((entry) =>
@@ -1554,8 +1556,8 @@ function renderDocumentationCatalog(
     rulesContentElement.append(
         createCatalogCard(
             "Refactor Codemods",
-            "Live codemod catalog sourced from @gmloop/refactor.",
-            "Refactor.listRegisteredCodemods()",
+            "Project-wide refactors for larger cleanup and migration tasks.",
+            "",
             refactorRows
         )
     );
@@ -1637,7 +1639,8 @@ function updatePageState(
     graphControls.classList.toggle("hidden", state.activePage !== "graph");
     if (state.activePage === "graph") {
         toolbarHeading.textContent = "Graph Index";
-        toolbarSubheading.textContent = "Interactive graph exploration controls for the current graph index.";
+        toolbarSubheading.textContent =
+            "Explore relationships across scripts, objects, events, and other project resources.";
         updateGraphViewModeFn();
         return;
     }
@@ -1648,19 +1651,16 @@ function updatePageState(
     }
     if (state.activePage === "docs") {
         toolbarHeading.textContent = "Docs";
-        toolbarSubheading.textContent =
-            "Live CLI, MCP, and workspace rule catalogs are combined in a single Docs view.";
+        toolbarSubheading.textContent = "Browse commands, tools, and rules that can help with your project.";
     } else if (state.activePage === "mcp") {
         toolbarHeading.textContent = "MCP";
-        toolbarSubheading.textContent =
-            "MCP runtime status, host-feed placeholder, and tool catalog details for the active workspace.";
+        toolbarSubheading.textContent = "Check tool access and connection status for integrations.";
     } else if (state.activePage === "live-reload") {
         toolbarHeading.textContent = "Live Reload";
-        toolbarSubheading.textContent = "Hot-reload watcher, patch streaming, and runtime-wrapper observability.";
+        toolbarSubheading.textContent = "Track live-update activity and recent reload problems.";
     } else {
         toolbarHeading.textContent = "Config";
-        toolbarSubheading.textContent =
-            "Loaded project configuration rendered from lint, format, refactor, and gmloop workspace data.";
+        toolbarSubheading.textContent = "Review the project settings and tool options currently in use.";
     }
 
     state.svg.classed("hidden", true);
@@ -1718,7 +1718,9 @@ function initializeGraphVisualizationSurface(state: GraphVisualizationSurfaceIni
     state.wireLiveReloadControls();
     state.applyPageState();
     state.updateGraph();
-    state.requestProjectNodeViewportCenter();
+    globalThis.requestAnimationFrame(() => {
+        state.requestProjectNodeViewportCenter();
+    });
     state.applySearchQuery(state.currentSearchQuery, false);
 }
 
@@ -1728,7 +1730,6 @@ function initializeGraphVisualizationSurface(state: GraphVisualizationSurfaceIni
 export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependencies): void {
     const initialUiState = readGraphVisualizationUiStateFromCurrentUrl();
     const graphRuntime = d3;
-    const { innerHeight: height, innerWidth: width } = globalThis;
     const svg = graphRuntime.select<SVGSVGElement, unknown>("#graph");
     const jsonView = graphRuntime.select<HTMLElement, unknown>("#json-view");
     const container = graphRuntime.select<SVGGElement, unknown>("#container");
@@ -1837,6 +1838,11 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         });
     svg.call(zoomBehavior);
 
+    const applySimulationViewportCenter = (): void => {
+        const viewport = readGraphViewportDimensions(svg);
+        simulation.force("center", graphRuntime.forceCenter(viewport.width / 2, viewport.height / 2));
+    };
+
     const simulation: GraphSimulationApi = graphRuntime
         .forceSimulation<MutableGraphNodeRecord>()
         .force(
@@ -1847,7 +1853,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                 .distance(50)
         )
         .force("charge", graphRuntime.forceManyBody().strength(-100))
-        .force("center", graphRuntime.forceCenter(width / 2, height / 2))
+        .force("center", graphRuntime.forceCenter(0, 0))
         .force(
             "collide",
             graphRuntime
@@ -1857,6 +1863,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         )
         .alphaDecay(0.02)
         .velocityDecay(0.3);
+
+    applySimulationViewportCenter();
 
     if (dependencies.data.nodes.length > 2000) {
         console.warn("Large graph detected:", dependencies.data.nodes.length, "nodes. Adjusting rendering parameters.");
@@ -2757,6 +2765,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         if (linkForce !== undefined && "links" in linkForce) {
             (linkForce as ForceLink<MutableGraphNodeRecord, MutableGraphEdgeRecord>).links(filteredLinks);
         }
+        applySimulationViewportCenter();
         simulation.alpha(0.3).restart();
         applyCurrentLabelMode();
         applyHighlights();
@@ -2782,24 +2791,27 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         }
 
         const currentTransform = graphRuntime.zoomTransform(svg.node());
+        const viewport = readGraphViewportDimensions(svg);
         const centeredTransform = computeViewportTransformCenteredOnNode({
             currentScale: currentTransform.k,
             targetX: projectNode.x,
             targetY: projectNode.y,
-            viewportHeight: height,
-            viewportWidth: width
+            viewportHeight: viewport.height,
+            viewportWidth: viewport.width
         });
         if (centeredTransform === null) {
             return;
         }
 
-        shouldCenterViewportOnProjectNode = false;
         svg.call((selection) =>
             zoomBehavior.transform(
                 selection,
                 graphRuntime.zoomIdentity.translate(centeredTransform.x, centeredTransform.y).scale(centeredTransform.k)
             )
         );
+        if (simulation.alpha() <= simulation.alphaMin()) {
+            shouldCenterViewportOnProjectNode = false;
+        }
     }
 
     function renderNodeShape(nodeValue: MutableGraphNodeRecord): string {

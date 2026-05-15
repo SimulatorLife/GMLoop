@@ -12,6 +12,8 @@ import {
     resolveProjectFileCategory
 } from "./project-file-categories.js";
 
+const PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS = new Set<string>([".git", ".gmcache", "node_modules"]);
+
 function createProjectTreeRecord(absolutePath, relativePosix) {
     return {
         absolutePath,
@@ -135,6 +137,11 @@ async function processDirectoryEntries({
     await Core.runSequentially(entries, async (entry) => {
         ensureNotAborted();
         const descriptor = createDirectoryEntryDescriptor(directoryContext, entry, projectRoot);
+        if (Core.isDirectoryExcludedBySegments(descriptor.absolutePath, PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS, [])) {
+            metrics?.counters?.increment("io.skippedExcludedDirectories");
+            return;
+        }
+
         const stats = await resolveEntryStats({
             absolutePath: descriptor.absolutePath,
             fsFacade,

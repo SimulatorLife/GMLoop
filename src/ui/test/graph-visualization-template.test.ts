@@ -58,8 +58,9 @@ void test("graph visualization entry html references local assets and avoids CDN
     assert.match(html, /id="live-reload-content"/u);
     assert.match(html, /Pipeline Overview/u);
     assert.match(html, /class="project-context"/u);
+    assert.match(html, /aria-label="Open GameMaker manual"/u);
     assert.match(html, /aria-label="Open GMLoop GitHub repository"/u);
-    assert.match(html, /class="github-link-icon"/u);
+    assert.equal(countTextOccurrences(html, /class="header-link-icon"/gu), 2);
     assert.doesNotMatch(html, />GitHub Repo</u);
     assert.match(html, /id="playground-rule-toolbar" class="rule-details"/u);
     assert.doesNotMatch(html, /id="toggle-lint"/u);
@@ -280,8 +281,8 @@ void test("graph visualization bundle includes a graph empty state for no-projec
 void test("graph visualization bundle includes startup-loading shell affordances", () => {
     const bundle = renderGraphVisualizationBundle(createBaseData(), {
         startupState: {
-            detail: "Project discovery and index checks continue without blocking first paint.",
-            message: "Resolving the project and checking the graph index in the background.",
+            detail: null,
+            message: "Loading project data…",
             phase: "loading"
         },
         title: "Startup Loading"
@@ -291,8 +292,6 @@ void test("graph visualization bundle includes startup-loading shell affordances
     const html = readBundleFileText(bundle, bundle.entryHtmlPath);
 
     assert.match(script, /const graphVisualizationStartupState = /u);
-    assert.match(script, /Resolving the project and checking the graph index in the background\./u);
-    assert.match(script, /Loading the graph UI first\. Project work continues in the background\./u);
     assert.match(html, /Loading project data…/u);
 });
 
