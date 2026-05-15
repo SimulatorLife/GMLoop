@@ -147,6 +147,14 @@ function evaluateEqualityOperator(
  *          operation can be safely evaluated, otherwise null
  */
 export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | string | boolean | null {
+    // Guard against malformed ASTs where the type field is present but structural
+    // properties are missing (e.g., recovery-mode partial nodes from the parser).
+    // Throws would propagate as uncaught TypeErrors; returning null signals that
+    // folding cannot proceed safely.
+    if (!ast.left || !ast.right) {
+        return null;
+    }
+
     // Only fold if both operands are literals
     if (ast.left.type !== "Literal" || ast.right.type !== "Literal") {
         return null;
@@ -253,6 +261,14 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
  *          operation can be safely evaluated, otherwise null
  */
 export function tryFoldConstantUnaryExpression(ast: UnaryExpressionNode): number | boolean | null {
+    // Guard against malformed ASTs where the type field is present but structural
+    // properties are missing (e.g., recovery-mode partial nodes from the parser).
+    // Throws would propagate as uncaught TypeErrors; returning null signals that
+    // folding cannot proceed safely.
+    if (!ast.argument) {
+        return null;
+    }
+
     // Only fold if the operand is a literal
     if (ast.argument.type !== "Literal") {
         return null;
@@ -319,6 +335,14 @@ export function tryFoldConstantUnaryExpression(ast: UnaryExpressionNode): number
  * @returns The selected branch node when folding is safe, otherwise null
  */
 export function tryFoldConstantTernaryExpression(ast: TernaryExpressionNode): GmlNode | null {
+    // Guard against malformed ASTs where the type field is present but structural
+    // properties are missing (e.g., recovery-mode partial nodes from the parser).
+    // Throws would propagate as uncaught TypeErrors; returning null signals that
+    // folding cannot proceed safely.
+    if (!ast.test) {
+        return null;
+    }
+
     if (ast.test.type !== "Literal") {
         return null;
     }
