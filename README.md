@@ -326,3 +326,5 @@ Start here for deeper context and plans:
 - [GML Support (VS Code)](https://marketplace.visualstudio.com/items?itemName=electrobrains.gml-support)
 - [Prettier (VS Code)](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
 - [jscpd CLI](https://github.com/kucherenko/jscpd/tree/master/apps/jscpd)
+- [GameMaker Igor CI Building](https://manual.gamemaker.io/lts/en/Settings/Building_via_Command_Line.htm)
+- [GameMaker CLI](https://github.com/YoYoGames/gm-cli)

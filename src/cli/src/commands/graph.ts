@@ -29,7 +29,6 @@ import {
     DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
     DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT
 } from "../modules/live-reload/config.js";
-import { resolveLiveReloadTarget } from "../modules/live-reload/target-resolution.js";
 import { GmlParserBridge, GmlSemanticBridge, GmlTranspilerBridge } from "../modules/refactor/index.js";
 import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
 import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
@@ -149,6 +148,7 @@ type GraphVisualizationLiveReloadSessionState = {
 
 type GraphVisualizationLiveReloadStartupOptions = Readonly<{
     gmTempRoot: string;
+    hasBuildConfiguration: boolean;
     html5OutputRoot: string | null;
 }>;
 
@@ -165,7 +165,7 @@ type OsaScriptExecutionResult = Readonly<{
 
 const DEMO_PROJECT_DIRECTORY = path.join("vendor", "3DSpider");
 const DEMO_PROJECT_MANIFEST = "3D-ish spider thing 2.yyp";
-const GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS = 4000;
+const GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS = 10 * 60 * 1000;
 const GRAPH_VISUALIZATION_LIVE_RELOAD_POLL_INTERVAL_MS = 2000;
 
 function createGraphVisualizationLiveReloadModel(
@@ -198,10 +198,12 @@ function resolveGraphVisualizationLiveReloadStartupOptions(
         typeof liveReloadConfig?.html5Output === "string" ? liveReloadConfig.html5Output.trim() : "";
     const configuredGmTempRoot =
         typeof liveReloadConfig?.gmTempRoot === "string" ? liveReloadConfig.gmTempRoot.trim() : "";
+    const hasBuildConfiguration = Core.isObjectLike(liveReloadConfig?.build);
 
     return Object.freeze({
         gmTempRoot:
             configuredGmTempRoot.length > 0 ? path.resolve(projectRoot, configuredGmTempRoot) : DEFAULT_GM_TEMP_ROOT,
+        hasBuildConfiguration,
         html5OutputRoot:
             configuredHtml5OutputRoot.length > 0 ? path.resolve(projectRoot, configuredHtml5OutputRoot) : null
     });
@@ -320,8 +322,8 @@ function createGraphVisualizationLiveReloadStartupTimeoutError(stderrMessages: R
     }
 
     return new Error(
-        "Timed out waiting for the live-reload watcher/status server to become ready. " +
-            "Ensure a valid HTML5 output exists, or configure runtime.liveReload.html5Output in gmloop.json, and retry starting live reload."
+        "Timed out waiting for the live-reload build and watcher to become ready. " +
+            "Ensure GameMaker CLI/Igor prerequisites are installed and runtime.liveReload.build plus runtime.liveReload.html5Output are configured correctly in gmloop.json."
     );
 }
 
@@ -923,10 +925,6 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 activeContext.projectRoot,
                 activeContext.projectConfig
             );
-            await resolveLiveReloadTarget({
-                gmTempRoot: startupOptions.gmTempRoot,
-                html5OutputRoot: startupOptions.html5OutputRoot
-            });
 
             const cliEntrypointPath = resolveGraphVisualizationCliEntrypointPath();
             const childProcess = spawn(
@@ -1415,6 +1413,7 @@ export function createGraphCommand(): Command {
 }
 
 export const __graphCommandTest__ = Object.freeze({
+    GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS,
     createGraphVisualizationLiveReloadDevCommandArgs,
     isGraphVisualizationUiSourceReloadCandidate,
     normalizeGraphVisualizationUiSourceWatchFileName,

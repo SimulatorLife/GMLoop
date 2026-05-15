@@ -16,7 +16,11 @@ import {
     DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT,
     type LiveReloadBootstrapConfig
 } from "../modules/live-reload/config.js";
-import { prepareLiveReload, startLiveReloadDevSession } from "../modules/live-reload/session.js";
+import {
+    buildLiveReloadHtml5Output,
+    prepareLiveReload,
+    startLiveReloadDevSession
+} from "../modules/live-reload/session.js";
 import { startRuntimeStaticServer } from "../modules/runtime/server.js";
 import {
     DEFAULT_RUNTIME_PACKAGE,
@@ -49,6 +53,11 @@ interface LiveReloadPrepareCommandOptions {
     statusHost?: string;
     statusPort?: number;
     force?: boolean;
+    quiet?: boolean;
+    verbose?: boolean;
+}
+
+interface LiveReloadBuildCommandOptions {
     quiet?: boolean;
     verbose?: boolean;
 }
@@ -111,6 +120,22 @@ function reportLiveReloadPreparation(
     }
 }
 
+function reportLiveReloadBuildResult(
+    quiet: boolean,
+    verbose: boolean,
+    result: Awaited<ReturnType<typeof buildLiveReloadHtml5Output>>
+): void {
+    if (quiet) {
+        return;
+    }
+
+    console.log(`Built HTML5 output via ${result.backend}.`);
+    console.log(`HTML5 output: ${result.outputRoot}`);
+    if (verbose) {
+        console.log(`Command: ${result.command}`);
+    }
+}
+
 export async function runLiveReloadPrepareCommand(options: LiveReloadPrepareCommandOptions = {}): Promise<void> {
     const quiet = Boolean(options.quiet);
     const verbose = Boolean(options.verbose);
@@ -132,6 +157,27 @@ export async function runLiveReloadPrepareCommand(options: LiveReloadPrepareComm
     }
 }
 
+export async function runLiveReloadBuildCommand(
+    targetPath: string,
+    options: LiveReloadBuildCommandOptions = {}
+): Promise<void> {
+    const quiet = Boolean(options.quiet);
+    const verbose = Boolean(options.verbose);
+
+    try {
+        const result = await buildLiveReloadHtml5Output({
+            targetPath
+        });
+        reportLiveReloadBuildResult(quiet, verbose, result);
+    } catch (error) {
+        const message = Core.getErrorMessage(error, {
+            fallback: "Failed to build GameMaker HTML5 output."
+        });
+        console.error(formatCliError(new Error(message)));
+        process.exit(1);
+    }
+}
+
 export async function runLiveReloadDevCommand(
     targetPath: string,
     options: LiveReloadDevCommandOptions = {}
@@ -139,7 +185,7 @@ export async function runLiveReloadDevCommand(
     await startLiveReloadDevSession({
         targetPath,
         html5OutputRoot: options.html5Output,
-        gmTempRoot: options.gmTempRoot ?? DEFAULT_GM_TEMP_ROOT,
+        gmTempRoot: options.gmTempRoot,
         bootstrapConfig: createLiveReloadBootstrapConfig(options),
         watchOptions: {
             extensions: options.extensions,
@@ -174,11 +220,6 @@ function applySharedLiveReloadPrepareOptions(command: Command): Command {
     return command
         .addOption(new Option("--html5-output <path>", "Path to the HTML5 output directory."))
         .addOption(
-            new Option("--gm-temp-root <path>", "Root directory for GameMaker HTML5 temporary outputs.").default(
-                DEFAULT_GM_TEMP_ROOT
-            )
-        )
-        .addOption(
             new Option("--websocket-port <port>", "WebSocket server port for streaming patches")
                 .argParser(portValidator)
                 .default(DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT)
@@ -205,9 +246,28 @@ function createLiveReloadPrepareSubcommand(): Command {
     applyStandardCommandOptions(command);
 
     return applySharedLiveReloadPrepareOptions(command)
+        .addOption(
+            new Option("--gm-temp-root <path>", "Root directory for GameMaker HTML5 temporary outputs.").default(
+                DEFAULT_GM_TEMP_ROOT
+            )
+        )
         .description("Sync browser bootstrap assets and inject the live-reload module into an HTML5 output.")
         .addOption(new Option("--force", "Rewrite the injected bootstrap snippet if it already exists.").default(false))
         .action((options: LiveReloadPrepareCommandOptions) => runLiveReloadPrepareCommand(options));
+}
+
+function createLiveReloadBuildSubcommand(): Command {
+    const command = new Command("build");
+    applyStandardCommandOptions(command);
+
+    return command
+        .description("Build the configured GameMaker project to the HTML5 output used by live reload.")
+        .argument("[targetPath]", "Project directory or .yyp path to build", process.cwd())
+        .addOption(new Option("--verbose", "Enable verbose logging").default(false))
+        .addOption(new Option("--quiet", "Suppress non-essential output").default(false))
+        .action((targetPath: string, options: LiveReloadBuildCommandOptions) =>
+            runLiveReloadBuildCommand(targetPath, options)
+        );
 }
 
 function createLiveReloadDevSubcommand(): Command {
@@ -215,8 +275,9 @@ function createLiveReloadDevSubcommand(): Command {
     applyStandardCommandOptions(command);
 
     return applySharedLiveReloadPrepareOptions(command)
-        .description("Prepare HTML5 live reload, start servers, then watch GML files and stream patches.")
+        .description("Build HTML5 when configured, prepare live reload, start servers, then watch GML files.")
         .argument("[targetPath]", "Directory to watch for changes", process.cwd())
+        .addOption(new Option("--gm-temp-root <path>", "Root directory for GameMaker HTML5 temporary outputs."))
         .addOption(
             new Option("--extensions <extensions...>", "File extensions to watch").default(
                 [".gml"],
@@ -323,6 +384,7 @@ export function createLiveReloadCommand(): Command {
 
     return command
         .description("Prepare, run, and inspect the HTML5 live-reload workflow.")
+        .addCommand(createLiveReloadBuildSubcommand())
         .addCommand(createLiveReloadPrepareSubcommand())
         .addCommand(createLiveReloadDevSubcommand())
         .addCommand(createLiveReloadStatusSubcommand());

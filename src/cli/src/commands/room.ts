@@ -1,27 +1,20 @@
-import { type ProjectResourceMutationResult, Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
-import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
+import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
 import {
     ensureProjectGraphIndex,
     printProjectPayload,
     type SharedProjectContextOptions
 } from "../workflow/project-context.js";
-import { resolveCommandProjectContext } from "../workflow/project-root.js";
 
-type RoomCommandSharedOptions = SharedProjectContextOptions &
-    Readonly<{
-        newName?: string;
-        write?: boolean;
-    }>;
+type RoomCommandSharedOptions = SharedProjectContextOptions;
 
 function addRoomSharedOptions(command: Command): Command {
     return command
         .addOption(createPathOption())
         .addOption(createConfigOption())
-        .addOption(createWriteOption())
         .option("--database-path <path>", "Graph index database path override.")
         .option("--toolset-root <path>", "Toolset project root path override.")
         .option("--force", "Rebuild graph index before query.")
@@ -30,41 +23,6 @@ function addRoomSharedOptions(command: Command): Command {
 
 function printRoomPayload(payload: unknown): void {
     printProjectPayload(payload);
-}
-
-function mapMutationResult(result: ProjectResourceMutationResult): {
-    action: string;
-    dryRun: boolean;
-    resourceKind: string;
-    resourceName: string;
-    writtenPaths: ReadonlyArray<string>;
-    deletedPaths: ReadonlyArray<string>;
-    warnings: ReadonlyArray<string>;
-} {
-    return {
-        action: result.action,
-        deletedPaths: result.deletedPaths,
-        dryRun: result.dryRun,
-        resourceKind: result.resourceKind,
-        resourceName: result.resourceName,
-        warnings: result.warnings,
-        writtenPaths: result.writtenPaths
-    };
-}
-
-async function runRoomResourceMutation(
-    commandName: string,
-    options: RoomCommandSharedOptions,
-    runMutation: (projectRoot: string) => Promise<ProjectResourceMutationResult>
-): Promise<void> {
-    const context = await resolveCommandProjectContext(options);
-    const result = await runMutation(context.projectRoot);
-
-    printRoomPayload({
-        command: commandName,
-        ok: true,
-        payload: mapMutationResult(result)
-    });
 }
 
 function emitRoomUnavailableLeaf(
@@ -85,7 +43,9 @@ function emitRoomUnavailableLeaf(
 }
 
 export function createRoomCommand(): Command {
-    const command = applyStandardCommandOptions(new Command("room")).description("Inspect and mutate room resources.");
+    const command = applyStandardCommandOptions(new Command("room")).description(
+        "Inspect room resources. Use `gmloop gm-cli resourcetool ...` for room edits."
+    );
 
     const list = addRoomSharedOptions(applyStandardCommandOptions(new Command("list")).description("List rooms."));
     list.action(async function roomListAction() {
@@ -223,74 +183,6 @@ export function createRoomCommand(): Command {
         });
     });
 
-    const create = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("create")).description("Create a room.").argument("<room>", "Room name")
-    );
-    create.action(async function roomCreateAction(roomName: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        await runRoomResourceMutation("room create", options, (projectRoot) =>
-            Refactor.addProjectResource({
-                dryRun: !options.write,
-                projectRoot,
-                resourceKind: Refactor.ProjectResourceKind.ROOM,
-                resourceName: roomName
-            })
-        );
-    });
-
-    const duplicate = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("duplicate"))
-            .description("Duplicate a room.")
-            .argument("<room>", "Room name")
-            .requiredOption("--new-name <name>", "New room name")
-    );
-    duplicate.action(async function roomDuplicateAction(roomName: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        await runRoomResourceMutation("room duplicate", options, (projectRoot) =>
-            Refactor.duplicateProjectResource({
-                dryRun: !options.write,
-                newResourceName: options.newName ?? "",
-                projectRoot,
-                resourceKind: Refactor.ProjectResourceKind.ROOM,
-                resourceName: roomName
-            })
-        );
-    });
-
-    const rename = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("rename"))
-            .description("Rename a room.")
-            .argument("<room>", "Current room name")
-            .requiredOption("--new-name <name>", "New room name")
-    );
-    rename.action(async function roomRenameAction(roomName: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        await runRoomResourceMutation("room rename", options, (projectRoot) =>
-            Refactor.renameProjectResource({
-                dryRun: !options.write,
-                newResourceName: options.newName ?? "",
-                projectRoot,
-                resourceKind: Refactor.ProjectResourceKind.ROOM,
-                resourceName: roomName
-            })
-        );
-    });
-
-    const remove = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("delete")).description("Delete a room.").argument("<room>", "Room name")
-    );
-    remove.action(async function roomDeleteAction(roomName: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        await runRoomResourceMutation("room delete", options, (projectRoot) =>
-            Refactor.removeProjectResource({
-                dryRun: !options.write,
-                projectRoot,
-                resourceKind: Refactor.ProjectResourceKind.ROOM,
-                resourceName: roomName
-            })
-        );
-    });
-
     const update = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("update")).description("Update a room.").argument("<room>", "Room name")
     );
@@ -363,10 +255,6 @@ export function createRoomCommand(): Command {
     command.addCommand(validate);
     command.addCommand(preview);
     command.addCommand(summary);
-    command.addCommand(create);
-    command.addCommand(duplicate);
-    command.addCommand(rename);
-    command.addCommand(remove);
     command.addCommand(update);
     command.addCommand(repair);
     command.addCommand(instance);

@@ -18,6 +18,11 @@ command = "npx"
 args = ["-y", "@playwright/mcp@latest"]
 enabled = true
 
+[mcp_servers.gm-cli]
+command = "gm-cli"
+args = ["resourcetool", "mcp"]
+enabled = true
+
 [features]
 shell_snapshot = true           # Speed up repeated commands
 unified_exec = true
@@ -60,8 +65,7 @@ model = "MiniMax-M2.7"
 
 [profiles.minimax.features]
 multi_agent = false
-browser_use = false
-apps = false
+browser_use = true
 computer_use = false
-in_app_browser = false
+in_app_browser = true
 plugins = false

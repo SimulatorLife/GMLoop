@@ -1,15 +1,10 @@
 {
   "mcpServers": {
     "gmloop": {
-      "command": "pnpm",
-      "args": [
-        "--dir",
-        "/absolute/path/to/GMLoop",
-        "run",
-        "cli",
-        "--",
-        "mcp"
-      ]
+      "command": "gmloop mcp"
+    },
+    "gm-cli": {
+      "command": "gm-cli resourcetool mcp"
     }
   }
 }

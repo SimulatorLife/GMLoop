@@ -504,6 +504,7 @@ void test("graph visualize UI source watcher reports watcher errors without thro
 void test("graph visualize live-reload startup options default to GameMaker temp-root autodetection", () => {
     const startupOptions = __graphCommandTest__.resolveGraphVisualizationLiveReloadStartupOptions("/tmp/project", {});
 
+    assert.equal(startupOptions.hasBuildConfiguration, false);
     assert.equal(startupOptions.html5OutputRoot, null);
     assert.equal(startupOptions.gmTempRoot, "/private/tmp/GameMakerStudio2/GMS2TEMP");
 });
@@ -512,19 +513,28 @@ void test("graph visualize live-reload startup options honor runtime.liveReload 
     const startupOptions = __graphCommandTest__.resolveGraphVisualizationLiveReloadStartupOptions("/tmp/project", {
         runtime: {
             liveReload: {
+                build: {
+                    backend: "igor"
+                },
                 gmTempRoot: ".gm-temp/html5",
                 html5Output: "dist/html5"
             }
         }
     });
 
+    assert.equal(startupOptions.hasBuildConfiguration, true);
     assert.equal(startupOptions.html5OutputRoot, path.resolve("/tmp/project", "dist/html5"));
     assert.equal(startupOptions.gmTempRoot, path.resolve("/tmp/project", ".gm-temp/html5"));
+});
+
+void test("graph visualize live-reload startup timeout allows long build-first startup", () => {
+    assert.equal(__graphCommandTest__.GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS, 600_000);
 });
 
 void test("graph visualize live-reload dev args include configured startup paths", () => {
     const args = __graphCommandTest__.createGraphVisualizationLiveReloadDevCommandArgs("/tmp/project", {
         gmTempRoot: "/tmp/project/.gm-temp/html5",
+        hasBuildConfiguration: true,
         html5OutputRoot: "/tmp/project/dist/html5"
     });
 

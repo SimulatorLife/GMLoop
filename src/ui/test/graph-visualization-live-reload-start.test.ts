@@ -253,6 +253,7 @@ void test("graph visualization start live reload button shows spinner and surfac
         await flushMicrotasks();
 
         assert.match(startButton.innerHTML, /button-spinner/u);
+        assert.match(startButton.innerHTML, /Building/u);
         assert.equal(startButton.ariaBusy, "true");
         assert.equal(startButton.disabled, true);
 

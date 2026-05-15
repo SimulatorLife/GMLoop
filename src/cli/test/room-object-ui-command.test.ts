@@ -2,59 +2,28 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { runCliTestCommand } from "../src/cli.js";
-import { withSyntheticRefactorProject } from "./test-helpers/refactor-codemod-command-fixture.js";
+import { createRoomCommand } from "../src/commands/room.js";
 
-void test("room create routes through resource mutation backend with stable JSON payload", async () => {
-    await withSyntheticRefactorProject({}, async (projectRoot) => {
-        const createDryRunResult = await runCliTestCommand({
-            argv: ["room", "create", "rm_test", "--json"],
-            cwd: projectRoot
-        });
+void test("room command keeps inspection leaves and drops bespoke mutation leaves", () => {
+    const command = createRoomCommand();
+    const commandNames = command.commands.map((entry) => entry.name()).sort();
 
-        assert.equal(createDryRunResult.exitCode, 0);
-        const dryRunPayload = JSON.parse(createDryRunResult.stdout) as {
-            command: string;
-            ok: boolean;
-            payload: {
-                action: string;
-                dryRun: boolean;
-                resourceKind: string;
-                resourceName: string;
-            };
-        };
-
-        assert.equal(dryRunPayload.command, "room create");
-        assert.equal(dryRunPayload.ok, true);
-        assert.equal(dryRunPayload.payload.action, "add");
-        assert.equal(dryRunPayload.payload.resourceKind, "room");
-        assert.equal(dryRunPayload.payload.resourceName, "rm_test");
-        assert.equal(dryRunPayload.payload.dryRun, true);
-
-        const createWriteResult = await runCliTestCommand({
-            argv: ["room", "create", "rm_test", "--write", "--json"],
-            cwd: projectRoot
-        });
-        assert.equal(createWriteResult.exitCode, 0);
-
-        const listResult = await runCliTestCommand({
-            argv: ["room", "list", "--json"],
-            cwd: projectRoot
-        });
-
-        assert.equal(listResult.exitCode, 0);
-        const listPayload = JSON.parse(listResult.stdout) as {
-            command: string;
-            ok: boolean;
-            payload: Array<{ kind: string; name: string }>;
-        };
-
-        assert.equal(listPayload.command, "room list");
-        assert.equal(listPayload.ok, true);
-        assert.equal(
-            listPayload.payload.some((entry) => entry.kind === "room" && entry.name === "rm_test"),
-            true
-        );
-    });
+    assert.deepEqual(
+        commandNames,
+        [
+            "camera",
+            "inspect",
+            "instance",
+            "layer",
+            "preview",
+            "query",
+            "repair",
+            "summary",
+            "update",
+            "validate",
+            "list"
+        ].sort()
+    );
 });
 
 void test("object planned leaves emit concrete non-stub payloads", async () => {

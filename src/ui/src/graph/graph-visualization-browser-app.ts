@@ -96,7 +96,7 @@ const START_LIVE_RELOAD_BUTTON_LABEL =
 const RESTART_LIVE_RELOAD_BUTTON_LABEL =
     '<span class="button-content"><span class="button-label">Restart Live Reload</span></span>';
 const STARTING_LIVE_RELOAD_BUTTON_LABEL =
-    '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Starting…</span></span>';
+    '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Building &amp; Starting…</span></span>';
 
 function isErrorLike(errorValue: unknown): errorValue is Readonly<{ message: string; name?: string }> {
     return (
@@ -359,7 +359,7 @@ function createLiveReloadBrowserSurfaceController(
 
         metaElement.innerHTML =
             endpoints === null
-                ? "Start live reload to prepare the HTML5 runtime wrapper, launch the watcher, and expose patch status for the active project."
+                ? "Start live reload to build the HTML5 export when configured, prepare the runtime wrapper, launch the watcher, and expose patch status for the active project."
                 : `Status <code>${escapeHtmlText(endpoints.statusUrl ?? "not configured")}</code> • WebSocket <code>${escapeHtmlText(endpoints.websocketUrl ?? "not configured")}</code>`;
 
         refreshButton.disabled = endpoints?.statusUrl === null || endpoints === null || state.isStarting;

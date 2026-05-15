@@ -136,6 +136,28 @@ pnpm run cli -- mcp
 This command is intended to be launched by an MCP host process, not from the
 in-process CLI test/capture runner.
 
+### `gm-cli` - Delegate to the Official GameMaker CLI
+
+Delegates directly to YoYo Games' official `gm-cli` instead of re-implementing
+GameMaker-native workflows inside GMLoop.
+
+```bash
+pnpm run cli -- gm-cli manual read "data structures"
+pnpm run cli -- gm-cli resourcetool eval "resource list"
+pnpm run cli -- gm-cli compile --target=html5
+```
+
+Use this command for:
+
+- Manual lookup/search (`manual read`, `manual open`)
+- Project editing through `resourcetool`
+- GameMaker compile/package/run flows that should stay owned by `gm-cli`
+
+GMLoop keeps its graph-backed read/query commands such as `resource list`,
+`resource inspect`, `room list`, and `room inspect`, but no longer owns bespoke
+resource or room mutation commands. Use `gmloop gm-cli resourcetool ...` for
+those edits.
+
 ### `watch` - Monitor Files for Hot-Reload Pipeline
 
 **NEW**: Now integrated with the transpiler to generate JavaScript patches when GML files change.
@@ -220,11 +242,14 @@ Slowest transpilation: 5.67ms (complex_script.gml)
 Use the dedicated `live-reload` command group instead of mixing manual injection with `watch`:
 
 ```bash
-# Prepare an HTML5 output explicitly
+# Build the configured GameMaker project into the live-reload HTML5 output
+pnpm run cli -- live-reload build /path/to/project
+
+# Prepare an existing HTML5 output explicitly
 pnpm run cli -- live-reload prepare --html5-output /path/to/output
 
-# Start the full live-reload dev session
-pnpm run cli -- live-reload dev /path/to/project --html5-output /path/to/output
+# Start the full live-reload dev session (builds first when configured)
+pnpm run cli -- live-reload dev /path/to/project
 
 # Query the running status server
 pnpm run cli -- live-reload status
@@ -232,21 +257,27 @@ pnpm run cli -- live-reload status
 
 The `live-reload dev` command will:
 
-1. Locate the most recent GameMaker HTML5 output (or use the path specified with `--html5-output`)
-2. Copy the self-contained `@gmloop/runtime-wrapper/dist/browser` asset tree into the output directory
-3. Inject a single module bootstrap tag into `index.html`
-4. Start the file watcher and patch/status servers
+1. Resolve `runtime.liveReload` from `gmloop.json`
+2. Build the GameMaker project into `runtime.liveReload.html5Output` when `runtime.liveReload.build` is configured
+3. Otherwise, locate an existing HTML5 output via `--html5-output`, `runtime.liveReload.html5Output`, or the latest GameMaker temp output
+4. Copy the self-contained `@gmloop/runtime-wrapper/dist/browser` asset tree into the output directory
+5. Inject a single module bootstrap tag into `index.html`
+6. Start the file watcher and patch/status servers
 
 The injected bootstrap uses the configured `--websocket-host`, `--websocket-port`, `--status-host`, and `--status-port` values so the running game can connect deterministically to the live-reload services.
 
 **Project config for one-click graph UI startup:**
 
-When using `graph visualize --serve`, the `Start Live Reload` button now reads `runtime.liveReload` from `gmloop.json` and forwards that configuration to `live-reload dev`. This avoids relying only on transient `GMS2TEMP` auto-detection.
+When using `graph visualize --serve`, the `Start Live Reload` button now reads `runtime.liveReload` from `gmloop.json` and forwards that configuration to `live-reload dev`. This allows the graph UI to build the HTML5 export first when build orchestration is configured, instead of relying only on transient `GMS2TEMP` auto-detection.
 
 ```json
 {
   "runtime": {
     "liveReload": {
+      "build": {
+        "backend": "auto",
+        "configuration": "Default"
+      },
       "html5Output": "build/html5",
       "gmTempRoot": ".gm-temp/html5"
     }
@@ -256,8 +287,24 @@ When using `graph visualize --serve`, the `Start Live Reload` button now reads `
 
 - `runtime.liveReload.html5Output` - Stable HTML5 output directory to inject and serve for live reload. Relative paths resolve from the project root.
 - `runtime.liveReload.gmTempRoot` - Optional fallback root for GameMaker temporary HTML5 outputs when `html5Output` is not set. Relative paths resolve from the project root.
+- `runtime.liveReload.build.backend` - Build backend selection: `auto` (default), `gm-cli`, or `igor`.
+- `runtime.liveReload.build.project` - Optional explicit `.yyp` path. Defaults to the single `.yyp` discovered under the selected project root.
+- `runtime.liveReload.build.configuration` - Optional GameMaker build configuration name. Defaults to `Default`.
+- `runtime.liveReload.build.toolPath` - Optional explicit path to `gm-cli` or Igor.
+- `runtime.liveReload.build.runtimeRoot` - Optional explicit GameMaker runtime root for Igor.
+- `runtime.liveReload.build.userFolder` - Optional explicit GameMaker user folder for Igor.
+- `runtime.liveReload.build.licenseFile` - Optional explicit GameMaker license plist path.
+- `runtime.liveReload.build.cacheDir` - Optional explicit build cache directory.
+- `runtime.liveReload.build.tempDir` - Optional explicit build temp directory for Igor.
+- `runtime.liveReload.build.extraArgs` - Optional extra command-line arguments appended to the selected backend invocation.
 
-`Start Live Reload` can bootstrap the wrapper, watcher, status server, and patch stream against that configured output directory, but it still requires a real GameMaker HTML5 app to exist there. The button does not synthesize a GameMaker build from scratch.
+When `runtime.liveReload.build` is present, `Start Live Reload` and `live-reload dev` always rebuild the HTML5 export into `runtime.liveReload.html5Output` before injection and watcher startup.
+
+**Build prerequisites:**
+
+- `gm-cli` or an installed GameMaker runtime with Igor must be available.
+- Command-line GameMaker builds still require a valid GameMaker login/license context.
+- Igor builds require either a license plist or a GameMaker user folder. Configure them explicitly when auto-detection is not sufficient.
 
 **Debouncing File Changes:**
 
@@ -523,6 +570,39 @@ pnpm run cli -- live-reload prepare --html5-output /path/to/html5/output
 - `--force` - Re-inject even if snippet already exists
 - `--quiet` - Suppress informational output
 
+### `live-reload build` - Build HTML5 Output
+
+Build the configured GameMaker project into the HTML5 output directory used by live reload.
+
+```bash
+# Build the current project
+pnpm run cli -- live-reload build
+
+# Build a specific project directory or .yyp
+pnpm run cli -- live-reload build /path/to/project
+```
+
+`live-reload build` reads `runtime.liveReload.build` and `runtime.liveReload.html5Output` from `gmloop.json`, selects `gm-cli` or Igor, runs the external GameMaker build, and verifies that the produced output contains `index.html`.
+
+**Options:**
+
+- `--verbose` - Print the selected backend command line
+- `--quiet` - Suppress informational output
+
+### `live-reload dev` - Build, Prepare, And Watch
+
+Start the full live-reload session for a GameMaker project.
+
+```bash
+# Build first when runtime.liveReload.build is configured, then watch
+pnpm run cli -- live-reload dev /path/to/project
+
+# Force an existing output directory when build orchestration is not configured
+pnpm run cli -- live-reload dev /path/to/project --html5-output /path/to/html5/output
+```
+
+When `runtime.liveReload.build` exists, `live-reload dev` treats `runtime.liveReload.html5Output` as the canonical output directory and rebuilds it before injecting the runtime wrapper and starting the watcher.
+
 ✅ **Configurable patch history limit** ✨
 ✅ **Error recovery and graceful degradation** ✨
 ✅ **Patch validation before broadcast** ✨
@@ -721,21 +801,7 @@ Generates GML identifier metadata from the GameMaker manual repository.
 pnpm run cli -- generate-gml-identifiers
 ```
 
-### `lookup-gml-identifier` - Query Built-In Metadata
-
-Looks up a built-in GML keyword/function/identifier from `gml-identifiers.json`
-(the manual-derived snapshot). This command does not maintain a separate glossary;
-it reads the identifier snapshot directly.
-
-```bash
-pnpm run cli -- lookup-gml-identifier draw_text
-pnpm run cli -- lookup-gml-identifier draw_text --json
-```
-
-Behavior:
-
-- Exit code `0`: identifier exists in the snapshot.
-- Exit code `2`: identifier is not recognized as a built-in.
+For interactive manual lookup/search, use `gmloop gm-cli manual read <query>` or `gmloop gm-cli manual open <query>` instead of a GMLoop-specific manual-search implementation.
 
 ### `generate-feather-metadata` - Generate Feather Metadata
 
@@ -869,7 +935,6 @@ The CLI package is organized into focused, single-responsibility modules:
 - `refactor.ts` - Safe, project-wide code transformations
 - `format.ts` - GML code formatting
 - `generate-gml-identifiers.ts` - Identifier metadata generation
-- `lookup-gml-identifier.ts` - Built-in identifier lookup from manual-derived metadata
 - `generate-feather-metadata.ts` - Feather metadata generation
 
 **Modules** (`src/modules/`)

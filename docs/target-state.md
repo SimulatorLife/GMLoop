@@ -553,6 +553,8 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 
 ### 6.2 System Architecture
 
+- **GameMaker build tooling (external)**: Produces the HTML5 export through `gm-cli` or Igor. GMLoop delegates export generation to these tools instead of reimplementing the GameMaker build pipeline.
+- **GameMaker project editing/manual lookup (external)**: ResourceTool and manual search stay owned by `gm-cli`; GMLoop should delegate those workflows instead of maintaining parallel CLI mutation/search implementations.
 - **Dev server (Node.js/CLI)**: Watches GML files, transpiles them into JavaScript functions on demand, and broadcasts them as JSON patches via WebSocket.
 - **Runtime wrapper (browser)**: Listens for patches via WebSocket and swaps function references in the GameMaker engine's internal registry.
 
