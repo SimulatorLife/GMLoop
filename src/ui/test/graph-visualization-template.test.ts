@@ -132,6 +132,15 @@ void test("graph visualization module script renders unloaded project state with
     assert.doesNotMatch(script, /loadedTargetLabel\.textContent = "No project loaded";/u);
 });
 
+void test("graph visualization module script shows live-reload startup state via button spinner instead of banner text", () => {
+    const bundle = renderGraphVisualizationBundle(createBaseData(), { title: "Live Reload Startup" });
+    const script = readBundleFileText(bundle, "assets/graph-visualization.js");
+
+    assert.match(script, /STARTING_LIVE_RELOAD_BUTTON_LABEL/u);
+    assert.match(script, /button-spinner/u);
+    assert.doesNotMatch(script, /Restarting live reload pipeline\. Waiting for watcher status/u);
+});
+
 void test("graph visualization module script embeds workspace rule catalogs when provided", () => {
     const bundle = renderGraphVisualizationBundle(createBaseData(), {
         documentationCatalogs: {

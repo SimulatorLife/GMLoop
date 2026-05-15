@@ -92,9 +92,12 @@ const CONFIG_LIST_CLASS_NAME = "config-list";
 const DEFAULT_LIVE_RELOAD_POLL_INTERVAL_MS = 2000;
 const MIN_LIVE_RELOAD_POLL_INTERVAL_MS = 500;
 const START_LIVE_RELOAD_BUTTON_ID = "start-live-reload";
-const START_LIVE_RELOAD_BUTTON_LABEL = "Start Live Reload";
-const RESTART_LIVE_RELOAD_BUTTON_LABEL = "Restart Live Reload";
-const STARTING_LIVE_RELOAD_BUTTON_LABEL = "Starting...";
+const START_LIVE_RELOAD_BUTTON_LABEL =
+    '<span class="button-content"><span class="button-label">Start Live Reload</span></span>';
+const RESTART_LIVE_RELOAD_BUTTON_LABEL =
+    '<span class="button-content"><span class="button-label">Restart Live Reload</span></span>';
+const STARTING_LIVE_RELOAD_BUTTON_LABEL =
+    '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Starting…</span></span>';
 
 function readErrorName(errorValue: unknown): string {
     // Use a capability probe rather than `instanceof Error` so that cross-realm
@@ -344,11 +347,13 @@ function createLiveReloadBrowserSurfaceController(
                 : `Status <code>${escapeHtmlText(endpoints.statusUrl ?? "not configured")}</code> • WebSocket <code>${escapeHtmlText(endpoints.websocketUrl ?? "not configured")}</code>`;
 
         refreshButton.disabled = endpoints?.statusUrl === null || endpoints === null || state.isStarting;
-        startButton.disabled = dependencies.isServerMode === false || getLoadedTarget() === null;
-        startButton.textContent =
-            endpoints?.statusUrl === null || endpoints === null
-                ? START_LIVE_RELOAD_BUTTON_LABEL
-                : RESTART_LIVE_RELOAD_BUTTON_LABEL;
+        startButton.disabled = dependencies.isServerMode === false || getLoadedTarget() === null || state.isStarting;
+        startButton.innerHTML = state.isStarting
+            ? STARTING_LIVE_RELOAD_BUTTON_LABEL
+            : endpoints?.statusUrl === null || endpoints === null
+              ? START_LIVE_RELOAD_BUTTON_LABEL
+              : RESTART_LIVE_RELOAD_BUTTON_LABEL;
+        startButton.ariaBusy = state.isStarting ? "true" : "false";
         startButton.style.display = dependencies.isServerMode ? "" : "none";
 
         const recentPatchesMarkup =
@@ -391,12 +396,7 @@ function createLiveReloadBrowserSurfaceController(
             state.currentLiveReloadErrorMessage === null
                 ? ""
                 : `<div class="catalog-card live-reload-panel-card" role="alert"><h3>Refresh Status</h3><p>${escapeHtmlText(state.currentLiveReloadErrorMessage)}</p></div>`;
-        const startBannerMarkup = state.isStarting
-            ? `<div class="catalog-card live-reload-panel-card"><h3>Live Reload</h3><p>Restarting live reload pipeline. Waiting for watcher status...</p></div>`
-            : "";
-
         contentElement.innerHTML = `
-            ${startBannerMarkup}
             ${errorBannerMarkup}
             <div class="catalog-card live-reload-panel-card">
               <h3>Pipeline Overview</h3>
@@ -522,7 +522,6 @@ function createLiveReloadBrowserSurfaceController(
         }
 
         startButton.disabled = true;
-        startButton.textContent = STARTING_LIVE_RELOAD_BUTTON_LABEL;
         liveReloadState.isStarting = true;
         renderPanel();
 
@@ -587,15 +586,7 @@ function createLiveReloadBrowserSurfaceController(
             renderPanel();
         } finally {
             liveReloadState.isStarting = false;
-            const currentStartButton = document.getElementById(START_LIVE_RELOAD_BUTTON_ID);
-            if (currentStartButton instanceof HTMLButtonElement) {
-                currentStartButton.disabled = false;
-                currentStartButton.textContent =
-                    liveReloadState.currentLiveReload?.endpoints.statusUrl === null ||
-                    liveReloadState.currentLiveReload === null
-                        ? START_LIVE_RELOAD_BUTTON_LABEL
-                        : RESTART_LIVE_RELOAD_BUTTON_LABEL;
-            }
+            renderPanel();
         }
     };
 

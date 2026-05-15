@@ -8,6 +8,16 @@ personality = "pragmatic"
 sandbox_mode = "workspace-write"
 background_terminal_max_timeout = 600000
 
+[mcp_servers.gmloop]
+command = "gmloop"
+args = ["mcp"]
+enabled = true
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+enabled = true
+
 [features]
 shell_snapshot = true           # Speed up repeated commands
 unified_exec = true
