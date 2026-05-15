@@ -247,6 +247,9 @@ importers:
       '@gmloop/core':
         specifier: workspace:*
         version: link:../core
+      '@gmloop/lint':
+        specifier: workspace:*
+        version: link:../lint
       '@gmloop/parser':
         specifier: workspace:*
         version: link:../parser

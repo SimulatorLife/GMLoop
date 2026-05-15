@@ -21,6 +21,9 @@ import { Core } from "@gmloop/core";
  * that architectural inversion.  (See target-state.md §2.1 and §3.1.)
  */
 
+const EXPONENT_DIGIT_PATTERN = /^[+-]?\d+$/u;
+const MAX_FIXED_LITERAL_LENGTH = 4096;
+
 /**
  * Matches scientific-notation numeric literals (sticky, must be reset via `lastIndex`).
  * Pattern: optional-integer optional-fraction exponent  e.g. `1e5`, `1.5e-3`, `.25E+2`
@@ -36,6 +39,92 @@ export function isScientificNotationBoundary(sourceText: string, startIndex: num
         Core.isIdentifierBoundaryCharacter(sourceText[startIndex - 1]) &&
         Core.isIdentifierBoundaryCharacter(sourceText[endIndex])
     );
+}
+
+/**
+ * Removes trailing fractional zeros that are not significant, returning the
+ * minimal representation (e.g. `"1.500"` → `"1.5"`, `"1.000"` → `"1"`).
+ */
+export function trimInsignificantFractionalZeros(decimalText: string): string {
+    const decimalPointIndex = decimalText.indexOf(".");
+    if (decimalPointIndex === -1) {
+        return decimalText;
+    }
+
+    let trimmedLength = decimalText.length;
+    while (trimmedLength > decimalPointIndex + 1 && decimalText[trimmedLength - 1] === "0") {
+        trimmedLength -= 1;
+    }
+
+    if (trimmedLength === decimalPointIndex + 1) {
+        trimmedLength = decimalPointIndex;
+    }
+
+    const trimmed = decimalText.slice(0, trimmedLength);
+    return trimmed.length === 0 ? "0" : trimmed;
+}
+
+/**
+ * Converts a scientific-notation literal (e.g. `"1.5e-3"`) to its plain decimal
+ * string representation (e.g. `"0.0015"`).  Returns `null` if the input is not
+ * a valid scientific-notation literal or the result would exceed
+ * `MAX_FIXED_LITERAL_LENGTH` digits.
+ */
+export function toPlainDecimalFromScientificLiteral(scientificText: string): string | null {
+    const separatorIndex = Math.max(scientificText.indexOf("e"), scientificText.indexOf("E"));
+    if (separatorIndex <= 0 || separatorIndex >= scientificText.length - 1) {
+        return null;
+    }
+
+    const mantissaText = scientificText.slice(0, separatorIndex);
+    const exponentText = scientificText.slice(separatorIndex + 1);
+    if (!EXPONENT_DIGIT_PATTERN.test(exponentText)) {
+        return null;
+    }
+
+    const exponent = Number.parseInt(exponentText);
+    if (!Number.isFinite(exponent)) {
+        return null;
+    }
+
+    const decimalPointIndex = mantissaText.indexOf(".");
+    const unsignedDigits =
+        decimalPointIndex === -1
+            ? mantissaText
+            : `${mantissaText.slice(0, decimalPointIndex)}${mantissaText.slice(decimalPointIndex + 1)}`;
+    if (!/^\d+$/u.test(unsignedDigits)) {
+        return null;
+    }
+
+    let leadingZeroCount = 0;
+    while (leadingZeroCount < unsignedDigits.length && unsignedDigits[leadingZeroCount] === "0") {
+        leadingZeroCount += 1;
+    }
+
+    if (leadingZeroCount >= unsignedDigits.length) {
+        return "0";
+    }
+
+    const significantDigits = unsignedDigits.slice(leadingZeroCount);
+    const baseDecimalIndex = decimalPointIndex === -1 ? mantissaText.length : decimalPointIndex;
+    const shiftedDecimalIndex = baseDecimalIndex + exponent - leadingZeroCount;
+    const outputDigitLength = Math.max(significantDigits.length, shiftedDecimalIndex);
+    if (outputDigitLength > MAX_FIXED_LITERAL_LENGTH) {
+        return null;
+    }
+
+    if (shiftedDecimalIndex <= 0) {
+        const decimal = `0.${"0".repeat(-shiftedDecimalIndex)}${significantDigits}`;
+        return trimInsignificantFractionalZeros(decimal);
+    }
+
+    if (shiftedDecimalIndex >= significantDigits.length) {
+        return `${significantDigits}${"0".repeat(shiftedDecimalIndex - significantDigits.length)}`;
+    }
+
+    const integerPortion = significantDigits.slice(0, shiftedDecimalIndex);
+    const fractionalPortion = significantDigits.slice(shiftedDecimalIndex);
+    return trimInsignificantFractionalZeros(`${integerPortion}.${fractionalPortion}`);
 }
 
 /**

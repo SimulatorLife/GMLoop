@@ -13,6 +13,7 @@
   ],
   "dependencies": {
     "@gmloop/core": "workspace:*",
+    "@gmloop/lint": "workspace:*",
     "@gmloop/parser": "workspace:*"
   },
   "devDependencies": {
