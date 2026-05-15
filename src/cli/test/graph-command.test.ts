@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { type FSWatcher, type PathLike, promises as fs, type WatchListener, type WatchOptions } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -450,6 +450,94 @@ void test("graph visualize UI source watcher is disabled outside the repository 
         process.chdir(previousWorkingDirectory);
         await fs.rm(temporaryDirectory, { force: true, recursive: true });
     }
+});
+
+void test("graph visualize UI source watcher reports watcher errors without throwing", () => {
+    let closeCount = 0;
+    const receivedErrors: Array<string> = [];
+    let errorListener: ((error: Error) => void) | null = null;
+    const fakeWatcher = {
+        close() {
+            closeCount += 1;
+        },
+        on(eventName: string, listener: (error: Error) => void) {
+            if (eventName === "error") {
+                errorListener = listener;
+            }
+            return fakeWatcher;
+        },
+        ref() {
+            return fakeWatcher;
+        },
+        unref() {
+            return fakeWatcher;
+        }
+    } as unknown as FSWatcher;
+
+    const watchFactory = (
+        _path: PathLike,
+        _options?: WatchOptions | BufferEncoding | "buffer",
+        _listener?: WatchListener<string>
+    ): FSWatcher => {
+        void _path;
+        void _options;
+        void _listener;
+        return fakeWatcher;
+    };
+
+    const watcher = __graphCommandTest__.startGraphVisualizationUiSourceWatcher({
+        onError: (error: unknown) => {
+            receivedErrors.push(error instanceof Error ? error.message : "Unknown watcher error");
+        },
+        onReloadCandidate: () => {},
+        watchFactory,
+        watchRoot: REPO_ROOT
+    });
+
+    assert.equal(watcher, fakeWatcher);
+    errorListener?.(new Error("synthetic watcher failure"));
+
+    assert.deepEqual(receivedErrors, ["synthetic watcher failure"]);
+    assert.equal(closeCount, 1);
+});
+
+void test("graph visualize live-reload startup options default to GameMaker temp-root autodetection", () => {
+    const startupOptions = __graphCommandTest__.resolveGraphVisualizationLiveReloadStartupOptions("/tmp/project", {});
+
+    assert.equal(startupOptions.html5OutputRoot, null);
+    assert.equal(startupOptions.gmTempRoot, "/private/tmp/GameMakerStudio2/GMS2TEMP");
+});
+
+void test("graph visualize live-reload startup options honor runtime.liveReload config", () => {
+    const startupOptions = __graphCommandTest__.resolveGraphVisualizationLiveReloadStartupOptions("/tmp/project", {
+        runtime: {
+            liveReload: {
+                gmTempRoot: ".gm-temp/html5",
+                html5Output: "dist/html5"
+            }
+        }
+    });
+
+    assert.equal(startupOptions.html5OutputRoot, path.resolve("/tmp/project", "dist/html5"));
+    assert.equal(startupOptions.gmTempRoot, path.resolve("/tmp/project", ".gm-temp/html5"));
+});
+
+void test("graph visualize live-reload dev args include configured startup paths", () => {
+    const args = __graphCommandTest__.createGraphVisualizationLiveReloadDevCommandArgs("/tmp/project", {
+        gmTempRoot: "/tmp/project/.gm-temp/html5",
+        html5OutputRoot: "/tmp/project/dist/html5"
+    });
+
+    assert.deepEqual(args, [
+        "live-reload",
+        "dev",
+        "/tmp/project",
+        "--html5-output",
+        "/tmp/project/dist/html5",
+        "--gm-temp-root",
+        "/tmp/project/.gm-temp/html5",
+        "--quiet"
+    ]);
 });
 
 void test("graph visualize serve defaults to the bundled 3DSpider demo from the repository root", () => {

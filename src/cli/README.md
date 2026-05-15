@@ -239,6 +239,26 @@ The `live-reload dev` command will:
 
 The injected bootstrap uses the configured `--websocket-host`, `--websocket-port`, `--status-host`, and `--status-port` values so the running game can connect deterministically to the live-reload services.
 
+**Project config for one-click graph UI startup:**
+
+When using `graph visualize --serve`, the `Start Live Reload` button now reads `runtime.liveReload` from `gmloop.json` and forwards that configuration to `live-reload dev`. This avoids relying only on transient `GMS2TEMP` auto-detection.
+
+```json
+{
+  "runtime": {
+    "liveReload": {
+      "html5Output": "build/html5",
+      "gmTempRoot": ".gm-temp/html5"
+    }
+  }
+}
+```
+
+- `runtime.liveReload.html5Output` - Stable HTML5 output directory to inject and serve for live reload. Relative paths resolve from the project root.
+- `runtime.liveReload.gmTempRoot` - Optional fallback root for GameMaker temporary HTML5 outputs when `html5Output` is not set. Relative paths resolve from the project root.
+
+`Start Live Reload` can bootstrap the wrapper, watcher, status server, and patch stream against that configured output directory, but it still requires a real GameMaker HTML5 app to exist there. The button does not synthesize a GameMaker build from scratch.
+
 **Debouncing File Changes:**
 
 The watch command includes intelligent debouncing to prevent unnecessary transpilations when files change rapidly (e.g., during IDE auto-save or when making multiple quick edits). By default, the watcher waits 100ms after the last file change before transpiling, which:

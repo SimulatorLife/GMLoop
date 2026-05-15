@@ -1,5 +1,5 @@
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
-import { existsSync, watch } from "node:fs";
+import { existsSync, type FSWatcher, watch, type WatchListener, type WatchOptions } from "node:fs";
 import { access, constants, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -147,6 +147,17 @@ type GraphVisualizationLiveReloadSessionState = {
     startupPromise: Promise<GraphVisualizationLiveReloadModel> | null;
 };
 
+type GraphVisualizationLiveReloadStartupOptions = Readonly<{
+    gmTempRoot: string;
+    html5OutputRoot: string | null;
+}>;
+
+type GraphVisualizationUiSourceWatchFactory = (
+    path: string,
+    options?: WatchOptions | BufferEncoding | "buffer",
+    listener?: WatchListener<string>
+) => FSWatcher;
+
 type OsaScriptExecutionResult = Readonly<{
     stderr: string;
     stdout: string;
@@ -171,6 +182,44 @@ function createGraphVisualizationLiveReloadModel(
         runtimeHealth: null,
         statusSnapshot
     });
+}
+
+function resolveGraphVisualizationLiveReloadStartupOptions(
+    projectRoot: string,
+    projectConfig: Record<string, unknown>
+): GraphVisualizationLiveReloadStartupOptions {
+    const runtimeConfig = Core.isObjectLike(projectConfig.runtime)
+        ? (projectConfig.runtime as Record<string, unknown>)
+        : null;
+    const liveReloadConfig = Core.isObjectLike(runtimeConfig?.liveReload)
+        ? (runtimeConfig.liveReload as Record<string, unknown>)
+        : null;
+    const configuredHtml5OutputRoot =
+        typeof liveReloadConfig?.html5Output === "string" ? liveReloadConfig.html5Output.trim() : "";
+    const configuredGmTempRoot =
+        typeof liveReloadConfig?.gmTempRoot === "string" ? liveReloadConfig.gmTempRoot.trim() : "";
+
+    return Object.freeze({
+        gmTempRoot:
+            configuredGmTempRoot.length > 0 ? path.resolve(projectRoot, configuredGmTempRoot) : DEFAULT_GM_TEMP_ROOT,
+        html5OutputRoot:
+            configuredHtml5OutputRoot.length > 0 ? path.resolve(projectRoot, configuredHtml5OutputRoot) : null
+    });
+}
+
+function createGraphVisualizationLiveReloadDevCommandArgs(
+    projectRoot: string,
+    startupOptions: GraphVisualizationLiveReloadStartupOptions
+): Array<string> {
+    return [
+        "live-reload",
+        "dev",
+        projectRoot,
+        ...(startupOptions.html5OutputRoot === null ? [] : ["--html5-output", startupOptions.html5OutputRoot]),
+        "--gm-temp-root",
+        startupOptions.gmTempRoot,
+        "--quiet"
+    ];
 }
 
 function resolveGraphVisualizationCliEntrypointPath(): string {
@@ -262,6 +311,41 @@ function setActiveGraphVisualizationLiveReloadModel(
 ): GraphVisualizationLiveReloadModel {
     sessionState.model = model;
     return model;
+}
+
+function createGraphVisualizationLiveReloadStartupTimeoutError(stderrMessages: ReadonlyArray<string>): Error {
+    const stderrMessage = stderrMessages.join("\n").trim();
+    if (stderrMessage.length > 0) {
+        return new Error(stderrMessage);
+    }
+
+    return new Error(
+        "Timed out waiting for the live-reload watcher/status server to become ready. " +
+            "Ensure a valid HTML5 output exists, or configure runtime.liveReload.html5Output in gmloop.json, and retry starting live reload."
+    );
+}
+
+function startGraphVisualizationUiSourceWatcher({
+    watchRoot,
+    onReloadCandidate,
+    onError,
+    watchFactory = watch
+}: Readonly<{
+    watchRoot: string;
+    onReloadCandidate: (fileName: string | Buffer | null) => void;
+    onError: (error: unknown) => void;
+    watchFactory?: GraphVisualizationUiSourceWatchFactory;
+}>): FSWatcher {
+    const watcher = watchFactory(watchRoot, { recursive: true }, (_eventType, fileName) => {
+        onReloadCandidate(fileName);
+    });
+
+    watcher.on("error", (error) => {
+        onError(error);
+        watcher.close();
+    });
+
+    return watcher;
 }
 
 function setActiveGraphVisualizationLiveReloadStartupPromise(
@@ -456,6 +540,14 @@ async function runUiWorkspaceTypeBuildForServe(): Promise<void> {
 
 function isGraphVisualizationUiSourceReloadCandidate(fileName: string | null): boolean {
     return fileName !== null && (fileName.endsWith(".ts") || fileName.endsWith(".css") || fileName.endsWith(".html"));
+}
+
+function normalizeGraphVisualizationUiSourceWatchFileName(fileName: string | Buffer | null): string | null {
+    if (fileName === null) {
+        return null;
+    }
+
+    return typeof fileName === "string" ? fileName : fileName.toString("utf8");
 }
 
 function resolveGraphVisualizationUiSourceWatchRoot(): string | null {
@@ -827,14 +919,22 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         }
 
         const startupPromise = (async () => {
+            const startupOptions = resolveGraphVisualizationLiveReloadStartupOptions(
+                activeContext.projectRoot,
+                activeContext.projectConfig
+            );
             await resolveLiveReloadTarget({
-                gmTempRoot: DEFAULT_GM_TEMP_ROOT
+                gmTempRoot: startupOptions.gmTempRoot,
+                html5OutputRoot: startupOptions.html5OutputRoot
             });
 
             const cliEntrypointPath = resolveGraphVisualizationCliEntrypointPath();
             const childProcess = spawn(
                 process.execPath,
-                [cliEntrypointPath, "live-reload", "dev", activeContext.projectRoot, "--quiet"],
+                [
+                    cliEntrypointPath,
+                    ...createGraphVisualizationLiveReloadDevCommandArgs(activeContext.projectRoot, startupOptions)
+                ],
                 {
                     cwd: process.cwd(),
                     stdio: ["ignore", "pipe", "pipe"]
@@ -868,7 +968,10 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             return await new Promise<GraphVisualizationLiveReloadModel>((resolve, reject) => {
                 const timeoutHandle = globalThis.setTimeout(() => {
                     cleanup();
-                    resolve(activeLiveReloadSession.model ?? createGraphVisualizationLiveReloadModel(null));
+                    void stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession);
+                    reject(
+                        createGraphVisualizationLiveReloadStartupTimeoutError(activeLiveReloadSession.childStderrBuffer)
+                    );
                 }, GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS);
 
                 const cleanup = (): void => {
@@ -969,20 +1072,44 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
         let uiWatchDebounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
         const uiSourceWatchRoot = resolveGraphVisualizationUiSourceWatchRoot();
-        const uiSourceWatcher =
-            options.liveReload === false || uiSourceWatchRoot === null
-                ? null
-                : watch(uiSourceWatchRoot, { recursive: true }, (_eventType, fileName) => {
-                      if (!isGraphVisualizationUiSourceReloadCandidate(fileName)) {
-                          return;
-                      }
-                      if (uiWatchDebounceTimer !== null) {
-                          globalThis.clearTimeout(uiWatchDebounceTimer);
-                      }
-                      uiWatchDebounceTimer = globalThis.setTimeout(() => {
-                          triggerUiBundleRebuild();
-                      }, 300);
-                  });
+        let uiSourceWatcher: FSWatcher | null = null;
+        if (options.liveReload !== false && uiSourceWatchRoot !== null) {
+            try {
+                uiSourceWatcher = startGraphVisualizationUiSourceWatcher({
+                    watchRoot: uiSourceWatchRoot,
+                    onReloadCandidate: (fileName) => {
+                        const normalizedFileName = normalizeGraphVisualizationUiSourceWatchFileName(fileName);
+                        if (!isGraphVisualizationUiSourceReloadCandidate(normalizedFileName)) {
+                            return;
+                        }
+                        if (uiWatchDebounceTimer !== null) {
+                            globalThis.clearTimeout(uiWatchDebounceTimer);
+                        }
+                        uiWatchDebounceTimer = globalThis.setTimeout(() => {
+                            triggerUiBundleRebuild();
+                        }, 300);
+                    },
+                    onError: (error) => {
+                        if (uiWatchDebounceTimer !== null) {
+                            globalThis.clearTimeout(uiWatchDebounceTimer);
+                            uiWatchDebounceTimer = null;
+                        }
+                        console.error(
+                            `[graph visualize] UI source watcher disabled: ${Core.getErrorMessage(error, {
+                                fallback: "Unknown file-watcher failure"
+                            })}`
+                        );
+                        uiSourceWatcher = null;
+                    }
+                });
+            } catch (error) {
+                console.error(
+                    `[graph visualize] Failed to start UI source watcher: ${Core.getErrorMessage(error, {
+                        fallback: "Unknown file-watcher startup failure"
+                    })}`
+                );
+            }
+        }
 
         const server = await startGraphVisualizationServer({
             getUiRevision: () => uiRevision,
@@ -1127,8 +1254,9 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         }
 
         if (uiSourceWatcher) {
-            process.once("SIGINT", () => uiSourceWatcher.close());
-            process.once("SIGTERM", () => uiSourceWatcher.close());
+            const activeUiSourceWatcher = uiSourceWatcher;
+            process.once("SIGINT", () => activeUiSourceWatcher.close());
+            process.once("SIGTERM", () => activeUiSourceWatcher.close());
         }
 
         const stopLiveReloadChildProcess = (): void => {
@@ -1287,9 +1415,13 @@ export function createGraphCommand(): Command {
 }
 
 export const __graphCommandTest__ = Object.freeze({
+    createGraphVisualizationLiveReloadDevCommandArgs,
     isGraphVisualizationUiSourceReloadCandidate,
+    normalizeGraphVisualizationUiSourceWatchFileName,
+    resolveGraphVisualizationLiveReloadStartupOptions,
     resolveDefaultGraphVisualizationServeTargetPath,
-    resolveGraphVisualizationUiSourceWatchRoot
+    resolveGraphVisualizationUiSourceWatchRoot,
+    startGraphVisualizationUiSourceWatcher
 });
 function createDocumentationCatalogs() {
     const cliCommands = getCliCommandCatalog();

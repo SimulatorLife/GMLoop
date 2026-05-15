@@ -139,6 +139,7 @@ void test("graph visualization module script shows live-reload startup state via
     assert.match(script, /STARTING_LIVE_RELOAD_BUTTON_LABEL/u);
     assert.match(script, /button-spinner/u);
     assert.doesNotMatch(script, /Restarting live reload pipeline\. Waiting for watcher status/u);
+    assert.doesNotMatch(script, /Core\./u);
 });
 
 void test("graph visualization module script embeds workspace rule catalogs when provided", () => {

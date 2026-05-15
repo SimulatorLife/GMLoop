@@ -86,6 +86,12 @@
       }
     }
   },
+  "runtime": {
+    "liveReload": {
+      "html5Output": "build/html5",
+      "gmTempRoot": ".gm-temp/html5"
+    }
+  },
   "graph": {
     "toolsetRoot": "../shared-gml-toolset",
     "databasePath": ".gmloop/graph-index.sqlite",

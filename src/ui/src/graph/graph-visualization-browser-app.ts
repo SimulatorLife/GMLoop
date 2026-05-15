@@ -1,4 +1,3 @@
-import { Core } from "@gmloop/core";
 import type {
     D3DragEvent,
     D3ZoomEvent,
@@ -99,11 +98,28 @@ const RESTART_LIVE_RELOAD_BUTTON_LABEL =
 const STARTING_LIVE_RELOAD_BUTTON_LABEL =
     '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Starting…</span></span>';
 
+function isErrorLike(errorValue: unknown): errorValue is Readonly<{ message: string; name?: string }> {
+    return (
+        typeof errorValue === "object" &&
+        errorValue !== null &&
+        "message" in errorValue &&
+        typeof Reflect.get(errorValue, "message") === "string"
+    );
+}
+
+function readErrorMessage(errorValue: unknown, fallback: string): string {
+    if (isErrorLike(errorValue)) {
+        return errorValue.message;
+    }
+
+    return typeof errorValue === "string" && errorValue.length > 0 ? errorValue : fallback;
+}
+
 function readErrorName(errorValue: unknown): string {
     // Use a capability probe rather than `instanceof Error` so that cross-realm
     // error objects (e.g. from iframes, workers, or sandboxed code) are handled
     // consistently even when their prototype chain differs from the local realm.
-    if (Core.isErrorLike(errorValue)) {
+    if (isErrorLike(errorValue)) {
         return errorValue.name;
     }
     if (typeof errorValue === "object" && errorValue !== null && "name" in errorValue) {
@@ -482,9 +498,7 @@ function createLiveReloadBrowserSurfaceController(
             setLiveReloadSurfaceStatus(
                 state,
                 state.currentLiveReloadStatus,
-                Core.getErrorMessage(error, {
-                    fallback: "Failed to refresh live-reload status."
-                })
+                readErrorMessage(error, "Failed to refresh live-reload status.")
             );
         }
 
@@ -579,9 +593,7 @@ function createLiveReloadBrowserSurfaceController(
             setLiveReloadSurfaceStatus(
                 liveReloadState,
                 liveReloadState.currentLiveReloadStatus,
-                Core.getErrorMessage(error, {
-                    fallback: "Failed to start live reload."
-                })
+                readErrorMessage(error, "Failed to start live reload.")
             );
             renderPanel();
         } finally {
@@ -3351,7 +3363,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
             } catch (error) {
                 // Use a capability probe rather than `instanceof Error` so that
                 // cross-realm errors from sandboxed code are handled consistently.
-                lastOutput = Core.isErrorLike(error) ? error.message : String(error);
+                lastOutput = readErrorMessage(error, String(error));
                 lastAst = "";
             }
             updateView();

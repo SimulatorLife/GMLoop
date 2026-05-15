@@ -300,6 +300,9 @@ importers:
       '@types/node':
         specifier: ^22.19.7
         version: 22.19.7
+      linkedom:
+        specifier: ^0.18.12
+        version: 0.18.12
       vite:
         specifier: ^7.1.9
         version: 7.3.2(@types/node@22.19.7)(yaml@2.8.2)

@@ -23,8 +23,8 @@ then return here for deeper context.
 - [`examples/example.mcp.json`](examples/example.mcp.json) — MCP client config
   example that starts the MCP stdio server via the `gmloop mcp` CLI command
   through `pnpm`.
-- [`examples/gmloop.json`](examples/gmloop.json) *(planned)* — Baseline project config
-  with formatter, lint, and refactor settings.
+- [`examples/gmloop.json`](examples/gmloop.json) — Baseline project config
+  with formatter, lint, refactor, graph, and runtime live-reload settings.
 
 ## Usage & rollout
 

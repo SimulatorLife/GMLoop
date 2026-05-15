@@ -428,6 +428,38 @@ void test("graph visualization server rejects malformed JSON on /api/live-reload
     }
 });
 
+void test("graph visualization server surfaces live-reload startup failures from /api/live-reload/start", async (testContext) => {
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            startLiveReload: async () => {
+                throw new Error("Timed out waiting for the live-reload watcher/status server to become ready.");
+            }
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/live-reload/start`, { method: "POST" });
+        assert.equal(response.status, 500);
+        const payload = (await response.json()) as { error: string };
+        assert.match(payload.error, /Timed out waiting for the live-reload watcher\/status server to become ready/u);
+    } finally {
+        await handle.stop();
+    }
+});
+
 void test("graph visualization server forwards sanitized lint rule ids for playground processing", async (testContext) => {
     let receivedLintRuleIds: ReadonlyArray<string> = [];
     let receivedFormatOptionNames: ReadonlyArray<string> = [];
