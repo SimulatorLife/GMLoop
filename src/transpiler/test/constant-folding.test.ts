@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { BinaryExpressionNode, TernaryExpressionNode, UnaryExpressionNode } from "../src/emitter/ast.js";
 import {
     tryFoldConstantExpression,
     tryFoldConstantTernaryExpression,
@@ -497,4 +498,65 @@ void test("ternary constant folding: guards against both branches missing", () =
         // both consequent and alternate intentionally omitted
     });
     assert.strictEqual(tryFoldConstantTernaryExpression(ast), null);
+});
+
+// ---------------------------------------------------------------------------
+// Regression: malformed AST guard-clause tests
+// ---------------------------------------------------------------------------
+
+// These tests verify that the folding functions do not crash on edge-case
+// ASTs where the parser guarantees a type field but not structural properties.
+
+void test("tryFoldConstantExpression: malformed BinaryExpression with missing left returns null", () => {
+    const malformed = { type: "BinaryExpression", operator: "+" } as unknown as BinaryExpressionNode;
+    // Before the guard, this would throw: Cannot read properties of undefined (reading 'type')
+    assert.strictEqual(tryFoldConstantExpression(malformed), null);
+});
+
+void test("tryFoldConstantExpression: malformed BinaryExpression with missing right returns null", () => {
+    const malformed = {
+        type: "BinaryExpression",
+        operator: "+",
+        left: { type: "Literal", value: 1 }
+    } as unknown as BinaryExpressionNode;
+    // Before the guard, this would throw: Cannot read properties of undefined (reading 'type')
+    assert.strictEqual(tryFoldConstantExpression(malformed), null);
+});
+
+void test("tryFoldConstantUnaryExpression: malformed UnaryExpression with missing argument returns null", () => {
+    const malformed = { type: "UnaryExpression", operator: "!" } as unknown as UnaryExpressionNode;
+    // Before the guard, this would throw: Cannot read properties of undefined (reading 'type')
+    assert.strictEqual(tryFoldConstantUnaryExpression(malformed), null);
+});
+
+void test("tryFoldConstantUnaryExpression: Literal argument with missing value property returns null", () => {
+    const malformed = {
+        type: "UnaryExpression",
+        operator: "-",
+        argument: { type: "Literal" } // value is missing/undefined
+    } as unknown as UnaryExpressionNode;
+    // Before the guard, this would throw: Cannot read properties of undefined (reading 'value')
+    assert.strictEqual(tryFoldConstantUnaryExpression(malformed), null);
+});
+
+void test("tryFoldConstantTernaryExpression: malformed TernaryExpression with missing test returns null", () => {
+    const malformed = {
+        type: "TernaryExpression",
+        consequent: { type: "Identifier", name: "a" },
+        alternate: { type: "Identifier", name: "b" }
+    } as unknown as TernaryExpressionNode;
+    // Before the guard, accessing test.type would throw: Cannot read properties of undefined (reading 'type')
+    assert.strictEqual(tryFoldConstantTernaryExpression(malformed), null);
+});
+
+void test("tryFoldConstantTernaryExpression: Literal test with missing value property returns null", () => {
+    const malformed = {
+        type: "TernaryExpression",
+        test: { type: "Literal" }, // value is missing/undefined
+        consequent: { type: "Identifier", name: "a" },
+        alternate: { type: "Identifier", name: "b" }
+    } as unknown as TernaryExpressionNode;
+    // Before the guard, toBooleanLiteral(undefined) returns null, so folding is skipped.
+    // The consequent/alternate guard also protects against empty branches.
+    assert.strictEqual(tryFoldConstantTernaryExpression(malformed), null);
 });
