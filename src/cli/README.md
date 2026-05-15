@@ -826,20 +826,7 @@ pnpm run cli -- graph index --path path/to/project --force
 
 # Search the index
 pnpm run cli -- graph search "player"
-pnpm run cli -- graph search "player" --path path/to/project --database-path .gmloop/graph.db
-
-# Inspect a node by graph id
-pnpm run cli -- graph symbol project::gml/script/scr_player
-pnpm run cli -- graph symbol --path path/to/project scr_player
-
-# Get context around a node (declaration + neighbors)
-pnpm run cli -- graph context project::gml/script/scr_player --depth 3
-
-# Get neighboring nodes
-pnpm run cli -- graph neighbors project::gml/script/scr_player --depth 2
-
-# Find all usages of a symbol
-pnpm run cli -- graph usages project::gml/script/scr_player
+pnpm run cli -- graph search "player" --path path/to/project
 
 # Validate graph index health
 pnpm run cli -- graph doctor --path path/to/project
@@ -879,6 +866,27 @@ All `--json` commands return a stable envelope:
 **Ownership note:** The graph index is a semantic analysis and retrieval surface.
 It does not perform refactoring, formatting, or linting. It is backed by
 `@gmloop/semantic` and exposed through the CLI for human and agent use.
+
+### `symbol` - Inspect Symbols and Relationships
+
+Queries the graph index to inspect symbol definitions, references, and dependencies.
+All symbol subcommands accept either a plain identifier (e.g., `scr_player`) or
+a full graph node id (e.g., `project::gml/script/scr_player`).
+
+```bash
+# Inspect a symbol by name or graph id
+pnpm run cli -- symbol inspect scr_player
+pnpm run cli -- symbol inspect project::gml/script/scr_player
+
+# Get context around a symbol (declaration + neighbors)
+pnpm run cli -- symbol context project::gml/script/scr_player --depth 3
+
+# Get neighboring symbols
+pnpm run cli -- symbol neighbors project::gml/script/scr_player --depth 2
+
+# Find all usages of a symbol
+pnpm run cli -- symbol usages project::gml/script/scr_player
+```
 
 ## Architecture
 
