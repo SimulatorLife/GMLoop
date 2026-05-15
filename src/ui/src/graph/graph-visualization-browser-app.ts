@@ -1067,7 +1067,7 @@ function appendGameMakerCliConfigurationCards(
         createConfigCard(
             `GameMaker MCP (${String(gameMakerCliCatalog.mcpTools.length)})`,
             gameMakerCliCatalog.mcpServer.available
-                ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} tool metadata sourced directly from gm-cli resourcetool mcp${gameMakerCliCatalog.mcpServer.projectPath ? ` for ${gameMakerCliCatalog.mcpServer.projectPath}` : ""}.`
+                ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} tool metadata sourced directly from ${gameMakerCliCatalog.mcpServer.serverId ? `the configured MCP server "${gameMakerCliCatalog.mcpServer.serverId}"` : "gm-cli resourcetool mcp"}${gameMakerCliCatalog.mcpServer.sourcePath ? ` in ${gameMakerCliCatalog.mcpServer.sourcePath}` : ""}${gameMakerCliCatalog.mcpServer.projectPath ? ` for ${gameMakerCliCatalog.mcpServer.projectPath}` : ""}.`
                 : (gameMakerCliCatalog.mcpServer.error ?? "ResourceTool MCP metadata is unavailable."),
             [gameMakerMcpList]
         )
@@ -2086,6 +2086,8 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                                   error: null,
                                   name: null,
                                   projectPath: null,
+                                  serverId: null,
+                                  sourcePath: null,
                                   version: null
                               },
                               mcpTools: [],

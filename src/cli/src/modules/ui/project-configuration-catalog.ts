@@ -90,6 +90,8 @@ export type GraphVisualizationProjectConfigurationCatalog = Readonly<{
             error: string | null;
             name: string | null;
             projectPath: string | null;
+            serverId: string | null;
+            sourcePath: string | null;
             version: string | null;
         }>;
         mcpTools: ReadonlyArray<ProjectConfigurationGameMakerCliMcpToolEntry>;
@@ -139,6 +141,8 @@ function createEmptyGameMakerCliCatalog(error: string | null = null): GameMakerC
             error,
             name: null,
             projectPath: null,
+            serverId: null,
+            sourcePath: null,
             version: null
         }),
         mcpTools: [],

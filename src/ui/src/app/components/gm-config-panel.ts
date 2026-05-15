@@ -368,7 +368,7 @@ ${serializeConfigurationValue(configCatalog.gmloop.rawConfig)}</pre
                               >
                                   <p>
                                       ${gameMakerCliCatalog.mcpServer.available
-                                          ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} tool metadata sourced directly from gm-cli resourcetool mcp${gameMakerCliCatalog.mcpServer.projectPath ? ` for ${gameMakerCliCatalog.mcpServer.projectPath}` : ""}.`
+                                          ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} tool metadata sourced directly from ${gameMakerCliCatalog.mcpServer.serverId ? `the configured MCP server "${gameMakerCliCatalog.mcpServer.serverId}"` : "gm-cli resourcetool mcp"}${gameMakerCliCatalog.mcpServer.sourcePath ? ` in ${gameMakerCliCatalog.mcpServer.sourcePath}` : ""}${gameMakerCliCatalog.mcpServer.projectPath ? ` for ${gameMakerCliCatalog.mcpServer.projectPath}` : ""}.`
                                           : (gameMakerCliCatalog.mcpServer.error ??
                                             "ResourceTool MCP metadata is unavailable.")}
                                   </p>

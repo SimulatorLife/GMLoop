@@ -336,7 +336,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                 ${this.#renderMetricCard(
                     "Total Patches",
                     formatInteger(status?.totalPatchCount ?? status?.patchCount ?? null),
-                    "Cumulative patches broadcast by the watcher."
+                    "Cumulative runtime patch payloads generated for replay or connected clients."
                 )}
                 ${this.#renderMetricCard(
                     "Retained History",
@@ -361,7 +361,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Recent Patches"}>
                 ${patches.length === 0
-                    ? html`<p class="catalog-empty">No patches have been broadcast yet.</p>`
+                    ? html`<p class="catalog-empty">No runtime patch payloads have been generated yet.</p>`
                     : html`
                           <ul class="live-reload-event-list">
                               ${patches.map(

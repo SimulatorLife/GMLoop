@@ -2,6 +2,12 @@ import { spawn } from "node:child_process";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 
+import {
+    type ConfiguredGameMakerCliMcpServer,
+    discoverConfiguredGameMakerCliMcpServer
+} from "./configured-mcp-server.js";
+import { probeStdioMcpServer, type StdioMcpServerProbeResult } from "./stdio-mcp-server.js";
+
 type GameMakerCliInvocation = Readonly<{
     args: ReadonlyArray<string>;
     command: string;
@@ -30,10 +36,21 @@ type GameMakerCliMcpProbeResult = Readonly<{
 }>;
 
 type GameMakerCliCatalogDependencies = Readonly<{
+    discoverConfiguredMcpServer?: (
+        projectRoot: string | null
+    ) => Promise<ConfiguredGameMakerCliMcpServer | null>;
     executeCommand?: (
         invocation: GameMakerCliInvocation,
         options: GameMakerCliCommandExecutionOptions
     ) => Promise<GameMakerCliCommandExecutionResult>;
+    probeConfiguredMcpServer?: (options: {
+        args: ReadonlyArray<string>;
+        command: string;
+        cwd: string;
+        displayName: string;
+        env?: Readonly<Record<string, string>>;
+        timeoutMs?: number;
+    }) => Promise<StdioMcpServerProbeResult>;
     probeMcpServer?: (
         invocation: GameMakerCliInvocation,
         projectPath: string,
@@ -94,6 +111,8 @@ export type GameMakerCliCompanionCatalog = Readonly<{
         error: string | null;
         name: string | null;
         projectPath: string | null;
+        serverId: string | null;
+        sourcePath: string | null;
         version: string | null;
     }>;
     mcpTools: ReadonlyArray<GameMakerCliMcpToolCatalogEntry>;
@@ -147,7 +166,9 @@ export async function loadGameMakerCliCompanionCatalog(
         cwd: options.projectRoot ?? process.cwd(),
         toolPath: options.toolPath ?? null
     });
+    const discoverConfiguredMcpServer = dependencies.discoverConfiguredMcpServer ?? discoverConfiguredGameMakerCliMcpServer;
     const executeCommand = dependencies.executeCommand ?? executeGameMakerCliCommand;
+    const probeConfiguredMcpServer = dependencies.probeConfiguredMcpServer ?? probeStdioMcpServer;
     const probeMcpServer = dependencies.probeMcpServer ?? probeGameMakerCliMcpServer;
 
     let versionSnapshot: GameMakerCliTextCommandSnapshot;
@@ -170,6 +191,7 @@ export async function loadGameMakerCliCompanionCatalog(
     const rootHelp = parseGameMakerCliHelp(rootHelpSnapshot.output.stdout);
     const cliCommands = await collectGameMakerCliLeafCommands([], rootHelp, executionOptions, executeCommand);
     const resolvedProjectPath = await resolveSingleProjectManifestPathOrNull(options.projectRoot);
+    const configuredExternalMcpServer = await discoverConfiguredMcpServer(options.projectRoot);
 
     if (resolvedProjectPath === null) {
         return Object.freeze({
@@ -185,6 +207,8 @@ export async function loadGameMakerCliCompanionCatalog(
                         : "Could not resolve a single .yyp file for ResourceTool MCP discovery.",
                 name: null,
                 projectPath: null,
+                serverId: configuredExternalMcpServer?.serverId ?? null,
+                sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
                 version: null
             }),
             mcpTools: [],
@@ -193,7 +217,15 @@ export async function loadGameMakerCliCompanionCatalog(
     }
 
     try {
-        const mcpProbeResult = await runGameMakerCliMcpProbe(resolvedProjectPath, executionOptions, probeMcpServer);
+        const mcpProbeResult =
+            configuredExternalMcpServer === null
+                ? await runGameMakerCliMcpProbe(resolvedProjectPath, executionOptions, probeMcpServer)
+                : await probeConfiguredExternalGameMakerCliMcpServer(
+                      configuredExternalMcpServer,
+                      resolvedProjectPath,
+                      executionOptions.cwd,
+                      probeConfiguredMcpServer
+                  );
         return Object.freeze({
             available: true,
             cliCommands,
@@ -204,6 +236,8 @@ export async function loadGameMakerCliCompanionCatalog(
                 error: null,
                 name: mcpProbeResult.serverName,
                 projectPath: resolvedProjectPath,
+                serverId: configuredExternalMcpServer?.serverId ?? null,
+                sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
                 version: mcpProbeResult.serverVersion
             }),
             mcpTools: mcpProbeResult.tools
@@ -228,6 +262,8 @@ export async function loadGameMakerCliCompanionCatalog(
                 error: error instanceof Error ? error.message : "Could not inspect ResourceTool MCP tools.",
                 name: null,
                 projectPath: resolvedProjectPath,
+                serverId: configuredExternalMcpServer?.serverId ?? null,
+                sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
                 version: null
             }),
             mcpTools: [],
@@ -520,6 +556,45 @@ async function runGameMakerCliMcpProbe(
 ): Promise<GameMakerCliMcpProbeResult> {
     const invocationPlan = createGameMakerCliInvocationPlan(options.toolPath, ["resourcetool", "mcp", projectPath]);
     return await runGameMakerCliMcpProbeAtIndex(invocationPlan, projectPath, options, probeMcpServer, 0);
+}
+
+async function probeConfiguredExternalGameMakerCliMcpServer(
+    configuredServer: Readonly<{
+        args: ReadonlyArray<string>;
+        command: string;
+        displayName: string;
+        env: Readonly<Record<string, string>>;
+    }>,
+    projectPath: string,
+    cwd: string,
+    probeConfiguredMcpServer: (options: {
+        args: ReadonlyArray<string>;
+        command: string;
+        cwd: string;
+        displayName: string;
+        env?: Readonly<Record<string, string>>;
+        timeoutMs?: number;
+    }) => Promise<StdioMcpServerProbeResult>
+): Promise<GameMakerCliMcpProbeResult> {
+    const args =
+        configuredServer.args.some((entry) => entry.toLowerCase().endsWith(".yyp")) ||
+        configuredServer.args.some((entry) => path.resolve(cwd, entry) === projectPath)
+            ? [...configuredServer.args]
+            : [...configuredServer.args, projectPath];
+
+    const probeResult = await probeConfiguredMcpServer({
+        args,
+        command: configuredServer.command,
+        cwd,
+        displayName: configuredServer.displayName,
+        env: configuredServer.env
+    });
+
+    return Object.freeze({
+        serverName: probeResult.serverName,
+        serverVersion: probeResult.serverVersion,
+        tools: probeResult.tools
+    });
 }
 
 async function runGameMakerCliMcpProbeAtIndex(
@@ -839,6 +914,8 @@ function createUnavailableGameMakerCliCompanionCatalog(
             error: "The official gm-cli is not available, so ResourceTool MCP metadata could not be loaded.",
             name: null,
             projectPath: null,
+            serverId: null,
+            sourcePath: null,
             version: null
         }),
         mcpTools: [],

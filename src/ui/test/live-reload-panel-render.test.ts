@@ -137,7 +137,7 @@ void test("GmLiveReloadPanel renders inactive empty state when host does not pro
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /Live-reload endpoints were not provided by the host\./u);
-    assert.match(rendered, /No patches have been broadcast yet\./u);
+    assert.match(rendered, /No runtime patch payloads have been generated yet\./u);
     assert.match(rendered, /Runtime-wrapper diagnostics are not available from the host\./u);
 });
 

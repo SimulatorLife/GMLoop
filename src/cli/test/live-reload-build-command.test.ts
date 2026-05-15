@@ -292,7 +292,7 @@ void test("buildGameMakerHtml5Output reports missing Igor identity prerequisites
 
 void test("startLiveReloadDevSession builds before preparing live reload when build config is present", async () => {
     const prepareCalls: Array<Readonly<{ gmTempRoot?: string; html5OutputRoot?: string | null }>> = [];
-    const watchTargets: Array<string> = [];
+    const watchInvocations: Array<Readonly<{ runtimeRoot?: string; targetPath: string }>> = [];
     const buildCalls: Array<GameMakerHtml5BuildConfig> = [];
     const outputRoot = "/tmp/project/build/html5";
     const buildConfig = createGameMakerBuildConfig({
@@ -354,8 +354,11 @@ void test("startLiveReloadDevSession builds before preparing live reload when bu
                 gmTempRoot: path.resolve("/tmp/project", ".gm-temp/html5"),
                 html5OutputRoot: outputRoot
             }),
-        watchRunner: async (watchTarget) => {
-            watchTargets.push(watchTarget);
+        watchRunner: async (watchTarget, watchOptions) => {
+            watchInvocations.push({
+                runtimeRoot: watchOptions.runtimeRoot,
+                targetPath: watchTarget
+            });
         }
     });
 
@@ -367,11 +370,17 @@ void test("startLiveReloadDevSession builds before preparing live reload when bu
             html5OutputRoot: outputRoot
         }
     ]);
-    assert.deepEqual(watchTargets, ["/tmp/project"]);
+    assert.deepEqual(watchInvocations, [
+        {
+            runtimeRoot: outputRoot,
+            targetPath: "/tmp/project"
+        }
+    ]);
 });
 
 void test("startLiveReloadDevSession uses configured temp-root fallback when no build config exists", async () => {
     const prepareCalls: Array<string | undefined> = [];
+    const watchInvocations: Array<Readonly<{ runtimeRoot?: string; targetPath: string }>> = [];
 
     await startLiveReloadDevSession({
         targetPath: "/tmp/project",
@@ -405,8 +414,19 @@ void test("startLiveReloadDevSession uses configured temp-root fallback when no 
                 gmTempRoot: "/tmp/project/.gm-temp/html5",
                 html5OutputRoot: null
             }),
-        watchRunner: async () => {}
+        watchRunner: async (watchTarget, watchOptions) => {
+            watchInvocations.push({
+                runtimeRoot: watchOptions.runtimeRoot,
+                targetPath: watchTarget
+            });
+        }
     });
 
     assert.deepEqual(prepareCalls, ["/tmp/project/.gm-temp/html5"]);
+    assert.deepEqual(watchInvocations, [
+        {
+            runtimeRoot: "/tmp/project/output",
+            targetPath: "/tmp/project"
+        }
+    ]);
 });

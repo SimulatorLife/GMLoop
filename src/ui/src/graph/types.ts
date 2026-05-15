@@ -369,6 +369,8 @@ export type GraphVisualizationProjectConfigurationCatalog = Readonly<{
             error: string | null;
             name: string | null;
             projectPath: string | null;
+            serverId: string | null;
+            sourcePath: string | null;
             version: string | null;
         }>;
         mcpTools: ReadonlyArray<GraphVisualizationGameMakerCliMcpToolEntry>;

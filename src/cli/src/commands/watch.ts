@@ -72,6 +72,7 @@ import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
     DEFAULT_WATCH_DEBOUNCE_DELAY_MS,
+    DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES,
     DEFAULT_WATCH_MAX_CONCURRENT_DIRS,
     DEFAULT_WATCH_MAX_PATCH_HISTORY,
     DEFAULT_WATCH_POLLING_INTERVAL_MS
@@ -90,6 +91,7 @@ import {
 } from "./watch/source-analysis.js";
 
 const { debounce, getErrorMessage, isErrorWithCode } = Core;
+const IGNORED_WATCH_DIRECTORY_NAMES = new Set(DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES);
 
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
 
@@ -323,6 +325,17 @@ interface FileChangeOptions extends LoggingConfig {
     abortSignal?: AbortSignal;
     /** Wall-clock timestamp (Date.now()) when the filesystem change event was first detected. */
     fileChangeDetectedAt?: number;
+}
+
+function normalizeWatchedPathSegments(candidatePath: string): Array<string> {
+    return candidatePath
+        .replaceAll("\\", "/")
+        .split("/")
+        .filter((segment) => segment.length > 0);
+}
+
+function shouldIgnoreWatchedPath(candidatePath: string): boolean {
+    return normalizeWatchedPathSegments(candidatePath).some((segment) => IGNORED_WATCH_DIRECTORY_NAMES.has(segment));
 }
 
 async function runAutoInjectHotReload(
@@ -1137,7 +1150,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                         return;
                     }
 
-                    if (!extensionMatcher.matches(filename)) {
+                    if (shouldIgnoreWatchedPath(filename) || !extensionMatcher.matches(filename)) {
                         return;
                     }
 
@@ -1850,8 +1863,11 @@ function partitionScannedDirectoryEntries(
     for (const entry of entries) {
         const candidatePath = path.join(currentPath, entry.name);
         if (entry.isDirectory()) {
+            if (IGNORED_WATCH_DIRECTORY_NAMES.has(entry.name)) {
+                continue;
+            }
             directories.push(candidatePath);
-        } else if (entry.isFile() && extensionMatcher.matches(entry.name)) {
+        } else if (entry.isFile() && !shouldIgnoreWatchedPath(candidatePath) && extensionMatcher.matches(entry.name)) {
             files.push(candidatePath);
         }
     }

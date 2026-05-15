@@ -148,7 +148,7 @@ export async function startLiveReloadDevSession({
         effectiveHtml5OutputRoot = buildResult.outputRoot;
     }
 
-    await prepareRunner({
+    const preparation = await prepareRunner({
         html5OutputRoot: effectiveHtml5OutputRoot,
         gmTempRoot: effectiveGmTempRoot,
         bootstrapConfig,
@@ -156,7 +156,10 @@ export async function startLiveReloadDevSession({
         force: false
     });
 
-    await watchRunner(targetPath, watchOptions);
+    await watchRunner(targetPath, {
+        ...watchOptions,
+        runtimeRoot: preparation.target.outputRoot
+    });
 }
 
 function resolveRequestedPath(inputPath: string): string {

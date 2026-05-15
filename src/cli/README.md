@@ -259,9 +259,10 @@ The `live-reload dev` command will:
 3. Otherwise, locate an existing HTML5 output via `--html5-output`, `runtime.liveReload.html5Output`, or the latest GameMaker temp output
 4. Copy the self-contained `@gmloop/runtime-wrapper/dist/browser` asset tree into the output directory
 5. Inject a single module bootstrap tag into `index.html`
-6. Start the file watcher and patch/status servers
+6. Start the file watcher plus the runtime, patch, and status servers against that prepared HTML5 output
 
 The injected bootstrap uses the configured `--websocket-host`, `--websocket-port`, `--status-host`, and `--status-port` values so the running game can connect deterministically to the live-reload services.
+The watcher ignores generated/cache directories such as `.gmcache`, `.gml-hot-reload`, `dist`, and `node_modules` so the patch stream stays focused on project-owned GML sources.
 
 **Project config for one-click graph UI startup:**
 
@@ -598,7 +599,7 @@ pnpm run cli -- live-reload dev /path/to/project
 pnpm run cli -- live-reload dev /path/to/project --html5-output /path/to/html5/output
 ```
 
-When `runtime.liveReload.build` exists, `live-reload dev` treats `runtime.liveReload.html5Output` as the canonical output directory and rebuilds it before injecting the runtime wrapper and starting the watcher.
+When `runtime.liveReload.build` exists, `live-reload dev` treats `runtime.liveReload.html5Output` as the canonical output directory, rebuilds it before injection, and serves that same prepared output as the runtime URL shown by the UI.
 
 ✅ **Configurable patch history limit** ✨
 ✅ **Error recovery and graceful degradation** ✨
