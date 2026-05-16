@@ -7,8 +7,7 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
-import { printProjectPayload } from "../workflow/project-context.js";
-import { resolveCommandProjectContext } from "../workflow/project-root.js";
+import { printProjectPayload, resolveCommandProjectContext } from "../workflow/project-root.js";
 
 type ValidateSharedOptions = Readonly<{
     config?: string;

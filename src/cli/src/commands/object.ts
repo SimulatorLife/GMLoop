@@ -7,7 +7,7 @@ import {
     ensureProjectGraphIndex,
     printProjectPayload,
     type SharedProjectContextOptions
-} from "../workflow/project-context.js";
+} from "../workflow/project-root.js";
 
 function addObjectSharedOptions(command: Command): Command {
     return command
