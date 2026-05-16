@@ -34,6 +34,8 @@ import {
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
+const LIVE_RELOAD_ERROR_ACTION_TYPE = "set-live-reload-error";
+
 /**
  * Root app shell that composes header, toolbar, and graph/docs/config surfaces.
  *
@@ -189,7 +191,7 @@ export class GmAppShell extends LightDomLitElement {
 
     async #runHostActionWithPendingState(
         pendingType: "set-open-project-pending" | "set-regenerate-pending",
-        hostAction: () => void | Promise<void>
+        hostAction: GraphVisualizationUiCallbacks["onOpenProject"] | GraphVisualizationUiCallbacks["onRegenerate"]
     ): Promise<void> {
         try {
             this.#store.dispatch({ pending: true, type: pendingType });
@@ -206,12 +208,12 @@ export class GmAppShell extends LightDomLitElement {
     async #refreshLiveReloadStatus(): Promise<void> {
         try {
             this.#store.dispatch({ pending: true, type: "set-live-reload-refresh-pending" });
-            this.#store.dispatch({ errorMessage: null, type: "set-live-reload-error" });
+            this.#store.dispatch({ errorMessage: null, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
             const status = await this.callbacks.onRefreshLiveReloadStatus();
             this.#store.dispatch({ status, type: "set-live-reload-status" });
         } catch (error) {
             const message = Core.getErrorMessage(error, { fallback: "Unknown live-reload status error" });
-            this.#store.dispatch({ errorMessage: message, type: "set-live-reload-error" });
+            this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
         } finally {
             this.#store.dispatch({ pending: false, type: "set-live-reload-refresh-pending" });
         }
@@ -224,7 +226,7 @@ export class GmAppShell extends LightDomLitElement {
 
         try {
             this.#store.dispatch({ pending: true, type: "set-live-reload-start-pending" });
-            this.#store.dispatch({ errorMessage: null, type: "set-live-reload-error" });
+            this.#store.dispatch({ errorMessage: null, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
             const liveReload = await this.callbacks.onStartLiveReload();
             if (liveReload !== null) {
                 this.model = {
@@ -234,7 +236,7 @@ export class GmAppShell extends LightDomLitElement {
             }
         } catch (error) {
             const message = Core.getErrorMessage(error, { fallback: "Unknown live-reload startup error" });
-            this.#store.dispatch({ errorMessage: message, type: "set-live-reload-error" });
+            this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
         } finally {
             this.#store.dispatch({ pending: false, type: "set-live-reload-start-pending" });
         }

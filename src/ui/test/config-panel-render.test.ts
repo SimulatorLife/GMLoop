@@ -130,6 +130,7 @@ function createMockModel(): GraphVisualizationUiModel {
                 ]
             }
         },
+        startupState: null,
         title: "Config Panel"
     };
 }

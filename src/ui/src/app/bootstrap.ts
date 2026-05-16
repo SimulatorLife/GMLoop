@@ -12,8 +12,8 @@ import {
  */
 export type GraphVisualizationAppBootstrapDependencies = Readonly<{
     callbacks?: Readonly<{
-        onOpenProject?: () => void | Promise<void>;
-        onRegenerate?: () => void | Promise<void>;
+        onOpenProject?: GraphVisualizationUiCallbacks["onOpenProject"];
+        onRegenerate?: GraphVisualizationUiCallbacks["onRegenerate"];
         onRunFix?: GraphVisualizationUiCallbacks["onRunFix"];
         onStartLiveReload?: GraphVisualizationUiCallbacks["onStartLiveReload"];
         onRefreshLiveReloadStatus?: GraphVisualizationUiCallbacks["onRefreshLiveReloadStatus"];
