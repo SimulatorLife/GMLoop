@@ -51,27 +51,17 @@ function rewriteMethodListTripleSlashBlock(
     sourceLines: ReadonlyArray<string>,
     startLineIndex: number
 ): SourceLineRewrite | null {
-    const firstMatch = TRIPLE_SLASH_LINE_PATTERN.exec(sourceLines[startLineIndex] ?? "");
-    if (firstMatch === null) {
+    if (TRIPLE_SLASH_LINE_PATTERN.exec(sourceLines[startLineIndex] ?? "") === null) {
         return null;
     }
 
-    let endLineExclusive = startLineIndex;
-    while (endLineExclusive < sourceLines.length) {
-        const sourceLine = sourceLines[endLineExclusive] ?? "";
-        if (TRIPLE_SLASH_LINE_PATTERN.exec(sourceLine) === null) {
-            break;
-        }
-        endLineExclusive += 1;
-    }
-
     const rewrittenLines: Array<string> = [];
-    let containsMethodListLine = false;
-    for (let lineIndex = startLineIndex; lineIndex < endLineExclusive; lineIndex += 1) {
+    let lineIndex = startLineIndex;
+    while (lineIndex < sourceLines.length) {
         const sourceLine = sourceLines[lineIndex] ?? "";
         const match = TRIPLE_SLASH_LINE_PATTERN.exec(sourceLine);
         if (match === null) {
-            return null;
+            break;
         }
 
         const leadingWhitespace = match[1] ?? "";
@@ -88,17 +78,17 @@ function rewriteMethodListTripleSlashBlock(
             return null;
         }
 
-        containsMethodListLine = true;
         rewrittenLines.push(`${leadingWhitespace}// ${content}`);
+        lineIndex += 1;
     }
 
-    if (!containsMethodListLine) {
+    if (rewrittenLines.length === 0) {
         return null;
     }
 
     return {
         lines: rewrittenLines,
-        lastConsumedLineIndex: endLineExclusive - 1
+        lastConsumedLineIndex: lineIndex - 1
     };
 }
 
