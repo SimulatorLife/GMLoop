@@ -12,6 +12,7 @@ void describe("skip-cli-run", () => {
     void it("returns true only when the skip flag is exactly enabled", () => {
         assert.equal(isCliRunSkipped({ [SKIP_CLI_RUN_ENV_VAR]: "1" }), true);
         assert.equal(isCliRunSkipped({ [SKIP_CLI_RUN_ENV_VAR]: " 1 " }), true);
+        assert.equal(isCliRunSkipped({ [SKIP_CLI_RUN_ENV_VAR]: "\t1\t" }), true);
         assert.equal(isCliRunSkipped({ [SKIP_CLI_RUN_ENV_VAR]: "0" }), false);
         assert.equal(isCliRunSkipped({ [SKIP_CLI_RUN_ENV_VAR]: "" }), false);
     });
