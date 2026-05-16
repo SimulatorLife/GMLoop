@@ -29,7 +29,7 @@ import {
     DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
     DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT
 } from "../modules/live-reload/config.js";
-import { GmlParserBridge, GmlSemanticBridge, GmlTranspilerBridge } from "../modules/refactor/index.js";
+import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
 import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
 import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
 import { createGraphVisualizationProjectConfigurationCatalog } from "../modules/ui/index.js";
@@ -511,10 +511,11 @@ function createGraphPlaygroundFormatOptions(
 }
 
 function createRefactorEngineForPlayground(activeProjectRoot: string) {
+    const bridges = createRefactorBridges({}, activeProjectRoot);
     return new Refactor.RefactorEngine({
-        formatter: new GmlTranspilerBridge(),
-        parser: new GmlParserBridge(),
-        semantic: new GmlSemanticBridge({}, activeProjectRoot)
+        formatter: bridges.formatter,
+        parser: bridges.parser,
+        semantic: bridges.semantic
     });
 }
 

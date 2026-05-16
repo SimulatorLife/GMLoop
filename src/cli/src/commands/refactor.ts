@@ -23,8 +23,9 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
+import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
 import { isRefactorResourcePath } from "../modules/refactor/gml-resource-path.js";
-import { GmlParserBridge, GmlSemanticBridge, GmlTranspilerBridge } from "../modules/refactor/index.js";
+import { GmlSemanticBridge } from "../modules/refactor/index.js";
 import {
     discoverProjectRoot,
     resolveExistingGmloopConfigPath,
@@ -377,19 +378,14 @@ function createRefactorEngineForProject(
     projectIndex: object | null,
     includeSemanticBridge: boolean = projectIndex !== null
 ): InstanceType<typeof RefactorEngine> {
-    const semantic =
-        includeSemanticBridge && projectIndex !== null
-            ? new GmlSemanticBridge(projectIndex, projectRoot)
-            : includeSemanticBridge
-              ? new GmlSemanticBridge({}, projectRoot)
-              : null;
-    const parser = new GmlParserBridge();
-    const formatter = new GmlTranspilerBridge();
+    const semanticBridge = includeSemanticBridge ? new GmlSemanticBridge(projectIndex ?? {}, projectRoot) : undefined;
+
+    const bridges = createRefactorBridges({ semantic: semanticBridge }, projectRoot);
 
     return new RefactorEngine({
-        semantic,
-        parser,
-        formatter
+        semantic: semanticBridge ?? null,
+        parser: bridges.parser,
+        formatter: bridges.formatter
     });
 }
 
@@ -626,7 +622,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                 );
 
                 // Access the underlying GmlSemanticBridge and update it directly
-                const semanticBridge = engine.semantic as any;
+                const semanticBridge = engine.semantic as GmlSemanticBridge;
                 if (semanticBridge && typeof semanticBridge.updateProjectIndex === "function") {
                     semanticBridge.updateProjectIndex(updatedProjectIndex);
                 }
