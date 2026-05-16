@@ -24,6 +24,8 @@ tools/
 
 .gmloop
 **/.gmloop
+.playwright-mcp/
+*.png
 
 # TypeScript
 *.tsbuildinfo

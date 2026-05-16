@@ -490,7 +490,38 @@ function resolveResourcePathForFile(context: ProjectionContext, filePath: string
         return null;
     }
 
-    return context.resourcePathByGmlFile.get(filePath) ?? null;
+    const indexedResourcePath = context.resourcePathByGmlFile.get(filePath);
+    if (indexedResourcePath) {
+        return indexedResourcePath;
+    }
+
+    return inferResourcePathFromSiblingDirectory(context, filePath);
+}
+
+function inferResourcePathFromSiblingDirectory(context: ProjectionContext, filePath: string): string | null {
+    const resources = asRecord(context.projectIndex.resources);
+    if (filePath in resources) {
+        return filePath;
+    }
+
+    const fileDirectory = path.posix.dirname(filePath);
+    const fileDirectoryName = path.posix.basename(fileDirectory);
+    const siblingResourcePaths = Object.keys(resources).filter(
+        (resourcePath) => path.posix.dirname(resourcePath) === fileDirectory
+    );
+    if (siblingResourcePaths.length === 0) {
+        return null;
+    }
+
+    if (siblingResourcePaths.length === 1) {
+        return siblingResourcePaths[0] ?? null;
+    }
+
+    return (
+        siblingResourcePaths.find(
+            (resourcePath) => path.posix.basename(resourcePath, path.posix.extname(resourcePath)) === fileDirectoryName
+        ) ?? null
+    );
 }
 
 function resolveEnumOwnerNodeId(context: ProjectionContext, entry: ProjectIndexIdentifierEntry): string | null {
@@ -943,6 +974,7 @@ function projectObjectEventScopes(context: ProjectionContext): void {
 function projectFiles(context: ProjectionContext): void {
     const files = asRecord(context.projectIndex.files);
     for (const relativePath of Object.keys(files)) {
+        const resourcePath = resolveResourcePathForFile(context, relativePath);
         context.fileRecords.push(createFileRecord(context.rootPath, relativePath));
         const nodeId = createGraphNodeId(context.graphId, "file", relativePath);
         const node = createNodeRecord({
@@ -952,15 +984,24 @@ function projectFiles(context: ProjectionContext): void {
             id: nodeId,
             kind: "file",
             name: path.posix.basename(relativePath),
+            resourcePath,
             summary: createGraphNodeSummary({
                 filePath: relativePath,
                 kind: "file",
-                name: path.posix.basename(relativePath)
+                name: path.posix.basename(relativePath),
+                resourcePath
             }),
             snippet: ""
         });
         context.nodeRecords.push(node);
         registerNodeIndexes(context, node);
+        if (resourcePath) {
+            context.edgeRecords.push({
+                fromId: createGraphNodeId(context.graphId, "resource", resourcePath),
+                toId: nodeId,
+                type: "contains"
+            });
+        }
     }
 }
 
@@ -1606,9 +1647,9 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         const buildStart = performance.now();
         const projectIndex = (await buildProjectIndex(config.projectRoot)) as ProjectIndexSnapshot;
         const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
-        projectFiles(projectContext);
         projectResources(projectContext);
         projectObjectEventScopes(projectContext);
+        projectFiles(projectContext);
         projectIdentifierCollections(projectContext);
         projectRelationshipEdges(projectContext);
         removeDanglingEdges(projectContext);
@@ -1617,9 +1658,9 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         if (config.toolsetRoot) {
             const toolsetIndex = (await buildProjectIndex(config.toolsetRoot)) as ProjectIndexSnapshot;
             toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
-            projectFiles(toolsetContext);
             projectResources(toolsetContext);
             projectObjectEventScopes(toolsetContext);
+            projectFiles(toolsetContext);
             projectIdentifierCollections(toolsetContext);
             projectRelationshipEdges(toolsetContext);
             removeDanglingEdges(toolsetContext);

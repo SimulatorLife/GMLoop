@@ -1386,6 +1386,10 @@ void test("buildGraphIndex projects the project manifest as the connected projec
                 rootEdges.map((row) => ({ toId: row.toId, type: row.type })),
                 [
                     {
+                        toId: "project::file::InterplanetaryFootball.yyp",
+                        type: "contains"
+                    },
+                    {
                         toId: "project::resource::datafiles/config/config.yy",
                         type: "contains"
                     },
@@ -1512,6 +1516,90 @@ void test("buildGraphIndex projects object event scopes as readable visualizatio
                     (edge) => edge.source === eventNodeId && edge.target === targetScriptNodeId && edge.type === "calls"
                 ),
                 "expected visualization export to preserve event-to-script call ownership"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("graph visualization keeps object event files connected when YY metadata omits explicit event file paths", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-object-event-file-ownership-");
+
+    try {
+        await fixture.writeProjectFile(
+            "ConnectedProject.yyp",
+            JSON.stringify({ name: "ConnectedProject", resourceType: "GMProject" })
+        );
+        await fixture.writeProjectFile(
+            "objects/oSpider/oSpider.yy",
+            JSON.stringify({
+                name: "oSpider",
+                resourceType: "GMObject",
+                eventList: [
+                    { eventNum: 0, eventType: 0, resourceType: "GMEvent" },
+                    { eventNum: 0, eventType: 3, resourceType: "GMEvent" },
+                    { eventNum: 27, eventType: 9, resourceType: "GMEvent" }
+                ]
+            })
+        );
+        await fixture.writeProjectFile("objects/oSpider/Create_0.gml", "hp = 100;\n");
+        await fixture.writeProjectFile("objects/oSpider/Step_0.gml", "hp -= 1;\n");
+        await fixture.writeProjectFile("objects/oSpider/KeyPress_27.gml", 'show_debug_message("pressed");\n');
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const objectResourceNodeId = "project::resource::objects/oSpider/oSpider.yy";
+            const projectNodeId = "project::resource::ConnectedProject.yyp";
+
+            for (const filePath of [
+                "objects/oSpider/oSpider.yy",
+                "objects/oSpider/Create_0.gml",
+                "objects/oSpider/Step_0.gml",
+                "objects/oSpider/KeyPress_27.gml"
+            ]) {
+                const fileNodeId = `project::file::${filePath}`;
+                const fileNode = visualizationData.nodes.find((node) => node.id === fileNodeId);
+
+                assert.ok(fileNode, `expected ${filePath} file node to exist`);
+                assert.equal(
+                    fileNode?.resourcePath,
+                    "objects/oSpider/oSpider.yy",
+                    `expected ${filePath} to inherit its object resource path`
+                );
+                assert.ok(
+                    visualizationData.edges.some(
+                        (edge) =>
+                            edge.source === objectResourceNodeId &&
+                            edge.target === fileNodeId &&
+                            edge.type === "contains"
+                    ),
+                    `expected ${filePath} to stay connected to the object resource node`
+                );
+            }
+
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === projectNodeId &&
+                        edge.target === objectResourceNodeId &&
+                        edge.type === "contains"
+                ),
+                "expected the object resource to remain connected to the central project node"
             );
         } finally {
             database.close();
