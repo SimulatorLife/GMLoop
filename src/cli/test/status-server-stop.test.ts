@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import http from "node:http";
 import { describe, it } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -36,5 +37,45 @@ void describe("status server lifecycle", () => {
         }
 
         assert.equal(closed, true, "Expected status server stop to close active sockets");
+    });
+
+    void it("stops accepting new connections after stop()", async () => {
+        const controller = await startStatusServer({
+            host: "127.0.0.1",
+            port: 0,
+            getSnapshot: () => ({
+                uptime: 0,
+                patchCount: 0,
+                errorCount: 0,
+                recentPatches: [],
+                recentErrors: [],
+                websocketClients: 0
+            })
+        });
+
+        await controller.stop();
+
+        // After stop(), the server should no longer accept new connections.
+        // Attempting to connect should fail (connection refused or hang until timeout).
+        const connectionRefused = await Promise.race([
+            new Promise<boolean>((resolve) => {
+                const req = http.get(`http://${controller.host}:${controller.port}/status`, (res) => {
+                    res.resume();
+                    resolve(false);
+                });
+                req.on("error", () => resolve(true));
+                req.setTimeout(200, () => {
+                    req.destroy();
+                    resolve(false);
+                });
+            }),
+            delay(1000).then(() => false)
+        ]);
+
+        assert.equal(
+            connectionRefused,
+            true,
+            "Server should refuse connections after stop() — no lingering open socket"
+        );
     });
 });

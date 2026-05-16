@@ -395,10 +395,22 @@ export async function startStatusServer({
         stop() {
             return new Promise<void>((resolve, reject) => {
                 for (const socket of activeSockets) {
+                    // Clean up individual socket listeners before destroying so the
+                    // removeSocket closure does not fire against a socket that has
+                    // already been destroyed. This prevents potential errors in the
+                    // socket event handlers during shutdown.
+                    socket.removeAllListeners("close");
+                    socket.removeAllListeners("error");
                     socket.destroy();
                 }
                 activeSockets.clear();
 
+                // Remove the "connection" listener before closing so the server
+                // stops accepting new sockets and the handler does not fire again
+                // during or after server.close(). Node emits "close" only after all
+                // existing connections have been destroyed and no more can be
+                // accepted, but the handler should not remain registered regardless.
+                server.removeAllListeners("connection");
                 server.close((err) => {
                     if (err) {
                         reject(err);
