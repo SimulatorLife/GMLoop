@@ -10,7 +10,7 @@ import type {
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
-import { GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD } from "./events.js";
+import { GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
@@ -248,6 +248,15 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         );
     }
 
+    #emitStartLiveReload(): void {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    }
+
     #resolveStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot | null {
         return this.state?.liveReloadStatus ?? this.#polledStatus ?? this.model?.liveReload?.statusSnapshot ?? null;
     }
@@ -469,15 +478,32 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                               `
                             : "Live reload is not connected right now."}
                     </p>
-                    <button
-                        id="refresh-live-reload"
-                        type="button"
-                        class="top-nav-button"
-                        ?disabled=${this.state.isLiveReloadRefreshPending}
-                        @click=${() => this.#emitRefreshStatus()}
-                    >
-                        ${this.state.isLiveReloadRefreshPending ? "Refreshing..." : "Refresh Status"}
-                    </button>
+                    <div class="live-reload-actions">
+                        ${this.model.isServerMode
+                            ? html`
+                                  <button
+                                      id="start-live-reload"
+                                      type="button"
+                                      class="top-nav-button"
+                                      ?disabled=${this.state.isLiveReloadStartPending}
+                                      @click=${() => this.#emitStartLiveReload()}
+                                  >
+                                      ${this.state.isLiveReloadStartPending
+                                          ? "Building & Starting..."
+                                          : "Start Live Reload"}
+                                  </button>
+                              `
+                            : null}
+                        <button
+                            id="refresh-live-reload"
+                            type="button"
+                            class="top-nav-button"
+                            ?disabled=${this.state.isLiveReloadRefreshPending}
+                            @click=${() => this.#emitRefreshStatus()}
+                        >
+                            ${this.state.isLiveReloadRefreshPending ? "Refreshing..." : "Refresh Status"}
+                        </button>
+                    </div>
                 </div>
                 ${errorMessage ? html`<gm-error-banner .message=${errorMessage}></gm-error-banner>` : null}
                 <div class="live-reload-stack" aria-live="polite">

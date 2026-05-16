@@ -1,8 +1,10 @@
-import { readFileSync } from "node:fs";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { renderGraphVisualizationClientScript } from "./graph-visualization-client-script.js";
+import { build } from "vite";
+
 import {
     renderGraphVisualizationDocumentTitle,
     serializeGraphVisualizationDataForInlineScript,
@@ -12,11 +14,6 @@ import {
     serializeGraphVisualizationProjectConfigurationCatalogForInlineScript,
     serializeGraphVisualizationStartupStateForInlineScript
 } from "./graph-visualization-inline-data.js";
-import {
-    getEdgeLineColor,
-    renderEdgeLineCssRules,
-    renderNodeFillCssRules
-} from "./graph-visualization-style-metadata.js";
 import type {
     GraphVisualizationBundleArtifact,
     GraphVisualizationBundleFile,
@@ -24,176 +21,163 @@ import type {
     GraphVisualizationRenderOptions
 } from "./types.js";
 
-const GRAPH_VISUALIZATION_TEMPLATE_ASSET_FILE_NAMES = Object.freeze({
-    css: "graph-visualization-template.css",
-    html: "graph-visualization-template.html"
-});
+const GRAPH_VISUALIZATION_ENTRY_HTML_PATH = "index.html";
 
-const GRAPH_VISUALIZATION_BUNDLE_FILE_PATHS = Object.freeze({
-    browserFsAccessScriptPath: "assets/vendor/browser-fs-access.js",
-    d3ScriptPath: "assets/vendor/d3.min.js",
-    entryHtmlPath: "index.html",
-    scriptPath: "assets/graph-visualization.js",
-    stylesheetPath: "assets/graph-visualization.css"
-});
-
-const GRAPH_VISUALIZATION_VENDOR_ASSET_FILE_PATHS = Object.freeze({
-    browserFsAccess: "../../../../node_modules/browser-fs-access/dist/index.modern.js",
-    d3: "../../../../node_modules/d3/dist/d3.min.js"
-});
-
-function resolveGraphVisualizationTemplateAssetPath(fileName: string): string {
-    const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
-    const primaryPath = path.resolve(moduleDirectory, "assets", fileName);
-    try {
-        readFileSync(primaryPath, "utf8");
-        return primaryPath;
-    } catch {
-        return path.resolve(moduleDirectory, "../../../src/graph/assets", fileName);
-    }
-}
-
-function readGraphVisualizationTemplateAsset(fileName: string): string {
-    return readFileSync(resolveGraphVisualizationTemplateAssetPath(fileName), "utf8");
-}
-
-function readGraphVisualizationVendorAsset(relativePath: string): string {
-    const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
-    const candidatePaths = [
-        path.resolve(moduleDirectory, relativePath),
-        path.resolve(
-            moduleDirectory,
-            "../../../../ui/node_modules",
-            relativePath.replace("../../../../node_modules/", "")
-        )
-    ];
-
-    for (const candidatePath of candidatePaths) {
-        try {
-            return readFileSync(candidatePath, "utf8");
-        } catch {
-            continue;
-        }
-    }
-
-    throw new Error(`Unable to resolve graph visualization vendor asset: ${relativePath}`);
+function resolveUiSourcePath(relativePath: string): string {
+    return fileURLToPath(new URL(`../web/${relativePath}`, import.meta.url));
 }
 
 function createGraphVisualizationBundleFile(
     relativePath: string,
     contentType: string,
-    textContent: string
+    bytes: Uint8Array
 ): GraphVisualizationBundleFile {
     return Object.freeze({
-        bytes: new TextEncoder().encode(textContent),
+        bytes,
         contentType,
         relativePath
     });
 }
 
-/**
- * Render the graph visualization as an HTML + assets bundle artifact.
- */
-export function renderGraphVisualizationBundle(
+function resolveContentType(relativePath: string): string {
+    if (relativePath.endsWith(".html")) {
+        return "text/html; charset=utf-8";
+    }
+    if (relativePath.endsWith(".css")) {
+        return "text/css; charset=utf-8";
+    }
+    if (relativePath.endsWith(".js")) {
+        return "text/javascript; charset=utf-8";
+    }
+    if (relativePath.endsWith(".map")) {
+        return "application/json; charset=utf-8";
+    }
+
+    return "application/octet-stream";
+}
+
+async function listBundleFiles(
+    rootDirectory: string,
+    currentDirectory = rootDirectory
+): Promise<ReadonlyArray<string>> {
+    const entries = await readdir(currentDirectory, { withFileTypes: true });
+    const paths = await Promise.all(
+        entries.map(async (entry): Promise<ReadonlyArray<string>> => {
+            const absolutePath = path.join(currentDirectory, entry.name);
+            if (entry.isDirectory()) {
+                return await listBundleFiles(rootDirectory, absolutePath);
+            }
+
+            return [path.relative(rootDirectory, absolutePath).split(path.sep).join("/")];
+        })
+    );
+
+    return paths.flat().toSorted();
+}
+
+function renderBootstrapScript(data: GraphVisualizationData, options: GraphVisualizationRenderOptions): string {
+    const serializedOptions = JSON.stringify({
+        ...options,
+        documentationCatalogs: options.documentationCatalogs ?? null,
+        isServerMode: options.isServerMode === true,
+        liveReload: options.liveReload ?? null,
+        loadedTarget: options.loadedTarget ?? null,
+        projectConfigurationCatalog: options.projectConfigurationCatalog ?? null,
+        startupState: options.startupState ?? null,
+        title: options.title
+    })
+        .replaceAll("<", String.raw`\u003c`)
+        .replaceAll(">", String.raw`\u003e`)
+        .replaceAll("&", String.raw`\u0026`)
+        .replaceAll("\u2028", String.raw`\u2028`)
+        .replaceAll("\u2029", String.raw`\u2029`);
+
+    return [
+        "<script>",
+        `window.__GMLOOP_GRAPH_VISUALIZATION_DATA__ = ${serializeGraphVisualizationDataForInlineScript(data)};`,
+        `window.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__ = ${serializedOptions};`,
+        `window.__GMLOOP_DOCUMENTATION_CATALOGS__ = ${serializeGraphVisualizationDocumentationCatalogsForInlineScript(options.documentationCatalogs ?? null)};`,
+        `window.__GMLOOP_LIVE_RELOAD__ = ${serializeGraphVisualizationLiveReloadForInlineScript(options.liveReload ?? null)};`,
+        `window.__GMLOOP_LOADED_TARGET__ = ${serializeGraphVisualizationLoadedTargetForInlineScript(options.loadedTarget ?? null)};`,
+        `window.__GMLOOP_PROJECT_CONFIGURATION__ = ${serializeGraphVisualizationProjectConfigurationCatalogForInlineScript(options.projectConfigurationCatalog ?? null)};`,
+        `window.__GMLOOP_STARTUP_STATE__ = ${serializeGraphVisualizationStartupStateForInlineScript(options.startupState ?? null)};`,
+        "</script>"
+    ].join("\n");
+}
+
+function injectBootstrapPayload(
+    html: string,
     data: GraphVisualizationData,
     options: GraphVisualizationRenderOptions
-): GraphVisualizationBundleArtifact {
-    const serializedData = serializeGraphVisualizationDataForInlineScript(data);
-    const serializedDocumentationCatalogs = serializeGraphVisualizationDocumentationCatalogsForInlineScript(
-        options.documentationCatalogs ?? null
-    );
-    const serializedLoadedTarget = serializeGraphVisualizationLoadedTargetForInlineScript(options.loadedTarget ?? null);
-    const serializedProjectConfigurationCatalog = serializeGraphVisualizationProjectConfigurationCatalogForInlineScript(
-        options.projectConfigurationCatalog ?? null
-    );
-    const serializedLiveReload = serializeGraphVisualizationLiveReloadForInlineScript(options.liveReload ?? null);
-    const serializedStartupState = serializeGraphVisualizationStartupStateForInlineScript(options.startupState ?? null);
+): string {
     const documentTitle = renderGraphVisualizationDocumentTitle(options.title);
-    const isServerMode = options.isServerMode === true;
-    const clientScriptBody = renderGraphVisualizationClientScript(
-        serializedData,
-        serializedDocumentationCatalogs,
-        serializedLiveReload,
-        serializedLoadedTarget,
-        serializedProjectConfigurationCatalog,
-        serializedStartupState,
-        isServerMode
-    );
-    const moduleScript = [
-        `import { fileOpen, directoryOpen } from "./vendor/browser-fs-access.js";`,
-        clientScriptBody
-    ].join("\n");
-    const stylesheet = readGraphVisualizationTemplateAsset(GRAPH_VISUALIZATION_TEMPLATE_ASSET_FILE_NAMES.css)
-        .replace("{{EDGE_LINE_CSS_RULES}}", renderEdgeLineCssRules())
-        .replace("{{NODE_FILL_CSS_RULES}}", renderNodeFillCssRules());
-    const documentMarkup = readGraphVisualizationTemplateAsset(GRAPH_VISUALIZATION_TEMPLATE_ASSET_FILE_NAMES.html)
-        .replaceAll("{{DOCUMENT_TITLE}}", documentTitle)
-        .replace(
-            "{{REGENERATE_BUTTON}}",
-            isServerMode
-                ? '<button id="regenerate" class="toolbar-chip-button toolbar-accent-button"><span class="button-content"><span class="button-label">Regenerate</span></span></button>'
-                : ""
-        )
-        .replace("{{ARROW_CALLS_COLOR}}", getEdgeLineColor("calls"))
-        .replace("{{ARROW_INHERITS_COLOR}}", getEdgeLineColor("inherits"))
-        .replace("{{ARROW_DEPENDS_ON_COLOR}}", getEdgeLineColor("depends_on"));
-    const htmlDocument = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GMLoop Graph Index - ${documentTitle}</title>
-  <link rel="stylesheet" href="./${GRAPH_VISUALIZATION_BUNDLE_FILE_PATHS.stylesheetPath}" />
-  <script src="./${GRAPH_VISUALIZATION_BUNDLE_FILE_PATHS.d3ScriptPath}"></script>
-</head>
-<body>
-${documentMarkup}
-  <script type="module" src="./${GRAPH_VISUALIZATION_BUNDLE_FILE_PATHS.scriptPath}"></script>
-</body>
-</html>`;
+    return html
+        .replace("<title>GMLoop Graph Visualization</title>", `<title>GMLoop Graph Index - ${documentTitle}</title>`)
+        .replace("</head>", `${renderBootstrapScript(data, options)}\n</head>`);
+}
 
-    const files = Object.freeze([
-        createGraphVisualizationBundleFile(
-            GRAPH_VISUALIZATION_BUNDLE_FILE_PATHS.entryHtmlPath,
-            "text/html; charset=utf-8",
-            htmlDocument
-        ),
-        createGraphVisualizationBundleFile(
-            GRAPH_VISUALIZATION_BUNDLE_FILE_PATHS.stylesheetPath,
-            "text/css; charset=utf-8",
-            stylesheet
-        ),
-        createGraphVisualizationBundleFile(
-            GRAPH_VISUALIZATION_BUNDLE_FILE_PATHS.scriptPath,
-            "text/javascript; charset=utf-8",
-            moduleScript
-        ),
-        createGraphVisualizationBundleFile(
-            GRAPH_VISUALIZATION_BUNDLE_FILE_PATHS.d3ScriptPath,
-            "text/javascript; charset=utf-8",
-            readGraphVisualizationVendorAsset(GRAPH_VISUALIZATION_VENDOR_ASSET_FILE_PATHS.d3)
-        ),
-        createGraphVisualizationBundleFile(
-            GRAPH_VISUALIZATION_BUNDLE_FILE_PATHS.browserFsAccessScriptPath,
-            "text/javascript; charset=utf-8",
-            readGraphVisualizationVendorAsset(GRAPH_VISUALIZATION_VENDOR_ASSET_FILE_PATHS.browserFsAccess)
-        )
-    ]);
-
-    return Object.freeze({
-        entryHtmlPath: GRAPH_VISUALIZATION_BUNDLE_FILE_PATHS.entryHtmlPath,
-        files
+async function createViteWebBundle(outDirectory: string): Promise<void> {
+    await build({
+        base: "./",
+        build: {
+            emptyOutDir: true,
+            manifest: false,
+            outDir: outDirectory,
+            rollupOptions: {
+                input: resolveUiSourcePath("index.html")
+            },
+            sourcemap: true,
+            target: "es2022"
+        },
+        configFile: false,
+        root: path.dirname(resolveUiSourcePath("index.html")),
+        logLevel: "silent"
     });
 }
 
 /**
- * Render the self-contained graph visualization HTML document for a graph-index payload.
+ * Render the graph visualization as a Lit web-app bundle artifact.
  */
-export function renderGraphVisualizationHtml(
+export async function renderGraphVisualizationBundle(
     data: GraphVisualizationData,
     options: GraphVisualizationRenderOptions
-): string {
-    const bundleArtifact = renderGraphVisualizationBundle(data, options);
+): Promise<GraphVisualizationBundleArtifact> {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-ui-bundle-"));
+
+    try {
+        await createViteWebBundle(outputDirectory);
+        const relativePaths = await listBundleFiles(outputDirectory);
+        const files = await Promise.all(
+            relativePaths.map(async (relativePath) => {
+                const bytes = await readFile(path.join(outputDirectory, relativePath));
+                const content =
+                    relativePath === GRAPH_VISUALIZATION_ENTRY_HTML_PATH
+                        ? new TextEncoder().encode(
+                              injectBootstrapPayload(new TextDecoder().decode(bytes), data, options)
+                          )
+                        : bytes;
+
+                return createGraphVisualizationBundleFile(relativePath, resolveContentType(relativePath), content);
+            })
+        );
+
+        return Object.freeze({
+            entryHtmlPath: GRAPH_VISUALIZATION_ENTRY_HTML_PATH,
+            files: Object.freeze(files)
+        });
+    } finally {
+        await rm(outputDirectory, { force: true, recursive: true });
+    }
+}
+
+/**
+ * Render the graph visualization HTML document for a graph-index payload.
+ */
+export async function renderGraphVisualizationHtml(
+    data: GraphVisualizationData,
+    options: GraphVisualizationRenderOptions
+): Promise<string> {
+    const bundleArtifact = await renderGraphVisualizationBundle(data, options);
     const htmlFile = bundleArtifact.files.find((file) => file.relativePath === bundleArtifact.entryHtmlPath);
     if (!htmlFile) {
         throw new Error("Graph visualization bundle is missing the entry HTML file.");

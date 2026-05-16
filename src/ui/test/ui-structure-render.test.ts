@@ -59,6 +59,7 @@ function createMockModel(): GraphVisualizationUiModel {
         liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Test GMLoop"
     };
 }
@@ -78,6 +79,7 @@ function createEmptyGraphModel(): GraphVisualizationUiModel {
         liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Test GMLoop"
     };
 }
@@ -93,6 +95,7 @@ function createMockState(activePage: GraphVisualizationUiState["activePage"]): G
         fixStatus: "idle",
         isFixPending: false,
         isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",

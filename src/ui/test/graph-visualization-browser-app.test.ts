@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { computeViewportTransformCenteredOnNode } from "../src/graph/graph-visualization-browser-app.js";
+import { computeViewportTransformCenteredOnNode } from "../src/graph/graph-viewport.js";
 
 void test("computeViewportTransformCenteredOnNode centers target coordinates at current zoom", () => {
     const transform = computeViewportTransformCenteredOnNode({

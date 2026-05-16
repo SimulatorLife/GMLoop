@@ -41,6 +41,7 @@ void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported n
         fixStatus: "idle",
         isFixPending: false,
         isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "always",

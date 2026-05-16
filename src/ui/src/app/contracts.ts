@@ -6,12 +6,17 @@ import type {
     GraphVisualizationLoadedTarget,
     GraphVisualizationMcpServerStatus,
     GraphVisualizationProjectConfigurationCatalog,
-    GraphVisualizationRenderOptions
+    GraphVisualizationRenderOptions,
+    GraphVisualizationStartupState
 } from "../graph/types.js";
 
 export type GraphVisualizationFixRunResult = Readonly<{
     logLines: ReadonlyArray<string>;
     status: "success";
+}>;
+
+export type GraphVisualizationHostMutationResult = Readonly<{
+    changed: boolean;
 }>;
 
 /**
@@ -25,6 +30,7 @@ export type GraphVisualizationUiModel = Readonly<{
     liveReload: GraphVisualizationLiveReloadModel | null;
     mcpServerStatus: GraphVisualizationMcpServerStatus;
     projectConfigurationCatalog: GraphVisualizationProjectConfigurationCatalog | null;
+    startupState: GraphVisualizationStartupState | null;
     title: string;
 }>;
 
@@ -33,8 +39,15 @@ export type GraphVisualizationUiModel = Readonly<{
  */
 export type GraphVisualizationUiCallbacks = Readonly<{
     onOpenProject: () => void | Promise<void>;
-    onRegenerate: () => void | Promise<void>;
+    onRegenerate: () =>
+        | GraphVisualizationHostMutationResult
+        | void
+        | Promise<GraphVisualizationHostMutationResult | void>;
     onRunFix: () => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
+    onStartLiveReload: () =>
+        | GraphVisualizationLiveReloadModel
+        | null
+        | Promise<GraphVisualizationLiveReloadModel | null>;
     onRefreshLiveReloadStatus: () =>
         | GraphVisualizationLiveReloadStatusSnapshot
         | null
@@ -56,6 +69,7 @@ export function createGraphVisualizationUiModel(
         liveReload: options.liveReload ?? null,
         mcpServerStatus: options.mcpServerStatus ?? "not-started",
         projectConfigurationCatalog: options.projectConfigurationCatalog ?? null,
+        startupState: options.startupState ?? null,
         title: options.title
     };
 }
@@ -68,6 +82,7 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
         onOpenProject: () => {},
         onRegenerate: () => {},
         onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
+        onStartLiveReload: () => null,
         onRefreshLiveReloadStatus: () => null
     };
 }

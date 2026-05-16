@@ -19,6 +19,7 @@ function createUiModel(): GraphVisualizationUiModel {
         liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Test GMLoop"
     };
 }

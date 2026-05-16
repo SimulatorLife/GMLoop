@@ -14,6 +14,7 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         fixStatus: "idle",
         isFixPending: false,
         isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
@@ -121,6 +122,12 @@ export function reduceGraphVisualizationUiState(
             return {
                 ...state,
                 isLiveReloadRefreshPending: action.pending
+            };
+        }
+        case "set-live-reload-start-pending": {
+            return {
+                ...state,
+                isLiveReloadStartPending: action.pending
             };
         }
         case "set-live-reload-error": {

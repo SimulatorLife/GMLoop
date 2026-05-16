@@ -4,7 +4,8 @@ import test from "node:test";
 import {
     GmAppShell,
     GmLiveReloadPanel,
-    GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD
+    GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
+    GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD
 } from "../src/app/components/index.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
@@ -87,6 +88,7 @@ function createMockModel(statusSnapshot: GraphVisualizationLiveReloadStatusSnaps
         },
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Live Reload"
     };
 }
@@ -102,6 +104,7 @@ function createMockState(): GraphVisualizationUiState {
         fixStatus: "idle",
         isFixPending: false,
         isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
@@ -167,6 +170,7 @@ void test("GmAppShell routes live-reload refresh events through the host callbac
         onOpenProject: () => {},
         onRegenerate: () => {},
         onRunFix: () => ({ logLines: [], status: "success" }),
+        onStartLiveReload: () => null,
         onRefreshLiveReloadStatus: () => {
             refreshCount += 1;
             return createStatusSnapshot();
@@ -179,4 +183,27 @@ void test("GmAppShell routes live-reload refresh events through the host callbac
     shell.disconnectedCallback();
 
     assert.equal(refreshCount, 1);
+});
+
+void test("GmAppShell routes live-reload start events through the host callback", async () => {
+    const shell = new TestableGmAppShell();
+    let startCount = 0;
+    shell.model = createMockModel(null);
+    shell.callbacks = {
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onRunFix: () => ({ logLines: [], status: "success" }),
+        onStartLiveReload: () => {
+            startCount += 1;
+            return createMockModel(createStatusSnapshot()).liveReload;
+        },
+        onRefreshLiveReloadStatus: () => null
+    };
+
+    shell.connectedCallback();
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, { bubbles: true }));
+    await Promise.resolve();
+    shell.disconnectedCallback();
+
+    assert.equal(startCount, 1);
 });

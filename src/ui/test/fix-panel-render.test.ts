@@ -32,6 +32,7 @@ function createMockModel(): GraphVisualizationUiModel {
         liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Fix Panel"
     };
 }
@@ -47,6 +48,7 @@ function createMockState(): GraphVisualizationUiState {
         fixStatus: "success",
         isFixPending: false,
         isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",

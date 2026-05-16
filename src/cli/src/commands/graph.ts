@@ -1380,7 +1380,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     return activeServeBundleCache.bundle;
                 }
 
-                const bundle = UI.renderGraphVisualizationBundle(exportVisualizationPayload(), {
+                const bundle = await UI.renderGraphVisualizationBundle(exportVisualizationPayload(), {
                     documentationCatalogs,
                     isServerMode,
                     liveReload: activeLiveReloadSession.model ?? undefined,
@@ -1469,7 +1469,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     });
     const dbPath = activeConfig.databasePath;
     const payload = exportVisualizationPayload();
-    const bundleArtifact = UI.renderGraphVisualizationBundle(payload, {
+    const bundleArtifact = await UI.renderGraphVisualizationBundle(payload, {
         documentationCatalogs,
         loadedTarget: createLoadedTarget(),
         mcpServerStatus: "not-started",
