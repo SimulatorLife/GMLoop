@@ -3,8 +3,11 @@ import { Command } from "commander";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
 import * as UI from "../modules/ui/index.js";
-import { printProjectPayload, type SharedProjectContextOptions } from "../workflow/project-context.js";
-import { resolveCommandProjectContext } from "../workflow/project-root.js";
+import {
+    printProjectPayload,
+    resolveCommandProjectContext,
+    type SharedProjectContextOptions
+} from "../workflow/project-root.js";
 
 function addUiSharedOptions(command: Command): Command {
     return command.addOption(createPathOption()).addOption(createConfigOption()).option("--json", "Emit JSON output.");

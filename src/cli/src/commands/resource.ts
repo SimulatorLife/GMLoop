@@ -4,7 +4,7 @@ import { Command } from "commander";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
-import { ensureProjectGraphIndex, printProjectPayload } from "../workflow/project-context.js";
+import { ensureProjectGraphIndex, printProjectPayload } from "../workflow/project-root.js";
 
 type ResourceCommandSharedOptions = Readonly<{
     config?: string;
