@@ -1084,7 +1084,7 @@ void test("WebSocket client removes socket observers on disconnect to prevent li
         }
     }
 
-    globalWithWebSocket.WebSocket = ListenerTrackingWebSocket as unknown as RuntimeWebSocketConstructor;
+    globalWithWebSocket.WebSocket = ListenerTrackingWebSocket;
 
     try {
         const client = RuntimeWrapper.createWebSocketClient({

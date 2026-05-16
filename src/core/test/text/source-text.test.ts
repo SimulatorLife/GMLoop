@@ -4,6 +4,18 @@ import { describe, it } from "node:test";
 import { Core } from "../../index.js";
 import { isValidSourceTextType, SourceTextValidationError, validateSourceText } from "../../src/text/source-text.js";
 
+function isFunctionSourceTextValidationError(error: unknown): boolean {
+    return (
+        error instanceof SourceTextValidationError &&
+        error.message.includes("must be a string") &&
+        error.message.includes("function")
+    );
+}
+
+function invalidFunctionSourceText(): string {
+    return "x = 42;";
+}
+
 void describe("validateSourceText", () => {
     void describe("successful validation", () => {
         void it("should accept valid non-empty strings", () => {
@@ -41,7 +53,7 @@ void describe("validateSourceText", () => {
     void describe("null and undefined handling", () => {
         void it("should reject null with descriptive error", () => {
             assert.throws(
-                () => validateSourceText(null as unknown as string),
+                () => validateSourceText(null),
                 (error: unknown) => {
                     return error instanceof SourceTextValidationError && error.message.includes("cannot be null");
                 }
@@ -50,7 +62,7 @@ void describe("validateSourceText", () => {
 
         void it("should reject undefined with descriptive error", () => {
             assert.throws(
-                () => validateSourceText(undefined as unknown as string),
+                () => validateSourceText(undefined),
                 (error: unknown) => {
                     return error instanceof SourceTextValidationError && error.message.includes("cannot be undefined");
                 }
@@ -61,7 +73,7 @@ void describe("validateSourceText", () => {
     void describe("type validation", () => {
         void it("should reject numbers", () => {
             assert.throws(
-                () => validateSourceText(123 as unknown as string),
+                () => validateSourceText(123),
                 (error: unknown) => {
                     return (
                         error instanceof SourceTextValidationError &&
@@ -74,7 +86,7 @@ void describe("validateSourceText", () => {
 
         void it("should reject booleans", () => {
             assert.throws(
-                () => validateSourceText(true as unknown as string),
+                () => validateSourceText(true),
                 (error: unknown) => {
                     return (
                         error instanceof SourceTextValidationError &&
@@ -87,7 +99,7 @@ void describe("validateSourceText", () => {
 
         void it("should reject objects", () => {
             assert.throws(
-                () => validateSourceText({ text: "x = 42;" } as unknown as string),
+                () => validateSourceText({ text: "x = 42;" }),
                 (error: unknown) => {
                     return (
                         error instanceof SourceTextValidationError &&
@@ -100,7 +112,7 @@ void describe("validateSourceText", () => {
 
         void it("should reject arrays with descriptive type label", () => {
             assert.throws(
-                () => validateSourceText(["x = 42;"] as unknown as string),
+                () => validateSourceText(["x = 42;"] as unknown),
                 (error: unknown) => {
                     return (
                         error instanceof SourceTextValidationError &&
@@ -112,21 +124,12 @@ void describe("validateSourceText", () => {
         });
 
         void it("should reject functions", () => {
-            assert.throws(
-                () => validateSourceText((() => "x = 42;") as unknown as string),
-                (error: unknown) => {
-                    return (
-                        error instanceof SourceTextValidationError &&
-                        error.message.includes("must be a string") &&
-                        error.message.includes("function")
-                    );
-                }
-            );
+            assert.throws(() => validateSourceText(invalidFunctionSourceText), isFunctionSourceTextValidationError);
         });
 
         void it("should reject symbols", () => {
             assert.throws(
-                () => validateSourceText(Symbol("test") as unknown as string),
+                () => validateSourceText(Symbol("test")),
                 (error: unknown) => {
                     return (
                         error instanceof SourceTextValidationError &&

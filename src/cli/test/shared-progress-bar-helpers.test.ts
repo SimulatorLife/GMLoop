@@ -4,7 +4,6 @@ import { afterEach, describe, it, mock } from "node:test";
 import {
     disposeProgressBars,
     type ProgressBarLike,
-    type ProgressBarStream,
     renderProgressBar,
     resetProgressBarRegistryForTesting
 } from "../src/shared/progress-bar.js";
@@ -48,13 +47,13 @@ void describe("manual CLI helpers", () => {
         };
 
         renderProgressBar("Task", 0, 3, 5, {
-            stdout: stdout as ProgressBarStream
+            stdout
         });
         renderProgressBar("Task", 1, 3, 5, {
-            stdout: stdout as ProgressBarStream
+            stdout
         });
         renderProgressBar("Task", 3, 3, 5, {
-            stdout: stdout as ProgressBarStream
+            stdout
         });
 
         const sanitized = writes.join("").replaceAll(ANSI_ESCAPE_SEQUENCE_PATTERN, "").replaceAll("\r", "\n");

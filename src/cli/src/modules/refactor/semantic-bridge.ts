@@ -774,9 +774,7 @@ export class GmlSemanticBridge {
      * Get the identifiers map, handling structural differences in the project index.
      */
     private get identifiers(): SemanticIdentifierCollections {
-        return (this.projectIndex.identifiers ??
-            this.projectIndex.identifierCollections ??
-            {}) as SemanticIdentifierCollections;
+        return this.projectIndex.identifiers ?? this.projectIndex.identifierCollections ?? {};
     }
 
     private getIndexes(): SemanticBridgeIndexes {

@@ -3,7 +3,7 @@ import { html } from "lit";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
 import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
-import { createGraphLayout, type GraphLayoutNode,listGraphEdgeTypes, listGraphNodeKinds } from "../graph-layout.js";
+import { createGraphLayout, type GraphLayoutNode, listGraphEdgeTypes, listGraphNodeKinds } from "../graph-layout.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
@@ -110,13 +110,21 @@ export class GmGraphPanel extends LightDomLitElement {
     }
 
     #renderEmptyState() {
-        const hasStartupState = this.model?.data.nodes.length === 0 && this.model.loadedTarget === null;
+        const startupState = this.model?.startupState ?? null;
+        const isStartupLoading = startupState?.phase === "loading";
+        const isStartupError = startupState?.phase === "error";
         return html`
             <div id="graph-empty-state" class="graph-empty-state" role="status" aria-live="polite">
-                ${hasStartupState
+                ${isStartupLoading
                     ? html`<div id="graph-empty-state-indicator" class="graph-empty-state-indicator">
                           <span class="loading-spinner graph-empty-state-spinner" aria-hidden="true"></span>
-                          <span>Loading project data…</span>
+                          <span>${startupState.message}</span>
+                      </div>`
+                    : null}
+                ${isStartupError
+                    ? html`<div class="graph-empty-state-error">
+                          <strong>${startupState.message}</strong>
+                          ${startupState.detail ? html`<p>${startupState.detail}</p>` : null}
                       </div>`
                     : null}
                 <strong
@@ -137,8 +145,9 @@ export class GmGraphPanel extends LightDomLitElement {
         nodeKinds: ReadonlyArray<GraphVisualizationNodeKind>,
         edgeTypes: ReadonlyArray<GraphVisualizationEdgeType>
     ) {
+        const legendClassName = this.state?.activeGraphView === "visual" ? "" : "hidden";
         return html`
-            <aside id="legend" aria-label="Graph filters">
+            <aside id="legend" class=${legendClassName} aria-label="Graph filters">
                 <div class="filter-section">
                     <strong>Nodes</strong>
                     ${nodeKinds.map(

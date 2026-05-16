@@ -27,13 +27,14 @@
     "@gmloop/parser": "workspace:*"
   },
   "devDependencies": {
-    "@gmloop/fixture-runner": "workspace:*"
+    "@gmloop/fixture-runner": "workspace:*",
+    "typescript": "catalog:",
+    "@types/node": "catalog:"
   },
   "engines": {
     "node": ">=22.5.0"
   },
   "peerDependencies": {
-    "prettier": "^3.0.0"
-  },
-  "packageManager": "pnpm@11.0.8"
+    "prettier": "catalog:"
+  }
 }

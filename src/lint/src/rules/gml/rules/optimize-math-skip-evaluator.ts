@@ -313,7 +313,7 @@ export function evaluateCanonicalFormDecision(
     node: unknown,
     config: NumericLiteralCanonicalFormPolicy = DEFAULT_NUMERIC_LITERAL_POLICY
 ): boolean {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "Literal") {
         return false;
     }
@@ -391,7 +391,7 @@ function formatCanonicalNumericLiteralWithConfig(
  * @returns Numeric value if node represents a constant number, null otherwise
  */
 export function tryEvaluateNumericOperand(node: unknown): number | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression) {
         return null;
     }

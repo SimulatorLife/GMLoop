@@ -1,7 +1,7 @@
-import { Core } from "@gmloop/core";
 import { html, type PropertyValues } from "lit";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import { getUiErrorMessage } from "../error-message.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE, resolveInitialPlaygroundGmlSource } from "../playground-default-gml.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -66,7 +66,9 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         if (savedInput !== this.#gmlInput) {
             localStorage.setItem("gmloop-playground-input", this.#gmlInput);
         }
-        void this.#processInput();
+        if (this.state?.activePage === "playground") {
+            void this.#processInput();
+        }
     }
 
     protected updated(changedProperties: PropertyValues): void {
@@ -214,7 +216,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 this.#gmlOutput = data.payload.output;
             }
         } catch (error) {
-            this.#error = Core.getErrorMessage(error, { fallback: "Unknown error" });
+            this.#error = getUiErrorMessage(error, "Unknown error");
             this.#gmlOutput = "";
             this.#astJson = "";
         }

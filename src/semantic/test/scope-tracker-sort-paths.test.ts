@@ -21,12 +21,7 @@ void describe("ScopeTracker: sortPathsForReanalysis", () => {
         declareAt(tracker, "x");
         tracker.exitScope();
 
-        const result = tracker.sortPathsForReanalysis([
-            null as unknown as string,
-            undefined as unknown as string,
-            "",
-            "/a.gml"
-        ]);
+        const result = tracker.sortPathsForReanalysis([null, undefined, "", "/a.gml"]);
         assert.deepStrictEqual(result, ["/a.gml"]);
     });
 

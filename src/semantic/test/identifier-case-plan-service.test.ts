@@ -93,7 +93,7 @@ void test("identifier case plan helpers delegate through segregated services", {
 
     try {
         await prepareIdentifierCasePlan({ flag: "prepare" });
-        getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" } as any, { flag: "rename" });
+        getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" }, { flag: "rename" });
 
         const snapshot = captureIdentifierCasePlanSnapshot({
             flag: "capture"

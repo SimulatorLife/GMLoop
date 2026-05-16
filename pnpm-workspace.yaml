@@ -12,6 +12,14 @@ packages:
   - src/fixture-runner
   - src/mcp
 
+catalog:
+  "@eslint/compat": "^2"
+  "@eslint/js": "^10"
+  "@types/node": "^25"
+  eslint: "^10"
+  prettier: "^3"
+  typescript: "^6"
+
 onlyBuiltDependencies:
   - esbuild
   - fast-folder-size

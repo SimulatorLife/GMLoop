@@ -161,7 +161,7 @@ await test("transpileScript rejects non-Program ast objects", () => {
                 sourceText: "x = 1 + 2",
                 symbolId: "gml/script/test",
                 ast: { type: "BinaryExpression", body: [] }
-            } as unknown as TranspileScriptArgs),
+            }),
         {
             message: /ast\.type to be 'Program'/
         }

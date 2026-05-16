@@ -187,7 +187,8 @@ interface InfrastructureConfig {
  * Composes all specialized configuration interfaces into a single contract.
  */
 interface WatchCommandOptions
-    extends FileWatchingConfig,
+    extends
+        FileWatchingConfig,
         LoggingConfig,
         WebSocketServerConfig,
         StatusServerConfig,
@@ -261,7 +262,8 @@ interface WatchLifecycle {
  * than this composite when possible.
  */
 interface RuntimeContext
-    extends Omit<
+    extends
+        Omit<
             TranspilationContext,
             | "transpiler"
             | "patches"

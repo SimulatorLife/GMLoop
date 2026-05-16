@@ -277,12 +277,7 @@ void describe("ScopeTracker batch invalidation", () => {
         tracker.enterScope("program", { path: "/project/valid.gml" });
         tracker.declare("x", { name: "x" });
 
-        const results = tracker.getBatchInvalidationSets([
-            "",
-            null as unknown as string,
-            undefined as unknown as string,
-            "/project/valid.gml"
-        ]);
+        const results = tracker.getBatchInvalidationSets(["", null, undefined, "/project/valid.gml"]);
 
         assert.ok(results.has("/project/valid.gml"), "Should process valid path");
         const validResults = results.get("/project/valid.gml");

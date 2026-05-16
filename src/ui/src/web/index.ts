@@ -5,7 +5,8 @@ import type {
     GraphVisualizationLiveReloadModel,
     GraphVisualizationLoadedTarget,
     GraphVisualizationProjectConfigurationCatalog,
-    GraphVisualizationRenderOptions
+    GraphVisualizationRenderOptions,
+    GraphVisualizationStartupState
 } from "../graph/types.js";
 import { registerGraphVisualizationCustomElements } from "./register-components.js";
 
@@ -53,6 +54,7 @@ declare global {
         __GMLOOP_LOADED_TARGET__?: GraphVisualizationLoadedTarget;
         __GMLOOP_LIVE_RELOAD__?: GraphVisualizationLiveReloadModel;
         __GMLOOP_PROJECT_CONFIGURATION__?: GraphVisualizationProjectConfigurationCatalog;
+        __GMLOOP_STARTUP_STATE__?: GraphVisualizationStartupState;
     }
 }
 
@@ -75,7 +77,8 @@ function readGraphVisualizationWebBootstrapPayload(): GraphVisualizationWebBoots
             loadedTarget: optionPayload.loadedTarget ?? globalThis.__GMLOOP_LOADED_TARGET__,
             liveReload: optionPayload.liveReload ?? globalThis.__GMLOOP_LIVE_RELOAD__,
             projectConfigurationCatalog:
-                optionPayload.projectConfigurationCatalog ?? globalThis.__GMLOOP_PROJECT_CONFIGURATION__
+                optionPayload.projectConfigurationCatalog ?? globalThis.__GMLOOP_PROJECT_CONFIGURATION__,
+            startupState: optionPayload.startupState ?? globalThis.__GMLOOP_STARTUP_STATE__
         }
     };
 }

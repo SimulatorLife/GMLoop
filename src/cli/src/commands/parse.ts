@@ -57,7 +57,7 @@ type DryRunPayload =
       };
 
 function resolveCommandOptions(command: CommanderCommandLike): ParseCommandOptions {
-    return command.opts() as ParseCommandOptions;
+    return command.opts();
 }
 
 function resolveParseCommandSettings(command: CommanderCommandLike): ParseCommandSettings {

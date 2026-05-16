@@ -12,7 +12,6 @@ import {
 import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { unwrapParenthesizedExpression } = Core;
-type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
 
 function isStringLiteralExpression(expression: unknown): boolean {
     if (!isAstNodeRecord(expression) || expression.type !== "Literal") {
@@ -49,11 +48,14 @@ function isTemplateStringTextAtom(node: unknown): node is AstNodeRecord {
 }
 
 function getNodeTextFromContext(context: Rule.RuleContext, astNode: any): string {
-    if (typeof context.getSourceCode === "function") {
-        return context.getSourceCode().getText(astNode);
+    const sourceCode = context.sourceCode;
+    const nodeText = sourceCode.getText(astNode);
+    if (nodeText.length > 0) {
+        return nodeText;
     }
+
     if (isAstNodeRecord(astNode) && Array.isArray(astNode.range)) {
-        const txt = context.sourceCode.text;
+        const txt = sourceCode.text;
         const [start, end] = astNode.range;
         if (typeof start === "number" && typeof end === "number") {
             return txt.slice(start, end);
@@ -110,7 +112,7 @@ function extractStringLiteralText(context: Rule.RuleContext, literalNode: AstNod
 }
 
 function collectConcatenationParts(node: unknown, output: Array<unknown>): void {
-    const candidate = unwrapParenthesizedExpression(node as UnwrapParenthesizedExpressionInput);
+    const candidate = unwrapParenthesizedExpression(node);
     if (isBinaryStringConcatenationExpression(candidate)) {
         collectConcatenationParts(candidate.left, output);
         collectConcatenationParts(candidate.right, output);
@@ -217,7 +219,7 @@ function buildTemplateBody(context: Rule.RuleContext, node: AstNodeRecord): stri
     };
 
     for (const part of concatenationParts) {
-        const segment = unwrapParenthesizedExpression(part as UnwrapParenthesizedExpressionInput);
+        const segment = unwrapParenthesizedExpression(part);
 
         if (isAstNodeRecord(segment) && isStringLiteralExpression(segment)) {
             const literalText = extractStringLiteralText(context, segment);

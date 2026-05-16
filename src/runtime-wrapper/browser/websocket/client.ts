@@ -614,7 +614,7 @@ function decodeBinaryPayload(
 
 function toUint8Array(payload: ArrayBuffer | ArrayBufferView): Uint8Array {
     if (Core.isArrayBufferLike(payload)) {
-        return new Uint8Array(payload as ArrayBufferLike);
+        return new Uint8Array(payload);
     }
 
     if (ArrayBuffer.isView(payload)) {

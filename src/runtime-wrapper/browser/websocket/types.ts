@@ -191,7 +191,8 @@ export interface WebSocketPatchQueueManager {
  * when possible.
  */
 export interface RuntimeWebSocketClient
-    extends WebSocketConnectionLifecycle,
+    extends
+        WebSocketConnectionLifecycle,
         WebSocketMessageSender,
         WebSocketInstanceProvider,
         WebSocketMetricsCollector,

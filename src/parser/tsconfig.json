@@ -4,7 +4,6 @@
     "rootDir": ".",
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "baseUrl": ".",
     "allowJs": true,
     "paths": {
       "@gmloop/cli": ["../cli/index.ts"],

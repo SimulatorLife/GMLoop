@@ -185,7 +185,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
     void describe("input validation", () => {
         void it("throws TypeError when request is not an object", () => {
             const transpiler = new Transpiler.GmlTranspiler();
-            assert.throws(() => transpiler.transpileEvent(null as never), {
+            assert.throws(() => transpiler.transpileEvent(null), {
                 name: "TypeError",
                 message: /transpileEvent requires a request object/
             });

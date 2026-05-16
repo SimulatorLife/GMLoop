@@ -21,18 +21,15 @@
   },
   "dependencies": {
     "@gmloop/core": "workspace:*",
-    "browser-fs-access": "^0.38.0",
-    "d3": "^7.9.0",
-    "lit": "^3.3.1"
+    "lit": "^3.3.3",
+    "vite": "^8.0.13"
   },
   "devDependencies": {
-    "@types/d3": "^7.4.3",
-    "@types/node": "^22.19.7",
+    "@types/node": "catalog:",
     "linkedom": "^0.18.12",
-    "vite": "^7.1.9"
+    "typescript": "catalog:"
   },
   "engines": {
     "node": ">=22.5.0"
-  },
-  "packageManager": "pnpm@11.0.8"
+  }
 }

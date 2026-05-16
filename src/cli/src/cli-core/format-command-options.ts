@@ -115,7 +115,7 @@ export function collectFormatCommandOptions(
     return {
         targetPathInput,
         targetPathProvided,
-        configPath: getNonEmptyTrimmedString(options.config as string | undefined) ?? null,
+        configPath: getNonEmptyTrimmedString(options.config) ?? null,
         prettierLogLevel,
         onParseError,
         dryRunMode,

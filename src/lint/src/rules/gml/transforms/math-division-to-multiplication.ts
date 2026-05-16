@@ -148,7 +148,7 @@ function flattenMultiplicativeOperand(node: MutableGameMakerAstNode) {
             break;
         }
 
-        current = expression as ParenthesizedExpressionNode | null;
+        current = expression;
     }
 }
 

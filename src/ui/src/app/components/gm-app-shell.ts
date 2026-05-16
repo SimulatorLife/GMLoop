@@ -1,4 +1,3 @@
-import { Core } from "@gmloop/core";
 import { html } from "lit";
 
 import {
@@ -6,6 +5,7 @@ import {
     type GraphVisualizationUiCallbacks,
     type GraphVisualizationUiModel
 } from "../contracts.js";
+import { getUiErrorMessage } from "../error-message.js";
 import { hasLoadedGraphIndex, hasLoadedGraphProject } from "../graph-availability.js";
 import { GraphVisualizationUiStore } from "../state/store.js";
 import type {
@@ -198,7 +198,7 @@ export class GmAppShell extends LightDomLitElement {
             this.#store.dispatch({ errorMessage: null, type: "set-error" });
             await hostAction();
         } catch (error) {
-            const message = Core.getErrorMessage(error, { fallback: "Unknown error" });
+            const message = getUiErrorMessage(error, "Unknown error");
             this.#store.dispatch({ errorMessage: message, type: "set-error" });
         } finally {
             this.#store.dispatch({ pending: false, type: pendingType });
@@ -212,7 +212,7 @@ export class GmAppShell extends LightDomLitElement {
             const status = await this.callbacks.onRefreshLiveReloadStatus();
             this.#store.dispatch({ status, type: "set-live-reload-status" });
         } catch (error) {
-            const message = Core.getErrorMessage(error, { fallback: "Unknown live-reload status error" });
+            const message = getUiErrorMessage(error, "Unknown live-reload status error");
             this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
         } finally {
             this.#store.dispatch({ pending: false, type: "set-live-reload-refresh-pending" });
@@ -235,7 +235,7 @@ export class GmAppShell extends LightDomLitElement {
                 };
             }
         } catch (error) {
-            const message = Core.getErrorMessage(error, { fallback: "Unknown live-reload startup error" });
+            const message = getUiErrorMessage(error, "Unknown live-reload startup error");
             this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
         } finally {
             this.#store.dispatch({ pending: false, type: "set-live-reload-start-pending" });
@@ -251,7 +251,7 @@ export class GmAppShell extends LightDomLitElement {
             this.#store.dispatch({ logLines: result.logLines, type: "set-fix-log-lines" });
             this.#store.dispatch({ status: result.status, type: "set-fix-status" });
         } catch (error) {
-            const message = Core.getErrorMessage(error, { fallback: "Unknown fix workflow error" });
+            const message = getUiErrorMessage(error, "Unknown fix workflow error");
             this.#store.dispatch({ errorMessage: message, type: "set-fix-error" });
             this.#store.dispatch({ status: "error", type: "set-fix-status" });
         } finally {

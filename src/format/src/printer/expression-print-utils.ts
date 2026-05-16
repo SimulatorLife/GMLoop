@@ -313,7 +313,7 @@ export function printEmptyBlock(path: any, options: any): any {
     }
 
     const comments = Core.getCommentArray(node);
-    const hasPrintableComments = comments.some(Core.isCommentNode as any);
+    const hasPrintableComments = comments.some(Core.isCommentNode);
 
     if (hasPrintableComments) {
         const sourceMetadata = resolvePrinterSourceMetadata(options);
@@ -323,7 +323,7 @@ export function printEmptyBlock(path: any, options: any): any {
 
         const trailingDocs = [hardline, "}"];
         if (shouldAddTrailingBlankLine) {
-            trailingDocs.unshift(lineSuffixBoundary as any, hardline as any);
+            trailingDocs.unshift(lineSuffixBoundary as any, hardline);
         }
 
         const inlineDangling = printDanglingComments(path, options, (comment: any) => comment.attachToBrace);
@@ -610,13 +610,9 @@ function maybePrintInlineEmptyBlockComment(path: any, options: any): any {
 
     const comment = comments[inlineIndex];
     const commentLeadingWS =
-        typeof comment === "object" && comment !== null && "leadingWS" in comment
-            ? (comment as { leadingWS: unknown }).leadingWS
-            : undefined;
+        typeof comment === "object" && comment !== null && "leadingWS" in comment ? comment.leadingWS : undefined;
     const commentTrailingWS =
-        typeof comment === "object" && comment !== null && "trailingWS" in comment
-            ? (comment as { trailingWS: unknown }).trailingWS
-            : undefined;
+        typeof comment === "object" && comment !== null && "trailingWS" in comment ? comment.trailingWS : undefined;
     const leadingSpacing = getInlineBlockCommentSpacing(commentLeadingWS, " ");
     const trailingSpacing = getInlineBlockCommentSpacing(commentTrailingWS, " ");
 
@@ -656,5 +652,5 @@ function getInlineBlockCommentSpacing(text: unknown, fallback: string): string {
         return fallback;
     }
 
-    return hasLineBreak(text as string) ? fallback : (text as string);
+    return hasLineBreak(text) ? fallback : (text as string);
 }

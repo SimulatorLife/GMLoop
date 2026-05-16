@@ -18,7 +18,6 @@
  */
 
 import { unwrapParenthesizedExpression } from "./node-helpers/index.js";
-import type { GameMakerAstNode } from "./types.js";
 
 /**
  * Epsilon-scaled tolerance for floating-point numeric comparisons.
@@ -135,7 +134,7 @@ export function areAstValuesEquivalentIgnoringParentheses(left: unknown, right: 
  */
 export function areExpressionNodesEquivalentIgnoringParentheses(left: unknown, right: unknown): boolean {
     return areAstValuesEquivalentIgnoringParentheses(
-        unwrapParenthesizedExpression(left as GameMakerAstNode | null | undefined),
-        unwrapParenthesizedExpression(right as GameMakerAstNode | null | undefined)
+        unwrapParenthesizedExpression(left),
+        unwrapParenthesizedExpression(right)
     );
 }

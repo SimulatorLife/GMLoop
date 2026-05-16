@@ -507,7 +507,8 @@ export interface CodemodCacheController {
  * interface when possible.
  */
 export interface CodemodEngine
-    extends CodemodSemanticProvider,
+    extends
+        CodemodSemanticProvider,
         CodemodTransformExecutor,
         CodemodRenameOperations,
         CodemodWorkspaceEditor,

@@ -6,7 +6,7 @@ type BrowserGlobalScope = Record<string, unknown>;
 
 function resolveBrowserGlobalScope(): BrowserGlobalScope | null {
     if (typeof globalThis === "object" && globalThis !== null) {
-        return globalThis as BrowserGlobalScope;
+        return globalThis;
     }
 
     return null;

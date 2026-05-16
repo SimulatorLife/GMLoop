@@ -571,7 +571,7 @@ function shouldAttemptManualNormalization(sourceTextOfNode: string): boolean {
 }
 
 function tryReadNumericLiteralValue(node: unknown): number | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression) {
         return null;
     }
@@ -580,7 +580,7 @@ function tryReadNumericLiteralValue(node: unknown): number | null {
 }
 
 function isCanonicalNumericLiteralText(sourceText: string, node: unknown): boolean {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "Literal") {
         return false;
     }
@@ -596,7 +596,7 @@ function isCanonicalNumericLiteralText(sourceText: string, node: unknown): boole
 }
 
 function isCanonicalConstantNumericExpression(sourceText: string, node: unknown): boolean {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression) {
         return false;
     }
@@ -648,7 +648,7 @@ function tryBuildConstantNumericReplacement(sourceText: string, node: unknown): 
 }
 
 function collectAdditiveTerms(node: unknown, terms: unknown[]): boolean {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression) {
         return false;
     }
@@ -662,7 +662,7 @@ function collectAdditiveTerms(node: unknown, terms: unknown[]): boolean {
 }
 
 function tryReadSquaredOperandText(sourceText: string, node: unknown): string | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "*") {
         return null;
     }
@@ -691,7 +691,7 @@ function tryBuildGroupedSquareSumReplacement(sourceText: string, node: unknown):
 }
 
 function tryReadHalfScaledBase(node: unknown) {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression") {
         return null;
     }
@@ -723,7 +723,7 @@ function tryReadHalfScaledBase(node: unknown) {
 }
 
 function tryBuildHalfLengthdirDifferenceReplacement(sourceText: string, node: unknown): string | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "-") {
         return null;
     }
@@ -782,7 +782,7 @@ type RatioMultiplierMatch = Readonly<{
 }>;
 
 function tryMatchRatioMultiplier(node: unknown): RatioMultiplierMatch | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "*") {
         return null;
     }
@@ -833,7 +833,7 @@ function formatCanonicalNumericLiteral(value: number): string | null {
 }
 
 function tryBuildGroupedRatioProductReplacement(sourceText: string, node: unknown): string | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "/") {
         return null;
     }
@@ -899,7 +899,7 @@ function collectAdditiveTermsForDotProduct(node: any, terms: any[]): boolean {
 }
 
 function isFastDotProductOperandCandidate(node: unknown): boolean {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || hasComment(expression)) {
         return false;
     }
@@ -1177,10 +1177,10 @@ function attemptManualNormalization(sourceText: string, node: any): string | nul
 
     const context = { sourceText };
     applyDivisionToMultiplication(clone);
-    applyManualMathNormalization(clone, context as any);
-    applyScalarCondensing(clone, context as any);
+    applyManualMathNormalization(clone, context);
+    applyScalarCondensing(clone, context);
     simplifyZeroDivisionNumerators(clone, context as any);
-    cleanupMultiplicativeIdentityParentheses(clone, context as any);
+    cleanupMultiplicativeIdentityParentheses(clone, context);
 
     const original = gmlRuleAutofixServices.readNodeText(sourceText, node) || "";
     if (Core.areExpressionNodesEquivalentIgnoringParentheses(node, clone)) {

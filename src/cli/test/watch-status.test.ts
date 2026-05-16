@@ -40,10 +40,10 @@ void describe("live-reload status command", () => {
                 withTemporaryProperty(
                     process,
                     "exit",
-                    ((code?: number) => {
+                    (code?: number) => {
                         errorThrown = true;
                         throw new Error(`Process exit: ${code ?? 0}`);
-                    }) as typeof process.exit,
+                    },
                     async () => {
                         try {
                             await runWatchStatusCommand({
@@ -87,18 +87,18 @@ void describe("live-reload status command", () => {
         await withTemporaryProperty(
             globalThis,
             "fetch",
-            (async () => {
+            async () => {
                 fetchCalled = true;
                 throw new Error("fetch should not be called for invalid format");
-            }) as typeof fetch,
+            },
             () =>
                 withTemporaryProperty(
                     process,
                     "exit",
-                    ((code?: number) => {
+                    (code?: number) => {
                         processExitCalled = true;
                         throw new Error(`Process exit: ${code ?? 0}`);
-                    }) as typeof process.exit,
+                    },
                     async () => {
                         await assert.rejects(
                             runWatchStatusCommand({
@@ -120,7 +120,7 @@ void describe("live-reload status command", () => {
         await withTemporaryProperty(
             globalThis,
             "fetch",
-            (async () => Response.json({ status: "ok" }, { status: 200 })) as typeof fetch,
+            async () => Response.json({ status: "ok" }, { status: 200 }),
             () =>
                 withTemporaryProperty(
                     console,

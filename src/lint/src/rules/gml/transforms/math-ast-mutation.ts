@@ -60,7 +60,7 @@ export function normalizeTraversalContext(
         }
         return { ...context, astRoot: ast };
     }
-    return { astRoot: ast } as { astRoot: any } & ConvertManualMathTransformOptions;
+    return { astRoot: ast };
 }
 
 // ---------------------------------------------------------------------------

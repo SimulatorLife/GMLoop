@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -22,9 +23,25 @@ import type {
 } from "./types.js";
 
 const GRAPH_VISUALIZATION_ENTRY_HTML_PATH = "index.html";
+const GRAPH_VISUALIZATION_WEB_ENTRY_RELATIVE_PATH = path.join("src", "web", "index.html");
+
+function resolveUiWorkspaceRoot(): string {
+    const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+    let candidateDirectory = moduleDirectory;
+
+    while (candidateDirectory !== path.dirname(candidateDirectory)) {
+        if (existsSync(path.join(candidateDirectory, GRAPH_VISUALIZATION_WEB_ENTRY_RELATIVE_PATH))) {
+            return candidateDirectory;
+        }
+
+        candidateDirectory = path.dirname(candidateDirectory);
+    }
+
+    throw new Error("Could not locate the @gmloop/ui workspace source root for graph visualization bundling.");
+}
 
 function resolveUiSourcePath(relativePath: string): string {
-    return fileURLToPath(new URL(`../web/${relativePath}`, import.meta.url));
+    return path.join(resolveUiWorkspaceRoot(), "src", "web", relativePath);
 }
 
 function createGraphVisualizationBundleFile(
@@ -117,6 +134,8 @@ function injectBootstrapPayload(
 }
 
 async function createViteWebBundle(outDirectory: string): Promise<void> {
+    const workspaceRoot = resolveUiWorkspaceRoot();
+    const entryHtmlPath = resolveUiSourcePath("index.html");
     await build({
         base: "./",
         build: {
@@ -124,13 +143,13 @@ async function createViteWebBundle(outDirectory: string): Promise<void> {
             manifest: false,
             outDir: outDirectory,
             rollupOptions: {
-                input: resolveUiSourcePath("index.html")
+                input: entryHtmlPath
             },
             sourcemap: true,
-            target: "es2022"
+            target: "es2021"
         },
-        configFile: false,
-        root: path.dirname(resolveUiSourcePath("index.html")),
+        configFile: path.join(workspaceRoot, "vite.config.ts"),
+        root: path.dirname(entryHtmlPath),
         logLevel: "silent"
     });
 }

@@ -61,7 +61,8 @@ async function resolveNewestDetectedLiveReloadTarget(tempRoot: string): Promise<
         const maybeFsError = error as NodeJS.ErrnoException;
         if (maybeFsError.code === "ENOENT") {
             throw new Error(
-                `GameMaker HTML5 temporary output root '${resolvedTempRoot}' was not found. Run the HTML5 build once or pass --html5-output explicitly.`
+                `GameMaker HTML5 temporary output root '${resolvedTempRoot}' was not found. Run the HTML5 build once or pass --html5-output explicitly.`,
+                { cause: error }
             );
         }
 

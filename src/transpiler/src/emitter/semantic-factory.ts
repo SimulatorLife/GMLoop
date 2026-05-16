@@ -34,12 +34,7 @@ export interface SemanticOracleOptions {
  * CallExpression, which may be any GML node type at runtime.
  */
 function hasIdentifierMetadata(value: unknown): value is IdentifierMetadata {
-    return (
-        typeof value === "object" &&
-        value !== null &&
-        "name" in value &&
-        typeof (value as { name: unknown }).name === "string"
-    );
+    return typeof value === "object" && value !== null && "name" in value && typeof value.name === "string";
 }
 
 /**

@@ -400,12 +400,7 @@ export class ScopeTracker {
     }
 
     private isScopeObject(value: unknown): value is Scope {
-        return (
-            typeof value === "object" &&
-            value !== null &&
-            "id" in value &&
-            typeof (value as { id: unknown }).id === "string"
-        );
+        return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string";
     }
 
     public buildClassifications(role?: ScopeRole | null, isDeclaration: boolean = false): string[] {

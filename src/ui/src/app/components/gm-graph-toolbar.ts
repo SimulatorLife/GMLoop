@@ -104,15 +104,20 @@ export class GmGraphToolbar extends LightDomLitElement {
             }
             case "4": {
                 event.preventDefault();
-                this.#emitNavigatePage("playground");
+                this.#emitNavigatePage("fix");
                 break;
             }
             case "5": {
                 event.preventDefault();
-                this.#emitNavigatePage("mcp");
+                this.#emitNavigatePage("playground");
                 break;
             }
             case "6": {
+                event.preventDefault();
+                this.#emitNavigatePage("mcp");
+                break;
+            }
+            case "7": {
                 event.preventDefault();
                 this.#emitNavigatePage("live-reload");
                 break;
@@ -231,11 +236,13 @@ export class GmGraphToolbar extends LightDomLitElement {
                   ? "Docs"
                   : this.state.activePage === "config"
                     ? "Config"
-                    : this.state.activePage === "playground"
-                      ? "Playground"
-                      : this.state.activePage === "mcp"
-                        ? "MCP"
-                        : "Live Reload";
+                    : this.state.activePage === "fix"
+                      ? "Fix"
+                      : this.state.activePage === "playground"
+                        ? "Playground"
+                        : this.state.activePage === "mcp"
+                          ? "MCP"
+                          : "Live Reload";
         const subheading =
             this.state.activePage === "graph"
                 ? "Explore relationships across scripts, objects, events, and other project resources."
@@ -243,11 +250,13 @@ export class GmGraphToolbar extends LightDomLitElement {
                   ? "Browse commands, tools, and rules that can help with your project."
                   : this.state.activePage === "config"
                     ? "Review the project settings and tool options currently in use."
-                    : this.state.activePage === "playground"
-                      ? "Interactive GML playground for parsing, formatting, and rule experiments."
-                      : this.state.activePage === "mcp"
-                        ? "Check tool access and connection status for integrations."
-                        : "Track live-update activity and recent reload problems.";
+                    : this.state.activePage === "fix"
+                      ? "Run the configured refactor, lint, and format workflow for the opened project."
+                      : this.state.activePage === "playground"
+                        ? "Interactive GML playground for parsing, formatting, and rule experiments."
+                        : this.state.activePage === "mcp"
+                          ? "Check tool access and connection status for integrations."
+                          : "Track live-update activity and recent reload problems.";
         const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const hasLoadedProject = hasLoadedGraphProject(this.model);
 

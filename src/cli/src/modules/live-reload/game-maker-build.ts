@@ -482,7 +482,8 @@ async function executeIgorHtml5Build(
     } catch (error) {
         if (Core.isErrorWithCode(error, "ENOENT")) {
             throw new Error(
-                `Could not find Igor executable '${command}'. Configure runtime.liveReload.build.toolPath or runtime.liveReload.build.runtimeRoot.`
+                `Could not find Igor executable '${command}'. Configure runtime.liveReload.build.toolPath or runtime.liveReload.build.runtimeRoot.`,
+                { cause: error }
             );
         }
 

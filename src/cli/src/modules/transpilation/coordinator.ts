@@ -373,7 +373,8 @@ export interface ErrorsSnapshot {
  * rather than this composite interface when possible.
  */
 export interface TranspilationContext
-    extends TranspilerProvider,
+    extends
+        TranspilerProvider,
         PatchHistoryStore,
         MetricsCollector,
         ErrorCollector,

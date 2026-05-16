@@ -32,7 +32,7 @@ export function createParserTransform<Options extends TransformOptions = EmptyTr
         name,
         defaultOptions: frozenDefaults,
         transform(ast: MutableGameMakerAstNode, options?: Options): MutableGameMakerAstNode {
-            const resolvedOptions = options ? (Object.assign({}, frozenDefaults, options) as Options) : frozenDefaults;
+            const resolvedOptions = options ? Object.assign({}, frozenDefaults, options) : frozenDefaults;
 
             return execute(ast, resolvedOptions);
         }

@@ -152,5 +152,5 @@ export async function loadFixtureProjectConfig(configPath: string): Promise<Fixt
     return Object.freeze({
         ...baseConfig,
         fixture
-    }) as FixtureProjectConfig;
+    });
 }

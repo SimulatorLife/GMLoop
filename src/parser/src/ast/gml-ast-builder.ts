@@ -153,7 +153,7 @@ export default class GameMakerASTBuilder {
             }
             return results;
         }
-        return this.visitor.visit(node as ParserContextWithMethods);
+        return this.visitor.visit(node);
     }
 
     visitChildren(node: unknown): any {

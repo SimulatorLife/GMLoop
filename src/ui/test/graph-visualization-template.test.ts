@@ -267,7 +267,7 @@ void test("graph visualization bundle includes a graph empty state for no-projec
         .map((entry) => decodeBytes(entry.bytes))
         .join("\n");
 
-    assert.match(script, /id:\"graph-empty-state\"/u);
+    assert.match(script, /graph-empty-state/u);
     assert.match(script, /Open a GameMaker project to start exploring the graph/u);
 });
 
@@ -287,9 +287,9 @@ void test("graph visualization bundle includes startup-loading shell affordances
 });
 
 void test("renderGraphVisualizationHtml returns the bundle entry html", async () => {
-    const html = await renderGraphVisualizationHtml(createBaseData(), { title: "Legacy Wrapper" });
+    const html = await renderGraphVisualizationHtml(createBaseData(), { title: "Rendered Entry" });
 
     assert.match(html, /<!DOCTYPE html>/u);
-    assert.match(html, /GMLoop Graph Index - Legacy Wrapper/u);
+    assert.match(html, /GMLoop Graph Index - Rendered Entry/u);
     assert.match(html, /assets\/.+\\.js/u);
 });

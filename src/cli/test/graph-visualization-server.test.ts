@@ -89,19 +89,18 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         const htmlResponse = await fetch(handle.url);
         assert.equal(htmlResponse.status, 200);
         const htmlText = await htmlResponse.text();
-        assert.match(htmlText, /id="regenerate"/u);
-        assert.match(htmlText, /assets\/graph-visualization\.js/u);
-        assert.match(htmlText, /assets\/vendor\/d3\.min\.js/u);
+        assert.match(htmlText, /window\.__GMLOOP_GRAPH_VISUALIZATION_DATA__/u);
+        assert.match(htmlText, /assets\/.+\.js/u);
+        assert.doesNotMatch(htmlText, /assets\/vendor\//u);
         assert.doesNotMatch(htmlText, /cdn\./u);
 
-        const scriptResponse = await fetch(`${handle.url}/assets/graph-visualization.js`);
+        const scriptPath = htmlText.match(/src="\.\/(assets\/[^"]+\.js)"/u)?.[1];
+        assert.ok(scriptPath);
+        const scriptResponse = await fetch(`${handle.url}/${scriptPath}`);
         assert.equal(scriptResponse.status, 200);
         const scriptText = await scriptResponse.text();
         assert.match(scriptText, /player_update/u);
-        assert.match(scriptText, /bootstrapGraphVisualizationApp/u);
-
-        const d3Response = await fetch(`${handle.url}/assets/vendor/d3.min.js`);
-        assert.equal(d3Response.status, 200);
+        assert.match(scriptText, /bootstrapGraphVisualizationLitApp/u);
 
         const reindexResponse = await fetch(`${handle.url}/api/reindex`, { method: "POST" });
         assert.equal(reindexResponse.status, 200);

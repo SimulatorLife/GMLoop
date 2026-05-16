@@ -113,7 +113,7 @@ export async function resolveCommandProjectContext(options: {
     const configPath = options.config ?? path.join(projectRoot, "gmloop.json");
     const loadedConfig = await Core.loadGmloopProjectConfig(configPath).catch(() => ({}));
     return {
-        projectConfig: Core.isObjectLike(loadedConfig) ? (loadedConfig as Record<string, unknown>) : {},
+        projectConfig: Core.isObjectLike(loadedConfig) ? loadedConfig : {},
         projectRoot
     };
 }

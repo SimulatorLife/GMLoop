@@ -5,7 +5,6 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "baseUrl": ".",
     "paths": {
       "@gmloop/cli": ["../cli/index.ts"],
       "@gmloop/core": ["../core/index.ts"],

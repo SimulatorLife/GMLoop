@@ -1,5 +1,8 @@
 import { fileURLToPath } from "node:url";
 
+import ts from "typescript";
+import type { Plugin } from "vite";
+
 const DEFAULT_API_PROXY_TARGET = "http://127.0.0.1:4173";
 const DEFAULT_DEV_SERVER_HOST = "127.0.0.1";
 const DEFAULT_DEV_SERVER_PORT = 4174;
@@ -16,6 +19,31 @@ const resolvePort = (input: string | undefined, fallbackPort: number): number =>
     return parsedPort;
 };
 
+function createTypeScriptTransformPlugin(): Plugin {
+    return {
+        name: "gmloop-ui-typescript-transform",
+        transform(code, id) {
+            if (!id.endsWith(".ts")) {
+                return null;
+            }
+
+            const output = ts.transpileModule(code, {
+                compilerOptions: {
+                    module: ts.ModuleKind.ESNext,
+                    target: ts.ScriptTarget.ES2021,
+                    useDefineForClassFields: true
+                },
+                fileName: id
+            });
+
+            return {
+                code: output.outputText,
+                map: output.sourceMapText ?? null
+            };
+        }
+    };
+}
+
 const resolveUiViteConfiguration = () => {
     const apiProxyTarget = process.env.GMLOOP_UI_API_PROXY_TARGET ?? DEFAULT_API_PROXY_TARGET;
     const devServerHost = process.env.GMLOOP_UI_DEV_HOST ?? DEFAULT_DEV_SERVER_HOST;
@@ -25,8 +53,9 @@ const resolveUiViteConfiguration = () => {
     return {
         root: resolveUiPath("./src/web"),
         base: "./",
+        plugins: [createTypeScriptTransformPlugin()],
         esbuild: {
-            target: "es2022"
+            target: "es2021"
         },
         server: {
             host: devServerHost,
@@ -46,7 +75,7 @@ const resolveUiViteConfiguration = () => {
             strictPort: true
         },
         build: {
-            target: "es2022",
+            target: "es2021",
             emptyOutDir: true,
             manifest: true,
             outDir: resolveUiPath("./dist/web"),

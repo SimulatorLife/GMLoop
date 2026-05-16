@@ -69,9 +69,7 @@ export const MEMBER_ACCESSOR_VALUES: readonly MemberAccessor[] = Object.freeze([
 /**
  * O(1) set for fast membership testing.
  */
-export const MEMBER_INDEX_ACCESSORS: ReadonlySet<MemberAccessor> = new Set(
-    MEMBER_ACCESSOR_VALUES
-) as ReadonlySet<MemberAccessor>;
+export const MEMBER_INDEX_ACCESSORS: ReadonlySet<MemberAccessor> = new Set(MEMBER_ACCESSOR_VALUES);
 
 /**
  * Narrows an arbitrary string to `MemberAccessor` when the value is known to be valid.
