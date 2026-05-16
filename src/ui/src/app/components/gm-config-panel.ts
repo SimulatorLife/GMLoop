@@ -63,7 +63,7 @@ function renderLintRuleEntry(entry: GraphVisualizationProjectConfigurationLintRu
             <span>${entry.description}</span>
             <div class="config-badge-row">
                 <span class=${`config-severity-badge ${entry.level}`}>${getLintLevelLabel(entry.level)}</span>
-                ${entry.fixable ? html`<gm-badge .label=${`fixable:${entry.fixable}`}></gm-badge>` : null}
+                ${entry.fixable ? html`<gm-badge .label=${"fixable"}></gm-badge>` : null}
             </div>
             ${hasOptions ? html`<pre class="config-value">${serializeConfigurationValue(entry.options)}</pre>` : null}
         </li>

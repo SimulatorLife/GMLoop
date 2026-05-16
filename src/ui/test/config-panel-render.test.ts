@@ -93,7 +93,7 @@ function createMockModel(): GraphVisualizationUiModel {
                 rules: [
                     {
                         description: "Disallow legacy globalvar declarations.",
-                        fixable: null,
+                        fixable: "code",
                         level: "warn",
                         options: {},
                         ruleId: "gml/no-globalvar"
@@ -177,5 +177,7 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
     assert.match(rendered, /All Levels/u);
     assert.match(rendered, /class="?config-severity-badge warn"?/u);
     assert.match(rendered, /class="?config-severity-badge error"?/u);
+    assert.match(rendered, /<gm-badge[^>]*>\s*fixable\s*<\/gm-badge>/u);
+    assert.doesNotMatch(rendered, /fixable:code/u);
     assert.doesNotMatch(rendered, /class="config-raw"/u);
 });

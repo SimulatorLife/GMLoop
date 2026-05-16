@@ -137,7 +137,7 @@
     .config-filter-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
     .config-filter-field > span { display: flex; align-items: center; gap: 6px; color: #f8fbff; font-size: 12px; font-weight: 700; }
     .config-filter-field select { min-height: 38px; width: 100%; border: 1px solid rgba(143,181,255,0.2); border-radius: 8px; background: rgba(5,10,19,0.75); color: #f8fbff; font: inherit; font-size: 13px; padding: 0 10px; }
-    .config-severity-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid transparent; font-size: 11px; font-weight: 800; line-height: 1; text-transform: uppercase; letter-spacing: 0; }
+    .config-severity-badge { display: inline-flex; align-items: center; justify-content: center; min-height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid transparent; font-size: 11px; font-weight: 800; line-height: 1; text-transform: uppercase; letter-spacing: 0; }
     .config-severity-badge.error { border-color: rgba(248,113,113,0.42); background: rgba(127,29,29,0.42); color: #fecaca; }
     .config-severity-badge.warn { border-color: rgba(251,146,60,0.42); background: rgba(124,45,18,0.42); color: #fed7aa; }
     .config-severity-badge.off { border-color: rgba(148,163,184,0.28); background: rgba(51,65,85,0.36); color: #cbd5e1; }

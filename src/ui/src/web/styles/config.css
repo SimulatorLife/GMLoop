@@ -163,6 +163,7 @@
 .config-severity-badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 22px;
   padding: 0 8px;
   border-radius: 999px;
