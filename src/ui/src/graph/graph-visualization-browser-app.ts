@@ -1352,7 +1352,7 @@ function wirePageNavigation(
     updateDocsViewStateFn: () => void,
     syncUrlState: () => void
 ): void {
-    ["graph", "docs", "config", "playground", "mcp", "live-reload"].forEach((pageValue) => {
+    ["graph", "docs", "config", "fix", "playground", "mcp", "live-reload"].forEach((pageValue) => {
         const button = document.getElementById(`tab-${pageValue}`);
         if (button instanceof HTMLButtonElement) {
             button.addEventListener("click", () => {
@@ -1615,6 +1615,7 @@ function updatePageState(
         { buttonId: "tab-graph", pageId: "graph-page", pageValue: "graph" },
         { buttonId: "tab-docs", pageId: "docs-page", pageValue: "docs" },
         { buttonId: "tab-config", pageId: "config-page", pageValue: "config" },
+        { buttonId: "tab-fix", pageId: "fix-page", pageValue: "fix" },
         { buttonId: "tab-playground", pageId: "playground-page", pageValue: "playground" },
         { buttonId: "tab-mcp", pageId: "mcp-page", pageValue: "mcp" },
         { buttonId: "tab-live-reload", pageId: "live-reload-page", pageValue: "live-reload" }
@@ -1656,6 +1657,9 @@ function updatePageState(
     if (state.activePage === "docs") {
         toolbarHeading.textContent = "Docs";
         toolbarSubheading.textContent = "Browse commands, tools, and rules that can help with your project.";
+    } else if (state.activePage === "fix") {
+        toolbarHeading.textContent = "Fix";
+        toolbarSubheading.textContent = "Apply configured refactor, lint, and format changes to the opened project.";
     } else if (state.activePage === "mcp") {
         toolbarHeading.textContent = "MCP";
         toolbarSubheading.textContent = "Check tool access and connection status for integrations.";
@@ -1696,6 +1700,7 @@ type GraphVisualizationSurfaceInitializer = Readonly<{
     updateDocsViewState: () => void;
     updateGraph: () => void;
     wireLiveReloadControls: () => void;
+    wireFixControls: () => void;
     wireOpenProjectButton: () => void;
     wireRegenerateButton: () => void;
     wireViewControls: () => void;
@@ -1720,6 +1725,7 @@ function initializeGraphVisualizationSurface(state: GraphVisualizationSurfaceIni
     state.wireRegenerateButton();
     state.wirePlaygroundControls();
     state.wireLiveReloadControls();
+    state.wireFixControls();
     state.applyPageState();
     state.updateGraph();
     globalThis.requestAnimationFrame(() => {
@@ -1914,6 +1920,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
         updateDocsViewState: () => updateDocsViewState(navigationState),
         updateGraph,
         wireLiveReloadControls: liveReloadController.wireControls,
+        wireFixControls,
         wireOpenProjectButton,
         wireRegenerateButton,
         wireViewControls,
@@ -3095,6 +3102,7 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                         dependencies.isServerMode,
                         currentStartupState
                     );
+                    updateFixControls();
                     renderProjectConfigurationCatalog();
                     button.attr("disabled", null).html(OPEN_PROJECT_BUTTON_LABEL);
                 } catch (error) {
@@ -3136,6 +3144,103 @@ export function bootstrapGraphVisualizationApp(dependencies: BrowserAppDependenc
                     button
                         .attr("disabled", null)
                         .html('<span class="button-content"><span class="button-label">Error</span></span>');
+                }
+            })();
+        });
+    }
+
+    function updateFixControls(): void {
+        const runFixButton = document.getElementById("run-fix");
+        const fixTarget = document.getElementById("fix-target");
+        if (!(runFixButton instanceof HTMLButtonElement) || !(fixTarget instanceof HTMLElement)) {
+            return;
+        }
+
+        const canRunFix = dependencies.isServerMode && currentLoadedTarget !== null;
+        runFixButton.disabled = !canRunFix;
+        fixTarget.classList.toggle("is-empty", !canRunFix);
+        if (currentLoadedTarget === null) {
+            fixTarget.textContent = "Open a project before running fixes.";
+            return;
+        }
+
+        fixTarget.textContent = dependencies.isServerMode
+            ? currentLoadedTarget.projectRoot
+            : "Serve mode is required to apply fixes.";
+    }
+
+    function setFixStatus(status: "error" | "idle" | "running" | "success", label: string): void {
+        const fixStatus = document.getElementById("fix-status");
+        if (!(fixStatus instanceof HTMLElement)) {
+            return;
+        }
+
+        fixStatus.className = `fix-status-chip ${status}`;
+        fixStatus.textContent = label;
+    }
+
+    function setFixError(message: string | null): void {
+        const fixError = document.getElementById("fix-error");
+        if (!(fixError instanceof HTMLElement)) {
+            return;
+        }
+
+        fixError.classList.toggle("hidden", message === null);
+        fixError.textContent = message ?? "";
+    }
+
+    function setFixLog(lines: ReadonlyArray<string>): void {
+        const fixLog = document.getElementById("fix-log");
+        if (!(fixLog instanceof HTMLElement)) {
+            return;
+        }
+
+        fixLog.textContent =
+            lines.length > 0 ? lines.join("\n") : "Fix workflow completed without additional log output.";
+    }
+
+    function wireFixControls(): void {
+        updateFixControls();
+        const runFixButton = document.getElementById("run-fix");
+        if (!(runFixButton instanceof HTMLButtonElement) || !dependencies.isServerMode) {
+            return;
+        }
+
+        runFixButton.addEventListener("click", () => {
+            void (async () => {
+                if (currentLoadedTarget === null) {
+                    return;
+                }
+
+                runFixButton.disabled = true;
+                runFixButton.innerHTML =
+                    '<span class="button-content"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">Applying Fixes...</span></span>';
+                setFixStatus("running", "Running");
+                setFixError(null);
+                setFixLog(["Starting project fix workflow..."]);
+
+                try {
+                    const response = await fetch("/api/fix", { method: "POST" });
+                    const payload = (await response.json()) as Readonly<{
+                        error?: string;
+                        logLines?: ReadonlyArray<string>;
+                        ok?: boolean;
+                    }>;
+                    if (!response.ok || payload.ok !== true) {
+                        throw new Error(payload.error ?? "Fix workflow failed.");
+                    }
+
+                    setFixLog(payload.logLines ?? []);
+                    setFixStatus("success", "Completed");
+                    globalThis.setTimeout(() => {
+                        globalThis.location.reload();
+                    }, 600);
+                } catch (error) {
+                    setFixError(readErrorMessage(error, "Fix workflow failed."));
+                    setFixStatus("error", "Needs Review");
+                    runFixButton.disabled = false;
+                    runFixButton.innerHTML =
+                        '<span class="button-content"><span class="button-label">Apply Fixes</span></span>';
                 }
             })();
         });

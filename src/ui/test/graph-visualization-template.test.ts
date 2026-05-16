@@ -52,6 +52,9 @@ void test("graph visualization entry html references local assets and avoids CDN
     assert.doesNotMatch(html, /<link[^>]+href="https?:\/\//u);
     assert.match(html, /id="docs-view-rules"/u);
     assert.match(html, /id="loaded-target-details"/u);
+    assert.match(html, /id="tab-fix"/u);
+    assert.match(html, /id="fix-page"/u);
+    assert.match(html, /id="run-fix"/u);
     assert.match(html, /id="tab-live-reload"/u);
     assert.match(html, /id="live-reload-page"/u);
     assert.match(html, /id="start-live-reload"/u);
