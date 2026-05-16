@@ -145,6 +145,7 @@ function createMockState(): GraphVisualizationUiState {
         fixStatus: "idle",
         isFixPending: false,
         isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",

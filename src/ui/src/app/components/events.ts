@@ -9,6 +9,7 @@ export const GRAPH_UI_EVENT_TRIGGER_REGENERATE = "gmloop-trigger-regenerate";
 export const GRAPH_UI_EVENT_TRIGGER_FIX = "gmloop-trigger-fix";
 export const GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT = "gmloop-trigger-open-project";
 export const GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD = "gmloop-trigger-refresh-live-reload";
+export const GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD = "gmloop-trigger-start-live-reload";
 export const GRAPH_UI_EVENT_RESET_DEFAULTS = "gmloop-reset-defaults";
 
 export type GraphUiNavigatePageDetail = Readonly<{ page: GraphVisualizationUiPage }>;

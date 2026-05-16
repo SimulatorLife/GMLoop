@@ -57,6 +57,7 @@ function createMockModel(): GraphVisualizationUiModel {
         liveReload: null,
         mcpServerStatus: "running",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "MCP"
     };
 }
@@ -72,6 +73,7 @@ function createMockState(): GraphVisualizationUiState {
         fixStatus: "idle",
         isFixPending: false,
         isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",

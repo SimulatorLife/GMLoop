@@ -61,6 +61,7 @@ void test("GmDocsPanel renders the Rules subview and project-facing rule content
         liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Rules Catalog"
     };
     panel.state = {
@@ -73,6 +74,7 @@ void test("GmDocsPanel renders the Rules subview and project-facing rule content
         fixStatus: "idle",
         isFixPending: false,
         isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
@@ -113,6 +115,7 @@ void test("GmDocsPanel renders an empty rules state when rule data is unavailabl
         liveReload: null,
         mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Rules Empty State"
     };
     panel.state = {
@@ -125,6 +128,7 @@ void test("GmDocsPanel renders an empty rules state when rule data is unavailabl
         fixStatus: "idle",
         isFixPending: false,
         isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",

@@ -28,7 +28,8 @@ import {
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
     GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
-    GRAPH_UI_EVENT_TRIGGER_REGENERATE
+    GRAPH_UI_EVENT_TRIGGER_REGENERATE,
+    GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD
 } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -145,6 +146,10 @@ export class GmAppShell extends LightDomLitElement {
         void this.#refreshLiveReloadStatus();
     };
 
+    #onTriggerStartLiveReload = (): void => {
+        void this.#startLiveReload();
+    };
+
     #onDismissErrorBanner = (): void => {
         this.#store.dispatch({ type: "clear-error" });
     };
@@ -165,6 +170,7 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_TRIGGER_REGENERATE, handler: this.#onTriggerRegenerate },
             { event: GRAPH_UI_EVENT_TRIGGER_FIX, handler: this.#onTriggerFix },
             { event: GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, handler: this.#onTriggerRefreshLiveReload },
+            { event: GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, handler: this.#onTriggerStartLiveReload },
             { event: "dismiss", handler: this.#onDismissErrorBanner }
         ]);
 
@@ -208,6 +214,29 @@ export class GmAppShell extends LightDomLitElement {
             this.#store.dispatch({ errorMessage: message, type: "set-live-reload-error" });
         } finally {
             this.#store.dispatch({ pending: false, type: "set-live-reload-refresh-pending" });
+        }
+    }
+
+    async #startLiveReload(): Promise<void> {
+        if (!this.model || !this.model.isServerMode) {
+            return;
+        }
+
+        try {
+            this.#store.dispatch({ pending: true, type: "set-live-reload-start-pending" });
+            this.#store.dispatch({ errorMessage: null, type: "set-live-reload-error" });
+            const liveReload = await this.callbacks.onStartLiveReload();
+            if (liveReload !== null) {
+                this.model = {
+                    ...this.model,
+                    liveReload
+                };
+            }
+        } catch (error) {
+            const message = Core.getErrorMessage(error, { fallback: "Unknown live-reload startup error" });
+            this.#store.dispatch({ errorMessage: message, type: "set-live-reload-error" });
+        } finally {
+            this.#store.dispatch({ pending: false, type: "set-live-reload-start-pending" });
         }
     }
 
