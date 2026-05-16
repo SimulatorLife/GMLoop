@@ -1375,7 +1375,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 return Object.freeze({ ast, output, error });
             },
             startLiveReload: (input) => ensureLiveReloadSessionStarted(input),
-            renderBundle: (isServerMode) => {
+            renderBundle: async (isServerMode) => {
                 if (isServerMode && activeServeBundleCache?.revision === activeServeRevision) {
                     return activeServeBundleCache.bundle;
                 }

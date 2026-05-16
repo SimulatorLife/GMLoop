@@ -69,6 +69,7 @@ function createMockModel(): GraphVisualizationUiModel {
             lint: { rules: [], rulesets: [], ruleset: null },
             refactor: { codemods: [] }
         },
+        startupState: null,
         title: "Test"
     };
 }
