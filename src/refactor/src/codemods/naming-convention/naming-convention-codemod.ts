@@ -803,9 +803,7 @@ export async function planNamingConventionCodemod(
     const isSelectedTargetPath = createPathSelectionMatcher(parameters.projectRoot, parameters.targetPaths, []);
     const selectedWholeProject =
         includesWholeProjectSelection(parameters.projectRoot, parameters.targetPaths) && !tracksLocalTargets;
-    const selectedFilePaths = selectedWholeProject
-        ? [...(parameters.gmlFilePaths ?? [])]
-        : (parameters.gmlFilePaths ?? []).filter((filePath) => isSelectedTargetPath(filePath));
+    const selectedFilePaths = [...(parameters.gmlFilePaths ?? [])];
     const queryPaths = selectedWholeProject
         ? []
         : buildNamingTargetQueryPaths(parameters.projectRoot, selectedFilePaths);
