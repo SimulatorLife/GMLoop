@@ -38,6 +38,8 @@ type GraphVisualizationServerStartLiveReload = (
     }>
 ) => Promise<unknown>;
 
+type GraphVisualizationServerRunFix = () => Promise<Readonly<{ logLines: ReadonlyArray<string> }>>;
+
 export type GraphVisualizationServerOptions = Readonly<{
     host?: string;
     port?: number;
@@ -46,6 +48,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     renderBundle: GraphVisualizationServerRenderBundle;
     openProjectTargets?: GraphVisualizationServerOpenProjectTargets;
     processPlayground?: GraphVisualizationServerProcessPlayground;
+    runFix?: GraphVisualizationServerRunFix;
     startLiveReload?: GraphVisualizationServerStartLiveReload;
 }>;
 
@@ -106,6 +109,18 @@ export async function startGraphVisualizationServer(
                     const regenerationResult = await options.regenerate();
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ changed: regenerationResult.changed, ok: true }));
+                } catch (error: unknown) {
+                    response.writeHead(500, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
+                }
+                return;
+            }
+
+            if (request.method === "POST" && request.url === "/api/fix" && options.runFix) {
+                try {
+                    const fixResult = await options.runFix();
+                    response.writeHead(200, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ logLines: fixResult.logLines, ok: true }));
                 } catch (error: unknown) {
                     response.writeHead(500, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ error: resolveErrorMessage(error) }));

@@ -140,6 +140,10 @@ function createMockState(): GraphVisualizationUiState {
         activeGraphView: "visual",
         activePage: "config",
         errorMessage: null,
+        fixErrorMessage: null,
+        fixLogLines: [],
+        fixStatus: "idle",
+        isFixPending: false,
         isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
@@ -177,7 +181,7 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
     assert.match(rendered, /All Levels/u);
     assert.match(rendered, /class="?config-severity-badge warn"?/u);
     assert.match(rendered, /class="?config-severity-badge error"?/u);
-    assert.match(rendered, /<gm-badge[^>]*>\s*fixable\s*<\/gm-badge>/u);
+    assert.match(rendered, /<gm-badge[^>]*\.label=fixable/u);
     assert.doesNotMatch(rendered, /fixable:code/u);
     assert.doesNotMatch(rendered, /class="config-raw"/u);
 });

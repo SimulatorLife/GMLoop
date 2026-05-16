@@ -25,6 +25,7 @@ import {
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
+    GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
     GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE
@@ -125,11 +126,19 @@ export class GmAppShell extends LightDomLitElement {
     };
 
     #onTriggerRegenerate = (): void => {
-        if (!this.model || !hasLoadedGraphProject(this.model)) {
+        if (!this.model || !this.model.isServerMode || !hasLoadedGraphProject(this.model)) {
             return;
         }
 
         void this.#runHostActionWithPendingState("set-regenerate-pending", this.callbacks.onRegenerate);
+    };
+
+    #onTriggerFix = (): void => {
+        if (!this.model || !hasLoadedGraphProject(this.model)) {
+            return;
+        }
+
+        void this.#runFixWorkflow();
     };
 
     #onTriggerRefreshLiveReload = (): void => {
@@ -154,6 +163,7 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults },
             { event: GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, handler: this.#onTriggerOpenProject },
             { event: GRAPH_UI_EVENT_TRIGGER_REGENERATE, handler: this.#onTriggerRegenerate },
+            { event: GRAPH_UI_EVENT_TRIGGER_FIX, handler: this.#onTriggerFix },
             { event: GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, handler: this.#onTriggerRefreshLiveReload },
             { event: "dismiss", handler: this.#onDismissErrorBanner }
         ]);
@@ -201,6 +211,23 @@ export class GmAppShell extends LightDomLitElement {
         }
     }
 
+    async #runFixWorkflow(): Promise<void> {
+        try {
+            this.#store.dispatch({ pending: true, type: "set-fix-pending" });
+            this.#store.dispatch({ errorMessage: null, type: "set-fix-error" });
+            this.#store.dispatch({ logLines: ["Starting project fix workflow..."], type: "set-fix-log-lines" });
+            const result = await this.callbacks.onRunFix();
+            this.#store.dispatch({ logLines: result.logLines, type: "set-fix-log-lines" });
+            this.#store.dispatch({ status: result.status, type: "set-fix-status" });
+        } catch (error) {
+            const message = Core.getErrorMessage(error, { fallback: "Unknown fix workflow error" });
+            this.#store.dispatch({ errorMessage: message, type: "set-fix-error" });
+            this.#store.dispatch({ status: "error", type: "set-fix-status" });
+        } finally {
+            this.#store.dispatch({ pending: false, type: "set-fix-pending" });
+        }
+    }
+
     protected override render() {
         if (!this.model) {
             return html``;
@@ -222,6 +249,7 @@ export class GmAppShell extends LightDomLitElement {
                     <gm-playground-panel .model=${this.model} .state=${this.#state}></gm-playground-panel>
                     <gm-docs-panel .model=${this.model} .state=${this.#state}></gm-docs-panel>
                     <gm-config-panel .model=${this.model} .state=${this.#state}></gm-config-panel>
+                    <gm-fix-panel .model=${this.model} .state=${this.#state}></gm-fix-panel>
                     <gm-mcp-panel .model=${this.model} .state=${this.#state}></gm-mcp-panel>
                     <gm-live-reload-panel .model=${this.model} .state=${this.#state}></gm-live-reload-panel>
                 </main>

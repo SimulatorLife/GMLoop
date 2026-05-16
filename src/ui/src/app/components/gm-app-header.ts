@@ -169,6 +169,16 @@ export class GmAppHeader extends LightDomLitElement {
                                     Config
                                 </button>
                                 <button
+                                    id="tab-fix"
+                                    aria-pressed=${this.state.activePage === "fix"}
+                                    class=${this.state.activePage === "fix"
+                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    @click=${() => this.#emitNavigatePage("fix")}
+                                >
+                                    Fix
+                                </button>
+                                <button
                                     id="tab-playground"
                                     aria-pressed=${this.state.activePage === "playground"}
                                     class=${this.state.activePage === "playground"

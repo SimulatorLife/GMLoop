@@ -97,6 +97,10 @@ function createMockState(): GraphVisualizationUiState {
         activeGraphView: "visual",
         activePage: "live-reload",
         errorMessage: null,
+        fixErrorMessage: null,
+        fixLogLines: [],
+        fixStatus: "idle",
+        isFixPending: false,
         isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
@@ -162,6 +166,7 @@ void test("GmAppShell routes live-reload refresh events through the host callbac
     shell.callbacks = {
         onOpenProject: () => {},
         onRegenerate: () => {},
+        onRunFix: () => ({ logLines: [], status: "success" }),
         onRefreshLiveReloadStatus: () => {
             refreshCount += 1;
             return createStatusSnapshot();

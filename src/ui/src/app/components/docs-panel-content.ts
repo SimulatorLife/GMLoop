@@ -3,6 +3,7 @@ import type {
     GraphVisualizationDocumentationCatalogs,
     GraphVisualizationMcpToolCatalogEntry
 } from "../../graph/types.js";
+import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
 
 export type GraphVisualizationDocsPanelRulesSection = Readonly<{
     description: string;
@@ -67,7 +68,7 @@ export function createGraphVisualizationDocsPanelContent(
             description: "Checks that spot common issues and can often fix them for you.",
             items: rulesCatalog.lintRules.map((entry) =>
                 createRulesSectionItem(entry.ruleId, entry.description, [
-                    entry.fixable === null ? "not-fixable" : `fixable:${entry.fixable}`
+                    getLintFixableBadgeLabel(entry.fixable) ?? "not-fixable"
                 ])
             ),
             title: "Lint Rules"

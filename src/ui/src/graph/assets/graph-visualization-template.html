@@ -48,6 +48,7 @@
             <button id="tab-graph" class="top-nav-button active">Graph Index</button>
             <button id="tab-docs" class="top-nav-button">Docs</button>
             <button id="tab-config" class="top-nav-button">Config</button>
+            <button id="tab-fix" class="top-nav-button">Fix</button>
             <button id="tab-playground" class="top-nav-button">Playground</button>
             <button id="tab-mcp" class="top-nav-button">MCP</button>
             <button id="tab-live-reload" class="top-nav-button">Live Reload</button>
@@ -128,6 +129,30 @@
     <section id="config-page" class="page docs-page">
       <p id="config-meta" class="docs-meta"></p>
       <div id="config-content" class="config-stack"></div>
+    </section>
+    <section id="fix-page" class="page docs-page">
+      <div class="fix-hero">
+        <div>
+          <p class="docs-meta">Run the opened project's gmloop-configured repair workflow.</p>
+          <h2>Apply Project Fixes</h2>
+          <p>This runs configured refactor codemods first, then lint auto-fixes, then formatter output against the active GameMaker project.</p>
+        </div>
+        <div class="fix-action-card" role="status" aria-live="polite">
+          <span id="fix-status" class="fix-status-chip idle">Ready</span>
+          <button id="run-fix" class="fix-run-button" disabled><span class="button-content"><span class="button-label">Apply Fixes</span></span></button>
+          <span id="fix-target" class="fix-target is-empty">Open a project before running fixes.</span>
+        </div>
+      </div>
+      <div class="fix-stage-grid" aria-label="Fix workflow stages">
+        <div class="catalog-card fix-stage-card"><h3>1. Refactor</h3><p>Applies enabled codemods from the project gmloop configuration.</p></div>
+        <div class="catalog-card fix-stage-card"><h3>2. Lint</h3><p>Runs fixable GML lint rules using the configured ruleset.</p></div>
+        <div class="catalog-card fix-stage-card"><h3>3. Format</h3><p>Formats changed GML files with the project formatter options.</p></div>
+      </div>
+      <div id="fix-error" class="catalog-card fix-error-card hidden" role="alert"></div>
+      <div class="catalog-card fix-log-card">
+        <h3>Run Log</h3>
+        <pre id="fix-log" class="fix-log" aria-live="polite">No fix run has been started from this UI session.</pre>
+      </div>
     </section>
     <section id="playground-page" class="page">
       <div class="playground-toolbar">

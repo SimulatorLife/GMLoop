@@ -14,6 +14,7 @@ export type GraphVisualizationAppBootstrapDependencies = Readonly<{
     callbacks?: Readonly<{
         onOpenProject?: () => void | Promise<void>;
         onRegenerate?: () => void | Promise<void>;
+        onRunFix?: GraphVisualizationUiCallbacks["onRunFix"];
         onRefreshLiveReloadStatus?: GraphVisualizationUiCallbacks["onRefreshLiveReloadStatus"];
     }>;
     data: GraphVisualizationData;
@@ -31,6 +32,7 @@ export function bootstrapGraphVisualizationLitApp(dependencies: GraphVisualizati
     const callbacks: GraphVisualizationUiCallbacks = {
         onOpenProject: dependencies.callbacks?.onOpenProject ?? defaultCallbacks.onOpenProject,
         onRegenerate: dependencies.callbacks?.onRegenerate ?? defaultCallbacks.onRegenerate,
+        onRunFix: dependencies.callbacks?.onRunFix ?? defaultCallbacks.onRunFix,
         onRefreshLiveReloadStatus:
             dependencies.callbacks?.onRefreshLiveReloadStatus ?? defaultCallbacks.onRefreshLiveReloadStatus
     };

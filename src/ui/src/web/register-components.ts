@@ -6,6 +6,7 @@ import {
     GmCard,
     GmConfigPanel,
     GmDocsPanel,
+    GmFixPanel,
     GmGraphPanel,
     GmGraphToolbar,
     GmLiveReloadPanel,
@@ -32,6 +33,7 @@ export function registerGraphVisualizationCustomElements(): void {
     defineCustomElementOnce("gm-live-reload-panel", GmLiveReloadPanel);
     defineCustomElementOnce("gm-playground-panel", GmPlaygroundPanel);
     defineCustomElementOnce("gm-docs-panel", GmDocsPanel);
+    defineCustomElementOnce("gm-fix-panel", GmFixPanel);
     defineCustomElementOnce("gm-config-panel", GmConfigPanel);
     defineCustomElementOnce("gm-mcp-panel", GmMcpPanel);
     defineCustomElementOnce("gm-app-shell", GmAppShell);

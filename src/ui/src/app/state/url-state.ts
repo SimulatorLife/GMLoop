@@ -10,7 +10,15 @@ import type {
 const VALID_DOCS_VIEWS = new Set<GraphVisualizationUiDocsView>(["cli", "mcp", "rules"]);
 const VALID_GRAPH_VIEWS = new Set<GraphVisualizationUiGraphView>(["visual", "json"]);
 const VALID_LABEL_MODES = new Set<GraphVisualizationUiLabelMode>(["auto", "always", "hidden"]);
-const VALID_PAGES = new Set<GraphVisualizationUiPage>(["graph", "docs", "config", "playground", "mcp", "live-reload"]);
+const VALID_PAGES = new Set<GraphVisualizationUiPage>([
+    "graph",
+    "docs",
+    "config",
+    "fix",
+    "playground",
+    "mcp",
+    "live-reload"
+]);
 
 function readUrlParameterValue(parameters: URLSearchParams, key: string): string | null {
     const value = parameters.get(key);

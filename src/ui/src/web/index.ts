@@ -9,6 +9,12 @@ import type {
 } from "../graph/types.js";
 import { registerGraphVisualizationCustomElements } from "./register-components.js";
 
+type FixApiResponse = Readonly<{
+    error?: string;
+    logLines?: ReadonlyArray<string>;
+    ok?: boolean;
+}>;
+
 /**
  * Serialized payload consumed by the web bootstrap entry.
  */
@@ -59,6 +65,20 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
     registerGraphVisualizationCustomElements();
     const payload = readGraphVisualizationWebBootstrapPayload();
     bootstrapGraphVisualizationLitApp({
+        callbacks: {
+            onRunFix: async () => {
+                const response = await fetch("/api/fix", { method: "POST" });
+                const result = (await response.json()) as FixApiResponse;
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Fix workflow failed.");
+                }
+
+                return {
+                    logLines: result.logLines ?? [],
+                    status: "success"
+                };
+            }
+        },
         data: payload.data,
         options: payload.options,
         rootElement

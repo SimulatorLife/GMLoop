@@ -66,6 +66,7 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
     try {
         handle = await startGraphVisualizationServer({
             regenerate: async () => ({ changed: true }),
+            runFix: async () => ({ logLines: ["Project root: /tmp/project", "Success!"] }),
             openProjectTargets: async (input) => {
                 openedPath = input.path;
                 return { changed: true };
@@ -106,6 +107,11 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         assert.equal(reindexResponse.status, 200);
         const reindexPayload = (await reindexResponse.json()) as { changed: boolean; ok: boolean };
         assert.deepEqual(reindexPayload, { changed: true, ok: true });
+
+        const fixResponse = await fetch(`${handle.url}/api/fix`, { method: "POST" });
+        assert.equal(fixResponse.status, 200);
+        const fixPayload = (await fixResponse.json()) as { logLines: ReadonlyArray<string>; ok: boolean };
+        assert.deepEqual(fixPayload, { logLines: ["Project root: /tmp/project", "Success!"], ok: true });
 
         const openWithoutBodyResponse = await fetch(`${handle.url}/api/open`, { method: "POST" });
         assert.equal(openWithoutBodyResponse.status, 200);

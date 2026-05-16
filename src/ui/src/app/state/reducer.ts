@@ -9,6 +9,10 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         activeGraphView: "visual",
         activePage: "graph",
         errorMessage: null,
+        fixErrorMessage: null,
+        fixLogLines: [],
+        fixStatus: "idle",
+        isFixPending: false,
         isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
@@ -80,6 +84,31 @@ export function reduceGraphVisualizationUiState(
             return {
                 ...state,
                 isRegeneratePending: action.pending
+            };
+        }
+        case "set-fix-pending": {
+            return {
+                ...state,
+                isFixPending: action.pending,
+                fixStatus: action.pending ? "running" : state.fixStatus
+            };
+        }
+        case "set-fix-error": {
+            return {
+                ...state,
+                fixErrorMessage: action.errorMessage
+            };
+        }
+        case "set-fix-log-lines": {
+            return {
+                ...state,
+                fixLogLines: action.logLines
+            };
+        }
+        case "set-fix-status": {
+            return {
+                ...state,
+                fixStatus: action.status
             };
         }
         case "set-open-project-pending": {

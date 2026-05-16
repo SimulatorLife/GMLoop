@@ -160,7 +160,7 @@
   margin-top: 6px;
 }
 
-.config-severity-badge {
+gm-badge.config-severity-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -175,19 +175,19 @@
   letter-spacing: 0;
 }
 
-.config-severity-badge.error {
+gm-badge.config-severity-badge.error {
   border-color: rgba(248, 113, 113, 0.42);
   background: rgba(127, 29, 29, 0.42);
   color: #fecaca;
 }
 
-.config-severity-badge.warn {
+gm-badge.config-severity-badge.warn {
   border-color: rgba(251, 146, 60, 0.42);
   background: rgba(124, 45, 18, 0.42);
   color: #fed7aa;
 }
 
-.config-severity-badge.off {
+gm-badge.config-severity-badge.off {
   border-color: rgba(148, 163, 184, 0.28);
   background: rgba(51, 65, 85, 0.36);
   color: #cbd5e1;

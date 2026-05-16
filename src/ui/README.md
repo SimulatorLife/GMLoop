@@ -9,6 +9,7 @@ The workspace exists to keep UI code separate from domain logic. The long-term s
 - CLI documentation views
 - MCP tool browsers
 - formatter, lint, and refactor rule explorers
+- project fix workflow launchers
 - live-reload observability
 - other cross-workspace dashboards and inspectors
 
@@ -83,10 +84,11 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - `renderGraphVisualizationHtml(data, options)` remains as a thin convenience wrapper that reads the bundle entry HTML
 - CLI host code is responsible for obtaining payloads and writing/serving the emitted bundle artifact
 - graph/docs/config tabs are rendered from live workspace-fed catalogs
+- the Fix tab delegates configured refactor, lint, and format mutation to the CLI host and renders status/log output
 - the Live Reload surface renders watcher, WebSocket, patch, latency, error, and optional runtime-wrapper health snapshots from UI-owned DTOs
 - the Docs surface includes `CLI`, `MCP`, and `Rules` subviews for command, tool, and workspace rule catalogs
 - loaded project state is shown in one canonical header location and reflects the active graph/config context
-- graph/docs/config/playground/MCP/live-reload page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
+- graph/docs/config/fix/playground/MCP/live-reload page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
 
 ## Design Rules
 
@@ -168,6 +170,7 @@ Current graph serve-mode host actions are:
 
 - `POST /api/reindex`: force-regenerate the current graph index
 - `POST /api/open`: switch the active UI project globally, optionally using a caller-supplied `path`
+- `POST /api/fix`: run the opened project's configured fix workflow in write mode and return log lines for the Fix tab
 
 The host serves the bundle entry document and static asset files, while `@gmloop/ui` remains responsible for typed rendering contracts and client presentation behavior.
 
@@ -178,6 +181,7 @@ The canonical current and planned top-level UI surfaces are tracked in code thro
 - `graph`: implemented
 - `ast`: planned
 - `docs`: implemented
+- `fix`: implemented
 - `live-reload`: implemented
 - `playground`: implemented
 - `rules`: planned

@@ -71,6 +71,31 @@ type GraphVisualizationExportResult = Readonly<{
     outputDirectory: string;
 }>;
 
+async function runGraphVisualizationFixWorkflow(
+    context: GraphResolutionContext,
+    configPath: string | undefined
+): Promise<Readonly<{ logLines: ReadonlyArray<string> }>> {
+    const cliEntryPath = fileURLToPath(new URL("../../index.js", import.meta.url));
+    const args = [cliEntryPath, "fix", "--write", "--path", context.projectRoot];
+    if (configPath) {
+        args.push("--config", configPath);
+    }
+
+    const logText = await new Promise<string>((resolve, reject) => {
+        execFile(process.execPath, args, { cwd: context.projectRoot }, (error, stdout, stderr) => {
+            const combinedOutput = [stdout, stderr].filter((value) => value.length > 0).join("\n");
+            if (error) {
+                reject(new Error(combinedOutput.length > 0 ? combinedOutput : Core.getErrorMessage(error)));
+                return;
+            }
+
+            resolve(combinedOutput);
+        });
+    });
+
+    return Object.freeze({ logLines: logText.split(/\r?\n/u).filter((line) => line.length > 0) });
+}
+
 type GraphVisualizationBundleFile = Readonly<{
     bytes: Uint8Array;
     contentType: string;
@@ -598,7 +623,8 @@ function normalizeGraphVisualizationUiSourceWatchFileName(fileName: string | Buf
 }
 
 function resolveGraphVisualizationUiSourceWatchRoot(): string | null {
-    const sourceRoot = path.resolve(process.cwd(), "src/ui/src");
+    const repoRoot = findRepoRootSync(path.dirname(fileURLToPath(import.meta.url)));
+    const sourceRoot = path.resolve(repoRoot, "src/ui/src");
     if (!existsSync(sourceRoot)) {
         return null;
     }
@@ -1263,6 +1289,17 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const nextPayloadString = safeStringifyVisualizationPayload();
                 markServeRevisionChanged();
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
+            },
+            runFix: async () => {
+                if (!activeContext) {
+                    throw new Error("Open a GameMaker project before running fixes.");
+                }
+
+                const result = await runGraphVisualizationFixWorkflow(activeContext, options.config);
+                await ensureGraphIndex({ ...options, force: true }, activeContext);
+                await refreshActiveVisualizationArtifacts(activeContext);
+                markServeRevisionChanged();
+                return result;
             },
             processPlayground: async ({
                 gml,

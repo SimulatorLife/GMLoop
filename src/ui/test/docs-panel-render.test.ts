@@ -68,6 +68,10 @@ void test("GmDocsPanel renders the Rules subview and project-facing rule content
         activeGraphView: "visual",
         activePage: "docs",
         errorMessage: null,
+        fixErrorMessage: null,
+        fixLogLines: [],
+        fixStatus: "idle",
+        isFixPending: false,
         isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
@@ -89,6 +93,8 @@ void test("GmDocsPanel renders the Rules subview and project-facing rule content
     assert.match(rendered, /printWidth/u);
     assert.match(rendered, /gml\/normalize-operators/u);
     assert.match(rendered, /refactor\/globalvar-to-global/u);
+    assert.match(rendered, /<gm-badge[^>]*\.label=fixable/u);
+    assert.doesNotMatch(rendered, /fixable:code/u);
 });
 
 void test("GmDocsPanel renders an empty rules state when rule data is unavailable", () => {
@@ -114,6 +120,10 @@ void test("GmDocsPanel renders an empty rules state when rule data is unavailabl
         activeGraphView: "visual",
         activePage: "docs",
         errorMessage: null,
+        fixErrorMessage: null,
+        fixLogLines: [],
+        fixStatus: "idle",
+        isFixPending: false,
         isLiveReloadRefreshPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,

@@ -439,13 +439,16 @@ void test("graph visualize UI source reload candidate includes template html ass
     assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate(null), false);
 });
 
-void test("graph visualize UI source watcher is disabled outside the repository source tree", async () => {
+void test("graph visualize UI source watcher resolves the repository source tree independently of cwd", async () => {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-ui-watch-root-"));
     const previousWorkingDirectory = process.cwd();
 
     try {
         process.chdir(temporaryDirectory);
-        assert.equal(__graphCommandTest__.resolveGraphVisualizationUiSourceWatchRoot(), null);
+        assert.equal(
+            __graphCommandTest__.resolveGraphVisualizationUiSourceWatchRoot(),
+            path.join(REPO_ROOT, "src", "ui", "src")
+        );
     } finally {
         process.chdir(previousWorkingDirectory);
         await fs.rm(temporaryDirectory, { force: true, recursive: true });

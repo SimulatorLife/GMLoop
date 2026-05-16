@@ -12,6 +12,7 @@ import type {
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
 
 type ConfigViewMode = "raw" | "rendered";
 type LintLevelFilter = "all" | GraphVisualizationProjectConfigurationLintRuleEntry["level"];
@@ -56,14 +57,18 @@ function renderConfigHelp(summary: string, body: string) {
 
 function renderLintRuleEntry(entry: GraphVisualizationProjectConfigurationLintRuleEntry) {
     const hasOptions = Object.keys(entry.options).length > 0;
+    const fixableBadgeLabel = getLintFixableBadgeLabel(entry.fixable);
 
     return html`
         <li class="config-item">
             <strong>${entry.ruleId}</strong>
             <span>${entry.description}</span>
             <div class="config-badge-row">
-                <span class=${`config-severity-badge ${entry.level}`}>${getLintLevelLabel(entry.level)}</span>
-                ${entry.fixable ? html`<gm-badge .label=${"fixable"}></gm-badge>` : null}
+                <gm-badge
+                    class=${`config-severity-badge ${entry.level}`}
+                    .label=${getLintLevelLabel(entry.level)}
+                ></gm-badge>
+                ${fixableBadgeLabel === null ? null : html`<gm-badge .label=${fixableBadgeLabel}></gm-badge>`}
             </div>
             ${hasOptions ? html`<pre class="config-value">${serializeConfigurationValue(entry.options)}</pre>` : null}
         </li>

@@ -4,6 +4,7 @@ export * from "./gm-app-header.js";
 export * from "./gm-app-shell.js";
 export * from "./gm-config-panel.js";
 export * from "./gm-docs-panel.js";
+export * from "./gm-fix-panel.js";
 export * from "./gm-graph-panel.js";
 export * from "./gm-graph-toolbar.js";
 export * from "./gm-live-reload-panel.js";

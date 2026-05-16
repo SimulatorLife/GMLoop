@@ -9,6 +9,11 @@ import type {
     GraphVisualizationRenderOptions
 } from "../graph/types.js";
 
+export type GraphVisualizationFixRunResult = Readonly<{
+    logLines: ReadonlyArray<string>;
+    status: "success";
+}>;
+
 /**
  * Normalized model consumed by the Lit graph visualization UI shell.
  */
@@ -29,6 +34,7 @@ export type GraphVisualizationUiModel = Readonly<{
 export type GraphVisualizationUiCallbacks = Readonly<{
     onOpenProject: () => void | Promise<void>;
     onRegenerate: () => void | Promise<void>;
+    onRunFix: () => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
     onRefreshLiveReloadStatus: () =>
         | GraphVisualizationLiveReloadStatusSnapshot
         | null
@@ -61,6 +67,7 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
     return {
         onOpenProject: () => {},
         onRegenerate: () => {},
+        onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
         onRefreshLiveReloadStatus: () => null
     };
 }
