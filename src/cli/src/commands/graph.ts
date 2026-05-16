@@ -915,6 +915,17 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         activeServeBundleCache = null;
     }
 
+    function cacheServeBundleForRevision(revision: number, bundle: GraphVisualizationServeBundleCache["bundle"]): void {
+        if (activeServeRevision !== revision) {
+            return;
+        }
+
+        activeServeBundleCache = Object.freeze({
+            bundle,
+            revision
+        });
+    }
+
     function readVisualizationPayloadFromContext(context: GraphResolutionContext) {
         const activeConfig = Semantic.resolveGraphIndexConfig({
             databasePath: options.databasePath,
@@ -1376,7 +1387,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             },
             startLiveReload: (input) => ensureLiveReloadSessionStarted(input),
             renderBundle: async (isServerMode) => {
-                if (isServerMode && activeServeBundleCache?.revision === activeServeRevision) {
+                const renderRevision = activeServeRevision;
+                if (isServerMode && activeServeBundleCache?.revision === renderRevision) {
                     return activeServeBundleCache.bundle;
                 }
 
@@ -1392,10 +1404,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 });
 
                 if (isServerMode) {
-                    activeServeBundleCache = Object.freeze({
-                        bundle,
-                        revision: activeServeRevision
-                    });
+                    cacheServeBundleForRevision(renderRevision, bundle);
                 }
 
                 return bundle;
