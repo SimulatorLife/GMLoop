@@ -147,10 +147,10 @@ function evaluateEqualityOperator(
  *          operation can be safely evaluated, otherwise null
  */
 export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | string | boolean | null {
-    // Guard against malformed ASTs where the type field is present but structural
-    // properties are missing (e.g., recovery-mode partial nodes from the parser).
-    // Throws would propagate as uncaught TypeErrors; returning null signals that
-    // folding cannot proceed safely.
+    // Guard: abort if either operand node is missing.  In recovery mode the
+    // parser may emit a node whose `type` field is present but whose structural
+    // children are undefined; accessing `.value` on either would throw a
+    // TypeError.  Returning null signals that folding cannot proceed safely.
     if (!ast.left || !ast.right) {
         return null;
     }
@@ -261,10 +261,9 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
  *          operation can be safely evaluated, otherwise null
  */
 export function tryFoldConstantUnaryExpression(ast: UnaryExpressionNode): number | boolean | null {
-    // Guard against malformed ASTs where the type field is present but structural
-    // properties are missing (e.g., recovery-mode partial nodes from the parser).
-    // Throws would propagate as uncaught TypeErrors; returning null signals that
-    // folding cannot proceed safely.
+    // Guard: abort if the operand node is missing.  In recovery mode the parser
+    // may emit a node whose `type` field is present but whose `argument` child
+    // is undefined; accessing `.value` on it would throw a TypeError.
     if (!ast.argument) {
         return null;
     }
@@ -335,10 +334,9 @@ export function tryFoldConstantUnaryExpression(ast: UnaryExpressionNode): number
  * @returns The selected branch node when folding is safe, otherwise null
  */
 export function tryFoldConstantTernaryExpression(ast: TernaryExpressionNode): GmlNode | null {
-    // Guard against malformed ASTs where the type field is present but structural
-    // properties are missing (e.g., recovery-mode partial nodes from the parser).
-    // Throws would propagate as uncaught TypeErrors; returning null signals that
-    // folding cannot proceed safely.
+    // Guard: abort if the test node is missing.  In recovery mode the parser may
+    // emit a node whose `type` field is present but whose structural children are
+    // undefined; accessing `.value` would throw a TypeError.
     if (!ast.test) {
         return null;
     }
@@ -352,8 +350,9 @@ export function tryFoldConstantTernaryExpression(ast: TernaryExpressionNode): Gm
         return null;
     }
 
-    // Guard against malformed AST where consequent/alternate are missing.
-    // Returning null signals that folding cannot proceed safely.
+    // Guard: return null if either branch is absent.  A ternary with only one branch
+    // (e.g. `condition ? value`) is valid GML but semantically different from a
+    // two-branch form, and collapsing it would alter program behaviour at runtime.
     if (!ast.consequent || !ast.alternate) {
         return null;
     }

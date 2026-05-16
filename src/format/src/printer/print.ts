@@ -295,7 +295,13 @@ function tryPrintVariableNode(node, path, options, print) {
             const docComments = printNodeDocComments(node, path, options);
 
             if (node.kind === "static") {
-                // WORKAROUND: Bypass printCommaSeparatedList for static declarations.
+                // WORKAROUND: printCommaSeparatedList adds a soft-break before each
+                // declarator, which is appropriate for `var a, b, c` but produces
+                // visually inconsistent output for `static x = 1, y = 2` where each
+                // declarator already contains its own initializer break.
+                // Bypassing the utility and manually assembling the joined parts keeps
+                // static declarations on a single formatting lane without hard breaks
+                // unless an individual initializer forces one.
                 const parts = path.map(print, "declarations");
                 const joined = joinDeclaratorPartsWithCommas(parts);
 
