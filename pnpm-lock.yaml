@@ -358,9 +358,6 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.8.0
-      linkedom:
-        specifier: ^0.18.12
-        version: 0.18.12
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
