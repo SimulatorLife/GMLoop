@@ -267,8 +267,10 @@ export class GmConfigPanel extends LightDomLitElement {
         return html`
             <section id="config-page" class=${configPageClassName}>
                 <p id="config-meta" class="docs-meta">
-                    Project root ${configCatalog.gmloop.projectRoot}
-                    ${configCatalog.gmloop.configPath ? html` • ${configCatalog.gmloop.configPath}` : null}
+                    Project Root: <strong>${configCatalog.gmloop.projectRoot}</strong>
+                    ${configCatalog.gmloop.configPath
+                        ? html` • Config Path: <strong>${configCatalog.gmloop.configPath}</strong>`
+                        : html` • Config Path: <strong>Not found</strong>`}
                 </p>
                 <div class="config-view-selector view-selector" role="group" aria-label="Configuration view selector">
                     <button
@@ -303,19 +305,6 @@ ${serializeConfigurationValue(configCatalog.gmloop.rawConfig)}</pre
                               </gm-card>
                           `
                         : html`
-                              <gm-card class="config-card" heading="Project Metadata">
-                                  <p>Active project root used by graph, lint, format, and refactor workflows.</p>
-                                  <ul class="config-list">
-                                      <li class="config-item">
-                                          <strong>Config path</strong>
-                                          <span>${configCatalog.gmloop.configPath ?? "Not found"}</span>
-                                      </li>
-                                      <li class="config-item">
-                                          <strong>Configuration exists</strong>
-                                          <span>${configCatalog.gmloop.exists ? "Yes" : "No"}</span>
-                                      </li>
-                                  </ul>
-                              </gm-card>
                               <gm-card class="config-card" .heading=${`Format (${String(formatEntries.length)})`}>
                                   <ul class="config-list">
                                       ${formatEntries.map((entry) => renderConfigEntry(entry))}

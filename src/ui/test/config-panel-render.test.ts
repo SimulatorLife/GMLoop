@@ -170,7 +170,8 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
     assert.match(rendered, /class="?view-option active"?/u);
     assert.match(rendered, createButtonAriaPressedPattern("config-view-rendered", true));
     assert.match(rendered, createButtonAriaPressedPattern("config-view-raw", false));
-    assert.match(rendered, /Project Metadata/u);
+    assert.match(rendered, /Project Root:?/iu);
+    assert.match(rendered, /Config Path:?/iu);
     assert.match(rendered, /Format \(1\)/u);
     assert.match(rendered, /Lint \(2\)/u);
     assert.match(rendered, /Refactor \(1\)/u);
