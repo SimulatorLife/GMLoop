@@ -1,5 +1,6 @@
 // Public API: expose a single public coordinator type for external consumers.
 export * from "./identifier-scope.js";
+export * from "./lookup-cache-policy.js";
 export * from "./occurrence.js";
 export * from "./path-sorting.js";
 export * from "./scope-override-keywords.js";
