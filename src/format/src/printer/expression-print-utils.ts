@@ -510,13 +510,20 @@ function shouldFlattenSyntheticBinary(parent: any, expression: any, _path: any):
         return false;
     }
 
-    // Flatten additive synthetic parentheses when associativity is preserved.
-    // Safe: (a + b) - c, (a - b) + c, a + (b - c), a + (b + c)
-    // Unsafe: a - (b + c), a - (b - c)
+    // Flatten additive synthetic parentheses only when left-to-right associativity
+    // guarantees the result is unchanged. This relies on precedence (all additive ops
+    // share prec 12) and associativity: a - b + c == (a - b) + c, but a - (b + c) !=
+    // a - b + c, and a - (b - c) != (a - b) - c. The comment below enumerates the
+    // safe cases so future readers can verify the guard before extending the logic.
+    // Safe (associativity preserved): (a + b) - c, (a - b) + c, a + (b - c), a + (b + c)
+    // Unsafe (changes result): a - (b + c), a - (b - c)
     if (parentKey === "left") {
         return true;
     }
 
+    // For the right operand, only flatten when the parent operator is "+" — subtraction
+    // on the right is non-associative and would change the result. For example,
+    // a - (b + c) should NOT flatten to a - b + c since subtraction is not commutative.
     return parentKey === "right" && parent.operator === "+";
 }
 
