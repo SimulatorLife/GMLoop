@@ -7,18 +7,29 @@ import type * as Refactor from "@gmloop/refactor";
  * Parser bridge that adapts @gmloop/parser to the refactor engine.
  */
 export class GmlParserBridge implements Refactor.ParserBridge {
+    private readonly parserInstance: Refactor.ParserBridge["parse"];
+
+    constructor(parser?: { parse(text: string): unknown }) {
+        // When a custom parser is supplied (e.g. for testing), use it directly.
+        // Otherwise fall back to the canonical GMLParser constructor.
+        this.parserInstance = parser
+            ? (source: string) => parser.parse(source)
+            : (source: string) => {
+                  const gmlParser = new Parser.GMLParser(source, {
+                      getLocations: true,
+                      simplifyLocations: true
+                  });
+                  return gmlParser.parse();
+              };
+    }
+
     /**
      * Parse a GML file and return a refactor-compatible AST.
      * @param filePath Path to the GML file
      */
     async parse(filePath: string): Promise<Refactor.AstNode> {
         const sourceText = await readFile(filePath, "utf8");
-        const parser = new Parser.GMLParser(sourceText, {
-            getLocations: true,
-            simplifyLocations: true
-        });
-
-        const ast = parser.parse();
+        const ast = await this.parserInstance(sourceText);
 
         // Adapt the @gmloop/parser AST to @gmloop/refactor AST
         return this.adaptNode(ast);
