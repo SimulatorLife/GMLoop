@@ -265,12 +265,35 @@ function getNodeEndLine(node: unknown): number | null {
     return getLocationNumber(node, "end", "line") ?? getLocationNumber(node, "start", "line");
 }
 
+/**
+ * Safely extract the source text covered by an AST node.
+ *
+ * Consolidates the repeated guard pattern:
+ *   const start = getNodeStartIndex(node);
+ *   const end = getNodeEndIndex(node);
+ *   if (typeof start !== "number" || typeof end !== "number") { return null; }
+ *   return sourceText.slice(start, end);
+ *
+ * @param sourceText Full source text of the file.
+ * @param node       AST node whose bounds should be used.
+ * @returns The source text slice for `node`, or `null` when either boundary is not a valid offset.
+ */
+function getNodeSourceText(sourceText: string, node: unknown): string | null {
+    const start = getNodeStartIndex(node);
+    const end = getNodeEndIndex(node);
+    if (typeof start !== "number" || typeof end !== "number") {
+        return null;
+    }
+    return sourceText.slice(start, end);
+}
+
 export {
     assignClonedLocation,
     cloneLocation,
     getNodeEndIndex,
     getNodeEndLine,
     getNodeRangeIndices,
+    getNodeSourceText,
     getNodeStartIndex,
     getNodeStartLine,
     getPreferredLocation
