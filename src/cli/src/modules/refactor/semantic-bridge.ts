@@ -2226,8 +2226,15 @@ export class GmlSemanticBridge {
 
         const symbolIdSet = new Set(symbolIds);
 
-        // We check which symbols reference any of the target symbolNames
-        // Note: This is an approximation as ProjectIndex might not have perfect symbolId-to-symbolId mapping yet
+        // We check which symbols reference any of the target symbolNames.
+        // Note: This is an approximation because ProjectIndex maintains two parallel
+        // symbol namespaces — `identifierId` (the legacy "kind:name" form) and the
+        // SCIP `id` field (the modern "gml/kind/name" form) — and cross-namespace
+        // reference resolution is not yet fully consistent in all code paths.
+        // WHAT WOULD BREAK: Removing this dual-check (targetName + targetSymbolId)
+        // would silently miss dependent symbols that appear under the alternate
+        // namespace, causing refactor to produce incomplete rename/update scopes
+        // and leaving stale references in user code.
         for (const collectionName of Object.keys(identifiers)) {
             const collection = identifiers[collectionName];
             for (const key of Object.keys(collection)) {
