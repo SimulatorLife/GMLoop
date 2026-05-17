@@ -17,8 +17,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import type { MutableGameMakerAstNode } from "../src/ast/types.js";
-import type { ParserTransform } from "../src/transforms/parser-transform.js";
-import { createParserTransform } from "../src/transforms/parser-transform.js";
+import { createParserTransform, type ParserTransform } from "../src/transforms/parser-transform.js";
 
 type SimpleTransformOptions = {
     extra?: string;

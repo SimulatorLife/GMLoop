@@ -93,7 +93,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildNonMathAssignmentBatchSource(1500);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
@@ -117,11 +117,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildNonLogicalConditionBatchSource(1200);
-        const timedRun = await lintSingleRuleWithTiming(
-            "gml/optimize-logical-flow",
-            source,
-            "performance-regression.gml"
-        );
+        const timedRun = lintSingleRuleWithTiming("gml/optimize-logical-flow", source, "performance-regression.gml");
 
         assert.equal(timedRun.messages.length, 0);
         assert.equal(timedRun.outputText, source);
@@ -141,11 +137,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildHeavyIfGuardBatchSource(300);
-        const timedRun = await lintSingleRuleWithTiming(
-            "gml/optimize-logical-flow",
-            source,
-            "performance-regression.gml"
-        );
+        const timedRun = lintSingleRuleWithTiming("gml/optimize-logical-flow", source, "performance-regression.gml");
 
         assert.equal(timedRun.messages.length, 0);
         assert.equal(timedRun.outputText, source);
@@ -165,7 +157,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildArithmeticChainBatchSource(250);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
@@ -192,7 +184,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildArithmeticChainBatchSource(1000);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
@@ -219,7 +211,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildAdditiveIdentifierBatchSource(2500);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
@@ -239,7 +231,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = await readFile(STILE_FIXTURE_URL, "utf8");
-        const timedRun = await lintSingleRuleWithTiming("gml/optimize-math-expressions", source, "stile.gml");
+        const timedRun = lintSingleRuleWithTiming("gml/optimize-math-expressions", source, "stile.gml");
 
         assert.equal(timedRun.messages.length, 0);
         assert.equal(createOutputHash(timedRun.outputText), STILE_OPTIMIZE_MATH_OUTPUT_HASH);
@@ -255,7 +247,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(60, 15);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/prefer-loop-invariant-expressions",
             source,
             "performance-regression.gml"
@@ -282,7 +274,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(160, 30);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/prefer-loop-invariant-expressions",
             source,
             "performance-regression.gml"
@@ -310,7 +302,7 @@ void test(
     async () => {
         const reservedHoistNameCount = 320;
         const source = buildLoopHoistCollisionStressSource(220, reservedHoistNameCount);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/prefer-loop-invariant-expressions",
             source,
             "local-collision-performance-regression.gml"
@@ -336,7 +328,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(320, 60);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/prefer-loop-invariant-expressions",
             source,
             "performance-regression.gml"

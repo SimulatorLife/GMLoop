@@ -1143,7 +1143,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         }
     }
 
-    if (options.serve === true) {
+    async function runServeVisualizationMode(): Promise<void> {
         const documentationCatalogs = createDocumentationCatalogs();
         let uiWatchRebuildInProgress = false;
         let uiWatchRebuildPending = false;
@@ -1465,39 +1465,46 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             uiSourceWatcher = null;
             void stopLiveReloadChildProcess();
         });
+    }
 
+    async function runStaticVisualizationExportMode(): Promise<void> {
+        const activeConfig = resolveActiveConfig();
+        if (!activeConfig || !activeContext) {
+            throw new Error("Could not locate a GameMaker project root. Pass --path or run inside a project tree.");
+        }
+        const documentationCatalogs = createDocumentationCatalogs();
+        const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(activeContext, {
+            config: options.config
+        });
+        const dbPath = activeConfig.databasePath;
+        const payload = exportVisualizationPayload();
+        const bundleArtifact = await UI.renderGraphVisualizationBundle(payload, {
+            documentationCatalogs,
+            loadedTarget: createLoadedTarget(),
+            mcpServerStatus: "not-started",
+            projectConfigurationCatalog,
+            title: activeConfig.projectRoot
+        });
+        const outputDirectory = options.output ?? path.join(path.dirname(dbPath), "graph-visualization");
+        const exportResult = await writeGraphVisualizationBundleArtifact(bundleArtifact, outputDirectory);
+
+        printGraphOutput(
+            createGraphEnvelope("graph visualize", activeContext, options, exportResult),
+            options.json === true,
+            `Exported graph visualization bundle to ${path.join(outputDirectory, exportResult.entryHtmlPath)}`
+        );
+
+        if (options.open) {
+            openUrlInDefaultBrowser(path.join(outputDirectory, exportResult.entryHtmlPath));
+        }
+    }
+
+    if (options.serve === true) {
+        await runServeVisualizationMode();
         return;
     }
 
-    const activeConfig = resolveActiveConfig();
-    if (!activeConfig || !activeContext) {
-        throw new Error("Could not locate a GameMaker project root. Pass --path or run inside a project tree.");
-    }
-    const documentationCatalogs = createDocumentationCatalogs();
-    const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(activeContext, {
-        config: options.config
-    });
-    const dbPath = activeConfig.databasePath;
-    const payload = exportVisualizationPayload();
-    const bundleArtifact = await UI.renderGraphVisualizationBundle(payload, {
-        documentationCatalogs,
-        loadedTarget: createLoadedTarget(),
-        mcpServerStatus: "not-started",
-        projectConfigurationCatalog,
-        title: activeConfig.projectRoot
-    });
-    const outputDirectory = options.output ?? path.join(path.dirname(dbPath), "graph-visualization");
-    const exportResult = await writeGraphVisualizationBundleArtifact(bundleArtifact, outputDirectory);
-
-    printGraphOutput(
-        createGraphEnvelope("graph visualize", activeContext, options, exportResult),
-        options.json === true,
-        `Exported graph visualization bundle to ${path.join(outputDirectory, exportResult.entryHtmlPath)}`
-    );
-
-    if (options.open) {
-        openUrlInDefaultBrowser(path.join(outputDirectory, exportResult.entryHtmlPath));
-    }
+    await runStaticVisualizationExportMode();
 }
 
 function addGraphSharedOptions(
