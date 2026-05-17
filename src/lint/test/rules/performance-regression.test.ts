@@ -11,60 +11,50 @@ import {
     STILE_OPTIMIZE_MATH_OUTPUT_HASH
 } from "../performance/index.js";
 
-function buildNonMathAssignmentBatchSource(statementCount: number): string {
+function buildBatchSource(
+    statementCount: number,
+    buildStatementLines: (statementIndex: number) => ReadonlyArray<string>
+): string {
     const lines: string[] = [];
     for (let index = 0; index < statementCount; index += 1) {
-        lines.push(`field_${index} = other_${index};`);
+        lines.push(...buildStatementLines(index));
     }
-
     lines.push("");
     return lines.join("\n");
+}
+
+function buildNonMathAssignmentBatchSource(statementCount: number): string {
+    return buildBatchSource(statementCount, (index) => [`field_${index} = other_${index};`]);
 }
 
 function buildNonLogicalConditionBatchSource(statementCount: number): string {
-    const lines: string[] = [];
-    for (let index = 0; index < statementCount; index += 1) {
-        lines.push(`if (value_${index} > 0) {`, `    value_${index} = value_${index};`, "}");
-    }
-
-    lines.push("");
-    return lines.join("\n");
+    return buildBatchSource(statementCount, (index) => [
+        `if (value_${index} > 0) {`,
+        `    value_${index} = value_${index};`,
+        "}"
+    ]);
 }
 
 function buildHeavyIfGuardBatchSource(statementCount: number): string {
-    const lines: string[] = [];
-    for (let index = 0; index < statementCount; index += 1) {
-        lines.push(
-            `if (is_array(_arg_${index}) && !is_undefined(_arg_${index})) {`,
-            `    _sum += array_length(_arg_${index});`,
-            `    _flag = _flag || (_sum > ${index});`,
-            "    _count += 1;",
-            "}"
-        );
-    }
-
-    lines.push("");
-    return lines.join("\n");
+    return buildBatchSource(statementCount, (index) => [
+        `if (is_array(_arg_${index}) && !is_undefined(_arg_${index})) {`,
+        `    _sum += array_length(_arg_${index});`,
+        `    _flag = _flag || (_sum > ${index});`,
+        "    _count += 1;",
+        "}"
+    ]);
 }
 
 function buildArithmeticChainBatchSource(statementCount: number): string {
-    const lines: string[] = [];
-    for (let index = 0; index < statementCount; index += 1) {
-        lines.push(`result_${index} = a_${index} * b_${index} + c_${index} * d_${index} + e_${index} * f_${index};`);
-    }
-
-    lines.push("");
-    return lines.join("\n");
+    return buildBatchSource(statementCount, (index) => [
+        `result_${index} = a_${index} * b_${index} + c_${index} * d_${index} + e_${index} * f_${index};`
+    ]);
 }
 
 function buildAdditiveIdentifierBatchSource(statementCount: number): string {
-    const lines: string[] = [];
-    for (let index = 0; index < statementCount; index += 1) {
-        lines.push(`sum_${index} = left_${index} + right_${index} + carry_${index};`);
-    }
-
-    lines.push("");
-    return lines.join("\n");
+    return buildBatchSource(statementCount, (index) => [
+        `sum_${index} = left_${index} + right_${index} + carry_${index};`
+    ]);
 }
 
 function buildLoopHoistCollisionStressSource(loopCount: number, reservedHoistNameCount: number): string {
@@ -93,7 +83,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildNonMathAssignmentBatchSource(1500);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
@@ -117,11 +107,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildNonLogicalConditionBatchSource(1200);
-        const timedRun = await lintSingleRuleWithTiming(
-            "gml/optimize-logical-flow",
-            source,
-            "performance-regression.gml"
-        );
+        const timedRun = lintSingleRuleWithTiming("gml/optimize-logical-flow", source, "performance-regression.gml");
 
         assert.equal(timedRun.messages.length, 0);
         assert.equal(timedRun.outputText, source);
@@ -141,11 +127,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildHeavyIfGuardBatchSource(300);
-        const timedRun = await lintSingleRuleWithTiming(
-            "gml/optimize-logical-flow",
-            source,
-            "performance-regression.gml"
-        );
+        const timedRun = lintSingleRuleWithTiming("gml/optimize-logical-flow", source, "performance-regression.gml");
 
         assert.equal(timedRun.messages.length, 0);
         assert.equal(timedRun.outputText, source);
@@ -165,7 +147,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildArithmeticChainBatchSource(250);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
@@ -192,7 +174,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildArithmeticChainBatchSource(1000);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
@@ -219,7 +201,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildAdditiveIdentifierBatchSource(2500);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
@@ -239,7 +221,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = await readFile(STILE_FIXTURE_URL, "utf8");
-        const timedRun = await lintSingleRuleWithTiming("gml/optimize-math-expressions", source, "stile.gml");
+        const timedRun = lintSingleRuleWithTiming("gml/optimize-math-expressions", source, "stile.gml");
 
         assert.equal(timedRun.messages.length, 0);
         assert.equal(createOutputHash(timedRun.outputText), STILE_OPTIMIZE_MATH_OUTPUT_HASH);
@@ -255,7 +237,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(60, 15);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/prefer-loop-invariant-expressions",
             source,
             "performance-regression.gml"
@@ -282,7 +264,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(160, 30);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/prefer-loop-invariant-expressions",
             source,
             "performance-regression.gml"
@@ -310,7 +292,7 @@ void test(
     async () => {
         const reservedHoistNameCount = 320;
         const source = buildLoopHoistCollisionStressSource(220, reservedHoistNameCount);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/prefer-loop-invariant-expressions",
             source,
             "local-collision-performance-regression.gml"
@@ -336,7 +318,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(320, 60);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/prefer-loop-invariant-expressions",
             source,
             "performance-regression.gml"
