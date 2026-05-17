@@ -113,7 +113,7 @@ export type CacheHitEvaluationResult =
  * enumerable property.
  */
 function hasEntries(record: unknown): boolean {
-    return typeof record === "object" && record !== null && Object.keys(record as object).length > 0;
+    return typeof record === "object" && record !== null && Object.keys(record).length > 0;
 }
 
 /**
@@ -142,7 +142,7 @@ function areMtimeMapsEqual(expected: Record<string, unknown>, actual: Record<str
     }
 
     return expectedEntries.every(([key, value]) => {
-        const actualValue = (actual as Record<string, unknown>)[key];
+        const actualValue = (actual)[key];
 
         if (typeof value === "number" && typeof actualValue === "number") {
             return Core.areNumbersApproximatelyEqual(value, actualValue);
@@ -272,7 +272,10 @@ export function evaluateCacheHitDecision(
     const expectedManifestMtimes = manifestMtimes ?? {};
     if (
         hasEntries(expectedManifestMtimes) &&
-        !areMtimeMapsEqual(expectedManifestMtimes as Record<string, unknown>, record.manifestMtimes as Record<string, unknown>)
+        !areMtimeMapsEqual(
+            expectedManifestMtimes,
+            record.manifestMtimes as Record<string, unknown>
+        )
     ) {
         return { valid: false, missReason: ProjectIndexCacheMissReason.MANIFEST_MTIME_MISMATCH };
     }
@@ -281,7 +284,10 @@ export function evaluateCacheHitDecision(
     const expectedSourceMtimes = sourceMtimes ?? {};
     if (
         hasEntries(expectedSourceMtimes) &&
-        !areMtimeMapsEqual(expectedSourceMtimes as Record<string, unknown>, record.sourceMtimes as Record<string, unknown>)
+        !areMtimeMapsEqual(
+            expectedSourceMtimes,
+            record.sourceMtimes as Record<string, unknown>
+        )
     ) {
         return { valid: false, missReason: ProjectIndexCacheMissReason.SOURCE_MTIME_MISMATCH };
     }

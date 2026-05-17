@@ -179,10 +179,7 @@ void test("evaluateCacheHitDecision resolves relative project roots before compa
 // ---------------------------------------------------------------------------
 
 void test("evaluateCacheHitDecision returns FORMATTER_VERSION_MISMATCH on version change", () => {
-    const result = evaluateCacheHitDecision(
-        makeValidPayload(),
-        makeValidExpectations({ formatterVersion: "2.0.0" })
-    );
+    const result = evaluateCacheHitDecision(makeValidPayload(), makeValidExpectations({ formatterVersion: "2.0.0" }));
     assert.equal(result.valid, false);
     if (result.valid === false) {
         assert.equal(result.missReason, ProjectIndexCacheMissReason.FORMATTER_VERSION_MISMATCH);
@@ -263,8 +260,8 @@ void test("evaluateCacheHitDecision skips source mtime check when expectation is
 void test("evaluateCacheHitDecision tolerates floating-point mtime noise", () => {
     // Timestamps from stat() can have sub-millisecond variance between reads.
     // The policy uses approximate equality to avoid spurious misses.
-    const payloadMtime = 1_234_567.89012;
-    const expectationMtime = 1_234_567.89014; // within 1e-9 relative tolerance
+    const payloadMtime = 1_234_567.890_12;
+    const expectationMtime = 1_234_567.890_14; // within 1e-9 relative tolerance
 
     const result = evaluateCacheHitDecision(
         makeValidPayload({ sourceMtimes: { "scripts/main.gml": payloadMtime } }),

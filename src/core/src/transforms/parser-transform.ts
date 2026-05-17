@@ -35,7 +35,7 @@ export function createParserTransform<Options extends TransformOptions = Transfo
         name,
         defaultOptions: frozenDefaults,
         transform(ast: MutableGameMakerAstNode, options?: Options): MutableGameMakerAstNode {
-            return execute(ast, options !== undefined ? { ...frozenDefaults, ...options } : frozenDefaults);
+            return execute(ast, options === undefined ? frozenDefaults : { ...frozenDefaults, ...options });
         }
     };
 }

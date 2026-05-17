@@ -3,14 +3,8 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import {
-    evaluateProjectIndexCacheSizePolicy,
-    normalizeProjectIndexCacheMaxSizeBytes
-} from "./cache-write-policy.js";
-import {
-    evaluateCacheHitDecision,
-    ProjectIndexCacheMissReason
-} from "./cache-validation-policy.js";
+import { evaluateCacheHitDecision, ProjectIndexCacheMissReason } from "./cache-validation-policy.js";
+import { evaluateProjectIndexCacheSizePolicy, normalizeProjectIndexCacheMaxSizeBytes } from "./cache-write-policy.js";
 import { isProjectManifestPath } from "./constants.js";
 import { PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE } from "./defaults.js";
 import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";

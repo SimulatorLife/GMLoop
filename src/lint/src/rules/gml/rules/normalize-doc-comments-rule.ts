@@ -1,5 +1,6 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
+
 import { normalizeDocParamName } from "../../../parameter-utils/index.js";
 import { gmlRuleDocCommentServices } from "../gml-rule-services.js";
 import {
