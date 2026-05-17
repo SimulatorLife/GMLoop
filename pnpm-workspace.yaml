@@ -17,6 +17,7 @@ catalog:
   "@eslint/js": "^10"
   "@types/node": "^25"
   eslint: "^10"
+  eslint-plugin-boundaries: "^6"
   prettier: "^3"
   typescript: "^6"
 
