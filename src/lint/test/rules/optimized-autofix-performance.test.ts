@@ -16,7 +16,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = await readFile(STILE_FIXTURE_URL, "utf8");
-        const timedRun = await lintSingleRuleWithTiming("gml/optimize-math-expressions", source, "stile.gml");
+        const timedRun = lintSingleRuleWithTiming("gml/optimize-math-expressions", source, "stile.gml");
 
         assert.equal(timedRun.messages.length, 0);
         assert.equal(createOutputHash(timedRun.outputText), STILE_OPTIMIZE_MATH_OUTPUT_HASH);
@@ -32,7 +32,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(220, 60);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/prefer-loop-invariant-expressions",
             source,
             "optimized-autofix-performance.gml"
@@ -57,7 +57,7 @@ void test(
         const additiveTerms = Array.from({ length: 1200 }, (_, index) => `value_${index}`).join(" + ");
         const source = ["function stress_math() {", `    return (${additiveTerms}) / 3;`, "}", ""].join("\n");
 
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/optimize-math-expressions",
             source,
             "optimized-autofix-giant-expression.gml"
