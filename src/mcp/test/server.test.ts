@@ -4,7 +4,12 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { createGmloopMcpServer, listGmloopMcpToolCatalogEntries, listGmloopMcpToolNames } from "../src/server/index.js";
+import {
+    createGmloopMcpServer,
+    extractGraphById,
+    listGmloopMcpToolCatalogEntries,
+    listGmloopMcpToolNames
+} from "../src/server/index.js";
 
 const WORKSPACE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -78,4 +83,32 @@ void test("MCP tool catalog exports live tool fields derived from the CLI catalo
     assert.match(formatTool.description, /Format GameMaker Language files/u);
     assert.ok(formatTool.fields.some((field) => field.name === "cwd"));
     assert.ok(formatTool.fields.some((field) => field.name === "--path"));
+});
+
+void test("extractGraphById collapses the 3-segment chain into a single call", () => {
+    // Simulates the shape returned by `graph doctor --json`.
+    const envelope = {
+        payload: {
+            graphs: [
+                { graphId: "project", nodeCount: 42, edgeCount: 7 },
+                { graphId: "toolset", nodeCount: 3, edgeCount: 0 }
+            ]
+        }
+    };
+
+    const projectGraph = extractGraphById(envelope, "project");
+    assert.ok(projectGraph);
+    assert.equal(projectGraph.graphId, "project");
+    assert.equal(projectGraph.nodeCount, 42);
+
+    const toolsetGraph = extractGraphById(envelope, "toolset");
+    assert.ok(toolsetGraph);
+    assert.equal(toolsetGraph.graphId, "toolset");
+    assert.equal(toolsetGraph.edgeCount, 0);
+
+    // Absent graph id returns null without throwing.
+    assert.equal(extractGraphById(envelope, "nonexistent"), null);
+
+    // Empty graphs array returns null.
+    assert.equal(extractGraphById({ payload: { graphs: [] } }, "project"), null);
 });
