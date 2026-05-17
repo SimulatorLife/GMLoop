@@ -1,12 +1,8 @@
 import { bootstrapGraphVisualizationLitApp } from "../app/bootstrap.js";
 import type {
     GraphVisualizationData,
-    GraphVisualizationDocumentationCatalogs,
     GraphVisualizationLiveReloadModel,
-    GraphVisualizationLoadedTarget,
-    GraphVisualizationProjectConfigurationCatalog,
-    GraphVisualizationRenderOptions,
-    GraphVisualizationStartupState
+    GraphVisualizationRenderOptions
 } from "../graph/types.js";
 import { registerGraphVisualizationCustomElements } from "./register-components.js";
 
@@ -28,6 +24,12 @@ type LiveReloadStartApiResponse = Readonly<{
     ok?: boolean;
 }>;
 
+type UiRevisionApiResponse = Readonly<{
+    revision?: number;
+}>;
+
+const SERVER_UI_REVISION_POLL_INTERVAL_MS = 1000;
+
 async function readJsonResponse<TResponse>(response: Response): Promise<TResponse> {
     return (await response.json()) as TResponse;
 }
@@ -36,6 +38,54 @@ function reloadWhenChanged(result: MutationApiResponse): void {
     if (result.changed === true) {
         globalThis.location.reload();
     }
+}
+
+function startServerUiRevisionPolling(isServerMode: boolean): void {
+    if (!isServerMode) {
+        return;
+    }
+
+    let observedRevision: number | null = null;
+    let activeRevisionRequest: Promise<void> | null = null;
+
+    const readRevision = async (): Promise<void> => {
+        try {
+            const response = await fetch("/api/ui-revision", {
+                cache: "no-store",
+                headers: { Accept: "application/json" }
+            });
+            if (!response.ok) {
+                return;
+            }
+
+            const payload = await readJsonResponse<UiRevisionApiResponse>(response);
+            if (typeof payload.revision !== "number") {
+                return;
+            }
+
+            if (observedRevision === null) {
+                observedRevision = payload.revision;
+                return;
+            }
+
+            if (payload.revision !== observedRevision) {
+                globalThis.location.reload();
+            }
+        } catch {
+            // Revision polling is opportunistic; transient server restarts should not break the UI.
+        } finally {
+            activeRevisionRequest = null;
+        }
+    };
+
+    const pollRevision = (): void => {
+        activeRevisionRequest ??= readRevision();
+    };
+
+    pollRevision();
+    globalThis.setInterval(() => {
+        pollRevision();
+    }, SERVER_UI_REVISION_POLL_INTERVAL_MS);
 }
 
 /**
@@ -48,13 +98,8 @@ export type GraphVisualizationWebBootstrapPayload = Readonly<{
 
 declare global {
     interface Window {
-        __GMLOOP_DOCUMENTATION_CATALOGS__?: GraphVisualizationDocumentationCatalogs;
         __GMLOOP_GRAPH_VISUALIZATION_DATA__?: GraphVisualizationData;
         __GMLOOP_GRAPH_VISUALIZATION_OPTIONS__?: GraphVisualizationRenderOptions;
-        __GMLOOP_LOADED_TARGET__?: GraphVisualizationLoadedTarget;
-        __GMLOOP_LIVE_RELOAD__?: GraphVisualizationLiveReloadModel;
-        __GMLOOP_PROJECT_CONFIGURATION__?: GraphVisualizationProjectConfigurationCatalog;
-        __GMLOOP_STARTUP_STATE__?: GraphVisualizationStartupState;
     }
 }
 
@@ -71,15 +116,7 @@ function readGraphVisualizationWebBootstrapPayload(): GraphVisualizationWebBoots
 
     return {
         data: graphData,
-        options: {
-            ...optionPayload,
-            documentationCatalogs: optionPayload.documentationCatalogs ?? globalThis.__GMLOOP_DOCUMENTATION_CATALOGS__,
-            loadedTarget: optionPayload.loadedTarget ?? globalThis.__GMLOOP_LOADED_TARGET__,
-            liveReload: optionPayload.liveReload ?? globalThis.__GMLOOP_LIVE_RELOAD__,
-            projectConfigurationCatalog:
-                optionPayload.projectConfigurationCatalog ?? globalThis.__GMLOOP_PROJECT_CONFIGURATION__,
-            startupState: optionPayload.startupState ?? globalThis.__GMLOOP_STARTUP_STATE__
-        }
+        options: optionPayload
     };
 }
 
@@ -89,6 +126,7 @@ function readGraphVisualizationWebBootstrapPayload(): GraphVisualizationWebBoots
 export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
     registerGraphVisualizationCustomElements();
     const payload = readGraphVisualizationWebBootstrapPayload();
+    startServerUiRevisionPolling(payload.options.isServerMode === true);
     bootstrapGraphVisualizationLitApp({
         callbacks: {
             onOpenProject: async () => {

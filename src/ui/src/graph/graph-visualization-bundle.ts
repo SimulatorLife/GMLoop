@@ -8,12 +8,7 @@ import { build } from "vite";
 
 import {
     renderGraphVisualizationDocumentTitle,
-    serializeGraphVisualizationDataForInlineScript,
-    serializeGraphVisualizationDocumentationCatalogsForInlineScript,
-    serializeGraphVisualizationLiveReloadForInlineScript,
-    serializeGraphVisualizationLoadedTargetForInlineScript,
-    serializeGraphVisualizationProjectConfigurationCatalogForInlineScript,
-    serializeGraphVisualizationStartupStateForInlineScript
+    serializeGraphVisualizationJsonForInlineScript
 } from "./graph-visualization-inline-data.js";
 import type {
     GraphVisualizationBundleArtifact,
@@ -93,7 +88,7 @@ async function listBundleFiles(
 }
 
 function renderBootstrapScript(data: GraphVisualizationData, options: GraphVisualizationRenderOptions): string {
-    const serializedOptions = JSON.stringify({
+    const serializedOptions = serializeGraphVisualizationJsonForInlineScript({
         ...options,
         documentationCatalogs: options.documentationCatalogs ?? null,
         isServerMode: options.isServerMode === true,
@@ -102,22 +97,12 @@ function renderBootstrapScript(data: GraphVisualizationData, options: GraphVisua
         projectConfigurationCatalog: options.projectConfigurationCatalog ?? null,
         startupState: options.startupState ?? null,
         title: options.title
-    })
-        .replaceAll("<", String.raw`\u003c`)
-        .replaceAll(">", String.raw`\u003e`)
-        .replaceAll("&", String.raw`\u0026`)
-        .replaceAll("\u2028", String.raw`\u2028`)
-        .replaceAll("\u2029", String.raw`\u2029`);
+    });
 
     return [
         "<script>",
-        `window.__GMLOOP_GRAPH_VISUALIZATION_DATA__ = ${serializeGraphVisualizationDataForInlineScript(data)};`,
+        `window.__GMLOOP_GRAPH_VISUALIZATION_DATA__ = ${serializeGraphVisualizationJsonForInlineScript(data)};`,
         `window.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__ = ${serializedOptions};`,
-        `window.__GMLOOP_DOCUMENTATION_CATALOGS__ = ${serializeGraphVisualizationDocumentationCatalogsForInlineScript(options.documentationCatalogs ?? null)};`,
-        `window.__GMLOOP_LIVE_RELOAD__ = ${serializeGraphVisualizationLiveReloadForInlineScript(options.liveReload ?? null)};`,
-        `window.__GMLOOP_LOADED_TARGET__ = ${serializeGraphVisualizationLoadedTargetForInlineScript(options.loadedTarget ?? null)};`,
-        `window.__GMLOOP_PROJECT_CONFIGURATION__ = ${serializeGraphVisualizationProjectConfigurationCatalogForInlineScript(options.projectConfigurationCatalog ?? null)};`,
-        `window.__GMLOOP_STARTUP_STATE__ = ${serializeGraphVisualizationStartupStateForInlineScript(options.startupState ?? null)};`,
         "</script>"
     ].join("\n");
 }
@@ -187,19 +172,4 @@ export async function renderGraphVisualizationBundle(
     } finally {
         await rm(outputDirectory, { force: true, recursive: true });
     }
-}
-
-/**
- * Render the graph visualization HTML document for a graph-index payload.
- */
-export async function renderGraphVisualizationHtml(
-    data: GraphVisualizationData,
-    options: GraphVisualizationRenderOptions
-): Promise<string> {
-    const bundleArtifact = await renderGraphVisualizationBundle(data, options);
-    const htmlFile = bundleArtifact.files.find((file) => file.relativePath === bundleArtifact.entryHtmlPath);
-    if (!htmlFile) {
-        throw new Error("Graph visualization bundle is missing the entry HTML file.");
-    }
-    return new TextDecoder().decode(htmlFile.bytes);
 }

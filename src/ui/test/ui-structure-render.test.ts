@@ -123,9 +123,9 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.match(rendered, /id="manual-link"[\s\S]*href="https:\/\/manual\.gamemaker\.io\/"/u);
     assert.match(rendered, /id="manual-link"[\s\S]*class="header-icon-link"/u);
     assert.match(rendered, /id="github-link"[\s\S]*class="header-icon-link"/u);
-    assert.match(rendered, /class="loaded-path-label">Active<\/span>/u);
-    assert.match(rendered, /class="loaded-path-label">Selected<\/span>/u);
-    assert.match(rendered, /loaded-path-value is-empty/u);
+    assert.doesNotMatch(rendered, /class="loaded-path-label"/u);
+    assert.doesNotMatch(rendered, /id="loaded-source"/u);
+    assert.doesNotMatch(rendered, /id="loaded-selected"/u);
     assert.match(rendered, /id="tab-mcp"/u);
 });
 

@@ -1,5 +1,7 @@
 #graph-page {
   position: relative;
+  height: calc(100vh - 300px);
+  min-height: 520px;
   border: 1px solid var(--gm-border);
   border-radius: 24px;
   overflow: hidden;

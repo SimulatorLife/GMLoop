@@ -425,7 +425,7 @@ void test("graph visualize UI source reload candidate includes Lit web source as
     assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph.css"), true);
     assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("index.html"), true);
     assert.equal(
-        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-template.gml"),
+        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-bundle.gml"),
         false
     );
     assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate(null), false);

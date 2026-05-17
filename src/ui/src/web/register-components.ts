@@ -6,6 +6,7 @@ import {
     GmCard,
     GmConfigPanel,
     GmDocsPanel,
+    GmErrorBanner,
     GmFixPanel,
     GmGraphPanel,
     GmGraphToolbar,
@@ -27,6 +28,7 @@ export function registerGraphVisualizationCustomElements(): void {
     defineCustomElementOnce("gm-button", GmButton);
     defineCustomElementOnce("gm-card", GmCard);
     defineCustomElementOnce("gm-badge", GmBadge);
+    defineCustomElementOnce("gm-error-banner", GmErrorBanner);
     defineCustomElementOnce("gm-app-header", GmAppHeader);
     defineCustomElementOnce("gm-graph-toolbar", GmGraphToolbar);
     defineCustomElementOnce("gm-graph-panel", GmGraphPanel);

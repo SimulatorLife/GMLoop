@@ -1,5 +1,3 @@
-import "./components/index.js";
-
 import type { GraphVisualizationData, GraphVisualizationRenderOptions } from "../graph/types.js";
 import {
     createGraphVisualizationUiModel,

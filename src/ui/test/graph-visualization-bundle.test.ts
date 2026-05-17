@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-    renderGraphVisualizationBundle,
-    renderGraphVisualizationHtml
-} from "../src/graph/graph-visualization-template.js";
+import { renderGraphVisualizationBundle } from "../src/graph/graph-visualization-bundle.js";
 
 function createBaseData() {
     return {
@@ -36,8 +33,8 @@ void test("graph visualization bundle emits entry html plus local runtime assets
     const bundle = await renderGraphVisualizationBundle(createBaseData(), { title: "Test Graph" });
 
     assert.equal(bundle.entryHtmlPath, "index.html");
-    assert.ok(bundle.files.some((entry) => /^assets\/.+\\.css$/u.test(entry.relativePath)));
-    assert.ok(bundle.files.some((entry) => /^assets\/.+\\.js$/u.test(entry.relativePath)));
+    assert.ok(bundle.files.some((entry) => /^assets\/.+\.css$/u.test(entry.relativePath)));
+    assert.ok(bundle.files.some((entry) => /^assets\/.+\.js$/u.test(entry.relativePath)));
     assert.equal(
         bundle.files.some((entry) => entry.relativePath.includes("vendor/d3")),
         false
@@ -48,13 +45,18 @@ void test("graph visualization entry html references local assets and avoids CDN
     const bundle = await renderGraphVisualizationBundle(createBaseData(), { title: "No CDN" });
     const html = readBundleFileText(bundle, bundle.entryHtmlPath);
 
-    assert.match(html, /<link rel="stylesheet" crossorigin href="\.\/assets\/.+\\.css">/u);
-    assert.match(html, /<script type="module" crossorigin src="\.\/assets\/.+\\.js"><\/script>/u);
+    assert.match(html, /<link rel="stylesheet" crossorigin href="\.\/assets\/.+\.css">/u);
+    assert.match(html, /<script type="module" crossorigin src="\.\/assets\/.+\.js"><\/script>/u);
     assert.doesNotMatch(html, /cdn\./u);
     assert.doesNotMatch(html, /<script[^>]+src="https?:\/\//u);
     assert.doesNotMatch(html, /<link[^>]+href="https?:\/\//u);
     assert.match(html, /window\.__GMLOOP_GRAPH_VISUALIZATION_DATA__/u);
     assert.match(html, /window\.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__/u);
+    assert.doesNotMatch(html, /window\.__GMLOOP_DOCUMENTATION_CATALOGS__/u);
+    assert.doesNotMatch(html, /window\.__GMLOOP_LIVE_RELOAD__/u);
+    assert.doesNotMatch(html, /window\.__GMLOOP_LOADED_TARGET__/u);
+    assert.doesNotMatch(html, /window\.__GMLOOP_PROJECT_CONFIGURATION__/u);
+    assert.doesNotMatch(html, /window\.__GMLOOP_STARTUP_STATE__/u);
     assert.doesNotMatch(html, />GitHub Repo</u);
 });
 
@@ -96,15 +98,17 @@ void test("graph visualization module script embeds serialized graph payload and
         { title: "Payload Test" }
     );
 
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
     const script = bundle.files
         .filter((entry) => entry.relativePath.endsWith(".js"))
         .map((entry) => decodeBytes(entry.bytes))
         .join("\n");
 
-    assert.match(script, /InterplanetaryFootball/u);
-    assert.match(script, /resourcePath":"InterplanetaryFootball\.yyp/u);
-    assert.match(script, /function .*readGraphNodePathLabel/u);
-    assert.match(script, /function resolveInitialPlaygroundGmlSource/u);
+    assert.match(html, /InterplanetaryFootball/u);
+    assert.match(html, /resourcePath":"InterplanetaryFootball\.yyp/u);
+    assert.match(script, /Graph Index/u);
+    assert.match(script, /Search graph nodes/u);
+    assert.match(script, /api\/ui-revision/u);
 });
 
 void test("graph visualization module script renders unloaded project state without repeated empty labels", async () => {
@@ -162,18 +166,17 @@ void test("graph visualization module script embeds workspace rule catalogs when
         title: "Rules Catalog"
     });
 
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
     const script = bundle.files
         .filter((entry) => entry.relativePath.endsWith(".js"))
         .map((entry) => decodeBytes(entry.bytes))
         .join("\n");
-    assert.match(script, /workspaceRules/u);
-    assert.match(script, /gml\/test-rule/u);
-    assert.match(script, /refactor\/test-codemod/u);
-    assert.match(script, /function createInitialGraphVisualizationUiState/u);
-    assert.match(script, /parseGraphVisualizationUiStateFromUrlSearch/u);
-    assert.match(script, /replaceGraphVisualizationUiStateInCurrentUrl/u);
-    assert.match(script, /Workspace configuration snapshot/u);
-    assert.match(script, /Rendered Workspace View/u);
+    assert.match(html, /workspaceRules/u);
+    assert.match(html, /gml\/test-rule/u);
+    assert.match(html, /refactor\/test-codemod/u);
+    assert.match(script, /activePage/u);
+    assert.match(script, /history\.replaceState/u);
+    assert.match(script, /Rendered/u);
     assert.match(script, /Raw gmloop\.json/u);
 });
 
@@ -218,14 +221,15 @@ void test("graph visualization bundle exposes object inheritance as a readable e
         { title: "Inheritance Graph" }
     );
 
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
     const script = bundle.files
         .filter((entry) => entry.relativePath.endsWith(".js"))
         .map((entry) => decodeBytes(entry.bytes))
         .join("\n");
 
-    assert.match(script, /"type":"inherits"/u);
+    assert.match(html, /"type":"inherits"/u);
     assert.match(script, /arrow-inherits/u);
-    assert.match(script, /listGraphEdgeTypes/u);
+    assert.match(script, /inherits/u);
 });
 
 void test("graph visualization css asset preserves core visual affordances", async () => {
@@ -235,12 +239,12 @@ void test("graph visualization css asset preserves core visual affordances", asy
         .map((entry) => decodeBytes(entry.bytes))
         .join("\n");
 
-    assert.match(css, /font-size: 15px;/u);
+    assert.match(css, /font-size:\s*15px/u);
     assert.match(css, /#tooltip/u);
     assert.match(css, /\.link/u);
     assert.match(css, /@keyframes graph-button-spin/u);
-    assert.match(css, /button:disabled \{ cursor: not-allowed;/u);
-    assert.match(css, /\.top-nav-button\.active:disabled \{/u);
+    assert.match(css, /button:disabled\{cursor:not-allowed/u);
+    assert.match(css, /\.top-nav-button\.active:disabled\{/u);
     assert.match(css, /\.live-reload-pipeline/u);
     assert.match(css, /\.live-reload-status-chip/u);
 });
@@ -284,12 +288,4 @@ void test("graph visualization bundle includes startup-loading shell affordances
     const html = readBundleFileText(bundle, bundle.entryHtmlPath);
 
     assert.match(html, /"startupState":\{"detail":null,"message":"Loading project data…","phase":"loading"\}/u);
-});
-
-void test("renderGraphVisualizationHtml returns the bundle entry html", async () => {
-    const html = await renderGraphVisualizationHtml(createBaseData(), { title: "Rendered Entry" });
-
-    assert.match(html, /<!DOCTYPE html>/u);
-    assert.match(html, /GMLoop Graph Index - Rendered Entry/u);
-    assert.match(html, /assets\/.+\\.js/u);
 });

@@ -81,7 +81,6 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - `renderGraphVisualizationBundle(data, options)` is the primary renderer entrypoint
 - renderer output is a filesystem-ready artifact: `index.html` + local `assets/*` files
 - bundle assets include the local Vite-built Lit shell and stylesheet assets (no CDN dependencies)
-- `renderGraphVisualizationHtml(data, options)` remains as a thin convenience wrapper that reads the bundle entry HTML
 - CLI host code is responsible for obtaining payloads and writing/serving the emitted bundle artifact
 - graph/docs/config tabs are rendered from live workspace-fed catalogs
 - the Fix tab delegates configured refactor, lint, and format mutation to the CLI host and renders status/log output
@@ -128,12 +127,12 @@ src/ui/
       index.ts
       graph-visualization-inline-data.ts
       graph-visualization-style-metadata.ts
-      graph-visualization-template.ts
+      graph-visualization-bundle.ts
       graph-viewport.ts
       types.ts
   vite.config.ts
   test/
-    graph-visualization-template.test.ts
+    graph-visualization-bundle.test.ts
     ui-surfaces.test.ts
 ```
 
@@ -157,7 +156,7 @@ The Live Reload surface is observability-only. It displays data from the CLI sta
 - `@gmloop/runtime-wrapper` owns browser-side patch application, queueing, rollback, registry state, and runtime diagnostics.
 - `@gmloop/ui` owns the presentation model, polling display, refresh event, cards, recent patch/error lists, and optional runtime health rendering.
 
-Hosts can provide live-reload data through `GraphVisualizationRenderOptions.liveReload`, the `window.__GMLOOP_LIVE_RELOAD__` bootstrap payload, or the `onRefreshLiveReloadStatus` callback.
+Hosts can provide live-reload data through `GraphVisualizationRenderOptions.liveReload` or the `onRefreshLiveReloadStatus` callback.
 
 ## Serve Host Contract
 

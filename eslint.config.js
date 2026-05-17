@@ -472,164 +472,105 @@ const tsConfig = defineConfig({
 
         // Boundaries plugin (enforce architectural module boundaries)
         "boundaries/no-unknown": "error",
-        "boundaries/dependencies": [
+        "boundaries/entry-point": [
+            "error",
+            {
+                default: "allow",
+                rules: [
+                    {
+                        target: [
+                            "cli",
+                            "core",
+                            "parser",
+                            "transpiler",
+                            "semantic",
+                            "plugin",
+                            "lint",
+                            "ui",
+                            "fixture-runner",
+                            "refactor",
+                            "runtime-wrapper",
+                            "mcp"
+                        ],
+                        allow: ["index.ts", "index.js"]
+                    }
+                ]
+            }
+        ],
+        "boundaries/element-types": [
             "error",
             {
                 default: "disallow",
                 rules: [
+                    { from: "core", allow: "core" },
                     {
-                        to: {
-                            type: [
-                                "cli",
-                                "core",
-                                "parser",
-                                "transpiler",
-                                "semantic",
-                                "plugin",
-                                "lint",
-                                "ui",
-                                "fixture-runner",
-                                "refactor",
-                                "runtime-wrapper",
-                                "mcp"
-                            ]
-                        },
-                        allow: {
-                            to: { internalPath: ["index.ts", "index.js"] }
-                        }
-                    },
-                    { from: { type: "core" }, allow: { to: { type: "core" } } },
-                    {
-                        from: { type: "parser" },
-                        allow: {
-                            to: { type: ["core", "parser", "parser-generated"] }
-                        }
+                        from: "parser",
+                        allow: ["core", "parser", "parser-generated"]
                     },
                     {
-                        from: { type: "parser-generated" },
-                        allow: { to: { type: ["core", "parser-generated"] } }
+                        from: "parser-generated",
+                        allow: ["core", "parser-generated"]
                     },
                     {
-                        from: { type: "transpiler" },
-                        allow: {
-                            to: {
-                                type: [
-                                    "core",
-                                    "transpiler",
-                                    "parser",
-                                    "semantic"
-                                ]
-                            }
-                        }
+                        from: "transpiler",
+                        allow: ["core", "transpiler", "parser", "semantic"]
                     },
                     {
-                        from: { type: "semantic" },
-                        allow: {
-                            to: {
-                                type: [
-                                    "core",
-                                    "parser",
-                                    "transpiler",
-                                    "semantic"
-                                ]
-                            }
-                        }
+                        from: "semantic",
+                        allow: ["core", "parser", "transpiler", "semantic"]
                     },
                     {
-                        from: { type: "plugin" },
-                        allow: {
-                            to: {
-                                type: [
-                                    "core",
-                                    "parser",
-                                    "plugin",
-                                    "fixture-runner"
-                                ]
-                            }
-                        }
+                        from: "plugin",
+                        allow: ["core", "parser", "plugin", "fixture-runner"]
                     },
                     {
-                        from: { type: "lint" },
-                        allow: {
-                            to: {
-                                type: [
-                                    "core",
-                                    "parser",
-                                    "lint",
-                                    "fixture-runner"
-                                ]
-                            }
-                        }
+                        from: "lint",
+                        allow: ["core", "parser", "lint", "fixture-runner"]
+                    },
+                    { from: "ui", allow: ["core", "ui"] },
+                    {
+                        from: "fixture-runner",
+                        allow: ["core", "fixture-runner"]
                     },
                     {
-                        from: { type: "ui" },
-                        allow: { to: { type: ["core", "ui"] } }
+                        from: "refactor",
+                        allow: [
+                            "core",
+                            "parser",
+                            "transpiler",
+                            "semantic",
+                            "refactor",
+                            "fixture-runner"
+                        ]
                     },
                     {
-                        from: { type: "fixture-runner" },
-                        allow: { to: { type: ["core", "fixture-runner"] } }
+                        from: "runtime-wrapper",
+                        allow: [
+                            "core",
+                            "parser",
+                            "transpiler",
+                            "semantic",
+                            "runtime-wrapper"
+                        ]
                     },
                     {
-                        from: { type: "refactor" },
-                        allow: {
-                            to: {
-                                type: [
-                                    "core",
-                                    "parser",
-                                    "transpiler",
-                                    "semantic",
-                                    "refactor",
-                                    "fixture-runner"
-                                ]
-                            }
-                        }
+                        from: "cli",
+                        allow: [
+                            "core",
+                            "parser",
+                            "transpiler",
+                            "semantic",
+                            "runtime-wrapper",
+                            "plugin",
+                            "lint",
+                            "ui",
+                            "refactor",
+                            "cli"
+                        ]
                     },
-                    {
-                        from: { type: "runtime-wrapper" },
-                        allow: {
-                            to: {
-                                type: [
-                                    "core",
-                                    "parser",
-                                    "transpiler",
-                                    "semantic",
-                                    "runtime-wrapper"
-                                ]
-                            }
-                        }
-                    },
-                    {
-                        from: { type: "cli" },
-                        allow: {
-                            to: {
-                                type: [
-                                    "core",
-                                    "parser",
-                                    "transpiler",
-                                    "semantic",
-                                    "runtime-wrapper",
-                                    "plugin",
-                                    "lint",
-                                    "ui",
-                                    "refactor",
-                                    "cli"
-                                ]
-                            }
-                        }
-                    },
-                    {
-                        from: { type: "mcp" },
-                        allow: { to: { type: ["core", "cli", "mcp"] } }
-                    },
-
-                    // Tests can import anything
-                    { from: { type: "test" }, allow: { to: { type: "*" } } },
-
-                    // Integration tests can import anything
-                    {
-                        from: { type: "integration" },
-                        allow: { to: { type: "*" } }
-                    }
+                    { from: "mcp", allow: ["core", "cli", "mcp"] },
+                    { from: "test", allow: "*" },
+                    { from: "integration", allow: "*" }
                 ]
             }
         ]
