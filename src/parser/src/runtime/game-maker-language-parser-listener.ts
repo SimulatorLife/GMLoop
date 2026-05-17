@@ -119,10 +119,7 @@ definePrototypeMethods(
     (methodName: string) => {
         const inherited =
             typeof PARSE_TREE_LISTENER_PROTOTYPE[methodName] === "function"
-                ? (PARSE_TREE_LISTENER_PROTOTYPE[methodName] as (
-                      this: ParserListenerPrototype,
-                      ...args: unknown[]
-                  ) => unknown)
+                ? PARSE_TREE_LISTENER_PROTOTYPE[methodName]
                 : Core.noop;
         return function (this: GameMakerLanguageParserListener, ...args: unknown[]) {
             return inherited.call(this, ...args) as unknown;

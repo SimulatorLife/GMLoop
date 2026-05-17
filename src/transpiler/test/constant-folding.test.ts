@@ -340,7 +340,7 @@ void test("constant folding: does not fold mixed types", () => {
     const ast: ReturnType<typeof binary> = {
         type: "BinaryExpression" as const,
         left: { type: "Literal" as const, value: 5 },
-        right: { type: "Literal" as const, value: "hello" as string | number | boolean },
+        right: { type: "Literal" as const, value: "hello" },
         operator: "+"
     };
     assert.strictEqual(tryFoldConstantExpression(ast), null);

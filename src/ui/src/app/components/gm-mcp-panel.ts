@@ -5,7 +5,7 @@ import type { GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
- * MCP surface that summarizes runtime status and available MCP tool metadata.
+ * MCP surface that summarizes live server connection and activity status.
  */
 export class GmMcpPanel extends LightDomLitElement {
     public static properties = {
@@ -22,10 +22,10 @@ export class GmMcpPanel extends LightDomLitElement {
         const statusClassName = isRunning ? "mcp-runtime-status-chip running" : "mcp-runtime-status-chip";
         const statusLabel = isRunning ? "Running" : status === "stopped" ? "Stopped" : "Not Started";
         const statusDescription = isRunning
-            ? "Connected tools are ready to use."
+            ? "The MCP bridge is available for connected clients."
             : status === "stopped"
-              ? "The tool connection stopped. Restart it to continue."
-              : "Tool access has not started in this session yet.";
+              ? "The MCP bridge stopped. Restart it to continue."
+              : "The MCP bridge has not started in this session yet.";
 
         return html`
             <gm-card class="catalog-card" .heading=${"Runtime Status"}>
@@ -43,43 +43,20 @@ export class GmMcpPanel extends LightDomLitElement {
             return html``;
         }
 
-        const mcpCatalog = this.model.documentationCatalogs?.mcpServer ?? null;
-        const mcpTools = this.model.documentationCatalogs?.mcpTools ?? [];
         const mcpPageClassName = this.state.activePage === "mcp" ? "page docs-page active" : "page docs-page";
 
         return html`
             <section id="mcp-page" class=${mcpPageClassName}>
                 <p id="mcp-meta" class="docs-meta">
-                    ${mcpCatalog
-                        ? html`${mcpTools.length} connected tool${mcpTools.length === 1 ? "" : "s"} available`
-                        : "Connected tool details are not available right now."}
+                    Live MCP server status, connection health, and future activity updates.
                 </p>
                 <div id="mcp-content" class="docs-grid">
                     ${this.#renderMcpStatusSummary(this.model.mcpServerStatus)}
                     <gm-card class="catalog-card" .heading=${"Tool Call Feed"}>
-                        <p>Recent tool activity is not shown here yet.</p>
+                        <p>No live MCP tool calls have been observed in this UI session yet.</p>
                     </gm-card>
-                    <gm-card class="catalog-card" .heading=${"Available Tools"}>
-                        ${mcpTools.length === 0
-                            ? html`<p class="catalog-empty">No tools are available right now.</p>`
-                            : html`
-                                  <ul class="catalog-list">
-                                      ${mcpTools.map(
-                                          (toolEntry) => html`
-                                              <li class="catalog-item">
-                                                  <strong>${toolEntry.commandDisplayName}</strong>
-                                                  <p>${toolEntry.description}</p>
-                                                  <div class="config-badge-row">
-                                                      <gm-badge .label=${toolEntry.toolName}></gm-badge>
-                                                      <gm-badge
-                                                          .label=${`${String(toolEntry.fields.length)} field${toolEntry.fields.length === 1 ? "" : "s"}`}
-                                                      ></gm-badge>
-                                                  </div>
-                                              </li>
-                                          `
-                                      )}
-                                  </ul>
-                              `}
+                    <gm-card class="catalog-card" .heading=${"Connection Updates"}>
+                        <p>MCP lifecycle updates will appear here as the host reports server events.</p>
                     </gm-card>
                 </div>
             </section>

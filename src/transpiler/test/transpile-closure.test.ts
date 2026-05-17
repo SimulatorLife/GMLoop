@@ -231,7 +231,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
     void describe("input validation", () => {
         void it("throws TypeError when request is not an object", () => {
             const transpiler = new Transpiler.GmlTranspiler();
-            assert.throws(() => transpiler.transpileClosure(null as unknown as TranspileClosureArgs), {
+            assert.throws(() => transpiler.transpileClosure(null), {
                 name: "TypeError"
             });
         });
@@ -291,7 +291,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
                     transpiler.transpileClosure({
                         sourceText: "function f() {}",
                         symbolId: "gml/closure/scr/broken",
-                        ast: "not-an-object" as unknown
+                        ast: "not-an-object"
                     }),
                 (err: unknown) => err instanceof Error && err.message.includes("gml/closure/scr/broken")
             );

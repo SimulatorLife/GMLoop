@@ -640,7 +640,7 @@ void test("saveProjectIndexCache cleans up temp file when rename fails", async (
                 sourceMtimes: {},
                 projectIndex
             },
-            mockFsFacade as any
+            mockFsFacade
         ),
         /rename failed/
     );
@@ -681,7 +681,7 @@ void test("saveProjectIndexCache cleans up temp file when writeFile fails", asyn
                 sourceMtimes: {},
                 projectIndex
             },
-            mockFsFacade as any
+            mockFsFacade
         ),
         /writeFile failed/
     );

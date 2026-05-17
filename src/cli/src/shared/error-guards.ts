@@ -46,7 +46,7 @@ export function asErrorLike(error: unknown): ErrorLikeDetails | null {
         return null;
     }
 
-    return error as ErrorLikeDetails;
+    return error;
 }
 
 export function asErrorWithCode<TCode extends string>(

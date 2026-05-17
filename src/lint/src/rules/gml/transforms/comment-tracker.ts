@@ -36,7 +36,7 @@ function createCommentTrackerEntries(sourceComments: ReadonlyArray<unknown>): Ar
     return sourceComments
         .flatMap((comment) => {
             const index = resolveCommentStartIndex(comment);
-            return typeof index === "number" ? [{ index, comment: comment as CommentLike, consumed: false }] : [];
+            return typeof index === "number" ? [{ index, comment, consumed: false }] : [];
         })
         .toSorted((left, right) => left.index - right.index);
 }

@@ -52,7 +52,7 @@ function getNormalizedIdentifierName(node: unknown): string | null {
 }
 
 function resolveExplicitConstructorAccessor(node: unknown): MemberAccessor | null {
-    const callIdentifierName = Core.getCallExpressionIdentifierName(node as never);
+    const callIdentifierName = Core.getCallExpressionIdentifierName(node);
     if (!callIdentifierName) {
         return null;
     }
@@ -77,7 +77,7 @@ function resolveAssignmentSource(node: AssignmentExpressionNode | VariableDeclar
 }
 
 function getNodeOrderStart(node: AccessorEventNode): number | null {
-    const startIndex = Core.getNodeStartIndex(node as never);
+    const startIndex = Core.getNodeStartIndex(node);
     return typeof startIndex === "number" && Number.isFinite(startIndex) ? startIndex : null;
 }
 

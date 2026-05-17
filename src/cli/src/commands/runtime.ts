@@ -126,7 +126,7 @@ function sanitizeRuntimeValue(path: string, value: unknown): unknown {
 
     const description =
         typeof value === "object" && value !== null
-            ? `object with keys [${Object.keys(value as Record<string, unknown>).join(", ")}]`
+            ? `object with keys [${Object.keys(value).join(", ")}]`
             : typeof value;
     console.warn(
         `runtime set: value at "${path}" is ${description}; ` +

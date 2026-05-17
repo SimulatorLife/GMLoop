@@ -14,7 +14,6 @@ function normalizeWhitespaceForComparison(value: string): string {
 }
 
 type SourceTextRange = Readonly<{ start: number; end: number }>;
-type BooleanLiteralInput = Parameters<typeof Core.getBooleanLiteralValue>[0];
 
 const LOGICAL_NORMALIZATION_SIGNAL_PATTERN = /&&|\|\||!|\b(?:and|or|not|true|false)\b/u;
 const COMMENT_SEQUENCE_PATTERN = /\/\/|\/\*/u;
@@ -210,10 +209,10 @@ function canIfStatementBenefitFromNormalization(node: unknown): boolean {
 
     if (consequentStatement && alternateStatement) {
         if (consequentStatement.type === "ReturnStatement" && alternateStatement.type === "ReturnStatement") {
-            const consequentValue = Core.getBooleanLiteralValue(consequentStatement.argument as BooleanLiteralInput, {
+            const consequentValue = Core.getBooleanLiteralValue(consequentStatement.argument, {
                 acceptBooleanPrimitives: true
             });
-            const alternateValue = Core.getBooleanLiteralValue(alternateStatement.argument as BooleanLiteralInput, {
+            const alternateValue = Core.getBooleanLiteralValue(alternateStatement.argument, {
                 acceptBooleanPrimitives: true
             });
             return (
@@ -290,10 +289,10 @@ function canBooleanLiteralComparisonBenefitFromNormalization(node: unknown): boo
         return false;
     }
 
-    const leftBoolean = Core.getBooleanLiteralValue(left as BooleanLiteralInput, {
+    const leftBoolean = Core.getBooleanLiteralValue(left, {
         acceptBooleanPrimitives: true
     });
-    const rightBoolean = Core.getBooleanLiteralValue(right as BooleanLiteralInput, {
+    const rightBoolean = Core.getBooleanLiteralValue(right, {
         acceptBooleanPrimitives: true
     });
     const hasLeftBoolean = leftBoolean === "true" || leftBoolean === "false";
@@ -345,8 +344,8 @@ function canLogicalExpressionBenefitFromNormalization(node: unknown): boolean {
     }
 
     if (
-        Core.isBooleanLiteral(left as BooleanLiteralInput, { acceptBooleanPrimitives: true }) ||
-        Core.isBooleanLiteral(right as BooleanLiteralInput, { acceptBooleanPrimitives: true })
+        Core.isBooleanLiteral(left, { acceptBooleanPrimitives: true }) ||
+        Core.isBooleanLiteral(right, { acceptBooleanPrimitives: true })
     ) {
         return true;
     }
@@ -363,8 +362,8 @@ function canLogicalExpressionBenefitFromNormalization(node: unknown): boolean {
 }
 
 function getNodeRange(node: unknown): SourceTextRange | null {
-    const nodeStart = Core.getNodeStartIndex(node as any);
-    const nodeEnd = Core.getNodeEndIndex(node as any);
+    const nodeStart = Core.getNodeStartIndex(node);
+    const nodeEnd = Core.getNodeEndIndex(node);
     if (
         typeof nodeStart !== "number" ||
         typeof nodeEnd !== "number" ||

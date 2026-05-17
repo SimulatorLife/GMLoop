@@ -1,4 +1,3 @@
-import { Core } from "@gmloop/core";
 import { html } from "lit";
 
 import type {
@@ -9,6 +8,7 @@ import type {
     GraphVisualizationLiveReloadWatcherStatus
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import { getUiErrorMessage } from "../error-message.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -231,9 +231,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
             this.#polledStatus = snapshot;
             this.#pollErrorMessage = null;
         } catch (error) {
-            this.#pollErrorMessage = Core.getErrorMessage(error, {
-                fallback: "Failed to refresh live-reload status."
-            });
+            this.#pollErrorMessage = getUiErrorMessage(error, "Failed to refresh live-reload status.");
         }
 
         this.requestUpdate();

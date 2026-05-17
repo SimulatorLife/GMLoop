@@ -43,10 +43,10 @@ void describe("Watch command server startup cleanup", () => {
         await withTemporaryProperty(
             process,
             "exit",
-            ((code?: number) => {
+            (code?: number) => {
                 void code;
                 throw new Error("process.exit called");
-            }) as typeof process.exit,
+            },
             async () => {
                 try {
                     await runWatchCommand(root, {
@@ -86,10 +86,10 @@ void describe("Watch command server startup cleanup", () => {
         await withTemporaryProperty(
             process,
             "exit",
-            ((code?: number) => {
+            (code?: number) => {
                 void code;
                 throw new Error("process.exit called");
-            }) as typeof process.exit,
+            },
             async () => {
                 try {
                     await runWatchCommand(root, {

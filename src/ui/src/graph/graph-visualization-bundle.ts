@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,12 +8,7 @@ import { build } from "vite";
 
 import {
     renderGraphVisualizationDocumentTitle,
-    serializeGraphVisualizationDataForInlineScript,
-    serializeGraphVisualizationDocumentationCatalogsForInlineScript,
-    serializeGraphVisualizationLiveReloadForInlineScript,
-    serializeGraphVisualizationLoadedTargetForInlineScript,
-    serializeGraphVisualizationProjectConfigurationCatalogForInlineScript,
-    serializeGraphVisualizationStartupStateForInlineScript
+    serializeGraphVisualizationJsonForInlineScript
 } from "./graph-visualization-inline-data.js";
 import type {
     GraphVisualizationBundleArtifact,
@@ -22,9 +18,25 @@ import type {
 } from "./types.js";
 
 const GRAPH_VISUALIZATION_ENTRY_HTML_PATH = "index.html";
+const GRAPH_VISUALIZATION_WEB_ENTRY_RELATIVE_PATH = path.join("src", "web", "index.html");
+
+function resolveUiWorkspaceRoot(): string {
+    const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+    let candidateDirectory = moduleDirectory;
+
+    while (candidateDirectory !== path.dirname(candidateDirectory)) {
+        if (existsSync(path.join(candidateDirectory, GRAPH_VISUALIZATION_WEB_ENTRY_RELATIVE_PATH))) {
+            return candidateDirectory;
+        }
+
+        candidateDirectory = path.dirname(candidateDirectory);
+    }
+
+    throw new Error("Could not locate the @gmloop/ui workspace source root for graph visualization bundling.");
+}
 
 function resolveUiSourcePath(relativePath: string): string {
-    return fileURLToPath(new URL(`../web/${relativePath}`, import.meta.url));
+    return path.join(resolveUiWorkspaceRoot(), "src", "web", relativePath);
 }
 
 function createGraphVisualizationBundleFile(
@@ -76,7 +88,7 @@ async function listBundleFiles(
 }
 
 function renderBootstrapScript(data: GraphVisualizationData, options: GraphVisualizationRenderOptions): string {
-    const serializedOptions = JSON.stringify({
+    const serializedOptions = serializeGraphVisualizationJsonForInlineScript({
         ...options,
         documentationCatalogs: options.documentationCatalogs ?? null,
         isServerMode: options.isServerMode === true,
@@ -85,22 +97,12 @@ function renderBootstrapScript(data: GraphVisualizationData, options: GraphVisua
         projectConfigurationCatalog: options.projectConfigurationCatalog ?? null,
         startupState: options.startupState ?? null,
         title: options.title
-    })
-        .replaceAll("<", String.raw`\u003c`)
-        .replaceAll(">", String.raw`\u003e`)
-        .replaceAll("&", String.raw`\u0026`)
-        .replaceAll("\u2028", String.raw`\u2028`)
-        .replaceAll("\u2029", String.raw`\u2029`);
+    });
 
     return [
         "<script>",
-        `window.__GMLOOP_GRAPH_VISUALIZATION_DATA__ = ${serializeGraphVisualizationDataForInlineScript(data)};`,
+        `window.__GMLOOP_GRAPH_VISUALIZATION_DATA__ = ${serializeGraphVisualizationJsonForInlineScript(data)};`,
         `window.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__ = ${serializedOptions};`,
-        `window.__GMLOOP_DOCUMENTATION_CATALOGS__ = ${serializeGraphVisualizationDocumentationCatalogsForInlineScript(options.documentationCatalogs ?? null)};`,
-        `window.__GMLOOP_LIVE_RELOAD__ = ${serializeGraphVisualizationLiveReloadForInlineScript(options.liveReload ?? null)};`,
-        `window.__GMLOOP_LOADED_TARGET__ = ${serializeGraphVisualizationLoadedTargetForInlineScript(options.loadedTarget ?? null)};`,
-        `window.__GMLOOP_PROJECT_CONFIGURATION__ = ${serializeGraphVisualizationProjectConfigurationCatalogForInlineScript(options.projectConfigurationCatalog ?? null)};`,
-        `window.__GMLOOP_STARTUP_STATE__ = ${serializeGraphVisualizationStartupStateForInlineScript(options.startupState ?? null)};`,
         "</script>"
     ].join("\n");
 }
@@ -117,6 +119,8 @@ function injectBootstrapPayload(
 }
 
 async function createViteWebBundle(outDirectory: string): Promise<void> {
+    const workspaceRoot = resolveUiWorkspaceRoot();
+    const entryHtmlPath = resolveUiSourcePath("index.html");
     await build({
         base: "./",
         build: {
@@ -124,13 +128,13 @@ async function createViteWebBundle(outDirectory: string): Promise<void> {
             manifest: false,
             outDir: outDirectory,
             rollupOptions: {
-                input: resolveUiSourcePath("index.html")
+                input: entryHtmlPath
             },
             sourcemap: true,
-            target: "es2022"
+            target: "es2021"
         },
-        configFile: false,
-        root: path.dirname(resolveUiSourcePath("index.html")),
+        configFile: path.join(workspaceRoot, "vite.config.ts"),
+        root: path.dirname(entryHtmlPath),
         logLevel: "silent"
     });
 }
@@ -168,19 +172,4 @@ export async function renderGraphVisualizationBundle(
     } finally {
         await rm(outputDirectory, { force: true, recursive: true });
     }
-}
-
-/**
- * Render the graph visualization HTML document for a graph-index payload.
- */
-export async function renderGraphVisualizationHtml(
-    data: GraphVisualizationData,
-    options: GraphVisualizationRenderOptions
-): Promise<string> {
-    const bundleArtifact = await renderGraphVisualizationBundle(data, options);
-    const htmlFile = bundleArtifact.files.find((file) => file.relativePath === bundleArtifact.entryHtmlPath);
-    if (!htmlFile) {
-        throw new Error("Graph visualization bundle is missing the entry HTML file.");
-    }
-    return new TextDecoder().decode(htmlFile.bytes);
 }

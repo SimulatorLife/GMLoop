@@ -30,8 +30,6 @@ type PreferArrayPushCandidate = Readonly<{
     valueExpression: unknown;
 }>;
 
-type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
-
 function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
     return isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=");
 }
@@ -65,7 +63,7 @@ function isSafeArrayReceiver(node: unknown): boolean {
                 return false;
             }
 
-            const propertyEntry = Core.getSingleMemberIndexPropertyEntry(node as never);
+            const propertyEntry = Core.getSingleMemberIndexPropertyEntry(node);
             return propertyEntry !== null && isSafeArrayReceiver(propertyEntry);
         }
         default: {
@@ -93,25 +91,25 @@ function tryGetPreferArrayPushCandidate(node: unknown, sourceText: string): Pref
         return null;
     }
 
-    const arrayExpression = Core.unwrapParenthesizedExpression(node.left.object as UnwrapParenthesizedExpressionInput);
+    const arrayExpression = Core.unwrapParenthesizedExpression(node.left.object);
     if (!arrayExpression || !isSafeArrayReceiver(arrayExpression)) {
         return null;
     }
 
-    const indexExpression = Core.getSingleMemberIndexPropertyEntry(node.left as never);
+    const indexExpression = Core.getSingleMemberIndexPropertyEntry(node.left);
     if (!isCallExpressionNode(indexExpression)) {
         return null;
     }
 
     if (
-        !Core.isCallExpressionIdentifierMatch(indexExpression as never, "array_length", {
+        !Core.isCallExpressionIdentifierMatch(indexExpression, "array_length", {
             caseInsensitive: true
         })
     ) {
         return null;
     }
 
-    const indexArguments = Core.getCallExpressionArguments(indexExpression as never);
+    const indexArguments = Core.getCallExpressionArguments(indexExpression);
     if (indexArguments.length !== 1) {
         return null;
     }

@@ -6,11 +6,7 @@ import { describe, it } from "node:test";
 
 import { Transpiler } from "@gmloop/transpiler";
 
-import {
-    type ErrorCategory,
-    type TranspilationContext,
-    transpileFile
-} from "../src/modules/transpilation/coordinator.js";
+import { type TranspilationContext, transpileFile } from "../src/modules/transpilation/coordinator.js";
 
 function createTranspilationContext(): TranspilationContext {
     return {
@@ -42,7 +38,7 @@ void describe("Transpilation error classification", () => {
 
         assert.strictEqual(result.success, false);
         assert.ok(result.error);
-        assert.strictEqual(result.error.category, "syntax" as ErrorCategory);
+        assert.strictEqual(result.error.category, "syntax");
         assert.ok(result.error.line !== undefined || result.error.column !== undefined);
     });
 
@@ -60,7 +56,7 @@ void describe("Transpilation error classification", () => {
 
         assert.strictEqual(result.success, false);
         assert.ok(result.error);
-        assert.strictEqual(result.error.category, "validation" as ErrorCategory);
+        assert.strictEqual(result.error.category, "validation");
     });
 
     void it("should provide recovery hints for common errors", async (t) => {

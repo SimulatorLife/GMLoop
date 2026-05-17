@@ -70,12 +70,6 @@ export class GmAppHeader extends LightDomLitElement {
         const loadedTarget = this.model.loadedTarget;
         const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const activePath = loadedTarget?.activePath ?? this.model.title;
-        const loadedSource = loadedTarget?.source ?? "working-directory";
-        const selectedPaths = loadedTarget?.selectedPaths ?? [];
-        const selectedPathSummary =
-            selectedPaths.length === 0
-                ? "None"
-                : `${String(selectedPaths.length)} item${selectedPaths.length === 1 ? "" : "s"}`;
         const mcpStatusLabel = this.#getMcpStatusLabel(this.model.mcpServerStatus);
         const mcpStatusClass =
             this.model.mcpServerStatus === "running"
@@ -230,20 +224,7 @@ export class GmAppHeader extends LightDomLitElement {
                             </button>
                         </div>
                         <div id="loaded-target" class="loaded-path">
-                            <span class="loaded-path-label">Active</span>
                             <span class="loaded-path-value">${activePath}</span>
-                        </div>
-                        <div id="loaded-source" class="loaded-path">
-                            <span class="loaded-path-label">Source</span>
-                            <span class="loaded-path-value">${loadedSource}</span>
-                        </div>
-                        <div id="loaded-selected" class="loaded-path">
-                            <span class="loaded-path-label">Selected</span>
-                            <span
-                                class=${selectedPaths.length > 0 ? "loaded-path-value" : "loaded-path-value is-empty"}
-                            >
-                                ${selectedPathSummary}
-                            </span>
                         </div>
                     </div>
                 </div>

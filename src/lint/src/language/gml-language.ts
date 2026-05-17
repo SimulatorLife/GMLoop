@@ -240,7 +240,7 @@ function readRecoveryMode(parseContext: { languageOptions?: unknown }): Recovery
 }
 
 function toIndexedLocation(value: unknown): IndexedLocation | null {
-    return value && typeof value === "object" ? (value as IndexedLocation) : null;
+    return value && typeof value === "object" ? value : null;
 }
 
 function createLineStartIndexMap(sourceText: string): LineStartIndexMap {

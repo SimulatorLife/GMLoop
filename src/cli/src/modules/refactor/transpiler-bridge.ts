@@ -41,7 +41,11 @@ export class GmlTranspilerBridge implements Refactor.TranspilerBridge {
             const safeResult = Core.isObjectLike(result) ? (result as Record<string, unknown>) : {};
             return { ...safeResult, success: true };
         } catch (error) {
-            throw new Error(`Transpilation failed: ${Core.isErrorLike(error) ? error.message : String(error)}`);
+            // Use a capability probe rather than `instanceof Error` so that
+            // cross-realm errors (e.g. from sandboxed transpiler instances) are handled.
+            throw new Error(`Transpilation failed: ${Core.isErrorLike(error) ? error.message : String(error)}`, {
+                cause: error
+            });
         }
     }
 }

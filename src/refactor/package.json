@@ -17,7 +17,8 @@
     "@gmloop/parser": "workspace:*"
   },
   "devDependencies": {
-    "@gmloop/fixture-runner": "workspace:*"
+    "@gmloop/fixture-runner": "workspace:*",
+    "typescript": "catalog:"
   },
   "scripts": {
     "build:types": "tsc -p tsconfig.json",
@@ -26,6 +27,5 @@
   },
   "engines": {
     "node": ">=22.5.0"
-  },
-  "packageManager": "pnpm@11.0.8"
+  }
 }

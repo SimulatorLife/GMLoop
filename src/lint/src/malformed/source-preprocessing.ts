@@ -126,7 +126,7 @@ function extractErrorMessage(error: unknown): string {
     }
 
     if (typeof error === "object" && "message" in error) {
-        const message = (error as { message: unknown }).message;
+        const message = error.message;
         return Core.isNonEmptyString(message) ? String(message) : "";
     }
 

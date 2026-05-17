@@ -194,12 +194,7 @@ void describe("ScopeTracker batch query operations", () => {
             tracker.declare("valid", { name: "valid" });
 
             // Testing runtime behavior with potentially invalid input
-            const results = tracker.getBatchSymbolOccurrences([
-                "valid",
-                null as unknown as string,
-                "",
-                undefined as unknown as string
-            ]);
+            const results = tracker.getBatchSymbolOccurrences(["valid", null, "", undefined]);
 
             assert.equal(results.size, 1);
             assert.ok(results.has("valid"));

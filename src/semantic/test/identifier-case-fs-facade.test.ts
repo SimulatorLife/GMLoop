@@ -28,15 +28,12 @@ void describe("defaultIdentifierCaseFsFacade", () => {
     });
 
     void it("readFileSync rejects non-string paths", () => {
-        assert.throws(
-            () => defaultIdentifierCaseFsFacade.readFileSync(42 as unknown as string),
-            /readFileSync only accepts string paths/
-        );
+        assert.throws(() => defaultIdentifierCaseFsFacade.readFileSync(42), /readFileSync only accepts string paths/);
     });
 
     void it("writeFileSync rejects non-string paths", () => {
         assert.throws(
-            () => defaultIdentifierCaseFsFacade.writeFileSync(42 as unknown as string, "contents"),
+            () => defaultIdentifierCaseFsFacade.writeFileSync(42, "contents"),
             /writeFileSync only accepts string paths/
         );
     });

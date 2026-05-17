@@ -63,7 +63,7 @@ void describe("generateRenamePreview", () => {
     void it("validates input parameters", () => {
         const workspace = new WorkspaceEdit();
 
-        assert.throws(() => generateRenamePreview(null as unknown as WorkspaceEdit, "old", "new"), {
+        assert.throws(() => generateRenamePreview(null, "old", "new"), {
             name: "TypeError",
             message: /requires a valid WorkspaceEdit/
         });
@@ -581,7 +581,7 @@ void describe("formatOccurrencePreview", () => {
     void it("validates input parameters", () => {
         const occurrences: Array<SymbolOccurrence> = [];
 
-        assert.throws(() => formatOccurrencePreview(null as unknown as Array<SymbolOccurrence>, "old", "new"), {
+        assert.throws(() => formatOccurrencePreview(null, "old", "new"), {
             name: "TypeError",
             message: /requires an array of occurrences/
         });

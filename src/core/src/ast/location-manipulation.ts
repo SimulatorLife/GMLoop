@@ -28,7 +28,7 @@ function adjustLocationProperty(node: LocationNode, propertyName: LocationKey, m
         return;
     }
 
-    const locationObject = location as { index?: number };
+    const locationObject = location;
     if (typeof locationObject.index === "number") {
         locationObject.index = mapIndex(locationObject.index);
     }

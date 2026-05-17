@@ -436,12 +436,7 @@ void describe("ScopeTracker: getImpactedFilePaths", () => {
         tracker.exitScope();
 
         // Mix of valid and invalid entries.
-        const result = tracker.getImpactedFilePaths([
-            null as unknown as string,
-            "",
-            undefined as unknown as string,
-            "/project/valid.gml"
-        ]);
+        const result = tracker.getImpactedFilePaths([null, "", undefined, "/project/valid.gml"]);
 
         assert.ok(result.has("/project/valid.gml"));
         assert.equal(result.size, 1);

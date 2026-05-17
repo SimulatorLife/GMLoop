@@ -222,7 +222,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
         } catch (error) {
             recordError(patch, "application", error);
             const message = resolveRuntimeErrorMessage(error);
-            throw new Error(`Failed to apply patch ${patch.id}: ${message}`);
+            throw new Error(`Failed to apply patch ${patch.id}: ${message}`, { cause: error });
         }
     }
 

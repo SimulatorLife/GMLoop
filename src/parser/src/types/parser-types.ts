@@ -192,7 +192,8 @@ export interface PredictionStrategyOptions {
  * when possible.
  */
 export interface ParserOptions
-    extends CommentProcessingOptions,
+    extends
+        CommentProcessingOptions,
         LocationMetadataOptions,
         ScopeTrackingOptions,
         DocCommentAttachmentOptions,

@@ -1,6 +1,5 @@
 .docs-page {
-  height: 100%;
-  overflow: auto;
+  overflow: visible;
 }
 
 .docs-toggle-row {

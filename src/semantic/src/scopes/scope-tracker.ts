@@ -2,6 +2,11 @@ import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
 import { ROLE_DEF, ROLE_REF } from "../symbols/scip.js";
 import { IdentifierCacheManager } from "./identifier-cache-manager.js";
+import {
+    DEFAULT_LOOKUP_CACHE_MAX_ENTRIES,
+    evaluateLookupCacheEvictionPolicy,
+    resolveLookupCacheMaxEntries
+} from "./lookup-cache-policy.js";
 import { cloneDeclarationMetadata, cloneOccurrence, createOccurrence } from "./occurrence.js";
 import { buildPathLevelDependencyGraph, collectNormalisedInputPaths, topologicallySortPaths } from "./path-sorting.js";
 import { GlobalIdentifierRegistry } from "./registry.js";
@@ -69,7 +74,6 @@ function resolveStringScopeOverride(
 
 const DEFAULT_DECLARATION_ROLE: ScopeRole = Object.freeze({ type: "declaration" });
 const DEFAULT_REFERENCE_ROLE: ScopeRole = Object.freeze({ type: "reference" });
-const DEFAULT_LOOKUP_CACHE_MAX_ENTRIES = 2048;
 const EMPTY_INVALIDATION_SET: Array<{ scopeId: string; scopeKind: string; reason: string }> = [];
 
 /**
@@ -195,10 +199,10 @@ export class ScopeTracker {
         });
         this.lookupCache = new Map();
         this.lookupCacheDepth = -1;
-        this.lookupCacheMaxEntries =
-            typeof lookupCacheMaxEntries === "number" && Number.isFinite(lookupCacheMaxEntries)
-                ? Math.max(1, Math.floor(lookupCacheMaxEntries))
-                : DEFAULT_LOOKUP_CACHE_MAX_ENTRIES;
+        this.lookupCacheMaxEntries = resolveLookupCacheMaxEntries(
+            lookupCacheMaxEntries,
+            DEFAULT_LOOKUP_CACHE_MAX_ENTRIES
+        );
     }
 
     private readLookupCache(name: string): ScopeSymbolMetadata | null | undefined {
@@ -217,7 +221,12 @@ export class ScopeTracker {
         this.lookupCache.delete(name);
         this.lookupCache.set(name, metadata);
 
-        while (this.lookupCache.size > this.lookupCacheMaxEntries) {
+        const evictionDecision = evaluateLookupCacheEvictionPolicy({
+            currentCacheSize: this.lookupCache.size,
+            maxEntries: this.lookupCacheMaxEntries
+        });
+
+        for (let i = 0; i < evictionDecision.entriesToEvict; i++) {
             const oldestName = this.lookupCache.keys().next().value;
             if (!oldestName) {
                 break;
@@ -400,12 +409,7 @@ export class ScopeTracker {
     }
 
     private isScopeObject(value: unknown): value is Scope {
-        return (
-            typeof value === "object" &&
-            value !== null &&
-            "id" in value &&
-            typeof (value as { id: unknown }).id === "string"
-        );
+        return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string";
     }
 
     public buildClassifications(role?: ScopeRole | null, isDeclaration: boolean = false): string[] {

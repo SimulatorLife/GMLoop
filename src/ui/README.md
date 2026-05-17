@@ -80,8 +80,7 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 
 - `renderGraphVisualizationBundle(data, options)` is the primary renderer entrypoint
 - renderer output is a filesystem-ready artifact: `index.html` + local `assets/*` files
-- bundle assets include local runtime scripts and vendor files (no CDN dependencies)
-- `renderGraphVisualizationHtml(data, options)` remains as a thin convenience wrapper that reads the bundle entry HTML
+- bundle assets include the local Vite-built Lit shell and stylesheet assets (no CDN dependencies)
 - CLI host code is responsible for obtaining payloads and writing/serving the emitted bundle artifact
 - graph/docs/config tabs are rendered from live workspace-fed catalogs
 - the Fix tab delegates configured refactor, lint, and format mutation to the CLI host and renders status/log output
@@ -126,15 +125,14 @@ src/ui/
       styles/
     graph/
       index.ts
-      graph-visualization-client-script.ts
-      graph-visualization-engine-adapter.ts
       graph-visualization-inline-data.ts
       graph-visualization-style-metadata.ts
-      graph-visualization-template.ts
+      graph-visualization-bundle.ts
+      graph-viewport.ts
       types.ts
   vite.config.ts
   test/
-    graph-visualization-template.test.ts
+    graph-visualization-bundle.test.ts
     ui-surfaces.test.ts
 ```
 
@@ -145,7 +143,7 @@ This keeps the public API explicit while leaving room for additional UI domains.
 The graph visualization surface is split as:
 
 - `@gmloop/semantic`: exports the graph visualization payload
-- `@gmloop/ui`: owns Lit components, graph browser runtime integration, CSS assets, and bundle rendering contracts
+- `@gmloop/ui`: owns Lit components, graph rendering, CSS assets, and bundle rendering contracts
 - `@gmloop/cli`: chooses whether to write or serve the UI bundle, owns the HTTP host server, owns regeneration endpoints, and owns native file-picker integration
 
 That separation is intentional and should be preserved as more UI surfaces are added.
@@ -158,19 +156,20 @@ The Live Reload surface is observability-only. It displays data from the CLI sta
 - `@gmloop/runtime-wrapper` owns browser-side patch application, queueing, rollback, registry state, and runtime diagnostics.
 - `@gmloop/ui` owns the presentation model, polling display, refresh event, cards, recent patch/error lists, and optional runtime health rendering.
 
-Hosts can provide live-reload data through `GraphVisualizationRenderOptions.liveReload`, the `window.__GMLOOP_LIVE_RELOAD__` bootstrap payload, or the `onRefreshLiveReloadStatus` callback.
+Hosts can provide live-reload data through `GraphVisualizationRenderOptions.liveReload` or the `onRefreshLiveReloadStatus` callback.
 
 ## Serve Host Contract
 
 `@gmloop/ui` does not invoke native dialogs or perform local filesystem selection itself. The host workspace provides that behavior and passes loaded-target metadata into the renderer.
 
-The shipped `graph visualize` bundle still uses the existing imperative graph runtime, while the `src/ui/src/web` entry mounts the newer Lit shell. Both paths should preserve the same user-facing docs/config/navigation contract.
+The shipped `graph visualize` bundle and development web entry both mount the same Lit shell. That single path owns graph/docs/config/fix/playground/MCP/live-reload rendering and must preserve the same user-facing navigation contract in export and serve modes.
 
 Current graph serve-mode host actions are:
 
 - `POST /api/reindex`: force-regenerate the current graph index
 - `POST /api/open`: switch the active UI project globally, optionally using a caller-supplied `path`
 - `POST /api/fix`: run the opened project's configured fix workflow in write mode and return log lines for the Fix tab
+- `POST /api/live-reload/start`: build and start the configured live-reload pipeline, then return the latest live-reload model
 
 The host serves the bundle entry document and static asset files, while `@gmloop/ui` remains responsible for typed rendering contracts and client presentation behavior.
 

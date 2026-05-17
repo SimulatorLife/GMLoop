@@ -208,7 +208,7 @@ void describe("Dependency Validation", () => {
             id: "script:test",
             js_body: "return 42;",
             metadata: {
-                dependencies: ["script:real", null as any, 123 as any, "" as any]
+                dependencies: ["script:real", null, 123 as any, ""]
             }
         };
 

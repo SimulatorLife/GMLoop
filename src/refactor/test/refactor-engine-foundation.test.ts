@@ -7,7 +7,6 @@ import {
     Refactor,
     type RefactorEngine,
     type RenameRequest,
-    type WorkspaceEdit,
     type WorkspaceReadFile,
     type WorkspaceWriteFile
 } from "../index.js";
@@ -605,7 +604,7 @@ void test("applyWorkspaceEdit requires a WorkspaceEdit", async () => {
     const engine = new RefactorEngineClass();
     await assert.rejects(
         () =>
-            engine.applyWorkspaceEdit(null as unknown as WorkspaceEdit, {
+            engine.applyWorkspaceEdit(null, {
                 readFile: async () => ""
             }),
         {

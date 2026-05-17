@@ -61,7 +61,7 @@ void test("normalizeLintRulesConfig rejects invalid lintRuleset values", () => {
 });
 
 void test("normalizeLintRulesConfig rejects non-string lintRuleset values", () => {
-    assert.throws(() => normalizeLintRulesConfig({ lintRuleset: 123 as unknown as string }), {
+    assert.throws(() => normalizeLintRulesConfig({ lintRuleset: 123 }), {
         name: "TypeError",
         message: "gmloop.json lintRuleset must be one of recommended, feather, performance."
     });
@@ -137,7 +137,7 @@ void test("normalizeLintRulesConfigOrNull returns null for invalid lintRuleset",
 });
 
 void test("normalizeLintRulesConfigOrNull returns null for non-string lintRuleset", () => {
-    const result = normalizeLintRulesConfigOrNull({ lintRuleset: 123 as unknown as string });
+    const result = normalizeLintRulesConfigOrNull({ lintRuleset: 123 });
     assert.equal(result, null);
 });
 

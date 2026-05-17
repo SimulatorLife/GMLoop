@@ -53,7 +53,7 @@ void test("simplifyStatementList: splicing during iteration skips the next eleme
     const ast: MutableGameMakerAstNode = {
         type: "Program",
         body
-    } as MutableGameMakerAstNode;
+    };
 
     applyLogicalNormalizationWithChangeMetadata(ast);
 
@@ -105,7 +105,7 @@ void test("logical normalization traverses array entries from a stable snapshot 
     const ast: MutableGameMakerAstNode = {
         type: "Program",
         body
-    } as MutableGameMakerAstNode;
+    };
 
     const result = applyLogicalNormalizationWithChangeMetadata(ast);
 

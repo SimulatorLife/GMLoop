@@ -267,19 +267,20 @@ void test("graph visualize builds a missing database before exporting an HTML+as
         assert.equal(payload.payload.outputDirectory, outputDirectory);
         assert.equal(payload.payload.entryHtmlPath, "index.html");
         await fs.access(databasePath);
-        await fs.access(path.join(outputDirectory, "assets", "graph-visualization.css"));
-        await fs.access(path.join(outputDirectory, "assets", "graph-visualization.js"));
-        await fs.access(path.join(outputDirectory, "assets", "vendor", "d3.min.js"));
-        await fs.access(path.join(outputDirectory, "assets", "vendor", "browser-fs-access.js"));
+        const assetNames = await fs.readdir(path.join(outputDirectory, "assets"));
+        const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
+        const styleAsset = assetNames.find((assetName) => assetName.endsWith(".css"));
+        assert.ok(scriptAsset);
+        assert.ok(styleAsset);
         const html = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
-        const script = await fs.readFile(path.join(outputDirectory, "assets", "graph-visualization.js"), "utf8");
+        const script = await fs.readFile(path.join(outputDirectory, "assets", scriptAsset), "utf8");
         assert.match(script, /shared_toolset_fn/u);
         assert.match(script, /gmloop_format/u);
         assert.match(script, /Format GameMaker Language files using the prettier plugin\./u);
         assert.doesNotMatch(html, /id="regenerate"/u);
-        assert.match(html, /assets\/graph-visualization\.js/u);
-        assert.match(html, /assets\/graph-visualization\.css/u);
-        assert.match(html, /assets\/vendor\/d3\.min\.js/u);
+        assert.match(html, /assets\/.+\.js/u);
+        assert.match(html, /assets\/.+\.css/u);
+        assert.doesNotMatch(html, /assets\/vendor\//u);
         assert.doesNotMatch(html, /cdn\./u);
     } finally {
         await fixture.cleanup();
@@ -419,21 +420,12 @@ void test("graph visualize --serve boots without a project path and waits for UI
     }
 });
 
-void test("graph visualize UI source reload candidate includes template html assets", () => {
+void test("graph visualize UI source reload candidate includes Lit web source assets", () => {
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("gm-graph-panel.ts"), true);
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph.css"), true);
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("index.html"), true);
     assert.equal(
-        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-template.ts"),
-        true
-    );
-    assert.equal(
-        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-template.css"),
-        true
-    );
-    assert.equal(
-        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-template.html"),
-        true
-    );
-    assert.equal(
-        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-template.gml"),
+        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-bundle.gml"),
         false
     );
     assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate(null), false);

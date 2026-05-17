@@ -295,7 +295,13 @@ function tryPrintVariableNode(node, path, options, print) {
             const docComments = printNodeDocComments(node, path, options);
 
             if (node.kind === "static") {
-                // WORKAROUND: Bypass printCommaSeparatedList for static declarations.
+                // WORKAROUND: printCommaSeparatedList adds a soft-break before each
+                // declarator, which is appropriate for `var a, b, c` but produces
+                // visually inconsistent output for `static x = 1, y = 2` where each
+                // declarator already contains its own initializer break.
+                // Bypassing the utility and manually assembling the joined parts keeps
+                // static declarations on a single formatting lane without hard breaks
+                // unless an individual initializer forces one.
                 const parts = path.map(print, "declarations");
                 const joined = joinDeclaratorPartsWithCommas(parts);
 
@@ -980,12 +986,38 @@ function printSwitchCaseNode(node, path, options, print) {
 // so that any accidental `null` or `undefined` values nested inside raw
 // arrays are coerced into safe string fragments. This prevents Prettier's
 // doc traversal from encountering `null` and throwing `InvalidDocError`.
+/**
+ * Coerce accidental `null` / `undefined` leaves inside a Prettier doc tree
+ * into empty string fragments so that doc traversal never encounters them.
+ *
+ * This guard exists because `_printImpl` may occasionally leave `null` inside
+ * raw arrays when handling edge-case nodes. Prettier's doc traversal will
+ * throw `InvalidDocError` if it reaches a `null` leaf, so this recursive map
+ * strips them before the result reaches Prettier's document printer.
+ *
+ * @param doc - A Prettier doc node (null, string, Doc[], or plain Doc).
+ * @returns The doc with all `null` values replaced by `""`.
+ */
 function _sanitizeDocOutput(doc) {
     if (doc === null) return "";
     if (Array.isArray(doc)) return doc.map(_sanitizeDocOutput);
     return doc;
 }
 
+/**
+ * Format an AST node into a formatted GML string.
+ *
+ * Delegates to the internal `_printImpl` to produce a Prettier document tree,
+ * then passes the result through `_sanitizeDocOutput` to strip any accidental
+ * `null` or `undefined` values that `_printImpl` may have left in raw arrays.
+ * Without this guard, Prettier's doc traversal would throw `InvalidDocError`
+ * when it encounters a `null` leaf node.
+ *
+ * @param path   - Prettier AST path for the node being printed.
+ * @param options - Prettier formatting options (printWidth, tabWidth, etc.).
+ * @param print  - Recursive print function for printing child nodes.
+ * @returns Formatted GML source text.
+ */
 export function gmlPrint(path, options, print) {
     const doc = _printImpl(path, options, print);
     return _sanitizeDocOutput(doc);

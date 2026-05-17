@@ -730,7 +730,7 @@ async function loadOptionalProjectConfig(
     }
 
     const loadedConfig = await Core.loadGmloopProjectConfig(candidatePath);
-    return Core.isObjectLike(loadedConfig) ? (loadedConfig as Record<string, unknown>) : {};
+    return Core.isObjectLike(loadedConfig) ? loadedConfig : {};
 }
 
 async function resolveGraphContext(options: GraphCommandSharedOptions): Promise<GraphResolutionContext> {

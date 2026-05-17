@@ -26,11 +26,6 @@ void test("createProjectIndexBuildOptions ignores legacy alias properties", () =
     const options = createProjectIndexBuildOptions({
         logger: null,
         logMetrics: true
-    } as {
-        logger: null;
-        logMetrics: boolean;
-        projectIndexConcurrency: number;
-        parserOverride: { parse: (text: string) => unknown };
     });
 
     assert.equal(options.concurrency, undefined);

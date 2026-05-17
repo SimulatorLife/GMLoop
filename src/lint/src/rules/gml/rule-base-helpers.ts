@@ -808,5 +808,5 @@ export function shouldReportUnsafe(context: Rule.RuleContext): boolean {
  * require a fully-typed AST node and that already guard with `isAstNodeRecord`.
  */
 export function unwrapParenthesizedExpression(node: unknown): unknown {
-    return Core.unwrapParenthesizedExpression(node as Parameters<typeof Core.unwrapParenthesizedExpression>[0]);
+    return Core.unwrapParenthesizedExpression(node);
 }

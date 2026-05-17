@@ -71,7 +71,7 @@ function isFunctionDocTargetNode(node: unknown): node is NodeWithDocComments {
         return true;
     }
 
-    return isFunctionInitializedVariableDeclaration(node as NodeWithDocComments);
+    return isFunctionInitializedVariableDeclaration(node);
 }
 
 function collectFunctionDocTargets(rootNode: unknown): FunctionDocTarget[] {

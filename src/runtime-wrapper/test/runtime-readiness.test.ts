@@ -65,7 +65,7 @@ void test("resolveRuntimeReadiness returns false when JSON_game is null", () => 
 
     try {
         globals.g_pBuiltIn = {};
-        globals.JSON_game = null as unknown as JsonGameSnapshot;
+        globals.JSON_game = null;
         assert.strictEqual(resolveRuntimeReadiness(false), false);
     } finally {
         globals.g_pBuiltIn = savedBuiltins;
@@ -202,7 +202,7 @@ void test("resolveRuntimeReadiness returns false when g_pBuiltIn is a primitive 
     const savedJsonGame = globals.JSON_game;
 
     try {
-        (globals as Record<string, unknown>).g_pBuiltIn = 42 as unknown as Record<string, unknown>;
+        (globals as Record<string, unknown>).g_pBuiltIn = 42;
         globals.JSON_game = {
             ScriptNames: [],
             Scripts: [() => {}]

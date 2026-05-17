@@ -134,7 +134,7 @@ function reportMissingControlFlowBraces(
     }
 
     context.report({
-        node: branchNode as never,
+        node: branchNode,
         messageId,
         fix: allowAutofix
             ? (fixer) => {

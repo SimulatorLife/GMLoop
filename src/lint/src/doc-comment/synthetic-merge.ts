@@ -124,7 +124,7 @@ function filterEmptyDescriptionLines(
         const descriptionText = typeof metadata?.name === STRING_TYPE ? metadata.name.trim() : "";
 
         return descriptionText.length > 0;
-    }) as MutableDocCommentLines;
+    });
 }
 
 function filterEmptyDescriptionTags(docs: DocCommentLines): MutableDocCommentLines {
@@ -143,7 +143,7 @@ function filterEmptyDescriptionTags(docs: DocCommentLines): MutableDocCommentLin
 
             return descriptionText.length > 0;
         })
-    ) as MutableDocCommentLines;
+    );
 }
 
 export function mergeSyntheticDocComments(
@@ -165,15 +165,13 @@ export function mergeSyntheticDocComments(
     // comment text should be promoted into `@description` metadata.
     let preserveDescriptionBreaks = (existingDocLines as DocCommentLines)._preserveDescriptionBreaks === true;
 
-    normalizedExistingLines = toMutableArray(
-        reorderDescriptionLinesToTop(normalizedExistingLines)
-    ) as MutableDocCommentLines;
+    normalizedExistingLines = toMutableArray(reorderDescriptionLinesToTop(normalizedExistingLines));
 
     if (preserveDescriptionBreaks) {
         normalizedExistingLines._preserveDescriptionBreaks = true;
     }
     const dedupedResult = dedupeReturnDocLines(normalizedExistingLines);
-    normalizedExistingLines = toMutableArray(dedupedResult.lines) as MutableDocCommentLines;
+    normalizedExistingLines = toMutableArray(dedupedResult.lines);
     const removedExistingReturnDuplicates = dedupedResult.removed;
 
     if (preserveDescriptionBreaks) {
@@ -190,7 +188,7 @@ export function mergeSyntheticDocComments(
         convertLegacyReturnsDescriptionLinesToMetadata(normalizedExistingLines, {
             normalizeDocCommentTypeAnnotations: normalizeGameMakerType
         })
-    ) as MutableDocCommentLines;
+    );
 
     const _computedSynthetic = computeSyntheticFunctionDocLines(node, normalizedExistingLines, options, overrides);
 
@@ -292,7 +290,7 @@ export function mergeSyntheticDocComments(
         syntheticFunctionName
     });
 
-    reorderedDocs = toMutableArray(reorderDescriptionLinesToTop(reorderedDocs)) as MutableDocCommentLines;
+    reorderedDocs = toMutableArray(reorderDescriptionLinesToTop(reorderedDocs));
 
     reorderedDocs = filterEmptyDescriptionLines(reorderedDocs, docTagHelpers.isDescriptionLine);
 
@@ -405,9 +403,7 @@ export function mergeSyntheticDocComments(
         );
 
         if ((originalExistingHasTags || originalExistingHasDocLikePrefixes) && !hasDescriptionTag) {
-            filteredResult = toMutableArray(
-                promoteLeadingDocCommentTextToDescription(filteredResult)
-            ) as MutableDocCommentLines;
+            filteredResult = toMutableArray(promoteLeadingDocCommentTextToDescription(filteredResult));
         }
     } catch {
         // Tolerate missing Core service during test scenarios or when the doc
@@ -513,7 +509,7 @@ function integrateReturnAndFunctionLines({
     ({ result, removedAnyLine } = mergeReturnLinesIntoResult({ result, returnsLines, removedAnyLine }));
 
     const finalDedupedResult = dedupeReturnDocLines(result);
-    result = toMutableArray(finalDedupedResult.lines) as MutableDocCommentLines;
+    result = toMutableArray(finalDedupedResult.lines);
     if (finalDedupedResult.removed) {
         removedAnyLine = true;
     }
@@ -1600,7 +1596,7 @@ function applyDocCommentPromotionIfNeeded(params: ApplyDocCommentPromotionParams
             syntheticLines,
             originalExistingHasDocLikePrefixes || hasMultiLineSummary
         );
-        normalizedExistingLines = toMutableArray(promoted) as MutableDocCommentLines;
+        normalizedExistingLines = toMutableArray(promoted);
 
         if (
             (promoted as any)._preserveDescriptionBreaks === true ||

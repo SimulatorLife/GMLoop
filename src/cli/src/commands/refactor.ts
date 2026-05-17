@@ -483,7 +483,7 @@ async function performRename(options: ValidatedRenameOptions): Promise<void> {
                 `Check that the symbol name is correct (including case) and that it refers to a user-defined resource (Script, Macro, Variable, etc.).`;
         }
 
-        throw new Error(`Refactor operation failed: ${message}`);
+        throw new Error(`Refactor operation failed: ${message}`, { cause: error });
     }
 }
 

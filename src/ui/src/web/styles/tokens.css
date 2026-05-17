@@ -31,8 +31,7 @@ body {
   margin: 0;
   padding: 0;
   width: 100%;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   font-family: "Manrope", system-ui, sans-serif;
   font-size: 15px;
   color: var(--gm-text);
@@ -56,6 +55,9 @@ body::before {
 
 body {
   position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 * {

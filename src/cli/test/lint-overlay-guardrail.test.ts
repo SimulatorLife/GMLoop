@@ -316,7 +316,6 @@ void test("appendRetainedLintResults strips autofix payloads before aggregation"
                     message: "Example warning",
                     line: 1,
                     column: 1,
-                    nodeType: "Identifier",
                     fix: { range: [0, 3], text: "foo" },
                     suggestions: [{ desc: "Apply suggestion", fix: { range: [0, 3], text: "bar" } }]
                 }
@@ -340,8 +339,7 @@ void test("appendRetainedLintResults strips autofix payloads before aggregation"
                     severity: 1,
                     message: "Example warning",
                     line: 1,
-                    column: 1,
-                    nodeType: "Identifier"
+                    column: 1
                 }
             ],
             suppressedMessages: [],

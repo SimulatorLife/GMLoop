@@ -358,7 +358,7 @@ void test("patch queue preserves input order when dependency graph contains a cy
                     appliedPatchIds.push(
                         ...patches.map((patch) => {
                             if (typeof patch === "object" && patch !== null && "id" in patch) {
-                                const patchId = (patch as { id: unknown }).id;
+                                const patchId = patch.id;
                                 if (typeof patchId === "string") {
                                     return patchId;
                                 }

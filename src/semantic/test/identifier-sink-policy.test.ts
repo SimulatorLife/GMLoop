@@ -56,7 +56,7 @@ void test("normalizeSinkThresholds falls back to defaults for non-positive numbe
 void test("normalizeSinkThresholds falls back to defaults for non-numeric inputs", () => {
     const result = normalizeSinkThresholds({
         flushThreshold: Number.NaN,
-        retainedEntriesPerKey: "thirty-two" as unknown as undefined,
+        retainedEntriesPerKey: "thirty-two",
         readCacheMaxEntries: null
     });
 

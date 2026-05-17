@@ -84,7 +84,7 @@ function createMockState(): GraphVisualizationUiState {
     };
 }
 
-void test("GmMcpPanel renders running status and tool catalog summary", () => {
+void test("GmMcpPanel renders running status and live activity placeholders", () => {
     const panel = new TestableGmMcpPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
@@ -94,13 +94,16 @@ void test("GmMcpPanel renders running status and tool catalog summary", () => {
     assert.match(rendered, /id="mcp-page"[\s\S]*class=page docs-page active/u);
     assert.match(rendered, /Runtime Status/u);
     assert.match(rendered, /Tool Call Feed/u);
-    assert.match(rendered, /Available Tools/u);
-    assert.match(rendered, /Graph Visualize/u);
-    assert.match(rendered, /1 connected tool available/u);
+    assert.match(rendered, /Connection Updates/u);
+    assert.match(rendered, /Live MCP server status, connection health, and future activity updates\./u);
+    assert.match(rendered, /No live MCP tool calls have been observed in this UI session yet\./u);
+    assert.doesNotMatch(rendered, /Available Tools/u);
+    assert.doesNotMatch(rendered, /Graph Visualize/u);
+    assert.doesNotMatch(rendered, /connected tool/u);
     assert.match(rendered, /mcp-runtime-status-chip running/u);
 });
 
-void test("GmMcpPanel renders empty tool fallback copy", () => {
+void test("GmMcpPanel renders not-started server status without tool catalog fallback", () => {
     const panel = new TestableGmMcpPanel();
     panel.model = {
         ...createMockModel(),
@@ -114,6 +117,8 @@ void test("GmMcpPanel renders empty tool fallback copy", () => {
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Connected tool details are not available right now\./u);
-    assert.match(rendered, /No tools are available right now\./u);
+    assert.match(rendered, /The MCP bridge has not started in this session yet\./u);
+    assert.doesNotMatch(rendered, /Connected tool details are not available right now\./u);
+    assert.doesNotMatch(rendered, /No tools are available right now\./u);
+    assert.doesNotMatch(rendered, /Available Tools/u);
 });

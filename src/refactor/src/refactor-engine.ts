@@ -79,7 +79,8 @@ import {
 
 const RENAME_VALIDATION_CACHE_MAX_SIZE = 4096;
 const APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT = 8;
-const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 256;
+const CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES = 256;
+const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 2048;
 const validatedWorkspaceRevisions = new WeakMap<object, number>();
 const DEFAULT_HOT_RELOAD_COORDINATOR: RefactorHotReloadCoordinator = Object.freeze({
     checkHotReloadSafety: HotReload.checkHotReloadSafety,
@@ -157,6 +158,13 @@ function toWorkspacePathKey(filePath: string): string {
     }
 
     return path.posix.normalize(normalizedPath);
+}
+
+function resolveCodemodReadThroughCacheMaxEntries(fileCount: number): number {
+    return Math.min(
+        CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
+        Math.max(CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES, fileCount)
+    );
 }
 
 function semanticSupportsBatchWorkspaceOverlay(
@@ -1356,6 +1364,7 @@ export class RefactorEngine {
         const overlaySpillIndex = new Set<string>();
         const readThroughCache = new Map<string, string>();
         const readThroughCacheOrder: Array<string> = [];
+        const readThroughCacheMaxEntries = resolveCodemodReadThroughCacheMaxEntries(gmlFilePaths.length);
         const appliedFiles = new Map<string, string>();
         let overlayBytes = 0;
         let overlayHighWaterBytes = 0;
@@ -1379,7 +1388,7 @@ export class RefactorEngine {
             readThroughCache.set(filePath, content);
             readThroughCacheOrder.push(filePath);
 
-            while (readThroughCacheOrder.length > CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES) {
+            while (readThroughCacheOrder.length > readThroughCacheMaxEntries) {
                 const evictedFilePath = readThroughCacheOrder.shift();
                 if (evictedFilePath !== undefined) {
                     readThroughCache.delete(evictedFilePath);

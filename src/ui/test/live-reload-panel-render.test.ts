@@ -143,9 +143,10 @@ void test("GmLiveReloadPanel renders inactive empty state when host does not pro
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Live-reload endpoints were not provided by the host\./u);
-    assert.match(rendered, /No runtime patch payloads have been generated yet\./u);
-    assert.match(rendered, /Runtime-wrapper diagnostics are not available from the host\./u);
+    assert.match(rendered, /Start Live Reload/u);
+    assert.match(rendered, /No WebSocket URL configured/u);
+    assert.match(rendered, /No live updates have been prepared yet\./u);
+    assert.match(rendered, /Game runtime details are not available right now\./u);
 });
 
 void test("GmLiveReloadPanel renders live-reload error state from UI state", () => {

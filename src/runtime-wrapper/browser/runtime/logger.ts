@@ -226,11 +226,7 @@ export interface LoggerConfiguration {
  * rather than this composite interface when possible.
  */
 export interface Logger
-    extends PatchLifecycleLogger,
-        RegistryLifecycleLogger,
-        WebSocketLogger,
-        GeneralLogger,
-        LoggerConfiguration {}
+    extends PatchLifecycleLogger, RegistryLifecycleLogger, WebSocketLogger, GeneralLogger, LoggerConfiguration {}
 
 const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
     [LogLevels.silent]: 0,

@@ -121,7 +121,7 @@ void describe("SemanticQueryCache", () => {
                         start: index,
                         end: index + 1,
                         kind: "reference"
-                    })) as Array<SymbolOccurrence>;
+                    }));
                 }
             };
 
@@ -156,7 +156,7 @@ void describe("SemanticQueryCache", () => {
 
         void it("handles null results from semantic analyzer", async () => {
             const semantic: PartialSemanticAnalyzer = {
-                getFileSymbols: async () => null as unknown as Array<FileSymbol>
+                getFileSymbols: async () => null
             };
 
             const cache = new SemanticQueryCache(semantic);
@@ -223,7 +223,7 @@ void describe("SemanticQueryCache", () => {
 
         void it("handles null results from semantic analyzer", async () => {
             const semantic: PartialSemanticAnalyzer = {
-                getDependents: async () => null as unknown as Array<DependentSymbol>
+                getDependents: async () => null
             };
 
             const cache = new SemanticQueryCache(semantic);

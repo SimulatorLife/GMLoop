@@ -328,10 +328,10 @@ export async function runCliCommandCapture({ argv = [], env = {}, cwd }: RunCliC
 
     const originalExit = process.exit.bind(process);
     let exitCode = 0;
-    process.exit = ((code = 0) => {
+    process.exit = (code = 0) => {
         exitCode = Number.isNaN(Number(code)) ? 0 : Number(code);
         throw new CliTestExit(exitCode);
-    }) as typeof process.exit;
+    };
     process.exitCode = 0;
 
     try {

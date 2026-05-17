@@ -89,7 +89,7 @@ function parseProjectIndexSource(sourceText: string, context = {}) {
                 getIdentifierMetadata: true,
                 createScopeTracker: createProjectIndexScopeCoordinator
             }
-        } as any);
+        });
     } catch (error) {
         if (Core.isSyntaxErrorWithLocation(error)) {
             throw formatProjectIndexSyntaxError(error, sourceText, context);

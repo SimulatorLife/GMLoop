@@ -25,6 +25,8 @@
 
   .loaded-target-stack {
     min-width: 0;
+    grid-template-columns: 1fr;
+    border-radius: 18px;
   }
 
   #search {
