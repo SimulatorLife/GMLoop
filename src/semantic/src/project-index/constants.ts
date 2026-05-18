@@ -62,18 +62,6 @@ export function getProjectResourceMetadataExtensions() {
 }
 
 /**
- * Override the recognized resource metadata suffixes used while categorizing
- * project files. Intended for internal integrations, tests, or experimental
- * tooling—end users should rely on the opinionated defaults exposed by the
- * formatter. The override list is normalized, deduplicated, and seeded with the
- * stock `.yy` entry.
- */
-export function setProjectResourceMetadataExtensions(extensions) {
-    projectResourceMetadataExtensions = normalizeResourceMetadataExtensions(extensions);
-    return projectResourceMetadataExtensions;
-}
-
-/**
  * Restore the resource metadata extension list to its default contents. Useful
  * for tests that temporarily override the recognized suffixes.
  */

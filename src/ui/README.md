@@ -203,3 +203,12 @@ New top-level UI additions should:
 - [MDN: `inert`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/inert)
 - [MDN: Safe area env()](https://developer.mozilla.org/en-US/docs/Web/CSS/env)
 - [APCA Contrast](https://apcacontrast.com/)
+
+----
+
+## TODO
+- **FEAT**: Add syntax highlighting to the `Playground` code (both `gml` and `js`)
+- **FEAT**: Improve the controls/selections UI/UX on the `Playground` tab/page – it is messy... maybe a pop-out/collapsable left-panel instead? Then it can have more vertical space for the long list so it doesn't feel so crowded
+- **BUG**: Selecting *any* format option in the `Playground` tab/page for the format settings seems to enable the whole/default format settings too, not *just* that one control. Also not sure if the select-options are actually hooked up to live-update the playground's output view?
+- **FEAT**: For the playground tab/page, user should be able to select *any* of the 'golden' fixture .gml files to preview/test. Or, maybe this is only true if np project is opened in the UI. If a GameMaker project *is* opened in the UI, then the user could be able to select on of the .gml files from that project and test applying rules to those instead.
+- **FEAT**: The `Config` tab/page in the UI should allow for building/modifying a `gmloop.json` config file and then have an option to download it. If a project is opened and there is no `gmloop.json` present in it, users on the `Config` tab/page should be able to generate one which will then be added/included into their project's root directory. We can have a default/recommended `gmloop.json` with the recommended values & naming conventions. Users can, of course, then edit/modify that config the same way as a loaded one from then on.
