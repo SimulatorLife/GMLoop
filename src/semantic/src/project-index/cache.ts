@@ -47,8 +47,6 @@ const projectIndexCacheSizeConfig = Core.createEnvConfiguredValueWithFallback({
     computeFallback: ({ defaultValue }) => defaultValue
 });
 
-export { PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE as DEFAULT_MAX_PROJECT_INDEX_CACHE_SIZE } from "./defaults.js";
-
 export const ProjectIndexCacheStatus = Object.freeze({
     MISS: "miss",
     HIT: "hit",
