@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { readdir } from "node:fs/promises";
 import path from "node:path";
 
+import { safeReaddirOrEmpty } from "../../shared/fs-artifacts.js";
 import {
     type ConfiguredGameMakerCliMcpServer,
     discoverConfiguredGameMakerCliMcpServer
@@ -892,7 +892,7 @@ async function resolveSingleProjectManifestPathOrNull(projectRoot: string | null
         return null;
     }
 
-    const entries = await readdir(projectRoot, { withFileTypes: true }).catch(() => []);
+    const entries = await safeReaddirOrEmpty(projectRoot, { withFileTypes: true });
     const manifestPaths = entries
         .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".yyp"))
         .map((entry) => path.join(projectRoot, entry.name))
