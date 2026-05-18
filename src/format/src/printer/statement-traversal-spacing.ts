@@ -161,18 +161,6 @@ function canForceAutomaticPadding(
     return !nextLineEmpty && !shouldSuppressExtraEmptyLine && !sanitizedMacroHasExplicitBlankLine;
 }
 
-function canForceAutomaticPaddingWithSuppressionGuard(
-    suppressFollowingEmptyLine,
-    nextLineEmpty,
-    shouldSuppressExtraEmptyLine,
-    sanitizedMacroHasExplicitBlankLine
-): boolean {
-    return (
-        !suppressFollowingEmptyLine &&
-        canForceAutomaticPadding(nextLineEmpty, shouldSuppressExtraEmptyLine, sanitizedMacroHasExplicitBlankLine)
-    );
-}
-
 function isRegionDirectiveNode(node): boolean {
     return (
         node?.type === "RegionStatement" ||
@@ -236,12 +224,11 @@ function handleIntermediateTrailingSpacing({
         shouldSuppressExtraEmptyLine,
         sanitizedMacroHasExplicitBlankLine
     );
-    const hasAutomaticPaddingCapacityWithSuppressionGuard = canForceAutomaticPaddingWithSuppressionGuard(
-        suppressFollowingEmptyLine,
-        nextLineEmpty,
-        shouldSuppressExtraEmptyLine,
-        sanitizedMacroHasExplicitBlankLine
-    );
+    const hasAutomaticPaddingCapacityWithSuppressionGuard =
+        !suppressFollowingEmptyLine &&
+        !nextLineEmpty &&
+        !shouldSuppressExtraEmptyLine &&
+        !sanitizedMacroHasExplicitBlankLine;
 
     const isMacroLikeNode = Core.isMacroLikeStatement(node);
     const isDefineMacroReplacement =
@@ -468,7 +455,6 @@ function findNextTerminalCharacter(
 
 export {
     canForceAutomaticPadding,
-    canForceAutomaticPaddingWithSuppressionGuard,
     countContiguousVariableDeclarationsBeforeIndexWithSource,
     findNextTerminalCharacter,
     handleIntermediateTrailingSpacing,
