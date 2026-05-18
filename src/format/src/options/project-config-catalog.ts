@@ -60,6 +60,12 @@ const PROJECT_FORMAT_OPTION_CATALOG: ReadonlyArray<ProjectFormatOptionCatalogEnt
         defaultValue: false,
         description: "Indent with tabs instead of spaces.",
         name: "useTabs"
+    }),
+    Object.freeze({
+        defaultValue: 4,
+        description:
+            "Minimum number of consecutive variable declarations before inserting blank-line padding before a loop statement. Set to a higher value to reduce automatic padding, or a lower value to increase it.",
+        name: "variableDeclarationsBeforeLoopPadding"
     })
 ]);
 

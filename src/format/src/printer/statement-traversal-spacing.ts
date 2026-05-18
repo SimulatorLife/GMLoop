@@ -1,13 +1,16 @@
 import { Core } from "@gmloop/core";
 import { util } from "prettier";
 
-import { DOC_COMMENT_OUTPUT_FLAG, NUMBER_TYPE, STRING_TYPE } from "./constants.js";
+import {
+    DEFAULT_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING,
+    DOC_COMMENT_OUTPUT_FLAG,
+    NUMBER_TYPE,
+    STRING_TYPE
+} from "./constants.js";
 import { safeGetParentNode } from "./path-utils.js";
 import { countTrailingBlankLines, getNextNonWhitespaceCharacter } from "./semicolons.js";
 import { macroTextHasExplicitTrailingBlankLine } from "./source-text.js";
 import { shouldAddNewlinesAroundStatement, shouldSuppressEmptyLineBetween } from "./statement-spacing-policy.js";
-
-const MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING = 4;
 
 function isStaticFunctionVariableDeclaration(node) {
     if (node?.type !== Core.VARIABLE_DECLARATION || node.kind !== "static" || !Array.isArray(node.declarations)) {
@@ -143,14 +146,15 @@ function shouldForceVariableBlockBeforeLoopPadding(
     index,
     node,
     nextNode,
-    originalText: string | null
+    originalText: string | null,
+    threshold = DEFAULT_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING
 ): boolean {
     if (node?.type !== Core.VARIABLE_DECLARATION || !isLoopLikeStatement(nextNode)) {
         return false;
     }
 
     const variableBlockSize = countContiguousVariableDeclarationsBeforeIndexWithSource(statements, index, originalText);
-    return variableBlockSize >= MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING;
+    return variableBlockSize >= threshold;
 }
 
 function canForceAutomaticPadding(
@@ -198,7 +202,8 @@ function handleIntermediateTrailingSpacing({
     currentNodeRequiresNewline,
     nodeEndIndex,
     suppressFollowingEmptyLine,
-    isTopLevel
+    isTopLevel,
+    variableDeclarationsBeforeLoopPadding
 }) {
     let previousNodeHadNewlineAddedAfter = false;
     const nextNode = statements ? statements[index + 1] : null;
@@ -263,8 +268,10 @@ function handleIntermediateTrailingSpacing({
             index,
             node,
             nextNode,
-            typeof options.originalText === STRING_TYPE ? options.originalText : null
+            typeof options.originalText === STRING_TYPE ? options.originalText : null,
+            variableDeclarationsBeforeLoopPadding
         );
+
     const shouldForceConstructorStaticSectionPadding =
         hasAutomaticPaddingCapacityWithSuppressionGuard &&
         containerNode?.type === "ConstructorDeclaration" &&

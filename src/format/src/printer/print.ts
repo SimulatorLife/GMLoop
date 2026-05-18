@@ -1845,7 +1845,8 @@ function applyTrailingSpacing({
             currentNodeRequiresNewline,
             nodeEndIndex,
             suppressFollowingEmptyLine,
-            isTopLevel
+            isTopLevel,
+            variableDeclarationsBeforeLoopPadding: options.variableDeclarationsBeforeLoopPadding
         });
     }
 

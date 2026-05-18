@@ -3,6 +3,47 @@ import { test } from "node:test";
 
 import { Format } from "../src/index.js";
 
+void test("variableDeclarationsBeforeLoopPadding=5 prevents padding with 4 declarations", async () => {
+    const source = [
+        "var alpha = 1;",
+        "var beta = 2;",
+        "var gamma = 3;",
+        "var delta = 4;",
+        "for (var index = 0; index < 10; index += 1) {",
+        "    alpha += index;",
+        "}",
+        ""
+    ].join("\n");
+
+    const formatted = await Format.format(source, {
+        variableDeclarationsBeforeLoopPadding: 5
+    });
+    const lines = formatted.trim().split("\n");
+    const forIndex = lines.findIndex((line) => line.includes("for (var index = 0"));
+
+    assert.notEqual(lines[forIndex - 1], "", "With threshold 5, 4 declarations should not trigger padding");
+});
+
+void test("variableDeclarationsBeforeLoopPadding=3 enables padding with 3 declarations", async () => {
+    const source = [
+        "var alpha = 1;",
+        "var beta = 2;",
+        "var gamma = 3;",
+        "for (var index = 0; index < 10; index += 1) {",
+        "    alpha += index;",
+        "}",
+        ""
+    ].join("\n");
+
+    const formatted = await Format.format(source, {
+        variableDeclarationsBeforeLoopPadding: 3
+    });
+    const lines = formatted.trim().split("\n");
+    const forIndex = lines.findIndex((line) => line.includes("for (var index = 0"));
+
+    assert.equal(lines[forIndex - 1], "", "With threshold 3, 3 declarations should trigger padding");
+});
+
 void test("does not insert a blank line between variable blocks and following loops inside function bodies", async () => {
     const source = [
         "function demo() {",

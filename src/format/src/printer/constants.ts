@@ -38,6 +38,20 @@ export const DEFAULT_PRINT_WIDTH = 120;
 export const DEFAULT_TAB_WIDTH = 4;
 
 /**
+ * Minimum number of consecutive variable declarations required before inserting
+ * blank-line padding before a loop statement.
+ *
+ * This threshold controls when the formatter inserts a blank line between a
+ * block of variable declarations and the following loop (for/while/repeat/do-until/with).
+ * For example, with a threshold of 4, the formatter adds blank lines only when
+ * there are 4 or more consecutive `var` statements immediately before the loop.
+ *
+ * This value can be overridden via the `variableDeclarationsBeforeLoopPadding`
+ * formatter option in `.prettierrc` or `gmloop.json`.
+ */
+export const DEFAULT_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING = 4;
+
+/**
  * Pattern for validating numeric literal strings, including optional sign and
  * exponent parts. Anchored with the `u` flag to prevent unsafe regex warnings
  * from ESLint's `security/detect-unsafe-regex` rule.

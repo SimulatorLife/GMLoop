@@ -11,7 +11,8 @@ const FORMATTER_OWNED_CONFIG_KEYS = new Set([
     "singleQuote",
     "tabWidth",
     "trailingComma",
-    "useTabs"
+    "useTabs",
+    "variableDeclarationsBeforeLoopPadding"
 ]);
 
 /**
