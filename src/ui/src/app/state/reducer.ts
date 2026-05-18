@@ -21,8 +21,22 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         liveReloadErrorMessage: null,
         liveReloadStatus: null,
         mcpServerStatus: "not-started",
+        pendingActionCount: 0,
         searchQuery: ""
     };
+}
+
+/**
+ * Compute the number of pending background operations from the current state.
+ */
+function computePendingActionCount(state: GraphVisualizationUiState): number {
+    let count = 0;
+    if (state.isFixPending) count++;
+    if (state.isLiveReloadRefreshPending) count++;
+    if (state.isLiveReloadStartPending) count++;
+    if (state.isOpenProjectPending) count++;
+    if (state.isRegeneratePending) count++;
+    return count;
 }
 
 function getNextLabelMode(currentLabelMode: GraphVisualizationUiLabelMode): GraphVisualizationUiLabelMode {
@@ -84,14 +98,16 @@ export function reduceGraphVisualizationUiState(
         case "set-regenerate-pending": {
             return {
                 ...state,
-                isRegeneratePending: action.pending
+                isRegeneratePending: action.pending,
+                pendingActionCount: computePendingActionCount({ ...state, isRegeneratePending: action.pending })
             };
         }
         case "set-fix-pending": {
             return {
                 ...state,
                 isFixPending: action.pending,
-                fixStatus: action.pending ? "running" : state.fixStatus
+                fixStatus: action.pending ? "running" : state.fixStatus,
+                pendingActionCount: computePendingActionCount({ ...state, isFixPending: action.pending })
             };
         }
         case "set-fix-error": {
@@ -115,19 +131,22 @@ export function reduceGraphVisualizationUiState(
         case "set-open-project-pending": {
             return {
                 ...state,
-                isOpenProjectPending: action.pending
+                isOpenProjectPending: action.pending,
+                pendingActionCount: computePendingActionCount({ ...state, isOpenProjectPending: action.pending })
             };
         }
         case "set-live-reload-refresh-pending": {
             return {
                 ...state,
-                isLiveReloadRefreshPending: action.pending
+                isLiveReloadRefreshPending: action.pending,
+                pendingActionCount: computePendingActionCount({ ...state, isLiveReloadRefreshPending: action.pending })
             };
         }
         case "set-live-reload-start-pending": {
             return {
                 ...state,
-                isLiveReloadStartPending: action.pending
+                isLiveReloadStartPending: action.pending,
+                pendingActionCount: computePendingActionCount({ ...state, isLiveReloadStartPending: action.pending })
             };
         }
         case "set-live-reload-error": {

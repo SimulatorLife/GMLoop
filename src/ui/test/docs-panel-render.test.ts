@@ -81,6 +81,7 @@ void test("GmDocsPanel renders the Rules subview and project-facing rule content
         liveReloadErrorMessage: null,
         liveReloadStatus: null,
         mcpServerStatus: "not-started",
+        pendingActionCount: 0,
         searchQuery: ""
     };
 
@@ -135,6 +136,7 @@ void test("GmDocsPanel renders an empty rules state when rule data is unavailabl
         liveReloadErrorMessage: null,
         liveReloadStatus: null,
         mcpServerStatus: "not-started",
+        pendingActionCount: 0,
         searchQuery: ""
     };
 

@@ -102,6 +102,7 @@ function createMockState(activePage: GraphVisualizationUiState["activePage"]): G
         liveReloadErrorMessage: null,
         liveReloadStatus: null,
         mcpServerStatus: "not-started",
+        pendingActionCount: 0,
         searchQuery: "enemy"
     };
 }

@@ -22,6 +22,7 @@ void test("reset-defaults restores visual view, auto labels, and clears search q
             liveReloadErrorMessage: null,
             liveReloadStatus: null,
             mcpServerStatus: "not-started",
+            pendingActionCount: 0,
             searchQuery: "player object"
         },
         { type: "reset-defaults" }
@@ -83,6 +84,7 @@ void test("clear-error sets errorMessage to null regardless of prior value", () 
             liveReloadErrorMessage: null,
             liveReloadStatus: null,
             mcpServerStatus: "not-started",
+            pendingActionCount: 0,
             searchQuery: ""
         },
         { type: "clear-error" }

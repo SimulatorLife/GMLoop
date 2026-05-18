@@ -45,6 +45,7 @@ export type GraphVisualizationUiState = Readonly<{
     liveReloadErrorMessage: string | null;
     liveReloadStatus: GraphVisualizationLiveReloadStatusSnapshot | null;
     mcpServerStatus: GraphVisualizationUiMcpServerStatus;
+    pendingActionCount: number;
     searchQuery: string;
 }>;
 
