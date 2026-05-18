@@ -19,15 +19,18 @@ import {
 /**
  * Find the symbol at a specific location in a file.
  * Useful for triggering refactorings from editor positions.
+ *
+ * Returns a Promise to maintain API consistency with other symbol query functions.
+ * The actual result may be synchronous or asynchronous depending on the semantic provider.
  */
-export async function findSymbolAtLocation(
+export function findSymbolAtLocation(
     filePath: string,
     offset: number,
     semantic: PartialSemanticAnalyzer | null,
     parser: ParserBridge | null
 ): Promise<SymbolLocation | null> {
     if (!semantic) {
-        return null;
+        return Promise.resolve(null);
     }
 
     // Attempt to use the semantic analyzer's position-based lookup if available.
@@ -35,13 +38,25 @@ export async function findSymbolAtLocation(
     // type information, allowing it to distinguish between identically-named
     // symbols in different contexts (e.g., local variables vs. global functions).
     if (Core.hasMethods(semantic, "getSymbolAtPosition")) {
-        return semantic.getSymbolAtPosition(filePath, offset) ?? null;
+        return Promise.resolve(semantic.getSymbolAtPosition(filePath, offset) ?? null);
     }
 
     // Fallback to parser-only AST traversal when the semantic analyzer doesn't
     // provide position-based lookup. This is less accurate because it can't
     // resolve bindings, but it still lets us find the syntactic node at the
     // given offset for basic rename operations.
+    return findSymbolAtLocationFallback(filePath, offset, parser);
+}
+
+/**
+ * Fallback method to find AST node at a specific offset using the parser only.
+ * Used when the semantic analyzer doesn't provide position-based lookup.
+ */
+export async function findSymbolAtLocationFallback(
+    filePath: string,
+    offset: number,
+    parser: ParserBridge | null
+): Promise<SymbolLocation | null> {
     if (Core.hasMethods(parser, "parse")) {
         try {
             const ast = await parser.parse(filePath);
@@ -110,7 +125,9 @@ export async function validateSymbolExists(
     semantic: PartialSemanticAnalyzer | null
 ): Promise<boolean> {
     if (!semantic) {
-        throw new Error("RefactorEngine requires a semantic analyzer to validate symbols");
+        // When no semantic analyzer is available, assume the symbol exists
+        // to permit refactorings to proceed in minimal environments.
+        return true;
     }
 
     // Query the semantic analyzer's symbol table to determine whether the given

@@ -312,19 +312,24 @@ export class RefactorEngine {
     /**
      * Find the symbol at a specific location in a file.
      * Useful for triggering refactorings from editor positions.
+     *
+     * Uses the semantic cache when available for efficient repeated lookups.
+     * Falls back to parser-based AST traversal when the semantic analyzer
+     * doesn't provide position-based lookup.
      */
     findSymbolAtLocation(filePath: string, offset: number): Promise<SymbolLocation | null> {
-        return SymbolQueries.findSymbolAtLocation(filePath, offset, this.semantic, this.parser);
+        if (this.semantic !== null) {
+            return this.semanticCache.getSymbolAtPosition(filePath, offset);
+        }
+
+        return SymbolQueries.findSymbolAtLocationFallback(filePath, offset, this.parser);
     }
 
     /**
      * Validate symbol exists in the semantic index.
+     * Uses the semantic cache when available for efficient repeated lookups.
      */
     validateSymbolExists(symbolId: string): Promise<boolean> {
-        if (this.semantic === null) {
-            return SymbolQueries.validateSymbolExists(symbolId, this.semantic);
-        }
-
         return this.semanticCache.hasSymbol(symbolId);
     }
 
