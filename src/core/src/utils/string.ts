@@ -271,8 +271,12 @@ function toSafeString(value: unknown): string {
         return value.toString();
     }
 
-    const unexpected: never = value as never;
-    return String(unexpected);
+    // The exhaustive type check above means `value` reaches here only when
+    // it satisfies the `never` type for the current TypeScript version.  The
+    // cast to `never` documents this guarantee and makes the code robust
+    // against future type-level changes.  Calling `String()` directly on the
+    // narrowest type avoids allocating the intermediate `unexpected` variable.
+    return String(value);
 }
 
 /**
