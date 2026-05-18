@@ -1,17 +1,21 @@
-import { html } from "lit";
+import { html, svg } from "lit";
 
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
 import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { createGraphLayout, type GraphLayoutNode, listGraphEdgeTypes, listGraphNodeKinds } from "../graph-layout.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
+import { GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const NODE_STYLE_BY_KIND = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
 const EDGE_STYLE_BY_TYPE = new Map(EDGE_LINE_VISUAL_STYLES.map((style) => [style.type, style]));
 
 function formatNodeKindLabel(kind: string): string {
-    return kind.replaceAll("_", " ");
+    return kind
+        .split("_")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
 }
 
 function getNodeColor(kind: GraphVisualizationNodeKind): string {
@@ -51,27 +55,137 @@ export class GmGraphPanel extends LightDomLitElement {
     #enabledNodeKinds = new Set<GraphVisualizationNodeKind>();
     #enabledEdgeTypes = new Set<GraphVisualizationEdgeType>();
     #selectedNodeId: string | null = null;
+    #lastModelReference: GraphVisualizationUiModel | null = null;
+    #initializedFiltersForModel = false;
 
-    protected updated(): void {
-        this.#syncFilterDefaults();
+    #panX = 0;
+    #panY = 0;
+    #zoomScale = 1;
+    #isDragging = false;
+    #startX = 0;
+    #startY = 0;
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        globalThis.addEventListener(GRAPH_UI_EVENT_RESET_DEFAULTS, this.#onResetDefaults);
     }
 
-    #syncFilterDefaults(): void {
+    public disconnectedCallback(): void {
+        globalThis.removeEventListener(GRAPH_UI_EVENT_RESET_DEFAULTS, this.#onResetDefaults);
+        super.disconnectedCallback();
+    }
+
+    #onResetDefaults = (): void => {
+        this.#syncFilterDefaults(true);
+        this.#panX = 0;
+        this.#panY = 0;
+        this.#zoomScale = 1;
+        this.#selectedNodeId = null;
+        this.requestUpdate();
+    };
+
+    #syncFilterDefaults(force = false): void {
         if (!this.model) {
             return;
         }
 
-        for (const kind of listGraphNodeKinds(this.model.data.nodes)) {
-            if (!this.#enabledNodeKinds.has(kind)) {
-                this.#enabledNodeKinds.add(kind);
-            }
+        const modelChanged = this.#lastModelReference !== this.model;
+        if (modelChanged) {
+            this.#lastModelReference = this.model;
+            this.#initializedFiltersForModel = false;
         }
 
-        for (const type of listGraphEdgeTypes(this.model.data.edges)) {
-            if (!this.#enabledEdgeTypes.has(type)) {
-                this.#enabledEdgeTypes.add(type);
+        if (!this.#initializedFiltersForModel || force) {
+            if (this.model.data.nodes.length > 0 || force) {
+                this.#enabledNodeKinds.clear();
+                for (const kind of listGraphNodeKinds(this.model.data.nodes)) {
+                    this.#enabledNodeKinds.add(kind);
+                }
+                this.#initializedFiltersForModel = true;
+            }
+            if (this.model.data.edges.length > 0 || force) {
+                this.#enabledEdgeTypes.clear();
+                for (const type of listGraphEdgeTypes(this.model.data.edges)) {
+                    this.#enabledEdgeTypes.add(type);
+                }
             }
         }
+    }
+
+    #onPointerDown = (event: PointerEvent): void => {
+        if (event.button !== 0) {
+            return;
+        }
+
+        const svgElement = event.currentTarget as SVGElement;
+        svgElement.setPointerCapture(event.pointerId);
+
+        this.#isDragging = true;
+        this.#startX = event.clientX - this.#panX;
+        this.#startY = event.clientY - this.#panY;
+    };
+
+    #onPointerMove = (event: PointerEvent): void => {
+        if (!this.#isDragging) {
+            return;
+        }
+
+        this.#panX = event.clientX - this.#startX;
+        this.#panY = event.clientY - this.#startY;
+        this.requestUpdate();
+    };
+
+    #onPointerUp = (event: PointerEvent): void => {
+        if (!this.#isDragging) {
+            return;
+        }
+
+        const svgElement = event.currentTarget as SVGElement;
+        svgElement.releasePointerCapture(event.pointerId);
+        this.#isDragging = false;
+    };
+
+    #onWheel = (event: WheelEvent): void => {
+        event.preventDefault();
+
+        const svgElement = this.querySelector("svg#graph");
+        if (!svgElement) {
+            return;
+        }
+
+        const rect = svgElement.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left - rect.width / 2;
+        const mouseY = event.clientY - rect.top - rect.height / 2;
+
+        const zoomFactor = 1.1;
+        const newScale = event.deltaY < 0 ? this.#zoomScale * zoomFactor : this.#zoomScale / zoomFactor;
+        const finalScale = Math.max(0.15, Math.min(8, newScale));
+
+        this.#panX = mouseX - (mouseX - this.#panX) * (finalScale / this.#zoomScale);
+        this.#panY = mouseY - (mouseY - this.#panY) * (finalScale / this.#zoomScale);
+        this.#zoomScale = finalScale;
+
+        this.requestUpdate();
+    };
+
+    #getEdgeIntersection(source: GraphLayoutNode, target: GraphLayoutNode) {
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist === 0) {
+            return { x1: source.x, y1: source.y, x2: target.x, y2: target.y };
+        }
+
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        return {
+            x1: source.x + nx * source.radius,
+            y1: source.y + ny * source.radius,
+            x2: target.x - nx * target.radius,
+            y2: target.y - ny * target.radius
+        };
     }
 
     #toggleNodeKind(kind: GraphVisualizationNodeKind): void {
@@ -242,12 +356,18 @@ export class GmGraphPanel extends LightDomLitElement {
                     viewBox="-900 -700 1800 1400"
                     role="img"
                     aria-label="GameMaker project graph"
+                    style="touch-action: none;"
+                    @pointerdown=${this.#onPointerDown}
+                    @pointermove=${this.#onPointerMove}
+                    @pointerup=${this.#onPointerUp}
+                    @pointercancel=${this.#onPointerUp}
+                    @wheel=${this.#onWheel}
                 >
                     <defs>
                         <marker
                             id="arrow-calls"
                             viewBox="0 -5 10 10"
-                            refX="18"
+                            refX="10"
                             refY="0"
                             markerWidth="6"
                             markerHeight="6"
@@ -258,7 +378,7 @@ export class GmGraphPanel extends LightDomLitElement {
                         <marker
                             id="arrow-inherits"
                             viewBox="0 -5 10 10"
-                            refX="20"
+                            refX="10"
                             refY="0"
                             markerWidth="8"
                             markerHeight="8"
@@ -269,7 +389,7 @@ export class GmGraphPanel extends LightDomLitElement {
                         <marker
                             id="arrow-depends_on"
                             viewBox="0 -5 10 10"
-                            refX="18"
+                            refX="10"
                             refY="0"
                             markerWidth="6"
                             markerHeight="6"
@@ -278,29 +398,32 @@ export class GmGraphPanel extends LightDomLitElement {
                             <path d="M0,-5L10,0L0,5"></path>
                         </marker>
                     </defs>
-                    <g id="container">
-                        ${visibleEdges.map(
-                            (edge) => html`
+                    <g id="container" transform=${`translate(${this.#panX},${this.#panY}) scale(${this.#zoomScale})`}>
+                        ${visibleEdges.map((edge) => {
+                            const geom = this.#getEdgeIntersection(edge.sourceNode, edge.targetNode);
+                            return svg`
                                 <line
                                     class="link"
-                                    x1=${String(edge.sourceNode.x)}
-                                    y1=${String(edge.sourceNode.y)}
-                                    x2=${String(edge.targetNode.x)}
-                                    y2=${String(edge.targetNode.y)}
+                                    x1=${String(geom.x1)}
+                                    y1=${String(geom.y1)}
+                                    x2=${String(geom.x2)}
+                                    y2=${String(geom.y2)}
                                     stroke=${getEdgeColor(edge.type)}
                                     stroke-dasharray=${getEdgeDashArray(edge.type)}
-                                    marker-end=${edge.type === "calls"
-                                        ? "url(#arrow-calls)"
-                                        : edge.type === "inherits"
-                                          ? "url(#arrow-inherits)"
-                                          : edge.type === "depends_on"
-                                            ? "url(#arrow-depends_on)"
-                                            : ""}
+                                    marker-end=${
+                                        edge.type === "calls"
+                                            ? "url(#arrow-calls)"
+                                            : edge.type === "inherits"
+                                              ? "url(#arrow-inherits)"
+                                              : edge.type === "depends_on"
+                                                ? "url(#arrow-depends_on)"
+                                                : ""
+                                    }
                                 ></line>
-                            `
-                        )}
+                            `;
+                        })}
                         ${visibleNodes.map(
-                            (node) => html`
+                            (node) => svg`
                                 <g class="node-group" transform=${`translate(${node.x},${node.y})`}>
                                     <circle
                                         class=${`node node-${node.kind}${node.graphId === "toolset" ? " toolset" : ""}${this.#selectedNodeId === node.id ? " highlighted" : ""}`}
@@ -317,9 +440,11 @@ export class GmGraphPanel extends LightDomLitElement {
                                             }
                                         }}
                                     ></circle>
-                                    ${this.state.labelMode === "hidden"
-                                        ? null
-                                        : html`<text x=${String(node.radius + 5)} y="4">${node.displayName}</text>`}
+                                    ${
+                                        this.state.labelMode === "hidden"
+                                            ? null
+                                            : svg`<text x=${String(node.radius + 5)} y="4">${node.displayName}</text>`
+                                    }
                                 </g>
                             `
                         )}
