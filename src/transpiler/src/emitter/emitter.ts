@@ -80,6 +80,7 @@ export class GmlToJsEmitter {
     private readonly callTargetAnalyzer: CallTargetAnalyzer;
     private readonly options: EmitOptions;
     private readonly globalVars: Set<string>;
+    private readonly initializedGlobalVars: Set<string>;
     /**
      * Script symbol IDs referenced by call expressions encountered during emission.
      *
@@ -98,6 +99,7 @@ export class GmlToJsEmitter {
         this.callTargetAnalyzer = semantic;
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this.globalVars = new Set();
+        this.initializedGlobalVars = new Set();
         this.scriptRefs = new Set();
         this.emitDepth = 0;
     }
@@ -126,6 +128,7 @@ export class GmlToJsEmitter {
         const isTopLevelEmit = this.emitDepth === 0;
         if (isTopLevelEmit) {
             this.globalVars.clear();
+            this.initializedGlobalVars.clear();
             this.scriptRefs.clear();
         }
         this.emitDepth += 1;
@@ -644,7 +647,11 @@ export class GmlToJsEmitter {
                 if (!identifier) {
                     return "";
                 }
+                if (this.initializedGlobalVars.has(identifier)) {
+                    return "";
+                }
                 this.globalVars.add(identifier);
+                this.initializedGlobalVars.add(identifier);
                 return `if (!Object.prototype.hasOwnProperty.call(${globalsIdent}, "${identifier}")) { ${globalsIdent}.${identifier} = undefined; }`;
             })
         );
