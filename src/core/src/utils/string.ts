@@ -230,7 +230,6 @@ const CHAR_CODE_UPPER_END = 90; // Z
 const CHAR_CODE_LOWER_START = 97; // a
 const CHAR_CODE_LOWER_END = 122; // z
 const CHAR_CODE_UNDERSCORE = 95; // _
-const OBJECT_TO_STRING = Object.prototype.toString.bind(Object.prototype);
 const STARTS_WITH_VOWEL_PATTERN = /^[aeiou]/i;
 
 function normalizeIndefiniteArticle(label) {
@@ -255,14 +254,6 @@ function toSafeString(value: unknown): string {
         return value;
     }
 
-    if (typeof value === "object") {
-        const toString = (value as { toString?: unknown }).toString;
-        if (typeof toString === "function" && toString !== Object.prototype.toString) {
-            return (toString as (this: unknown) => string).call(value);
-        }
-        return OBJECT_TO_STRING(value);
-    }
-
     if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
         return String(value);
     }
@@ -271,12 +262,23 @@ function toSafeString(value: unknown): string {
         return value.toString();
     }
 
-    // The exhaustive type check above means `value` reaches here only when
-    // it satisfies the `never` type for the current TypeScript version.  The
-    // cast to `never` documents this guarantee and makes the code robust
-    // against future type-level changes.  Calling `String()` directly on the
-    // narrowest type avoids allocating the intermediate `unexpected` variable.
-    return String(value);
+    // `typeof value === "object"` — invoke the custom toString if the object's
+    // prototype chain provides one; fall back to Object.prototype.toString for
+    // plain objects so callers receive "[object Object]" rather than silently
+    // dropping to a generic string that masks the actual type.
+    const obj = value as object;
+    if (
+        "toString" in obj &&
+        typeof (obj as unknown as { toString(): string }).toString === "function" &&
+        (obj as unknown as { toString(): string }).toString !== Object.prototype.toString
+    ) {
+        // Invoking the custom toString after confirming it differs from Object.prototype.toString.
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- the guard above confirms this is a custom toString
+        return obj.toString();
+    }
+    // Plain object: fall back to the generic tag. The preceding guard ensures
+    // method is Object.prototype.toString here, so using it directly is safe.
+    return Object.prototype.toString.call(value);
 }
 
 /**
