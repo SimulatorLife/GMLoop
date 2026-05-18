@@ -615,7 +615,7 @@ async function performInitialScan(
     // Files that failed to read or parse in collectScriptNames are not in the cache;
     // they will be processed on their first watch event instead.
     await (fileDataCache !== undefined && fileDataCache.size > 0
-        ? Core.runInParallel(Array.from(fileDataCache.keys()), processFile)
+        ? Core.runInParallelWithLimit(Array.from(fileDataCache.keys()), processFile, maxConcurrentDirs)
         : scanDirectory(dirPath));
 
     const stats = runtimeContext.dependencyTracker.getStatistics();
