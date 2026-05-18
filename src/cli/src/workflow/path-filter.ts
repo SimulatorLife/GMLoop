@@ -4,29 +4,15 @@ import { Core } from "@gmloop/core";
 
 import { REPO_ROOT } from "../shared/workspace-paths.js";
 
-const { getNonEmptyTrimmedString, isNonEmptyString, isPathWithinBoundary, toArray, uniqueArray, compactArray } = Core;
-const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u;
-const WINDOWS_UNC_PATH_PATTERN = /^[/\\]{2}[^/\\]+[/\\][^/\\]+/u;
-
-/**
- * Resolve workflow paths while preserving Windows absolute/UNC semantics even
- * when the CLI runs on a non-Windows host.
- *
- * Node's POSIX `path.resolve()` treats `C:\project` and `\\server\share` as
- * relative filenames on Linux/macOS, which corrupts allow/deny lists before
- * the boundary helpers can compare them. Choosing the Win32 resolver only for
- * true Windows absolute inputs keeps existing relative-path behavior intact.
- *
- * @param {string} candidate Raw workflow path candidate.
- * @returns {string} Resolved absolute path using the correct path flavor.
- */
-function resolveWorkflowPathCandidate(candidate: string): string {
-    if (WINDOWS_ABSOLUTE_PATH_PATTERN.test(candidate) || WINDOWS_UNC_PATH_PATTERN.test(candidate)) {
-        return path.win32.resolve(candidate);
-    }
-
-    return path.resolve(candidate);
-}
+const {
+    getNonEmptyTrimmedString,
+    isNonEmptyString,
+    isPathWithinBoundary,
+    resolvePortableAbsolutePath,
+    toArray,
+    uniqueArray,
+    compactArray
+} = Core;
 
 export interface WorkflowPathFilterOptions {
     allowPaths?: Iterable<unknown>;
@@ -67,7 +53,7 @@ export function normalizeWorkflowPathList(paths: Iterable<unknown> | null | unde
     const trimmed = compactArray(toArray(paths).map(getNonEmptyTrimmedString)).filter(
         (value): value is string => typeof value === "string"
     );
-    const resolved = trimmed.map((candidate) => resolveWorkflowPathCandidate(candidate));
+    const resolved = trimmed.map((candidate) => resolvePortableAbsolutePath(candidate));
     return [...(uniqueArray(resolved, { freeze: false }) as Array<string>)];
 }
 
@@ -279,7 +265,7 @@ function isWorkflowTargetAllowed({
     denyList,
     treatAsDirectory = false
 }: WorkflowTargetAllowanceOptions): boolean {
-    const normalized = resolveWorkflowPathCandidate(candidate);
+    const normalized = resolvePortableAbsolutePath(candidate);
 
     if (denyList.some((deny) => isPathWithinBoundary(normalized, deny))) {
         return false;
