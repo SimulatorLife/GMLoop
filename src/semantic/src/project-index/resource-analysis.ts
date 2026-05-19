@@ -286,25 +286,23 @@ async function registerResourceEvents({ context, parsed, resourceRecord, resourc
         return;
     }
 
-    const eventPathPairs = await Promise.all(
+    const resolvedEvents = await Promise.all(
         eventList.map(async (event) => ({
             event,
             eventGmlPath: await extractEventGmlPath(event, resourceRecord, resourceDir, projectRoot, fsFacade)
         }))
     );
 
-    for (const { event, eventGmlPath } of eventPathPairs) {
+    for (const { event, eventGmlPath } of resolvedEvents) {
         if (!eventGmlPath) {
             continue;
         }
-
-        const descriptor = createObjectEventScopeDescriptor(resourceRecord, event, eventGmlPath);
 
         attachScopeDescriptor({
             context,
             resourceRecord,
             gmlRelativePath: eventGmlPath,
-            descriptor
+            descriptor: createObjectEventScopeDescriptor(resourceRecord, event, eventGmlPath)
         });
     }
 }
