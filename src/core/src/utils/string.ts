@@ -271,12 +271,10 @@ function toSafeString(value: unknown): string {
         return value.toString();
     }
 
-    // The exhaustive type check above means `value` reaches here only when
-    // it satisfies the `never` type for the current TypeScript version.  The
-    // cast to `never` documents this guarantee and makes the code robust
-    // against future type-level changes.  Calling `String()` directly on the
-    // narrowest type avoids allocating the intermediate `unexpected` variable.
-    return String(value);
+    // The exhaustive checks above should leave no runtime path to this branch.
+    // Throwing surfaces unexpected runtime values explicitly and avoids
+    // accidental object stringification in diagnostics.
+    throw new TypeError("Unsupported value type for toSafeString");
 }
 
 /**
