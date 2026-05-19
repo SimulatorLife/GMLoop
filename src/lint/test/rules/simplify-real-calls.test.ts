@@ -52,6 +52,20 @@ function createContext(sourceText: string): {
     return { context, messages };
 }
 
+function runRuleOnNode(
+    rule: { create?: unknown },
+    source: string,
+    node: Record<string, unknown>
+): Array<{ messageId: string; fix?: { range: [number, number]; text: string } }> {
+    const { context, messages } = createContext(source);
+    const create = rule.create as
+        | ((context: Record<string, unknown>) => { Program?: (ast: Record<string, unknown>) => void })
+        | undefined;
+    const visitor = create?.(context);
+    visitor?.Program?.({ type: "Program", body: [node] });
+    return messages;
+}
+
 void describe("gml/simplify-real-calls", () => {
     const rule = Lint.plugin.rules["simplify-real-calls"];
 
@@ -59,67 +73,54 @@ void describe("gml/simplify-real-calls", () => {
         assert.ok(rule, "Expected simplify-real-calls rule to be registered");
     });
 
-    void it("reports real() with a double-quoted numeric string", () => {
-        const source = 'var x = real("123.45");';
-        const node = buildRealCallNode("real", '"123.45"', 8);
-        const { context, messages } = createContext(source);
+    const reportingCases = [
+        {
+            name: "double-quoted numeric string",
+            source: 'var x = real("123.45");',
+            callee: "real",
+            literalValue: '"123.45"',
+            expectedFixText: "123.45"
+        },
+        {
+            name: "single-quoted numeric string",
+            source: "var x = real('56');",
+            callee: "real",
+            literalValue: "'56'",
+            expectedFixText: "56"
+        },
+        {
+            name: 'verbatim (@") string',
+            source: 'var x = real(@"123.45");',
+            callee: "real",
+            literalValue: '@"123.45"',
+            expectedFixText: "123.45"
+        },
+        {
+            name: "uppercase callee (case-insensitive)",
+            source: 'var x = REAL("123.45");',
+            callee: "REAL",
+            literalValue: '"123.45"',
+            expectedFixText: "123.45"
+        },
+        {
+            name: "mixed-case callee",
+            source: 'var x = ReAl("56");',
+            callee: "ReAl",
+            literalValue: '"56"',
+            expectedFixText: "56"
+        }
+    ] as const;
 
-        const visitor = rule.create(context as any);
-        visitor.Program?.({ type: "Program", body: [node] } as any);
+    for (const testCase of reportingCases) {
+        void it(`reports real() with a ${testCase.name}`, () => {
+            const node = buildRealCallNode(testCase.callee, testCase.literalValue, 8);
+            const messages = runRuleOnNode(rule, testCase.source, node);
 
-        assert.strictEqual(messages.length, 1);
-        assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
-        assert.strictEqual(messages[0]?.fix?.text, "123.45");
-    });
-
-    void it("reports real() with a single-quoted numeric string", () => {
-        const source = "var x = real('56');";
-        const node = buildRealCallNode("real", "'56'", 8);
-        const { context, messages } = createContext(source);
-
-        const visitor = rule.create(context as any);
-        visitor.Program?.({ type: "Program", body: [node] } as any);
-
-        assert.strictEqual(messages.length, 1);
-        assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
-        assert.strictEqual(messages[0]?.fix?.text, "56");
-    });
-
-    void it('reports real() with a verbatim (@") string', () => {
-        const source = 'var x = real(@"123.45");';
-        const node = buildRealCallNode("real", '@"123.45"', 8);
-        const { context, messages } = createContext(source);
-
-        const visitor = rule.create(context as any);
-        visitor.Program?.({ type: "Program", body: [node] } as any);
-
-        assert.strictEqual(messages.length, 1);
-        assert.strictEqual(messages[0]?.fix?.text, "123.45");
-    });
-
-    void it("reports real() with an uppercase callee (case-insensitive)", () => {
-        const source = 'var x = REAL("123.45");';
-        const node = buildRealCallNode("REAL", '"123.45"', 8);
-        const { context, messages } = createContext(source);
-
-        const visitor = rule.create(context as any);
-        visitor.Program?.({ type: "Program", body: [node] } as any);
-
-        assert.strictEqual(messages.length, 1);
-        assert.strictEqual(messages[0]?.fix?.text, "123.45");
-    });
-
-    void it("reports real() with a mixed-case callee", () => {
-        const source = 'var x = ReAl("56");';
-        const node = buildRealCallNode("ReAl", '"56"', 8);
-        const { context, messages } = createContext(source);
-
-        const visitor = rule.create(context as any);
-        visitor.Program?.({ type: "Program", body: [node] } as any);
-
-        assert.strictEqual(messages.length, 1);
-        assert.strictEqual(messages[0]?.fix?.text, "56");
-    });
+            assert.strictEqual(messages.length, 1);
+            assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
+            assert.strictEqual(messages[0]?.fix?.text, testCase.expectedFixText);
+        });
+    }
 
     void it("does not report real() when the argument is a non-numeric string", () => {
         const source = 'var x = real("hello");';
