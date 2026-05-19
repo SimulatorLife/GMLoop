@@ -17,7 +17,7 @@ function normalizeResourceMetadataExtension(candidate) {
     return Core.normalizeExtensionSuffix(candidate);
 }
 
-function normalizeResourceMetadataExtensions(candidate) {
+function _normalizeResourceMetadataExtensions(candidate) {
     const entries = typeof candidate === "string" ? [candidate] : candidate;
 
     const normalized = Core.mergeUniqueValues(DEFAULT_RESOURCE_METADATA_EXTENSIONS, entries, {
