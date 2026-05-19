@@ -231,7 +231,25 @@ const CHAR_CODE_LOWER_START = 97; // a
 const CHAR_CODE_LOWER_END = 122; // z
 const CHAR_CODE_UNDERSCORE = 95; // _
 const OBJECT_TO_STRING = Object.prototype.toString.bind(Object.prototype);
-const STARTS_WITH_INDEFINITE_AN_PATTERN = /^(?:[aeiou]|8|11|18)/i;
+const STARTS_WITH_VOWEL_PATTERN = /^[aeiou]/i;
+const LEADING_NUMERIC_TOKEN_PATTERN = /^\d+/;
+
+function startsWithIndefiniteAnSound(label: string): boolean {
+    if (STARTS_WITH_VOWEL_PATTERN.test(label)) {
+        return true;
+    }
+
+    const numericPrefix = label.match(LEADING_NUMERIC_TOKEN_PATTERN)?.[0];
+    if (!numericPrefix) {
+        return false;
+    }
+
+    if (numericPrefix.startsWith("8")) {
+        return true;
+    }
+
+    return numericPrefix === "11" || numericPrefix === "18";
+}
 
 function normalizeIndefiniteArticle(label) {
     if (typeof label !== "string") {
@@ -243,7 +261,7 @@ function normalizeIndefiniteArticle(label) {
         return null;
     }
 
-    return `${STARTS_WITH_INDEFINITE_AN_PATTERN.test(normalized) ? "an" : "a"} ${normalized}`;
+    return `${startsWithIndefiniteAnSound(normalized) ? "an" : "a"} ${normalized}`;
 }
 
 function toSafeString(value: unknown): string {
@@ -273,10 +291,10 @@ function toSafeString(value: unknown): string {
 
     // The exhaustive type check above means `value` reaches here only when
     // it satisfies the `never` type for the current TypeScript version.  The
-    // cast to `never` documents this guarantee and makes the code robust
-    // against future type-level changes.  Calling `String()` directly on the
-    // narrowest type avoids allocating the intermediate `unexpected` variable.
-    return OBJECT_TO_STRING(value);
+    // cast to `never` documents this guarantee and keeps this fallback aligned
+    // with the human-readable coercion strategy used above.
+    const unexpectedValue = value as never;
+    return String(unexpectedValue);
 }
 
 /**
