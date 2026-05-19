@@ -321,7 +321,9 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
 
     const patchById = new Map<string, unknown>();
     const orderedIds: Array<string> = [];
+    const dependencyIdsByPatchId = new Map<string, ReadonlyArray<string>>();
     let containsPatchWithoutStringId = false;
+    let hasDependencyMetadata = false;
 
     for (const patch of patches) {
         const patchId = extractPatchId(patch);
@@ -336,13 +338,15 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
 
         patchById.set(patchId, patch);
         orderedIds.push(patchId);
+
+        const dependencyIds = readPatchDependencies(patch);
+        dependencyIdsByPatchId.set(patchId, dependencyIds);
+        if (!hasDependencyMetadata && dependencyIds.length > 0) {
+            hasDependencyMetadata = true;
+        }
     }
 
-    if (containsPatchWithoutStringId) {
-        return patches;
-    }
-
-    if (orderedIds.length < 2) {
+    if (containsPatchWithoutStringId || !hasDependencyMetadata || orderedIds.length < 2) {
         return patches;
     }
 
@@ -351,16 +355,9 @@ function orderPatchesForDependencyBatching(patches: Array<unknown>): Array<unkno
         patchIndexById.set(patchId, index);
     }
 
-    const dependencyIdsByPatchId = new Map<string, ReadonlyArray<string>>();
     let requiresReorder = false;
     for (const [index, patchId] of orderedIds.entries()) {
-        const patch = patchById.get(patchId);
-        if (patch === undefined) {
-            continue;
-        }
-
-        const dependencyIds = readPatchDependencies(patch);
-        dependencyIdsByPatchId.set(patchId, dependencyIds);
+        const dependencyIds = dependencyIdsByPatchId.get(patchId) ?? [];
         if (dependencyIds.length === 0) {
             continue;
         }
