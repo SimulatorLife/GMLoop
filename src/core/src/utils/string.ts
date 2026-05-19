@@ -233,6 +233,7 @@ const CHAR_CODE_UNDERSCORE = 95; // _
 const OBJECT_TO_STRING = Object.prototype.toString.bind(Object.prototype);
 const STARTS_WITH_VOWEL_PATTERN = /^[aeiou]/i;
 const LEADING_NUMERIC_TOKEN_PATTERN = /^\d+/;
+const NUMERIC_TOKENS_REQUIRING_INDEFINITE_AN = new Set(["11", "18"]);
 
 function startsWithIndefiniteAnSound(label: string): boolean {
     if (STARTS_WITH_VOWEL_PATTERN.test(label)) {
@@ -248,7 +249,9 @@ function startsWithIndefiniteAnSound(label: string): boolean {
         return true;
     }
 
-    return numericPrefix === "11" || numericPrefix === "18";
+    // "11" and "18" are pronounced with an initial vowel sound ("eleven",
+    // "eighteen"), so they conventionally pair with "an".
+    return NUMERIC_TOKENS_REQUIRING_INDEFINITE_AN.has(numericPrefix);
 }
 
 function normalizeIndefiniteArticle(label) {

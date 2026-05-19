@@ -286,12 +286,14 @@ async function registerResourceEvents({ context, parsed, resourceRecord, resourc
         return;
     }
 
-    const eventGmlPaths = await Promise.all(
-        eventList.map((event) => extractEventGmlPath(event, resourceRecord, resourceDir, projectRoot, fsFacade))
+    const eventPathPairs = await Promise.all(
+        eventList.map(async (event) => ({
+            event,
+            eventGmlPath: await extractEventGmlPath(event, resourceRecord, resourceDir, projectRoot, fsFacade)
+        }))
     );
 
-    for (const [eventIndex, event] of eventList.entries()) {
-        const eventGmlPath = eventGmlPaths[eventIndex];
+    for (const { event, eventGmlPath } of eventPathPairs) {
         if (!eventGmlPath) {
             continue;
         }
