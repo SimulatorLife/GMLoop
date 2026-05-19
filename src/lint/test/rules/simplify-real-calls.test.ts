@@ -52,20 +52,6 @@ function createContext(sourceText: string): {
     return { context, messages };
 }
 
-function runRuleOnNode(
-    rule: { create?: unknown },
-    source: string,
-    node: Record<string, unknown>
-): Array<{ messageId: string; fix?: { range: [number, number]; text: string } }> {
-    const { context, messages } = createContext(source);
-    const create = rule.create as
-        | ((context: Record<string, unknown>) => { Program?: (ast: Record<string, unknown>) => void })
-        | undefined;
-    const visitor = create?.(context);
-    visitor?.Program?.({ type: "Program", body: [node] });
-    return messages;
-}
-
 void describe("gml/simplify-real-calls", () => {
     const rule = Lint.plugin.rules["simplify-real-calls"];
 
@@ -114,7 +100,9 @@ void describe("gml/simplify-real-calls", () => {
     for (const testCase of reportingCases) {
         void it(`reports real() with a ${testCase.name}`, () => {
             const node = buildRealCallNode(testCase.callee, testCase.literalValue, 8);
-            const messages = runRuleOnNode(rule, testCase.source, node);
+            const { context, messages } = createContext(testCase.source);
+            const visitor = rule.create(context as any);
+            visitor.Program?.({ type: "Program", body: [node] } as any);
 
             assert.strictEqual(messages.length, 1);
             assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
