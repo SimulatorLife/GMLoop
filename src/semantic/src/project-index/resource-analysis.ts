@@ -7,8 +7,7 @@ import {
     matchProjectResourceMetadataExtension,
     PROJECT_MANIFEST_EXTENSION
 } from "./constants.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
-import { runWithMissingPathFallback } from "./missing-path-fallback.js";
+import { defaultFsFacade, type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { normalizeProjectResourcePath } from "./path-normalization.js";
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { extractAssetReferencesFromMetadataDocument } from "./resource-reference-extractor.js";
