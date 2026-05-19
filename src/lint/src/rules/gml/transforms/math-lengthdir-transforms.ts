@@ -7,7 +7,7 @@
  * Public exports mirror the original names so callers can import from either
  * module without changing behavior.
  */
-import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
+import { Core } from "@gmloop/core";
 
 import {
     createBinaryExpressionNode,
@@ -18,6 +18,7 @@ import {
     replaceNode,
     replaceNodeWith as replaceNodeByMutation
 } from "./math-ast-builders.js";
+import type { ConvertManualMathTransformOptions } from "./math-ast-mutation.js";
 import { computeNumericTolerance, normalizeNumericCoefficient, parseNumericFactor } from "./math-numeric-utils.js";
 import {
     attemptCollectDistributedScalars,
@@ -39,16 +40,6 @@ const {
     VARIABLE_DECLARATION,
     isObjectLike
 } = Core;
-
-type ConvertManualMathTransformOptions = {
-    sourceText?: string;
-    originalText?: string;
-    astRoot?: MutableGameMakerAstNode;
-};
-
-// ---------------------------------------------------------------------------
-// Shared helpers (copied verbatim from the source file)
-// ---------------------------------------------------------------------------
 
 export function unwrapEnclosingParentheses(node: any, context: ConvertManualMathTransformOptions | null) {
     if (!isObjectLike(node)) {

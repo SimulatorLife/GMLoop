@@ -28,13 +28,10 @@ import {
     replaceNodeWith as replaceNodeByMutation
 } from "./math-ast-builders.js";
 import type { ConvertManualMathTransformOptions } from "./math-ast-mutation.js";
-// Also import as a namespace so the module body can use the helpers internally
-// (export* does not make symbols available within the module performing the re-export).
 import * as AST from "./math-ast-mutation.js";
 import {
     attemptConvertLengthDir,
     isIdentityReplacementSafeExpression,
-    isSafeOperand,
     isSafeReciprocalCancellationOperand,
     matchLengthdirReassignment,
     matchScaledOperand
@@ -337,7 +334,7 @@ function removeMultiplicativeIdentityOperand(node, key, otherKey, context) {
         return false;
     }
 
-    const sanitizedOperand = isSafeOperand(other) ? Core.unwrapParenthesizedExpression(other) : other;
+    const sanitizedOperand = AST.isSafeOperand(other) ? Core.unwrapParenthesizedExpression(other) : other;
 
     const replacement = Core.cloneAstNode(sanitizedOperand);
     if (!replaceNodeByMutation(node, replacement)) {
@@ -755,7 +752,7 @@ function unwrapEnclosingParentheses(node, context) {
             break;
         }
 
-        if (!isSafeOperand(parent) && expression.type !== CALL_EXPRESSION) {
+        if (!AST.isSafeOperand(parent) && expression.type !== CALL_EXPRESSION) {
             break;
         }
 
@@ -1807,7 +1804,7 @@ function attemptCollectDistributedScalars(node, context) {
         }
 
         if (!baseDetails) {
-            if (!isSafeOperand(details.base)) {
+            if (!AST.isSafeOperand(details.base)) {
                 return false;
             }
 
@@ -1907,7 +1904,7 @@ function attemptConvertSquare(node, context) {
     }
 
     if (areNodesEquivalent(left, right) || areNodesApproximatelyEquivalent(left, right)) {
-        if (!isSafeOperand(left)) {
+        if (!AST.isSafeOperand(left)) {
             return false;
         }
 
@@ -1922,7 +1919,7 @@ function attemptConvertSquare(node, context) {
             for (let j = i + 1; j < factors.length; j++) {
                 const a = Core.unwrapParenthesizedExpression(factors[i]);
                 const b = Core.unwrapParenthesizedExpression(factors[j]);
-                if (a && b && areNodesEquivalent(a, b) && isSafeOperand(a)) {
+                if (a && b && areNodesEquivalent(a, b) && AST.isSafeOperand(a)) {
                     const remainingFactors = factors.filter((_, idx) => idx !== i && idx !== j);
                     const sqrNode = createCallExpressionNode("sqr", [Core.cloneAstNode(a)], node);
 
@@ -1967,7 +1964,7 @@ function attemptConvertRepeatedPower(node, context) {
     }
 
     const base = Core.unwrapParenthesizedExpression(factors[0]);
-    if (!base || !isSafeOperand(base)) {
+    if (!base || !AST.isSafeOperand(base)) {
         return false;
     }
 
@@ -2505,7 +2502,7 @@ function attemptSimplifyLengthdirHalfDifference(node, context) {
         return false;
     }
 
-    if (!isSafeOperand(minuend)) {
+    if (!AST.isSafeOperand(minuend)) {
         return false;
     }
 
