@@ -197,9 +197,14 @@ function readExclusiveOrOperands(
 function simplifyStatementList(body: any[]): boolean {
     if (!Array.isArray(body)) return false;
     let changed = false;
-    for (let i = 0; i < body.length - 1; i++) {
-        const current = body[i];
-        const next = body[i + 1];
+
+    // Iterate over a stable snapshot so that splicing the live array does not skip elements.
+    for (const original of body) {
+        const index = body.indexOf(original);
+        if (index === -1) break;
+
+        const current = body[index];
+        const next = body[index + 1];
 
         if (current && next && current.type === "IfStatement" && !current.alternate) {
             // if (cond) { return true; } return false;
@@ -211,8 +216,8 @@ function simplifyStatementList(body: any[]): boolean {
 
                 const shouldNegate = resolveBooleanReturnNegation(consBool, nextBool);
                 if (shouldNegate !== null) {
-                    body[i] = createBooleanReturnStatement(current.test, current.start, next.end, shouldNegate);
-                    body.splice(i + 1, 1);
+                    body[index] = createBooleanReturnStatement(current.test, current.start, next.end, shouldNegate);
+                    body.splice(index + 1, 1);
                     changed = true;
                 }
             }
