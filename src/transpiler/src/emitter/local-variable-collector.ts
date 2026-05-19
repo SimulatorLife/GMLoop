@@ -18,6 +18,8 @@
  *   declaration appears after the first use.
  */
 
+import { Core } from "@gmloop/core";
+
 import type { ProgramNode } from "./ast.js";
 
 type AstRecord = Record<string, unknown>;
@@ -27,7 +29,7 @@ function isAstRecord(value: unknown): value is AstRecord {
 }
 
 function isFunctionScopeBoundary(node: AstRecord): boolean {
-    return node.type === "FunctionDeclaration" || node.type === "ConstructorDeclaration";
+    return Core.isFunctionLikeDeclaration(node);
 }
 
 function walkAstNodes(root: unknown, visitNode: (node: AstRecord) => boolean | void): void {
