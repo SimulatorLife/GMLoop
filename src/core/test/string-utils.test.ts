@@ -291,6 +291,7 @@ void test("describeValueForError formats primitives and structured values", () =
 void test("formatWithIndefiniteArticle selects the correct article", () => {
     assert.strictEqual(formatWithIndefiniteArticle("array"), "an array");
     assert.strictEqual(formatWithIndefiniteArticle("string"), "a string");
+    assert.strictEqual(formatWithIndefiniteArticle("8-bit integer"), "an 8-bit integer");
     assert.strictEqual(formatWithIndefiniteArticle(""), "a");
 });
 

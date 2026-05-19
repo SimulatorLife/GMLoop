@@ -231,7 +231,7 @@ const CHAR_CODE_LOWER_START = 97; // a
 const CHAR_CODE_LOWER_END = 122; // z
 const CHAR_CODE_UNDERSCORE = 95; // _
 const OBJECT_TO_STRING = Object.prototype.toString.bind(Object.prototype);
-const STARTS_WITH_VOWEL_PATTERN = /^[aeiou]/i;
+const STARTS_WITH_INDEFINITE_AN_PATTERN = /^(?:[aeiou]|8|11|18)/i;
 
 function normalizeIndefiniteArticle(label) {
     if (typeof label !== "string") {
@@ -243,7 +243,7 @@ function normalizeIndefiniteArticle(label) {
         return null;
     }
 
-    return `${STARTS_WITH_VOWEL_PATTERN.test(normalized) ? "an" : "a"} ${normalized}`;
+    return `${STARTS_WITH_INDEFINITE_AN_PATTERN.test(normalized) ? "an" : "a"} ${normalized}`;
 }
 
 function toSafeString(value: unknown): string {
@@ -276,7 +276,7 @@ function toSafeString(value: unknown): string {
     // cast to `never` documents this guarantee and makes the code robust
     // against future type-level changes.  Calling `String()` directly on the
     // narrowest type avoids allocating the intermediate `unexpected` variable.
-    return String(value);
+    return OBJECT_TO_STRING(value);
 }
 
 /**
