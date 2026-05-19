@@ -9,6 +9,7 @@ export * from "./error.js";
 export * from "./function.js";
 export * from "./json.js";
 export * from "./number.js";
+export * from "./numeric-evaluation.js";
 export * from "./numeric-options.js";
 export * from "./object.js";
 export * from "./regexp.js";
