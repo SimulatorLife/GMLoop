@@ -444,8 +444,9 @@ export function createFormatCommand({ name = "gmloop" } = {}) {
     return applyStandardCommandOptions(
         new Command()
             .name(name)
-            .usage("[options]")
+            .usage("[path] [options]")
             .description("Format GameMaker Language files using the prettier plugin.")
+            .argument("[path]", "Target .gml file, GameMaker project directory, or .yyp path")
     )
         .addOption(createPathOption())
         .addOption(createConfigOption())
