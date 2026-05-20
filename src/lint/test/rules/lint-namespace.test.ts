@@ -158,6 +158,25 @@ void test("feather namespace rule IDs are strictly feather/gm#### only", () => {
     }
 });
 
+void test("Lint.plugin.rules and Lint.featherPlugin.rules are properly populated from catalog (no intermediate pass-through)", () => {
+    // Verify that plugin rules contain the expected short names sourced directly from
+    // the catalog. Previously rules/index.ts exported gmlLintRules and featherLintRules
+    // as thin aliases of the catalog maps. Removing that file is safe because plugin.ts
+    // and rule-entries.ts now import directly from catalog.ts.
+    assert.ok(Lint.plugin.rules, "Lint.plugin.rules must be defined");
+    assertEquals(Object.isFrozen(Lint.plugin.rules), true);
+    assert.ok(Lint.plugin.rules["prefer-array-push"], "prefer-array-push must be in plugin rules");
+    assert.ok(Lint.plugin.rules["no-globalvar"], "no-globalvar must be in plugin rules");
+
+    assert.ok(Lint.featherPlugin.rules, "Lint.featherPlugin.rules must be defined");
+    assertEquals(Object.isFrozen(Lint.featherPlugin.rules), true);
+    assert.ok(Lint.featherPlugin.rules.gm1000, "gm1000 must be in feather plugin rules");
+    assert.ok(
+        typeof Lint.featherPlugin.rules.gm1000?.meta?.docs?.description === "string",
+        "feather rule gm1000 must have a docs description"
+    );
+});
+
 void test("Lint namespace does not expose internal doc-comment implementation helpers (target-state.md §2.3)", () => {
     // Internal doc-comment helpers must be imported directly from the
     // doc-comment module (src/lint/src/doc-comment/*.ts) rather than leaked
