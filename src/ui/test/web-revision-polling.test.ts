@@ -1,50 +1,43 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { startServerUiRevisionPolling } from "../src/web/index.js";
+import { startServerUiRevisionPolling, stopServerUiRevisionPolling } from "../src/web/index.js";
 
-const TIMER_KEY = Symbol.for("gmloop.ui.pollTimer");
+// After each test, stop any polling timer that was started.
+// Using test.afterEach ensures deterministic teardown regardless of
+// test execution order, eliminating cross-test timer pollution that
+// could cause a dangling setInterval to outlive its test.
+test.afterEach(() => {
+    stopServerUiRevisionPolling();
+});
 
 void test("startServerUiRevisionPolling stores the poll timer on globalThis", () => {
-    // Clear any leftover timer from previous test runs.
-    const prevId = (globalThis as unknown as Record<symbol, unknown>)[TIMER_KEY];
-    if (prevId !== undefined) {
-        clearInterval(prevId as Parameters<typeof clearInterval>[0]);
-        delete (globalThis as unknown as Record<symbol, unknown>)[TIMER_KEY];
-    }
-
     startServerUiRevisionPolling(true);
 
-    // The function should have stored the timer on globalThis via a Symbol key.
-    // Node 22+ returns a Timeout object from setInterval; verify it's stored.
-    const storedTimer = (globalThis as unknown as Record<symbol, unknown>)[TIMER_KEY];
+    // The function stores the timer on globalThis via a well-known Symbol key.
+    // Read it back via Symbol.for so we match the production lookup path.
+    const timerKey = Symbol.for("gmloop.ui.pollTimer");
+    const storedTimer = (globalThis as unknown as Record<symbol, unknown>)[timerKey];
     assert.notEqual(storedTimer, undefined, "pollTimer should be set on globalThis");
 });
 
 void test("startServerUiRevisionPolling does not start polling when isServerMode is false", () => {
-    // Clear any previous timer from prior tests.
-    const previousTimer = Object.getOwnPropertyDescriptor(globalThis, TIMER_KEY)?.value;
-    if (previousTimer !== undefined) {
-        clearInterval(previousTimer);
-    }
-    delete (globalThis as unknown as Record<symbol, unknown>)[TIMER_KEY];
-
     startServerUiRevisionPolling(false);
 
-    const timerDescriptor = Object.getOwnPropertyDescriptor(globalThis, TIMER_KEY);
-    assert.equal(timerDescriptor, undefined, "no timer should be stored when isServerMode is false");
+    const timerKey = Symbol.for("gmloop.ui.pollTimer");
+    const storedTimer = (globalThis as unknown as Record<symbol, unknown>)[timerKey];
+    assert.equal(storedTimer, undefined, "no timer should be stored when isServerMode is false");
 });
 
-void test("poll timer can be cleanly cleared with clearInterval", () => {
+void test("poll timer can be cleanly cleared with stopServerUiRevisionPolling", () => {
     startServerUiRevisionPolling(true);
 
-    const timerId = Object.getOwnPropertyDescriptor(globalThis, TIMER_KEY)?.value as number | undefined;
-    assert.notEqual(timerId, undefined, "timer should be set");
+    const timerKey = Symbol.for("gmloop.ui.pollTimer");
+    const storedTimer = (globalThis as unknown as Record<symbol, unknown>)[timerKey];
+    assert.notEqual(storedTimer, undefined, "timer should be set before stop");
 
-    clearInterval(timerId);
+    stopServerUiRevisionPolling();
 
-    // After clearing, the timer ID is no longer active (no assertion needed on
-    // Node side since setInterval already ran at least once by this point).
-    // Verify we can still delete the property without errors.
-    delete (globalThis as unknown as Record<symbol, unknown>)[TIMER_KEY];
+    const afterStop = (globalThis as unknown as Record<symbol, unknown>)[timerKey];
+    assert.equal(afterStop, undefined, "timer should be removed after stop");
 });

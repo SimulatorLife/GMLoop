@@ -98,6 +98,19 @@ export function startServerUiRevisionPolling(isServerMode: boolean): void {
 }
 
 /**
+ * Stops the UI revision polling timer and removes it from globalThis.
+ * Idempotent: calling when no timer exists is a no-op.
+ */
+export function stopServerUiRevisionPolling(): void {
+    const timerKey = Symbol.for("gmloop.ui.pollTimer");
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, timerKey);
+    if (descriptor?.value !== undefined) {
+        globalThis.clearInterval(descriptor.value as Parameters<typeof globalThis.clearInterval>[0]);
+        delete (globalThis as unknown as Record<symbol, unknown>)[timerKey];
+    }
+}
+
+/**
  * Serialized payload consumed by the web bootstrap entry.
  */
 export type GraphVisualizationWebBootstrapPayload = Readonly<{
