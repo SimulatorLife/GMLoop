@@ -14,6 +14,8 @@
 import type { PartialSemanticAnalyzer } from "@gmloop/refactor";
 import type * as Refactor from "@gmloop/refactor";
 
+import { createGmlParserAdapter, createGmlTranspilerAdapter } from "./bridge-dependencies.js";
+import type { ParserAdapterFactory, TranspilerAdapterFactory } from "./bridge-types.js";
 import { GmlParserBridge } from "./parser-bridge.js";
 import { GmlSemanticBridge } from "./semantic-bridge.js";
 import { GmlTranspilerBridge } from "./transpiler-bridge.js";
@@ -42,9 +44,16 @@ export interface RefactorBridgesOptions {
  *   Unused when a semantic bridge is supplied in options.
  */
 export function createRefactorBridges(options: RefactorBridgesOptions = {}, projectRoot?: string): RefactorBridges {
+    // Canonical factory functions that instantiate the concrete parser and
+    // transpiler adapters with their production configuration.  These factories
+    // live here rather than inside the bridge constructors so the bridges
+    // remain pure adapters that only receive their dependencies.
+    const defaultParserFactory: ParserAdapterFactory = createGmlParserAdapter;
+    const defaultTranspilerFactory: TranspilerAdapterFactory = createGmlTranspilerAdapter;
+
     return Object.freeze({
-        formatter: options.formatter ?? new GmlTranspilerBridge(),
-        parser: options.parser ?? new GmlParserBridge(),
+        formatter: options.formatter ?? new GmlTranspilerBridge(defaultTranspilerFactory),
+        parser: options.parser ?? new GmlParserBridge(defaultParserFactory),
         semantic: options.semantic ?? new GmlSemanticBridge({}, projectRoot ?? process.cwd())
     });
 }
