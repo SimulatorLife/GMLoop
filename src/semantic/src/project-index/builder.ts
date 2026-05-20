@@ -7,12 +7,11 @@ import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from 
 import { getDefaultProjectIndexCacheMaxSize, loadProjectIndexCache, saveProjectIndexCache } from "./cache.js";
 import { clampConcurrency } from "./concurrency.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
+import { defaultFsFacade, type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { resolveProjectIndexParser } from "./gml-parser-facade.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
 import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metrics.js";
-import { runWithMissingPathFallback } from "./missing-path-fallback.js";
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";

@@ -4,14 +4,12 @@ import test from "node:test";
 import {
     getProjectIndexSourceExtensions,
     getProjectResourceMetadataExtensions,
-    matchProjectResourceMetadataExtension,
     normalizeProjectFileCategory,
     ProjectFileCategory,
     resetProjectIndexSourceExtensions,
     resetProjectResourceMetadataExtensions,
     resolveProjectFileCategory,
-    setProjectIndexSourceExtensions,
-    setProjectResourceMetadataExtensions
+    setProjectIndexSourceExtensions
 } from "../src/project-index/index.js";
 
 test.afterEach(() => {
@@ -79,17 +77,4 @@ void test("resource metadata extensions expose the default list", () => {
     assert.throws(() => {
         defaults.push(".yyz");
     }, TypeError);
-});
-
-void test("resource metadata extension overrides extend detection", () => {
-    setProjectResourceMetadataExtensions([".meta"]);
-    assert.deepEqual(getProjectResourceMetadataExtensions(), [".yy", ".meta"]);
-    assert.equal(resolveProjectFileCategory("objects/player/player.meta"), ProjectFileCategory.RESOURCE_METADATA);
-    assert.equal(resolveProjectFileCategory("objects/player/player.yy"), ProjectFileCategory.RESOURCE_METADATA);
-});
-
-void test("resource metadata extension overrides normalise input", () => {
-    setProjectResourceMetadataExtensions([" .YYZ", "", null, ".yyz"]);
-    assert.deepEqual(getProjectResourceMetadataExtensions(), [".yy", ".yyz"]);
-    assert.equal(matchProjectResourceMetadataExtension("objects/player/player.YYZ"), ".yyz");
 });

@@ -37,10 +37,6 @@ The current scaffold intentionally contains only the package framework, public n
     - A `gmloop-mcp` bin using `StdioServerTransport`.
     - Direct workspace import via `import { CLI } from "@gmloop/cli"`.
     - `@modelcontextprotocol/sdk` and `zod` as direct dependencies.
-- Update monorepo wiring:
-    - Add `src/mcp` to `pnpm-workspace.yaml`, root `package.json` workspaces/devDependencies, root `tsconfig.json` references, and TypeScript path maps.
-    - Add a `test:mcp` script matching the repo's existing workspace test style.
-    - Update docs/TODO naming from `@gmloop/mcp-server` to `@gmloop/mcp`.
 
 ### MCP Tool Behavior
 

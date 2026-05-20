@@ -1221,7 +1221,7 @@ function shouldForceInlineFunctionParameters(path, options) {
 
     // For regular function declarations and struct function declarations,
     // always keep parameters inline
-    if (node.type === "FunctionDeclaration" || node.type === "StructFunctionDeclaration") {
+    if (Core.isFunctionLikeDeclaration(node)) {
         return true;
     }
 

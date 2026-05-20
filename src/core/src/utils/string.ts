@@ -231,6 +231,27 @@ const CHAR_CODE_LOWER_START = 97; // a
 const CHAR_CODE_LOWER_END = 122; // z
 const CHAR_CODE_UNDERSCORE = 95; // _
 const STARTS_WITH_VOWEL_PATTERN = /^[aeiou]/i;
+const LEADING_NUMERIC_TOKEN_PATTERN = /^\d+/;
+const NUMERIC_TOKENS_REQUIRING_INDEFINITE_AN = new Set(["11", "18"]);
+
+function startsWithIndefiniteAnSound(label: string): boolean {
+    if (STARTS_WITH_VOWEL_PATTERN.test(label)) {
+        return true;
+    }
+
+    const numericPrefix = label.match(LEADING_NUMERIC_TOKEN_PATTERN)?.[0];
+    if (!numericPrefix) {
+        return false;
+    }
+
+    if (numericPrefix.startsWith("8")) {
+        return true;
+    }
+
+    // "11" and "18" are pronounced with an initial vowel sound ("eleven",
+    // "eighteen"), so they conventionally pair with "an".
+    return NUMERIC_TOKENS_REQUIRING_INDEFINITE_AN.has(numericPrefix);
+}
 
 function normalizeIndefiniteArticle(label) {
     if (typeof label !== "string") {
@@ -242,7 +263,7 @@ function normalizeIndefiniteArticle(label) {
         return null;
     }
 
-    return `${STARTS_WITH_VOWEL_PATTERN.test(normalized) ? "an" : "a"} ${normalized}`;
+    return `${startsWithIndefiniteAnSound(normalized) ? "an" : "a"} ${normalized}`;
 }
 
 function toSafeString(value: unknown): string {

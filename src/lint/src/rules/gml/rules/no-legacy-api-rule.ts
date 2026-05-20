@@ -82,7 +82,7 @@ function collectScopedDeclaredIdentifiers(
             }
         }
 
-        if (node.type === "FunctionDeclaration" || node.type === "ConstructorDeclaration") {
+        if (Core.isFunctionLikeDeclaration(node)) {
             const functionName = (node as Readonly<{ id?: unknown }>).id;
             if (
                 typeof functionName === "string" &&

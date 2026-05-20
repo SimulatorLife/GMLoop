@@ -12,14 +12,8 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
 import { findFirstAstNodeBy } from "../rule-base-helpers.js";
-import { createNumericLiteral, replaceNode } from "./math-ast-builders.js";
+import { createNumericLiteral, replaceNode, replaceNodeWith } from "./math-ast-builders.js";
 import { computeNumericTolerance, evaluateNumericExpression } from "./math-numeric-utils.js";
-// ---------------------------------------------------------------------------
-// Scalar condensing simplifier dispatch (imported from parent)
-// ---------------------------------------------------------------------------
-// Re-use the same simplifier list as the parent module.  These are only
-// used inside applyScalarCondensing; importing them avoids duplicating the
-// list definition.
 import {
     attemptCancelReciprocalRatios,
     attemptCollectDistributedScalars,
@@ -31,11 +25,55 @@ const {
     isObjectLike,
     LITERAL,
     BINARY_EXPRESSION,
+    CALL_EXPRESSION,
     VARIABLE_DECLARATION,
     ASSIGNMENT_EXPRESSION,
     UNARY_EXPRESSION,
-    IDENTIFIER
+    IDENTIFIER,
+    MEMBER_DOT_EXPRESSION,
+    MEMBER_INDEX_EXPRESSION,
+    PARENTHESIZED_EXPRESSION
 } = Core;
+
+// ---------------------------------------------------------------------------
+// Safe operand detection
+// ---------------------------------------------------------------------------
+
+/**
+ * True when `node` is a "safe" operand for math transforms.
+ *
+ * A safe operand is one that can appear without brackets in generated output
+ * without altering the expression's meaning.  Literal values, identifiers, and
+ * member-access chains are safe; nodes carrying comments, unary operators,
+ * or other complex expressions are not.
+ *
+ * This consolidates the identical logic that previously existed in both
+ * `math-traversal-normalization.ts` and `math-lengthdir-transforms.ts`.
+ */
+export function isSafeOperand(node: unknown): boolean {
+    if (!isObjectLike(node)) {
+        return false;
+    }
+
+    if (Core.hasComment(node)) {
+        return false;
+    }
+
+    switch ((node as { type?: string }).type) {
+        case IDENTIFIER:
+        case LITERAL:
+        case MEMBER_DOT_EXPRESSION:
+        case MEMBER_INDEX_EXPRESSION: {
+            return true;
+        }
+        case PARENTHESIZED_EXPRESSION: {
+            return isSafeOperand((node as { expression?: unknown }).expression);
+        }
+        default: {
+            return false;
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Context normalization
@@ -758,4 +796,122 @@ function applySimplifiers(node: any, context: any, simplifiers: Array<(node: any
         }
     }
     return changed;
+}
+
+// ---------------------------------------------------------------------------
+// Parent-entry and parenthesis-unwrapping helpers (consolidated from duplication)
+// ---------------------------------------------------------------------------
+
+/**
+ * Locate the parent node and property key that lead to `target` within `root`.
+ *
+ * This is used by `unwrapEnclosingParentheses` to iteratively climb the AST
+ * without relying on temporary `parent` properties that may be stale after
+ * mutations.
+ */
+export function findParentEntry(
+    root: unknown,
+    target: unknown
+): { parent: unknown; key: string | number | null } | null {
+    if (!isObjectLike(root) || !target) {
+        return null;
+    }
+
+    const stack = [{ parent: null, key: null as string | number | null, node: root }];
+    const visited = new Set<object>();
+
+    while (stack.length > 0) {
+        const entry = stack.pop();
+        if (!entry) {
+            continue;
+        }
+
+        const { parent, key, node } = entry;
+        if (node === target) {
+            return { parent, key };
+        }
+
+        if (!isObjectLike(node) || visited.has(node as object)) {
+            continue;
+        }
+
+        visited.add(node as object);
+
+        if (Array.isArray(node)) {
+            for (let index = node.length - 1; index >= 0; index -= 1) {
+                stack.push({ parent: node, key: index, node: node[index] });
+            }
+            continue;
+        }
+
+        for (const [childKey, childValue] of Object.entries(node)) {
+            if (childKey === "parent") {
+                continue;
+            }
+
+            if (!isObjectLike(childValue)) {
+                continue;
+            }
+
+            stack.push({ parent: node, key: childKey, node: childValue });
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Strip enclosing parenthesized-expression wrappers from `node` when all guards pass.
+ *
+ * Iteratively walks up the AST using `findParentEntry` and replaces each
+ * parenthesized-expression with its inner expression, stopping when:
+ * - The parent is not a parenthesized expression
+ * - Either the wrapper or its inner expression carries a comment
+ * - The inner expression is not a safe operand (and not a call expression)
+ *
+ * This consolidates the identical logic that previously existed in both
+ * `math-traversal-normalization.ts` and `math-lengthdir-transforms.ts`.
+ */
+export function unwrapEnclosingParentheses(node: unknown, context: ConvertManualMathTransformOptions | null): void {
+    if (!isObjectLike(node)) {
+        return;
+    }
+
+    const root = context?.astRoot;
+    if (!isObjectLike(root)) {
+        return;
+    }
+
+    let current: unknown = node;
+    while (true) {
+        const parentInfo = findParentEntry(root, current);
+        if (!parentInfo) {
+            break;
+        }
+
+        const { parent } = parentInfo;
+        if (!isObjectLike(parent)) {
+            break;
+        }
+
+        if ((parent as { type?: string }).type !== PARENTHESIZED_EXPRESSION) {
+            break;
+        }
+
+        const expression = (parent as { expression?: unknown }).expression;
+        if (!expression) {
+            break;
+        }
+
+        if (Core.hasComment(parent) || Core.hasComment(expression)) {
+            break;
+        }
+
+        if (!isSafeOperand(parent) && (expression as { type?: string }).type !== CALL_EXPRESSION) {
+            break;
+        }
+
+        replaceNodeWith(parent, current);
+        current = parent;
+    }
 }
