@@ -58,7 +58,37 @@ export async function prepareHotReloadUpdates(
 
     // Group edits by file
     const grouped = workspace.groupByFile();
-    const updatesBySymbol = new Map<string, HotReloadUpdate>();
+
+    // Query symbol definitions for each edited file and create targeted `recompile`
+    // updates when semantic data is available.  Falls back to a file-level update when
+    // `getFileSymbols` is unavailable or throws.  Cascade expansion then adds transitive
+    // dependents so hot-reload consumers receive a full picture of which symbols should
+    // be refreshed.
+    const { directUpdates, knownSymbolIds } = await createDirectUpdatesFromGroupedEdits(grouped, semantic);
+    await expandUpdatesWithCascade(directUpdates, knownSymbolIds, semantic);
+
+    return directUpdates;
+}
+
+/**
+ * Query symbol definitions for each edited file and create targeted `recompile`
+ * updates when semantic data is available. Falls back to a file-level update when
+ * `getFileSymbols` is unavailable or throws.
+ *
+ * Extracted from `prepareHotReloadUpdates` so the orchestrator delegates per-file
+ * bookkeeping rather than performing it inline.
+ *
+ * @param grouped - Edits grouped by file path (from `WorkspaceEdit.groupByFile()`).
+ * @param semantic - Partial semantic analyzer (may be null).
+ * @returns Tuple of `[directUpdates, updatesBySymbol]` where the map enables
+ *           O(1) deduplication during subsequent cascade expansion.
+ */
+async function createDirectUpdatesFromGroupedEdits(
+    grouped: Map<string, Array<{ start: number; end: number; newText: string }>>,
+    semantic: PartialSemanticAnalyzer | null
+): Promise<{ directUpdates: Array<HotReloadUpdate>; knownSymbolIds: Map<string, HotReloadUpdate> }> {
+    const directUpdates: Array<HotReloadUpdate> = [];
+    const knownSymbolIds = new Map<string, HotReloadUpdate>();
 
     // Parallelize file symbol queries for better hot reload performance.
     // Each file's symbol lookup is independent, so we can query them concurrently
@@ -66,7 +96,7 @@ export async function prepareHotReloadUpdates(
     const fileResults = await Promise.all(
         Array.from(grouped.entries()).map(async ([filePath, edits]) => {
             // Determine which symbols are defined in this file
-            let affectedSymbols = [];
+            let affectedSymbols: Array<{ id: string }> = [];
 
             if (Core.hasMethods(semantic, "getFileSymbols")) {
                 try {
@@ -81,55 +111,77 @@ export async function prepareHotReloadUpdates(
             }
 
             const fileUpdates: Array<HotReloadUpdate> = [];
+            const affectedRanges = edits.map((e) => ({
+                start: e.start,
+                end: e.end
+            }));
 
             // If we have specific symbol information, create targeted updates
             if (affectedSymbols.length > 0) {
                 for (const symbol of affectedSymbols) {
-                    const update: HotReloadUpdate = {
+                    fileUpdates.push({
                         symbolId: symbol.id,
                         action: "recompile",
                         filePath,
-                        affectedRanges: edits.map((e) => ({
-                            start: e.start,
-                            end: e.end
-                        }))
-                    };
-                    fileUpdates.push(update);
+                        affectedRanges
+                    });
                 }
                 return fileUpdates;
             }
 
             // Fallback: create a generic update for the file
-            const update: HotReloadUpdate = {
+            fileUpdates.push({
                 symbolId: `file://${filePath}`,
                 action: "recompile",
                 filePath,
-                affectedRanges: edits.map((e) => ({
-                    start: e.start,
-                    end: e.end
-                }))
-            };
-            fileUpdates.push(update);
+                affectedRanges
+            });
             return fileUpdates;
         })
     );
 
-    // Flatten results and build the updatesBySymbol map
+    // Flatten and deduplicate: the map allows O(1) membership checks when the
+    // cascade phase wants to skip symbols that already have a direct update.
     for (const fileUpdates of fileResults) {
         for (const update of fileUpdates) {
-            updates.push(update);
-            updatesBySymbol.set(update.symbolId, update);
+            directUpdates.push(update);
+            knownSymbolIds.set(update.symbolId, update);
         }
     }
 
-    // Expand to transitive dependents using the cascade helper so hot reload
-    // consumers receive a full picture of which symbols should be refreshed.
-    const cascade = await computeHotReloadCascade(Array.from(updatesBySymbol.keys()), semantic);
+    return { directUpdates, knownSymbolIds };
+}
+
+/**
+ * Extend an initial update set with transitive dependent symbols retrieved via
+ * the hot-reload cascade. Symbols already present in `updatesBySymbol` are
+ * skipped; only genuinely new dependents receive a `notify` action.
+ *
+ * Extracted from `prepareHotReloadUpdates` so the orchestrator delegates cascade
+ * bookkeeping rather than performing it inline.
+ *
+ * @param directUpdates - The accumulated updates array (mutated in place).
+ * @param updatesBySymbol - Lookup map for deduplication.
+ * @param semantic - Partial semantic analyzer (may be null).
+ */
+async function expandUpdatesWithCascade(
+    directUpdates: Array<HotReloadUpdate>,
+    knownSymbolIds: Map<string, HotReloadUpdate>,
+    semantic: PartialSemanticAnalyzer | null
+): Promise<void> {
+    if (knownSymbolIds.size === 0 || !semantic) {
+        return;
+    }
+
+    const cascade = await computeHotReloadCascade(Array.from(knownSymbolIds.keys()), semantic);
     for (const entry of cascade.cascade) {
-        if (updatesBySymbol.has(entry.symbolId)) {
+        // Skip symbols that already have a direct update
+        if (knownSymbolIds.has(entry.symbolId)) {
             continue;
         }
 
+        // Only emit entries with a known file path — entries without one cannot
+        // produce a meaningful `notify` update for the hot reload system.
         if (!entry.filePath) {
             continue;
         }
@@ -140,11 +192,9 @@ export async function prepareHotReloadUpdates(
             filePath: entry.filePath,
             affectedRanges: []
         };
-        updates.push(dependentUpdate);
-        updatesBySymbol.set(entry.symbolId, dependentUpdate);
+        directUpdates.push(dependentUpdate);
+        knownSymbolIds.set(entry.symbolId, dependentUpdate);
     }
-
-    return updates;
 }
 
 /**
