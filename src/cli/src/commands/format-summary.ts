@@ -254,12 +254,8 @@ function formatExampleSuffix(formattedSamples: ReadonlyArray<string>, totalCount
     return ` (e.g., ${sampleList}${ellipsis})`;
 }
 
-function formatIgnoredFileSample(sample: unknown): null | string {
-    if (!sample || typeof sample !== "object") {
-        return null;
-    }
-
-    const { filePath, sourceDescription } = sample as IgnoredFileSample;
+function formatIgnoredFileSample(sample: IgnoredFileSample): null | string {
+    const { filePath, sourceDescription } = sample;
     if (typeof filePath !== "string" || filePath.length === 0) {
         return null;
     }
@@ -290,8 +286,8 @@ function formatIgnoredDetail({
     return `ignored by .prettierignore (${ignored})${suffix}`;
 }
 
-function formatUnsupportedExtensionSample(sample: unknown): null | string {
-    if (typeof sample !== "string" || sample.length === 0) {
+function formatUnsupportedExtensionSample(sample: string): null | string {
+    if (sample.length === 0) {
         return null;
     }
 
