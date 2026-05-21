@@ -177,6 +177,24 @@ export class ScopeTracker {
         });
     }
 
+    /**
+     * Creates a scope tracker for a single GML file or compilation unit.
+     *
+     * @param options - Configuration for the scope tracker.
+     * @param options.enabled - Whether to perform scope tracking.  When `false`,
+     *   the tracker builds no index and every query returns empty results.
+     * @param options.lookupCacheMaxEntries - Maximum number of entries retained in the
+     *   lookup cache (LRU eviction).  Values less than `1` are floored to `1`.
+     *   There is no sentinel to disable the lookup cache; use a very large value instead.
+     * @param options.identifierCacheMaxTrackedNames - Passed directly to the internal
+     *   `IdentifierCacheManager` as the `maxTrackedNames` ceiling.  Pass `0` (or any
+     *   non-positive value) to fall back to the default of `4000`; there is no
+     *   "disable entirely" sentinel.
+     * @param options.identifierCacheMaxScopesPerName - Passed directly to the internal
+     *   `IdentifierCacheManager` as the `maxScopesPerName` limit.  Pass `0` (or any
+     *   non-positive value) to fall back to the default of `64`; pass `Infinity`
+     *   to disable per-name eviction entirely.
+     */
     constructor({
         enabled = true,
         lookupCacheMaxEntries = DEFAULT_LOOKUP_CACHE_MAX_ENTRIES,
