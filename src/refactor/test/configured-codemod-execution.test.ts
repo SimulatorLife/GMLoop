@@ -72,6 +72,11 @@ class InMemoryOverlayStorageBackend implements StorageBackend {
         this.stats.spilledEntries = this.valuesByKey.size;
     }
 
+    removeFromIndex(_key: string): void {
+        // In-memory backend has no separate index — the Map IS the index.
+        // This is a no-op that matches the StorageBackend contract.
+    }
+
     async dispose(): Promise<void> {
         this.disposed = true;
         this.valuesByKey.clear();
