@@ -1,5 +1,7 @@
 import { Core } from "@gmloop/core";
 
+import { clearStructArgumentBreakCache } from "./print.js";
+
 const { isNonEmptyTrimmedString } = Core;
 
 const MULTIPLE_BLANK_LINE_PATTERN = /\n{3,}/g;
@@ -155,5 +157,8 @@ export function normalizeFormattedOutput(formatted: string): string {
         collapseLineCommentToBlockCommentBlankLines
     ].reduce<string>((current, step) => step(current), formatted);
 
-    return collapseDuplicateBlankLines(collapseWhitespaceOnlyBlankLines(normalized));
+    const result = collapseDuplicateBlankLines(collapseWhitespaceOnlyBlankLines(normalized));
+
+    clearStructArgumentBreakCache();
+    return result;
 }
