@@ -114,7 +114,10 @@ export function resolveContainedRelativePath(childPath, parentPath) {
         return null;
     }
 
-    const relative = path.relative(parentPath, childPath);
+    const shouldUseWin32Relative = isWindowsLikeBoundaryPath(childPath) || isWindowsLikeBoundaryPath(parentPath);
+    const relative = shouldUseWin32Relative
+        ? path.win32.relative(normalizeBoundarySeparators(parentPath), normalizeBoundarySeparators(childPath))
+        : path.relative(parentPath, childPath);
 
     if (relative === "") {
         return "";
