@@ -1452,6 +1452,17 @@ function resolveCallTargetKind(identifierNode) {
     return null;
 }
 
+/**
+ * Appends a call record to all three aggregation targets (file, scope, and
+ * relationship lists). Extracted from `recordFunctionOrScriptCall` so the
+ * orchestrator stays focused on record construction rather than bookkeeping.
+ */
+function recordScriptCallInTargets(fileRecord, scopeRecord, relationships, callRecord) {
+    fileRecord.scriptCalls.push(callRecord);
+    scopeRecord.scriptCalls.push(callRecord);
+    relationships.scriptCalls.push(callRecord);
+}
+
 function recordFunctionOrScriptCall({
     builtInNames,
     callee,
@@ -1497,9 +1508,7 @@ function recordFunctionOrScriptCall({
         }
     };
 
-    fileRecord.scriptCalls.push(callRecord);
-    scopeRecord.scriptCalls.push(callRecord);
-    relationships.scriptCalls.push(callRecord);
+    recordScriptCallInTargets(fileRecord, scopeRecord, relationships, callRecord);
     metrics?.counters?.increment("scriptCalls.discovered");
 }
 
