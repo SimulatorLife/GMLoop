@@ -1,8 +1,27 @@
 import { isObjectLike } from "../../utils/object.js";
 import type { GameMakerAstNode } from "../types.js";
 
-const CLONE_SKIPPED_NODE_KEYS = new Set(["parent", "enclosingNode", "precedingNode", "followingNode"]);
-const IGNORED_NODE_CHILD_KEYS = new Set(["parent", "enclosingNode", "precedingNode", "followingNode"]);
+const TRAVERSAL_LINK_PARENT_KEY = "parent";
+const TRAVERSAL_LINK_ENCLOSING_NODE_KEY = "enclosingNode";
+const TRAVERSAL_LINK_PRECEDING_NODE_KEY = "precedingNode";
+const TRAVERSAL_LINK_FOLLOWING_NODE_KEY = "followingNode";
+
+const CLONE_SKIPPED_NODE_KEYS = new Set([
+    TRAVERSAL_LINK_PARENT_KEY,
+    TRAVERSAL_LINK_ENCLOSING_NODE_KEY,
+    TRAVERSAL_LINK_PRECEDING_NODE_KEY,
+    TRAVERSAL_LINK_FOLLOWING_NODE_KEY
+]);
+
+function isTraversalLinkKey(key: string): boolean {
+    // Hot-path check in forEachNodeChild: direct comparisons avoid Set.has() overhead.
+    return (
+        key === TRAVERSAL_LINK_PARENT_KEY ||
+        key === TRAVERSAL_LINK_ENCLOSING_NODE_KEY ||
+        key === TRAVERSAL_LINK_PRECEDING_NODE_KEY ||
+        key === TRAVERSAL_LINK_FOLLOWING_NODE_KEY
+    );
+}
 
 /**
  * Clone an AST node while preserving primitives.
@@ -106,16 +125,17 @@ export function forEachNodeChild(node: unknown, callback: (child: GameMakerAstNo
         return;
     }
 
-    const keys = Object.keys(node);
+    const nodeValue = node as GameMakerAstNode;
+    const keys = Object.keys(nodeValue);
     const length = keys.length;
 
     for (let i = 0; i < length; i++) {
         const key = keys[i];
-        if (IGNORED_NODE_CHILD_KEYS.has(key)) {
+        if (isTraversalLinkKey(key)) {
             continue;
         }
 
-        const value = (node as GameMakerAstNode)[key as keyof GameMakerAstNode];
+        const value = nodeValue[key as keyof GameMakerAstNode];
         if (isObjectLike(value)) {
             callback(value, key);
         }
