@@ -8,4 +8,4 @@ export {
     parsers,
     printers
 } from "./format-entry.js";
-export { listProjectFormatOptionCatalogEntries } from "./options/project-config-catalog.js";
+export { PROJECT_FORMAT_OPTION_CATALOG } from "./options/project-config-catalog.js";
