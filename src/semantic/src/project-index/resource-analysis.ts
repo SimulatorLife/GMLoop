@@ -168,7 +168,14 @@ export function createFileScopeDescriptor(relativePath) {
     };
 }
 
-async function extractEventGmlPath(event, resourceRecord, resourceRelativeDir, projectRoot, fsFacade) {
+async function extractEventGmlPath(
+    event,
+    resourceRecord,
+    resourceRelativeDir,
+    projectRoot,
+    fsFacade,
+    logger: ProjectIndexLogger = null
+) {
     const { displayName } = resolveEventMetadata(event);
     for (const candidate of [
         event?.eventContents,
@@ -200,8 +207,13 @@ async function extractEventGmlPath(event, resourceRecord, resourceRelativeDir, p
                 return standardRelativePath;
             }
         }
-    } catch {
-        // Fall back to legacy format
+    } catch (error) {
+        // Fall back to legacy format but log the failure for diagnostics.
+        logProjectIndexDebug(
+            logger,
+            `Failed to stat '${standardAbsolutePath}', falling back to legacy GML path format.`,
+            error
+        );
     }
 
     return path.posix.join(resourceRelativeDir, `${resourceRecord.name}_${displayName}.gml`);
@@ -279,7 +291,7 @@ function registerScriptResourceIfNeeded({ context, parsed, resourceRecord, resou
     context.scriptNameToResourcePath.set(resourceRecord.name, resourceRecord.path);
 }
 
-async function registerResourceEvents({ context, parsed, resourceRecord, resourceDir, projectRoot, fsFacade }) {
+async function registerResourceEvents({ context, parsed, resourceRecord, resourceDir, projectRoot, fsFacade, logger }) {
     const eventList = parsed?.eventList;
     if (!Core.isNonEmptyArray(eventList)) {
         return;
@@ -288,7 +300,7 @@ async function registerResourceEvents({ context, parsed, resourceRecord, resourc
     const resolvedEvents = await Promise.all(
         eventList.map(async (event) => ({
             event,
-            eventGmlPath: await extractEventGmlPath(event, resourceRecord, resourceDir, projectRoot, fsFacade)
+            eventGmlPath: await extractEventGmlPath(event, resourceRecord, resourceDir, projectRoot, fsFacade, logger)
         }))
     );
 
@@ -328,7 +340,15 @@ function collectResourceAssetReferences({ context, parsed, resourceRecord, resou
     }
 }
 
-async function processResourceDocument({ context, parsed, resourceRecord, resourcePath, projectRoot, fsFacade }) {
+async function processResourceDocument({
+    context,
+    parsed,
+    resourceRecord,
+    resourcePath,
+    projectRoot,
+    fsFacade,
+    logger
+}) {
     const resourceDir = path.posix.dirname(resourcePath);
 
     registerScriptResourceIfNeeded({
@@ -344,7 +364,8 @@ async function processResourceDocument({ context, parsed, resourceRecord, resour
         resourceRecord,
         resourceDir,
         projectRoot,
-        fsFacade
+        fsFacade,
+        logger
     });
 
     collectResourceAssetReferences({
@@ -404,7 +425,8 @@ export async function analyseResourceFiles({
             resourceRecord,
             resourcePath: file.relativePath,
             projectRoot,
-            fsFacade
+            fsFacade,
+            logger
         });
     });
 
