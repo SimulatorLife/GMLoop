@@ -48,6 +48,13 @@ void describe("path-utils", () => {
             assert.strictEqual(resolveContainedRelativePath(null, projectRoot), null);
             assert.strictEqual(resolveContainedRelativePath(childFile, null), null);
         });
+
+        void it("supports Windows-style absolute paths on non-Windows hosts", () => {
+            const windowsRoot = String.raw`C:\project`;
+            const windowsChild = String.raw`C:\project\src\index.gml`;
+            const relative = resolveContainedRelativePath(windowsChild, windowsRoot);
+            assert.strictEqual(relative, String.raw`src\index.gml`);
+        });
     });
 
     void describe("walkAncestorDirectories", () => {
