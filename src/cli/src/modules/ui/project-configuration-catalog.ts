@@ -168,7 +168,7 @@ function createFormatConfigurationEntries(
 ): ReadonlyArray<ProjectConfigurationEntry> {
     const configuredOptions = Format.extractProjectFormatOptions(projectConfig);
 
-    return Format.listProjectFormatOptionCatalogEntries().map((entry) =>
+    return Format.projectFormatOptionCatalog.map((entry) =>
         Object.freeze({
             description: entry.description,
             name: entry.name,

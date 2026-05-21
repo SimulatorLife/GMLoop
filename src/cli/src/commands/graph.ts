@@ -1646,7 +1646,7 @@ function createDocumentationCatalogs() {
         }),
         mcpTools: getMcpToolCatalogEntries(),
         workspaceRules: Object.freeze({
-            formatOptions: Format.listProjectFormatOptionCatalogEntries().map((entry) =>
+            formatOptions: Format.projectFormatOptionCatalog.map((entry) =>
                 Object.freeze({
                     defaultValue: entry.defaultValue,
                     description: entry.description,
