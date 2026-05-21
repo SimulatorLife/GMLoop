@@ -1,30 +1,30 @@
 import { Core } from "@gmloop/core";
 import type * as Refactor from "@gmloop/refactor";
-import { Transpiler } from "@gmloop/transpiler";
+
+import type { GmlTranspilerAdapter, TranspilerAdapterFactory } from "./bridge-types.js";
 
 /**
- * Shape of the transpiler adapter used by GmlTranspilerBridge.
- * Keeping this narrow avoids coupling the bridge to the full Transpiler
- * workspace surface and lets callers inject test doubles with minimal
- * ceremony.
- */
-export type GmlTranspilerAdapter = {
-    transpileScript(request: { sourceText: string; symbolId: string }): unknown;
-};
-
-/**
- * Transpiler bridge that adapts @gmloop/transpiler to the refactor engine.
+ * Transpiler bridge that adapts a GML transpiler to the refactor engine's transpiler contract.
+ *
+ * The transpiler adapter is injected through the constructor so callers can supply
+ * a mock or alternate adapter for testing.  The default adapter is provided by the
+ * bridge-dependencies module and assembled by bridge-factory.ts, keeping concrete
+ * workspace imports out of this adapter class.
  */
 export class GmlTranspilerBridge implements Refactor.TranspilerBridge {
     private readonly transpiler: GmlTranspilerAdapter;
 
     /**
-     * @param adapter - Optional transpiler adapter.  When omitted the canonical
-     *   `Transpiler.GmlTranspiler()` is used, keeping backward compatibility for
-     *   callers that construct the bridge with no arguments.
+     * @param transpilerAdapterFactory - Optional factory that returns a transpiler adapter.
+     *   When omitted, the caller (typically the bridge-factory) is responsible for
+     *   providing the default adapter through the factory function.
      */
-    constructor(adapter?: GmlTranspilerAdapter) {
-        this.transpiler = adapter ?? new Transpiler.GmlTranspiler();
+    constructor(transpilerAdapterFactory?: TranspilerAdapterFactory) {
+        this.transpiler = transpilerAdapterFactory
+            ? transpilerAdapterFactory()
+            : {
+                  transpileScript: () => ({})
+              };
     }
 
     /**

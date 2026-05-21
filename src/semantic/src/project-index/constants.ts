@@ -17,7 +17,7 @@ function normalizeResourceMetadataExtension(candidate) {
     return Core.normalizeExtensionSuffix(candidate);
 }
 
-function normalizeResourceMetadataExtensions(candidate) {
+function _normalizeResourceMetadataExtensions(candidate) {
     const entries = typeof candidate === "string" ? [candidate] : candidate;
 
     const normalized = Core.mergeUniqueValues(DEFAULT_RESOURCE_METADATA_EXTENSIONS, entries, {
@@ -58,18 +58,6 @@ export function matchProjectResourceMetadataExtension(candidate) {
  * predictable.
  */
 export function getProjectResourceMetadataExtensions() {
-    return projectResourceMetadataExtensions;
-}
-
-/**
- * Override the recognized resource metadata suffixes used while categorizing
- * project files. Intended for internal integrations, tests, or experimental
- * tooling—end users should rely on the opinionated defaults exposed by the
- * formatter. The override list is normalized, deduplicated, and seeded with the
- * stock `.yy` entry.
- */
-export function setProjectResourceMetadataExtensions(extensions) {
-    projectResourceMetadataExtensions = normalizeResourceMetadataExtensions(extensions);
     return projectResourceMetadataExtensions;
 }
 

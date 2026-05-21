@@ -1153,10 +1153,11 @@ function buildCallArgumentsDocs(
         return { inlineDoc, multilineDoc };
     }
 
-    const firstArgumentNode = node.arguments[0];
+    const firstArgumentNode = node.arguments?.[0];
     const firstArgumentText = firstArgumentNode?.value;
     const firstArgumentIsStringLiteral =
-        firstArgumentNode?.type === Core.LITERAL &&
+        firstArgumentNode != null &&
+        firstArgumentNode.type === Core.LITERAL &&
         typeof firstArgumentText === STRING_TYPE &&
         (firstArgumentText.startsWith('"') || firstArgumentText.startsWith("'") || firstArgumentText.startsWith('@"'));
 
@@ -1221,7 +1222,7 @@ function shouldForceInlineFunctionParameters(path, options) {
 
     // For regular function declarations and struct function declarations,
     // always keep parameters inline
-    if (node.type === "FunctionDeclaration" || node.type === "StructFunctionDeclaration") {
+    if (Core.isFunctionLikeDeclaration(node)) {
         return true;
     }
 

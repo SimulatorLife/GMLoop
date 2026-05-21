@@ -62,7 +62,9 @@ function resolveCommandOptions(command: CommanderCommandLike): ParseCommandOptio
 
 function resolveParseCommandSettings(command: CommanderCommandLike): ParseCommandSettings {
     const options = resolveCommandOptions(command);
-    const explicitTargetPath = resolveExplicitWorkflowTargetPath(options.path);
+    // Positional argument takes precedence over --path option.
+    const positionalPath = Array.isArray(command.args) && command.args.length > 0 ? command.args[0] : null;
+    const explicitTargetPath = resolveExplicitWorkflowTargetPath(positionalPath ?? options.path);
     const targetPath = explicitTargetPath ?? path.resolve(process.cwd(), ".");
 
     return {
@@ -236,8 +238,9 @@ function printNoMatchingFilesMessage(targetPath: string): void {
 export function createParseCommand(): Command {
     return applyStandardCommandOptions(
         new Command("parse")
-            .usage("[options]")
+            .usage("[path] [options]")
             .description("Parse GameMaker Language files to AST JSON using @gmloop/parser.")
+            .argument("[path]", "Target .gml file, GameMaker project directory, or .yyp path")
             .addOption(createPathOption())
             .addOption(createWriteOption())
             .addOption(createListOption())

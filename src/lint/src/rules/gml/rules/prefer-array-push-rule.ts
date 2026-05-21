@@ -73,13 +73,7 @@ function isSafeArrayReceiver(node: unknown): boolean {
 }
 
 function sliceNodeText(sourceText: string, node: unknown): string | null {
-    const start = Core.getNodeStartIndex(node);
-    const end = Core.getNodeEndIndex(node);
-    if (typeof start !== "number" || typeof end !== "number") {
-        return null;
-    }
-
-    return sourceText.slice(start, end);
+    return Core.getNodeSourceText(sourceText, node);
 }
 
 function tryGetPreferArrayPushCandidate(node: unknown, sourceText: string): PreferArrayPushCandidate | null {

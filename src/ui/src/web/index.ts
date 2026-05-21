@@ -40,7 +40,7 @@ function reloadWhenChanged(result: MutationApiResponse): void {
     }
 }
 
-function startServerUiRevisionPolling(isServerMode: boolean): void {
+export function startServerUiRevisionPolling(isServerMode: boolean): void {
     if (!isServerMode) {
         return;
     }
@@ -83,9 +83,31 @@ function startServerUiRevisionPolling(isServerMode: boolean): void {
     };
 
     pollRevision();
-    globalThis.setInterval(() => {
+    const pollTimer = globalThis.setInterval(() => {
         pollRevision();
     }, SERVER_UI_REVISION_POLL_INTERVAL_MS);
+    // Expose timer reference for testability and programmatic teardown.
+    // Uses a Symbol key so this is not a public API surface.
+    const timerKey = Symbol.for("gmloop.ui.pollTimer");
+    Object.defineProperty(globalThis, timerKey, {
+        configurable: true,
+        enumerable: false,
+        value: pollTimer,
+        writable: true
+    });
+}
+
+/**
+ * Stops the UI revision polling timer and removes it from globalThis.
+ * Idempotent: calling when no timer exists is a no-op.
+ */
+export function stopServerUiRevisionPolling(): void {
+    const timerKey = Symbol.for("gmloop.ui.pollTimer");
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, timerKey);
+    if (descriptor?.value !== undefined) {
+        globalThis.clearInterval(descriptor.value as Parameters<typeof globalThis.clearInterval>[0]);
+        delete (globalThis as unknown as Record<symbol, unknown>)[timerKey];
+    }
 }
 
 /**

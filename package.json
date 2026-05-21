@@ -172,7 +172,7 @@
     "eslint-plugin-yml": "^1",
     "globals": "^16",
     "husky": "^9",
-    "jscpd": "^4",
+    "jscpd": "^4.2.3",
     "patch-package": "^8",
     "tree-node-cli": "^1",
     "typescript-eslint": "^8",

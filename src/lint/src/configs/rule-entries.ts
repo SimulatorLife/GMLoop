@@ -1,6 +1,6 @@
 import type { Linter } from "eslint";
 
-import { featherLintRules, gmlLintRules } from "../rules/index.js";
+import { featherLintRuleMap, gmlLintRuleMap } from "../rules/catalog.js";
 import { normalizeLintRulesConfig, normalizeLintRulesConfigOrNull } from "./project-config.js";
 
 function extractRuleOptionCandidates(config: Record<string, unknown>): Record<string, unknown> {
@@ -26,7 +26,7 @@ function isRuleOptionsSchemaEntry(
 
 function resolveRuleSchemaPropertyNames(ruleId: string): ReadonlySet<string> {
     const [pluginId, ruleName] = ruleId.split("/", 2);
-    const pluginRules = pluginId === "gml" ? gmlLintRules : pluginId === "feather" ? featherLintRules : {};
+    const pluginRules = pluginId === "gml" ? gmlLintRuleMap : pluginId === "feather" ? featherLintRuleMap : {};
     const schemaEntry = pluginRules[ruleName]?.meta?.schema?.[0];
 
     if (!isRuleOptionsSchemaEntry(schemaEntry)) {
