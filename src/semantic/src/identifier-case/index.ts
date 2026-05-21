@@ -5,6 +5,7 @@ export * from "./identifier-case-report.js";
 export * from "./identifier-case-utils.js";
 export * from "./option-store.js";
 export * from "./option-store-defaults.js";
+export * from "./option-store-policy.js";
 export * from "./options.js";
 export * from "./plan-service.js";
 // Local plan exports are intentionally not re-exported to avoid duplicating
