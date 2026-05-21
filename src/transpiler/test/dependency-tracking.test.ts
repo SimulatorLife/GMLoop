@@ -169,6 +169,15 @@ void describe("GmlToJsEmitter.getDependencies()", () => {
         assert.equal(initializerMatches.length, 1);
         assert.match(output, /global\.score \+= 1;/);
     });
+
+    void it("preserves dependency tracking in nested blocks", () => {
+        const sem = makeScriptOracle(new Set(["scr_nested"]));
+        const ast = Parser.GMLParser.parse("if (true) { scr_nested(); }");
+        const emitter = new Transpiler.GmlToJsEmitter(sem);
+        emitter.emit(ast);
+
+        assert.deepEqual([...emitter.getDependencies()], ["gml/script/scr_nested"]);
+    });
 });
 
 void describe("GmlTranspiler.transpileScript — dependencies in metadata", () => {

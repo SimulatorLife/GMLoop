@@ -488,13 +488,13 @@ export class GmlToJsEmitter {
         }
         // Fast path: single statement
         if (stmts.length === 1) {
-            const code = this.emit(stmts[0]);
+            const code = this.visit(stmts[0]);
             return code ? this.ensureStatementTermination(code) : "";
         }
         // Multiple statements: use StringBuilder for efficiency
         const builder = new StringBuilder(stmts.length);
         for (const stmt of stmts) {
-            const code = this.emit(stmt);
+            const code = this.visit(stmt);
             if (code) {
                 builder.append(this.ensureStatementTermination(code));
             }
@@ -512,7 +512,7 @@ export class GmlToJsEmitter {
         const builder = new StringBuilder(stmts.length + 2);
         builder.append("{\n");
         for (const stmt of stmts) {
-            const code = this.emit(stmt);
+            const code = this.visit(stmt);
             if (code) {
                 builder.append(`${this.ensureStatementTermination(code)}\n`);
             }
@@ -889,7 +889,7 @@ export class GmlToJsEmitter {
         builder.append("{\n");
         builder.append(`${prologueStatement};\n`);
         for (const statement of statements) {
-            const code = this.emit(statement);
+            const code = this.visit(statement);
             if (!code) {
                 continue;
             }
