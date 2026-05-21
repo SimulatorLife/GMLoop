@@ -3,11 +3,21 @@ import { Core } from "@gmloop/core";
 import type { ScopeSymbolMetadata } from "./types.js";
 
 /**
- * Manages caching for identifier resolution results within a scope tracker.
+ * Bounded, LRU-style cache for symbol metadata collected during scope tracking.
  *
- * This class handles the storage, retrieval, and invalidation of cached
- * identifier resolution results to optimize repetitive lookups across
- * the scope hierarchy.
+ * The cache is keyed by (name, scopeId) so that the same symbol name in different
+ * scopes occupies separate entries — each scope may declare or reference a name
+ * independently.
+ *
+ * Two independent limits govern eviction:
+ * - `maxTrackedNames` — global ceiling on distinct symbol names retained.
+ *   Pass `0` (or any non-positive value) to fall back to the default of 4000.
+ *   There is no "disable entirely" sentinel here; use a sufficiently large value
+ *   if unbounded growth is acceptable for the session.
+ * - `maxScopesPerName` — how many scope-entries may accumulate for a single
+ *   name before the per-name entry is pruned.  Pass `0` (or any non-positive
+ *   value) to fall back to the default of 64.  Pass `Infinity` to disable
+ *   per-name eviction entirely.
  */
 export class IdentifierCacheManager {
     /**
