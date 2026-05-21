@@ -65,6 +65,13 @@ import { collectGlobalVarNames } from "./local-variable-collector.js";
 import { mapBinaryOperator, mapUnaryOperator } from "./operator-mapping.js";
 import { ensureStatementTerminated } from "./statement-termination-policy.js";
 import { StringBuilder } from "./string-builder.js";
+import {
+    isIdentifierNode,
+    isIfStatementNode,
+    isLiteralNode,
+    isProgramNode,
+    isTemplateStringTextNode
+} from "./type-guards.js";
 import { lowerWithStatement } from "./with-lowering.js";
 
 type StatementLike = GmlNode | undefined | null;
@@ -136,7 +143,7 @@ export class GmlToJsEmitter {
             // Pre-collect all globalvar-declared names before walking the AST so that
             // identifiers referenced before their `globalvar` declaration (a legal GML
             // forward reference) are emitted as `global.<name>` rather than bare names.
-            if (ast.type === "Program") {
+            if (isProgramNode(ast)) {
                 for (const name of collectGlobalVarNames(ast)) {
                     this.globalVars.add(name);
                 }
@@ -398,7 +405,7 @@ export class GmlToJsEmitter {
         // Fall back to runtime evaluation
         const operand = this.visit(ast.argument);
         const op = mapUnaryOperator(ast.operator);
-        if (ast.argument.type === "Literal") {
+        if (isLiteralNode(ast.argument)) {
             return `${op}${operand}`;
         }
         return ast.prefix === false ? `(${operand})${op}` : `${op}(${operand})`;
@@ -520,10 +527,9 @@ export class GmlToJsEmitter {
         if (!ast.alternate) {
             return `if ${test}${consequent}`;
         }
-        const alternate =
-            ast.alternate.type === "IfStatement"
-                ? ` else ${this.visit(ast.alternate)}`
-                : ` else ${wrapConditionalBody(ast.alternate, this.visitNode)}`;
+        const alternate = isIfStatementNode(ast.alternate)
+            ? ` else ${this.visit(ast.alternate)}`
+            : ` else ${wrapConditionalBody(ast.alternate, this.visitNode)}`;
         return `if ${test}${consequent}${alternate}`;
     }
 
@@ -732,7 +738,7 @@ export class GmlToJsEmitter {
             return "``";
         }
         // Fast path: single static text
-        if (atoms.length === 1 && atoms[0]?.type === "TemplateStringText") {
+        if (atoms.length === 1 && isTemplateStringTextNode(atoms[0])) {
             return `\`${escapeTemplateText(atoms[0].value)}\``;
         }
         // Build template string with StringBuilder to avoid O(n²) string concatenation
@@ -742,9 +748,7 @@ export class GmlToJsEmitter {
             if (!atom) {
                 continue;
             }
-            builder.append(
-                atom.type === "TemplateStringText" ? escapeTemplateText(atom.value) : `\${${this.visit(atom)}}`
-            );
+            builder.append(isTemplateStringTextNode(atom) ? escapeTemplateText(atom.value) : `\${${this.visit(atom)}}`);
         }
         builder.append("`");
         return builder.toString();
@@ -925,8 +929,8 @@ export class GmlToJsEmitter {
         if (typeof (node as IdentifierMetadata).name === "string") {
             return (node as IdentifierMetadata).name;
         }
-        if ((node as GmlNode).type === "Identifier") {
-            return this.identifierAnalyzer.nameOfIdent(node as IdentifierNode);
+        if (isIdentifierNode(node)) {
+            return this.identifierAnalyzer.nameOfIdent(node);
         }
         return null;
     }
@@ -946,7 +950,7 @@ export class GmlToJsEmitter {
     }
 
     private resolveMemberDotProperty(node: GmlNode): string {
-        if (node.type === "Identifier") {
+        if (isIdentifierNode(node)) {
             return this.identifierAnalyzer.nameOfIdent(node);
         }
         return this.visit(node);

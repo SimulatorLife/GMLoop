@@ -47,11 +47,7 @@ export function buildLoopInvariantStressBatchSource(loopCount: number, invariant
  * `Linter` API in fix mode and returns wall-clock elapsed milliseconds,
  * reported messages, and the fixed output text.
  */
-export async function lintSingleRuleWithTiming(
-    ruleId: string,
-    sourceText: string,
-    filePath: string
-): Promise<TimedLintRunResult> {
+export function lintSingleRuleWithTiming(ruleId: string, sourceText: string, filePath: string): TimedLintRunResult {
     const configEntry = {
         files: ["**/*.gml"],
         plugins: {
