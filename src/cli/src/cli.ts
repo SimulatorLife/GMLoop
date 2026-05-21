@@ -17,10 +17,14 @@
 
 import process from "node:process";
 
-import { Core } from "@gmloop/core";
 import { Command } from "commander";
 
 import { registerCliCommands } from "./cli-command-registration.js";
+import {
+    FORMAT_ACTION,
+    normalizeCommandLineArguments,
+    resolveDefaultAction
+} from "./cli-core/cli-argument-normalization.js";
 import { type CliCatalogEntry, createCliCommandCatalog } from "./cli-core/command-catalog.js";
 import { createCliCommandManager } from "./cli-core/command-manager.js";
 import { applyStandardCommandOptions } from "./cli-core/command-standard-options.js";
@@ -29,20 +33,10 @@ import { createMcpToolCatalogEntries, type McpToolCatalogEntry } from "./cli-cor
 import { resolveCliVersion } from "./cli-core/version.js";
 import { __formatTest__ } from "./commands/format.js";
 import { __runtimeTestHelpers__ as __runtimeTest__, parseRuntimeValue } from "./commands/runtime.js";
-import { CLI_COMMAND_NAMES } from "./shared/command-names.js";
 import { isCliRunSkipped, SKIP_CLI_RUN_ENV_VAR } from "./shared/skip-cli-run.js";
 
 function normalizeWriteChunk(chunk: string | Uint8Array, encoding?: BufferEncoding): string {
     return typeof chunk === "string" ? chunk : Buffer.from(chunk).toString(encoding);
-}
-
-const { isNonEmptyArray } = Core;
-
-const FORMAT_ACTION = "format";
-const HELP_ACTION = "help";
-
-function resolveDefaultAction() {
-    return process.env.PRETTIER_PLUGIN_GML_DEFAULT_ACTION === FORMAT_ACTION ? FORMAT_ACTION : HELP_ACTION;
 }
 
 function isNodeTestRunnerProcess(execArguments: ReadonlyArray<string> = process.execArgv): boolean {
@@ -56,99 +50,6 @@ function shouldAutoRunCliProcess(
     execArguments: ReadonlyArray<string> = process.execArgv
 ): boolean {
     return !isCliRunSkipped(env) && !isNodeTestRunnerProcess(execArguments);
-}
-
-function normalizeCommandLineArguments(argv) {
-    const normalizedArgs = normalizeArgumentList(argv);
-    const withoutSeparator = stripPnpmArgumentSeparators(normalizedArgs);
-    return resolveHelpAliasArguments(withoutSeparator);
-}
-
-function normalizeArgumentList(argv) {
-    return isNonEmptyArray(argv) ? [...argv] : [];
-}
-
-function stripPnpmArgumentSeparators(args) {
-    // pnpm forwards script arguments through `--`, which can show up as
-    // standalone tokens in argv (e.g., `format -- --check`). These separators
-    // are transport-only and should not reach command handlers because they can
-    // be misinterpreted as a positional path.
-    return args.filter((argument) => argument !== "--");
-}
-
-function resolveHelpAliasArguments(args) {
-    if (args.length === 0) {
-        // When no arguments are provided, default behavior depends on
-        // PRETTIER_PLUGIN_GML_DEFAULT_ACTION environment variable.
-        // Default is to show help (user-friendly for first-time users).
-        // Set PRETTIER_PLUGIN_GML_DEFAULT_ACTION to "format" for legacy behavior.
-        return resolveDefaultAction() === FORMAT_ACTION ? [] : ["--help"];
-    }
-
-    if (isStandaloneHelpRequest(args)) {
-        return ["--help"];
-    }
-
-    if (!isHelpAliasCommand(args)) {
-        return normalizeFormatCommandHelpShortcut(args);
-    }
-
-    return resolveHelpAliasCommandArguments(args);
-}
-
-function normalizeFormatCommandHelpShortcut(args) {
-    const firstArgument = args[0];
-    if (typeof firstArgument !== "string") {
-        return args;
-    }
-
-    const normalizedFirstArgument = firstArgument.trim().toLowerCase();
-    if (normalizedFirstArgument.length === 0) {
-        return args;
-    }
-
-    if (normalizedFirstArgument.startsWith("-")) {
-        return args;
-    }
-
-    if (CLI_COMMAND_NAMES.has(normalizedFirstArgument)) {
-        return args;
-    }
-
-    if (containsHelpFlag(args)) {
-        return [FORMAT_ACTION, "--help"];
-    }
-
-    return [FORMAT_ACTION, "--path", firstArgument, ...args.slice(1)];
-}
-
-function containsHelpFlag(args) {
-    return args.some((argument) => argument === "--help" || argument === "-h");
-}
-
-function isHelpRequest(input: unknown): boolean {
-    if (typeof input !== "string") {
-        return false;
-    }
-
-    const normalized = input.trim().toLowerCase();
-    return normalized === "--help" || normalized === "-h" || normalized === "help";
-}
-
-function isStandaloneHelpRequest(args) {
-    return args.length === 1 && isHelpRequest(args[0]);
-}
-
-function isHelpAliasCommand(args) {
-    return args[0] === "help";
-}
-
-function resolveHelpAliasCommandArguments(args) {
-    if (args.length === 1) {
-        return ["--help"];
-    }
-
-    return [...args.slice(1), "--help"];
 }
 
 const program = applyStandardCommandOptions(new Command())
@@ -174,7 +75,7 @@ export const { registry: cliCommandRegistry, runner: cliCommandRunner } = create
         })
 });
 
-export { normalizeCommandLineArguments };
+export { normalizeCommandLineArguments } from "./cli-core/cli-argument-normalization.js";
 
 /** Well-known name used as the contract discriminant for {@link CliTestExit}. */
 const CLI_TEST_EXIT_NAME = "CliTestExit";
