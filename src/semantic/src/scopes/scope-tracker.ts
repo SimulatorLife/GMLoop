@@ -2636,6 +2636,7 @@ export class ScopeTracker {
             string,
             Array<{ dependentScopeId: string; dependentScopeKind: string; depth: number }>
         >();
+        const dependentScopePathCache = new Map<string, string | null>();
 
         for (const filePath of changedPaths) {
             if (!filePath || typeof filePath !== "string" || filePath.length === 0) {
@@ -2664,10 +2665,16 @@ export class ScopeTracker {
                 }
 
                 for (const dep of transitiveDeps) {
-                    const depScope = this.scopesById.get(dep.dependentScopeId);
-                    const depPath = depScope?.metadata.path;
-                    if (depPath) {
-                        result.add(this.normalizeTrackedPath(depPath));
+                    let normalizedDependentPath = dependentScopePathCache.get(dep.dependentScopeId);
+                    if (normalizedDependentPath === undefined) {
+                        const depScope = this.scopesById.get(dep.dependentScopeId);
+                        const depPath = depScope?.metadata.path;
+                        normalizedDependentPath = depPath ? this.normalizeTrackedPath(depPath) : null;
+                        dependentScopePathCache.set(dep.dependentScopeId, normalizedDependentPath);
+                    }
+
+                    if (normalizedDependentPath) {
+                        result.add(normalizedDependentPath);
                     }
                 }
             }
