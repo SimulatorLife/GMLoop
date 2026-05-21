@@ -3,6 +3,7 @@ import { html, svg } from "lit";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
 import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import { hasGraphEdges, hasLoadedGraphIndex } from "../graph-availability.js";
 import { createGraphLayout, type GraphLayoutNode, listGraphEdgeTypes, listGraphNodeKinds } from "../graph-layout.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
@@ -96,14 +97,14 @@ export class GmGraphPanel extends LightDomLitElement {
         }
 
         if (!this.#initializedFiltersForModel || force) {
-            if (this.model.data.nodes.length > 0 || force) {
+            if (hasLoadedGraphIndex(this.model) || force) {
                 this.#enabledNodeKinds.clear();
                 for (const kind of listGraphNodeKinds(this.model.data.nodes)) {
                     this.#enabledNodeKinds.add(kind);
                 }
                 this.#initializedFiltersForModel = true;
             }
-            if (this.model.data.edges.length > 0 || force) {
+            if (hasGraphEdges(this.model) || force) {
                 this.#enabledEdgeTypes.clear();
                 for (const type of listGraphEdgeTypes(this.model.data.edges)) {
                     this.#enabledEdgeTypes.add(type);
@@ -349,7 +350,7 @@ export class GmGraphPanel extends LightDomLitElement {
                           </div>
                       `
                     : null}
-                ${this.model.data.nodes.length === 0 ? this.#renderEmptyState() : null}
+                ${hasLoadedGraphIndex(this.model) ? null : this.#renderEmptyState()}
                 <svg
                     id="graph"
                     class=${this.state.activeGraphView === "visual" ? "" : "hidden"}

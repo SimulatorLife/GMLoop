@@ -8,6 +8,13 @@ export function hasLoadedGraphIndex(model: GraphVisualizationUiModel): boolean {
 }
 
 /**
+ * Return whether the current UI model includes graph edges that can be visualised.
+ */
+export function hasGraphEdges(model: GraphVisualizationUiModel): boolean {
+    return model.data.edges.length > 0;
+}
+
+/**
  * Return whether the current UI model is associated with a loaded project target.
  */
 export function hasLoadedGraphProject(model: GraphVisualizationUiModel): boolean {
