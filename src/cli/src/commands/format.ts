@@ -72,6 +72,15 @@ import {
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
 import {
+    buildNoMatchingFilesMessage,
+    buildSkippedDirectorySummaryMessage,
+    buildSkippedFileDetailEntries,
+    buildWriteModeSummaryMessage,
+    type IgnoredFileSample,
+    type SkippedDirectorySummary,
+    type SkippedFileSummary
+} from "./format-summary.js";
+import {
     isHelpRequest,
     resolveTargetPathFromInput,
     resolveTargetStats,
@@ -176,10 +185,6 @@ function isMissingModuleDependency(error: unknown, moduleId: string): boolean {
 
     const quotedIdentifiers = [`'${normalizedModuleId}'`, `"${normalizedModuleId}"`];
     return quotedIdentifiers.some((identifier) => message.includes(identifier));
-}
-
-function formatExtensionListForDisplay(extensions) {
-    return extensions.map((extension) => `"${extension}"`).join(", ");
 }
 
 function createSampleLimitOption({ flag, description, defaultLimit, parseLimit }) {
@@ -523,7 +528,7 @@ function configurePrettierOptions({
     configureConsoleMethods(normalized);
 }
 
-const skippedFileSummary = {
+const skippedFileSummary: SkippedFileSummary = {
     ignored: 0,
     ignoredSamples: [],
     unsupportedExtension: 0,
@@ -531,7 +536,7 @@ const skippedFileSummary = {
     symbolicLink: 0
 };
 
-const skippedDirectorySummary = {
+const skippedDirectorySummary: SkippedDirectorySummary = {
     ignored: 0,
     ignoredSamples: []
 };
@@ -1762,66 +1767,6 @@ export async function runFormatCommand(command) {
     }
 }
 
-function buildNoMatchingFilesMessage({
-    targetPath,
-    targetIsDirectory,
-    targetPathProvided,
-    extensions,
-    ignoredFilesSkipped
-}) {
-    const formattedExtensions = formatExtensionListForDisplay(extensions);
-    const formattedTarget = formatPathForDisplay(targetPath);
-    const locationDescription = targetIsDirectory
-        ? describeDirectoryWithoutMatches({
-              formattedTargetPath: formattedTarget,
-              targetPathProvided
-          })
-        : formattedTarget;
-    const nothingToFormatMessage = "Nothing to format.";
-    const exampleGuidance = `For example: ${FORMAT_COMMAND_CLI_EXAMPLE} or ${FORMAT_COMMAND_WORKSPACE_EXAMPLE}.`;
-    const guidance = targetIsDirectory
-        ? [
-              `Provide a directory or file containing ${GML_EXTENSION} sources.`,
-              exampleGuidance,
-              "Update your .prettierignore files if this is unexpected."
-          ].join(" ")
-        : [
-              `Pass a ${GML_EXTENSION} file or a directory containing ${GML_EXTENSION} files, or adjust your .prettierignore files if this is unexpected.`,
-              exampleGuidance
-          ].join(" ");
-    const ignoredMessageSuffix = "Adjust your .prettierignore files or refine the target path if this is unexpected.";
-
-    if (targetIsDirectory) {
-        if (ignoredFilesSkipped) {
-            return [
-                `All files matching ${formattedExtensions} were skipped ${locationDescription} by ignore rules.`,
-                nothingToFormatMessage,
-                ignoredMessageSuffix
-            ].join(" ");
-        } else {
-            return [
-                `No files matching ${formattedExtensions} were found ${locationDescription}.`,
-                nothingToFormatMessage,
-                guidance
-            ].join(" ");
-        }
-    } else {
-        if (ignoredFilesSkipped) {
-            return [
-                `${locationDescription} was skipped by ignore rules and not formatted.`,
-                nothingToFormatMessage,
-                ignoredMessageSuffix
-            ].join(" ");
-        } else {
-            return [
-                `${locationDescription} does not match the supported extension ${formattedExtensions}.`,
-                nothingToFormatMessage,
-                guidance
-            ].join(" ");
-        }
-    }
-}
-
 function logNoMatchingFiles({ targetPath, targetIsDirectory, targetPathProvided, extensions }) {
     const ignoredFilesSkipped = skippedFileSummary.ignored > 0;
     const message = buildNoMatchingFilesMessage({
@@ -1829,22 +1774,13 @@ function logNoMatchingFiles({ targetPath, targetIsDirectory, targetPathProvided,
         targetIsDirectory,
         targetPathProvided,
         extensions,
-        ignoredFilesSkipped
+        ignoredFilesSkipped,
+        gmlExtension: GML_EXTENSION,
+        cliExample: FORMAT_COMMAND_CLI_EXAMPLE,
+        workspaceExample: FORMAT_COMMAND_WORKSPACE_EXAMPLE
     });
     console.log(message);
     logSkippedFileSummary();
-}
-
-function describeDirectoryWithoutMatches({ formattedTargetPath, targetPathProvided }) {
-    if (!targetPathProvided) {
-        return "in the current working directory (.)";
-    }
-
-    if (formattedTargetPath === ".") {
-        return "in the current directory";
-    }
-
-    return `in ${formattedTargetPath}`;
 }
 
 function logDryRunModeSummary() {
@@ -1866,58 +1802,15 @@ function logWriteModeSummary({
     targetIsDirectory?: boolean;
     targetPathProvided?: boolean;
 }) {
-    if (formattedFileCount === 0) {
-        console.log("All matched files are already formatted.");
-        return;
-    }
-
-    const label = formattedFileCount === 1 ? "file" : "files";
-
-    // Try to include a location phrase when logging from directory targets.
-    // The tests expect a phrase like "found in the current working directory (.)"
-    // which we'll construct without duplicating punctuation.
-    let message = `Formatted ${formattedFileCount} ${label}.`;
-    if (targetIsDirectory) {
-        // Compose a phrase for the location that avoids starting with 'in ' so
-        // we can naturaly say 'found in <location>'.
-        const formattedTarget = formatPathForDisplay(targetPath || ".");
-        const locationPhrase = formatLocationPhrase({
-            formattedTargetPath: formattedTarget,
-            targetPathProvided
-        });
-        message = `Formatted ${formattedFileCount} ${label} found in ${locationPhrase}.`;
-        // When the wrapper runs against the current working directory (no
-        // explicit target path provided) remind users of the recommended
-        // CLI/workspace wrapper usage examples so they can adopt a scoped
-        // workflow rather than running across the repository.
-        if (!targetPathProvided) {
-            const exampleGuidance = `For example: ${FORMAT_COMMAND_CLI_EXAMPLE} or ${FORMAT_COMMAND_WORKSPACE_EXAMPLE}.`;
-            message = `${message} ${exampleGuidance}`;
-        }
-    }
-
+    const message = buildWriteModeSummaryMessage({
+        formattedFileCount,
+        targetPath,
+        targetIsDirectory,
+        targetPathProvided,
+        cliExample: FORMAT_COMMAND_CLI_EXAMPLE,
+        workspaceExample: FORMAT_COMMAND_WORKSPACE_EXAMPLE
+    });
     console.log(message);
-}
-
-function formatLocationPhrase({
-    formattedTargetPath,
-    targetPathProvided
-}: {
-    formattedTargetPath: string;
-    targetPathProvided: boolean | undefined;
-}) {
-    // For the current working directory invocation where no targetPath was
-    // provided we prefer the explicit phrase used elsewhere in the CLI helpers
-    // without a leading 'in', so it can be used following 'found'.
-    if (!targetPathProvided) {
-        return "the current working directory (.)";
-    }
-
-    if (formattedTargetPath === ".") {
-        return "the current directory";
-    }
-
-    return formattedTargetPath;
 }
 
 function logFormattingErrorSummary() {
@@ -1935,121 +1828,8 @@ function logFormattingErrorSummary() {
     );
 }
 
-/**
- * Build human-readable detail messages describing skipped file categories.
- *
- * @param {{
- *     ignored: number,
- *     unsupportedExtension: number,
- *     unsupportedExtensionSamples: readonly string[],
- *     symbolicLink: number
- * }} summary
- * @returns {string[]}
- */
-function formatExampleSuffix(formattedSamples, totalCount) {
-    if (formattedSamples.length === 0) {
-        return "";
-    }
-
-    const sampleList = formattedSamples.join(", ");
-    const ellipsis = totalCount > formattedSamples.length ? ", ..." : "";
-    return ` (e.g., ${sampleList}${ellipsis})`;
-}
-
-function formatIgnoredFileSample(sample) {
-    if (!sample || typeof sample !== "object") {
-        return null;
-    }
-
-    const { filePath, sourceDescription } = sample;
-    if (typeof filePath !== "string" || filePath.length === 0) {
-        return null;
-    }
-
-    const formattedPath = formatPathForDisplay(filePath);
-
-    if (!sourceDescription || sourceDescription === "ignored") {
-        return formattedPath;
-    }
-
-    return `${formattedPath} (${sourceDescription})`;
-}
-
-function formatIgnoredDetail({ ignored, ignoredSamples }) {
-    if (ignored <= 0) {
-        return null;
-    }
-
-    const formattedSamples = compactArray((ignoredSamples ?? []).map((sample) => formatIgnoredFileSample(sample)));
-    const suffix = formatExampleSuffix(formattedSamples, ignored);
-
-    return `ignored by .prettierignore (${ignored})${suffix}`;
-}
-
-function formatUnsupportedExtensionSample(sample) {
-    if (typeof sample !== "string" || sample.length === 0) {
-        return null;
-    }
-
-    return formatPathForDisplay(sample);
-}
-
-function formatUnsupportedExtensionDetail({ unsupportedExtension, unsupportedExtensionSamples }) {
-    if (unsupportedExtension <= 0) {
-        return null;
-    }
-
-    const formattedSamples = compactArray(
-        (unsupportedExtensionSamples ?? []).map((sample) => formatUnsupportedExtensionSample(sample))
-    );
-    const suffix = formatExampleSuffix(formattedSamples, unsupportedExtension);
-
-    return `unsupported extensions (${unsupportedExtension})${suffix}`;
-}
-
-function formatSymbolicLinkDetail(symbolicLink) {
-    if (symbolicLink <= 0) {
-        return null;
-    }
-
-    return `symbolic links (${symbolicLink})`;
-}
-
-function buildSkippedFileDetailEntries({
-    ignored,
-    ignoredSamples,
-    unsupportedExtension,
-    unsupportedExtensionSamples,
-    symbolicLink
-}) {
-    const detailEntries = [];
-
-    const ignoredDetail = formatIgnoredDetail({
-        ignored,
-        ignoredSamples
-    });
-    if (ignoredDetail) {
-        detailEntries.push(ignoredDetail);
-    }
-
-    const unsupportedExtensionDetail = formatUnsupportedExtensionDetail({
-        unsupportedExtension,
-        unsupportedExtensionSamples
-    });
-    if (unsupportedExtensionDetail) {
-        detailEntries.push(unsupportedExtensionDetail);
-    }
-
-    const symbolicLinkDetail = formatSymbolicLinkDetail(symbolicLink);
-    if (symbolicLinkDetail) {
-        detailEntries.push(symbolicLinkDetail);
-    }
-
-    return detailEntries;
-}
-
 function logSkippedFileSummary() {
-    const directorySummaryMessage = buildSkippedDirectorySummaryMessage();
+    const directorySummaryMessage = buildSkippedDirectorySummaryMessage(skippedDirectorySummary);
 
     if (directorySummaryMessage) {
         console.log(directorySummaryMessage);
@@ -2075,25 +1855,7 @@ function logSkippedFileSummary() {
     console.log(`${summary} Breakdown: ${detailEntries.join("; ")}.`);
 }
 
-function buildSkippedDirectorySummaryMessage() {
-    const { ignored, ignoredSamples } = skippedDirectorySummary;
-
-    if (ignored === 0) {
-        return null;
-    }
-
-    const label = ignored === 1 ? "directory" : "directories";
-    const formattedSamples = ignoredSamples.map((directory) => formatPathForDisplay(directory));
-
-    if (formattedSamples.length === 0) {
-        return `Skipped ${ignored} ${label} ignored by .prettierignore.`;
-    }
-
-    const exampleSuffix = formatExampleSuffix(formattedSamples, ignored);
-    return `Skipped ${ignored} ${label} ignored by .prettierignore${exampleSuffix}.`;
-}
-
-function areIgnoredFileSamplesEqual(existing, candidate) {
+function areIgnoredFileSamplesEqual(existing: IgnoredFileSample, candidate: IgnoredFileSample) {
     return existing?.filePath === candidate?.filePath && existing?.sourceDescription === candidate?.sourceDescription;
 }
 
