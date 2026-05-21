@@ -58,6 +58,7 @@ import {
     registerScriptNamesFromSymbols,
     type RuntimeTranspilerPatch,
     type TranspilationContext,
+    type TranspilationCounter,
     type TranspilationResult,
     transpileFile,
     type TranspilerProvider
@@ -272,11 +273,13 @@ interface RuntimeContext
             | "lastSuccessfulPatches"
             | "maxPatchHistory"
             | "websocketServer"
+            | "totalPatchCount"
         >,
         TranspilationDependencies,
         RuntimePackageInfo,
         PatchHistory,
         ServerControllers,
+        TranspilationCounter,
         WatchLifecycle {
     watchRoot: string;
     extensionMatcher: ExtensionMatcher;
