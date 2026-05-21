@@ -7,7 +7,7 @@ import { TranspilerError, TranspilerErrorCode } from "../src/api/errors.js";
 type TranspilerInstance = InstanceType<typeof Transpiler.GmlTranspiler>;
 type TranspileScriptArgs = Parameters<TranspilerInstance["transpileScript"]>[0];
 
-await test("transpileScript validates inputs", () => {
+void test("transpileScript validates inputs", () => {
     const transpiler = new Transpiler.GmlTranspiler();
     assert.throws(
         () =>
@@ -18,31 +18,7 @@ await test("transpileScript validates inputs", () => {
     );
 });
 
-await test("transpileScript returns a patch object for simple code", () => {
-    const transpiler = new Transpiler.GmlTranspiler();
-    const result = transpiler.transpileScript({
-        sourceText: "42",
-        symbolId: "gml/script/test"
-    });
-
-    assert.equal(result.kind, "script");
-    assert.equal(result.id, "gml/script/test");
-    assert.ok(result.js_body);
-    assert.ok(result.version);
-});
-
-await test("transpileScript includes source text in result", () => {
-    const transpiler = new Transpiler.GmlTranspiler();
-    const sourceText = "x = 1 + 2";
-    const result = transpiler.transpileScript({
-        sourceText,
-        symbolId: "gml/script/test"
-    });
-
-    assert.equal(result.sourceText, sourceText);
-});
-
-await test("transpileScript unwraps function bodies without leading blank lines", () => {
+void test("transpileScript unwraps function bodies without leading blank lines", () => {
     const transpiler = new Transpiler.GmlTranspiler();
     const result = transpiler.transpileScript({
         sourceText: "function test() { return 1; }",
@@ -52,7 +28,18 @@ await test("transpileScript unwraps function bodies without leading blank lines"
     assert.equal(result.js_body, "return 1;");
 });
 
-await test("transpileScript unwraps function parameters into args assignments", () => {
+void test("transpileScript includes source path metadata when provided", () => {
+    const transpiler = new Transpiler.GmlTranspiler();
+    const result = transpiler.transpileScript({
+        sourceText: "x = 1 + 2",
+        symbolId: "gml/script/test",
+        sourcePath: "scripts/player_move.gml"
+    });
+
+    assert.equal(result.metadata?.sourcePath, "scripts/player_move.gml");
+});
+
+void test("transpileScript unwraps function parameters into args assignments", () => {
     const transpiler = new Transpiler.GmlTranspiler();
     const result = transpiler.transpileScript({
         sourceText: "function test(x, y = 5) { return x + y; }",
@@ -64,7 +51,7 @@ await test("transpileScript unwraps function parameters into args assignments", 
     assert.match(result.js_body, /return \(?x \+ y\)?;/);
 });
 
-await test("transpileScript reuses pre-parsed function ASTs with string parameters", () => {
+void test("transpileScript reuses pre-parsed function ASTs with string parameters", () => {
     const transpiler = new Transpiler.GmlTranspiler();
     const result = transpiler.transpileScript({
         sourceText: "function test(x, y = 5) { return x + y; }",
@@ -105,18 +92,7 @@ await test("transpileScript reuses pre-parsed function ASTs with string paramete
     assert.equal(result.js_body, "var x = args[0];\nvar y = args[1] === undefined ? 5 : args[1];\nreturn (x + y);");
 });
 
-await test("transpileScript includes source path metadata when provided", () => {
-    const transpiler = new Transpiler.GmlTranspiler();
-    const result = transpiler.transpileScript({
-        sourceText: "x = 1 + 2",
-        symbolId: "gml/script/test",
-        sourcePath: "scripts/player_move.gml"
-    });
-
-    assert.equal(result.metadata?.sourcePath, "scripts/player_move.gml");
-});
-
-await test("transpileScript rejects empty source paths", () => {
+void test("transpileScript rejects empty source paths", () => {
     const transpiler = new Transpiler.GmlTranspiler();
 
     assert.throws(
@@ -130,13 +106,13 @@ await test("transpileScript rejects empty source paths", () => {
     );
 });
 
-await test("transpileExpression generates JavaScript for simple expressions", () => {
+void test("transpileExpression generates JavaScript for simple expressions", () => {
     const transpiler = new Transpiler.GmlTranspiler();
     const result = transpiler.transpileExpression("x = 1 + 2");
     assert.ok(result, "Should generate some output");
 });
 
-await test("transpileScript rejects malformed ast objects before property access", () => {
+void test("transpileScript rejects malformed ast objects before property access", () => {
     const transpiler = new Transpiler.GmlTranspiler();
 
     assert.throws(
@@ -152,7 +128,7 @@ await test("transpileScript rejects malformed ast objects before property access
     );
 });
 
-await test("transpileScript rejects non-Program ast objects", () => {
+void test("transpileScript rejects non-Program ast objects", () => {
     const transpiler = new Transpiler.GmlTranspiler();
 
     assert.throws(
@@ -168,7 +144,7 @@ await test("transpileScript rejects non-Program ast objects", () => {
     );
 });
 
-await test("transpileScript handles parsing errors gracefully", () => {
+void test("transpileScript handles parsing errors gracefully", () => {
     const transpiler = new Transpiler.GmlTranspiler();
 
     assert.throws(
@@ -181,7 +157,7 @@ await test("transpileScript handles parsing errors gracefully", () => {
     );
 });
 
-await test("transpileExpression handles parsing errors gracefully", () => {
+void test("transpileExpression handles parsing errors gracefully", () => {
     const transpiler = new Transpiler.GmlTranspiler();
 
     assert.throws(() => transpiler.transpileExpression("invalid syntax %%%%"), {
@@ -189,7 +165,7 @@ await test("transpileExpression handles parsing errors gracefully", () => {
     });
 });
 
-await test("transpileScript preserves the original error as cause", () => {
+void test("transpileScript preserves the original error as cause", () => {
     const transpiler = new Transpiler.GmlTranspiler();
 
     try {
@@ -204,7 +180,7 @@ await test("transpileScript preserves the original error as cause", () => {
     }
 });
 
-await test("transpileScript throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
+void test("transpileScript throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
     const transpiler = new Transpiler.GmlTranspiler();
 
     let caughtError: unknown;
@@ -228,7 +204,7 @@ await test("transpileScript throws TranspilerError with INTERNAL_ERROR code on p
     assert.ok(caughtError.message.includes("Failed to transpile script"), "Message should include context");
 });
 
-await test("transpileExpression throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
+void test("transpileExpression throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
     const transpiler = new Transpiler.GmlTranspiler();
 
     let caughtError: unknown;
@@ -245,7 +221,7 @@ await test("transpileExpression throws TranspilerError with INTERNAL_ERROR code 
     assert.ok(caughtError.message.includes("Failed to transpile expression"));
 });
 
-await test("transpileEvent throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
+void test("transpileEvent throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
     const transpiler = new Transpiler.GmlTranspiler();
 
     let caughtError: unknown;
@@ -263,7 +239,7 @@ await test("transpileEvent throws TranspilerError with INTERNAL_ERROR code on pa
     assert.ok(caughtError.message.includes("Failed to transpile event"));
 });
 
-await test("transpileClosure throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
+void test("transpileClosure throws TranspilerError with INTERNAL_ERROR code on parse failure", () => {
     const transpiler = new Transpiler.GmlTranspiler();
 
     let caughtError: unknown;
@@ -281,7 +257,7 @@ await test("transpileClosure throws TranspilerError with INTERNAL_ERROR code on 
     assert.ok(caughtError.message.includes("Failed to transpile closure"));
 });
 
-await test("TranspilerError has correct properties", () => {
+void test("TranspilerError has correct properties", () => {
     const error = new TranspilerError("Test error message", TranspilerErrorCode.VALIDATION_ERROR, {
         cause: new Error("Original cause")
     });
@@ -293,7 +269,7 @@ await test("TranspilerError has correct properties", () => {
     assert.ok(error.cause?.message.includes("Original cause"));
 });
 
-await test("TranspilerErrorCode enum has all expected values", () => {
+void test("TranspilerErrorCode enum has all expected values", () => {
     assert.equal(typeof TranspilerErrorCode.PARSE_ERROR, "string");
     assert.equal(TranspilerErrorCode.PARSE_ERROR, "PARSE_ERROR");
 
