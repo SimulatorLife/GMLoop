@@ -42,21 +42,17 @@ export function createNoUnaryPlusOnIdentifierRule(definition: GmlRuleDefinition)
                         return;
                     }
 
-                    const start = Core.getNodeStartIndex(node);
-                    const end = Core.getNodeEndIndex(node);
-                    const argumentStart = Core.getNodeStartIndex(node.argument);
-                    const argumentEnd = Core.getNodeEndIndex(node.argument);
-
-                    if (
-                        typeof start !== "number" ||
-                        typeof end !== "number" ||
-                        typeof argumentStart !== "number" ||
-                        typeof argumentEnd !== "number"
-                    ) {
+                    // Use getNodeSourceText to deduplicate the index-guard + slice pattern.
+                    const argumentText = Core.getNodeSourceText(context.sourceCode.text, node.argument);
+                    if (argumentText === null) {
                         return;
                     }
 
-                    const argumentText = context.sourceCode.text.slice(argumentStart, argumentEnd);
+                    const start = Core.getNodeStartIndex(node);
+                    const end = Core.getNodeEndIndex(node);
+                    if (typeof start !== "number" || typeof end !== "number") {
+                        return;
+                    }
 
                     context.report({
                         node,
