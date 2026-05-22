@@ -177,7 +177,7 @@ void test("playground panel renders controls layout and readable pane status lab
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /class="playground-layout controls-open"/u);
+    assert.match(rendered, /class=playground-layout controls-open/u);
     assert.match(rendered, /class="playground-controls-panel is-open"/u);
     assert.match(rendered, /class="playground-main"/u);
     assert.match(rendered, /class="pane-header-status">Writable<\/span>/u);

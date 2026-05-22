@@ -63,11 +63,14 @@ void test("playground panel renders controls panel toggle with expanded state", 
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /button\s+type="button"\s+class="playground-controls-toggle"/u);
+    assert.match(rendered, /button\s+type="button"\s+class="playground-controls-toggle is-open"/u);
     assert.match(rendered, /aria-controls="playground-controls-panel"/u);
     assert.match(rendered, /aria-expanded=true/u);
+    assert.match(rendered, /class="playground-controls-toggle-icon"\s+aria-hidden="true"/u);
     assert.match(rendered, />\s*Hide Controls\s*</u);
     assert.match(rendered, /id="playground-controls-panel"/u);
+    assert.doesNotMatch(rendered, /Format, lint, codemod, and transpile selections/u);
+    assert.doesNotMatch(rendered, />\s*Collapse\s*</u);
 });
 
 /**
@@ -172,15 +175,15 @@ void test("playground panel toolbar keeps rule sections out of the top bar", () 
     };
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
-    const toolbarMatch =
-        /<div class="playground-toolbar">(?<toolbarContent>[\s\S]*?)<\/div>\s*<div class="playground-layout/u.exec(
-            rendered
-        );
+    const toolbarStart = rendered.indexOf('class="playground-toolbar"');
+    const layoutStart = rendered.indexOf("class=playground-layout controls-open");
+    const toolbarContent = rendered.slice(toolbarStart, layoutStart);
 
-    assert.notEqual(toolbarMatch, null);
-    assert.doesNotMatch(toolbarMatch.groups?.toolbarContent ?? "", /Format Options/u);
-    assert.doesNotMatch(toolbarMatch.groups?.toolbarContent ?? "", /Lint Rules/u);
-    assert.doesNotMatch(toolbarMatch.groups?.toolbarContent ?? "", /Codemods/u);
+    assert.notEqual(toolbarStart, -1);
+    assert.notEqual(layoutStart, -1);
+    assert.doesNotMatch(toolbarContent, /Format Options/u);
+    assert.doesNotMatch(toolbarContent, /Lint Rules/u);
+    assert.doesNotMatch(toolbarContent, /Codemods/u);
     assert.match(rendered, /class="playground-controls-panel is-open"/u);
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /Lint Rules/u);

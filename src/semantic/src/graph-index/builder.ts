@@ -860,15 +860,22 @@ function projectResources(context: ProjectionContext): void {
         const name =
             getString(resourceRecord.name) ?? path.posix.basename(resourcePath, path.posix.extname(resourcePath));
         const kind = normalizeResourceKind(getString(resourceRecord.resourceType));
+        const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
+        const primaryGmlFile = gmlFiles.find(
+            (gmlFile): gmlFile is string => typeof gmlFile === "string" && gmlFile.trim().length > 0
+        );
         const nodeId = createGraphNodeId(context.graphId, "resource", resourcePath);
         const node = createNodeRecord({
             displayName: name,
+            filePath: kind === "script" ? (primaryGmlFile ?? null) : null,
             graphId: context.graphId,
             id: nodeId,
             kind,
             name,
             resourcePath,
+            scipSymbol: kind === "script" ? `gml/script/${name}` : null,
             summary: createGraphNodeSummary({
+                filePath: kind === "script" ? (primaryGmlFile ?? null) : null,
                 kind,
                 name,
                 resourcePath
@@ -884,7 +891,6 @@ function projectResources(context: ProjectionContext): void {
             containedResourceNodeIds.add(node.id);
         }
 
-        const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
         for (const gmlFile of gmlFiles) {
             if (typeof gmlFile !== "string") {
                 continue;
@@ -1231,9 +1237,9 @@ function addCrossGraphEdges(
     }
 
     const crossEdges: Array<GraphEdgeRecord> = [];
-    const projectFileRecords = asRecord(projectContext.projectIndex.files);
+    const projectIndexedFiles = asRecord(projectContext.projectIndex.files);
 
-    for (const [relativePath, rawFileRecord] of Object.entries(projectFileRecords)) {
+    for (const [relativePath, rawFileRecord] of Object.entries(projectIndexedFiles)) {
         const fileRecord = asRecord(rawFileRecord);
         const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
         const projectCallerOwnerNodeId =

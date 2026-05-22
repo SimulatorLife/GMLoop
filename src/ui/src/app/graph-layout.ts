@@ -26,6 +26,7 @@ export type GraphLayout = Readonly<{
 const PROJECT_NODE_RADIUS = 17;
 const DEFAULT_NODE_RADIUS = 9;
 const CONNECTION_RADIUS_WEIGHT = 1.8;
+const PROMOTABLE_HIERARCHY_EDGE_TYPES = new Set<GraphVisualizationEdgeType>(["contains", "defines"]);
 
 function getNodeRadius(node: GraphVisualizationNodeRecord, connectionCount: number): number {
     if (node.kind === "project") {
@@ -91,13 +92,116 @@ export function createGraphLayout(
     });
 }
 
+function buildHierarchyParentIdsByNode(edges: ReadonlyArray<GraphLayoutEdge>): Map<string, Array<string>> {
+    const parentIdsByNode = new Map<string, Array<string>>();
+    for (const edge of edges) {
+        if (!PROMOTABLE_HIERARCHY_EDGE_TYPES.has(edge.type)) {
+            continue;
+        }
+
+        const parentIds = parentIdsByNode.get(edge.targetNode.id) ?? [];
+        parentIds.push(edge.sourceNode.id);
+        parentIdsByNode.set(edge.targetNode.id, parentIds);
+    }
+
+    return parentIdsByNode;
+}
+
+function findNearestVisibleHierarchyAncestorId(
+    nodeId: string,
+    parentIdsByNode: Map<string, Array<string>>,
+    visibleNodeIds: Set<string>
+): string | null {
+    const visitedNodeIds = new Set<string>([nodeId]);
+    const pendingNodeIds = [...(parentIdsByNode.get(nodeId) ?? [])];
+
+    while (pendingNodeIds.length > 0) {
+        const currentNodeId = pendingNodeIds.shift();
+        if (!currentNodeId || visitedNodeIds.has(currentNodeId)) {
+            continue;
+        }
+
+        if (visibleNodeIds.has(currentNodeId)) {
+            return currentNodeId;
+        }
+
+        visitedNodeIds.add(currentNodeId);
+        pendingNodeIds.push(...(parentIdsByNode.get(currentNodeId) ?? []));
+    }
+
+    return null;
+}
+
+/**
+ * Apply node-kind, edge-type, and search filters to a laid-out graph while
+ * preserving visible leaf nodes whose hierarchy parents are hidden. When a
+ * parent chain is hidden, leaf edges are promoted to the nearest visible
+ * hierarchy ancestor so symbols do not disappear from the visual graph.
+ */
+export function filterGraphLayoutForDisplay(parameters: {
+    enabledEdgeTypes: ReadonlySet<GraphVisualizationEdgeType>;
+    enabledNodeKinds: ReadonlySet<GraphVisualizationNodeKind>;
+    layout: GraphLayout;
+    matchesNode: (node: GraphLayoutNode) => boolean;
+}): GraphLayout {
+    const { enabledEdgeTypes, enabledNodeKinds, layout, matchesNode } = parameters;
+    const visibleNodes = layout.nodes.filter(
+        (node) => node.kind === "project" || (enabledNodeKinds.has(node.kind) && matchesNode(node))
+    );
+    const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+    const visibleNodeById = new Map(visibleNodes.map((node) => [node.id, node]));
+    const parentIdsByNode = buildHierarchyParentIdsByNode(layout.edges);
+    const visibleEdges: Array<GraphLayoutEdge> = [];
+    const visibleEdgeKeys = new Set<string>();
+
+    for (const edge of layout.edges) {
+        if (!enabledEdgeTypes.has(edge.type) || !visibleNodeIds.has(edge.targetNode.id)) {
+            continue;
+        }
+
+        const sourceNodeId = visibleNodeIds.has(edge.sourceNode.id)
+            ? edge.sourceNode.id
+            : PROMOTABLE_HIERARCHY_EDGE_TYPES.has(edge.type)
+              ? findNearestVisibleHierarchyAncestorId(edge.sourceNode.id, parentIdsByNode, visibleNodeIds)
+              : null;
+        if (!sourceNodeId || sourceNodeId === edge.targetNode.id) {
+            continue;
+        }
+
+        const sourceNode = visibleNodeById.get(sourceNodeId);
+        const targetNode = visibleNodeById.get(edge.targetNode.id);
+        if (!sourceNode || !targetNode) {
+            continue;
+        }
+
+        const edgeKey = `${sourceNode.id}\u0000${targetNode.id}\u0000${edge.type}`;
+        if (visibleEdgeKeys.has(edgeKey)) {
+            continue;
+        }
+
+        visibleEdgeKeys.add(edgeKey);
+        visibleEdges.push({
+            source: sourceNode.id,
+            sourceNode,
+            target: targetNode.id,
+            targetNode,
+            type: edge.type
+        });
+    }
+
+    return Object.freeze({
+        edges: visibleEdges,
+        nodes: visibleNodes
+    });
+}
+
 /**
  * Group graph node kinds for legend display.
  */
 export function listGraphNodeKinds(
     nodes: ReadonlyArray<GraphVisualizationNodeRecord>
 ): ReadonlyArray<GraphVisualizationNodeKind> {
-    return Array.from(new Set(nodes.map((node) => node.kind))).toSorted();
+    return Array.from(new Set(nodes.map((node) => node.kind).filter((kind) => kind !== "project"))).toSorted();
 }
 
 /**

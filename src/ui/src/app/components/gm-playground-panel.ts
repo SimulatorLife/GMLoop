@@ -38,8 +38,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #controlsPanelOpen = true;
 
-    #controlsToggleButton: HTMLButtonElement | null = null;
-
     #error: string | null = null;
 
     #debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -295,16 +293,9 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     }
 
     #toggleControlsPanel(event: Event): void {
-        this.#controlsToggleButton = event.currentTarget as HTMLButtonElement;
+        event.preventDefault();
         this.#controlsPanelOpen = !this.#controlsPanelOpen;
         this.requestUpdate();
-    }
-
-    async #closeControlsPanelAndRestoreFocus(): Promise<void> {
-        this.#controlsPanelOpen = false;
-        this.requestUpdate();
-        await this.updateComplete;
-        this.#controlsToggleButton?.focus();
     }
 
     #renderRuleRow(parameters: { description: string; keyText: string; onToggle: () => void; selected: boolean }) {
@@ -487,22 +478,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 class="playground-controls-panel ${this.#controlsPanelOpen ? "is-open" : "is-collapsed"}"
                 aria-label="Playground controls"
             >
-                <div class="playground-controls-header">
-                    <div>
-                        <div class="playground-controls-title">Controls</div>
-                        <div class="playground-controls-summary">Format, lint, codemod, and transpile selections</div>
-                    </div>
-                    <button
-                        type="button"
-                        class="playground-controls-close"
-                        aria-label="Collapse playground controls"
-                        @click=${() => {
-                            void this.#closeControlsPanelAndRestoreFocus();
-                        }}
-                    >
-                        Collapse
-                    </button>
-                </div>
                 <div class="playground-controls-body">
                     ${this.#renderTranspileControls()} ${this.#renderRuleDetails()}
                 </div>
@@ -525,12 +500,17 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 <div class="playground-toolbar">
                     <button
                         type="button"
-                        class="playground-controls-toggle"
+                        class="playground-controls-toggle ${this.#controlsPanelOpen ? "is-open" : "is-closed"}"
                         aria-controls="playground-controls-panel"
                         aria-expanded=${this.#controlsPanelOpen}
                         @click=${(event: Event) => this.#toggleControlsPanel(event)}
                     >
-                        ${this.#controlsPanelOpen ? "Hide Controls" : "Show Controls"}
+                        <span class="playground-controls-toggle-icon" aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </span>
+                        <span>${this.#controlsPanelOpen ? "Hide Controls" : "Show Controls"}</span>
                     </button>
                     <div class="view-selector">
                         <button

@@ -241,6 +241,7 @@ void test("graph visualization css asset preserves core visual affordances", asy
 
     assert.match(css, /font-size:\s*15px/u);
     assert.match(css, /#tooltip/u);
+    assert.match(css, /#tooltip\{[^}]*top:20px;[^}]*left:20px/u);
     assert.match(css, /\.link/u);
     assert.match(css, /@keyframes graph-button-spin/u);
     assert.match(css, /button:disabled\{cursor:not-allowed/u);

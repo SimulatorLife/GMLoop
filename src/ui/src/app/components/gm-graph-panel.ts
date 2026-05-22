@@ -4,7 +4,13 @@ import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-v
 import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { hasGraphEdges, hasLoadedGraphIndex } from "../graph-availability.js";
-import { createGraphLayout, type GraphLayoutNode, listGraphEdgeTypes, listGraphNodeKinds } from "../graph-layout.js";
+import {
+    createGraphLayout,
+    filterGraphLayoutForDisplay,
+    type GraphLayoutNode,
+    listGraphEdgeTypes,
+    listGraphNodeKinds
+} from "../graph-layout.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -207,8 +213,8 @@ export class GmGraphPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
-    #selectNode(nodeId: string): void {
-        this.#selectedNodeId = this.#selectedNodeId === nodeId ? null : nodeId;
+    protected selectNode(nodeId: string): void {
+        this.#selectedNodeId = nodeId;
         this.requestUpdate();
     }
 
@@ -325,16 +331,13 @@ export class GmGraphPanel extends LightDomLitElement {
         const layout = createGraphLayout(this.model.data.nodes, this.model.data.edges);
         const nodeKinds = listGraphNodeKinds(this.model.data.nodes);
         const edgeTypes = listGraphEdgeTypes(this.model.data.edges);
-        const visibleNodes = layout.nodes.filter(
-            (node) => this.#enabledNodeKinds.has(node.kind) && this.#matchesSearch(node)
-        );
-        const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
-        const visibleEdges = layout.edges.filter(
-            (edge) =>
-                this.#enabledEdgeTypes.has(edge.type) &&
-                visibleNodeIds.has(edge.sourceNode.id) &&
-                visibleNodeIds.has(edge.targetNode.id)
-        );
+        const visibleLayout = filterGraphLayoutForDisplay({
+            enabledEdgeTypes: this.#enabledEdgeTypes,
+            enabledNodeKinds: this.#enabledNodeKinds,
+            layout,
+            matchesNode: (node) => this.#matchesSearch(node)
+        });
+        const { edges: visibleEdges, nodes: visibleNodes } = visibleLayout;
         const selectedNode = visibleNodes.find((node) => node.id === this.#selectedNodeId) ?? null;
         const jsonValue = JSON.stringify({ edges: visibleEdges, nodes: visibleNodes }, null, 2);
 
@@ -433,11 +436,11 @@ export class GmGraphPanel extends LightDomLitElement {
                                         tabindex="0"
                                         role="button"
                                         aria-label=${node.displayName}
-                                        @click=${() => this.#selectNode(node.id)}
+                                        @click=${() => this.selectNode(node.id)}
                                         @keydown=${(event: KeyboardEvent) => {
                                             if (event.key === "Enter" || event.key === " ") {
                                                 event.preventDefault();
-                                                this.#selectNode(node.id);
+                                                this.selectNode(node.id);
                                             }
                                         }}
                                     ></circle>

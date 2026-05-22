@@ -52,7 +52,7 @@ void test("createSafeFtsQuery strips unsafe punctuation and quotes remaining tok
     assert.equal(__graphIndexBuilderTest__.createSafeFtsQuery("   !!!   "), "");
 });
 
-void test("searchGraphIndex prefers exact semantic symbol nodes over container resources with matching names", async () => {
+void test("searchGraphIndex returns the single script node before contained same-named functions", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "graph-index-search-ranking-"));
     const databasePath = path.join(tempRoot, "graph-index.sqlite");
     const database = openGraphIndexDatabase(databasePath);
@@ -69,33 +69,8 @@ void test("searchGraphIndex prefers exact semantic symbol nodes over container r
             .prepare(
                 "INSERT INTO index_state(graph_id, file_count, node_count, edge_count, embedding_model, build_duration_ms) VALUES (?, ?, ?, ?, ?, ?)"
             )
-            .run("project", 1, 3, 2, "disabled", 1);
+            .run("project", 1, 2, 1, "disabled", 1);
 
-        database
-            .prepare(
-                `
-                    INSERT INTO nodes(
-                        id, graph_id, kind, name, display_name, scip_symbol, relative_path, resource_path, scope_id,
-                        line_start, line_end, summary, snippet, content_hash
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                `
-            )
-            .run(
-                "project::gml/script/visible_symbols",
-                "project",
-                "script",
-                "visible_symbols",
-                "script.visible_symbols",
-                "gml/script/visible_symbols",
-                "scripts/visible_symbols/visible_symbols.gml",
-                "scripts/visible_symbols/visible_symbols.yy",
-                "scope:script:visible_symbols",
-                1,
-                10,
-                "Script symbol",
-                "",
-                "hash-script"
-            );
         database
             .prepare(
                 `
@@ -111,15 +86,15 @@ void test("searchGraphIndex prefers exact semantic symbol nodes over container r
                 "script",
                 "visible_symbols",
                 "visible_symbols",
-                null,
-                null,
+                "gml/script/visible_symbols",
+                "scripts/visible_symbols/visible_symbols.gml",
                 "scripts/visible_symbols/visible_symbols.yy",
-                null,
-                null,
-                null,
-                "Script resource",
+                "scope:script:visible_symbols",
+                1,
+                10,
+                "Script symbol",
                 "",
-                "hash-resource"
+                "hash-script"
             );
         database
             .prepare(
@@ -150,20 +125,11 @@ void test("searchGraphIndex prefers exact semantic symbol nodes over container r
         database
             .prepare("INSERT INTO node_fts(id, name, display_name, summary, content) VALUES (?, ?, ?, ?, ?)")
             .run(
-                "project::gml/script/visible_symbols",
-                "visible_symbols",
-                "script.visible_symbols",
-                "Script symbol",
-                "Script symbol"
-            );
-        database
-            .prepare("INSERT INTO node_fts(id, name, display_name, summary, content) VALUES (?, ?, ?, ?, ?)")
-            .run(
                 "project::resource::scripts/visible_symbols/visible_symbols.yy",
                 "visible_symbols",
                 "visible_symbols",
-                "Script resource",
-                "Script resource"
+                "Script symbol",
+                "Script symbol"
             );
         database
             .prepare("INSERT INTO node_fts(id, name, display_name, summary, content) VALUES (?, ?, ?, ?, ?)")
@@ -179,14 +145,6 @@ void test("searchGraphIndex prefers exact semantic symbol nodes over container r
             .prepare("INSERT INTO edges(from_id, to_id, type, ordinal) VALUES (?, ?, ?, ?)")
             .run(
                 "project::resource::scripts/visible_symbols/visible_symbols.yy",
-                "project::gml/script/visible_symbols",
-                "defines",
-                0
-            );
-        database
-            .prepare("INSERT INTO edges(from_id, to_id, type, ordinal) VALUES (?, ?, ?, ?)")
-            .run(
-                "project::gml/script/visible_symbols",
                 "project::gml/function/function:scripts/visible_symbols/visible_symbols.gml::1:9:9",
                 "defines",
                 0
@@ -207,7 +165,7 @@ void test("searchGraphIndex prefers exact semantic symbol nodes over container r
             query: "visible_symbols"
         });
 
-        assert.equal(search.results[0]?.id, "project::gml/script/visible_symbols");
+        assert.equal(search.results[0]?.id, "project::resource::scripts/visible_symbols/visible_symbols.yy");
         assert.equal(
             search.results[1]?.id,
             "project::gml/function/function:scripts/visible_symbols/visible_symbols.gml::1:9:9"

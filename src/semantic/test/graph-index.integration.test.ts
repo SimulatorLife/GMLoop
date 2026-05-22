@@ -1330,7 +1330,13 @@ void test("buildGraphIndex merges script scope identifiers into the script resou
             const scriptNodes = database
                 .prepare(
                     `
-                        SELECT id, display_name AS displayName, resource_path AS resourcePath, scip_symbol AS scipSymbol
+                        SELECT
+                            id,
+                            display_name AS displayName,
+                            relative_path AS filePath,
+                            resource_path AS resourcePath,
+                            scip_symbol AS scipSymbol,
+                            summary
                         FROM nodes
                         WHERE kind = 'script'
                         ORDER BY id
@@ -1338,22 +1344,28 @@ void test("buildGraphIndex merges script scope identifiers into the script resou
                 )
                 .all() as Array<{
                 displayName: string;
+                filePath: string | null;
                 id: string;
                 resourcePath: string | null;
                 scipSymbol: string | null;
+                summary: string;
             }>;
 
             assert.deepEqual(
                 scriptNodes.map((node) => ({
                     displayName: node.displayName,
+                    filePath: node.filePath,
                     id: node.id,
-                    resourcePath: node.resourcePath
+                    resourcePath: node.resourcePath,
+                    summary: node.summary
                 })),
                 [
                     {
                         displayName: "macros",
+                        filePath: "scripts/macros/macros.gml",
                         id: "project::resource::scripts/macros/macros.yy",
-                        resourcePath: "scripts/macros/macros.yy"
+                        resourcePath: "scripts/macros/macros.yy",
+                        summary: "script 'macros'. Defined in scripts/macros/macros.gml."
                     }
                 ]
             );
@@ -1365,6 +1377,31 @@ void test("buildGraphIndex merges script scope identifiers into the script resou
                 count: number;
             };
             assert.equal(duplicateScopeNodeCount.count, 0);
+
+            const standaloneScriptSymbolNodeCount = database
+                .prepare("SELECT COUNT(*) AS count FROM nodes WHERE id LIKE '%::gml/script/%'")
+                .get() as {
+                count: number;
+            };
+            assert.equal(standaloneScriptSymbolNodeCount.count, 0);
+
+            const functionNode = database
+                .prepare("SELECT id FROM nodes WHERE kind = 'function' AND name = 'macros'")
+                .get() as { id: string } | undefined;
+            assert.ok(functionNode);
+
+            const functionOwnershipEdge = database
+                .prepare(
+                    `
+                        SELECT COUNT(*) AS count
+                        FROM edges
+                        WHERE from_id = ? AND to_id = ? AND type = 'defines'
+                    `
+                )
+                .get("project::resource::scripts/macros/macros.yy", functionNode.id) as {
+                count: number;
+            };
+            assert.equal(functionOwnershipEdge.count, 1);
         } finally {
             database.close();
         }

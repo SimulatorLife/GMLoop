@@ -87,7 +87,6 @@
     content: none;
   }
 
-  .playground-layout.controls-collapsed .playground-controls-header,
   .playground-layout.controls-collapsed .playground-controls-body {
     visibility: visible;
   }

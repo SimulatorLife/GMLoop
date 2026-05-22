@@ -26,6 +26,9 @@
 }
 
 .playground-controls-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   min-height: 36px;
   padding: 8px 14px;
   border-radius: 10px;
@@ -36,6 +39,37 @@
   font-weight: 700;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+.playground-controls-toggle-icon {
+  position: relative;
+  display: inline-grid;
+  align-items: center;
+  width: 16px;
+  height: 14px;
+}
+
+.playground-controls-toggle-icon span {
+  display: block;
+  width: 16px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.playground-controls-toggle.is-open .playground-controls-toggle-icon span:first-child {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.playground-controls-toggle.is-open .playground-controls-toggle-icon span:nth-child(2) {
+  opacity: 0;
+}
+
+.playground-controls-toggle.is-open .playground-controls-toggle-icon span:last-child {
+  transform: translateY(-6px) rotate(-45deg);
 }
 
 .playground-controls-toggle:hover,
@@ -59,7 +93,6 @@
 
 .playground-controls-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -67,46 +100,11 @@
   border-right: 1px solid var(--gm-border);
 }
 
-.playground-controls-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--gm-space-tight);
-  padding: 14px;
-  border-bottom: 1px solid var(--gm-border);
-}
-
-.playground-controls-title {
-  color: var(--gm-text);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.playground-controls-summary,
 .playground-control-section-note {
   margin-top: 4px;
   color: var(--gm-text-subdued);
   font-size: 11px;
   line-height: 1.35;
-}
-
-.playground-controls-close {
-  flex: 0 0 auto;
-  min-height: 32px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(143, 181, 255, 0.16);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--gm-text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.playground-controls-close:hover,
-.playground-controls-close:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--gm-text);
 }
 
 .playground-controls-body {
@@ -122,7 +120,6 @@
   overflow: hidden;
 }
 
-.playground-layout.controls-collapsed .playground-controls-header,
 .playground-layout.controls-collapsed .playground-controls-body {
   visibility: hidden;
   pointer-events: none;

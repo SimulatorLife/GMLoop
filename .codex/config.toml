@@ -24,6 +24,9 @@ approval_mode = "approve"
 [mcp_servers.playwright.tools.browser_click]
 approval_mode = "approve"
 
+[mcp_servers.playwright.tools.browser_tabs]
+approval_mode = "approve"
+
 [mcp_servers.gm-cli]
 command = "gm-cli"
 args = ["resourcetool", "mcp"]
