@@ -6,10 +6,13 @@
  * This file has been progressively refactored.  Functions that were once
  * inlined here now live in focused sub-modules:
  *
- * - doc-comment-output.ts     – doc-comment block printing for function/variable nodes
- * - expression-print-utils.ts – parenthesis-flattening, ternary printing, and shared
+ * - doc-comment-output.ts      – doc-comment block printing for function/variable nodes
+ * - expression-print-utils.ts  – parenthesis-flattening, ternary printing, and shared
  *                               expression utility helpers (printSimpleDeclaration,
  *                               printEmptyParens, printEmptyBlock, etc.)
+ * - delimited-list.ts         – comma-separated list, argument list, and element
+ *                               printing utilities (printCommaSeparatedList,
+ *                               buildCallArgumentsDocs, printElements, etc.)
  *
  * Contributors should continue placing new domain-specific helpers in the appropriate
  * sub-module rather than growing this file further.
@@ -23,10 +26,16 @@ import {
     LogicalOperatorsStyle,
     normalizeLogicalOperatorsStyle,
     ObjectWrapOption,
-    resolveObjectWrapOption,
-    TRAILING_COMMA
+    resolveObjectWrapOption
 } from "../options/index.js";
 import { NUMBER_TYPE, OBJECT_TYPE, STRING_TYPE, UNDEFINED_TYPE } from "./constants.js";
+import {
+    buildCallArgumentsDocs,
+    buildFunctionParameterDocs,
+    countLeadingSimpleCallArguments,
+    printCommaSeparatedList,
+    shouldAllowTrailingComma
+} from "./delimited-list.js";
 import { printNodeDocComments } from "./doc-comment-output.js";
 import { getEnumNameAlignmentPadding, prepareEnumMembersForPrinting } from "./enum-alignment.js";
 import {
@@ -66,7 +75,7 @@ import {
 } from "./source-text.js";
 import { shouldAddNewlinesAroundStatement } from "./statement-spacing-policy.js";
 import { handleIntermediateTrailingSpacing, handleTerminalTrailingSpacing } from "./statement-traversal-spacing.js";
-import { isCallbackArgument, isComplexArgumentNode, isInLValueChain, isSimpleCallArgument } from "./type-guards.js";
+import { isComplexArgumentNode, isInLValueChain } from "./type-guards.js";
 import { joinDeclaratorPartsWithCommas } from "./variable-declarator-layout.js";
 
 // Module-level cache keyed on struct argument AST nodes.
@@ -1083,46 +1092,6 @@ function buildTemplateStringParts(atoms, path, print) {
     return parts;
 }
 
-function printDelimitedList(path, print, listKey, startChar, endChar, overrides: any = {}) {
-    const {
-        delimiter = ",",
-        allowTrailingDelimiter = false,
-        leadingNewline = true,
-        trailingNewline = true,
-        forceBreak = false,
-        padding = "",
-        addIndent = true,
-        groupId,
-        forceInline = false,
-        maxElementsPerLine = Infinity
-    } = overrides;
-    const lineBreak = forceBreak ? hardline : line;
-    const finalDelimiter = allowTrailingDelimiter ? delimiter : "";
-
-    const innerDoc = [
-        ifBreak(leadingNewline ? lineBreak : "", padding),
-        printElements(path, print, listKey, delimiter, lineBreak, maxElementsPerLine)
-    ];
-
-    const groupElements = [
-        startChar,
-        addIndent ? indent(innerDoc) : innerDoc,
-        // always print a trailing delimiter if the list breaks
-        ifBreak([finalDelimiter, trailingNewline ? lineBreak : ""], padding),
-        endChar
-    ];
-
-    const groupElementsNoBreak = [
-        startChar,
-        padding,
-        printElements(path, print, listKey, delimiter, " ", maxElementsPerLine),
-        padding,
-        endChar
-    ];
-
-    return forceInline ? groupElementsNoBreak : group(groupElements, { id: groupId });
-}
-
 function normalizeCallTextNewlines(text, endOfLineOption) {
     if (typeof text !== STRING_TYPE) {
         return text;
@@ -1135,102 +1104,6 @@ function normalizeCallTextNewlines(text, endOfLineOption) {
     }
 
     return normalized;
-}
-
-function shouldAllowTrailingComma(options) {
-    return options?.trailingComma === TRAILING_COMMA.ALL;
-}
-
-function buildCallArgumentsDocs(
-    path,
-    print,
-    options,
-    {
-        forceBreak = false,
-        maxElementsPerLine = Infinity,
-        includeInlineVariant = false,
-        hasCallbackArguments = false,
-        forceInline = false
-    } = {}
-) {
-    const node = path.getValue();
-    const simplePrefixLength = countLeadingSimpleCallArguments(node);
-    const hasTrailingArguments = Array.isArray(node?.arguments) && node.arguments.length > simplePrefixLength;
-
-    if (simplePrefixLength > 1 && hasTrailingArguments && hasCallbackArguments && maxElementsPerLine === Infinity) {
-        const inlineDoc = includeInlineVariant
-            ? printCommaSeparatedList(path, print, "arguments", "(", ")", options, {
-                  addIndent: false,
-                  forceInline: true,
-                  leadingNewline: false,
-                  trailingNewline: false,
-                  maxElementsPerLine
-              })
-            : null;
-
-        const multilineDoc = buildCallbackArgumentsWithSimplePrefix(path, print, simplePrefixLength);
-
-        return { inlineDoc, multilineDoc };
-    }
-
-    const firstArgumentNode = node.arguments?.[0];
-    const firstArgumentText = firstArgumentNode?.value;
-    const firstArgumentIsStringLiteral =
-        firstArgumentNode != null &&
-        firstArgumentNode.type === Core.LITERAL &&
-        typeof firstArgumentText === STRING_TYPE &&
-        (firstArgumentText.startsWith('"') || firstArgumentText.startsWith("'") || firstArgumentText.startsWith('@"'));
-
-    // NOTE: intentionally omit logging to keep production output clean.
-
-    if (
-        simplePrefixLength > 1 &&
-        hasTrailingArguments &&
-        !hasCallbackArguments &&
-        maxElementsPerLine === Infinity &&
-        firstArgumentIsStringLiteral
-    ) {
-        const multilineDoc = buildCallbackArgumentsWithSimplePrefix(path, print, simplePrefixLength);
-        return { inlineDoc: null, multilineDoc };
-    }
-
-    const multilineDoc = printCommaSeparatedList(path, print, "arguments", "(", ")", options, {
-        forceBreak,
-        forceInline,
-        maxElementsPerLine
-    });
-
-    const inlineDoc = includeInlineVariant
-        ? printCommaSeparatedList(path, print, "arguments", "(", ")", options, {
-              addIndent: false,
-              forceInline: true,
-              leadingNewline: false,
-              trailingNewline: false,
-              maxElementsPerLine
-          })
-        : null;
-
-    return { inlineDoc, multilineDoc };
-}
-
-function buildFunctionParameterDocs(path, print, options, overrides: any = {}) {
-    const forceInline = overrides.forceInline === true;
-
-    const inlineDoc = printCommaSeparatedList(path, print, "params", "(", ")", options, {
-        addIndent: false,
-        allowTrailingDelimiter: false,
-        forceInline: true,
-        leadingNewline: false,
-        trailingNewline: false
-    });
-
-    const multilineDoc = forceInline
-        ? inlineDoc
-        : printCommaSeparatedList(path, print, "params", "(", ")", options, {
-              allowTrailingDelimiter: false
-          });
-
-    return { inlineDoc, multilineDoc };
 }
 
 function shouldForceInlineFunctionParameters(path, options) {
@@ -1329,19 +1202,6 @@ function maybePrintInlineDefaultParameterFunctionBody(path, print) {
     return group(["{ ", statementDoc, semicolon, " }"]);
 }
 
-function printCommaSeparatedList(path, print, listKey, startChar, endChar, options, overrides: any = {}) {
-    const allowTrailingDelimiter =
-        overrides.allowTrailingDelimiter === undefined
-            ? shouldAllowTrailingComma(options)
-            : overrides.allowTrailingDelimiter;
-
-    return printDelimitedList(path, print, listKey, startChar, endChar, {
-        delimiter: ",",
-        ...overrides,
-        allowTrailingDelimiter
-    });
-}
-
 // Force statement-shaped children into explicit `{}` blocks so every call site
 // that relies on this helper inherits the same guard rails. The printer uses it
 // for `if`, loop, and struct bodies where we always emit braces regardless of
@@ -1396,112 +1256,6 @@ function shouldPrintBlockAlternateAsElseIf(node) {
 
     const [onlyStatement] = body;
     return onlyStatement?.type === Core.IF_STATEMENT;
-}
-
-// print a delimited sequence of elements
-// handles the case where a trailing comment follows a delimiter
-function printElements(path, print, listKey, delimiter, lineBreak, maxElementsPerLine = Infinity) {
-    const node = path.getValue();
-    const finalIndex = node[listKey].length - 1;
-    let itemsSinceLastBreak = 0;
-    return path.map((childPath, index) => {
-        const parts: any[] = [];
-        const printed = print();
-        const separator = index === finalIndex ? "" : delimiter;
-
-        if (docHasTrailingComment(printed)) {
-            printed.splice(-1, 0, separator);
-            parts.push(printed);
-        } else {
-            parts.push(printed, separator);
-        }
-
-        if (index !== finalIndex) {
-            const hasLimit = Number.isFinite(maxElementsPerLine) && maxElementsPerLine > 0;
-            itemsSinceLastBreak += 1;
-            if (hasLimit) {
-                const childNode = childPath.getValue();
-                const nextNode = index < finalIndex ? node[listKey][index + 1] : null;
-                const shouldBreakAfter =
-                    isComplexArgumentNode(childNode) ||
-                    isComplexArgumentNode(nextNode) ||
-                    itemsSinceLastBreak >= maxElementsPerLine;
-
-                if (shouldBreakAfter) {
-                    parts.push(hardline);
-                    itemsSinceLastBreak = 0;
-                } else {
-                    parts.push(" ");
-                }
-            } else {
-                parts.push(lineBreak);
-            }
-        }
-
-        return parts;
-    }, listKey);
-}
-
-function countLeadingSimpleCallArguments(node) {
-    const args = node?.arguments;
-    if (!Array.isArray(args) || args.length === 0) {
-        return 0;
-    }
-
-    let count = 0;
-    for (const argument of args) {
-        if (!isSimpleCallArgument(argument)) {
-            break;
-        }
-
-        count += 1;
-    }
-
-    return count;
-}
-
-function buildCallbackArgumentsWithSimplePrefix(path, print, simplePrefixLength) {
-    const node = path.getValue();
-    const args = node?.arguments;
-
-    if (!Array.isArray(args) || args.length === 0) {
-        return group(["(", softline, softline, ")"]);
-    }
-
-    const parts: any[] = [];
-    // Short-circuit: if simplePrefixLength <= 1 or there are no trailing args,
-    // we know shouldForcePrefixBreaks will be false and can skip the array operations.
-    const trailingArgsStart = simplePrefixLength < args.length ? simplePrefixLength : -1;
-    let shouldForcePrefixBreaks = false;
-
-    if (simplePrefixLength > 1 && trailingArgsStart !== -1) {
-        const trailingArguments = args.slice(trailingArgsStart);
-        const firstCallbackIndex = trailingArguments.findIndex(isCallbackArgument);
-        shouldForcePrefixBreaks =
-            firstCallbackIndex !== -1 &&
-            trailingArguments.slice(firstCallbackIndex + 1).some((argument) => !isCallbackArgument(argument));
-    }
-
-    for (let index = 0; index < args.length; index++) {
-        parts.push(path.call(print, "arguments", index));
-
-        if (index >= args.length - 1) {
-            continue;
-        }
-
-        parts.push(",");
-
-        if (index < simplePrefixLength - 1 && !shouldForcePrefixBreaks) {
-            parts.push(" ");
-            continue;
-        }
-
-        parts.push(line);
-    }
-
-    const argumentGroup = group(["(", indent([softline, ...parts]), softline, ")"]);
-
-    return shouldForcePrefixBreaks ? concat([breakParent, argumentGroup]) : argumentGroup;
 }
 
 function shouldForceBreakStructArgument(argument, options, previousArgument) {
