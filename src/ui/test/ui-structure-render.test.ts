@@ -170,14 +170,16 @@ void test("graph toolbar disables graph controls and regenerate without a loaded
     assert.match(rendered, /id="regenerate"[\s\S]*disabled/u);
 });
 
-void test("playground panel renders structural spacer and readable pane status labels", () => {
+void test("playground panel renders controls layout and readable pane status labels", () => {
     const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState("playground");
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /class="playground-toolbar-spacer"/u);
+    assert.match(rendered, /class="playground-layout controls-open"/u);
+    assert.match(rendered, /class="playground-controls-panel is-open"/u);
+    assert.match(rendered, /class="playground-main"/u);
     assert.match(rendered, /class="pane-header-status">Writable<\/span>/u);
     assert.match(rendered, /class="pane-header-status">Read-only<\/span>/u);
     assert.doesNotMatch(rendered, /style="/u);

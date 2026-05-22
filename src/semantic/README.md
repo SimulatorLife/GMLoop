@@ -1064,14 +1064,7 @@ in CI builds to avoid repeated discovery work.
 
 ## TODO
 
-- **FEAT**: Node types `Local variable`, `Instance variable`, and `Enun member` should be unchecked/disabled by default in the visualization, since they are very common and can create a lot of visual noise in the graph. Instead, the user can choose to enable them if they want to see those details.
-- **FEAT**: We need additional node types that are currently missing/excluded in the graph index:
-  1. `Enum`
-  2. `Enum Member`
-  3. `Macro`
-- **FEAT/BUG**: We should NOT have node types for these & they should not be included in the graph index:
-  1. ALL `*.gml` `*.yy`, `*.yyp` files should be excluded (these are currently being considered `File` type nodes). Just the *actual* node that the two files together define/represent should be in the index as a single node (e.g. a single `Object` node named `obj_spider` instead of `objects/obj_spider/obj_spider.yy` and `objects/obj_spider/obj_spider.gml`)
-  2. ALL options should be excluded/removed (`tvOS`, `Reddit`, `macOS`, `HTML5`, etc.) these are currently being considered 'Resource' type nodes in the graph index
+- **FEAT**: Node types `Local variable`, `Instance variable`, and `Enum member` should be unchecked/disabled by default in the visualization, since they are very common and can create a lot of visual noise in the graph. Instead, the user can choose to enable them if they want to see those details.
 - **BUG**: A few node types like `Macro`, `Enum`, `global variable`, etc. do not show in the visualzation if their parent is disabled. So, for instance, if a global variable is defined in a script, the `global variable` node-type is enabled and the `script` node-type is *disabled*, then `global variable` are not viewable. Instead, do we want a way for the leaf-node (e.g. `global variable`) to go up a level in the hirerarchy to the next non-disabled ancestor? For instance, if ALL node types are disabled in the visualization EXCEPT `global variable`, then it would link directly to the center node; the `game` node itself.
 - **BUG**: The main/center node – the 'Project Node' should NOT be disable-able. And should NOT be included in the legend/key.
 - **FEAT/BUG**: When a node is selected in the Graph Index visualization, a tooltip with details about it is supposed to show (this used to work but now nothing shows). When a node is selected in the visualization, the tooltip box should stay open until another node is selected (will allow for future the user-interactions with the tooltip box)

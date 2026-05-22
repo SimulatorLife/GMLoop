@@ -57,19 +57,17 @@ function createMockState(): GraphVisualizationUiState {
     };
 }
 
-/**
- * Verify that playground toolbar mode buttons render with semantic
- * button elements and proper accessibility attributes.
- */
-void test("playground panel renders toolbar mode buttons as accessible <button> elements", () => {
+void test("playground panel renders controls panel toggle with expanded state", () => {
     const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /button\s+type="button"\s+class="rule-toggle "\s+aria-pressed=false/u);
-    assert.match(rendered, /Patch Transpile/u);
-    assert.match(rendered, /Expression Transpile/u);
+    assert.match(rendered, /button\s+type="button"\s+class="playground-controls-toggle"/u);
+    assert.match(rendered, /aria-controls="playground-controls-panel"/u);
+    assert.match(rendered, /aria-expanded=true/u);
+    assert.match(rendered, />\s*Hide Controls\s*</u);
+    assert.match(rendered, /id="playground-controls-panel"/u);
 });
 
 /**
@@ -102,27 +100,106 @@ void test("playground panel clears debounce timer on disconnect", () => {
     panel.disconnectedCallback();
 });
 
-/**
- * Verify that only transpile mode buttons exist in the toolbar toggle row.
- */
-void test("playground panel toolbar omits redundant format/lint/refactor buttons", () => {
+void test("playground panel toolbar keeps rule sections out of the top bar", () => {
     const panel = new TestableGmPlaygroundPanel();
-    panel.model = createMockModel();
+    panel.model = {
+        ...createMockModel(),
+        projectConfigurationCatalog: {
+            format: {
+                entries: [
+                    {
+                        description: "Preferred maximum line width for formatting decisions.",
+                        name: "printWidth",
+                        source: "default",
+                        value: 100
+                    }
+                ]
+            },
+            gameMakerCli: {
+                available: false,
+                cliCommands: [],
+                error: null,
+                invocation: null,
+                mcpServer: {
+                    available: false,
+                    error: null,
+                    name: null,
+                    projectPath: null,
+                    serverId: null,
+                    sourcePath: null,
+                    version: null
+                },
+                mcpTools: [],
+                version: null
+            },
+            githubRepositoryUrl: "",
+            gmloop: {
+                configPath: null,
+                exists: false,
+                projectRoot: "/tmp/test",
+                rawConfig: {}
+            },
+            lint: {
+                rules: [
+                    {
+                        description: "No constructor assignment.",
+                        fixable: "code",
+                        level: "error",
+                        options: {},
+                        ruleId: "@gmloop/no-constructor-assignment"
+                    }
+                ],
+                rulesets: [
+                    {
+                        name: "recommended",
+                        ruleIds: ["@gmloop/no-constructor-assignment"]
+                    }
+                ],
+                ruleset: null
+            },
+            refactor: {
+                codemods: [
+                    {
+                        config: {},
+                        description: "Legacy test codemod",
+                        enabled: true,
+                        id: "legacy-codemod",
+                        requiresSemanticProjectIndex: false
+                    }
+                ]
+            }
+        }
+    };
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
+    const toolbarMatch =
+        /<div class="playground-toolbar">(?<toolbarContent>[\s\S]*?)<\/div>\s*<div class="playground-layout/u.exec(
+            rendered
+        );
 
-    assert.doesNotMatch(rendered, />\s*Format\s*</u);
-    assert.doesNotMatch(rendered, />\s*Lint\s*</u);
-    assert.doesNotMatch(rendered, />\s*Refactor\s*</u);
-    assert.equal([...rendered.matchAll(/class="rule-toggle "\s+aria-pressed=false/gu)].length, 2);
+    assert.notEqual(toolbarMatch, null);
+    assert.doesNotMatch(toolbarMatch.groups?.toolbarContent ?? "", /Format Options/u);
+    assert.doesNotMatch(toolbarMatch.groups?.toolbarContent ?? "", /Lint Rules/u);
+    assert.doesNotMatch(toolbarMatch.groups?.toolbarContent ?? "", /Codemods/u);
+    assert.match(rendered, /class="playground-controls-panel is-open"/u);
+    assert.match(rendered, /Format Options/u);
+    assert.match(rendered, /Lint Rules/u);
+    assert.match(rendered, /Codemods/u);
 });
 
-void test("playground panel renders transpile modes off by default", () => {
+void test("playground panel renders transpile modes in the controls panel and off by default", () => {
     const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
+    const controlsPanelMatch = /<aside[\s\S]*?class="playground-controls-panel is-open"[\s\S]*?<\/aside>/u.exec(
+        rendered
+    );
 
+    assert.notEqual(controlsPanelMatch, null);
+    assert.match(controlsPanelMatch[0], /Transpile/u);
+    assert.match(controlsPanelMatch[0], /Patch Transpile/u);
+    assert.match(controlsPanelMatch[0], /Expression Transpile/u);
     assert.match(rendered, /Patch Transpile/);
     assert.match(rendered, /Expression Transpile/);
     assert.equal([...rendered.matchAll(/class="rule-toggle active"/gu)].length, 0);

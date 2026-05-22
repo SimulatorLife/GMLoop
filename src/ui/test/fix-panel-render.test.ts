@@ -61,22 +61,28 @@ function createMockState(): GraphVisualizationUiState {
     };
 }
 
-void test("GmFixPanel renders the fix workflow button, stages, status, target, and log", () => {
+void test("GmFixPanel renders the fix workflow button, status, target, and log", () => {
     const panel = new TestableGmFixPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
 
     const rendered = renderTemplateValue(panel.renderForTest());
+    const runLogIndex = rendered.indexOf("Run Log");
+    const firstLogLineIndex = rendered.indexOf("[1/3 Refactor Codemods]");
 
     assert.match(rendered, /id="fix-page"[\s\S]*class=page docs-page active/u);
-    assert.match(rendered, /Apply Project Fixes/u);
+    assert.match(rendered, /class="fix-action-bar"/u);
     assert.match(rendered, /id="run-fix"/u);
     assert.match(rendered, /Completed/u);
-    assert.match(rendered, /1\. Refactor/u);
-    assert.match(rendered, /2\. Lint/u);
-    assert.match(rendered, /3\. Format/u);
+    assert.match(rendered, /Run Log/u);
+    assert.notEqual(runLogIndex, -1);
+    assert.ok(firstLogLineIndex > runLogIndex);
     assert.match(rendered, /\[1\/3 Refactor Codemods\]/u);
     assert.match(rendered, /\/tmp\/test/u);
+    assert.doesNotMatch(rendered, /Apply Project Fixes/u);
+    assert.doesNotMatch(rendered, /1\. Refactor/u);
+    assert.doesNotMatch(rendered, /2\. Lint/u);
+    assert.doesNotMatch(rendered, /3\. Format/u);
 });
 
 void test("GmFixPanel renders the last server-side fix run after UI reload clears session state", () => {

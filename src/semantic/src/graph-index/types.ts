@@ -44,7 +44,6 @@ export type GraphNodeKind =
     | "enum"
     | "enum_member"
     | "extension"
-    | "file"
     | "font"
     | "function"
     | "global_variable"

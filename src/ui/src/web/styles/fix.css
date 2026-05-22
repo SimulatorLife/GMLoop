@@ -2,48 +2,28 @@
   padding: 24px;
 }
 
-.fix-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
-  gap: 20px;
-  align-items: stretch;
-  margin-bottom: 20px;
-}
-
-.fix-hero h2 {
-  margin: 0 0 10px;
-  color: var(--gm-text);
-  font-size: clamp(28px, 4vw, 48px);
-  line-height: 0.95;
-  letter-spacing: -0.04em;
-}
-
-.fix-hero p {
-  max-width: 760px;
-  margin: 0;
-  color: var(--gm-text-secondary);
-  line-height: 1.6;
+.fix-action-bar {
+  margin-bottom: 18px;
 }
 
 .fix-action-card {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  justify-content: space-between;
-  padding: 18px;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
   border: 1px solid var(--gm-border);
-  border-radius: 24px;
-  background:
-    radial-gradient(circle at 15% 15%, rgba(107, 211, 170, 0.18), transparent 35%),
-    linear-gradient(145deg, var(--gm-surface-elevated), var(--gm-surface-muted));
+  border-radius: 16px;
+  background: var(--gm-surface-elevated);
   box-shadow: var(--gm-shadow);
 }
 
 .fix-run-button {
-  min-height: 48px;
+  min-height: 42px;
   justify-content: center;
   background: linear-gradient(135deg, #9ce8c8, #f7d081);
   color: #101820;
+  white-space: nowrap;
 }
 
 .fix-status-chip {
@@ -75,6 +55,8 @@
 }
 
 .fix-target {
+  min-width: 0;
+  margin-left: auto;
   color: var(--gm-text-subdued);
   font-size: 12px;
   overflow-wrap: anywhere;
@@ -84,18 +66,25 @@
   color: var(--gm-error-text);
 }
 
-.fix-log-card {
-  margin-top: 18px;
+.fix-log-section h2 {
+  margin: 0 0 10px;
+  color: var(--gm-text);
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.fix-log-card .gm-card {
+  padding: 10px;
 }
 
 .fix-log {
-  min-height: 220px;
-  max-height: 420px;
+  min-height: 280px;
+  max-height: min(56vh, 620px);
   margin: 0;
-  padding: 14px;
+  padding: 16px;
   overflow: auto;
   border: 1px solid rgba(143, 181, 255, 0.12);
-  border-radius: 16px;
+  border-radius: 12px;
   background: #071019;
   color: #d9f7e7;
   font-size: 12px;
@@ -104,7 +93,12 @@
 }
 
 @media (max-width: 860px) {
-  .fix-hero {
-    grid-template-columns: 1fr;
+  .fix-action-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fix-target {
+    margin-left: 0;
   }
 }

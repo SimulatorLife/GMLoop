@@ -19,6 +19,13 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
+    public constructor() {
+        super();
+        if ("matchMedia" in globalThis && globalThis.matchMedia("(max-width: 920px)").matches) {
+            this.#controlsPanelOpen = false;
+        }
+    }
+
     #gmlInput = DEFAULT_PLAYGROUND_GML_SOURCE;
 
     #gmlOutput = "";
@@ -28,6 +35,10 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     #viewMode: "code" | "ast" = "code";
 
     #transpileMode: "none" | "patch" | "expression" = "none";
+
+    #controlsPanelOpen = true;
+
+    #controlsToggleButton: HTMLButtonElement | null = null;
 
     #error: string | null = null;
 
@@ -283,6 +294,19 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
+    #toggleControlsPanel(event: Event): void {
+        this.#controlsToggleButton = event.currentTarget as HTMLButtonElement;
+        this.#controlsPanelOpen = !this.#controlsPanelOpen;
+        this.requestUpdate();
+    }
+
+    async #closeControlsPanelAndRestoreFocus(): Promise<void> {
+        this.#controlsPanelOpen = false;
+        this.requestUpdate();
+        await this.updateComplete;
+        this.#controlsToggleButton?.focus();
+    }
+
     #renderRuleRow(parameters: { description: string; keyText: string; onToggle: () => void; selected: boolean }) {
         return html`
             <label class="rule-details-item" title=${parameters.description}>
@@ -427,36 +451,87 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         `;
     }
 
+    #renderTranspileControls() {
+        return html`
+            <div class="playground-control-section">
+                <div class="playground-control-section-header">
+                    <span>Transpile</span>
+                    <span class="playground-control-section-note">Optional JS output</span>
+                </div>
+                <div class="rule-toggles">
+                    <button
+                        type="button"
+                        class="rule-toggle ${this.#transpileMode === "patch" ? "active" : ""}"
+                        aria-pressed=${this.#transpileMode === "patch"}
+                        @click=${() => this.#setTranspileMode("patch")}
+                    >
+                        Patch Transpile
+                    </button>
+                    <button
+                        type="button"
+                        class="rule-toggle ${this.#transpileMode === "expression" ? "active" : ""}"
+                        aria-pressed=${this.#transpileMode === "expression"}
+                        @click=${() => this.#setTranspileMode("expression")}
+                    >
+                        Expression Transpile
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    #renderControlsPanel() {
+        return html`
+            <aside
+                id="playground-controls-panel"
+                class="playground-controls-panel ${this.#controlsPanelOpen ? "is-open" : "is-collapsed"}"
+                aria-label="Playground controls"
+            >
+                <div class="playground-controls-header">
+                    <div>
+                        <div class="playground-controls-title">Controls</div>
+                        <div class="playground-controls-summary">Format, lint, codemod, and transpile selections</div>
+                    </div>
+                    <button
+                        type="button"
+                        class="playground-controls-close"
+                        aria-label="Collapse playground controls"
+                        @click=${() => {
+                            void this.#closeControlsPanelAndRestoreFocus();
+                        }}
+                    >
+                        Collapse
+                    </button>
+                </div>
+                <div class="playground-controls-body">
+                    ${this.#renderTranspileControls()} ${this.#renderRuleDetails()}
+                </div>
+            </aside>
+        `;
+    }
+
     protected render() {
         if (!this.model || !this.state) {
             return html``;
         }
 
         const activeClassName = this.state.activePage === "playground" ? "page active" : "page";
+        const controlsPanelClassName = this.#controlsPanelOpen
+            ? "playground-layout controls-open"
+            : "playground-layout controls-collapsed";
 
         return html`
             <section id="playground-page" class=${activeClassName}>
                 <div class="playground-toolbar">
-                    <div class="rule-toggles">
-                        ${this.#renderRuleDetails()}
-                        <button
-                            type="button"
-                            class="rule-toggle ${this.#transpileMode === "patch" ? "active" : ""}"
-                            aria-pressed=${this.#transpileMode === "patch"}
-                            @click=${() => this.#setTranspileMode("patch")}
-                        >
-                            Patch Transpile
-                        </button>
-                        <button
-                            type="button"
-                            class="rule-toggle ${this.#transpileMode === "expression" ? "active" : ""}"
-                            aria-pressed=${this.#transpileMode === "expression"}
-                            @click=${() => this.#setTranspileMode("expression")}
-                        >
-                            Expression Transpile
-                        </button>
-                    </div>
-                    <div class="playground-toolbar-spacer" aria-hidden="true"></div>
+                    <button
+                        type="button"
+                        class="playground-controls-toggle"
+                        aria-controls="playground-controls-panel"
+                        aria-expanded=${this.#controlsPanelOpen}
+                        @click=${(event: Event) => this.#toggleControlsPanel(event)}
+                    >
+                        ${this.#controlsPanelOpen ? "Hide Controls" : "Show Controls"}
+                    </button>
                     <div class="view-selector">
                         <button
                             type="button"
@@ -476,36 +551,39 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </button>
                     </div>
                 </div>
-                <div class="playground-main">
-                    <div class="editor-pane">
-                        <div class="pane-header">
-                            <span>Input GML</span>
-                            <span class="pane-header-status">Writable</span>
+                <div class=${controlsPanelClassName}>
+                    ${this.#renderControlsPanel()}
+                    <div class="playground-main">
+                        <div class="editor-pane">
+                            <div class="pane-header">
+                                <span>Input GML</span>
+                                <span class="pane-header-status">Writable</span>
+                            </div>
+                            <textarea
+                                class="playground-input"
+                                placeholder="Paste or write GML code here..."
+                                .value=${this.#gmlInput}
+                                @input=${this.#onInputChange}
+                                spellcheck="false"
+                            ></textarea>
                         </div>
-                        <textarea
-                            class="playground-input"
-                            placeholder="Paste or write GML code here..."
-                            .value=${this.#gmlInput}
-                            @input=${this.#onInputChange}
-                            spellcheck="false"
-                        ></textarea>
-                    </div>
-                    <div class="editor-pane">
-                        <div class="pane-header">
-                            <span
-                                >${this.#viewMode === "code"
-                                    ? this.#transpileMode === "none"
-                                        ? "GML"
-                                        : "JS"
-                                    : "Parsed AST"}</span
-                            >
-                            <span class="pane-header-status">Read-only</span>
+                        <div class="editor-pane">
+                            <div class="pane-header">
+                                <span
+                                    >${this.#viewMode === "code"
+                                        ? this.#transpileMode === "none"
+                                            ? "GML"
+                                            : "JS"
+                                        : "Parsed AST"}</span
+                                >
+                                <span class="pane-header-status">Read-only</span>
+                            </div>
+                            ${this.#error
+                                ? html`<div class="playground-output is-error">${this.#error}</div>`
+                                : this.#viewMode === "code"
+                                  ? html`<pre class="playground-output">${this.#gmlOutput}</pre>`
+                                  : html`<pre class="playground-output">${this.#astJson}</pre>`}
                         </div>
-                        ${this.#error
-                            ? html`<div class="playground-output is-error">${this.#error}</div>`
-                            : this.#viewMode === "code"
-                              ? html`<pre class="playground-output">${this.#gmlOutput}</pre>`
-                              : html`<pre class="playground-output">${this.#astJson}</pre>`}
                     </div>
                 </div>
             </section>

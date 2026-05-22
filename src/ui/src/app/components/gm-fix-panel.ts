@@ -87,7 +87,7 @@ export class GmFixPanel extends LightDomLitElement {
 
         return html`
             <section id="fix-page" class=${activeClassName}>
-                <div class="fix-hero">
+                <div class="fix-action-bar">
                     <div class="fix-action-card" role="status" aria-live="polite">
                         <span class=${`fix-status-chip ${effectiveFixStatus}`}>
                             ${getFixStatusLabel({ ...this.state, fixStatus: effectiveFixStatus })}

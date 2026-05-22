@@ -18,15 +18,142 @@
 .playground-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--gm-space-related);
-  flex-wrap: wrap;
   padding: 12px 20px;
   background: rgba(143, 181, 255, 0.05);
   border-bottom: 1px solid var(--gm-border);
 }
 
-.playground-toolbar-spacer {
-  flex: 1;
+.playground-controls-toggle {
+  min-height: 36px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(143, 181, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--gm-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.playground-controls-toggle:hover,
+.playground-controls-toggle:focus-visible {
+  background: rgba(143, 181, 255, 0.12);
+  color: var(--gm-text);
+}
+
+.playground-layout {
+  position: relative;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  transition: grid-template-columns 180ms ease;
+}
+
+.playground-layout.controls-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.playground-controls-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: rgba(7, 13, 23, 0.78);
+  border-right: 1px solid var(--gm-border);
+}
+
+.playground-controls-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gm-space-tight);
+  padding: 14px;
+  border-bottom: 1px solid var(--gm-border);
+}
+
+.playground-controls-title {
+  color: var(--gm-text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.playground-controls-summary,
+.playground-control-section-note {
+  margin-top: 4px;
+  color: var(--gm-text-subdued);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.playground-controls-close {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(143, 181, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--gm-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.playground-controls-close:hover,
+.playground-controls-close:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--gm-text);
+}
+
+.playground-controls-body {
+  display: grid;
+  align-content: start;
+  gap: var(--gm-space-related);
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.playground-layout.controls-collapsed .playground-controls-panel {
+  overflow: hidden;
+}
+
+.playground-layout.controls-collapsed .playground-controls-header,
+.playground-layout.controls-collapsed .playground-controls-body {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.playground-layout.controls-collapsed .playground-controls-panel::before {
+  content: "Controls";
+  align-self: start;
+  justify-self: center;
+  margin-top: 18px;
+  writing-mode: vertical-rl;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gm-text-subdued);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.playground-control-section {
+  display: grid;
+  gap: 10px;
+}
+
+.playground-control-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gm-space-tight);
+  color: var(--gm-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .playground-main {
@@ -87,22 +214,24 @@
 }
 
 .rule-toggles {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 10px;
-  flex-wrap: wrap;
-  flex: 1;
 }
 
 .rule-toggle {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 12px;
+  color: var(--gm-text-secondary);
+  cursor: pointer;
   user-select: none;
 }
 
@@ -118,10 +247,9 @@
 
 .rule-details {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  min-height: 0;
   padding: 0;
-  max-height: 42vh;
-  overflow: auto;
 }
 
 .rule-details-section {
@@ -133,13 +261,20 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  border: none;
-  background: transparent;
+  min-height: 36px;
+  border: 1px solid rgba(143, 181, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
   color: var(--gm-text-secondary);
-  padding: 0;
+  padding: 8px 10px;
   text-align: left;
   font-size: 12px;
   cursor: pointer;
+}
+
+.rule-details-header:hover,
+.rule-details-header:focus-visible {
+  background: rgba(143, 181, 255, 0.1);
 }
 
 .rule-details-header-icon {
@@ -163,15 +298,17 @@
 }
 
 .rule-details-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   align-items: center;
 }
 
 .rule-details-search {
-  flex: 1;
-  min-width: 220px;
-  padding: 6px 10px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 10px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
@@ -180,7 +317,8 @@
 }
 
 .rule-details-bulk-action {
-  padding: 6px 10px;
+  min-height: 32px;
+  padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
@@ -196,17 +334,17 @@
 .rule-details-list {
   display: grid;
   gap: 6px;
-  max-height: 220px;
+  max-height: min(42vh, 360px);
   overflow: auto;
   padding-right: 4px;
 }
 
 .rule-details-item {
   display: grid;
-  grid-template-columns: auto minmax(120px, 300px) 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
   align-items: start;
-  padding: 6px 8px;
+  padding: 8px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -220,11 +358,14 @@
   font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 12px;
   color: var(--gm-text);
+  word-break: break-word;
 }
 
 .rule-details-item-description {
+  grid-column: 2;
   font-size: 12px;
   color: var(--gm-text-subdued);
+  line-height: 1.35;
 }
 
 .rule-details-footer {
