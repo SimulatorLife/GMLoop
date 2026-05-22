@@ -13,8 +13,8 @@ const createCacheLimitErrorMessage = (received: unknown) =>
 
 const createCacheLimitTypeErrorMessage = createNumericTypeErrorFormatter("Maximum formatting cache entries");
 
-const coerceCacheLimit = (value: unknown, context = {}) => {
-    const opts = { ...context, createErrorMessage: createCacheLimitErrorMessage };
+const coerceCacheLimit = (value: unknown, coercionOptions = {}) => {
+    const opts = { ...coercionOptions, createErrorMessage: createCacheLimitErrorMessage };
     return coerceNonNegativeInteger(value, opts);
 };
 
@@ -34,6 +34,9 @@ export function getDefaultMaxFormattingCacheEntries(): number {
 
 /**
  * Overrides the default cap for in-memory formatting-cache entries.
+ *
+ * Passing `undefined` resets the runtime default to the baseline constant.
+ * Invalid values throw a typed validation error and leave the previous value unchanged.
  */
 export function setDefaultMaxFormattingCacheEntries(value?: unknown): number {
     return state.set(value) ?? DEFAULT_MAX_FORMATTING_CACHE_ENTRIES;
@@ -43,11 +46,9 @@ export function setDefaultMaxFormattingCacheEntries(value?: unknown): number {
  * Applies environment overrides for the formatting-cache entry cap.
  */
 export function applyMaxFormattingCacheEntriesEnvOverride(env?: NodeJS.ProcessEnv): number {
-    const applied = callWithFallback(() => state.applyEnvOverride(env), {
+    return callWithFallback(() => state.applyEnvOverride(env) ?? getDefaultMaxFormattingCacheEntries(), {
         fallback: () => getDefaultMaxFormattingCacheEntries()
     });
-
-    return applied ?? DEFAULT_MAX_FORMATTING_CACHE_ENTRIES;
 }
 
 applyMaxFormattingCacheEntriesEnvOverride();
