@@ -1,4 +1,4 @@
-import { strict as assert } from "node:assert";
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,9 +18,9 @@ import {
 
 const xmlHeader = '<?xml version="1.0" encoding="utf-8"?>\n';
 
-// These tests intentionally rely on assert.strictEqual-style comparisons because
-// Node.js deprecated the legacy assert.equal API. Behaviour has been
-// revalidated via `pnpm test src/cli/test/detect-test-regressions.test.js`.
+// This file uses assert.strictEqual and assert.deepStrictEqual (from node:assert/strict)
+// so that Node.js' deprecated assert.equal / assert.deepEqual aliases are not exercised.
+// Regression coverage confirmed via `pnpm test src/cli/test/generate-quality-report.test.js`.
 
 function writeXml(dir, name, contents) {
     fs.mkdirSync(dir, { recursive: true });
@@ -215,7 +215,7 @@ void test("ignores checkstyle reports when scanning result directories", () => {
     assert.strictEqual(head.stats.total, 1);
     assert.strictEqual(head.stats.failed, 1);
     assert.strictEqual([...head.results.keys()][0], "sample :: suite :: real failure");
-    assert.equal(
+    assert.strictEqual(
         head.notes.some((note) => note.includes("Ignoring checkstyle report reports/eslint-checkstyle.xml")),
         true
     );
@@ -296,7 +296,7 @@ void test("reportRegressionSummary returns failure details when regressions exis
     );
 
     assert.strictEqual(summary.exitCode, 1);
-    assert.deepEqual(summary.lines, [
+    assert.deepStrictEqual(summary.lines, [
         "New failing tests detected (compared to base using PR head):",
         "- suite :: test (passed -> failed)"
     ]);
@@ -306,7 +306,7 @@ void test("reportRegressionSummary returns success details when no regressions e
     const summary = reportRegressionSummary([], "PR head");
 
     assert.strictEqual(summary.exitCode, 0);
-    assert.deepEqual(summary.lines, ["No new failing tests compared to base using PR head."]);
+    assert.deepStrictEqual(summary.lines, ["No new failing tests compared to base using PR head."]);
 });
 
 void test("reportRegressionSummary clarifies when regressions offset resolved failures", () => {
@@ -333,7 +333,7 @@ void test("reportRegressionSummary clarifies when regressions offset resolved fa
     );
 
     assert.strictEqual(summary.exitCode, 1);
-    assert.deepEqual(summary.lines, [
+    assert.deepStrictEqual(summary.lines, [
         "New failing tests detected (compared to base using PR head):",
         "- suite :: new failure (passed -> failed)",
         "Note: 1 previously failing test is now passing or missing, so totals may appear unchanged."
@@ -425,10 +425,10 @@ void test("detectRegressions accepts heterogeneous result containers", () => {
 
     const regressions = detectRegressions(base, target);
 
-    assert.equal(regressions.length, 1);
-    assert.equal(regressions[0].from, "passed");
-    assert.equal(regressions[0].to, "failed");
-    assert.equal(regressions[0].detail?.displayName, "suite :: test :: scenario");
+    assert.strictEqual(regressions.length, 1);
+    assert.strictEqual(regressions[0].from, "passed");
+    assert.strictEqual(regressions[0].to, "failed");
+    assert.strictEqual(regressions[0].detail?.displayName, "suite :: test :: scenario");
 });
 
 void test("does not treat a JUnit-undefined-wrapper renamed failure as a regression", () => {
@@ -1281,7 +1281,7 @@ void test("readTestResults extracts workspace names from nested paths", () => {
 
     assert.strictEqual(cases.length, 3);
     const workspaces = cases.map((c) => c.workspace).sort();
-    assert.deepEqual(workspaces, ["core", "lint", "parser"]);
+    assert.deepStrictEqual(workspaces, ["core", "lint", "parser"]);
 });
 
 void test("readTestResults handles missing workspace info gracefully", () => {

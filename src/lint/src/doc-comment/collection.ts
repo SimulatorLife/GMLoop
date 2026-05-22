@@ -389,24 +389,6 @@ function appendFlattenedEntry(target: string[], entry: unknown): void {
     target.push(entry);
 }
 
-function getCommentIndexValue(comment: unknown, field: "start" | "end"): number | null {
-    if (!comment || typeof comment !== "object") {
-        return null;
-    }
-
-    const fieldValue = (comment as { [key: string]: unknown })[field];
-    if (typeof fieldValue === "number") {
-        return fieldValue;
-    }
-
-    if (!fieldValue || typeof fieldValue !== "object") {
-        return null;
-    }
-
-    const indexValue = (fieldValue as { index?: unknown }).index;
-    return typeof indexValue === "number" ? indexValue : null;
-}
-
 function isUnprintedLineComment(comment: unknown): comment is { [key: string]: unknown; type: "CommentLine" } {
     if (!comment || typeof comment !== "object") {
         return false;
@@ -446,8 +428,8 @@ export function collectLeadingProgramLineComments(
             continue;
         }
 
-        const commentEnd = getCommentIndexValue(comment, "end");
-        const commentStart = getCommentIndexValue(comment, "start");
+        const commentEnd = Core.getCommentBoundaryIndex(comment, "end");
+        const commentStart = Core.getCommentBoundaryIndex(comment, "start");
 
         if (!Number.isInteger(commentEnd) || commentEnd >= anchorIndex) {
             continue;

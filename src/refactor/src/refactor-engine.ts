@@ -1452,7 +1452,11 @@ export class RefactorEngine {
                 overlayBytes -= previousSize;
             } else if (overlaySpillIndex.has(filePath) && spillBackend) {
                 overlaySpillIndex.delete(filePath);
-                await spillBackend.deleteEntry(filePath);
+                // Use removeFromIndex instead of deleteEntry to reclaim memory
+                // from the backend's path index and read cache without the
+                // overhead of a disk I/O call. The backing file stays valid in
+                // case other reads need it; it will be cleaned up at disposal.
+                spillBackend.removeFromIndex(filePath);
             }
 
             overlay.set(filePath, content);

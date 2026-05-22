@@ -13,9 +13,9 @@ import {
     type GmlFormatDefaultOptions,
     type GmlFormatProvider
 } from "./components/index.js";
-import { resolveCoreOptionOverrides } from "./options/core-option-overrides.js";
+import { DEFAULT_CORE_OPTION_OVERRIDES } from "./options/core-option-overrides.js";
 import { extractProjectFormatOptions } from "./options/project-config.js";
-import { listProjectFormatOptionCatalogEntries } from "./options/project-config-catalog.js";
+import { PROJECT_FORMAT_OPTION_CATALOG } from "./options/project-config-catalog.js";
 
 export const languages: SupportLanguage[] = [
     {
@@ -35,7 +35,7 @@ function extractOptionDefaults(optionConfigMap: SupportOptions): Record<string, 
 }
 
 function createDefaultOptions(provider: GmlFormatProvider): GmlFormatDefaultOptions {
-    const coreOptionOverrides = resolveCoreOptionOverrides();
+    const coreOptionOverrides = DEFAULT_CORE_OPTION_OVERRIDES;
     const formatOptionDefaults = extractOptionDefaults(provider.components.options);
 
     return Object.freeze({
@@ -64,7 +64,7 @@ export function createGmlFormat(provider: GmlFormatProvider = defaultGmlFormatPr
         options: provider.components.options,
         defaultOptions,
         extractProjectFormatOptions,
-        listProjectFormatOptionCatalogEntries,
+        projectFormatOptionCatalog: PROJECT_FORMAT_OPTION_CATALOG,
         /**
          * Utility function and entry point to format GML source code.
          *
