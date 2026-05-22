@@ -157,20 +157,18 @@ function trackInFlightOperation(
     key: string,
     createOperation: () => Promise<EnsureReadyResult>
 ): Promise<EnsureReadyResult> {
-    if (map.has(key)) {
-        return map.get(key);
-    }
-
-    const pending = (async () => {
-        try {
-            return await createOperation();
-        } finally {
-            map.delete(key);
-        }
-    })();
-
-    map.set(key, pending);
-    return pending;
+    // Use Core.getOrCreateMapEntry instead of the manual has/get/set pattern.
+    // The initializer returns the cached promise when one is already in flight,
+    // avoiding the double-lookup that the manual pattern required.
+    return Core.getOrCreateMapEntry(map, key, () =>
+        (async () => {
+            try {
+                return await createOperation();
+            } finally {
+                map.delete(key);
+            }
+        })()
+    );
 }
 
 type ExecuteOperationOptions = {
