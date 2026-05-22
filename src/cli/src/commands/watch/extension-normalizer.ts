@@ -27,7 +27,9 @@ function coerceExtensionValue(value: unknown): string | null {
     const extensionCandidate =
         cleaned.startsWith(".") || !cleaned.includes(".") ? cleaned : path.extname(cleaned) || cleaned;
 
-    return normalizeExtensionSuffix(extensionCandidate);
+    const braceTrimmedCandidate = extensionCandidate.replace(/^[{[(<]+/, "").replace(/[}\])>]+$/u, "");
+
+    return normalizeExtensionSuffix(braceTrimmedCandidate);
 }
 
 function splitExtensionInput(value: unknown): Array<string> {

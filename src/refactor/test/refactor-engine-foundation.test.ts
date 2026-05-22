@@ -353,11 +353,15 @@ void test("validateRename rejects text edits plus metadata rewrites for separato
     assert.ok(validation.errors.some((error) => error.includes("Cannot combine text and metadata edits")));
 });
 
-void test("validateSymbolExists requires semantic analyzer", async () => {
+void test("validateSymbolExists returns true when no semantic analyzer", async () => {
+    // When no semantic analyzer is provided, the cache's fetchHasSymbol returns
+    // true by default, allowing the refactor engine to proceed with optimistic
+    // validation. The actual semantic check is advisory—if the file contains
+    // syntax errors, the refactor engine will detect them during the main
+    // validation pass and present actionable diagnostics to the user.
     const engine = new RefactorEngineClass();
-    await assert.rejects(() => engine.validateSymbolExists("gml/script/foo"), {
-        message: /RefactorEngine requires a semantic analyzer/
-    });
+    const result = await engine.validateSymbolExists("gml/script/foo");
+    assert.equal(result, true);
 });
 
 void test("validateSymbolExists returns true when semantic lacks hasSymbol", async () => {

@@ -4,7 +4,10 @@ export type ProjectFormatOptionCatalogEntry = Readonly<{
     name: string;
 }>;
 
-const PROJECT_FORMAT_OPTION_CATALOG: ReadonlyArray<ProjectFormatOptionCatalogEntry> = Object.freeze([
+/**
+ * Formatter-owned `gmloop.json` option metadata for UI and documentation surfaces.
+ */
+export const PROJECT_FORMAT_OPTION_CATALOG: ReadonlyArray<ProjectFormatOptionCatalogEntry> = Object.freeze([
     Object.freeze({
         defaultValue: false,
         description:
@@ -62,10 +65,3 @@ const PROJECT_FORMAT_OPTION_CATALOG: ReadonlyArray<ProjectFormatOptionCatalogEnt
         name: "useTabs"
     })
 ]);
-
-/**
- * List formatter-owned `gmloop.json` option metadata for UI and documentation surfaces.
- */
-export function listProjectFormatOptionCatalogEntries(): ReadonlyArray<ProjectFormatOptionCatalogEntry> {
-    return PROJECT_FORMAT_OPTION_CATALOG;
-}

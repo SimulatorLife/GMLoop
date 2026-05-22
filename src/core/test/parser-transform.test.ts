@@ -17,8 +17,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import type { MutableGameMakerAstNode } from "../src/ast/types.js";
-import type { EmptyTransformOptions, ParserTransform } from "../src/transforms/parser-transform.js";
-import { createParserTransform } from "../src/transforms/parser-transform.js";
+import { createParserTransform, type ParserTransform } from "../src/transforms/parser-transform.js";
 
 type SimpleTransformOptions = {
     extra?: string;
@@ -26,7 +25,7 @@ type SimpleTransformOptions = {
 
 /** Minimal AST node used to exercise the transform. */
 const makeAst = (extra?: string): MutableGameMakerAstNode => {
-    return { type: "Program", body: [], extra: extra ?? "" } as MutableGameMakerAstNode;
+    return { type: "Program", body: [], extra: extra ?? "" };
 };
 
 /** Execute function captured by the factory for use in the direct-implementation test. */
@@ -45,7 +44,7 @@ const directTransform: ParserTransform<MutableGameMakerAstNode, typeof defaultOp
     transform(ast: MutableGameMakerAstNode, options?: { extra?: string }) {
         return executeSimpleTransform(
             ast,
-            options !== undefined ? { ...directTransform.defaultOptions, ...options } : directTransform.defaultOptions
+            options === undefined ? directTransform.defaultOptions : { ...directTransform.defaultOptions, ...options }
         );
     }
 };

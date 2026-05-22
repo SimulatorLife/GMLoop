@@ -12,7 +12,14 @@
 
 import { Core } from "@gmloop/core";
 
-import type { DependentSymbol, FileSymbol, PartialSemanticAnalyzer, SymbolOccurrence } from "./types.js";
+import type {
+    DependentSymbol,
+    FileSymbol,
+    PartialSemanticAnalyzer,
+    SymbolLocation,
+    SymbolLookupResult,
+    SymbolOccurrence
+} from "./types.js";
 
 /**
  * Cache entry with TTL tracking.
@@ -96,6 +103,9 @@ export class SemanticQueryCache {
     private fileSymbolsCache = new Map<string, CacheEntry<Array<FileSymbol>>>();
     private dependentsCache = new Map<string, CacheEntry<Array<DependentSymbol>>>();
     private existenceCache = new Map<string, CacheEntry<boolean>>();
+    private symbolLookupCache = new Map<string, CacheEntry<SymbolLookupResult | null>>();
+    private symbolLocationCache = new Map<string, CacheEntry<SymbolLocation | null>>();
+    private symbolIdCache = new Map<string, CacheEntry<string | null>>();
 
     /**
      * Tracks occurrence cache keys whose stored array has already been deduplicated
@@ -254,6 +264,32 @@ export class SemanticQueryCache {
     }
 
     /**
+     * Look up a symbol in the semantic analyzer.
+     * Uses cached results if available.
+     */
+    lookup(name: string, scopeId?: string): Promise<SymbolLookupResult | null> {
+        const cacheKey = scopeId ? `${scopeId}::${name}` : name;
+        return this.getOrFetch(this.symbolLookupCache, cacheKey, () => this.fetchLookup(name, scopeId));
+    }
+
+    /**
+     * Find the symbol at a specific location in a file.
+     * Uses cached results if available.
+     */
+    getSymbolAtPosition(filePath: string, offset: number): Promise<SymbolLocation | null> {
+        const cacheKey = `${filePath}:${offset}`;
+        return this.getOrFetch(this.symbolLocationCache, cacheKey, () => this.fetchSymbolAtPosition(filePath, offset));
+    }
+
+    /**
+     * Resolve a symbol ID from an identifier name.
+     * Uses cached results if available.
+     */
+    resolveSymbolId(identifierName: string): Promise<string | null> {
+        return this.getOrFetch(this.symbolIdCache, identifierName, () => this.fetchResolveSymbolId(identifierName));
+    }
+
+    /**
      * Invalidate all cached entries.
      * Should be called when source files change during a refactoring session.
      */
@@ -262,6 +298,9 @@ export class SemanticQueryCache {
         this.fileSymbolsCache.clear();
         this.dependentsCache.clear();
         this.existenceCache.clear();
+        this.symbolLookupCache.clear();
+        this.symbolLocationCache.clear();
+        this.symbolIdCache.clear();
         this.primedOccurrenceKeys.clear();
         this.occurrenceFileIndex.clear();
     }
@@ -314,7 +353,10 @@ export class SemanticQueryCache {
                 this.occurrenceCache.size +
                 this.fileSymbolsCache.size +
                 this.dependentsCache.size +
-                this.existenceCache.size
+                this.existenceCache.size +
+                this.symbolLookupCache.size +
+                this.symbolLocationCache.size +
+                this.symbolIdCache.size
         };
     }
 
@@ -533,5 +575,38 @@ export class SemanticQueryCache {
             return Promise.resolve(true);
         }
         return Promise.resolve(this.semantic.hasSymbol(symbolId));
+    }
+
+    /**
+     * Fetch symbol lookup result from the semantic analyzer.
+     * @private
+     */
+    private fetchLookup(name: string, scopeId?: string): Promise<SymbolLookupResult | null> {
+        if (!this.semantic || !Core.hasMethods(this.semantic, "lookup")) {
+            return Promise.resolve<SymbolLookupResult | null>(null);
+        }
+        return Promise.resolve(this.semantic.lookup(name, scopeId) ?? null);
+    }
+
+    /**
+     * Fetch symbol location from the semantic analyzer.
+     * @private
+     */
+    private async fetchSymbolAtPosition(filePath: string, offset: number): Promise<SymbolLocation | null> {
+        if (!this.semantic || !Core.hasMethods(this.semantic, "getSymbolAtPosition")) {
+            return null;
+        }
+        return (await this.semantic.getSymbolAtPosition(filePath, offset)) ?? null;
+    }
+
+    /**
+     * Fetch resolved symbol ID from the semantic analyzer.
+     * @private
+     */
+    private fetchResolveSymbolId(identifierName: string): Promise<string | null> {
+        if (!this.semantic || !Core.hasMethods(this.semantic, "resolveSymbolId")) {
+            return Promise.resolve<string | null>(null);
+        }
+        return Promise.resolve(this.semantic.resolveSymbolId(identifierName) ?? null);
     }
 }

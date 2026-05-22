@@ -10,6 +10,9 @@ import {
     type FunctionDeclarationNode,
     GmlToJsEmitter,
     type IdentifierAnalyzer,
+    isBlockStatementNode,
+    isDefaultParameterNode,
+    isIdentifierNode,
     type ProgramNode,
     StringBuilder
 } from "../emitter/index.js";
@@ -192,9 +195,9 @@ export class GmlTranspiler {
 
             if (typeof parameter === "string") {
                 line = `var ${parameter} = args[${index}];`;
-            } else if (parameter.type === "Identifier") {
+            } else if (isIdentifierNode(parameter)) {
                 line = `var ${parameter.name} = args[${index}];`;
-            } else if (parameter.type === "DefaultParameter" && parameter.left.type === "Identifier") {
+            } else if (isDefaultParameterNode(parameter) && isIdentifierNode(parameter.left)) {
                 const name = parameter.left.name;
                 if (parameter.right) {
                     const defaultValue = emitter.emit(parameter.right);
@@ -215,7 +218,7 @@ export class GmlTranspiler {
     }
 
     private emitUnwrappedFunctionBody(body: ProgramNode["body"][number], emitter: GmlToJsEmitter): string {
-        if (body.type !== "BlockStatement") {
+        if (!isBlockStatementNode(body)) {
             return emitter.emit(body).trim();
         }
 

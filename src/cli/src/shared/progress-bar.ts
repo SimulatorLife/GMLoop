@@ -99,8 +99,9 @@ class TerminalProgressBar implements ProgressBarLike {
     #render(): void {
         const ratio = this.total > 0 ? this.current / this.total : 0;
         const filled = Math.round(ratio * this.width);
-        const complete = COMPLETE_CHAR.repeat(Math.min(filled, this.width));
-        const incomplete = INCOMPLETE_CHAR.repeat(Math.max(this.width - filled, 0));
+        const filledWidth = Core.clamp(filled, 0, this.width);
+        const complete = COMPLETE_CHAR.repeat(filledWidth);
+        const incomplete = INCOMPLETE_CHAR.repeat(this.width - filledWidth);
         const bar = `${complete}${incomplete}`;
         const output = `${this.label} [${bar}] ${this.current}/${this.total}`;
 

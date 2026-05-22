@@ -63,6 +63,19 @@ void describe("manual CLI helpers", () => {
         assert.match(sanitized, /Task \[[^\]]*\] 3\/3/);
     });
 
+    void it("keeps rendered fill width bounded when progress values overshoot", () => {
+        const stdout = createMockStdout();
+        const writes = [];
+        stdout.write = (chunk) => {
+            writes.push(chunk);
+        };
+
+        renderProgressBar("Task", 10, 3, 5, { stdout });
+
+        const sanitized = writes.join("").replaceAll(ANSI_ESCAPE_SEQUENCE_PATTERN, "").replaceAll("\r", "\n");
+        assert.match(sanitized, /Task \[█████\] 3\/3/);
+    });
+
     void it("throws when createBar is not a function", () => {
         const stdout = createMockStdout();
 

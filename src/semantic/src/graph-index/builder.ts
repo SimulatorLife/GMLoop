@@ -1235,6 +1235,11 @@ function classifyAssetReferenceEdgeType(reference: Record<string, unknown>): Gra
     }
 
     const fromResourcePath = getString(reference.fromResourcePath);
+    const targetPath = getString(reference.targetPath);
+    if (fromResourcePath?.startsWith("rooms/") && targetPath?.startsWith("objects/")) {
+        return "placed_in_room";
+    }
+
     return fromResourcePath && isProjectManifestPath(fromResourcePath) ? "contains" : "references";
 }
 

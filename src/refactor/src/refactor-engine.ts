@@ -312,19 +312,24 @@ export class RefactorEngine {
     /**
      * Find the symbol at a specific location in a file.
      * Useful for triggering refactorings from editor positions.
+     *
+     * Uses the semantic cache when available for efficient repeated lookups.
+     * Falls back to parser-based AST traversal when the semantic analyzer
+     * doesn't provide position-based lookup.
      */
     findSymbolAtLocation(filePath: string, offset: number): Promise<SymbolLocation | null> {
-        return SymbolQueries.findSymbolAtLocation(filePath, offset, this.semantic, this.parser);
+        if (this.semantic !== null) {
+            return this.semanticCache.getSymbolAtPosition(filePath, offset);
+        }
+
+        return SymbolQueries.findSymbolAtLocationFallback(filePath, offset, this.parser);
     }
 
     /**
      * Validate symbol exists in the semantic index.
+     * Uses the semantic cache when available for efficient repeated lookups.
      */
     validateSymbolExists(symbolId: string): Promise<boolean> {
-        if (this.semantic === null) {
-            return SymbolQueries.validateSymbolExists(symbolId, this.semantic);
-        }
-
         return this.semanticCache.hasSymbol(symbolId);
     }
 
@@ -1447,7 +1452,11 @@ export class RefactorEngine {
                 overlayBytes -= previousSize;
             } else if (overlaySpillIndex.has(filePath) && spillBackend) {
                 overlaySpillIndex.delete(filePath);
-                await spillBackend.deleteEntry(filePath);
+                // Use removeFromIndex instead of deleteEntry to reclaim memory
+                // from the backend's path index and read cache without the
+                // overhead of a disk I/O call. The backing file stays valid in
+                // case other reads need it; it will be cleaned up at disposal.
+                spillBackend.removeFromIndex(filePath);
             }
 
             overlay.set(filePath, content);

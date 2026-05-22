@@ -48,6 +48,7 @@ void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported n
         liveReloadErrorMessage: null,
         liveReloadStatus: null,
         mcpServerStatus: "not-started",
+        pendingActionCount: 0,
         searchQuery: "enemy ship"
     });
 

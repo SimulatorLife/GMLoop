@@ -53,7 +53,10 @@ function createUsageError(message: string, command: CommanderCommandLike): CliUs
 
 function resolvePathOptionValue(command: CommanderCommandLike): string {
     const options = (command.opts() ?? {}) as TranspileCommandOptions;
-    const configuredPath = typeof options.path === "string" ? options.path.trim() : "";
+    // Positional argument takes precedence over --path option.
+    const positionalPath = Array.isArray(command.args) && command.args.length > 0 ? command.args[0] : null;
+    const configuredPath =
+        typeof (positionalPath ?? options.path) === "string" ? (positionalPath ?? options.path).trim() : "";
     if (configuredPath.length === 0) {
         return process.cwd();
     }
@@ -190,7 +193,9 @@ function emitDryRunOutput(parameters: { outputs: Array<{ sourcePath: string; jsB
 export function createTranspileCommand(): Command {
     return applyStandardCommandOptions(
         new Command("transpile")
+            .usage("[path] [options]")
             .description("Transpile GameMaker Language files to JavaScript using @gmloop/transpiler")
+            .argument("[path]", "Target .gml file, GameMaker project directory, or .yyp path")
             .addOption(createPathOption())
             .addOption(createWriteOption())
             .addOption(createListOption())

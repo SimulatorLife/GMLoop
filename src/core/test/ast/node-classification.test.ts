@@ -63,6 +63,7 @@ void describe("AST node classification helpers", () => {
         assert.equal(Core.isFunctionLikeDeclaration({ type: "FunctionDeclaration" }), true);
         assert.equal(Core.isFunctionLikeDeclaration({ type: "ConstructorDeclaration" }), true);
         assert.equal(Core.isFunctionLikeDeclaration({ type: "FunctionExpression" }), true);
+        assert.equal(Core.isFunctionLikeDeclaration({ type: "StructFunctionDeclaration" }), true);
         assert.equal(Core.isFunctionLikeDeclaration({ type: "StructDeclaration" }), false);
     });
 

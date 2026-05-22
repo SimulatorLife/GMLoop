@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 
 import { __test__ } from "../src/cli.js";
+import { setDefaultMaxFormattingCacheEntries } from "../src/runtime-options/format-memory-cache.js";
+import { DEFAULT_MAX_FORMATTING_CACHE_ENTRIES } from "../src/runtime-options/format-memory-constants.js";
 
 const {
     clearFormattingCacheForTests,
@@ -12,6 +14,7 @@ const {
 
 void describe("formatting cache", () => {
     beforeEach(() => {
+        setDefaultMaxFormattingCacheEntries(DEFAULT_MAX_FORMATTING_CACHE_ENTRIES);
         clearFormattingCacheForTests();
     });
 
@@ -49,5 +52,18 @@ void describe("formatting cache", () => {
         const expectedBytes = Buffer.byteLength(key, "utf8") + Buffer.byteLength(value, "utf8");
 
         assert.equal(estimatedBytes, expectedBytes);
+    });
+
+    void it("respects the runtime-configured cache entry cap", () => {
+        setDefaultMaxFormattingCacheEntries(2);
+
+        setFormattingCacheEntryForTests("key-1", "formatted-1");
+        setFormattingCacheEntryForTests("key-2", "formatted-2");
+        setFormattingCacheEntryForTests("key-3", "formatted-3");
+
+        const stats = getFormattingCacheStatsForTests();
+        assert.equal(stats.maxEntries, 2);
+        assert.equal(stats.size, 2);
+        assert.deepEqual(getFormattingCacheKeysForTests(), ["key-2", "key-3"]);
     });
 });

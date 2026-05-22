@@ -69,7 +69,27 @@ import { handleIntermediateTrailingSpacing, handleTerminalTrailingSpacing } from
 import { isCallbackArgument, isComplexArgumentNode, isInLValueChain, isSimpleCallArgument } from "./type-guards.js";
 import { joinDeclaratorPartsWithCommas } from "./variable-declarator-layout.js";
 
-const forcedStructArgumentBreaks = new WeakMap();
+// Module-level cache keyed on struct argument AST nodes.
+// See clearStructArgumentBreakCache for the memory-management rationale.
+let forcedStructArgumentBreaks = new WeakMap();
+
+/**
+ * Reset the struct-argument-break cache to an empty WeakMap.
+ *
+ * Standard WeakMaps have no `clear()` method, so the only way to release
+ * the entries without relying on GC is to replace the reference with a
+ * fresh instance.  This is safe because every call to `printCallExpressionNode`
+ * and `printNewExpressionNode` reads the current value of
+ * `forcedStructArgumentBreaks` via the variable binding, not via closure.
+ *
+ * After this function runs the previous WeakMap is eligible for GC (it has
+ * no outgoing references), and the new empty instance immediately starts
+ * collecting new entries for the next format cycle.  This cuts steady-state
+ * heap usage for repeated format calls from O(N entries) to O(1) per cycle.
+ */
+export function clearStructArgumentBreakCache(): void {
+    forcedStructArgumentBreaks = new WeakMap();
+}
 
 function applyLogicalOperatorsStyle(operator, style) {
     const coreStyle = style === LogicalOperatorsStyle.KEYWORDS ? "keyword" : "symbol";
@@ -1153,10 +1173,11 @@ function buildCallArgumentsDocs(
         return { inlineDoc, multilineDoc };
     }
 
-    const firstArgumentNode = node.arguments[0];
+    const firstArgumentNode = node.arguments?.[0];
     const firstArgumentText = firstArgumentNode?.value;
     const firstArgumentIsStringLiteral =
-        firstArgumentNode?.type === Core.LITERAL &&
+        firstArgumentNode != null &&
+        firstArgumentNode.type === Core.LITERAL &&
         typeof firstArgumentText === STRING_TYPE &&
         (firstArgumentText.startsWith('"') || firstArgumentText.startsWith("'") || firstArgumentText.startsWith('@"'));
 
@@ -1221,7 +1242,7 @@ function shouldForceInlineFunctionParameters(path, options) {
 
     // For regular function declarations and struct function declarations,
     // always keep parameters inline
-    if (node.type === "FunctionDeclaration" || node.type === "StructFunctionDeclaration") {
+    if (Core.isFunctionLikeDeclaration(node)) {
         return true;
     }
 

@@ -81,7 +81,7 @@ void test("resolveLookupCacheMaxEntries returns default when input is not a numb
 });
 
 void test("resolveLookupCacheMaxEntries returns default when input is NaN", () => {
-    const result = resolveLookupCacheMaxEntries(NaN, DEFAULT_LOOKUP_CACHE_MAX_ENTRIES);
+    const result = resolveLookupCacheMaxEntries(Number.NaN, DEFAULT_LOOKUP_CACHE_MAX_ENTRIES);
     assert.equal(result, DEFAULT_LOOKUP_CACHE_MAX_ENTRIES);
 });
 
@@ -119,7 +119,7 @@ void test("resolveLookupCacheMaxEntries preserves valid positive integers", () =
 });
 
 void test("resolveLookupCacheMaxEntries ignores custom default when input is valid", () => {
-    const result = resolveLookupCacheMaxEntries(500, 10000);
+    const result = resolveLookupCacheMaxEntries(500, 10_000);
     assert.equal(result, 500);
 });
 

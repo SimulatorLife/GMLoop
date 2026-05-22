@@ -75,3 +75,30 @@
   border-color: rgba(89, 195, 195, 0.38);
   color: var(--gm-text);
 }
+
+.pending-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(142, 224, 240, 0.2);
+  border: 1px solid rgba(142, 224, 240, 0.4);
+  color: var(--gm-accent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  animation: pending-badge-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pending-badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}

@@ -10,8 +10,10 @@ import {
     isDirectoryExcludedBySegments,
     isPathInside,
     isPathWithinBoundary,
+    isPortableAbsolutePath,
     normalizeBoundaryPath,
     resolveContainedRelativePath,
+    resolvePortableAbsolutePath,
     walkAncestorDirectories
 } from "../src/fs/path.js";
 
@@ -45,6 +47,13 @@ void describe("path-utils", () => {
         void it("returns null for empty inputs", () => {
             assert.strictEqual(resolveContainedRelativePath(null, projectRoot), null);
             assert.strictEqual(resolveContainedRelativePath(childFile, null), null);
+        });
+
+        void it("supports Windows-style absolute paths on non-Windows hosts", () => {
+            const windowsRoot = String.raw`C:\project`;
+            const windowsChild = String.raw`C:\project\src\index.gml`;
+            const relative = resolveContainedRelativePath(windowsChild, windowsRoot);
+            assert.strictEqual(relative, String.raw`src\index.gml`);
         });
     });
 
@@ -103,6 +112,30 @@ void describe("path-utils", () => {
             assert.strictEqual(isPathInside("", root), false);
             assert.strictEqual(isPathInside(root, ""), false);
         });
+    });
+});
+
+void describe("portable path resolution", () => {
+    void it("recognizes current-platform and Windows absolute paths", () => {
+        assert.strictEqual(isPortableAbsolutePath(path.resolve("project")), true);
+        assert.strictEqual(isPortableAbsolutePath(String.raw`C:\project\file.gml`), true);
+        assert.strictEqual(isPortableAbsolutePath(String.raw`\\server\share\file.gml`), true);
+        assert.strictEqual(isPortableAbsolutePath("relative/file.gml"), false);
+    });
+
+    void it("preserves Windows absolute paths on non-Windows hosts", () => {
+        assert.strictEqual(
+            resolvePortableAbsolutePath(String.raw`C:\Project\file.gml`),
+            String.raw`C:\Project\file.gml`
+        );
+        assert.strictEqual(
+            resolvePortableAbsolutePath(String.raw`\\server\share\Project\file.gml`),
+            String.raw`\\server\share\Project\file.gml`
+        );
+    });
+
+    void it("resolves relative paths with the current-platform resolver", () => {
+        assert.strictEqual(resolvePortableAbsolutePath("relative/file.gml"), path.resolve("relative/file.gml"));
     });
 });
 

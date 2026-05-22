@@ -224,6 +224,24 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
+    #renderPendingBadge() {
+        if (!this.state || this.state.pendingActionCount === 0) {
+            return null;
+        }
+
+        return html`
+            <span
+                class="pending-badge"
+                aria-label="${this.state.pendingActionCount} background operation${this.state.pendingActionCount > 1
+                    ? "s"
+                    : ""} in progress"
+                role="status"
+            >
+                ${this.state.pendingActionCount}
+            </span>
+        `;
+    }
+
     protected render() {
         if (!this.model || !this.state) {
             return html``;
@@ -336,6 +354,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                                   </button>
                               `
                             : null}
+                        ${this.#renderPendingBadge()}
                     </div>
                 </div>
             </div>

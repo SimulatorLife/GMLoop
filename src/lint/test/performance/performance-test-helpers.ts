@@ -38,6 +38,11 @@ export function buildLoopInvariantStressBatchSource(loopCount: number, invariant
     return lines.join("\n");
 }
 
+/**
+ * Runs a single GML lint rule against `sourceText` using ESLint's in-process
+ * `Linter` API in fix mode and returns wall-clock elapsed milliseconds,
+ * reported messages, and the fixed output text.
+ */
 export function lintSingleRuleWithTiming(ruleId: string, sourceText: string, filePath: string): TimedLintRunResult {
     const configEntry = {
         files: ["**/*.gml"],
@@ -52,7 +57,9 @@ export function lintSingleRuleWithTiming(ruleId: string, sourceText: string, fil
 
     const linter = new Linter({ configType: "flat" });
     const startedAtNanoseconds = process.hrtime.bigint();
-    const result = linter.verifyAndFix(sourceText, configEntry, { filename: filePath });
+    const result = linter.verifyAndFix(sourceText, configEntry, {
+        filename: filePath
+    });
     const elapsedMilliseconds = Number(process.hrtime.bigint() - startedAtNanoseconds) / 1e6;
 
     return Object.freeze({

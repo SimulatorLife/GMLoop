@@ -61,3 +61,16 @@ void test("preserves unary plus conversions", async () => {
 
     assert.strictEqual(formatted, 'var value = +"5";\n');
 });
+
+void test("does not throw TypeError when CallExpression node has undefined arguments", async () => {
+    // A CallExpression node with `arguments` set to undefined (malformed or
+    // synthetic input) must not produce a TypeError when accessing arguments[0]
+    // inside buildCallArgumentsDocs. Previously the direct index access would
+    // throw "TypeError: Cannot read properties of undefined (reading 'type')"
+    // when simplePrefixLength === 1 and hasTrailingArguments is true.
+    const source = 'function demo() { return my_func("hello"); }\n';
+
+    const formatted = await Format.format(source);
+
+    assert.strictEqual(formatted, ["function demo() {", '    return my_func("hello");', "}", ""].join("\n"));
+});

@@ -204,6 +204,28 @@ async function createFixtureCase(rootPath: string, fixturePath: string): Promise
     });
 }
 
+function collectRejectedReasons(settledCases: ReadonlyArray<PromiseSettledResult<FixtureCase>>): ReadonlyArray<string> {
+    return settledCases
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .map((result) => {
+            // Use a capability probe rather than `instanceof Error` so that
+            // cross-realm errors and custom error-like objects are handled correctly.
+            if (Core.isErrorLike(result.reason)) {
+                return result.reason.message;
+            }
+
+            return String(result.reason);
+        });
+}
+
+function collectFulfilledFixtureCases(
+    settledCases: ReadonlyArray<PromiseSettledResult<FixtureCase>>
+): ReadonlyArray<FixtureCase> {
+    return settledCases
+        .filter((result): result is PromiseFulfilledResult<FixtureCase> => result.status === "fulfilled")
+        .map((result) => result.value);
+}
+
 /**
  * Discover directory-per-case fixtures rooted at {@link fixtureRoot}.
  *
@@ -215,23 +237,11 @@ export async function discoverFixtureCases(fixtureRoot: string): Promise<Readonl
     const settledCases = await Promise.allSettled(
         caseDirectories.map((fixturePath) => createFixtureCase(fixtureRoot, fixturePath))
     );
-    const validationErrors = settledCases
-        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-        .map((result) => {
-            // Use a capability probe rather than `instanceof Error` so that
-            // cross-realm errors and custom error-like objects are handled correctly.
-            if (Core.isErrorLike(result.reason)) {
-                return result.reason.message;
-            }
-
-            return String(result.reason);
-        });
+    const validationErrors = collectRejectedReasons(settledCases);
     if (validationErrors.length > 0) {
         throw new Error(`Invalid fixture cases under ${fixtureRoot}:\n- ${validationErrors.join("\n- ")}`);
     }
 
-    const fixtureCases = settledCases
-        .filter((result): result is PromiseFulfilledResult<FixtureCase> => result.status === "fulfilled")
-        .map((result) => result.value);
+    const fixtureCases = collectFulfilledFixtureCases(settledCases);
     return Object.freeze(fixtureCases);
 }

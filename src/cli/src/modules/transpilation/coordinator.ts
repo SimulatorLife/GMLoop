@@ -299,7 +299,6 @@ export interface PatchHistoryStore {
     patches: Array<PatchSummary>;
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>;
     maxPatchHistory: number;
-    totalPatchCount: number;
 }
 
 /**
@@ -311,6 +310,27 @@ export interface PatchHistoryStore {
 export interface MetricsCollector {
     metrics: Array<TranspilationMetrics>;
     maxPatchHistory: number;
+}
+
+/**
+ * Successful-patch counter.
+ *
+ * Provides an increment-only counter of all successfully emitted patches.
+ * Does not track patch contents; callers that need per-patch details
+ * should consult PatchHistoryStore instead.
+ */
+export interface TranspilationCounter {
+    totalPatchCount: number;
+}
+
+/**
+ * Read-only snapshot of the patch counter for display/monitoring purposes.
+ *
+ * Provides a stable view of the counter without coupling to transpilation
+ * state, metrics tracking, or broadcasting.
+ */
+export interface PatchCounter {
+    readonly totalPatchCount: number;
 }
 
 /**
@@ -376,6 +396,7 @@ export interface TranspilationContext
     extends
         TranspilerProvider,
         PatchHistoryStore,
+        TranspilationCounter,
         MetricsCollector,
         ErrorCollector,
         PatchBroadcastService,

@@ -80,6 +80,7 @@ function createMockState(): GraphVisualizationUiState {
         liveReloadErrorMessage: null,
         liveReloadStatus: null,
         mcpServerStatus: "running",
+        pendingActionCount: 0,
         searchQuery: ""
     };
 }

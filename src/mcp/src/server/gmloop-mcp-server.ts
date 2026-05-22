@@ -60,6 +60,27 @@ type CliGraphEnvelope<TPayload> = Readonly<{
     payload: TPayload;
 }>;
 
+/** Stable graph data returned by `graph doctor --json`. */
+export type GraphOverviewEnvelope = Readonly<{
+    graphs: ReadonlyArray<{
+        graphId: string;
+        [key: string]: unknown;
+    }>;
+}>;
+
+/**
+ * Looks up a named graph inside a `GraphOverviewEnvelope`.
+ *
+ * Collapses `envelope.payload.payload.graphs?.find(...)` into a single call.
+ * Returns `null` when the envelope or the named graph is absent.
+ */
+export function extractGraphById(
+    envelope: CliGraphEnvelope<GraphOverviewEnvelope>,
+    graphId: string
+): (GraphOverviewEnvelope["graphs"][number] & { graphId: string }) | null {
+    return envelope.payload.graphs?.find((entry) => entry.graphId === graphId) ?? null;
+}
+
 function createToolInputSchema(entry: CliCatalogEntry): z.ZodObject<Record<string, z.ZodTypeAny>> {
     const shape: Record<string, z.ZodTypeAny> = {
         cwd: z.string().optional()
@@ -287,15 +308,8 @@ function registerGraphResources(server: McpServer): void {
             description: "Overview of the active project graph."
         },
         async (uri) => {
-            const report = await runCliJsonCommand<
-                CliGraphEnvelope<{
-                    graphs?: Array<{ graphId?: string }>;
-                }>
-            >(["graph", "doctor", "--json"]);
-            return createJsonResourceResult(
-                uri,
-                report.payload.payload.graphs?.find((entry) => entry.graphId === "project") ?? null
-            );
+            const report = await runCliJsonCommand<GraphOverviewEnvelope>(["graph", "doctor", "--json"]);
+            return createJsonResourceResult(uri, extractGraphById(report, "project"));
         }
     );
 
@@ -306,15 +320,8 @@ function registerGraphResources(server: McpServer): void {
             description: "Overview of the optional toolset graph."
         },
         async (uri) => {
-            const report = await runCliJsonCommand<
-                CliGraphEnvelope<{
-                    graphs?: Array<{ graphId?: string }>;
-                }>
-            >(["graph", "doctor", "--json"]);
-            return createJsonResourceResult(
-                uri,
-                report.payload.payload.graphs?.find((entry) => entry.graphId === "toolset") ?? null
-            );
+            const report = await runCliJsonCommand<GraphOverviewEnvelope>(["graph", "doctor", "--json"]);
+            return createJsonResourceResult(uri, extractGraphById(report, "toolset"));
         }
     );
 
