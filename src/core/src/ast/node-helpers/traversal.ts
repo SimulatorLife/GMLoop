@@ -103,11 +103,15 @@ function restoreLocalParentLinks(clonedNode: unknown): void {
         }
         const nextParentNode = hasNodeType ? currentRecord : parentNode;
 
-        for (const [key, value] of Object.entries(currentRecord)) {
+        for (let i = 0, keys = Object.keys(currentRecord), len = keys.length; i < len; i++) {
+            const key = keys[i];
             if (CLONE_SKIPPED_NODE_KEYS.has(key)) {
                 continue;
             }
-            visit(value, nextParentNode);
+            const childValue = currentRecord[key];
+            if (isObjectLike(childValue)) {
+                visit(childValue, nextParentNode);
+            }
         }
     };
 
@@ -191,6 +195,42 @@ export function visitChildNodes(node: unknown, callback: (child: unknown) => voi
         const value = (node as Record<string, unknown>)[key];
         if (isObjectLike(value)) {
             callback(value);
+        }
+    }
+}
+
+/**
+ * Recursively visit every object-valued child of `node`, skipping
+ * `parent` / `enclosingNode` / `precedingNode` / `followingNode` traversal links.
+ *
+ * This is a depth-first traversal that fires `callback` for every object-like
+ * value reachable from `node` (including array elements) except the traversal-link
+ * keys themselves.  The callback is invoked before descending into each
+ * discovered child so callers can inspect or mutate child nodes as the walk
+ * proceeds.
+ *
+ * @param node     Root of the subtree to traverse.
+ * @param callback Invoked for every object-like value reachable from `node`.
+ */
+export function visitNonTraversalChildValues(node: unknown, callback: (child: unknown) => void): void {
+    if (!isObjectLike(node)) {
+        return;
+    }
+
+    if (Array.isArray(node)) {
+        for (const entry of node) {
+            visitNonTraversalChildValues(entry, callback);
+        }
+        return;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+        if (isTraversalLinkKey(key)) {
+            continue;
+        }
+        if (isObjectLike(value)) {
+            callback(value);
+            visitNonTraversalChildValues(value, callback);
         }
     }
 }

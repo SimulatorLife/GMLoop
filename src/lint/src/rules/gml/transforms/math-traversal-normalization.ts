@@ -372,13 +372,9 @@ function combineLengthdirScalarAssignments(ast) {
 
     const body = Array.isArray(ast.body) ? ast.body : null;
     if (!body) {
-        for (const [key, value] of Object.entries(ast)) {
-            if (key === "parent" || !isObjectLike(value)) {
-                continue;
-            }
-
-            combineLengthdirScalarAssignments(value);
-        }
+        Core.visitNonTraversalChildValues(ast, (child) => {
+            combineLengthdirScalarAssignments(child);
+        });
         return;
     }
 
