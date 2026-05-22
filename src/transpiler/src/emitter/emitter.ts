@@ -493,12 +493,7 @@ export class GmlToJsEmitter {
         }
         // Multiple statements: use StringBuilder for efficiency
         const builder = new StringBuilder(stmts.length);
-        for (const stmt of stmts) {
-            const code = this.emit(stmt);
-            if (code) {
-                builder.append(this.ensureStatementTermination(code));
-            }
-        }
+        this.appendStatementsWithTermination(builder, stmts);
         return builder.toString("\n");
     }
 
@@ -625,12 +620,7 @@ export class GmlToJsEmitter {
 
             // Process statements for this case
             const caseBuilder = new StringBuilder(stmts.length);
-            for (const stmt of stmts) {
-                const code = this.visit(stmt);
-                if (code) {
-                    caseBuilder.append(this.ensureStatementTermination(code));
-                }
-            }
+            this.appendStatementsWithTermination(caseBuilder, stmts);
 
             if (caseBuilder.length === 0) {
                 builder.append(header);
@@ -888,13 +878,7 @@ export class GmlToJsEmitter {
         const builder = new StringBuilder(statements.length + 2);
         builder.append("{\n");
         builder.append(`${prologueStatement};\n`);
-        for (const statement of statements) {
-            const code = this.emit(statement);
-            if (!code) {
-                continue;
-            }
-            builder.append(`${this.ensureStatementTermination(code)}\n`);
-        }
+        this.appendStatementsWithTermination(builder, statements);
         builder.append("}");
         return builder.toString();
     }
@@ -977,6 +961,15 @@ export class GmlToJsEmitter {
      * Join argument nodes into a comma-separated string.
      * This is optimized to avoid creating intermediate arrays.
      */
+    private appendStatementsWithTermination(builder: StringBuilder, stmts: readonly GmlNode[]): void {
+        for (const stmt of stmts) {
+            const code = this.emit(stmt);
+            if (code) {
+                builder.append(this.ensureStatementTermination(code));
+            }
+        }
+    }
+
     private joinArguments(args: readonly GmlNode[]): string {
         // Fast path: no arguments
         if (args.length === 0) {
