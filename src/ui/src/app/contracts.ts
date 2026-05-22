@@ -1,6 +1,7 @@
 import type {
     GraphVisualizationData,
     GraphVisualizationDocumentationCatalogs,
+    GraphVisualizationLastFixRun,
     GraphVisualizationLiveReloadModel,
     GraphVisualizationLiveReloadStatusSnapshot,
     GraphVisualizationLoadedTarget,
@@ -26,6 +27,7 @@ export type GraphVisualizationUiModel = Readonly<{
     data: GraphVisualizationData;
     documentationCatalogs: GraphVisualizationDocumentationCatalogs | null;
     isServerMode: boolean;
+    lastFixRun: GraphVisualizationLastFixRun | null;
     loadedTarget: GraphVisualizationLoadedTarget | null;
     liveReload: GraphVisualizationLiveReloadModel | null;
     mcpServerStatus: GraphVisualizationMcpServerStatus;
@@ -65,6 +67,7 @@ export function createGraphVisualizationUiModel(
         data,
         documentationCatalogs: options.documentationCatalogs ?? null,
         isServerMode: options.isServerMode ?? false,
+        lastFixRun: options.lastFixRun ?? null,
         loadedTarget: options.loadedTarget ?? null,
         liveReload: options.liveReload ?? null,
         mcpServerStatus: options.mcpServerStatus ?? "not-started",

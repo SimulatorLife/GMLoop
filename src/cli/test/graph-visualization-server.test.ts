@@ -69,7 +69,7 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
             runFix: async () => ({ logLines: ["Project root: /tmp/project", "Success!"] }),
             openProjectTargets: async (input) => {
                 openedPath = input.path;
-                return { changed: true };
+                return { changed: true, projectChanged: input.path !== null };
             },
             renderBundle: (isServerMode) =>
                 UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
@@ -90,6 +90,7 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         assert.equal(htmlResponse.status, 200);
         const htmlText = await htmlResponse.text();
         assert.match(htmlText, /window\.__GMLOOP_GRAPH_VISUALIZATION_DATA__/u);
+        assert.match(htmlText, /player_update/u);
         assert.match(htmlText, /assets\/.+\.js/u);
         assert.doesNotMatch(htmlText, /assets\/vendor\//u);
         assert.doesNotMatch(htmlText, /cdn\./u);
@@ -99,8 +100,7 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         const scriptResponse = await fetch(`${handle.url}/${scriptPath}`);
         assert.equal(scriptResponse.status, 200);
         const scriptText = await scriptResponse.text();
-        assert.match(scriptText, /player_update/u);
-        assert.match(scriptText, /bootstrapGraphVisualizationLitApp/u);
+        assert.match(scriptText, /gm-app-shell/u);
 
         const reindexResponse = await fetch(`${handle.url}/api/reindex`, { method: "POST" });
         assert.equal(reindexResponse.status, 200);
@@ -114,8 +114,12 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
 
         const openWithoutBodyResponse = await fetch(`${handle.url}/api/open`, { method: "POST" });
         assert.equal(openWithoutBodyResponse.status, 200);
-        const openWithoutBodyPayload = (await openWithoutBodyResponse.json()) as { changed: boolean; ok: boolean };
-        assert.deepEqual(openWithoutBodyPayload, { changed: true, ok: true });
+        const openWithoutBodyPayload = (await openWithoutBodyResponse.json()) as {
+            changed: boolean;
+            ok: boolean;
+            projectChanged: boolean;
+        };
+        assert.deepEqual(openWithoutBodyPayload, { changed: true, ok: true, projectChanged: false });
         assert.equal(openedPath, null);
 
         const openPath = "/tmp/project/Project.yyp";
@@ -127,8 +131,8 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
             method: "POST"
         });
         assert.equal(openResponse.status, 200);
-        const openPayload = (await openResponse.json()) as { changed: boolean; ok: boolean };
-        assert.deepEqual(openPayload, { changed: true, ok: true });
+        const openPayload = (await openResponse.json()) as { changed: boolean; ok: boolean; projectChanged: boolean };
+        assert.deepEqual(openPayload, { changed: true, ok: true, projectChanged: true });
         assert.equal(openedPath, openPath);
     } finally {
         await handle.stop();

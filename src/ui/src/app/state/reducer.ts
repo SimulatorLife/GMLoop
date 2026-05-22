@@ -174,6 +174,17 @@ export function reduceGraphVisualizationUiState(
                 errorMessage: null
             };
         }
+        case "reset-project-scoped-state": {
+            return {
+                ...state,
+                fixErrorMessage: null,
+                fixLogLines: [],
+                fixStatus: "idle",
+                liveReloadErrorMessage: null,
+                liveReloadStatus: null,
+                searchQuery: ""
+            };
+        }
         case "reset-defaults": {
             return {
                 ...state,

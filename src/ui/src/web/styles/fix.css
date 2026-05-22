@@ -84,20 +84,6 @@
   color: var(--gm-error-text);
 }
 
-.fix-stage-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 18px;
-}
-
-.fix-stage-card p {
-  margin: 0;
-  color: var(--gm-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
 .fix-log-card {
   margin-top: 18px;
 }
@@ -118,8 +104,7 @@
 }
 
 @media (max-width: 860px) {
-  .fix-hero,
-  .fix-stage-grid {
+  .fix-hero {
     grid-template-columns: 1fr;
   }
 }

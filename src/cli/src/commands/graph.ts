@@ -876,6 +876,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     let activeServeStartupGeneration = 0;
     let activeServeRevision = 0;
     let activeServeBundleCache: GraphVisualizationServeBundleCache | null = null;
+    let activeLastFixRun: Readonly<{ logLines: ReadonlyArray<string>; projectRoot: string; status: "success" }> | null =
+        null;
     const activeLiveReloadSession: GraphVisualizationLiveReloadSessionState = {
         childProcess: null,
         childStderrBuffer: [],
@@ -980,6 +982,12 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         } catch {
             return "";
         }
+    }
+
+    function resetActiveProjectScopedServeState(): void {
+        activeLastFixRun = null;
+        resetGraphVisualizationLiveReloadSessionForRestart(activeLiveReloadSession);
+        clearActiveGraphVisualizationLiveReloadStartupPromise(activeLiveReloadSession);
     }
 
     function updateLiveReloadRuntimeUrlFromProcessOutput(outputChunk: string): void {
@@ -1283,7 +1291,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const nextPathFromPicker =
                     selectedPath === null ? await pickProjectPathUsingNativeDialog() : selectedPath;
                 if (!nextPathFromPicker) {
-                    return Object.freeze({ changed: false });
+                    return Object.freeze({ changed: false, projectChanged: false });
                 }
                 const resolvedPathFromPicker =
                     resolveExplicitWorkflowTargetPath(nextPathFromPicker) ?? nextPathFromPicker;
@@ -1293,14 +1301,22 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 };
                 const nextContext = await resolveGraphContext(nextOptions);
                 await ensureGraphIndexForQuery(nextOptions, nextContext);
+                const projectChanged = activeContext?.projectRoot !== nextContext.projectRoot;
+                const stopPreviousLiveReloadProcess = projectChanged
+                    ? stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession)
+                    : Promise.resolve();
+                if (projectChanged) {
+                    resetActiveProjectScopedServeState();
+                }
                 activeContext = nextContext;
                 activeSelectedPaths = [resolvedPathFromPicker];
                 activeSource = "finder-open";
-                await refreshActiveVisualizationArtifacts(activeContext);
+                await stopPreviousLiveReloadProcess;
+                await refreshActiveVisualizationArtifacts(nextContext);
                 activeStartupState = null;
                 const nextPayloadString = safeStringifyVisualizationPayload();
                 markServeRevisionChanged();
-                return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
+                return Object.freeze({ changed: previousPayloadString !== nextPayloadString, projectChanged });
             },
             runFix: async () => {
                 if (!activeContext) {
@@ -1308,6 +1324,11 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 }
 
                 const result = await runGraphVisualizationFixWorkflow(activeContext, options.config);
+                activeLastFixRun = Object.freeze({
+                    logLines: result.logLines,
+                    projectRoot: activeContext.projectRoot,
+                    status: "success"
+                });
                 await ensureGraphIndex({ ...options, force: true }, activeContext);
                 await refreshActiveVisualizationArtifacts(activeContext);
                 markServeRevisionChanged();
@@ -1396,6 +1417,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const bundle = await UI.renderGraphVisualizationBundle(exportVisualizationPayload(), {
                     documentationCatalogs,
                     isServerMode,
+                    lastFixRun: activeLastFixRun ?? undefined,
                     liveReload: activeLiveReloadSession.model ?? undefined,
                     loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
                     mcpServerStatus: "not-started",

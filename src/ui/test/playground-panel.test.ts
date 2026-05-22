@@ -24,6 +24,7 @@ function createMockModel(): GraphVisualizationUiModel {
         },
         documentationCatalogs: null,
         isServerMode: false,
+        lastFixRun: null,
         loadedTarget: { activePath: "/test", projectRoot: "/tmp/test", selectedPaths: [], source: "working-directory" },
         liveReload: null,
         mcpServerStatus: "not-started",

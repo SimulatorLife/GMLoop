@@ -122,11 +122,21 @@ export type GraphVisualizationStartupState = Readonly<{
 }>;
 
 /**
+ * Most recent project fix workflow result known by the visualization host.
+ */
+export type GraphVisualizationLastFixRun = Readonly<{
+    logLines: ReadonlyArray<string>;
+    projectRoot: string;
+    status: "success";
+}>;
+
+/**
  * Options that control how the graph-index visualization HTML document is rendered.
  */
 export type GraphVisualizationRenderOptions = Readonly<{
     documentationCatalogs?: GraphVisualizationDocumentationCatalogs;
     isServerMode?: boolean;
+    lastFixRun?: GraphVisualizationLastFixRun;
     loadedTarget?: GraphVisualizationLoadedTarget;
     liveReload?: GraphVisualizationLiveReloadModel;
     mcpServerStatus?: GraphVisualizationMcpServerStatus;

@@ -66,6 +66,7 @@ function createMockModel(statusSnapshot: GraphVisualizationLiveReloadStatusSnaps
         },
         documentationCatalogs: null,
         isServerMode: true,
+        lastFixRun: null,
         loadedTarget: null,
         liveReload: {
             endpoints: {

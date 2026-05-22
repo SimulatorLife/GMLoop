@@ -1,4 +1,5 @@
 import { bootstrapGraphVisualizationLitApp } from "../app/bootstrap.js";
+import { resetProjectScopedGraphVisualizationUiStateInCurrentUrl } from "../app/state/url-state.js";
 import type {
     GraphVisualizationData,
     GraphVisualizationLiveReloadModel,
@@ -16,6 +17,7 @@ type MutationApiResponse = Readonly<{
     changed?: boolean;
     error?: string;
     ok?: boolean;
+    projectChanged?: boolean;
 }>;
 
 type LiveReloadStartApiResponse = Readonly<{
@@ -156,6 +158,9 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 const result = await readJsonResponse<MutationApiResponse>(response);
                 if (!response.ok || result.ok !== true) {
                     throw new Error(result.error ?? "Project open failed.");
+                }
+                if (result.projectChanged === true) {
+                    resetProjectScopedGraphVisualizationUiStateInCurrentUrl();
                 }
                 reloadWhenChanged(result);
             },

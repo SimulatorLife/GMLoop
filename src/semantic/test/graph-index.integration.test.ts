@@ -187,7 +187,7 @@ void test("buildGraphIndex honors disabled embeddings and doctor reports stale f
         assert.ok(report.issues.some((issue) => issue.code === "GRAPH_DB_STALE"));
         assert.ok(!report.issues.some((issue) => issue.code === "GRAPH_EMBEDDINGS_MISSING"));
         assert.equal(report.runtime?.driver, "node:sqlite");
-        assert.equal(report.runtime?.experimental, true);
+        assert.equal(report.runtime?.runtimeStability, "stable");
         assert.equal(report.integrity?.ok, true);
     } finally {
         await fixture.cleanup();

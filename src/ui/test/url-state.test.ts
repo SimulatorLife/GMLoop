@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
     parseGraphVisualizationUiStateFromUrlSearch,
+    resetProjectScopedGraphVisualizationUiState,
     serializeGraphVisualizationUiStateToUrlSearch
 } from "../src/app/state/url-state.js";
 
@@ -66,4 +67,19 @@ void test("parseGraphVisualizationUiStateFromUrlSearch accepts the mcp top-level
 
     assert.equal(state.activePage, "mcp");
     assert.equal(state.activeDocsView, "mcp");
+});
+
+void test("resetProjectScopedGraphVisualizationUiState removes project search from serialized URL state", () => {
+    const state = parseGraphVisualizationUiStateFromUrlSearch(
+        "?page=fix&docs=rules&view=json&labels=always&q=old%20project"
+    );
+
+    const reset = resetProjectScopedGraphVisualizationUiState({
+        ...state,
+        fixLogLines: ["Old project fix log"],
+        fixStatus: "success",
+        liveReloadErrorMessage: "Old project live reload error."
+    });
+
+    assert.equal(serializeGraphVisualizationUiStateToUrlSearch(reset), "?page=fix&docs=rules&view=json&labels=always");
 });

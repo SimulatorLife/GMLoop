@@ -50,6 +50,7 @@ function createMockModel(): GraphVisualizationUiModel {
         },
         documentationCatalogs: null,
         isServerMode: true,
+        lastFixRun: null,
         loadedTarget: {
             activePath: "/tmp/test/project.yyp",
             projectRoot: "/tmp/test",
@@ -75,6 +76,7 @@ function createEmptyGraphModel(): GraphVisualizationUiModel {
         },
         documentationCatalogs: null,
         isServerMode: true,
+        lastFixRun: null,
         loadedTarget: null,
         liveReload: null,
         mcpServerStatus: "not-started",

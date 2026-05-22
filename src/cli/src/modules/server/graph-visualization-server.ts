@@ -12,6 +12,7 @@ type GraphVisualizationServerRenderBundle = (
 
 type GraphVisualizationServerRegenerationResult = Readonly<{
     changed: boolean;
+    projectChanged?: boolean;
 }>;
 
 type GraphVisualizationServerRegenerate = () => Promise<GraphVisualizationServerRegenerationResult>;
@@ -142,7 +143,15 @@ export async function startGraphVisualizationServer(
                         path: selectedPath.length > 0 ? selectedPath : null
                     });
                     response.writeHead(200, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ changed: selectionResult.changed, ok: true }));
+                    response.end(
+                        JSON.stringify({
+                            changed: selectionResult.changed,
+                            ok: true,
+                            ...(selectionResult.projectChanged === undefined
+                                ? {}
+                                : { projectChanged: selectionResult.projectChanged })
+                        })
+                    );
                 } catch (error: unknown) {
                     response.writeHead(500, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ error: resolveErrorMessage(error) }));

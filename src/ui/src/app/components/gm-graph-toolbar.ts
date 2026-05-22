@@ -269,7 +269,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                   : this.state.activePage === "config"
                     ? "Review the project settings and tool options currently in use."
                     : this.state.activePage === "fix"
-                      ? "Run the configured refactor, lint, and format workflow for the opened project."
+                      ? "Run the opened project's gmloop-configured repair workflow."
                       : this.state.activePage === "playground"
                         ? "Interactive GML playground for parsing, formatting, and rule experiments."
                         : this.state.activePage === "mcp"

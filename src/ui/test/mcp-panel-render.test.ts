@@ -53,6 +53,7 @@ function createMockModel(): GraphVisualizationUiModel {
             }
         },
         isServerMode: true,
+        lastFixRun: null,
         loadedTarget: null,
         liveReload: null,
         mcpServerStatus: "running",

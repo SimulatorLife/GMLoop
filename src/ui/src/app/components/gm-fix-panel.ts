@@ -22,6 +22,36 @@ function getFixStatusLabel(state: GraphVisualizationUiState): string {
     return "Ready";
 }
 
+function getEffectiveFixStatus(
+    model: GraphVisualizationUiModel,
+    state: GraphVisualizationUiState
+): GraphVisualizationUiState["fixStatus"] {
+    if (state.fixStatus === "idle" && state.fixLogLines.length === 0 && hasCurrentProjectFixRun(model)) {
+        return model.lastFixRun.status;
+    }
+
+    return state.fixStatus;
+}
+
+function getEffectiveFixLogLines(
+    model: GraphVisualizationUiModel,
+    state: GraphVisualizationUiState
+): ReadonlyArray<string> {
+    if (state.fixLogLines.length > 0) {
+        return state.fixLogLines;
+    }
+
+    return hasCurrentProjectFixRun(model)
+        ? model.lastFixRun.logLines
+        : ["No fix run has been started from this UI session."];
+}
+
+function hasCurrentProjectFixRun(
+    model: GraphVisualizationUiModel
+): model is GraphVisualizationUiModel & Readonly<{ lastFixRun: NonNullable<GraphVisualizationUiModel["lastFixRun"]> }> {
+    return model.lastFixRun !== null && model.lastFixRun.projectRoot === model.loadedTarget?.projectRoot;
+}
+
 /**
  * Project fix workflow surface for running configured refactor, lint, and format steps.
  */
@@ -52,25 +82,15 @@ export class GmFixPanel extends LightDomLitElement {
         const activeClassName = this.state.activePage === "fix" ? "page docs-page active" : "page docs-page";
         const hasProject = hasLoadedGraphProject(this.model);
         const canRunFix = hasProject && this.model.isServerMode;
-        const logLines =
-            this.state.fixLogLines.length > 0
-                ? this.state.fixLogLines
-                : ["No fix run has been started from this UI session."];
+        const effectiveFixStatus = getEffectiveFixStatus(this.model, this.state);
+        const logLines = getEffectiveFixLogLines(this.model, this.state);
 
         return html`
             <section id="fix-page" class=${activeClassName}>
                 <div class="fix-hero">
-                    <div>
-                        <p class="docs-meta">Run the opened project's gmloop-configured repair workflow.</p>
-                        <h2>Apply Project Fixes</h2>
-                        <p>
-                            This runs configured refactor codemods first, then lint auto-fixes, then formatter output
-                            against the active GameMaker project.
-                        </p>
-                    </div>
                     <div class="fix-action-card" role="status" aria-live="polite">
-                        <span class=${`fix-status-chip ${this.state.fixStatus}`}>
-                            ${getFixStatusLabel(this.state)}
+                        <span class=${`fix-status-chip ${effectiveFixStatus}`}>
+                            ${getFixStatusLabel({ ...this.state, fixStatus: effectiveFixStatus })}
                         </span>
                         <button
                             id="run-fix"
@@ -97,25 +117,16 @@ export class GmFixPanel extends LightDomLitElement {
                     </div>
                 </div>
 
-                <div class="fix-stage-grid" aria-label="Fix workflow stages">
-                    <gm-card class="fix-stage-card" .heading=${"1. Refactor"}>
-                        <p>Applies enabled codemods from the project gmloop configuration.</p>
-                    </gm-card>
-                    <gm-card class="fix-stage-card" .heading=${"2. Lint"}>
-                        <p>Runs fixable GML lint rules using the configured ruleset.</p>
-                    </gm-card>
-                    <gm-card class="fix-stage-card" .heading=${"3. Format"}>
-                        <p>Formats changed GML files with the project formatter options.</p>
-                    </gm-card>
-                </div>
-
                 ${this.state.fixErrorMessage
                     ? html`<gm-error-banner .message=${this.state.fixErrorMessage}></gm-error-banner>`
                     : null}
 
-                <gm-card class="fix-log-card" .heading=${"Run Log"}>
-                    <pre class="fix-log" aria-live="polite">${logLines.join("\n")}</pre>
-                </gm-card>
+                <section class="fix-log-section" aria-labelledby="fix-log-heading">
+                    <h2 id="fix-log-heading">Run Log</h2>
+                    <gm-card class="fix-log-card">
+                        <pre class="fix-log" aria-live="polite">${logLines.join("\n")}</pre>
+                    </gm-card>
+                </section>
             </section>
         `;
     }

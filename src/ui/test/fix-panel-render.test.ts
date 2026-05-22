@@ -23,6 +23,7 @@ function createMockModel(): GraphVisualizationUiModel {
         },
         documentationCatalogs: null,
         isServerMode: true,
+        lastFixRun: null,
         loadedTarget: {
             activePath: "/tmp/test",
             projectRoot: "/tmp/test",
@@ -76,6 +77,53 @@ void test("GmFixPanel renders the fix workflow button, stages, status, target, a
     assert.match(rendered, /3\. Format/u);
     assert.match(rendered, /\[1\/3 Refactor Codemods\]/u);
     assert.match(rendered, /\/tmp\/test/u);
+});
+
+void test("GmFixPanel renders the last server-side fix run after UI reload clears session state", () => {
+    const panel = new TestableGmFixPanel();
+    panel.model = {
+        ...createMockModel(),
+        lastFixRun: {
+            logLines: ["Project root: /tmp/test", "Success!"],
+            projectRoot: "/tmp/test",
+            status: "success"
+        }
+    };
+    panel.state = {
+        ...createMockState(),
+        fixLogLines: [],
+        fixStatus: "idle"
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Completed/u);
+    assert.match(rendered, /Project root: \/tmp\/test/u);
+    assert.match(rendered, /Success!/u);
+    assert.doesNotMatch(rendered, /No fix run has been started/u);
+});
+
+void test("GmFixPanel ignores a server-side fix run from a different project", () => {
+    const panel = new TestableGmFixPanel();
+    panel.model = {
+        ...createMockModel(),
+        lastFixRun: {
+            logLines: ["Previous project fix log"],
+            projectRoot: "/tmp/previous",
+            status: "success"
+        }
+    };
+    panel.state = {
+        ...createMockState(),
+        fixLogLines: [],
+        fixStatus: "idle"
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Ready/u);
+    assert.match(rendered, /No fix run has been started from this UI session\./u);
+    assert.doesNotMatch(rendered, /Previous project fix log/u);
 });
 
 void test("GmFixPanel disables the run button when no project is loaded", () => {

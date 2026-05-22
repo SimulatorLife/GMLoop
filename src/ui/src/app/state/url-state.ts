@@ -1,4 +1,4 @@
-import { createInitialGraphVisualizationUiState } from "./reducer.js";
+import { createInitialGraphVisualizationUiState, reduceGraphVisualizationUiState } from "./reducer.js";
 import type {
     GraphVisualizationUiDocsView,
     GraphVisualizationUiGraphView,
@@ -108,6 +108,24 @@ export function replaceGraphVisualizationUiStateInCurrentUrl(state: GraphVisuali
     const nextSearch = serializeGraphVisualizationUiStateToUrlSearch(state);
     const nextUrl = `${globalThis.location.pathname}${nextSearch}${globalThis.location.hash}`;
     globalThis.history.replaceState(null, "", nextUrl);
+}
+
+/**
+ * Clear project-scoped UI state while preserving view preferences and navigation.
+ */
+export function resetProjectScopedGraphVisualizationUiState(
+    state: GraphVisualizationUiState
+): GraphVisualizationUiState {
+    return reduceGraphVisualizationUiState(state, { type: "reset-project-scoped-state" });
+}
+
+/**
+ * Clear project-scoped UI state from the current browser URL before a project-change reload.
+ */
+export function resetProjectScopedGraphVisualizationUiStateInCurrentUrl(): void {
+    replaceGraphVisualizationUiStateInCurrentUrl(
+        resetProjectScopedGraphVisualizationUiState(readGraphVisualizationUiStateFromCurrentUrl())
+    );
 }
 
 /**

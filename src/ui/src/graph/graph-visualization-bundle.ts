@@ -92,6 +92,7 @@ function renderBootstrapScript(data: GraphVisualizationData, options: GraphVisua
         ...options,
         documentationCatalogs: options.documentationCatalogs ?? null,
         isServerMode: options.isServerMode === true,
+        lastFixRun: options.lastFixRun ?? null,
         liveReload: options.liveReload ?? null,
         loadedTarget: options.loadedTarget ?? null,
         projectConfigurationCatalog: options.projectConfigurationCatalog ?? null,

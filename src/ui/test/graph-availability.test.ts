@@ -15,6 +15,7 @@ function createUiModel(): GraphVisualizationUiModel {
         },
         documentationCatalogs: null,
         isServerMode: true,
+        lastFixRun: null,
         loadedTarget: null,
         liveReload: null,
         mcpServerStatus: "not-started",

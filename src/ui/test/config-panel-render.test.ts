@@ -23,6 +23,7 @@ function createMockModel(): GraphVisualizationUiModel {
         },
         documentationCatalogs: null,
         isServerMode: false,
+        lastFixRun: null,
         loadedTarget: null,
         liveReload: null,
         mcpServerStatus: "not-started",
