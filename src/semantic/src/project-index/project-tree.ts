@@ -1,10 +1,9 @@
-import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
 import { createProjectIndexAbortGuard } from "./abort-guard.js";
-import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
+import { defaultFsFacade, type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import {
     normalizeProjectFileCategory,
     ProjectFileCategory,
@@ -161,7 +160,12 @@ async function processDirectoryEntries({
     });
 }
 
-export async function scanProjectTree(projectRoot, fsFacade: ProjectIndexFsFacade = fs, metrics = null, options = {}) {
+export async function scanProjectTree(
+    projectRoot,
+    fsFacade: ProjectIndexFsFacade = defaultFsFacade,
+    metrics = null,
+    options = {}
+) {
     const { signal, ensureNotAborted } = createProjectIndexAbortGuard(options);
     const traversal = createDirectoryTraversal(projectRoot);
     const collector = createProjectTreeCollector(metrics);
