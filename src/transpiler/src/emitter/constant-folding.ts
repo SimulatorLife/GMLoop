@@ -111,6 +111,29 @@ function evaluateEqualityOperator(
             if (typeof left === "number" && typeof right === "number") {
                 return isApproximatelyEqual(left, right);
             }
+            // Normalize boolean-string comparisons: "true"/"false" strings compare
+            // equal to their boolean equivalents (true/false), matching GML's
+            // loose equality semantics where the literal token is equivalent to
+            // the keyword form. Non-boolean strings like "maybe" are not comparable
+            // to booleans at compile time, so return null to skip folding.
+            if (typeof left === "string" && typeof right === "boolean") {
+                const normalized = normalizeBooleanString(left);
+                if (normalized !== null) return normalized === right;
+                return null;
+            } else if (typeof left === "boolean" && typeof right === "string") {
+                const normalized = normalizeBooleanString(right);
+                if (normalized !== null) return left === normalized;
+                return null;
+            }
+            // Normalize boolean-number comparisons: in GML loose equality,
+            // true == 1 and false == 0. Strict equality (===) remains false
+            // since the types differ.
+            if (typeof left === "boolean" && typeof right === "number") {
+                if (operator === "==") return (left ? 1 : 0) === right;
+            } else if (typeof left === "number" && typeof right === "boolean" && operator === "==") return left === (right ? 1 : 0);
+            // Both sides are booleans or strings (including normalized boolean strings
+            // like "true"/"false" from the parser). Direct value comparison is safe
+            // and matches JavaScript semantics for same-type comparisons.
             return left === right;
         }
         case "!=":
@@ -118,12 +141,37 @@ function evaluateEqualityOperator(
             if (typeof left === "number" && typeof right === "number") {
                 return !isApproximatelyEqual(left, right);
             }
+            // Normalize boolean-string comparisons for inequality.
+            // Non-boolean strings are not comparable to booleans, so return null.
+            if (typeof left === "string" && typeof right === "boolean") {
+                const normalized = normalizeBooleanString(left);
+                if (normalized !== null) return normalized !== right;
+                return null;
+            } else if (typeof left === "boolean" && typeof right === "string") {
+                const normalized = normalizeBooleanString(right);
+                if (normalized !== null) return left !== normalized;
+                return null;
+            }
+            // Normalize boolean-number comparisons for inequality.
+            if (typeof left === "boolean" && typeof right === "number") {
+                if (operator === "!=") return (left ? 1 : 0) !== right;
+            } else if (typeof left === "number" && typeof right === "boolean" && operator === "!=") return left !== (right ? 1 : 0);
             return left !== right;
         }
         default: {
             return null;
         }
     }
+}
+
+/**
+ * Convert the string literal "true" or "false" to its boolean equivalent.
+ * Returns null for any other string value so the caller can bail out safely.
+ */
+function normalizeBooleanString(value: string): boolean | null {
+    if (value === "true") return true;
+    if (value === "false") return false;
+    return null;
 }
 
 /**
@@ -213,6 +261,31 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
             normalizeStructKeyText(left),
             normalizeStructKeyText(right)
         );
+        if (equalityResult !== null) {
+            return equalityResult;
+        }
+    }
+
+    // Mixed-type comparisons where one operand is boolean and the other is numeric.
+    // Loose equality (`==`) coerces booleans to 1/0 before comparison; strict equality
+    // (`===`) preserves type identity so returns false when types differ.
+    if (
+        (typeof left === "boolean" && typeof right === "number") ||
+        (typeof left === "number" && typeof right === "boolean")
+    ) {
+        const equalityResult = evaluateEqualityOperator(op, left, right);
+        if (equalityResult !== null) {
+            return equalityResult;
+        }
+    }
+
+    // Mixed-type boolean-string comparisons: boolean literal compared against
+    // the string literal "true" or "false". Normalize the string to boolean.
+    if (
+        (typeof left === "boolean" && typeof right === "string") ||
+        (typeof left === "string" && typeof right === "boolean")
+    ) {
+        const equalityResult = evaluateEqualityOperator(op, left, right);
         if (equalityResult !== null) {
             return equalityResult;
         }
