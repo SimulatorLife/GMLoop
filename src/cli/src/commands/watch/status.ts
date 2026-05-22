@@ -26,6 +26,16 @@ interface WatchStatusCommandOptions {
     endpoint?: "status" | "health" | "ping" | "ready";
 }
 
+/**
+ * Parse the requested status output format from CLI options.
+ *
+ * Omitting `--format` defaults to `pretty` so interactive CLI usage remains
+ * human-readable. Any non-empty value outside the supported format set is
+ * rejected immediately with a deterministic validation error.
+ *
+ * @param {string | undefined} value Raw `--format` option value.
+ * @returns {WatchStatusOutputFormat} Normalized output format.
+ */
 function parseWatchStatusOutputFormat(value: string | undefined): WatchStatusOutputFormat {
     const candidate = value ?? WATCH_STATUS_OUTPUT_FORMATS.PRETTY;
     if (candidate === WATCH_STATUS_OUTPUT_FORMATS.PRETTY || candidate === WATCH_STATUS_OUTPUT_FORMATS.JSON) {
@@ -199,8 +209,8 @@ function displayPretty(data: unknown, endpoint: string): void {
  * @param {object} options - Command options
  * @param {string} [options.statusHost] - Status server host
  * @param {number} [options.statusPort] - Status server port
- * @param {string} [options.format] - Output format (pretty or json)
- * @param {string} [options.endpoint] - Endpoint to query
+ * @param {string} [options.format] - Output format; defaults to `pretty` and accepts `pretty` or `json`.
+ * @param {string} [options.endpoint] - Endpoint to query; defaults to `status`.
  */
 export async function runWatchStatusCommand(options: WatchStatusCommandOptions = {}): Promise<void> {
     const { statusHost = "127.0.0.1", statusPort = 17_891, endpoint = "status" } = options;
