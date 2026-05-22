@@ -8,109 +8,50 @@ import {
     isHelpRequest,
     isStandaloneHelpRequest,
     normalizeArgumentList,
+    normalizeCommandLineArguments,
     resolveDefaultAction,
     resolveHelpAliasArguments,
     resolveHelpAliasCommandArguments,
     stripPnpmArgumentSeparators
 } from "../src/cli-core/cli-argument-normalization.js";
 
-const CLI_COMMAND_NAMES = new Set([
-    "format",
-    "lint",
-    "refactor",
-    "transpile",
-    "graph",
-    "runtime",
-    "mcp",
-    "test",
-    "report"
-]);
-
-function normalizeFormatCommandHelpShortcutWithCommandNames(args: unknown[]): unknown[] {
-    const firstArgument = args[0];
-    if (typeof firstArgument !== "string") {
-        return args;
-    }
-
-    const normalizedFirstArgument = firstArgument.trim().toLowerCase();
-    if (normalizedFirstArgument.length === 0) {
-        return args;
-    }
-
-    if (normalizedFirstArgument.startsWith("-")) {
-        return args;
-    }
-
-    if (CLI_COMMAND_NAMES.has(normalizedFirstArgument)) {
-        return args;
-    }
-
-    if (containsHelpFlag(args)) {
-        return [FORMAT_ACTION, "--help"];
-    }
-
-    return [FORMAT_ACTION, "--path", firstArgument, ...args.slice(1)];
-}
-
-function resolveHelpAliasArgumentsWithCommandNames(args: unknown[]): unknown[] {
-    if (args.length === 0) {
-        return resolveDefaultAction() === FORMAT_ACTION ? [] : ["--help"];
-    }
-
-    if (isStandaloneHelpRequest(args)) {
-        return ["--help"];
-    }
-
-    if (!isHelpAliasCommand(args)) {
-        return normalizeFormatCommandHelpShortcutWithCommandNames(args);
-    }
-
-    return resolveHelpAliasCommandArguments(args);
-}
-
-function normalizeCommandLineArgumentsWithCommandNames(argv: unknown): string[] {
-    const normalizedArgs = normalizeArgumentList(argv);
-    const withoutSeparator = stripPnpmArgumentSeparators(normalizedArgs);
-    return resolveHelpAliasArgumentsWithCommandNames(withoutSeparator) as string[];
-}
-
 void describe("normalizeCommandLineArguments", () => {
     void it("passes through arguments when the command is not help", () => {
         const argumentsForCli = ["format", "src/scripts"];
-        const normalized = normalizeCommandLineArgumentsWithCommandNames(argumentsForCli);
+        const normalized = normalizeCommandLineArguments(argumentsForCli);
 
         assert.deepEqual(normalized, argumentsForCli);
         assert.notStrictEqual(normalized, argumentsForCli);
     });
 
     void it("maps bare help commands to the --help flag", () => {
-        assert.deepEqual(normalizeCommandLineArgumentsWithCommandNames(["help"]), ["--help"]);
+        assert.deepEqual(normalizeCommandLineArguments(["help"]), ["--help"]);
     });
 
     void it("converts help <command> into <command> --help", () => {
-        const normalized = normalizeCommandLineArgumentsWithCommandNames(["help", "format"]);
+        const normalized = normalizeCommandLineArguments(["help", "format"]);
 
         assert.deepEqual(normalized, ["format", "--help"]);
     });
 
     void it("treats pnpm-style double-dash help as a top-level help request", () => {
-        const normalized = normalizeCommandLineArgumentsWithCommandNames(["--", "--help"]);
+        const normalized = normalizeCommandLineArguments(["--", "--help"]);
 
         assert.deepEqual(normalized, ["--help"]);
     });
 
     void it("strips pnpm argument separators between command and command options", () => {
-        const normalized = normalizeCommandLineArgumentsWithCommandNames(["format", "--", "--write"]);
+        const normalized = normalizeCommandLineArguments(["format", "--", "--write"]);
 
         assert.deepEqual(normalized, ["format", "--write"]);
     });
 
     void it("treats implicit format targets with --help as format help requests", () => {
-        assert.deepEqual(normalizeCommandLineArgumentsWithCommandNames(["src", "--help"]), ["format", "--help"]);
+        assert.deepEqual(normalizeCommandLineArguments(["src", "--help"]), ["format", "--help"]);
     });
 
     void it("maps implicit format targets to --path when help is not requested", () => {
-        const normalized = normalizeCommandLineArgumentsWithCommandNames(["src/scripts"]);
+        const normalized = normalizeCommandLineArguments(["src/scripts"]);
 
         assert.deepEqual(normalized, ["format", "--path", "src/scripts"]);
     });

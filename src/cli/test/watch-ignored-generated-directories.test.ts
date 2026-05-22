@@ -16,6 +16,37 @@ import {
 import { createMockWatchFactory } from "./test-helpers/watch-fixtures.js";
 import { runWatchTest } from "./test-helpers/watch-runner.js";
 
+async function startWatchServer(
+    projectRoot: string,
+    abortController: AbortController,
+    watchFactory: ReturnType<typeof createMockWatchFactory>
+): Promise<{ statusBaseUrl: string; watchPromise: Promise<unknown> }> {
+    let statusBaseUrl = "";
+    const watchPromise = runWatchCommand(projectRoot, {
+        abortSignal: abortController.signal,
+        extensions: [".gml"],
+        onStatusServerReady: (server: StatusServerHandle) => {
+            statusBaseUrl = server.url.replace(/\/status$/u, "");
+        },
+        quiet: true,
+        runtimeServer: false,
+        statusPort: 0,
+        statusServer: true,
+        watchFactory,
+        websocketServer: false
+    });
+
+    const deadline = Date.now() + 5000;
+    while (statusBaseUrl.length === 0 && Date.now() < deadline) {
+        await new Promise((resolve) => {
+            setTimeout(resolve, 25);
+        });
+    }
+
+    assert.notEqual(statusBaseUrl, "", "status server URL should resolve");
+    return { statusBaseUrl, watchPromise };
+}
+
 void describe("watch command ignored generated directories", () => {
     void it("skips .gmcache files during startup scan and status reporting", async () => {
         const testRoot = path.join("/tmp", `watch-ignore-generated-${Date.now()}-${randomUUID()}`);
@@ -29,30 +60,9 @@ void describe("watch command ignored generated directories", () => {
         await writeFile(projectScriptPath, "function scr_player() { return 1; }", "utf8");
         await writeFile(generatedScriptPath, "function scr_compat() { return 2; }", "utf8");
 
-        let statusBaseUrl = "";
-        const watchPromise = runWatchCommand(testRoot, {
-            abortSignal: abortController.signal,
-            extensions: [".gml"],
-            onStatusServerReady: (server: StatusServerHandle) => {
-                statusBaseUrl = server.url.replace(/\/status$/u, "");
-            },
-            quiet: true,
-            runtimeServer: false,
-            statusPort: 0,
-            statusServer: true,
-            watchFactory,
-            websocketServer: false
-        });
+        const { statusBaseUrl, watchPromise } = await startWatchServer(testRoot, abortController, watchFactory);
 
         try {
-            const deadline = Date.now() + 5000;
-            while (statusBaseUrl.length === 0 && Date.now() < deadline) {
-                await new Promise((resolve) => {
-                    setTimeout(resolve, 25);
-                });
-            }
-
-            assert.notEqual(statusBaseUrl, "", "status server URL should resolve");
             await waitForStatusReady(statusBaseUrl);
             await waitForScanComplete(statusBaseUrl);
 
@@ -126,30 +136,9 @@ void describe("watch command ignored generated directories", () => {
         await mkdir(path.dirname(projectScriptPath), { recursive: true });
         await writeFile(projectScriptPath, "function scr_player() { return 1; }", "utf8");
 
-        let statusBaseUrl = "";
-        const watchPromise = runWatchCommand(projectRoot, {
-            abortSignal: abortController.signal,
-            extensions: [".gml"],
-            onStatusServerReady: (server: StatusServerHandle) => {
-                statusBaseUrl = server.url.replace(/\/status$/u, "");
-            },
-            quiet: true,
-            runtimeServer: false,
-            statusPort: 0,
-            statusServer: true,
-            watchFactory,
-            websocketServer: false
-        });
+        const { statusBaseUrl, watchPromise } = await startWatchServer(projectRoot, abortController, watchFactory);
 
         try {
-            const deadline = Date.now() + 5000;
-            while (statusBaseUrl.length === 0 && Date.now() < deadline) {
-                await new Promise((resolve) => {
-                    setTimeout(resolve, 25);
-                });
-            }
-
-            assert.notEqual(statusBaseUrl, "", "status server URL should resolve");
             await waitForStatusReady(statusBaseUrl);
             await waitForScanComplete(statusBaseUrl);
 

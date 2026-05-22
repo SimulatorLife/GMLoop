@@ -4,6 +4,34 @@ import { describe, it } from "node:test";
 
 import { scanProjectTree } from "../src/project-index/project-tree.js";
 
+type ProjectTreeFacade = Parameters<typeof scanProjectTree>[1];
+
+function createProjectTreeFacade(
+    directories: Map<string, Array<string>>,
+    onReadDir?: (directoryPath: string) => void
+): ProjectTreeFacade {
+    return {
+        async readDir(directoryPath: string): Promise<Array<string>> {
+            onReadDir?.(directoryPath);
+            const entries = directories.get(directoryPath);
+            if (!entries) {
+                throw Object.assign(new Error(`Missing directory: ${directoryPath}`), { code: "ENOENT" });
+            }
+
+            return entries;
+        },
+        async stat(entryPath: string): Promise<{ isDirectory(): boolean; mtimeMs: number }> {
+            const isDirectory = directories.has(entryPath);
+            return {
+                mtimeMs: 0,
+                isDirectory() {
+                    return isDirectory;
+                }
+            };
+        }
+    };
+}
+
 void describe("project-index/project-tree", () => {
     void it("collects source and metadata files while traversing nested directories", async () => {
         const projectRoot = "/project";
@@ -14,25 +42,7 @@ void describe("project-index/project-tree", () => {
             [path.join(projectRoot, "objects"), ["obj_player.yy"]]
         ]);
 
-        const facade = {
-            async readDir(directoryPath: string): Promise<Array<string>> {
-                const entries = directories.get(directoryPath);
-                if (!entries) {
-                    throw Object.assign(new Error(`Missing directory: ${directoryPath}`), { code: "ENOENT" });
-                }
-
-                return entries;
-            },
-            async stat(entryPath: string): Promise<{ isDirectory(): boolean; mtimeMs: number }> {
-                const isDirectory = directories.has(entryPath);
-                return {
-                    mtimeMs: 0,
-                    isDirectory() {
-                        return isDirectory;
-                    }
-                };
-            }
-        };
+        const facade = createProjectTreeFacade(directories);
 
         const result = await scanProjectTree(projectRoot, facade);
 
@@ -69,26 +79,9 @@ void describe("project-index/project-tree", () => {
 
         const scannedDirectories: Array<string> = [];
 
-        const facade = {
-            async readDir(directoryPath: string): Promise<Array<string>> {
-                scannedDirectories.push(directoryPath);
-                const entries = directories.get(directoryPath);
-                if (!entries) {
-                    throw Object.assign(new Error(`Missing directory: ${directoryPath}`), { code: "ENOENT" });
-                }
-
-                return entries;
-            },
-            async stat(entryPath: string): Promise<{ isDirectory(): boolean; mtimeMs: number }> {
-                const isDirectory = directories.has(entryPath);
-                return {
-                    mtimeMs: 0,
-                    isDirectory() {
-                        return isDirectory;
-                    }
-                };
-            }
-        };
+        const facade = createProjectTreeFacade(directories, (directoryPath) => {
+            scannedDirectories.push(directoryPath);
+        });
 
         const result = await scanProjectTree(projectRoot, facade);
 

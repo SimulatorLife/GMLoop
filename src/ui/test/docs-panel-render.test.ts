@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
+import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationDocumentationCatalogs } from "../src/graph/types.js";
 import { createButtonAriaPressedPattern, renderTemplateValue } from "./render-template-helpers.js";
 
@@ -45,6 +46,29 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
     };
 }
 
+function createDocsPanelState(): GraphVisualizationUiState {
+    return {
+        activeDocsView: "rules",
+        activeGraphView: "visual",
+        activePage: "docs",
+        errorMessage: null,
+        fixErrorMessage: null,
+        fixLogLines: [],
+        fixStatus: "idle",
+        isFixPending: false,
+        isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
+        isOpenProjectPending: false,
+        isRegeneratePending: false,
+        labelMode: "auto",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
+        mcpServerStatus: "not-started",
+        pendingActionCount: 0,
+        searchQuery: ""
+    };
+}
+
 void test("GmDocsPanel renders the Rules subview and project-facing rule content", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
@@ -65,26 +89,7 @@ void test("GmDocsPanel renders the Rules subview and project-facing rule content
         startupState: null,
         title: "Rules Catalog"
     };
-    panel.state = {
-        activeDocsView: "rules",
-        activeGraphView: "visual",
-        activePage: "docs",
-        errorMessage: null,
-        fixErrorMessage: null,
-        fixLogLines: [],
-        fixStatus: "idle",
-        isFixPending: false,
-        isLiveReloadRefreshPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
-        labelMode: "auto",
-        liveReloadErrorMessage: null,
-        liveReloadStatus: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
-        searchQuery: ""
-    };
+    panel.state = createDocsPanelState();
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
@@ -121,26 +126,7 @@ void test("GmDocsPanel renders an empty rules state when rule data is unavailabl
         startupState: null,
         title: "Rules Empty State"
     };
-    panel.state = {
-        activeDocsView: "rules",
-        activeGraphView: "visual",
-        activePage: "docs",
-        errorMessage: null,
-        fixErrorMessage: null,
-        fixLogLines: [],
-        fixStatus: "idle",
-        isFixPending: false,
-        isLiveReloadRefreshPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
-        labelMode: "auto",
-        liveReloadErrorMessage: null,
-        liveReloadStatus: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
-        searchQuery: ""
-    };
+    panel.state = createDocsPanelState();
 
     const rendered = renderTemplateValue(panel.renderForTest());
 

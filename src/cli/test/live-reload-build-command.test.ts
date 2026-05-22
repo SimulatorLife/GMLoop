@@ -47,6 +47,17 @@ async function createTempDirectory(prefix: string): Promise<string> {
     return await fs.mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
+async function createIgorProjectFixtures(
+    runtimeIgorPath: string,
+    licenseFile: string,
+    projectPath: string
+): Promise<void> {
+    await fs.mkdir(path.dirname(runtimeIgorPath), { recursive: true });
+    await fs.writeFile(runtimeIgorPath, "", "utf8");
+    await fs.writeFile(licenseFile, "license", "utf8");
+    await fs.writeFile(projectPath, JSON.stringify({ name: "Project" }), "utf8");
+}
+
 function restoreProcessEnvironmentValue(name: "APPDATA" | "HOME" | "USERPROFILE", value: string | undefined): void {
     if (value === undefined) {
         delete process.env[name];
@@ -130,10 +141,7 @@ void test("buildGameMakerHtml5Output falls back from gm-cli to Igor when HTML5 p
     const projectPath = path.join(projectRoot, "Project.yyp");
 
     try {
-        await fs.mkdir(path.dirname(runtimeIgorPath), { recursive: true });
-        await fs.writeFile(runtimeIgorPath, "", "utf8");
-        await fs.writeFile(licenseFile, "license", "utf8");
-        await fs.writeFile(projectPath, JSON.stringify({ name: "Project" }), "utf8");
+        await createIgorProjectFixtures(runtimeIgorPath, licenseFile, projectPath);
 
         const executedCommands: Array<string> = [];
         const result = await buildGameMakerHtml5Output({
@@ -218,10 +226,7 @@ void test("buildGameMakerHtml5Output fails when the selected backend does not pr
     const projectPath = path.join(projectRoot, "Project.yyp");
 
     try {
-        await fs.mkdir(path.dirname(runtimeIgorPath), { recursive: true });
-        await fs.writeFile(runtimeIgorPath, "", "utf8");
-        await fs.writeFile(licenseFile, "license", "utf8");
-        await fs.writeFile(projectPath, JSON.stringify({ name: "Project" }), "utf8");
+        await createIgorProjectFixtures(runtimeIgorPath, licenseFile, projectPath);
 
         await assert.rejects(
             () =>
