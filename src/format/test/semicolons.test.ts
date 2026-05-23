@@ -5,7 +5,7 @@ import type { AstPath } from "prettier";
 
 import * as Semicolons from "../src/printer/semicolons.js";
 
-void describe("Semicolons helper utilities", () => {
+void describe("semicolon helpers", () => {
     void it("flags statement nodes that require a terminator", () => {
         assert.strictEqual(Semicolons.optionalSemicolon("ExpressionStatement"), ";");
         assert.strictEqual(Semicolons.optionalSemicolon("IfStatement"), "");
@@ -35,9 +35,7 @@ void describe("Semicolons helper utilities", () => {
         assert.strictEqual(Semicolons.isSkippableSemicolonWhitespace(0x41), false);
     });
 
-    void it("ASCII fast-path covers all six ASCII whitespace code points and excludes non-whitespace", () => {
-        // All six ASCII whitespace characters must be recognized without
-        // allocating a string (the fast path handles charCode < 128).
+    void it("covers the ASCII fast path for skippable whitespace", () => {
         assert.strictEqual(Semicolons.isSkippableSemicolonWhitespace(0x09), true, "HT (tab)");
         assert.strictEqual(Semicolons.isSkippableSemicolonWhitespace(0x0a), true, "LF");
         assert.strictEqual(Semicolons.isSkippableSemicolonWhitespace(0x0b), true, "VT");
@@ -45,12 +43,10 @@ void describe("Semicolons helper utilities", () => {
         assert.strictEqual(Semicolons.isSkippableSemicolonWhitespace(0x0d), true, "CR");
         assert.strictEqual(Semicolons.isSkippableSemicolonWhitespace(0x20), true, "SP (space)");
 
-        // Non-whitespace ASCII characters must not be classified as whitespace.
         assert.strictEqual(Semicolons.isSkippableSemicolonWhitespace(0x08), false, "BS (not whitespace)");
         assert.strictEqual(Semicolons.isSkippableSemicolonWhitespace(0x21), false, "! (not whitespace)");
         assert.strictEqual(Semicolons.isSkippableSemicolonWhitespace(0x7f), false, "DEL (not whitespace)");
 
-        // ASCII boundary: 0x7f is the last ASCII char and must not leak through.
         assert.strictEqual(Semicolons.isSkippableSemicolonWhitespace(0x7f), false, "boundary 0x7f");
     });
 
@@ -80,12 +76,7 @@ void describe("Semicolons helper utilities", () => {
         assert.strictEqual(Semicolons.isLastStatement(orphanPath), true);
     });
 
-    void it("handles Unicode whitespace characters beyond the basic ASCII set", () => {
-        // This test proves the generalization: Unicode whitespace (like em-space U+2003)
-        // should be recognized as whitespace when skipping to find the next meaningful token.
-        // The original implementation only handled 6 hardcoded ASCII values.
-
-        // U+2003 em-space is a valid Unicode whitespace character that matches /\s/
+    void it("handles Unicode whitespace beyond ASCII", () => {
         const textWithEmSpace = "\u2003\u2003}";
         assert.strictEqual(
             Semicolons.getNextNonWhitespaceCharacter(textWithEmSpace, 0),
@@ -93,7 +84,6 @@ void describe("Semicolons helper utilities", () => {
             "Should skip Unicode em-space (U+2003) whitespace"
         );
 
-        // U+2009 thin-space is another Unicode whitespace
         const textWithThinSpace = "\u2009\u2009bar";
         assert.strictEqual(
             Semicolons.getNextNonWhitespaceCharacter(textWithThinSpace, 0),
@@ -101,7 +91,6 @@ void describe("Semicolons helper utilities", () => {
             "Should skip Unicode thin-space (U+2009) whitespace"
         );
 
-        // U+1680 Ogham space mark
         const textWithOghamSpace = "\u1680{";
         assert.strictEqual(
             Semicolons.getNextNonWhitespaceCharacter(textWithOghamSpace, 0),
@@ -111,14 +100,9 @@ void describe("Semicolons helper utilities", () => {
     });
 
     void it("handles Unicode whitespace in blank line counting", () => {
-        // Prove that Unicode whitespace between newlines should be recognized
-        // when counting blank lines, just like ASCII whitespace.
-
-        // Text with Unicode em-space between newlines
         const textWithUnicodeSpaces = "foo();\n\u2003\n\u2003\nbar();";
         const newlineIndex = textWithUnicodeSpaces.indexOf("\n");
 
-        // Should count 2 blank lines (same as with ASCII spaces)
         assert.strictEqual(
             Semicolons.countTrailingBlankLines(textWithUnicodeSpaces, newlineIndex),
             2,
