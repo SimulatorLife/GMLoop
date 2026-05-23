@@ -46,16 +46,10 @@ export type LintConfigSets = Readonly<{
 }>;
 
 /**
- * Legacy helper that builds all config sets from a single plugin object.
- * Prefer `createLintConfigsWithPlugins` when gml/feather plugins differ.
+ * Builds all config sets from separate gml and feather plugin objects.
+ * The gml and feather configs may differ; pass the same plugin instance
+ * to both fields to replicate the deprecated single-plugin behavior.
  */
-export function createLintConfigs(plugin: LintPluginShape): LintConfigSets {
-    return createLintConfigsWithPlugins({
-        gmlPlugin: plugin,
-        featherPlugin: plugin
-    });
-}
-
 type LintConfigPluginSet = Readonly<{
     gmlPlugin: LintPluginShape;
     featherPlugin: LintPluginShape;
