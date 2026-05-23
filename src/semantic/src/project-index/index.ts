@@ -16,6 +16,7 @@ export * from "./parsing/index.js";
 export * from "./path-info.js";
 export * from "./path-normalization.js";
 export * from "./project-file-categories.js";
+export * from "./project-index-logger.js";
 export * from "./project-root.js";
 export * from "./project-tree.js";
 export * from "./resource-analysis.js";

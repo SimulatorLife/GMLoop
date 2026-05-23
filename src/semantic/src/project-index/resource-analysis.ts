@@ -9,7 +9,7 @@ import {
 } from "./constants.js";
 import { defaultFsFacade, type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { normalizeProjectResourcePath } from "./path-normalization.js";
-import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
+import { logProjectIndexDebug, logProjectIndexDebugError, type ProjectIndexLogger } from "./project-index-logger.js";
 import { extractAssetReferencesFromMetadataDocument } from "./resource-reference-extractor.js";
 
 const RESOURCE_ANALYSIS_ABORT_MESSAGE = "Project index build was aborted.";
@@ -209,7 +209,7 @@ async function extractEventGmlPath(
         }
     } catch (error) {
         // Fall back to legacy format but log the failure for diagnostics.
-        logProjectIndexDebug(
+        logProjectIndexDebugError(
             logger,
             `Failed to stat '${standardAbsolutePath}', falling back to legacy GML path format.`,
             error
