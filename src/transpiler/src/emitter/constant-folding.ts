@@ -130,7 +130,8 @@ function evaluateEqualityOperator(
             // since the types differ.
             if (typeof left === "boolean" && typeof right === "number") {
                 if (operator === "==") return (left ? 1 : 0) === right;
-            } else if (typeof left === "number" && typeof right === "boolean" && operator === "==") return left === (right ? 1 : 0);
+            } else if (typeof left === "number" && typeof right === "boolean" && operator === "==")
+                return left === (right ? 1 : 0);
             // Both sides are booleans or strings (including normalized boolean strings
             // like "true"/"false" from the parser). Direct value comparison is safe
             // and matches JavaScript semantics for same-type comparisons.
@@ -155,7 +156,8 @@ function evaluateEqualityOperator(
             // Normalize boolean-number comparisons for inequality.
             if (typeof left === "boolean" && typeof right === "number") {
                 if (operator === "!=") return (left ? 1 : 0) !== right;
-            } else if (typeof left === "number" && typeof right === "boolean" && operator === "!=") return left !== (right ? 1 : 0);
+            } else if (typeof left === "number" && typeof right === "boolean" && operator === "!=")
+                return left !== (right ? 1 : 0);
             return left !== right;
         }
         default: {

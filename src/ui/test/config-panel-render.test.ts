@@ -184,6 +184,9 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
     assert.match(rendered, /configured MCP server "gamemaker-resource-tool"/u);
     assert.match(rendered, /All Rules/u);
     assert.match(rendered, /All Levels/u);
+    assert.match(rendered, /class="config-filter-reset"/u);
+    assert.match(rendered, /Reset Filters/u);
+    assert.match(rendered, /disabled=true/u);
     assert.match(rendered, /class="?config-severity-badge warn"?/u);
     assert.match(rendered, /class="?config-severity-badge error"?/u);
     assert.match(rendered, /<gm-badge[^>]*\.label=fixable/u);

@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 import {
     collectAdjacentLeadingSourceLineComments,
     collectLeadingProgramLineComments,
@@ -7,7 +9,6 @@ import {
     getArgumentIndexFromIdentifier,
     getArgumentIndexFromReferenceNode,
     getIdentifierFromParameterNode,
-    isDocLikeLeadingLine,
     mergeSyntheticDocComments,
     prepareDocCommentEnvironment,
     promoteLeadingDocCommentTextToDescription,
@@ -31,10 +32,10 @@ export const gmlTransformDocCommentServices = Object.freeze({
     getArgumentIndexFromIdentifier,
     getArgumentIndexFromReferenceNode,
     getIdentifierFromParameterNode,
-    isDocLikeLeadingLine,
     mergeSyntheticDocComments,
     prepareDocCommentEnvironment,
     promoteLeadingDocCommentTextToDescription,
     reorderDescriptionLinesToTop,
-    resolveParameterName
+    resolveParameterName,
+    isDocLikeLeadingLine: Core.isDocLikeLeadingLine
 });
