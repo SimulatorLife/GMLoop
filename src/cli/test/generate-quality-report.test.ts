@@ -984,7 +984,7 @@ void test("quality report falls back to PR head gate semantics when merge artifa
         })
     });
 
-    assert.strictEqual(exitCode, 0);
+    assert.strictEqual(exitCode, 10);
     const markdown = fs.readFileSync(reportFile, "utf8");
     assert.match(markdown, /Regression gate target: \*\*PR \(Head\)\*\*\./u);
     assert.match(markdown, /❌ Test regressions detected \(Base → PR \(Head\)\)\./u);
