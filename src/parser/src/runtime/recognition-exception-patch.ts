@@ -258,8 +258,7 @@ let isPatched = false;
  * diagnostics, so repeated calls become no-ops after the first successful
  * installation.
  *
- * @returns {void}
- *          Returns immediately when ANTLR's runtime constructors are missing or
+ * @returns Returns immediately when ANTLR's runtime constructors are missing or
  *          when the guard has already been installed for this process.
  */
 export function installRecognitionExceptionLikeGuard() {
