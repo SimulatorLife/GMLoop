@@ -1,26 +1,8 @@
-import { promises as fs } from "node:fs";
+import { Core, type FsFacade } from "@gmloop/core";
 
-import { Core } from "@gmloop/core";
+export type ProjectIndexFsFacade = FsFacade;
 
-export type ProjectIndexFsFacade = {
-    readFile?: (...args: any[]) => Promise<any>;
-    writeFile?: (...args: any[]) => Promise<any>;
-    rename?: (...args: any[]) => Promise<any>;
-    unlink?: (...args: any[]) => Promise<any>;
-    mkdir?: (...args: any[]) => Promise<any>;
-    stat?: (...args: any[]) => Promise<{ mtimeMs?: number } | null>;
-    readDir?: (path: string) => Promise<Iterable<string>>;
-};
-
-export const defaultFsFacade: Required<ProjectIndexFsFacade> = {
-    readFile: fs.readFile,
-    writeFile: fs.writeFile,
-    rename: fs.rename,
-    unlink: fs.unlink,
-    mkdir: fs.mkdir,
-    stat: fs.stat,
-    readDir: fs.readdir
-};
+export const defaultFsFacade: Required<FsFacade> = Core.defaultFsFacade as Required<FsFacade>;
 
 /**
  * Run an async filesystem operation and recover only from missing-path errors

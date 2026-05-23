@@ -10,6 +10,7 @@ export type {
     EmptyTransformOptions,
     FeatherDiagnostic,
     FeatherMetadata,
+    FsFacade,
     GameMakerAstLocation,
     GameMakerAstNode,
     GmloopProjectConfig,
@@ -22,7 +23,7 @@ export type {
     StripCommentsTransformOptions
 } from "./src/index.js";
 export type { MemberAccessor } from "./src/index.js";
-export { Core } from "./src/index.js";
+export { Core, coreDefaultFsFacade as defaultFsFacade } from "./src/index.js";
 export {
     isMemberAccessor,
     MEMBER_ACCESSOR_ARRAY,

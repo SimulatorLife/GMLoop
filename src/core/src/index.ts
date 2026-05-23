@@ -61,6 +61,8 @@ export type { GameMakerAstLocation, GameMakerAstNode, LiteralNode, MutableGameMa
 export type { DocCommentLines, MutableDocCommentLines } from "./comments/comment-utils.js";
 export type { DocCommentNodeMetadata } from "./comments/doc-comment/node-metadata.js";
 export type { StripCommentsTransformOptions } from "./comments/strip-comments-transform.js";
+export type { FsFacade } from "./fs/io.js";
+export { defaultFsFacade as coreDefaultFsFacade } from "./fs/io.js";
 export type { GmloopProjectConfig } from "./project-config/gmloop-project-config.js";
 export type { FeatherDiagnostic, FeatherMetadata } from "./resources/feather-metadata.js";
 export type {
