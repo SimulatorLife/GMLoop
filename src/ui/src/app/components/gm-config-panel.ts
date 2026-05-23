@@ -182,6 +182,16 @@ export class GmConfigPanel extends LightDomLitElement {
         this.requestUpdate();
     };
 
+    #resetLintFilters = (): void => {
+        this.#lintLevelFilter = "all";
+        this.#lintRulesetFilter = "all";
+        this.requestUpdate();
+    };
+
+    #isLintFilterResetDisabled(): boolean {
+        return this.#lintLevelFilter === "all" && this.#lintRulesetFilter === "all";
+    }
+
     #filterLintRules(
         lintRules: ReadonlyArray<GraphVisualizationProjectConfigurationLintRuleEntry>,
         rulesets: ReadonlyArray<GraphVisualizationProjectConfigurationLintRulesetEntry>
@@ -236,6 +246,14 @@ export class GmConfigPanel extends LightDomLitElement {
                         <option value="off" ?selected=${this.#lintLevelFilter === "off"}>Off</option>
                     </select>
                 </label>
+                <button
+                    type="button"
+                    class="config-filter-reset"
+                    @click=${this.#resetLintFilters}
+                    ?disabled=${this.#isLintFilterResetDisabled()}
+                >
+                    Reset Filters
+                </button>
             </div>
         `;
     }
