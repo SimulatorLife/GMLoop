@@ -77,6 +77,20 @@ export function createMcpCommand(): Command {
     return excludeCommandFromMcpTools(
         applyStandardCommandOptions(new Command("mcp"))
             .description("Start the GMLoop MCP stdio server.")
+            .addHelpText("after", () =>
+                [
+                    "",
+                    "Examples:",
+                    "  # Run the MCP server directly",
+                    "  gmloop mcp",
+                    "",
+                    "  # Run via pnpm",
+                    "  pnpm dlx gmloop mcp",
+                    "",
+                    "  # MCP client configuration (e.g., Claude Desktop):",
+                    '  { "mcpServers": { "gmloop": { "command": "gmloop mcp" } } }'
+                ].join("\n")
+            )
             .action(async () => {
                 if (process.env[SKIP_CLI_RUN_ENV_VAR] === "1") {
                     process.stderr.write(
