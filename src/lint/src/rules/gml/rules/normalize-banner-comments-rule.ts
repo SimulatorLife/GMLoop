@@ -71,6 +71,7 @@ function rewriteMethodListTripleSlashBlock(
         }
 
         if (content.length === 0) {
+            lineIndex += 1;
             continue;
         }
 
