@@ -5,6 +5,7 @@
 export type ProjectIndexLogger = {
     log?: (...args: Array<unknown>) => void;
     debug?: (...args: Array<unknown>) => void;
+    error?: (...args: Array<unknown>) => void;
 } | null;
 
 /**
@@ -30,4 +31,62 @@ export function logProjectIndexDebug(logger: ProjectIndexLogger, message: string
     }
 
     emitter(message, payload);
+}
+
+/**
+ * Emit an error-level debug message through the given logger.
+ *
+ * Errors caught during non-critical operations (e.g. stat failures) are
+ * handled differently from fatal errors: we surface them so operators can
+ * diagnose filesystem or permission problems, but do not propagate them up
+ * the call stack. This pattern aligns with the "safe fallback + structured
+ * reporting" principle used by the broader project: callers can log at
+ * debug level while keeping the error context available for diagnostics.
+ */
+export function logProjectIndexDebugError(logger: ProjectIndexLogger, message: string, error: unknown): void {
+    if (!logger) {
+        return;
+    }
+
+    const emitter =
+        typeof logger.error === "function"
+            ? logger.error
+            : typeof logger.log === "function"
+              ? logger.log
+              : typeof logger.debug === "function"
+                ? logger.debug
+                : null;
+
+    if (!emitter) {
+        return;
+    }
+
+    // Extract a human-readable reason string from the error using the same
+    // strategy as the rest of the project: prefer the error's own message,
+    // fall back to string coercion, and fall back to an empty string.
+    const reason = getErrorReason(error);
+    const suffix = reason.length > 0 ? `: ${reason}` : "";
+
+    emitter(message + suffix);
+}
+
+/**
+ * Extract a human-readable reason string from an error-like value.
+ *
+ * Mirrors the `getErrorMessage(error, { fallback: "" })` pattern used
+ * throughout the project, returning the error's message property when
+ * available, or an empty string when the error cannot be meaningfully
+ * stringified.
+ */
+function getErrorReason(error: unknown): string {
+    if (error && typeof error === "object" && "message" in error) {
+        const msg = error.message;
+        if (typeof msg === "string" && msg.length > 0) {
+            return msg;
+        }
+    }
+    if (typeof error === "string" && error.length > 0) {
+        return error;
+    }
+    return "";
 }
