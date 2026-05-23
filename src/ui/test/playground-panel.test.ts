@@ -302,6 +302,88 @@ void test("playground panel renders format/lint/codemod detail sections", () => 
     assert.match(rendered, /Codemods/u);
 });
 
+void test("playground panel starts with all format/lint/codemod controls unchecked and off", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = {
+        ...createMockModel(),
+        documentationCatalogs: {
+            cliCommands: [],
+            mcpServer: { name: "gmloop-mcp", version: "0.0.1" },
+            mcpTools: [],
+            workspaceRules: {
+                formatOptions: [
+                    {
+                        defaultValue: 100,
+                        description: "Preferred maximum line width.",
+                        name: "printWidth"
+                    },
+                    {
+                        defaultValue: true,
+                        description: "Use trailing commas.",
+                        name: "trailingComma"
+                    }
+                ],
+                lintRules: [
+                    {
+                        description: "Rule for noGlobalvar.",
+                        fixable: null,
+                        ruleId: "gml/no-globalvar"
+                    }
+                ],
+                refactorCodemods: [
+                    {
+                        description: "Expand scientific notation.",
+                        id: "scientificNotation",
+                        requiresSemanticProjectIndex: false
+                    }
+                ]
+            }
+        },
+        projectConfigurationCatalog: {
+            format: { entries: [] },
+            gameMakerCli: {
+                available: false,
+                cliCommands: [],
+                error: null,
+                invocation: null,
+                mcpServer: {
+                    available: false,
+                    error: null,
+                    name: null,
+                    projectPath: null,
+                    serverId: null,
+                    sourcePath: null,
+                    version: null
+                },
+                mcpTools: [],
+                version: null
+            },
+            githubRepositoryUrl: "",
+            gmloop: {
+                configPath: null,
+                exists: false,
+                projectRoot: "/tmp/test",
+                rawConfig: {}
+            },
+            lint: { rules: [], rulesets: [], ruleset: null },
+            refactor: { codemods: [] }
+        }
+    };
+    panel.state = createMockState();
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // Section labels appear (rules catalog is populated from workspace rules fallback)
+    assert.match(rendered, /Format Options/u);
+    assert.match(rendered, /Lint Rules/u);
+    assert.match(rendered, /Codemods/u);
+
+    // Verify no checked checkboxes appear for these rules (they default to unchecked/off)
+    assert.doesNotMatch(rendered, /type="checkbox"\s+checked[^>]*>.*printWidth/u);
+    assert.doesNotMatch(rendered, /type="checkbox"\s+checked[^>]*>.*trailingComma/u);
+    assert.doesNotMatch(rendered, /type="checkbox"\s+checked[^>]*>.*gml\/no-globalvar/u);
+    assert.doesNotMatch(rendered, /type="checkbox"\s+checked[^>]*>.*scientificNotation/u);
+});
+
 void test("playground panel falls back to workspace catalogs when project config entries are empty", () => {
     const panel = new TestableGmPlaygroundPanel();
     panel.model = {

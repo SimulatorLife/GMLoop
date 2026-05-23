@@ -88,21 +88,21 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     }
 
     #toggleFormatOption(optionName: string): void {
-        const current = this.#enabledFormatOptions.get(optionName) ?? true;
+        const current = this.#enabledFormatOptions.get(optionName) ?? false;
         this.#enabledFormatOptions.set(optionName, !current);
         void this.#processInput();
         this.requestUpdate();
     }
 
     #toggleLintRule(ruleId: string): void {
-        const current = this.#enabledLintRules.get(ruleId) ?? true;
+        const current = this.#enabledLintRules.get(ruleId) ?? false;
         this.#enabledLintRules.set(ruleId, !current);
         void this.#processInput();
         this.requestUpdate();
     }
 
     #toggleCodemod(codemodId: string): void {
-        const current = this.#enabledCodemods.get(codemodId) ?? true;
+        const current = this.#enabledCodemods.get(codemodId) ?? false;
         this.#enabledCodemods.set(codemodId, !current);
         void this.#processInput();
         this.requestUpdate();
@@ -267,18 +267,20 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         formatOptions: ReadonlyArray<{ description: string; name: string }>
     ): ReadonlyArray<string> {
         return formatOptions
-            .filter((option) => this.#enabledFormatOptions.get(option.name) ?? true)
+            .filter((option) => this.#enabledFormatOptions.get(option.name) === true)
             .map((option) => option.name);
     }
 
     #resolveEnabledLintRuleIds(
         lintRules: ReadonlyArray<{ description: string; ruleId: string }>
     ): ReadonlyArray<string> {
-        return lintRules.filter((rule) => this.#enabledLintRules.get(rule.ruleId) ?? true).map((rule) => rule.ruleId);
+        return lintRules.filter((rule) => this.#enabledLintRules.get(rule.ruleId) === true).map((rule) => rule.ruleId);
     }
 
     #resolveEnabledCodemodIds(codemods: ReadonlyArray<{ description: string; id: string }>): ReadonlyArray<string> {
-        return codemods.filter((codemod) => this.#enabledCodemods.get(codemod.id) ?? true).map((codemod) => codemod.id);
+        return codemods
+            .filter((codemod) => this.#enabledCodemods.get(codemod.id) === true)
+            .map((codemod) => codemod.id);
     }
 
     #setTranspileMode(mode: "patch" | "expression"): void {
@@ -396,7 +398,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                               description: option.description,
                               keyText: option.name,
                               onToggle: () => this.#toggleFormatOption(option.name),
-                              selected: this.#enabledFormatOptions.get(option.name) ?? true
+                              selected: this.#enabledFormatOptions.get(option.name) === true
                           })),
                           expanded: this.#showFormatDetails,
                           label: "Format Options",
@@ -412,7 +414,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                               description: rule.description,
                               keyText: rule.ruleId,
                               onToggle: () => this.#toggleLintRule(rule.ruleId),
-                              selected: this.#enabledLintRules.get(rule.ruleId) ?? true
+                              selected: this.#enabledLintRules.get(rule.ruleId) === true
                           })),
                           expanded: this.#showLintDetails,
                           label: "Lint Rules",
@@ -428,7 +430,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                               description: codemod.description,
                               keyText: codemod.id,
                               onToggle: () => this.#toggleCodemod(codemod.id),
-                              selected: this.#enabledCodemods.get(codemod.id) ?? true
+                              selected: this.#enabledCodemods.get(codemod.id) === true
                           })),
                           expanded: this.#showCodemodDetails,
                           label: "Codemods",
