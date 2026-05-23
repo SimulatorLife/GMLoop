@@ -95,6 +95,34 @@
   display: none;
 }
 
+
+.config-filter-reset {
+  min-height: 38px;
+  border: 1px solid rgba(143, 181, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(31, 94, 214, 0.14);
+  color: var(--gm-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 12px;
+  justify-self: start;
+}
+
+.config-filter-reset:hover:not(:disabled) {
+  background: rgba(31, 94, 214, 0.22);
+}
+
+.config-filter-reset:focus-visible {
+  outline: 2px solid var(--gm-accent-strong);
+  outline-offset: 2px;
+}
+
+.config-filter-reset:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .config-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
