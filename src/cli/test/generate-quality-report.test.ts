@@ -221,6 +221,26 @@ void test("ignores checkstyle reports when scanning result directories", () => {
     );
 });
 
+void test("ignores malformed checkstyle-like XML without attempting expensive test-case parsing", () => {
+    const resultsDir = path.join(workspace, "reports");
+
+    writeXml(
+        resultsDir,
+        "eslint-checkstyle-broken",
+        `<checkstyle version="1.0">
+      <file name="src/example.js">
+        <error line="1" severity="error" message="nope" source="lint" />`
+    );
+
+    const result = readTestResults(["reports"], { workspace });
+
+    assert.strictEqual(result.stats.total, 0);
+    assert.strictEqual(
+        result.notes.some((note) => note.includes("Ignoring checkstyle report reports/eslint-checkstyle-broken.xml")),
+        true
+    );
+});
+
 void test("records a note when XML lacks test suites or cases", () => {
     const resultsDir = path.join(workspace, "reports");
 

@@ -33,6 +33,15 @@ const parser = new XMLParser({
     attributeNamePrefix: ""
 });
 
+function xmlContainsPotentialTestElements(xml: string): boolean {
+    const lowered = xml.toLowerCase();
+    return lowered.includes("<testsuite") || lowered.includes("<testsuites") || lowered.includes("<testcase");
+}
+
+function xmlLooksLikeCheckstyle(xml: string): boolean {
+    return xml.toLowerCase().includes("<checkstyle");
+}
+
 function hasAnyOwn(object: Record<string, unknown>, keys: string[]): boolean {
     return keys.some((key) => Object.hasOwn(object, key));
 }
@@ -720,6 +729,20 @@ function readXmlFile(filePath, displayPath) {
 }
 
 function parseXmlTestCases(xml, displayPath, reportFilePath = "") {
+    if (!xmlContainsPotentialTestElements(xml)) {
+        if (xmlLooksLikeCheckstyle(xml)) {
+            return {
+                status: ParseResultStatus.IGNORED,
+                note: `Ignoring checkstyle report ${displayPath}; no test cases found.`
+            };
+        }
+
+        return {
+            status: ParseResultStatus.ERROR,
+            note: `Parsed ${displayPath} but it does not contain any test suites or cases.`
+        };
+    }
+
     try {
         const data = parser.parse(xml);
         if (isCheckstyleDocument(data)) {
