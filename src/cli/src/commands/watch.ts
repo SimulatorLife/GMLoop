@@ -109,6 +109,10 @@ const noopAbortListener = () => {};
  * Controls which files to monitor and how to detect changes.
  */
 interface FileWatchingConfig {
+    /**
+     * Legacy programmatic hook retained for internal tests/integration wiring.
+     * CLI input is intentionally fixed to `.gml` to keep watch behavior opinionated.
+     */
     extensions?: Array<string>;
     polling?: boolean;
     pollingInterval?: number;
@@ -402,12 +406,6 @@ export function createWatchCommand(): Command {
     command
         .description("Watch GML source files and coordinate hot-reload pipeline actions")
         .argument("[targetPath]", "Directory to watch for changes", process.cwd())
-        .addOption(
-            new Option("--extensions <extensions...>", "File extensions to watch").default(
-                [".gml"],
-                "Defaults to .gml; custom extensions are allowed"
-            )
-        )
         .addOption(new Option("--polling", "Use polling instead of native file watching").default(false))
         .addOption(
             new Option("--polling-interval <ms>", "Polling interval in milliseconds")
@@ -705,7 +703,7 @@ function logWatchStartup(
  *
  * @param {string} targetPath - Directory to watch
  * @param {object} options - Command options
- * @param {string[]} options.extensions - File extensions to watch
+ * Watch mode intentionally targets `.gml` only to mirror GameMaker defaults.
  * @param {boolean} options.polling - Use polling instead of native watching
  * @param {number} options.pollingInterval - Polling interval in milliseconds
  * @param {boolean} options.verbose - Enable verbose logging
@@ -715,7 +713,6 @@ function logWatchStartup(
  */
 export async function runWatchCommand(targetPath: string, options: WatchCommandOptions = {}): Promise<void> {
     const {
-        extensions = [".gml"],
         polling = false,
         pollingInterval = DEFAULT_WATCH_POLLING_INTERVAL_MS,
         verbose = false,
@@ -759,7 +756,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
     const normalizedPath = await validateTargetPath(targetPath);
 
-    const extensionMatcher = createExtensionMatcher(extensions);
+    const extensionMatcher = createExtensionMatcher(options.extensions ?? [".gml"]);
     const extensionSet = extensionMatcher.extensions;
 
     const { scriptNames, fileDataCache } = await collectScriptNames(
