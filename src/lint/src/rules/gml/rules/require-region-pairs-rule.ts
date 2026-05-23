@@ -1,5 +1,6 @@
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import {
     collectRegionSourceLines,
     readRegionDirectiveType,
@@ -12,7 +13,6 @@ import {
     reportProgramTextRewrite,
     type SourceTextEdit
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type RegionPairingState = Readonly<{
     unmatchedEndRegionLines: ReadonlyArray<RegionSourceLine>;

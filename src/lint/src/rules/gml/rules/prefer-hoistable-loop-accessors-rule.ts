@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeWithType,
     createMeta,
@@ -11,7 +12,6 @@ import {
     walkAstNodes,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const DEFAULT_HOIST_ACCESSORS = Object.freeze({
     array_length: "len"
