@@ -795,35 +795,65 @@ function analyzeFunctionReturnInference(
     let concreteReturnType: string | null = null;
     const structValuedIdentifiers = new Set<string>();
 
-    const bodyNode = Reflect.get(functionNode, "body");
-    const stack: unknown[] = [];
-    if (bodyNode && typeof bodyNode === "object") {
-        stack.push(bodyNode);
-    }
-
-    while (stack.length > 0) {
-        const current = stack.pop();
-        if (!current || typeof current !== "object") {
-            continue;
+    // Two-pass traversal:
+    //  1. Collect struct-valued identifiers from every declarator/assignment in scope.
+    //  2. Re-walk, now resolving return types against the complete identifier map.
+    //
+    // This mirrors the original while-loop ordering without hand-rolling a mutable
+    // stack: pass 1 processes all siblings before recursing into any subtree, so
+    // `var foo = {}` is always seen before `return foo`.
+    const collectStructIdentifiers = (node: unknown): void => {
+        if (!node || typeof node !== "object") {
+            return;
         }
 
-        if (Array.isArray(current)) {
-            for (let index = current.length - 1; index >= 0; index -= 1) {
-                stack.push(current[index]);
+        if (Array.isArray(node)) {
+            for (const item of node) {
+                collectStructIdentifiers(item);
             }
-            continue;
+            return;
         }
 
-        const currentType = Reflect.get(current, "type");
-        recordStructValuedIdentifierFromDeclarator(current, structValuedIdentifiers);
-        recordStructValuedIdentifierFromAssignment(current, structValuedIdentifiers);
+        const nodeType = Reflect.get(node, "type");
+        if (typeof nodeType === "string" && isFunctionLikeNodeType(nodeType)) {
+            return; // nested functions have their own scope
+        }
 
-        if (currentType === "ReturnStatement") {
+        recordStructValuedIdentifierFromDeclarator(node, structValuedIdentifiers);
+        recordStructValuedIdentifierFromAssignment(node, structValuedIdentifiers);
+
+        // Recurse into all children for this pass.
+        for (const [key, value] of Object.entries(node)) {
+            if (key === "parent") {
+                continue;
+            }
+            collectStructIdentifiers(value);
+        }
+    };
+
+    const analyzeReturns = (node: unknown): void => {
+        if (!node || typeof node !== "object") {
+            return;
+        }
+
+        if (Array.isArray(node)) {
+            for (const item of node) {
+                analyzeReturns(item);
+            }
+            return;
+        }
+
+        const nodeType = Reflect.get(node, "type");
+        if (typeof nodeType === "string" && isFunctionLikeNodeType(nodeType)) {
+            return; // nested functions have their own scope
+        }
+
+        if (nodeType === "ReturnStatement") {
             hasReturnStatement = true;
-            const argument = Reflect.get(current, "argument");
+            const argument = Reflect.get(node, "argument");
             if (argument == null || isUndefinedReturnArgument(argument)) {
                 hasUndefinedReturn = true;
-                continue;
+                return;
             }
 
             hasConcreteReturn = true;
@@ -837,22 +867,21 @@ function analyzeFunctionReturnInference(
                 structValuedIdentifiers
             );
             concreteReturnType = mergeConcreteReturnType(concreteReturnType, inferredType);
-            continue;
+            return;
         }
 
-        if (typeof currentType === "string" && isFunctionLikeNodeType(currentType)) {
-            continue;
-        }
-
-        for (const [key, value] of Object.entries(current)) {
+        for (const [key, value] of Object.entries(node)) {
             if (key === "parent") {
                 continue;
             }
-
-            if (value && typeof value === "object") {
-                stack.push(value);
-            }
+            analyzeReturns(value);
         }
+    };
+
+    const bodyNode = Reflect.get(functionNode, "body");
+    if (bodyNode && typeof bodyNode === "object") {
+        collectStructIdentifiers(bodyNode);
+        analyzeReturns(bodyNode);
     }
 
     return {
