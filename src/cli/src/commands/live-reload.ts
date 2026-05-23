@@ -63,7 +63,6 @@ interface LiveReloadBuildCommandOptions {
 }
 
 interface LiveReloadDevCommandOptions extends LiveReloadPrepareCommandOptions {
-    extensions?: Array<string>;
     polling?: boolean;
     pollingInterval?: number;
     debounceDelay?: number;
@@ -188,7 +187,6 @@ export async function runLiveReloadDevCommand(
         gmTempRoot: options.gmTempRoot,
         bootstrapConfig: createLiveReloadBootstrapConfig(options),
         watchOptions: {
-            extensions: options.extensions,
             polling: options.polling,
             pollingInterval: options.pollingInterval,
             verbose: options.verbose,
@@ -278,12 +276,6 @@ function createLiveReloadDevSubcommand(): Command {
         .description("Build HTML5 when configured, prepare live reload, start servers, then watch GML files.")
         .argument("[targetPath]", "Directory to watch for changes", process.cwd())
         .addOption(new Option("--gm-temp-root <path>", "Root directory for GameMaker HTML5 temporary outputs."))
-        .addOption(
-            new Option("--extensions <extensions...>", "File extensions to watch").default(
-                [".gml"],
-                "Defaults to .gml; custom extensions are allowed"
-            )
-        )
         .addOption(new Option("--polling", "Use polling instead of native file watching").default(false))
         .addOption(
             new Option("--polling-interval <ms>", "Polling interval in milliseconds")
