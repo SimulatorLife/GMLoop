@@ -1453,6 +1453,30 @@ void test("optimize-math-expressions simplifies trigonometric degree/radian wrap
     assertEquals(result.output, expected);
 });
 
+void test("optimize-math-expressions rewrites pi * (1/180) * angle (reciprocal-first bug regression)", () => {
+    // Regression: sequential findIndex + splice mutates the operands array between
+    // the two findIndex calls. When reciprocalIndex < piIndex (reciprocal appears
+    // before pi in the flattened operands), the second findIndex operates on a
+    // shifted array and fails to locate pi. This leaves operands.length == 2
+    // instead of 1, so the function returns null and the simplification is skipped.
+    //
+    // With pi * (1/180) * angle, left-assoc associativity produces operands
+    // [pi, 1/180, angle]. reciprocalIndex=1, piIndex=0. After splicing pi at 0,
+    // operands becomes [1/180, angle] — pi is gone and the second findIndex finds
+    // nothing.
+    //
+    // The fix collects splice positions first, then removes from high to low index
+    // so later removals are not affected by earlier shifts.
+    // Before the fix: pi * (1/180) * angle was left unchanged (no simplification).
+    // After the fix: pi * (1/180) is correctly rewritten to degtorad(1), yielding
+    // degtorad(1) * angle.
+    const input = "var radians = pi * (1 / 180) * angle;\n";
+    const expected = "var radians = degtorad(1) * angle;\n";
+
+    const result = lintWithRule("optimize-math-expressions", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("optimize-math-expressions handles extreme reciprocals", () => {
     const input = [
         "var tinyDivisor = value / 0.00000000001;",

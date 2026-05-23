@@ -353,14 +353,18 @@ function matchDegreesToRadiansViaReciprocalPi(expression: unknown): unknown {
         return null;
     }
 
-    operands.splice(piIndex, 1);
-
     const reciprocalIndex = operands.findIndex((operand) => isLiteralReciprocalOf180(operand));
     if (reciprocalIndex === -1) {
         return null;
     }
 
-    operands.splice(reciprocalIndex, 1);
+    // Compute splice positions in descending order so that removing earlier indices
+    // does not shift the positions of later removals.
+    const removals = [piIndex, reciprocalIndex].filter((index) => index !== -1).sort((a, b) => b - a);
+
+    for (const index of removals) {
+        operands.splice(index, 1);
+    }
 
     if (operands.length !== 1) {
         return null;
