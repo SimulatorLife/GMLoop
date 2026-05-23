@@ -44,7 +44,7 @@ Lint (`lint --write`) does single-file-scoped semantic/content rewrites (rule-ow
 
 ### 1) Prerequisites
 
-- Node.js `>=22.5.0` (workspace default in `.nvmrc` is `25.0.0`)
+- Node.js `>=25.0.0` (matches the pinned workspace default in `.nvmrc`)
 - pnpm (`corepack enable pnpm`)
 
 ### 2) Clone and install
@@ -60,6 +60,8 @@ pnpm run cli -- --help
 
 Need contributor-focused setup and validation expectations? Continue with [`docs/contributor-onboarding.md`](docs/contributor-onboarding.md).
 For a guided docs tour, start with the [documentation index](docs/README.md).
+
+If you're planning architecture or boundary changes, read [`docs/target-state.md`](docs/target-state.md) before implementing so parser/core/format ownership remains aligned.
 
 ### Format from a local clone
 

@@ -6,7 +6,6 @@ export * from "./cache-validation-policy.js";
 export * from "./concurrency.js";
 export * from "./constants.js";
 export * from "./coordinator.js";
-export * from "./defaults.js";
 export * from "./fs-facade.js";
 export * from "./gml-parser-facade.js";
 export * from "./identifier-roles.js";

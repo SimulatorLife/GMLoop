@@ -17,6 +17,7 @@ checks.
 ## 2. Install dependencies
 
 ```bash
+git submodule update --init --recursive
 nvm use
 pnpm install
 ```
@@ -90,6 +91,10 @@ scripting automation, and fall back to `pnpm run cli -- --help` for the global
 command inventory. The global CLI help also notes that passing just a file or
 directory path runs the `format` command implicitly, which is useful for quick
 one-off formatting checks.
+
+Before large structural changes, review [`docs/target-state.md`](target-state.md)
+to keep parser/core/format ownership boundaries and workspace API rules aligned
+with project expectations.
 
 When you're ready to try the wrapper against a project, provide the target
 directory explicitly so the command has GameMaker sources to process:
