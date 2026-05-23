@@ -108,8 +108,8 @@ importers:
         specifier: ^2
         version: 2.10.0(eslint@10.4.0)
       eslint-plugin-security:
-        specifier: ^3
-        version: 3.0.1
+        specifier: ^4
+        version: 4.0.0
       eslint-plugin-simple-import-sort:
         specifier: ^12
         version: 12.1.1(eslint@10.4.0)
@@ -1346,8 +1346,8 @@ packages:
     peerDependencies:
       eslint: '>=8.44.0'
 
-  eslint-plugin-security@3.0.1:
-    resolution: {integrity: sha512-XjVGBhtDZJfyuhIxnQ/WMm385RbX3DBu7H1J7HNNhmB2tnGxMeqVSnYv79oAj992ayvIBZghsymwkYFS6cGH4Q==}
+  eslint-plugin-security@4.0.0:
+    resolution: {integrity: sha512-tfuQT8K/Li1ZxhFzyD8wPIKtlzZxqBcPr9q0jFMQ77wWAbKBVEhaMPVQRTMTvCMUDhwBe5vPVqQPwAGk/ASfxQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
   eslint-plugin-simple-import-sort@12.1.1:
@@ -3545,7 +3545,7 @@ snapshots:
       regexp-ast-analysis: 0.7.1
       scslre: 0.3.0
 
-  eslint-plugin-security@3.0.1:
+  eslint-plugin-security@4.0.0:
     dependencies:
       safe-regex: 2.1.1
 
