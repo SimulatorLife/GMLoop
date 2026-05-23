@@ -68,7 +68,7 @@ import {
     calculateElapsedNanoseconds,
     formatElapsedNanosecondsAsMilliseconds,
     readMonotonicNanoseconds
-} from "../shared/timing/elapsed-time.js";
+} from "../shared/timing/verbose-timing.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
 import {
