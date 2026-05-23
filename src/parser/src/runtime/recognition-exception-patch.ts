@@ -248,6 +248,20 @@ function ensureStartToken(
 
 let isPatched = false;
 
+/**
+ * Installs runtime guards that normalize ANTLR recognition exceptions.
+ *
+ * @remarks
+ * The patch is intentionally idempotent because parser modules call this during
+ * import-time setup. Reapplying `Symbol.hasInstance` or
+ * `reportNoViableAlternative` wrappers would stack behavior and distort parser
+ * diagnostics, so repeated calls become no-ops after the first successful
+ * installation.
+ *
+ * @returns {void}
+ *          Returns immediately when ANTLR's runtime constructors are missing or
+ *          when the guard has already been installed for this process.
+ */
 export function installRecognitionExceptionLikeGuard() {
     if (isPatched) {
         return;
