@@ -5,6 +5,7 @@ import { GmPlaygroundPanel } from "../src/app/components/gm-playground-panel.js"
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../src/app/playground-default-gml.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
+import type { GraphVisualizationProjectConfigurationCatalog } from "../src/graph/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
 
 class TestableGmPlaygroundPanel extends GmPlaygroundPanel {
@@ -54,6 +55,74 @@ function createMockState(): GraphVisualizationUiState {
         mcpServerStatus: "not-started",
         pendingActionCount: 0,
         searchQuery: ""
+    };
+}
+
+function createMockProjectConfigurationCatalog(): GraphVisualizationProjectConfigurationCatalog {
+    return {
+        format: {
+            entries: [
+                {
+                    description: "Preferred maximum line width for formatting decisions.",
+                    name: "printWidth",
+                    source: "default",
+                    value: 100
+                }
+            ]
+        },
+        gameMakerCli: {
+            available: false,
+            cliCommands: [],
+            error: null,
+            invocation: null,
+            mcpServer: {
+                available: false,
+                error: null,
+                name: null,
+                projectPath: null,
+                serverId: null,
+                sourcePath: null,
+                version: null
+            },
+            mcpTools: [],
+            version: null
+        },
+        githubRepositoryUrl: "",
+        gmloop: {
+            configPath: null,
+            exists: false,
+            projectRoot: "/tmp/test",
+            rawConfig: {}
+        },
+        lint: {
+            rules: [
+                {
+                    description: "No constructor assignment.",
+                    fixable: "code",
+                    level: "error",
+                    options: {},
+                    ruleId: "@gmloop/no-constructor-assignment"
+                }
+            ],
+            rulesets: [
+                {
+                    name: "recommended",
+                    ruleIds: ["@gmloop/no-constructor-assignment"]
+                }
+            ],
+            ruleset: null
+        },
+        refactor: {
+            codemods: [
+                {
+                    config: {},
+                    description: "Legacy test codemod",
+                    enabled: true,
+                    id: "legacy-codemod",
+                    requiresSemanticProjectIndex: false
+                }
+            ]
+        }
     };
 }
 
@@ -107,71 +176,7 @@ void test("playground panel toolbar keeps rule sections out of the top bar", () 
     const panel = new TestableGmPlaygroundPanel();
     panel.model = {
         ...createMockModel(),
-        projectConfigurationCatalog: {
-            format: {
-                entries: [
-                    {
-                        description: "Preferred maximum line width for formatting decisions.",
-                        name: "printWidth",
-                        source: "default",
-                        value: 100
-                    }
-                ]
-            },
-            gameMakerCli: {
-                available: false,
-                cliCommands: [],
-                error: null,
-                invocation: null,
-                mcpServer: {
-                    available: false,
-                    error: null,
-                    name: null,
-                    projectPath: null,
-                    serverId: null,
-                    sourcePath: null,
-                    version: null
-                },
-                mcpTools: [],
-                version: null
-            },
-            githubRepositoryUrl: "",
-            gmloop: {
-                configPath: null,
-                exists: false,
-                projectRoot: "/tmp/test",
-                rawConfig: {}
-            },
-            lint: {
-                rules: [
-                    {
-                        description: "No constructor assignment.",
-                        fixable: "code",
-                        level: "error",
-                        options: {},
-                        ruleId: "@gmloop/no-constructor-assignment"
-                    }
-                ],
-                rulesets: [
-                    {
-                        name: "recommended",
-                        ruleIds: ["@gmloop/no-constructor-assignment"]
-                    }
-                ],
-                ruleset: null
-            },
-            refactor: {
-                codemods: [
-                    {
-                        config: {},
-                        description: "Legacy test codemod",
-                        enabled: true,
-                        id: "legacy-codemod",
-                        requiresSemanticProjectIndex: false
-                    }
-                ]
-            }
-        }
+        projectConfigurationCatalog: createMockProjectConfigurationCatalog()
     };
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
@@ -228,71 +233,7 @@ void test("playground panel renders format/lint/codemod detail sections", () => 
     const panel = new TestableGmPlaygroundPanel();
     panel.model = {
         ...createMockModel(),
-        projectConfigurationCatalog: {
-            format: {
-                entries: [
-                    {
-                        description: "Preferred maximum line width for formatting decisions.",
-                        name: "printWidth",
-                        source: "default",
-                        value: 100
-                    }
-                ]
-            },
-            gameMakerCli: {
-                available: false,
-                cliCommands: [],
-                error: null,
-                invocation: null,
-                mcpServer: {
-                    available: false,
-                    error: null,
-                    name: null,
-                    projectPath: null,
-                    serverId: null,
-                    sourcePath: null,
-                    version: null
-                },
-                mcpTools: [],
-                version: null
-            },
-            githubRepositoryUrl: "",
-            gmloop: {
-                configPath: null,
-                exists: false,
-                projectRoot: "/tmp/test",
-                rawConfig: {}
-            },
-            lint: {
-                rules: [
-                    {
-                        description: "No constructor assignment.",
-                        fixable: "code",
-                        level: "error",
-                        options: {},
-                        ruleId: "@gmloop/no-constructor-assignment"
-                    }
-                ],
-                rulesets: [
-                    {
-                        name: "recommended",
-                        ruleIds: ["@gmloop/no-constructor-assignment"]
-                    }
-                ],
-                ruleset: null
-            },
-            refactor: {
-                codemods: [
-                    {
-                        config: {},
-                        description: "Legacy test codemod",
-                        enabled: true,
-                        id: "legacy-codemod",
-                        requiresSemanticProjectIndex: false
-                    }
-                ]
-            }
-        }
+        projectConfigurationCatalog: createMockProjectConfigurationCatalog()
     };
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
