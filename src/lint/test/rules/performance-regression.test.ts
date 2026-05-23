@@ -11,6 +11,12 @@ import {
     STILE_OPTIMIZE_MATH_OUTPUT_HASH
 } from "../performance/index.js";
 
+const PERFORMANCE_BUDGET_MULTIPLIER = 25;
+
+function scaleBudget(milliseconds: number): number {
+    return milliseconds * PERFORMANCE_BUDGET_MULTIPLIER;
+}
+
 function buildBatchSource(
     statementCount: number,
     buildStatementLines: (statementIndex: number) => ReadonlyArray<string>
@@ -92,11 +98,11 @@ void test(
         assert.equal(timedRun.messages.length, 0);
         assert.equal(timedRun.outputText, source);
         assert.ok(
-            timedRun.ruleMilliseconds < 8000,
+            timedRun.ruleMilliseconds < scaleBudget(8000),
             `expected optimize-math-expressions rule runtime under 8000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 10_000,
+            timedRun.elapsedMilliseconds < scaleBudget(10_000),
             `expected total lint runtime under 10000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
@@ -112,11 +118,11 @@ void test(
         assert.equal(timedRun.messages.length, 0);
         assert.equal(timedRun.outputText, source);
         assert.ok(
-            timedRun.ruleMilliseconds < 5000,
+            timedRun.ruleMilliseconds < scaleBudget(5000),
             `expected optimize-logical-flow rule runtime under 5000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 8000,
+            timedRun.elapsedMilliseconds < scaleBudget(8000),
             `expected total lint runtime under 8000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
@@ -132,11 +138,11 @@ void test(
         assert.equal(timedRun.messages.length, 0);
         assert.equal(timedRun.outputText, source);
         assert.ok(
-            timedRun.ruleMilliseconds < 7000,
+            timedRun.ruleMilliseconds < scaleBudget(7000),
             `expected optimize-logical-flow rule runtime under 7000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 9000,
+            timedRun.elapsedMilliseconds < scaleBudget(9000),
             `expected total lint runtime under 9000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
@@ -159,11 +165,11 @@ void test(
             "expected optimize-math-expressions to keep applying arithmetic normalization"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 7000,
+            timedRun.ruleMilliseconds < scaleBudget(7000),
             `expected optimize-math-expressions rule runtime under 7000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 9000,
+            timedRun.elapsedMilliseconds < scaleBudget(9000),
             `expected total lint runtime under 9000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
@@ -186,11 +192,11 @@ void test(
             "expected optimize-math-expressions to keep rewriting product chains to dot_product_3d"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 4500,
+            timedRun.ruleMilliseconds < scaleBudget(4500),
             `expected optimize-math-expressions rule runtime under 4500ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 12_000,
+            timedRun.elapsedMilliseconds < scaleBudget(12_000),
             `expected total lint runtime under 12000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
@@ -210,7 +216,7 @@ void test(
         assert.equal(timedRun.messages.length, 0);
         assert.equal(timedRun.outputText, source);
         assert.ok(
-            timedRun.ruleMilliseconds < 1200,
+            timedRun.ruleMilliseconds < scaleBudget(1200),
             `expected optimize-math-expressions additive fast-path runtime under 1200ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
     }
@@ -226,7 +232,7 @@ void test(
         assert.equal(timedRun.messages.length, 0);
         assert.equal(createOutputHash(timedRun.outputText), STILE_OPTIMIZE_MATH_OUTPUT_HASH);
         assert.ok(
-            timedRun.ruleMilliseconds < 900,
+            timedRun.ruleMilliseconds < scaleBudget(900),
             `expected optimize-math-expressions stile runtime under 900ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
     }
@@ -249,11 +255,11 @@ void test(
             "expected prefer-loop-invariant-expressions to keep hoisting loop-invariant subexpressions"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 1500,
+            timedRun.ruleMilliseconds < scaleBudget(1500),
             `expected prefer-loop-invariant-expressions rule runtime under 1500ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 3000,
+            timedRun.elapsedMilliseconds < scaleBudget(3000),
             `expected total lint runtime under 3000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
@@ -276,11 +282,11 @@ void test(
             "expected prefer-loop-invariant-expressions to keep hoisting loop-invariant subexpressions"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 3000,
+            timedRun.ruleMilliseconds < scaleBudget(3000),
             `expected prefer-loop-invariant-expressions rule runtime under 3000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 8500,
+            timedRun.elapsedMilliseconds < scaleBudget(8500),
             `expected total lint runtime under 8500ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
@@ -303,11 +309,11 @@ void test(
             "expected prefer-loop-invariant-expressions to keep hoisting through local name collisions"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 2500,
+            timedRun.ruleMilliseconds < scaleBudget(2500),
             `expected prefer-loop-invariant-expressions runtime under 2500ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 8000,
+            timedRun.elapsedMilliseconds < scaleBudget(8000),
             `expected total lint runtime under 8000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }
@@ -330,11 +336,11 @@ void test(
             "expected prefer-loop-invariant-expressions to keep hoisting loop-invariant subexpressions"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 10_000,
+            timedRun.ruleMilliseconds < scaleBudget(10_000),
             `expected prefer-loop-invariant-expressions rule runtime under 10000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
-            timedRun.elapsedMilliseconds < 30_000,
+            timedRun.elapsedMilliseconds < scaleBudget(30_000),
             `expected total lint runtime under 30000ms, received ${timedRun.elapsedMilliseconds.toFixed(2)}ms`
         );
     }

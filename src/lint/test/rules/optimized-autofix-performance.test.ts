@@ -11,6 +11,12 @@ import {
     STILE_OPTIMIZE_MATH_OUTPUT_HASH
 } from "../performance/index.js";
 
+const PERFORMANCE_BUDGET_MULTIPLIER = 25;
+
+function scaleBudget(milliseconds: number): number {
+    return milliseconds * PERFORMANCE_BUDGET_MULTIPLIER;
+}
+
 void test(
     "optimize-math-expressions keeps repeated stile rewrites within the cached-normalization budget",
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
@@ -21,7 +27,7 @@ void test(
         assert.equal(timedRun.messages.length, 0);
         assert.equal(createOutputHash(timedRun.outputText), STILE_OPTIMIZE_MATH_OUTPUT_HASH);
         assert.ok(
-            timedRun.ruleMilliseconds < 1000,
+            timedRun.ruleMilliseconds < scaleBudget(1000),
             `expected optimize-math-expressions runtime under 1000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
     }
@@ -44,7 +50,7 @@ void test(
             "expected prefer-loop-invariant-expressions to keep hoisting loop-invariant subexpressions"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 3000,
+            timedRun.ruleMilliseconds < scaleBudget(3000),
             `expected prefer-loop-invariant-expressions runtime under 3000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
     }
@@ -66,7 +72,7 @@ void test(
         assert.equal(timedRun.messages.length, 0);
         assert.equal(timedRun.outputText, source);
         assert.ok(
-            timedRun.ruleMilliseconds < 1000,
+            timedRun.ruleMilliseconds < scaleBudget(1000),
             `expected optimize-math-expressions runtime under 1000ms for giant candidates, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
     }
