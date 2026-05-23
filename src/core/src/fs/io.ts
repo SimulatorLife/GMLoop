@@ -193,15 +193,19 @@ export function writeTextFileSync(filePath: string, content: string): void {
  * @returns {Promise<Array<string>>} Stable array of directory entries,
  *          ordered according to the underlying iterator.
  */
-export async function safeReaddir(fsFacade: FileSystemDirectoryReader, directoryPath: string): Promise<Array<string>> {
+async function runDirectoryReadWithMissingFallback<TResult>(readDirectory: () => Promise<TResult>): Promise<TResult> {
     try {
-        return toArrayFromIterable(await fsFacade.readDir(directoryPath));
+        return await readDirectory();
     } catch (error) {
         if (isErrorWithCode(error, "ENOENT", "ENOTDIR")) {
-            return [];
+            return [] as TResult;
         }
         throw error;
     }
+}
+
+export function safeReaddir(fsFacade: FileSystemDirectoryReader, directoryPath: string): Promise<Array<string>> {
+    return runDirectoryReadWithMissingFallback(async () => toArrayFromIterable(await fsFacade.readDir(directoryPath)));
 }
 
 /**
@@ -240,18 +244,8 @@ export interface FileSystemDirentReader {
  * @returns {Promise<Array<FileDirent>>} Stable array of directory entries,
  *          ordered according to the underlying iterator.
  */
-export async function safeReaddirDirent(
-    fsFacade: FileSystemDirentReader,
-    directoryPath: string
-): Promise<FileDirent[]> {
-    try {
-        return await fsFacade.readDir(directoryPath, { withFileTypes: true });
-    } catch (error) {
-        if (isErrorWithCode(error, "ENOENT", "ENOTDIR")) {
-            return [];
-        }
-        throw error;
-    }
+export function safeReaddirDirent(fsFacade: FileSystemDirentReader, directoryPath: string): Promise<FileDirent[]> {
+    return runDirectoryReadWithMissingFallback(() => fsFacade.readDir(directoryPath, { withFileTypes: true }));
 }
 
 /**
