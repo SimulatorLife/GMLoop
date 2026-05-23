@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import type { TestContext } from "node:test";
+import test, { type TestContext } from "node:test";
 
 import { UI } from "@gmloop/ui";
 
