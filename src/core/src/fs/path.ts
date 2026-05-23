@@ -17,6 +17,8 @@ const WINDOWS_DRIVE_ROOT_PATTERN = /^[A-Za-z]:\\$/;
 const WINDOWS_DRIVE_ROOT_WITH_OPTIONAL_SEPARATOR_PATTERN = /^(?:[A-Za-z]:)\\?$/;
 const UNC_SHARE_ROOT_PATTERN = /^\\\\[^\\]+\\[^\\]+$/;
 const UNC_SHARE_ROOT_WITH_TRAILING_SEPARATOR_PATTERN = /^\\\\[^\\]+\\[^\\]+\\$/;
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u;
+const WINDOWS_UNC_PATH_PATTERN = /^[\\/]{2}[^/\\]+[\\/][^/\\]+/u;
 
 /**
  * Replace any Windows-style backslashes with forward slashes so downstream
@@ -58,6 +60,42 @@ export function fromPosixPath(inputPath) {
 }
 
 /**
+ * Report whether a path is absolute in either the current platform syntax or
+ * Windows absolute/UNC syntax.
+ *
+ * @param {string} candidate Raw path candidate.
+ * @returns {boolean} Whether the candidate is already absolute.
+ */
+export function isPortableAbsolutePath(candidate: string): boolean {
+    return (
+        path.isAbsolute(candidate) ||
+        WINDOWS_ABSOLUTE_PATH_PATTERN.test(candidate) ||
+        WINDOWS_UNC_PATH_PATTERN.test(candidate)
+    );
+}
+
+/**
+ * Resolve a path candidate to an absolute path while preserving Windows
+ * absolute and UNC semantics on non-Windows hosts.
+ *
+ * Node's POSIX resolver treats values such as `C:\project` and
+ * `\\server\share` as relative filenames when the process is not running on
+ * Windows. This helper selects the Win32 resolver only for paths that are
+ * already absolute in Windows syntax, while keeping normal relative-path
+ * resolution tied to the current platform.
+ *
+ * @param {string} candidate Raw path candidate.
+ * @returns {string} Absolute path resolved with the matching platform flavor.
+ */
+export function resolvePortableAbsolutePath(candidate: string): string {
+    if (WINDOWS_ABSOLUTE_PATH_PATTERN.test(candidate) || WINDOWS_UNC_PATH_PATTERN.test(candidate)) {
+        return path.win32.resolve(candidate);
+    }
+
+    return path.resolve(candidate);
+}
+
+/**
  * Resolve the relative path from {@link parentPath} to {@link childPath} when
  * the child resides within the parent directory tree.
  *
@@ -76,7 +114,10 @@ export function resolveContainedRelativePath(childPath, parentPath) {
         return null;
     }
 
-    const relative = path.relative(parentPath, childPath);
+    const shouldUseWin32Relative = isWindowsLikeBoundaryPath(childPath) || isWindowsLikeBoundaryPath(parentPath);
+    const relative = shouldUseWin32Relative
+        ? path.win32.relative(normalizeBoundarySeparators(parentPath), normalizeBoundarySeparators(childPath))
+        : path.relative(parentPath, childPath);
 
     if (relative === "") {
         return "";

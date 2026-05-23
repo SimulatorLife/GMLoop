@@ -83,3 +83,5 @@ export {
     IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES_ENV_VAR,
     setDefaultIdentifierCaseOptionStoreMaxEntries
 };
+
+export type { OptionStoreEvictionPolicyDecision, OptionStoreEvictionPolicyInput } from "./option-store-policy.js";

@@ -41,9 +41,7 @@ function classifyVariableDeclarationSyntax(
     parent: unknown,
     key: string | number | null
 ): ParsedLocalNamingCategory | null {
-    const declarationKind = Core.getVariableDeclarationKind(
-        node as Parameters<typeof Core.getVariableDeclarationKind>[0]
-    );
+    const declarationKind = Core.getVariableDeclarationKind(node);
     if (declarationKind === "static") {
         return "staticVariable";
     }

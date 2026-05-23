@@ -34,12 +34,7 @@ export interface SemanticOracleOptions {
  * CallExpression, which may be any GML node type at runtime.
  */
 function hasIdentifierMetadata(value: unknown): value is IdentifierMetadata {
-    return (
-        typeof value === "object" &&
-        value !== null &&
-        "name" in value &&
-        typeof (value as { name: unknown }).name === "string"
-    );
+    return typeof value === "object" && value !== null && "name" in value && typeof value.name === "string";
 }
 
 /**
@@ -101,6 +96,9 @@ class DefaultSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyzer {
             case "other_field": {
                 return null;
             }
+            default: {
+                return null;
+            }
         }
     }
 
@@ -119,6 +117,9 @@ class DefaultSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyzer {
             }
             case "builtin": {
                 return `gml/macro/${node.object.name}`;
+            }
+            default: {
+                return null;
             }
         }
     }

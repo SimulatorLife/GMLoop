@@ -3683,7 +3683,7 @@ void describe("GmlSemanticBridge tests", () => {
                     "fake.gml": { path: "fake.gml", declarations: [] }
                 },
                 scopes: {}
-            } as any,
+            },
             "/fake/path"
         );
 

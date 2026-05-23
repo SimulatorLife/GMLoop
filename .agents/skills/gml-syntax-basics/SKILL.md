@@ -10,6 +10,22 @@ GML is syntactically similar to JavaScript ES3, but differs significantly in sem
 
 Treat GML as a JavaScript-like language with the following important differences and extensions.
 
+## Editing GameMaker project files
+
+Do not make changes to `.yy` or `.yyp` files yourself.
+It's very hard to correctly edit these manually!
+
+## GML reserved names
+
+Your own names must avoid clashing with these:
+
+- `score`, `lives`, `health`
+- Position: `x`, `y`
+- Sprite: `sprite_index`, `image_index`, `image_speed`, `image_xscale`, `image_yscale`, `image_angle`, `image_alpha`, `image_blend`
+- Physics: `speed`, `direction`, `friction`, `gravity`, `gravity_direction`
+- Collision: `bbox_left`, `bbox_right`, `bbox_top`, `bbox_bottom`
+- Instance: `id`, `object_index`, `layer`, `depth`, `visible`, `persistent`
+
 ## Object Model & Types
 
 * GML uses `self` instead of `this`
@@ -17,6 +33,12 @@ Treat GML as a JavaScript-like language with the following important differences
 * GML calls numbers "reals"
 * GML uses `pointer_null` instead of `null`
 * GML uses lowercase `infinity` instead of `Infinity`
+
+## GML Naming conventions
+
+- Use `snake_case` for all variables and functions
+- Prefix local variables with `_` (e.g., `var _temp_value`, `var _effect`)
+- Prefix resource names based on their type, e.g. obj_player, spr_player, etc.
 
 ## Type & Instance Checks
 

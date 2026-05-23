@@ -5,12 +5,7 @@ import { sym } from "./scip.js";
  * Type guard to check if a value is an identifier metadata object.
  */
 function isIdentifierMetadata(value: unknown): value is { name: string; isGlobalIdentifier?: boolean } {
-    return (
-        typeof value === "object" &&
-        value !== null &&
-        "name" in value &&
-        typeof (value as { name: unknown }).name === "string"
-    );
+    return typeof value === "object" && value !== null && "name" in value && typeof value.name === "string";
 }
 
 /**
@@ -18,13 +13,13 @@ function isIdentifierMetadata(value: unknown): value is { name: string; isGlobal
  */
 function getClassifications(declaration: unknown): string[] | undefined {
     if (typeof declaration !== "object" || declaration === null) {
-        return undefined as undefined;
+        return undefined;
     }
 
     const classifications = (declaration as Record<string, unknown>).classifications;
 
     if (!Array.isArray(classifications)) {
-        return undefined as undefined;
+        return undefined;
     }
 
     return classifications as string[];

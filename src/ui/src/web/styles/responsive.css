@@ -25,6 +25,8 @@
 
   .loaded-target-stack {
     min-width: 0;
+    grid-template-columns: 1fr;
+    border-radius: 18px;
   }
 
   #search {
@@ -40,6 +42,53 @@
   .toolbar-control-group,
   .toolbar-search-group {
     width: 100%;
+  }
+
+  .toolbar-control-group {
+    flex-wrap: wrap;
+  }
+
+  .playground-toolbar {
+    align-items: stretch;
+  }
+
+  .playground-controls-toggle,
+  .view-selector {
+    width: 100%;
+  }
+
+  .view-option {
+    flex: 1;
+  }
+
+  .playground-layout,
+  .playground-layout.controls-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .playground-controls-panel {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 2;
+    width: min(340px, 92vw);
+    max-width: 92vw;
+    border-right: 1px solid var(--gm-border-strong);
+    box-shadow: 16px 0 36px rgba(0, 0, 0, 0.34);
+    transform: translateX(0);
+    transition: transform 180ms ease;
+  }
+
+  .playground-layout.controls-collapsed .playground-controls-panel {
+    transform: translateX(-100%);
+    pointer-events: none;
+  }
+
+  .playground-layout.controls-collapsed .playground-controls-panel::before {
+    content: none;
+  }
+
+  .playground-layout.controls-collapsed .playground-controls-body {
+    visibility: visible;
   }
 
   .playground-main {

@@ -36,7 +36,7 @@ void describe("generate-gml-identifiers", () => {
         });
 
         void it("treats null as a nullish value that falls back to current", () => {
-            assert.equal(applyFirstWin(null as unknown as string, "current"), "current");
+            assert.equal(applyFirstWin(null, "current"), "current");
         });
 
         void it("treats false as a defined value", () => {

@@ -4,7 +4,6 @@
     "rootDir": ".",
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "baseUrl": ".",
     "paths": {
       "#fixture-test/format": ["../src/format/test/index.ts"],
       "#fixture-test/lint": ["../src/lint/test/rules/index.ts"],

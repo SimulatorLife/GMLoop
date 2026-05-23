@@ -9,7 +9,7 @@ import { Core } from "@gmloop/core";
 import {
     PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE,
     PROJECT_INDEX_GML_CONCURRENCY_BASELINE
-} from "../project-index/defaults.js";
+} from "../project-index/constants.js";
 import { getIdentifierCaseStyleMetadata } from "./identifier-case-utils.js";
 import { DEFAULT_IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES } from "./option-store-defaults.js";
 

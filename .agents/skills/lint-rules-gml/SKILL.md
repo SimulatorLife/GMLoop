@@ -26,7 +26,7 @@ Lint owns:
 
 - ESLint v9 language integration for GML
 - rule metadata, messages, diagnostics, and docs surfaced through rule catalogs
-- local single-file autofixes
+- local single-file autofixes. **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
 - safe token-based fixes that can run before full AST success when explicitly designed
 - content-aware single-file rewrites such as doc-comment normalization
 - parser services that expose GML-specific metadata to rules
@@ -37,8 +37,9 @@ Lint does not own:
 - project graph mutation
 - `.yy` or `.yyp` metadata updates
 - project-wide rename planning
-- formatter layout decisions
+- formatter layout decisions. **The formatter never repairs invalid syntax and only formats valid AST.**
 - transpilation or runtime patching
+- recovering from non-parseable syntax; if the file cannot be parsed into an AST, ESLint rules usually do not run because the parser fails before rule traversal starts. **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 
 If a rule needs global correctness, emit a diagnostic and point to a refactor workflow instead of applying a risky autofix.
 

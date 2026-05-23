@@ -92,11 +92,7 @@ void describe("Watch command file read errors", () => {
             globalThis,
             "setTimeout",
             ((handler: (...args: Array<unknown>) => void, timeout?: number, ...args: Array<unknown>) => {
-                const timeoutId = originalSetTimeout(
-                    handler as (...handlerArgs: Array<unknown>) => void,
-                    timeout,
-                    ...args
-                );
+                const timeoutId = originalSetTimeout(handler, timeout, ...args);
                 if (timeout === DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS) {
                     retryTimerIds.add(timeoutId);
                     originalSetTimeout(() => {

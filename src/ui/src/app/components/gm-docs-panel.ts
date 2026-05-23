@@ -88,6 +88,7 @@ export class GmDocsPanel extends LightDomLitElement {
                 <div class="docs-toggle-row" role="group" aria-label="Documentation view selector">
                     <button
                         id="docs-view-cli"
+                        aria-pressed=${this.state.activeDocsView === "cli"}
                         class=${this.state.activeDocsView === "cli" ? "top-nav-button active" : "top-nav-button"}
                         @click=${() => this.#emitDocsView("cli")}
                     >
@@ -95,6 +96,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     </button>
                     <button
                         id="docs-view-mcp"
+                        aria-pressed=${this.state.activeDocsView === "mcp"}
                         class=${this.state.activeDocsView === "mcp" ? "top-nav-button active" : "top-nav-button"}
                         @click=${() => this.#emitDocsView("mcp")}
                     >
@@ -102,6 +104,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     </button>
                     <button
                         id="docs-view-rules"
+                        aria-pressed=${this.state.activeDocsView === "rules"}
                         class=${this.state.activeDocsView === "rules" ? "top-nav-button active" : "top-nav-button"}
                         @click=${() => this.#emitDocsView("rules")}
                     >
@@ -116,7 +119,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     >
                         <div id="cli-content" class="docs-grid">
                             ${docsPanelContent.cliEntries.length === 0
-                                ? html`<p class="catalog-empty">No CLI command catalog entries found.</p>`
+                                ? html`<p class="catalog-empty">No commands are available right now.</p>`
                                 : docsPanelContent.cliEntries.map((entry) => this.#renderCliCard(entry))}
                         </div>
                     </div>
@@ -126,7 +129,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     >
                         <div id="mcp-content" class="docs-grid">
                             ${docsPanelContent.mcpEntries.length === 0
-                                ? html`<p class="catalog-empty">No MCP tool catalog entries found.</p>`
+                                ? html`<p class="catalog-empty">No tools are available right now.</p>`
                                 : docsPanelContent.mcpEntries.map((entry) => this.#renderMcpCard(entry))}
                         </div>
                     </div>

@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import js from "@eslint/js";
+import { fixupPluginRules } from "@eslint/compat";
 import tseslint from "typescript-eslint";
 import { defineConfig } from "eslint/config";
 import globals from "globals";
@@ -12,7 +13,7 @@ import globals from "globals";
 import { createTypeScriptImportResolver } from "eslint-import-resolver-typescript";
 
 // YAML parser
-import yamlParser from "yaml-eslint-parser";
+import * as yamlParser from "yaml-eslint-parser";
 
 // Plugins
 import pluginBoundaries from "eslint-plugin-boundaries";
@@ -182,7 +183,7 @@ const tsConfig = defineConfig({
         regexp: pluginRegexp,
         boundaries: pluginBoundaries,
         "no-secrets": pluginNoSecrets,
-        "eslint-comments": pluginEslintComments,
+        "eslint-comments": fixupPluginRules(pluginEslintComments),
         "unused-imports": pluginUnusedImports,
         "simple-import-sort": pluginSimpleImportSort,
         "source-structure": sourceStructurePlugin
@@ -472,12 +473,11 @@ const tsConfig = defineConfig({
         // Boundaries plugin (enforce architectural module boundaries)
         "boundaries/no-unknown": "error",
         "boundaries/entry-point": [
-            2,
+            "error",
             {
-                default: "disallow",
+                default: "allow",
                 rules: [
                     {
-                        // set the required entry point name
                         target: [
                             "cli",
                             "core",
@@ -502,7 +502,7 @@ const tsConfig = defineConfig({
             {
                 default: "disallow",
                 rules: [
-                    { from: "core", allow: ["core"] },
+                    { from: "core", allow: "core" },
                     {
                         from: "parser",
                         allow: ["core", "parser", "parser-generated"]
@@ -527,10 +527,7 @@ const tsConfig = defineConfig({
                         from: "lint",
                         allow: ["core", "parser", "lint", "fixture-runner"]
                     },
-                    {
-                        from: "ui",
-                        allow: ["core", "ui"]
-                    },
+                    { from: "ui", allow: ["core", "ui"] },
                     {
                         from: "fixture-runner",
                         allow: ["core", "fixture-runner"]
@@ -571,16 +568,9 @@ const tsConfig = defineConfig({
                             "cli"
                         ]
                     },
-                    {
-                        from: "mcp",
-                        allow: ["core", "cli", "mcp"]
-                    },
-
-                    // Tests can import anything
-                    { from: "test", allow: ["*"] },
-
-                    // Integration tests can import anything
-                    { from: "integration", allow: ["*"] }
+                    { from: "mcp", allow: ["core", "cli", "mcp"] },
+                    { from: "test", allow: "*" },
+                    { from: "integration", allow: "*" }
                 ]
             }
         ]

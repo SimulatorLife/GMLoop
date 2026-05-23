@@ -10,7 +10,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
-import type { EventPatch, ScriptPatch, Transpiler } from "@gmloop/transpiler";
+import { type EventPatch, type ScriptPatch, type Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
 
 import { formatCliError } from "../../cli-core/index.js";
 import type { PatchBroadcaster } from "../websocket/server.js";
@@ -98,6 +98,15 @@ function resolveSyntaxRecoveryHint(message: string): string | undefined {
     return undefined;
 }
 
+/**
+ * Classifies a transpilation error using structured error codes when available,
+ * falling back to string-based heuristics for backward compatibility.
+ *
+ * This function first checks for a TranspilerError with a known error code
+ * (PARSE_ERROR, VALIDATION_ERROR, REQUEST_ERROR, INTERNAL_ERROR). If found,
+ * the error is classified based on the code directly. If not, it falls back
+ * to the original string-matching logic for errors from other sources.
+ */
 function classifyTranspilationError(error: unknown): {
     category: ErrorCategory;
     message: string;
@@ -111,18 +120,81 @@ function classifyTranspilationError(error: unknown): {
         targetError = error.cause;
     }
 
+    // Classify using structured error codes when available.
+    // This avoids fragile string matching and provides reliable categorization
+    // for errors thrown by the transpiler workspace.
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.PARSE_ERROR)) {
+        // Extract line/column from the cause if it's a GML parse error.
+        if (Core.isGmlParseError(targetError)) {
+            return {
+                category: "syntax",
+                message: targetError.message,
+                line: targetError.line,
+                column: targetError.column,
+                recoveryHint: resolveSyntaxRecoveryHint(targetError.message)
+            };
+        }
+        // Fallback: parse error without location info.
+        return {
+            category: "syntax",
+            message: Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error),
+            recoveryHint: "Check for syntax errors in the GML source."
+        };
+    }
+
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.VALIDATION_ERROR)) {
+        return {
+            category: "validation",
+            message: Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error),
+            recoveryHint:
+                "The transpiler produced invalid output. This may indicate an internal issue. Try simplifying the code."
+        };
+    }
+
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.REQUEST_ERROR)) {
+        return {
+            category: "validation",
+            message: Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error),
+            recoveryHint: "Ensure the file is a valid GML source file."
+        };
+    }
+
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.INTERNAL_ERROR)) {
+        // If the cause is a GML parse error, classify as syntax error.
+        // This handles the common case where the transpiler wraps a parse error.
+        if (Core.isGmlParseError(targetError)) {
+            return {
+                category: "syntax",
+                message: targetError.message,
+                line: targetError.line,
+                column: targetError.column,
+                recoveryHint: resolveSyntaxRecoveryHint(targetError.message)
+            };
+        }
+        // Extract inner message if this is a transpiler-wrapped error.
+        const message = Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error);
+        const causeMatch = /Failed to transpile (?:script|event|closure|expression) [^:]+: (?<inner>.+)$/u.exec(
+            message
+        );
+        const innerMessage = causeMatch?.groups?.inner ?? message;
+        return {
+            category: "internal",
+            message: innerMessage,
+            recoveryHint:
+                "An internal transpilation error occurred. This may be a bug. Check for unsupported GML features."
+        };
+    }
+
+    // Fallback: string-based classification for errors without structured codes.
+    // This handles errors from external sources or pre-structured-error code.
     if (Core.isGmlParseError(targetError)) {
         const syntaxError = targetError;
-        const line = syntaxError.line;
-        const column = syntaxError.column;
-        const recoveryHint = resolveSyntaxRecoveryHint(syntaxError.message);
-
         return {
             category: "syntax",
             message: syntaxError.message,
-            line,
-            column,
-            recoveryHint
+            line: syntaxError.line,
+            column: syntaxError.column,
+            recoveryHint: resolveSyntaxRecoveryHint(syntaxError.message)
         };
     }
 
@@ -227,7 +299,6 @@ export interface PatchHistoryStore {
     patches: Array<PatchSummary>;
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>;
     maxPatchHistory: number;
-    totalPatchCount: number;
 }
 
 /**
@@ -239,6 +310,27 @@ export interface PatchHistoryStore {
 export interface MetricsCollector {
     metrics: Array<TranspilationMetrics>;
     maxPatchHistory: number;
+}
+
+/**
+ * Successful-patch counter.
+ *
+ * Provides an increment-only counter of all successfully emitted patches.
+ * Does not track patch contents; callers that need per-patch details
+ * should consult PatchHistoryStore instead.
+ */
+export interface TranspilationCounter {
+    totalPatchCount: number;
+}
+
+/**
+ * Read-only snapshot of the patch counter for display/monitoring purposes.
+ *
+ * Provides a stable view of the counter without coupling to transpilation
+ * state, metrics tracking, or broadcasting.
+ */
+export interface PatchCounter {
+    readonly totalPatchCount: number;
 }
 
 /**
@@ -273,6 +365,26 @@ export interface ScriptRegistry {
 }
 
 /**
+ * Metrics snapshot for display purposes.
+ *
+ * Provides a read-only view of transpilation metrics without coupling to
+ * patch history, error tracking, or broadcasting operations.
+ */
+export interface MetricsSnapshot {
+    readonly metrics: ReadonlyArray<TranspilationMetrics>;
+}
+
+/**
+ * Errors snapshot for display purposes.
+ *
+ * Provides a read-only view of transpilation errors without coupling to
+ * metrics, patch history, or broadcasting operations.
+ */
+export interface ErrorsSnapshot {
+    readonly errors: ReadonlyArray<TranspilationError>;
+}
+
+/**
  * Complete transpilation context interface.
  *
  * Combines all role-focused interfaces for consumers that need full
@@ -281,8 +393,10 @@ export interface ScriptRegistry {
  * rather than this composite interface when possible.
  */
 export interface TranspilationContext
-    extends TranspilerProvider,
+    extends
+        TranspilerProvider,
         PatchHistoryStore,
+        TranspilationCounter,
         MetricsCollector,
         ErrorCollector,
         PatchBroadcastService,
@@ -297,6 +411,18 @@ export interface TranspilationOptions {
      * the initial scan where the AST was already produced while collecting script names.
      */
     cachedAst?: unknown;
+    /**
+     * Pre-extracted symbol definitions to reuse instead of re-traversing the AST.
+     * When provided alongside `cachedAst`, the symbol walker is skipped entirely,
+     * saving a second full AST traversal during the initial scan.
+     */
+    cachedSymbols?: ReadonlyArray<string>;
+    /**
+     * Pre-extracted symbol references to reuse instead of re-traversing the AST.
+     * When provided alongside `cachedAst`, the reference walker is skipped entirely,
+     * saving a second full AST traversal during the initial scan.
+     */
+    cachedReferences?: ReadonlyArray<string>;
     /**
      * Wall-clock timestamp (Date.now()) recorded when the filesystem change event
      * was first detected. When provided, the transpiler records the end-to-end
@@ -336,13 +462,16 @@ function addToBoundedCollection<T>(collection: Array<T>, item: T, maxSize: numbe
 
 /**
  * Parses GML content and extracts symbols/references when parsing succeeds.
- * Accepts an optional pre-parsed AST to skip the parse step when the caller
- * has already produced the AST (e.g., during the initial file cache build).
+ * Accepts pre-parsed AST and pre-extracted symbols/references to skip redundant
+ * work when the caller has already produced them (e.g., during the initial
+ * startup scan).
  */
 function parseAstAndExtractMetadata(
     content: string,
     filePath: string,
-    preParseAst?: unknown
+    preParseAst?: unknown,
+    preExtractedSymbols?: ReadonlyArray<string>,
+    preExtractedReferences?: ReadonlyArray<string>
 ): ParsedAstExtractionResult {
     try {
         let ast: unknown;
@@ -352,11 +481,18 @@ function parseAstAndExtractMetadata(
         } else {
             ast = preParseAst;
         }
+
+        // Reuse pre-extracted values when available to avoid a second full AST walk.
+        const parsedSymbols =
+            preExtractedSymbols === undefined ? extractSymbolsFromAst(ast, filePath) : Array.from(preExtractedSymbols);
+        const parsedReferences =
+            preExtractedReferences === undefined ? extractReferencesFromAst(ast) : Array.from(preExtractedReferences);
+
         return {
             ast,
             parseError: null,
-            parsedSymbols: extractSymbolsFromAst(ast, filePath),
-            parsedReferences: extractReferencesFromAst(ast)
+            parsedSymbols,
+            parsedReferences
         };
     } catch (error) {
         return {
@@ -493,7 +629,7 @@ export function transpileFile(
     lines: number,
     options: TranspilationOptions
 ): TranspilationResult {
-    const { verbose, quiet, cachedAst, fileChangeDetectedAt } = options;
+    const { verbose, quiet, cachedAst, cachedSymbols, cachedReferences, fileChangeDetectedAt } = options;
     const startTime = performance.now();
 
     try {
@@ -501,7 +637,9 @@ export function transpileFile(
         const { ast, parseError, parsedSymbols, parsedReferences } = parseAstAndExtractMetadata(
             content,
             filePath,
-            cachedAst
+            cachedAst,
+            cachedSymbols,
+            cachedReferences
         );
 
         let patch: RuntimeTranspilerPatch;
@@ -676,10 +814,7 @@ export function transpileFile(
  * Displays transpilation and error statistics.
  */
 export function displayTranspilationStatistics(
-    context: {
-        metrics: ReadonlyArray<TranspilationMetrics>;
-        errors: ReadonlyArray<TranspilationError>;
-    },
+    context: MetricsSnapshot & ErrorsSnapshot,
     verbose: boolean,
     quiet: boolean
 ): void {

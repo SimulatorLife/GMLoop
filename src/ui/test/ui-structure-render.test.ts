@@ -50,13 +50,17 @@ function createMockModel(): GraphVisualizationUiModel {
         },
         documentationCatalogs: null,
         isServerMode: true,
+        lastFixRun: null,
         loadedTarget: {
             activePath: "/tmp/test/project.yyp",
             projectRoot: "/tmp/test",
             selectedPaths: [],
             source: "working-directory"
         },
+        liveReload: null,
+        mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Test GMLoop"
     };
 }
@@ -72,8 +76,12 @@ function createEmptyGraphModel(): GraphVisualizationUiModel {
         },
         documentationCatalogs: null,
         isServerMode: true,
+        lastFixRun: null,
         loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Test GMLoop"
     };
 }
@@ -84,9 +92,19 @@ function createMockState(activePage: GraphVisualizationUiState["activePage"]): G
         activeGraphView: "visual",
         activePage,
         errorMessage: null,
+        fixErrorMessage: null,
+        fixLogLines: [],
+        fixStatus: "idle",
+        isFixPending: false,
+        isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
+        mcpServerStatus: "not-started",
+        pendingActionCount: 0,
         searchQuery: "enemy"
     };
 }
@@ -105,9 +123,13 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.match(rendered, /class="loaded-target-actions"/u);
     assert.equal(Array.from(rendered.matchAll(/id="open-project"/gu)).length, 1);
     assert.match(rendered, /id="open-project"[\s\S]*class="open-button"/u);
-    assert.match(rendered, /class="loaded-path-label">Active<\/span>/u);
-    assert.match(rendered, /class="loaded-path-label">Selected<\/span>/u);
-    assert.match(rendered, /loaded-path-value is-empty/u);
+    assert.match(rendered, /id="manual-link"[\s\S]*href="https:\/\/manual\.gamemaker\.io\/"/u);
+    assert.match(rendered, /id="manual-link"[\s\S]*class="header-icon-link"/u);
+    assert.match(rendered, /id="github-link"[\s\S]*class="header-icon-link"/u);
+    assert.doesNotMatch(rendered, /class="loaded-path-label"/u);
+    assert.doesNotMatch(rendered, /id="loaded-source"/u);
+    assert.doesNotMatch(rendered, /id="loaded-selected"/u);
+    assert.match(rendered, /id="tab-mcp"/u);
 });
 
 void test("graph toolbar renders grouped controls for search, view state, and actions", () => {
@@ -148,14 +170,16 @@ void test("graph toolbar disables graph controls and regenerate without a loaded
     assert.match(rendered, /id="regenerate"[\s\S]*disabled/u);
 });
 
-void test("playground panel renders structural spacer and readable pane status labels", () => {
+void test("playground panel renders controls layout and readable pane status labels", () => {
     const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState("playground");
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /class="playground-toolbar-spacer"/u);
+    assert.match(rendered, /class=playground-layout controls-open/u);
+    assert.match(rendered, /class="playground-controls-panel is-open"/u);
+    assert.match(rendered, /class="playground-main"/u);
     assert.match(rendered, /class="pane-header-status">Writable<\/span>/u);
     assert.match(rendered, /class="pane-header-status">Read-only<\/span>/u);
     assert.doesNotMatch(rendered, /style="/u);
@@ -166,4 +190,16 @@ void test("playground panel source uses class-based error rendering instead of i
 
     assert.match(source, /class="playground-output is-error"/u);
     assert.doesNotMatch(source, /style="color: #ff8080/u);
+});
+
+void test("toolbar stylesheet keeps graph toolbar controls in a full-width horizontal flow", () => {
+    const source = readFileSync(new URL("../../src/web/styles/toolbar.css", import.meta.url), "utf8");
+
+    assert.match(source, /\.page-toolbar\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/u);
+    assert.match(
+        source,
+        /\.toolbar-controls\s*\{[\s\S]*align-items:\s*center;[\s\S]*justify-content:\s*flex-start;[\s\S]*width:\s*100%;/u
+    );
+    assert.match(source, /\.toolbar-control-group\s*\{[\s\S]*flex-wrap:\s*nowrap;/u);
+    assert.match(source, /\.toolbar-search-group\s*\{[\s\S]*flex:\s*1 1 220px;[\s\S]*max-width:\s*360px;/u);
 });

@@ -37,9 +37,29 @@ function createMockModel(): GraphVisualizationUiModel {
         },
         documentationCatalogs: null,
         isServerMode: false,
+        lastFixRun: null,
         loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
         projectConfigurationCatalog: {
             format: { entries: [] },
+            gameMakerCli: {
+                available: false,
+                cliCommands: [],
+                error: null,
+                invocation: null,
+                mcpServer: {
+                    available: false,
+                    error: null,
+                    name: null,
+                    projectPath: null,
+                    serverId: null,
+                    sourcePath: null,
+                    version: null
+                },
+                mcpTools: [],
+                version: null
+            },
             githubRepositoryUrl: "https://github.com/SimulatorLife/GMLoop",
             gmloop: {
                 configPath: "/tmp/.gmloop.json",
@@ -47,9 +67,10 @@ function createMockModel(): GraphVisualizationUiModel {
                 projectRoot: "/tmp/test",
                 rawConfig: {}
             },
-            lint: { rules: [], ruleset: null },
+            lint: { rules: [], rulesets: [], ruleset: null },
             refactor: { codemods: [] }
         },
+        startupState: null,
         title: "Test"
     };
 }
@@ -60,9 +81,19 @@ function createMockState(): GraphVisualizationUiState {
         activeGraphView: "visual",
         activePage: "docs",
         errorMessage: null,
+        fixErrorMessage: null,
+        fixLogLines: [],
+        fixStatus: "idle",
+        isFixPending: false,
+        isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
+        mcpServerStatus: "not-started",
+        pendingActionCount: 0,
         searchQuery: ""
     };
 }
@@ -92,12 +123,15 @@ void test("GmDocsPanel renders docs-toggle-row with aria-label group context", (
     assert.match(rendered, /<div class="docs-toggle-row" role="group" aria-label="Documentation view selector">/u);
 });
 
-void test("GmConfigPanel renders config-toggle-row with aria-label group context", () => {
+void test("GmConfigPanel renders shared view-selector with aria-label group context", () => {
     const panel = new TestableGmConfigPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /<div class="config-toggle-row" role="group" aria-label="Configuration view selector">/u);
+    assert.match(
+        rendered,
+        /<div class="config-view-selector view-selector" role="group" aria-label="Configuration view selector">/u
+    );
 });

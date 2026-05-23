@@ -440,18 +440,15 @@ void test("prepareBatchRenamePlan skips per-symbol impact analyses when disabled
 
 void test("generateTranspilerPatches requires array parameter", async () => {
     const engine = new RefactorEngineClass();
-    await assert.rejects(
-        () => engine.generateTranspilerPatches(null as unknown as Array<HotReloadUpdate>, async () => ""),
-        {
-            name: "TypeError",
-            message: /requires an array/
-        }
-    );
+    await assert.rejects(() => engine.generateTranspilerPatches(null, async () => ""), {
+        name: "TypeError",
+        message: /requires an array/
+    });
 });
 
 void test("generateTranspilerPatches requires readFile function", async () => {
     const engine = new RefactorEngineClass();
-    await assert.rejects(() => engine.generateTranspilerPatches([], null as unknown as never), {
+    await assert.rejects(() => engine.generateTranspilerPatches([], null), {
         name: "TypeError",
         message: /requires a readFile function/
     });

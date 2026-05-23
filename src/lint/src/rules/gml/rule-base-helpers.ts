@@ -798,3 +798,15 @@ export function shouldReportUnsafe(context: Rule.RuleContext): boolean {
     const option = readObjectOption(context).reportUnsafe;
     return option === undefined ? true : option === true;
 }
+
+/**
+ * Unwraps chains of `ParenthesizedExpression` nodes to retrieve the innermost
+ * expression. Returns the original node when no wrapping is present.
+ *
+ * This is a lint-workspace wrapper around `Core.unwrapParenthesizedExpression`.
+ * It accepts a broader input type (`unknown`) to serve call sites that do not
+ * require a fully-typed AST node and that already guard with `isAstNodeRecord`.
+ */
+export function unwrapParenthesizedExpression(node: unknown): unknown {
+    return Core.unwrapParenthesizedExpression(node);
+}

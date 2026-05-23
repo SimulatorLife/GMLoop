@@ -104,7 +104,22 @@ export class GmGraphToolbar extends LightDomLitElement {
             }
             case "4": {
                 event.preventDefault();
+                this.#emitNavigatePage("fix");
+                break;
+            }
+            case "5": {
+                event.preventDefault();
                 this.#emitNavigatePage("playground");
+                break;
+            }
+            case "6": {
+                event.preventDefault();
+                this.#emitNavigatePage("mcp");
+                break;
+            }
+            case "7": {
+                event.preventDefault();
+                this.#emitNavigatePage("live-reload");
                 break;
             }
         }
@@ -209,6 +224,24 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
+    #renderPendingBadge() {
+        if (!this.state || this.state.pendingActionCount === 0) {
+            return null;
+        }
+
+        return html`
+            <span
+                class="pending-badge"
+                aria-label="${this.state.pendingActionCount} background operation${this.state.pendingActionCount > 1
+                    ? "s"
+                    : ""} in progress"
+                role="status"
+            >
+                ${this.state.pendingActionCount}
+            </span>
+        `;
+    }
+
     protected render() {
         if (!this.model || !this.state) {
             return html``;
@@ -221,15 +254,27 @@ export class GmGraphToolbar extends LightDomLitElement {
                   ? "Docs"
                   : this.state.activePage === "config"
                     ? "Config"
-                    : "Playground";
+                    : this.state.activePage === "fix"
+                      ? "Fix"
+                      : this.state.activePage === "playground"
+                        ? "Playground"
+                        : this.state.activePage === "mcp"
+                          ? "MCP"
+                          : "Live Reload";
         const subheading =
             this.state.activePage === "graph"
-                ? "Interactive graph exploration controls for the current graph index."
+                ? "Explore relationships across scripts, objects, events, and other project resources."
                 : this.state.activePage === "docs"
-                  ? "CLI, MCP, and workspace rule catalogs generated from the active workspace."
+                  ? "Browse commands, tools, and rules that can help with your project."
                   : this.state.activePage === "config"
-                    ? "Project and tooling configuration metadata loaded for the active root."
-                    : "Interactive GML playground for parsing, formatting, and rule experiments.";
+                    ? "Review the project settings and tool options currently in use."
+                    : this.state.activePage === "fix"
+                      ? "Run the opened project's gmloop-configured repair workflow."
+                      : this.state.activePage === "playground"
+                        ? "Interactive GML playground for parsing, formatting, and rule experiments."
+                        : this.state.activePage === "mcp"
+                          ? "Check tool access and connection status for integrations."
+                          : "Track live-update activity and recent reload problems.";
         const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const hasLoadedProject = hasLoadedGraphProject(this.model);
 
@@ -309,6 +354,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                                   </button>
                               `
                             : null}
+                        ${this.#renderPendingBadge()}
                     </div>
                 </div>
             </div>

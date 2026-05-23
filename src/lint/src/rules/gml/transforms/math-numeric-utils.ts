@@ -304,9 +304,9 @@ export function isPiIdentifier(node: unknown): boolean {
     const expression = Core.unwrapParenthesizedExpression(node);
     return Boolean(
         expression &&
-            (expression as any).type === IDENTIFIER &&
-            typeof (expression as any).name === "string" &&
-            (expression as any).name.toLowerCase() === "pi"
+        (expression as any).type === IDENTIFIER &&
+        typeof (expression as any).name === "string" &&
+        (expression as any).name.toLowerCase() === "pi"
     );
 }
 

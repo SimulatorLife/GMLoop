@@ -71,7 +71,7 @@ function isFunctionDocTargetNode(node: unknown): node is NodeWithDocComments {
         return true;
     }
 
-    return isFunctionInitializedVariableDeclaration(node as NodeWithDocComments);
+    return isFunctionInitializedVariableDeclaration(node);
 }
 
 function collectFunctionDocTargets(rootNode: unknown): FunctionDocTarget[] {
@@ -194,11 +194,14 @@ function attachFunctionDocCommentToTarget(comment: CommentNodeWithAttachmentFlag
         targetNode.docComments = [];
     }
 
-    const alreadyAttached = targetNode.docComments.includes(comment);
-    if (!alreadyAttached) {
-        targetNode.docComments.push(comment);
+    // Guard against the rare case where the same comment object appears multiple
+    // times in the input array (e.g., via reference duplication). The length
+    // check short-circuits the includes() call for the common empty case.
+    if (targetNode.docComments.length > 0 && targetNode.docComments.includes(comment)) {
+        return;
     }
 
+    targetNode.docComments.push(comment);
     comment._gmlAttachedDocComment = true;
 }
 

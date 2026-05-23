@@ -67,7 +67,7 @@ function makeConstructor(
 }
 
 function makeProgram(body: Record<string, unknown>[]): MutableGameMakerAstNode {
-    return { type: "Program", body } as unknown as MutableGameMakerAstNode;
+    return { type: "Program", body };
 }
 
 void describe("annotateStaticFunctionOverridesTransform", () => {

@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
+import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationDocumentationCatalogs } from "../src/graph/types.js";
-import { renderTemplateValue } from "./render-template-helpers.js";
+import { createButtonAriaPressedPattern, renderTemplateValue } from "./render-template-helpers.js";
 
 class TestableGmDocsPanel extends GmDocsPanel {
     public renderForTest(): unknown {
@@ -45,7 +46,30 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
     };
 }
 
-void test("GmDocsPanel renders the Rules subview and workspace rule catalog content", () => {
+function createDocsPanelState(): GraphVisualizationUiState {
+    return {
+        activeDocsView: "rules",
+        activeGraphView: "visual",
+        activePage: "docs",
+        errorMessage: null,
+        fixErrorMessage: null,
+        fixLogLines: [],
+        fixStatus: "idle",
+        isFixPending: false,
+        isLiveReloadRefreshPending: false,
+        isLiveReloadStartPending: false,
+        isOpenProjectPending: false,
+        isRegeneratePending: false,
+        labelMode: "auto",
+        liveReloadErrorMessage: null,
+        liveReloadStatus: null,
+        mcpServerStatus: "not-started",
+        pendingActionCount: 0,
+        searchQuery: ""
+    };
+}
+
+void test("GmDocsPanel renders the Rules subview and project-facing rule content", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
         data: {
@@ -57,33 +81,32 @@ void test("GmDocsPanel renders the Rules subview and workspace rule catalog cont
         },
         documentationCatalogs: createDocumentationCatalogs(),
         isServerMode: false,
+        lastFixRun: null,
         loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Rules Catalog"
     };
-    panel.state = {
-        activeDocsView: "rules",
-        activeGraphView: "visual",
-        activePage: "docs",
-        errorMessage: null,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
-        labelMode: "auto",
-        searchQuery: ""
-    };
+    panel.state = createDocsPanelState();
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /docs-view-rules/u);
+    assert.match(rendered, createButtonAriaPressedPattern("docs-view-rules", true));
+    assert.match(rendered, createButtonAriaPressedPattern("docs-view-cli", false));
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /Lint Rules/u);
     assert.match(rendered, /Refactor Codemods/u);
     assert.match(rendered, /printWidth/u);
     assert.match(rendered, /gml\/normalize-operators/u);
     assert.match(rendered, /refactor\/globalvar-to-global/u);
+    assert.match(rendered, /<gm-badge[^>]*\.label=fixable/u);
+    assert.doesNotMatch(rendered, /fixable:code/u);
 });
 
-void test("GmDocsPanel renders an empty rules state when workspace rule catalogs are missing", () => {
+void test("GmDocsPanel renders an empty rules state when rule data is unavailable", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
         data: {
@@ -95,23 +118,19 @@ void test("GmDocsPanel renders an empty rules state when workspace rule catalogs
         },
         documentationCatalogs: null,
         isServerMode: false,
+        lastFixRun: null,
         loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
         projectConfigurationCatalog: null,
+        startupState: null,
         title: "Rules Empty State"
     };
-    panel.state = {
-        activeDocsView: "rules",
-        activeGraphView: "visual",
-        activePage: "docs",
-        errorMessage: null,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
-        labelMode: "auto",
-        searchQuery: ""
-    };
+    panel.state = createDocsPanelState();
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /docs-view-rules/u);
-    assert.match(rendered, /No workspace rule catalog entries were provided by the host\./u);
+    assert.match(rendered, createButtonAriaPressedPattern("docs-view-rules", true));
+    assert.match(rendered, /Rules and code actions are not available right now\./u);
 });

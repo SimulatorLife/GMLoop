@@ -142,7 +142,7 @@ function visit(node) {
         return;
     }
 
-    const bodyStatements = Core.getBodyStatements(node as Record<string, unknown>);
+    const bodyStatements = Core.getBodyStatements(node);
     if (bodyStatements.length > 0) {
         condenseWithinStatements(bodyStatements);
     } else if (isNode(node.body)) {

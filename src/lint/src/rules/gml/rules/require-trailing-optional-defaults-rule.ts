@@ -555,7 +555,7 @@ export function rewriteTrailingOptionalDefaultsProgram(sourceText: string, progr
     const callEdits: SourceTextEdit[] = [];
 
     walkAstNodes(programNode, (node) => {
-        if (node?.type === "FunctionDeclaration" || node?.type === "ConstructorDeclaration") {
+        if (Core.isFunctionLikeDeclaration(node)) {
             const edit = rewriteFunctionForOptionalDefaults(sourceText, node);
             if (edit) {
                 functionEdits.push(edit);

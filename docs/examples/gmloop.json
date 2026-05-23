@@ -12,6 +12,7 @@
   },
   "refactor": {
     "codemods": {
+      "docCommentAlignment": {},
       "loopLengthHoisting": {},
       "namingConvention": {
         "rules": {
@@ -83,6 +84,12 @@
           "ps_": "particleSystemResourceName"
         }
       }
+    }
+  },
+  "runtime": {
+    "liveReload": {
+      "html5Output": "build/html5",
+      "gmTempRoot": ".gm-temp/html5"
     }
   },
   "graph": {

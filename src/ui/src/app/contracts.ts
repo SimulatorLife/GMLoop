@@ -1,10 +1,24 @@
 import type {
     GraphVisualizationData,
     GraphVisualizationDocumentationCatalogs,
+    GraphVisualizationLastFixRun,
+    GraphVisualizationLiveReloadModel,
+    GraphVisualizationLiveReloadStatusSnapshot,
     GraphVisualizationLoadedTarget,
+    GraphVisualizationMcpServerStatus,
     GraphVisualizationProjectConfigurationCatalog,
-    GraphVisualizationRenderOptions
+    GraphVisualizationRenderOptions,
+    GraphVisualizationStartupState
 } from "../graph/types.js";
+
+export type GraphVisualizationFixRunResult = Readonly<{
+    logLines: ReadonlyArray<string>;
+    status: "success";
+}>;
+
+export type GraphVisualizationHostMutationResult = Readonly<{
+    changed: boolean;
+}>;
 
 /**
  * Normalized model consumed by the Lit graph visualization UI shell.
@@ -13,8 +27,12 @@ export type GraphVisualizationUiModel = Readonly<{
     data: GraphVisualizationData;
     documentationCatalogs: GraphVisualizationDocumentationCatalogs | null;
     isServerMode: boolean;
+    lastFixRun: GraphVisualizationLastFixRun | null;
     loadedTarget: GraphVisualizationLoadedTarget | null;
+    liveReload: GraphVisualizationLiveReloadModel | null;
+    mcpServerStatus: GraphVisualizationMcpServerStatus;
     projectConfigurationCatalog: GraphVisualizationProjectConfigurationCatalog | null;
+    startupState: GraphVisualizationStartupState | null;
     title: string;
 }>;
 
@@ -23,7 +41,19 @@ export type GraphVisualizationUiModel = Readonly<{
  */
 export type GraphVisualizationUiCallbacks = Readonly<{
     onOpenProject: () => void | Promise<void>;
-    onRegenerate: () => void | Promise<void>;
+    onRegenerate: () =>
+        | GraphVisualizationHostMutationResult
+        | void
+        | Promise<GraphVisualizationHostMutationResult | void>;
+    onRunFix: () => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
+    onStartLiveReload: () =>
+        | GraphVisualizationLiveReloadModel
+        | null
+        | Promise<GraphVisualizationLiveReloadModel | null>;
+    onRefreshLiveReloadStatus: () =>
+        | GraphVisualizationLiveReloadStatusSnapshot
+        | null
+        | Promise<GraphVisualizationLiveReloadStatusSnapshot | null>;
 }>;
 
 /**
@@ -37,8 +67,12 @@ export function createGraphVisualizationUiModel(
         data,
         documentationCatalogs: options.documentationCatalogs ?? null,
         isServerMode: options.isServerMode ?? false,
+        lastFixRun: options.lastFixRun ?? null,
         loadedTarget: options.loadedTarget ?? null,
+        liveReload: options.liveReload ?? null,
+        mcpServerStatus: options.mcpServerStatus ?? "not-started",
         projectConfigurationCatalog: options.projectConfigurationCatalog ?? null,
+        startupState: options.startupState ?? null,
         title: options.title
     };
 }
@@ -49,6 +83,9 @@ export function createGraphVisualizationUiModel(
 export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiCallbacks {
     return {
         onOpenProject: () => {},
-        onRegenerate: () => {}
+        onRegenerate: () => {},
+        onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
+        onStartLiveReload: () => null,
+        onRefreshLiveReloadStatus: () => null
     };
 }

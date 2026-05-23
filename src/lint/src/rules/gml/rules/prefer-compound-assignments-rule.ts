@@ -42,8 +42,6 @@ type CompoundAssignmentCandidate = Readonly<{
     compoundOperator: CompoundAssignmentOperator;
 }>;
 
-type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
-
 const COMPOUND_OPERATOR_BY_BINARY_OPERATOR = Object.freeze({
     "+": "+=",
     "-": "-=",
@@ -97,14 +95,12 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
         return null;
     }
 
-    const rightExpressionNode = Core.unwrapParenthesizedExpression(node.right as UnwrapParenthesizedExpressionInput);
+    const rightExpressionNode = Core.unwrapParenthesizedExpression(node.right);
     if (!isBinaryExpressionNode(rightExpressionNode)) {
         return null;
     }
 
-    const rightLeftNode = Core.unwrapParenthesizedExpression(
-        rightExpressionNode.left as UnwrapParenthesizedExpressionInput
-    );
+    const rightLeftNode = Core.unwrapParenthesizedExpression(rightExpressionNode.left);
 
     // Left-first pattern: x = x OP y → x OP= y
     if (isIdentifierNode(rightLeftNode) && rightLeftNode.name === node.left.name) {
@@ -132,9 +128,7 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
         return null;
     }
 
-    const rightRightNode = Core.unwrapParenthesizedExpression(
-        rightExpressionNode.right as UnwrapParenthesizedExpressionInput
-    );
+    const rightRightNode = Core.unwrapParenthesizedExpression(rightExpressionNode.right);
     if (!isIdentifierNode(rightRightNode) || rightRightNode.name !== node.left.name) {
         return null;
     }

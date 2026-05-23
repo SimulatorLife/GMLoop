@@ -19,6 +19,21 @@ export const DEFAULT_WATCH_MAX_CONCURRENT_DIRS = 4;
 export const DEFAULT_WATCH_MAX_PATCH_HISTORY = 100;
 
 /**
+ * Generated or dependency-managed directories that should never participate in
+ * live-reload source discovery.
+ *
+ * These paths do not represent author-owned game source and create noisy,
+ * misleading patch streams when watched recursively.
+ */
+export const DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES = Object.freeze([
+    ".git",
+    ".gmcache",
+    ".gml-hot-reload",
+    "dist",
+    "node_modules"
+]);
+
+/**
  * Number of attempts used when retrying transient empty-file reads.
  *
  * Editors that use truncate-then-write save behavior can briefly expose a file

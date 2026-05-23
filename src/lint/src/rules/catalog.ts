@@ -108,6 +108,12 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "noEmptyRegions"
     },
     {
+        mapKey: "GmlNoEmptyComments",
+        shortName: "no-empty-comments",
+        fullId: "gml/no-empty-comments",
+        messageId: "noEmptyComments"
+    },
+    {
         mapKey: "GmlNoLegacyApi",
         shortName: "no-legacy-api",
         fullId: "gml/no-legacy-api",

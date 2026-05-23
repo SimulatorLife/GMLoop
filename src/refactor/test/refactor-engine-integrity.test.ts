@@ -7,8 +7,7 @@ import {
     type PartialSemanticAnalyzer,
     Refactor,
     type RenameRequest,
-    type WorkspaceEdit,
-    type WorkspaceReadFile
+    type WorkspaceEdit
 } from "../index.js";
 
 const { RefactorEngine: RefactorEngineClass, WorkspaceEdit: WorkspaceEditFactory, OccurrenceKind } = Refactor;
@@ -114,7 +113,7 @@ void test("verifyPostEditIntegrity validates input parameters", async () => {
         symbolId: "gml/script/test",
         oldName: "old",
         newName: "new",
-        workspace: null as unknown as WorkspaceEdit,
+        workspace: null,
         readFile: async () => ""
     });
     assert.equal(result3.valid, false);
@@ -126,7 +125,7 @@ void test("verifyPostEditIntegrity validates input parameters", async () => {
         oldName: "old",
         newName: "new",
         workspace: new WorkspaceEditFactory(),
-        readFile: null as unknown as WorkspaceReadFile
+        readFile: null
     });
     assert.equal(result4.valid, false);
     assert.ok(result4.errors.some((e) => e.includes("Invalid readFile")));
@@ -652,7 +651,7 @@ void test("getFileSymbols queries semantic analyzer", async () => {
 
 void test("getFileSymbols validates file path", async () => {
     const engine = new RefactorEngineClass();
-    assert.throws(() => engine.getFileSymbols(null as unknown as string), {
+    assert.throws(() => engine.getFileSymbols(null), {
         name: "TypeError",
         message: /requires a valid file path/
     });
@@ -869,7 +868,7 @@ void test("validateBatchRenameRequest validates empty array", async () => {
 
 void test("validateBatchRenameRequest validates non-array input", async () => {
     const engine = new RefactorEngineClass();
-    const validation = await engine.validateBatchRenameRequest(null as unknown as Array<RenameRequest>);
+    const validation = await engine.validateBatchRenameRequest(null);
 
     assert.equal(validation.valid, false);
     assert.ok(validation.errors.some((e) => e.includes("array")));
@@ -1007,7 +1006,7 @@ void test("validateBatchRenameRequest handles invalid request objects", async ()
     const engine = new RefactorEngineClass();
 
     const validation = await engine.validateBatchRenameRequest([
-        null as unknown as RenameRequest,
+        null,
         { symbolId: "gml/script/scr_a", newName: "scr_x" }
     ]);
 

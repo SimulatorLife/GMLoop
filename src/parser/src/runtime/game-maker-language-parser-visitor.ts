@@ -37,9 +37,7 @@ const INHERITED_METHOD_NAMES = Object.freeze(collectPrototypeMethodNames(PARSE_T
 export const VISIT_METHOD_NAMES = Object.freeze(collectVisitMethodNames(GameMakerLanguageParserVisitorBase));
 
 function callInheritedVisitChildren(instance: ParserVisitorPrototype, ctx: ParserContext) {
-    return (
-        PARSE_TREE_VISITOR_PROTOTYPE.visitChildren as (this: ParserVisitorPrototype, ctx: ParserContext) => unknown
-    ).call(instance, ctx) as unknown;
+    return PARSE_TREE_VISITOR_PROTOTYPE.visitChildren.call(instance, ctx) as unknown;
 }
 
 function resolveVisitChildrenDelegate(options: VisitorOptions): (payload: VisitorPayload) => unknown {
@@ -81,10 +79,7 @@ export default class GameMakerLanguageParserVisitor implements ParserVisitorProt
 definePrototypeMethods(GameMakerLanguageParserVisitor.prototype, INHERITED_METHOD_NAMES, (methodName: string) => {
     const inherited =
         typeof PARSE_TREE_VISITOR_PROTOTYPE[methodName] === "function"
-            ? (PARSE_TREE_VISITOR_PROTOTYPE[methodName] as (
-                  this: ParserVisitorPrototype,
-                  ...args: unknown[]
-              ) => unknown)
+            ? PARSE_TREE_VISITOR_PROTOTYPE[methodName]
             : Core.noop;
     return function (this: GameMakerLanguageParserVisitor, ...args: unknown[]) {
         return inherited.call(this, ...args) as unknown;

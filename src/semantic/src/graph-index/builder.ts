@@ -94,7 +94,7 @@ type ProjectIndexSnapshot = {
     >;
     identifiers?: Record<string, Record<string, ProjectIndexIdentifierEntry>>;
     relationships?: {
-        assetReferences?: Array<{ fromResourcePath?: string; targetPath?: string }>;
+        assetReferences?: Array<{ fromResourcePath?: string; propertyPath?: string; targetPath?: string }>;
     };
     resources?: Record<string, { gmlFiles?: Array<string>; name?: string; path?: string; resourceType?: string }>;
     scopes?: Record<string, ProjectIndexScopeRecord>;
@@ -215,11 +215,13 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "struct_variable": {
             return `gml/var/struct::${entry.scopeId ?? entry.key ?? name}`;
         }
+        case "file": {
+            return `gml/file/${entry.filePath ?? entry.key ?? name}`;
+        }
         case "anim_curve":
         case "constructor":
         case "data_file":
         case "extension":
-        case "file":
         case "font":
         case "note":
         case "object":
@@ -373,7 +375,7 @@ function findPrimaryFunctionNodeForFile(
 function resolveScopedFileOwnerNodeId(
     context: ProjectionContext,
     filePath: string | null,
-    fallbackFileNodeId: string,
+    fallbackOwnerNodeId: string,
     scopeId: string | null,
     locationLine: number | null
 ): string {
@@ -398,13 +400,13 @@ function resolveScopedFileOwnerNodeId(
         }
     }
 
-    return resolveFileSemanticOwnerNodeId(context, filePath) ?? fallbackFileNodeId;
+    return resolveFileSemanticOwnerNodeId(context, filePath) ?? fallbackOwnerNodeId;
 }
 
 function resolveCallerNodeId(
     context: ProjectionContext,
     relativePath: string,
-    callerFileNodeId: string,
+    callerOwnerNodeId: string,
     callRecord: Record<string, unknown>,
     fallbackScopeId: string | null
 ): string {
@@ -429,7 +431,7 @@ function resolveCallerNodeId(
             return primaryFunctionNodeId;
         }
     }
-    return resolveScopedFileOwnerNodeId(context, callerFilePath, callerFileNodeId, callerScopeId, callLocationLine);
+    return resolveScopedFileOwnerNodeId(context, callerFilePath, callerOwnerNodeId, callerScopeId, callLocationLine);
 }
 
 function resolveCallTargetNodeId(
@@ -490,7 +492,38 @@ function resolveResourcePathForFile(context: ProjectionContext, filePath: string
         return null;
     }
 
-    return context.resourcePathByGmlFile.get(filePath) ?? null;
+    const indexedResourcePath = context.resourcePathByGmlFile.get(filePath);
+    if (indexedResourcePath) {
+        return indexedResourcePath;
+    }
+
+    return inferResourcePathFromSiblingDirectory(context, filePath);
+}
+
+function inferResourcePathFromSiblingDirectory(context: ProjectionContext, filePath: string): string | null {
+    const resources = asRecord(context.projectIndex.resources);
+    if (filePath in resources) {
+        return filePath;
+    }
+
+    const fileDirectory = path.posix.dirname(filePath);
+    const fileDirectoryName = path.posix.basename(fileDirectory);
+    const siblingResourcePaths = Object.keys(resources).filter(
+        (resourcePath) => path.posix.dirname(resourcePath) === fileDirectory
+    );
+    if (siblingResourcePaths.length === 0) {
+        return null;
+    }
+
+    if (siblingResourcePaths.length === 1) {
+        return siblingResourcePaths[0] ?? null;
+    }
+
+    return (
+        siblingResourcePaths.find(
+            (resourcePath) => path.posix.basename(resourcePath, path.posix.extname(resourcePath)) === fileDirectoryName
+        ) ?? null
+    );
 }
 
 function resolveEnumOwnerNodeId(context: ProjectionContext, entry: ProjectIndexIdentifierEntry): string | null {
@@ -513,6 +546,10 @@ function resolveFileSemanticOwnerNodeId(context: ProjectionContext, filePath: st
         (node) => node.kind === "script" && node.resourcePath === resourcePath && node.scipSymbol !== null
     );
     return scriptNode?.id ?? createGraphNodeId(context.graphId, "resource", resourcePath);
+}
+
+function resolveProjectRootNodeId(context: ProjectionContext): string | null {
+    return context.nodeRecords.find((node) => node.kind === "project")?.id ?? null;
 }
 
 function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKind | null {
@@ -610,6 +647,15 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
             return "resource";
         }
     }
+}
+
+function isGraphResourceProjectionEligible(resourcePath: string, resourceRecord: Record<string, unknown>): boolean {
+    if (resourcePath.split("/")[0] === "options") {
+        return false;
+    }
+
+    const resourceType = getString(resourceRecord.resourceType);
+    return resourceType === null || !/^GM[A-Za-z0-9]*Options$/u.test(resourceType);
 }
 
 function readSourceText(rootPath: string, relativePath: string | null): string | null {
@@ -810,18 +856,29 @@ function projectResources(context: ProjectionContext): void {
 
     for (const [resourcePath, rawRecord] of Object.entries(resources)) {
         const resourceRecord = asRecord(rawRecord);
+        if (!isGraphResourceProjectionEligible(resourcePath, resourceRecord)) {
+            continue;
+        }
+
         const name =
             getString(resourceRecord.name) ?? path.posix.basename(resourcePath, path.posix.extname(resourcePath));
         const kind = normalizeResourceKind(getString(resourceRecord.resourceType));
+        const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
+        const primaryGmlFile = gmlFiles.find(
+            (gmlFile): gmlFile is string => typeof gmlFile === "string" && gmlFile.trim().length > 0
+        );
         const nodeId = createGraphNodeId(context.graphId, "resource", resourcePath);
         const node = createNodeRecord({
             displayName: name,
+            filePath: kind === "script" ? (primaryGmlFile ?? null) : null,
             graphId: context.graphId,
             id: nodeId,
             kind,
             name,
             resourcePath,
+            scipSymbol: kind === "script" ? `gml/script/${name}` : null,
             summary: createGraphNodeSummary({
+                filePath: kind === "script" ? (primaryGmlFile ?? null) : null,
                 kind,
                 name,
                 resourcePath
@@ -837,15 +894,12 @@ function projectResources(context: ProjectionContext): void {
             containedResourceNodeIds.add(node.id);
         }
 
-        const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
         for (const gmlFile of gmlFiles) {
             if (typeof gmlFile !== "string") {
                 continue;
             }
 
             context.resourcePathByGmlFile.set(gmlFile, resourcePath);
-            const fileNodeId = createGraphNodeId(context.graphId, "file", gmlFile);
-            context.edgeRecords.push({ fromId: node.id, toId: fileNodeId, type: "contains" });
         }
     }
 
@@ -895,10 +949,10 @@ function projectObjectEventScopes(context: ProjectionContext): void {
 
         const scopeId = getString(scopeRecord.id);
         const resourcePath = getString(scopeRecord.resourcePath);
-        const filePaths = (Array.isArray(scopeRecord.filePaths) ? scopeRecord.filePaths : []).filter(
+        const filePath_ = (Array.isArray(scopeRecord.filePaths) ? scopeRecord.filePaths : []).find(
             (filePath): filePath is string => typeof filePath === "string" && filePath.trim().length > 0
         );
-        const firstFilePath = filePaths[0] ?? null;
+        const firstFilePath = filePath_ ?? null;
         const name = createObjectEventName(scopeRecord, firstFilePath);
         if (!scopeId || !resourcePath || !name) {
             continue;
@@ -929,38 +983,52 @@ function projectObjectEventScopes(context: ProjectionContext): void {
             toId: node.id,
             type: "contains"
         });
-
-        for (const filePath of filePaths) {
-            context.edgeRecords.push({
-                fromId: node.id,
-                toId: createGraphNodeId(context.graphId, "file", filePath),
-                type: "contains"
-            });
-        }
     }
 }
 
-function projectFiles(context: ProjectionContext): void {
+function projectFileRecords(context: ProjectionContext): void {
     const files = asRecord(context.projectIndex.files);
     for (const relativePath of Object.keys(files)) {
         context.fileRecords.push(createFileRecord(context.rootPath, relativePath));
+    }
+}
+
+function projectFileNodes(context: ProjectionContext): void {
+    const files = asRecord(context.projectIndex.files);
+    const projectNodeId = resolveProjectRootNodeId(context);
+
+    for (const relativePath of Object.keys(files)) {
+        const resourcePath = resolveResourcePathForFile(context, relativePath);
         const nodeId = createGraphNodeId(context.graphId, "file", relativePath);
         const node = createNodeRecord({
-            displayName: relativePath,
+            displayName: path.posix.basename(relativePath),
             filePath: relativePath,
             graphId: context.graphId,
             id: nodeId,
             kind: "file",
-            name: path.posix.basename(relativePath),
+            name: relativePath,
+            resourcePath,
             summary: createGraphNodeSummary({
                 filePath: relativePath,
                 kind: "file",
-                name: path.posix.basename(relativePath)
-            }),
-            snippet: ""
+                name: relativePath,
+                resourcePath
+            })
         });
+
         context.nodeRecords.push(node);
         registerNodeIndexes(context, node);
+
+        const ownerNodeId = resourcePath
+            ? createGraphNodeId(context.graphId, "resource", resourcePath)
+            : (projectNodeId ?? null);
+        if (ownerNodeId) {
+            context.edgeRecords.push({
+                fromId: ownerNodeId,
+                toId: nodeId,
+                type: "contains"
+            });
+        }
     }
 }
 
@@ -1013,13 +1081,6 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                     summary
                 })
             ) {
-                if (filePath) {
-                    context.edgeRecords.push({
-                        fromId: createGraphNodeId(context.graphId, "file", filePath),
-                        toId: createGraphNodeId(context.graphId, "resource", resourcePath),
-                        type: "defines"
-                    });
-                }
                 continue;
             }
             const node = createNodeRecord({
@@ -1044,14 +1105,6 @@ function projectIdentifierCollections(context: ProjectionContext): void {
             if (node.resourcePath) {
                 context.edgeRecords.push({
                     fromId: createGraphNodeId(context.graphId, "resource", node.resourcePath),
-                    toId: node.id,
-                    type: "defines"
-                });
-            }
-
-            if (filePath) {
-                context.edgeRecords.push({
-                    fromId: createGraphNodeId(context.graphId, "file", filePath),
                     toId: node.id,
                     type: "defines"
                 });
@@ -1105,10 +1158,15 @@ function projectIdentifierOwnershipEdges(
                 continue;
             }
 
-            const fileNodeId = createGraphNodeId(context.graphId, "file", filePath);
             const scopeId = getString(declaration.scopeId) ?? getString(entry.scopeId);
             const locationLine = readLocationLine(asRecord(declaration.start));
-            const sourceNodeId = resolveScopedFileOwnerNodeId(context, filePath, fileNodeId, scopeId, locationLine);
+            const sourceNodeId = resolveScopedFileOwnerNodeId(
+                context,
+                filePath,
+                resolveProjectRootNodeId(context) ?? targetNodeId,
+                scopeId,
+                locationLine
+            );
             context.edgeRecords.push({
                 fromId: sourceNodeId,
                 toId: targetNodeId,
@@ -1124,10 +1182,15 @@ function projectIdentifierOwnershipEdges(
                 continue;
             }
 
-            const fileNodeId = createGraphNodeId(context.graphId, "file", filePath);
             const scopeId = getString(reference.scopeId) ?? getString(entry.scopeId);
             const locationLine = readLocationLine(asRecord(reference.start));
-            const sourceNodeId = resolveScopedFileOwnerNodeId(context, filePath, fileNodeId, scopeId, locationLine);
+            const sourceNodeId = resolveScopedFileOwnerNodeId(
+                context,
+                filePath,
+                resolveProjectRootNodeId(context) ?? targetNodeId,
+                scopeId,
+                locationLine
+            );
             context.edgeRecords.push({
                 fromId: sourceNodeId,
                 toId: targetNodeId,
@@ -1142,7 +1205,11 @@ function projectRelationshipEdges(context: ProjectionContext): void {
     for (const [relativePath, rawFileRecord] of Object.entries(files)) {
         const fileRecord = asRecord(rawFileRecord);
         const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
-        const callerFileNodeId = createGraphNodeId(context.graphId, "file", relativePath);
+        const callerOwnerNodeId =
+            resolveFileSemanticOwnerNodeId(context, relativePath) ?? resolveProjectRootNodeId(context);
+        if (!callerOwnerNodeId) {
+            continue;
+        }
 
         for (const rawCall of scriptCalls) {
             const callRecord = asRecord(rawCall);
@@ -1154,7 +1221,7 @@ function projectRelationshipEdges(context: ProjectionContext): void {
             const callerNodeId = resolveCallerNodeId(
                 context,
                 relativePath,
-                callerFileNodeId,
+                callerOwnerNodeId,
                 callRecord,
                 getString(fileRecord.scopeId)
             );
@@ -1180,11 +1247,26 @@ function projectRelationshipEdges(context: ProjectionContext): void {
         context.edgeRecords.push({
             fromId: createGraphNodeId(context.graphId, "resource", fromResourcePath),
             toId: createGraphNodeId(context.graphId, "resource", targetPath),
-            type: isProjectManifestPath(fromResourcePath) ? "contains" : "references"
+            type: classifyAssetReferenceEdgeType(reference)
         });
     }
 
     projectGlobalVariableReferenceEdges(context);
+}
+
+function classifyAssetReferenceEdgeType(reference: Record<string, unknown>): GraphEdgeType {
+    const propertyPath = getString(reference.propertyPath);
+    if (propertyPath?.endsWith("parentObjectId")) {
+        return "inherits";
+    }
+
+    const fromResourcePath = getString(reference.fromResourcePath);
+    const targetPath = getString(reference.targetPath);
+    if (fromResourcePath?.startsWith("rooms/") && targetPath?.startsWith("objects/")) {
+        return "placed_in_room";
+    }
+
+    return fromResourcePath && isProjectManifestPath(fromResourcePath) ? "contains" : "references";
 }
 
 function addCrossGraphEdges(
@@ -1197,12 +1279,16 @@ function addCrossGraphEdges(
     }
 
     const crossEdges: Array<GraphEdgeRecord> = [];
-    const projectFileRecords = asRecord(projectContext.projectIndex.files);
+    const projectIndexedFiles = asRecord(projectContext.projectIndex.files);
 
-    for (const [relativePath, rawFileRecord] of Object.entries(projectFileRecords)) {
+    for (const [relativePath, rawFileRecord] of Object.entries(projectIndexedFiles)) {
         const fileRecord = asRecord(rawFileRecord);
         const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
-        const projectCallerFileNodeId = createGraphNodeId("project", "file", relativePath);
+        const projectCallerOwnerNodeId =
+            resolveFileSemanticOwnerNodeId(projectContext, relativePath) ?? resolveProjectRootNodeId(projectContext);
+        if (!projectCallerOwnerNodeId) {
+            continue;
+        }
 
         for (const rawCall of scriptCalls) {
             const callRecord = asRecord(rawCall);
@@ -1219,7 +1305,7 @@ function addCrossGraphEdges(
             const projectCallerNodeId = resolveCallerNodeId(
                 projectContext,
                 relativePath,
-                projectCallerFileNodeId,
+                projectCallerOwnerNodeId,
                 callRecord,
                 getString(fileRecord.scopeId)
             );
@@ -1596,9 +1682,10 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         const buildStart = performance.now();
         const projectIndex = (await buildProjectIndex(config.projectRoot)) as ProjectIndexSnapshot;
         const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
-        projectFiles(projectContext);
         projectResources(projectContext);
         projectObjectEventScopes(projectContext);
+        projectFileRecords(projectContext);
+        projectFileNodes(projectContext);
         projectIdentifierCollections(projectContext);
         projectRelationshipEdges(projectContext);
         removeDanglingEdges(projectContext);
@@ -1607,9 +1694,10 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         if (config.toolsetRoot) {
             const toolsetIndex = (await buildProjectIndex(config.toolsetRoot)) as ProjectIndexSnapshot;
             toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
-            projectFiles(toolsetContext);
             projectResources(toolsetContext);
             projectObjectEventScopes(toolsetContext);
+            projectFileRecords(toolsetContext);
+            projectFileNodes(toolsetContext);
             projectIdentifierCollections(toolsetContext);
             projectRelationshipEdges(toolsetContext);
             removeDanglingEdges(toolsetContext);

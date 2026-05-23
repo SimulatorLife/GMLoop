@@ -5,7 +5,6 @@ import GameMakerLanguageParserVisitorBase from "../generated/GameMakerLanguagePa
 import GameMakerLanguageParserVisitor, {
     VISIT_METHOD_NAMES
 } from "../src/runtime/game-maker-language-parser-visitor.js";
-import type { VisitorOptions } from "../src/types/index.js";
 
 void test("default visitor delegates to visitChildren", () => {
     const visitor = new GameMakerLanguageParserVisitor();
@@ -45,7 +44,7 @@ void test("delegate receives method metadata and can alter the result", () => {
 });
 
 void test("non-function delegates fall back to the default visitor behavior", () => {
-    const visitor = new GameMakerLanguageParserVisitor({ visitChildrenDelegate: null } as VisitorOptions);
+    const visitor = new GameMakerLanguageParserVisitor({ visitChildrenDelegate: null });
     const context = {
         children: [{ accept: () => "omega" }]
     };

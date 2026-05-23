@@ -339,27 +339,6 @@ The parser also emitted a `SYNTAX ERROR` for `scripts/Recovery/Recovery.gml` whi
 
 ## References
 - `https://github.com/bscotch/stitch/tree/develop/packages/parser`
-- `packages/parser/src/project.ts`
-- `packages/parser/src/project.asset.ts`
-- `packages/parser/src/project.code.ts`
-- `packages/parser/src/lexer.ts`, `packages/parser/src/parser.ts`
-- `packages/parser/gml-cst.d.ts`
-- `src/parser/src/gml-parser.ts`
-- `docs/target-state.md`
-- `src/semantic`
 - `https://github.com/bscotch/stitch/tree/develop/packages/launcher`
-- `packages/launcher/src/lib/GameMakerLauncher.ts`
-- `packages/launcher/src/lib/GameMakerIde.ts`
-- `packages/launcher/src/lib/GameMakerRuntime.ts`
-- `packages/launcher/src/lib/GameMakerRuntime.command.ts`
-- `packages/launcher/src/lib/GameMakerComponent.ts`
-- `packages/launcher/src/lib/utility.ts`
 - `https://github.com/bscotch/stitch/tree/develop/packages/yy`
-- `packages/yy/src/Yy.ts`
-- `packages/yy/src/Yy.parse.ts`
-- `packages/yy/src/Yy.stringify.ts`
-- `src/semantic/src/identifier-case/asset-rename-executor.ts`
-- `src/semantic/src/identifier-case/asset-renames/planner.ts`
-- `src/semantic/src/project-index/resource-analysis.ts`
-- `src/cli/src/modules/refactor/semantic-bridge.ts`
-- `src/refactor/src/refactor-engine.ts`
+- https://github.com/YoYoGames/gm-cli

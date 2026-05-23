@@ -1,8 +1,27 @@
 import { isObjectLike } from "../../utils/object.js";
 import type { GameMakerAstNode } from "../types.js";
 
-const CLONE_SKIPPED_NODE_KEYS = new Set(["parent", "enclosingNode", "precedingNode", "followingNode"]);
-const IGNORED_NODE_CHILD_KEYS = new Set(["parent", "enclosingNode", "precedingNode", "followingNode"]);
+const TRAVERSAL_LINK_PARENT_KEY = "parent";
+const TRAVERSAL_LINK_ENCLOSING_NODE_KEY = "enclosingNode";
+const TRAVERSAL_LINK_PRECEDING_NODE_KEY = "precedingNode";
+const TRAVERSAL_LINK_FOLLOWING_NODE_KEY = "followingNode";
+
+const CLONE_SKIPPED_NODE_KEYS = new Set([
+    TRAVERSAL_LINK_PARENT_KEY,
+    TRAVERSAL_LINK_ENCLOSING_NODE_KEY,
+    TRAVERSAL_LINK_PRECEDING_NODE_KEY,
+    TRAVERSAL_LINK_FOLLOWING_NODE_KEY
+]);
+
+function isTraversalLinkKey(key: string): boolean {
+    // Hot-path check in forEachNodeChild: direct comparisons avoid Set.has() overhead.
+    return (
+        key === TRAVERSAL_LINK_PARENT_KEY ||
+        key === TRAVERSAL_LINK_ENCLOSING_NODE_KEY ||
+        key === TRAVERSAL_LINK_PRECEDING_NODE_KEY ||
+        key === TRAVERSAL_LINK_FOLLOWING_NODE_KEY
+    );
+}
 
 /**
  * Clone an AST node while preserving primitives.
@@ -84,11 +103,15 @@ function restoreLocalParentLinks(clonedNode: unknown): void {
         }
         const nextParentNode = hasNodeType ? currentRecord : parentNode;
 
-        for (const [key, value] of Object.entries(currentRecord)) {
+        for (let i = 0, keys = Object.keys(currentRecord), len = keys.length; i < len; i++) {
+            const key = keys[i];
             if (CLONE_SKIPPED_NODE_KEYS.has(key)) {
                 continue;
             }
-            visit(value, nextParentNode);
+            const childValue = currentRecord[key];
+            if (isObjectLike(childValue)) {
+                visit(childValue, nextParentNode);
+            }
         }
     };
 
@@ -106,16 +129,17 @@ export function forEachNodeChild(node: unknown, callback: (child: GameMakerAstNo
         return;
     }
 
-    const keys = Object.keys(node);
+    const nodeValue = node as GameMakerAstNode;
+    const keys = Object.keys(nodeValue);
     const length = keys.length;
 
     for (let i = 0; i < length; i++) {
         const key = keys[i];
-        if (IGNORED_NODE_CHILD_KEYS.has(key)) {
+        if (isTraversalLinkKey(key)) {
             continue;
         }
 
-        const value = (node as GameMakerAstNode)[key as keyof GameMakerAstNode];
+        const value = nodeValue[key as keyof GameMakerAstNode];
         if (isObjectLike(value)) {
             callback(value, key);
         }
@@ -167,10 +191,46 @@ export function visitChildNodes(node: unknown, callback: (child: unknown) => voi
         return;
     }
 
-    for (const key of Object.keys(node as Record<string, unknown>)) {
+    for (const key of Object.keys(node)) {
         const value = (node as Record<string, unknown>)[key];
         if (isObjectLike(value)) {
             callback(value);
+        }
+    }
+}
+
+/**
+ * Recursively visit every object-valued child of `node`, skipping
+ * `parent` / `enclosingNode` / `precedingNode` / `followingNode` traversal links.
+ *
+ * This is a depth-first traversal that fires `callback` for every object-like
+ * value reachable from `node` (including array elements) except the traversal-link
+ * keys themselves.  The callback is invoked before descending into each
+ * discovered child so callers can inspect or mutate child nodes as the walk
+ * proceeds.
+ *
+ * @param node     Root of the subtree to traverse.
+ * @param callback Invoked for every object-like value reachable from `node`.
+ */
+export function visitNonTraversalChildValues(node: unknown, callback: (child: unknown) => void): void {
+    if (!isObjectLike(node)) {
+        return;
+    }
+
+    if (Array.isArray(node)) {
+        for (const entry of node) {
+            visitNonTraversalChildValues(entry, callback);
+        }
+        return;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+        if (isTraversalLinkKey(key)) {
+            continue;
+        }
+        if (isObjectLike(value)) {
+            callback(value);
+            visitNonTraversalChildValues(value, callback);
         }
     }
 }

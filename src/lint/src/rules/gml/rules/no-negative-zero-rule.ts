@@ -43,9 +43,13 @@ export function createNoNegativeZeroRule(definition: GmlRuleDefinition): Rule.Ru
                         return;
                     }
 
+                    const text = Core.getNodeSourceText(context.sourceCode.text, node);
+                    if (text === null) {
+                        return;
+                    }
+
                     const start = Core.getNodeStartIndex(node);
                     const end = Core.getNodeEndIndex(node);
-
                     if (typeof start !== "number" || typeof end !== "number") {
                         return;
                     }

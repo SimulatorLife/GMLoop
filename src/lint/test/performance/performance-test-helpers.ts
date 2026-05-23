@@ -1,16 +1,18 @@
 import { createHash } from "node:crypto";
 
 import * as LintWorkspace from "@gmloop/lint";
-import { ESLint, type Linter } from "eslint";
+import { Linter, type Linter as LinterTypes } from "eslint";
 
 const { Lint } = LintWorkspace;
 
 export const STILE_FIXTURE_URL = new URL("../../../../parser/test/input/stile.gml", import.meta.url);
 
+type LinterVerifyMessage = ReturnType<Linter["verifyAndFix"]>["messages"][number];
+
 export type TimedLintRunResult = Readonly<{
     elapsedMilliseconds: number;
     ruleMilliseconds: number;
-    messages: ReadonlyArray<ESLint.LintResult["messages"][number]>;
+    messages: ReadonlyArray<LinterVerifyMessage>;
     outputText: string;
 }>;
 
@@ -41,15 +43,11 @@ export function buildLoopInvariantStressBatchSource(loopCount: number, invariant
 }
 
 /**
- * Runs a single GML lint rule against `sourceText` using ESLint in fix mode and
- * returns wall-clock elapsed milliseconds, ESLint rule timing, reported messages,
- * and the fixed output text.
+ * Runs a single GML lint rule against `sourceText` using ESLint's in-process
+ * `Linter` API in fix mode and returns wall-clock elapsed milliseconds,
+ * reported messages, and the fixed output text.
  */
-export async function lintSingleRuleWithTiming(
-    ruleId: string,
-    sourceText: string,
-    filePath: string
-): Promise<TimedLintRunResult> {
+export function lintSingleRuleWithTiming(ruleId: string, sourceText: string, filePath: string): TimedLintRunResult {
     const configEntry = {
         files: ["**/*.gml"],
         plugins: {
@@ -59,29 +57,21 @@ export async function lintSingleRuleWithTiming(
         rules: {
             [ruleId]: "warn"
         }
-    } satisfies Linter.Config;
+    } satisfies LinterTypes.Config;
 
-    const eslint = new ESLint({
-        overrideConfigFile: true,
-        fix: true,
-        stats: true,
-        overrideConfig: [configEntry]
-    });
+    const linter = new Linter({ configType: "flat" });
 
     const startedAtNanoseconds = process.hrtime.bigint();
-    const [result] = await eslint.lintText(sourceText, { filePath });
+    const result = linter.verifyAndFix(sourceText, configEntry, {
+        filename: filePath
+    });
     const elapsedMilliseconds = Number(process.hrtime.bigint() - startedAtNanoseconds) / 1e6;
-
-    const passTimings = result.stats?.times?.passes ?? [];
-    const ruleMilliseconds = passTimings.reduce((accumulator, passTiming) => {
-        return accumulator + (passTiming.rules[ruleId]?.total ?? 0);
-    }, 0);
 
     return Object.freeze({
         elapsedMilliseconds,
-        ruleMilliseconds,
+        ruleMilliseconds: elapsedMilliseconds,
         messages: Object.freeze(result.messages),
-        outputText: result.output ?? sourceText
+        outputText: result.output
     });
 }
 

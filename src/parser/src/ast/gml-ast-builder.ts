@@ -153,7 +153,7 @@ export default class GameMakerASTBuilder {
             }
             return results;
         }
-        return this.visitor.visit(node as ParserContextWithMethods);
+        return this.visitor.visit(node);
     }
 
     visitChildren(node: unknown): any {
@@ -1145,6 +1145,11 @@ export default class GameMakerASTBuilder {
     // Visit a parse tree produced by GameMakerLanguageParser#FunctionExpression.
     visitFunctionExpression(ctx: ParserContext): any {
         return this.visit(ctx.functionDeclaration());
+    }
+
+    // Visit a parse tree produced by GameMakerLanguageParser#StructLiteralLValue.
+    visitStructLiteralLValue(ctx: ParserContext): any {
+        return this.visit(ctx.structLiteral());
     }
 
     // Visit a parse tree produced by GameMakerLanguageParser#ParenthesizedLValue.

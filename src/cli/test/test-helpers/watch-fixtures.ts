@@ -135,7 +135,7 @@ export function isolateSigtermListeners(): { restore: () => void } {
     return {
         restore: () => {
             for (const listener of savedSigtermListeners) {
-                process.on("SIGTERM", listener as NodeJS.SignalsListener);
+                process.on("SIGTERM", listener);
             }
         }
     };

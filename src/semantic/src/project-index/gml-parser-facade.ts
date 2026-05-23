@@ -28,21 +28,18 @@ import { formatProjectIndexSyntaxError } from "./parsing/syntax-error-formatter.
  * no longer requires semantic imports.
  */
 type ParserNamespace = typeof Parser.Parser;
-type ProjectIndexParser = (sourceText: string, context?: unknown) => unknown;
 
 let parserNamespace: ParserNamespace | null = null;
-const defaultProjectIndexParser: ProjectIndexParser = (sourceText: string, context = {}) =>
-    parseProjectIndexSource(sourceText, context);
+function defaultProjectIndexParser(sourceText: string, context = {}) {
+    return parseProjectIndexSource(sourceText, context);
+}
+const createProjectIndexScopeCoordinator = () => new SemanticScopeCoordinator();
 
 export function setProjectIndexParserNamespace(parser: ParserNamespace): void {
     parserNamespace = parser;
 }
 
-function resolveParserNamespace(parser?: ParserNamespace): ParserNamespace {
-    if (parser) {
-        return parser;
-    }
-
+function resolveParserNamespace(): ParserNamespace {
     if (!parserNamespace && Parser.Parser) {
         parserNamespace = Parser.Parser;
     }
@@ -54,12 +51,12 @@ function resolveParserNamespace(parser?: ParserNamespace): ParserNamespace {
     throw new Error("Parser namespace is not initialized; call setProjectIndexParserNamespace first.");
 }
 
-function parseProjectIndexSource(sourceText: string, context = {}, parser: ParserNamespace | null = null) {
-    const parserApi = resolveParserNamespace(parser);
+function parseProjectIndexSource(sourceText: string, context = {}) {
+    const parserApi = resolveParserNamespace();
 
     try {
-        // WORKAROUND: Type-cast to 'any' to bypass ParserOptions type mismatches
-        // during incremental refactoring.
+        // WORKAROUND: Keep the parser call behind a single `as any` boundary while
+        // ParserOptions is being unified across workspaces.
         //
         // CONTEXT: The ParserOptions interface is evolving across multiple packages
         // (parser, semantic, format) as the parser is being rebuilt. During this
@@ -67,12 +64,16 @@ function parseProjectIndexSource(sourceText: string, context = {}, parser: Parse
         // don't match the compile-time type definitions in all workspaces.
         //
         // SOLUTION: We cast the options to 'any' and pass the runtime values we need
-        // (getComments, getLocations, etc.), trusting that the parser implementation
-        // will handle them correctly even if the type signature is temporarily out of sync.
+        // (getComments, getLocations, etc.) from this one adapter instead of leaking
+        // ad-hoc casts across semantic callers. Centralizing the mismatch here keeps
+        // the parser/semantic boundary auditable and aligned with the workspace
+        // ownership rules in docs/target-state.md (see "2. Workspace Ownership
+        // Boundaries"), so future cleanup can remove one seam instead of many.
         //
         // WHAT WOULD BREAK: Removing this cast before the parser rebuild is complete
-        // would cause TypeScript compilation errors due to incompatible option types
-        // between packages.
+        // would force every parser call site in semantic to add duplicate unsafe
+        // casts, and TypeScript compilation would fail in whichever workspace first
+        // sees the temporary type drift.
         //
         // LONG-TERM FIX: Once the parser package is stable and all packages share a
         // consistent ParserOptions type, remove this cast and use the properly-typed
@@ -86,9 +87,9 @@ function parseProjectIndexSource(sourceText: string, context = {}, parser: Parse
             scopeTrackerOptions: {
                 enabled: true,
                 getIdentifierMetadata: true,
-                createScopeTracker: () => new SemanticScopeCoordinator()
+                createScopeTracker: createProjectIndexScopeCoordinator
             }
-        } as any);
+        });
     } catch (error) {
         if (Core.isSyntaxErrorWithLocation(error)) {
             throw formatProjectIndexSyntaxError(error, sourceText, context);
@@ -98,19 +99,19 @@ function parseProjectIndexSource(sourceText: string, context = {}, parser: Parse
     }
 }
 
-export function getDefaultProjectIndexParser(parser: ParserNamespace | null = null) {
-    return (sourceText: string, context = {}) => parseProjectIndexSource(sourceText, context, parser);
+export function getDefaultProjectIndexParser() {
+    return defaultProjectIndexParser;
 }
 
-export function getProjectIndexParserOverride(options) {
+function resolveProjectIndexParserOverride(options): ((sourceText: string, context?: unknown) => unknown) | null {
     if (!Core.isObjectLike(options)) {
         return null;
     }
 
     const parse = options.parseGml;
-    return typeof parse === "function" ? { parse } : null;
+    return typeof parse === "function" ? parse : null;
 }
 
 export function resolveProjectIndexParser(options) {
-    return getProjectIndexParserOverride(options)?.parse ?? defaultProjectIndexParser;
+    return resolveProjectIndexParserOverride(options) ?? defaultProjectIndexParser;
 }

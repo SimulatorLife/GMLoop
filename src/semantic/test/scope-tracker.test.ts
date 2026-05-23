@@ -3,7 +3,13 @@ import test from "node:test";
 
 import { SCOPE_OVERRIDE_KEYWORD } from "../src/scopes/index.js";
 import ScopeTracker from "../src/scopes/scope-tracker.js";
-import { createRange, type SourceLocation, type SourceRange } from "./scope-tracker-helpers.js";
+import {
+    cloneLocation,
+    cloneRange,
+    createRange,
+    type SourceLocation,
+    type SourceRange
+} from "./scope-tracker-helpers.js";
 
 void test("resolveScopeOverride returns the root scope when using the global keyword", () => {
     const tracker = new ScopeTracker({ enabled: true });
@@ -598,17 +604,6 @@ type ScopeSnapshot = {
         }>;
     }>;
 };
-
-function cloneLocation(location: SourceLocation): SourceLocation {
-    return { line: location.line, index: location.index };
-}
-
-function cloneRange(range: SourceRange): SourceRange {
-    return {
-        start: cloneLocation(range.start),
-        end: cloneLocation(range.end)
-    };
-}
 
 function buildDeclarationScopeSnapshot({
     scopeId,

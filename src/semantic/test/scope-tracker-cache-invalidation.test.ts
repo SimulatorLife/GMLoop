@@ -179,7 +179,7 @@ void describe("ScopeTracker: targeted cache invalidation", () => {
         tracker.declare(
             "a",
             { name: "a", start: { line: 1, column: 0, index: 0 }, end: { line: 1, column: 1, index: 1 } },
-            { scopeOverride: null as any }
+            { scopeOverride: null }
         );
 
         // Both scopes should be able to resolve now (cache was cleared)

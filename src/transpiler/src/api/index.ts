@@ -1,3 +1,4 @@
+export { TranspilerError, TranspilerErrorCode } from "./errors.js";
 export type {
     ClosurePatch,
     EventPatch,

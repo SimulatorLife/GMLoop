@@ -12,7 +12,6 @@ import { Core } from "@gmloop/core";
 import { createTempFileStorageBackend, type StorageBackend } from "./backends/index.js";
 import { executeRegisteredCodemods } from "./codemod-registry.js";
 import { applyGlobalvarToGlobalCodemod, collectGlobalvarDeclaredNames } from "./codemods/globalvar-to-global/index.js";
-import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 import { planNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import * as HotReload from "./hot-reload.js";
 import { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
@@ -40,8 +39,6 @@ import {
     type ExecuteBatchRenameRequest,
     type ExecuteGlobalvarToGlobalCodemodRequest,
     type ExecuteGlobalvarToGlobalCodemodResult,
-    type ExecuteLoopLengthHoistingCodemodRequest,
-    type ExecuteLoopLengthHoistingCodemodResult,
     type ExecuteRenameRequest,
     type ExecuteRenameResult,
     type HotReloadCascadeResult,
@@ -82,7 +79,8 @@ import {
 
 const RENAME_VALIDATION_CACHE_MAX_SIZE = 4096;
 const APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT = 8;
-const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 256;
+const CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES = 256;
+const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 2048;
 const validatedWorkspaceRevisions = new WeakMap<object, number>();
 const DEFAULT_HOT_RELOAD_COORDINATOR: RefactorHotReloadCoordinator = Object.freeze({
     checkHotReloadSafety: HotReload.checkHotReloadSafety,
@@ -162,6 +160,13 @@ function toWorkspacePathKey(filePath: string): string {
     return path.posix.normalize(normalizedPath);
 }
 
+function resolveCodemodReadThroughCacheMaxEntries(fileCount: number): number {
+    return Math.min(
+        CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
+        Math.max(CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES, fileCount)
+    );
+}
+
 function semanticSupportsBatchWorkspaceOverlay(
     semantic: PartialSemanticAnalyzer | null
 ): semantic is PartialSemanticAnalyzer &
@@ -200,6 +205,37 @@ function dropRedundantTextEditsForMetadataRewrites(workspace: WorkspaceEdit): Wo
     }
 
     return normalizedWorkspace;
+}
+
+function collectTextEditValidationErrors(
+    filePath: string,
+    edits: ReadonlyArray<Pick<TextEdit, "end" | "newText" | "start">>
+): Array<string> {
+    const errors: Array<string> = [];
+
+    if (!Core.isNonEmptyString(filePath)) {
+        errors.push("Text edit path must be a non-empty string");
+    }
+
+    for (const edit of edits) {
+        if (!Number.isInteger(edit.start) || edit.start < 0) {
+            errors.push(`Text edit for ${filePath} must have a non-negative integer start offset`);
+        }
+
+        if (!Number.isInteger(edit.end) || edit.end < 0) {
+            errors.push(`Text edit for ${filePath} must have a non-negative integer end offset`);
+        }
+
+        if (Number.isInteger(edit.start) && Number.isInteger(edit.end) && edit.end < edit.start) {
+            errors.push(`Text edit for ${filePath} must not end before it starts`);
+        }
+
+        if (typeof edit.newText !== "string") {
+            errors.push(`Text edit for ${filePath} must replace with a string`);
+        }
+    }
+
+    return errors;
 }
 
 function applyGroupedTextEditsToContent(
@@ -276,19 +312,24 @@ export class RefactorEngine {
     /**
      * Find the symbol at a specific location in a file.
      * Useful for triggering refactorings from editor positions.
+     *
+     * Uses the semantic cache when available for efficient repeated lookups.
+     * Falls back to parser-based AST traversal when the semantic analyzer
+     * doesn't provide position-based lookup.
      */
     findSymbolAtLocation(filePath: string, offset: number): Promise<SymbolLocation | null> {
-        return SymbolQueries.findSymbolAtLocation(filePath, offset, this.semantic, this.parser);
+        if (this.semantic !== null) {
+            return this.semanticCache.getSymbolAtPosition(filePath, offset);
+        }
+
+        return SymbolQueries.findSymbolAtLocationFallback(filePath, offset, this.parser);
     }
 
     /**
      * Validate symbol exists in the semantic index.
+     * Uses the semantic cache when available for efficient repeated lookups.
      */
     validateSymbolExists(symbolId: string): Promise<boolean> {
-        if (this.semantic === null) {
-            return SymbolQueries.validateSymbolExists(symbolId, this.semantic);
-        }
-
         return this.semanticCache.hasSymbol(symbolId);
     }
 
@@ -786,6 +827,8 @@ export class RefactorEngine {
         // start position. Overlaps indicate that two edits target overlapping or
         // adjacent text spans, which would corrupt the output if applied naively.
         for (const [filePath, edits] of grouped.entries()) {
+            errors.push(...collectTextEditValidationErrors(filePath, edits));
+
             for (let i = 0; i < edits.length - 1; i++) {
                 const current = edits[i];
                 const next = edits[i + 1];
@@ -1274,76 +1317,6 @@ export class RefactorEngine {
     }
 
     /**
-     * Execute the loop-length hoisting codemod across the provided files.
-     *
-     * The engine parses each file exactly once, collects all codemod rewrites into a
-     * single workspace transaction, and applies them atomically via applyWorkspaceEdit.
-     */
-    async executeLoopLengthHoistingCodemod(
-        request: ExecuteLoopLengthHoistingCodemodRequest
-    ): Promise<ExecuteLoopLengthHoistingCodemodResult> {
-        const { filePaths, readFile, writeFile, options, dryRun = false } = request ?? {};
-
-        if (!Array.isArray(filePaths) || filePaths.length === 0) {
-            throw new TypeError("executeLoopLengthHoistingCodemod requires a non-empty filePaths array");
-        }
-
-        Core.assertFunction(readFile, "readFile", {
-            errorMessage: "executeLoopLengthHoistingCodemod requires a readFile function"
-        });
-        const uniqueFilePaths = Core.uniqueArray(filePaths);
-
-        const workspace = new WorkspaceEdit();
-        const sourceTextByPath = new Map<string, string>();
-        const changedFiles: ExecuteLoopLengthHoistingCodemodResult["changedFiles"] = [];
-
-        await Core.runSequentially(uniqueFilePaths, async (filePath) => {
-            Core.assertNonEmptyString(filePath, {
-                errorMessage: "executeLoopLengthHoistingCodemod file paths must be non-empty strings"
-            });
-
-            const sourceText = await readFile(filePath);
-            sourceTextByPath.set(filePath, sourceText);
-            const result = applyLoopLengthHoistingCodemod(sourceText, options);
-
-            if (!result.changed) {
-                return;
-            }
-
-            workspace.addEdit(filePath, 0, sourceText.length, result.outputText);
-            changedFiles.push({
-                path: filePath,
-                appliedEditCount: result.appliedEdits.length,
-                diagnosticOffsets: [...result.diagnosticOffsets]
-            });
-        });
-
-        if (workspace.edits.length === 0) {
-            return {
-                workspace,
-                applied: new Map(),
-                changedFiles
-            };
-        }
-
-        if (!dryRun) {
-            Core.assertFunction(writeFile, "writeFile", {
-                errorMessage: "executeLoopLengthHoistingCodemod requires a writeFile function"
-            });
-        }
-
-        const applied = await this.applyWorkspaceEdit(workspace, {
-            readFile,
-            sourceTextByPath,
-            writeFile,
-            includeResultContent: dryRun,
-            dryRun
-        });
-
-        return { workspace, applied, changedFiles };
-    }
-
-    /**
      * Plan naming-policy-driven edits for the selected project paths.
      */
     async planNamingConventionCodemod(parameters: {
@@ -1396,6 +1369,7 @@ export class RefactorEngine {
         const overlaySpillIndex = new Set<string>();
         const readThroughCache = new Map<string, string>();
         const readThroughCacheOrder: Array<string> = [];
+        const readThroughCacheMaxEntries = resolveCodemodReadThroughCacheMaxEntries(gmlFilePaths.length);
         const appliedFiles = new Map<string, string>();
         let overlayBytes = 0;
         let overlayHighWaterBytes = 0;
@@ -1419,7 +1393,7 @@ export class RefactorEngine {
             readThroughCache.set(filePath, content);
             readThroughCacheOrder.push(filePath);
 
-            while (readThroughCacheOrder.length > CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES) {
+            while (readThroughCacheOrder.length > readThroughCacheMaxEntries) {
                 const evictedFilePath = readThroughCacheOrder.shift();
                 if (evictedFilePath !== undefined) {
                     readThroughCache.delete(evictedFilePath);
@@ -1478,7 +1452,11 @@ export class RefactorEngine {
                 overlayBytes -= previousSize;
             } else if (overlaySpillIndex.has(filePath) && spillBackend) {
                 overlaySpillIndex.delete(filePath);
-                await spillBackend.deleteEntry(filePath);
+                // Use removeFromIndex instead of deleteEntry to reclaim memory
+                // from the backend's path index and read cache without the
+                // overhead of a disk I/O call. The backing file stays valid in
+                // case other reads need it; it will be cleaned up at disposal.
+                spillBackend.removeFromIndex(filePath);
             }
 
             overlay.set(filePath, content);

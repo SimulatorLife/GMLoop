@@ -9,12 +9,18 @@ then return here for deeper context.
 
 ## Reference guides
 
-- [Sample `.prettierignore`](examples/example.prettierignore) — Baseline ignore
-  file tuned for common GameMaker metadata folders.
-- [Sample `.prettierrc`](examples/example.prettierrc) — Baseline Prettier
-  config for formatting `.gml` files in a GameMaker project.
-- [Sample `eslint.config.js`](examples/example.eslint.config.js) — Flat ESLint
-  config that composes the `@gmloop/lint` presets (without TypeScript requirement)
+- [`examples/example.prettierignore`](examples/example.prettierignore) — Baseline
+  ignore file tuned for common GameMaker metadata folders.
+- [`examples/example.prettierrc`](examples/example.prettierrc) — Baseline
+  Prettier config for formatting `.gml` files in a GameMaker project.
+- [`examples/example.eslint.config.js`](examples/example.eslint.config.js) —
+  Flat ESLint config that composes the `@gmloop/lint` presets (without TypeScript
+  requirement).
+- [`examples/example.mcp.json`](examples/example.mcp.json) — MCP client config
+  example that starts the MCP stdio server via the `gmloop mcp` CLI command
+  through `pnpm`.
+- [`examples/gmloop.json`](examples/gmloop.json) — Baseline project config
+  with formatter, lint, refactor, graph, and runtime live-reload settings.
 
 ## Usage & rollout
 
@@ -33,8 +39,10 @@ then return here for deeper context.
 ## Contributor workflow
 
 - [Contributor onboarding checklist](contributor-onboarding.md) — Environment
-  setup, validation commands, and supporting documentation for new
-  contributors.
+  setup, baseline validation (`build:ts`, `lint:quiet`), and supporting
+  documentation for new contributors.
+- [Architecture target state](target-state.md) — Canonical rules for workspace
+  ownership boundaries, dependency direction, and forward-looking design.
 - [ANTLR regeneration guide](antlr-regeneration.md) — Canonical steps for
   rebuilding the generated parser artifacts with the vendored toolchain plus
   pointers to the extension hooks that keep custom behaviour outside the
@@ -52,10 +60,6 @@ implementation details:
   — Adjust commented-code detection heuristics without forking the formatter.
   Normalization guards keep overrides safe even when hosts
   provide partial data.
-- **Doc comment type normalization** (`src/format/src/comments/`)
-  — Extend the doc-comment type synonym tables or resource prefixes without
-  patching the formatter's defaults. Resolver helpers expose guardrails and a
-  restore helper when experiments end.
 - **Statement newline padding extension** — Register additional AST node
   types that should inherit blank-line padding around statements while keeping
   the opinionated defaults intact for other consumers.

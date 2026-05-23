@@ -7,8 +7,7 @@ import {
     matchProjectResourceMetadataExtension,
     PROJECT_MANIFEST_EXTENSION
 } from "./constants.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
-import { runWithMissingPathFallback } from "./missing-path-fallback.js";
+import { defaultFsFacade, type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { normalizeProjectResourcePath } from "./path-normalization.js";
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { extractAssetReferencesFromMetadataDocument } from "./resource-reference-extractor.js";
@@ -96,6 +95,21 @@ function getNumericEventField(event, keys) {
     return null;
 }
 
+const EVENT_TYPE_NAMES: Record<number, string> = {
+    0: "Create",
+    1: "Destroy",
+    2: "CleanUp",
+    3: "Step",
+    4: "Collision",
+    5: "Keyboard",
+    6: "Mouse",
+    7: "Other",
+    8: "Draw",
+    9: "KeyPress",
+    10: "KeyRelease",
+    12: "Gesture"
+};
+
 function resolveEventMetadata(event) {
     const eventType = getNumericEventField(event, ["eventType", "eventtype"]);
     const eventNum = getNumericEventField(event, ["eventNum", "enumb"]);
@@ -106,6 +120,14 @@ function resolveEventMetadata(event) {
 
     if (eventType === null && eventNum === null) {
         return { eventType, eventNum, displayName: "event" };
+    }
+
+    if (eventType !== null) {
+        const eventName = EVENT_TYPE_NAMES[eventType];
+        if (eventName) {
+            const numSuffix = eventNum === null ? "_0" : `_${eventNum}`;
+            return { eventType, eventNum, displayName: `${eventName}${numSuffix}` };
+        }
     }
 
     if (eventNum === null) {
@@ -146,7 +168,14 @@ export function createFileScopeDescriptor(relativePath) {
     };
 }
 
-function extractEventGmlPath(event, resourceRecord, resourceRelativeDir) {
+async function extractEventGmlPath(
+    event,
+    resourceRecord,
+    resourceRelativeDir,
+    projectRoot,
+    fsFacade,
+    logger: ProjectIndexLogger = null
+) {
     const { displayName } = resolveEventMetadata(event);
     for (const candidate of [
         event?.eventContents,
@@ -167,6 +196,24 @@ function extractEventGmlPath(event, resourceRecord, resourceRelativeDir) {
 
     if (!resourceRecord?.name) {
         return null;
+    }
+
+    const standardRelativePath = path.posix.join(resourceRelativeDir, `${displayName}.gml`);
+    const standardAbsolutePath = path.join(projectRoot, standardRelativePath);
+    try {
+        if (fsFacade && typeof fsFacade.stat === "function") {
+            const stats = await fsFacade.stat(standardAbsolutePath);
+            if (stats) {
+                return standardRelativePath;
+            }
+        }
+    } catch (error) {
+        // Fall back to legacy format but log the failure for diagnostics.
+        logProjectIndexDebug(
+            logger,
+            `Failed to stat '${standardAbsolutePath}', falling back to legacy GML path format.`,
+            error
+        );
     }
 
     return path.posix.join(resourceRelativeDir, `${resourceRecord.name}_${displayName}.gml`);
@@ -244,25 +291,29 @@ function registerScriptResourceIfNeeded({ context, parsed, resourceRecord, resou
     context.scriptNameToResourcePath.set(resourceRecord.name, resourceRecord.path);
 }
 
-function registerResourceEvents({ context, parsed, resourceRecord, resourceDir }) {
+async function registerResourceEvents({ context, parsed, resourceRecord, resourceDir, projectRoot, fsFacade, logger }) {
     const eventList = parsed?.eventList;
     if (!Core.isNonEmptyArray(eventList)) {
         return;
     }
 
-    for (const event of eventList) {
-        const eventGmlPath = extractEventGmlPath(event, resourceRecord, resourceDir);
+    const resolvedEvents = await Promise.all(
+        eventList.map(async (event) => ({
+            event,
+            eventGmlPath: await extractEventGmlPath(event, resourceRecord, resourceDir, projectRoot, fsFacade, logger)
+        }))
+    );
+
+    for (const { event, eventGmlPath } of resolvedEvents) {
         if (!eventGmlPath) {
             continue;
         }
-
-        const descriptor = createObjectEventScopeDescriptor(resourceRecord, event, eventGmlPath);
 
         attachScopeDescriptor({
             context,
             resourceRecord,
             gmlRelativePath: eventGmlPath,
-            descriptor
+            descriptor: createObjectEventScopeDescriptor(resourceRecord, event, eventGmlPath)
         });
     }
 }
@@ -289,7 +340,15 @@ function collectResourceAssetReferences({ context, parsed, resourceRecord, resou
     }
 }
 
-function processResourceDocument({ context, parsed, resourceRecord, resourcePath, projectRoot }) {
+async function processResourceDocument({
+    context,
+    parsed,
+    resourceRecord,
+    resourcePath,
+    projectRoot,
+    fsFacade,
+    logger
+}) {
     const resourceDir = path.posix.dirname(resourcePath);
 
     registerScriptResourceIfNeeded({
@@ -299,11 +358,14 @@ function processResourceDocument({ context, parsed, resourceRecord, resourcePath
         resourceDir
     });
 
-    registerResourceEvents({
+    await registerResourceEvents({
         context,
         parsed,
         resourceRecord,
-        resourceDir
+        resourceDir,
+        projectRoot,
+        fsFacade,
+        logger
     });
 
     collectResourceAssetReferences({
@@ -336,7 +398,7 @@ export async function analyseResourceFiles({
 }: {
     projectRoot: string;
     yyFiles: Array<{ relativePath: string; absolutePath: string }>;
-    fsFacade?: Required<Pick<ProjectIndexFsFacade, "readFile">>;
+    fsFacade?: Required<Pick<ProjectIndexFsFacade, "readFile">> & ProjectIndexFsFacade;
     signal?: AbortSignal | null;
     logger?: ProjectIndexLogger;
 }) {
@@ -357,12 +419,14 @@ export async function analyseResourceFiles({
 
         const resourceRecord = ensureResourceRecordForDocument(context, file, parsed);
 
-        processResourceDocument({
+        await processResourceDocument({
             context,
             parsed,
             resourceRecord,
             resourcePath: file.relativePath,
-            projectRoot
+            projectRoot,
+            fsFacade,
+            logger
         });
     });
 

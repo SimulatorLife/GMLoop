@@ -7,7 +7,7 @@ import type { ProgramNode } from "../src/emitter/ast.js";
 import { collectGlobalVarNames, collectLocalVariables } from "../src/emitter/local-variable-collector.js";
 
 function parseProgram(source: string): ProgramNode {
-    return Parser.GMLParser.parse(source) as unknown as ProgramNode;
+    return Parser.GMLParser.parse(source);
 }
 
 void describe("collectLocalVariables", () => {

@@ -1,7 +1,7 @@
 /**
  * Supported top-level UI surface identifiers.
  */
-export type UISurfaceId = "ast" | "docs" | "graph" | "rules" | "playground";
+export type UISurfaceId = "ast" | "docs" | "fix" | "graph" | "rules" | "playground";
 
 /**
  * Delivery status for a top-level UI surface.
@@ -40,6 +40,12 @@ export const UI_SURFACE_DEFINITIONS: ReadonlyArray<UISurfaceDefinition> = Object
     {
         description: "Combined CLI and MCP documentation browsing surface with an internal view toggle.",
         id: "docs",
+        owningWorkspace: UI_OWNING_WORKSPACE,
+        status: "implemented"
+    },
+    {
+        description: "Project fix workflow launcher for configured refactor, lint, and format operations.",
+        id: "fix",
         owningWorkspace: UI_OWNING_WORKSPACE,
         status: "implemented"
     },

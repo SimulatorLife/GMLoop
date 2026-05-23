@@ -155,9 +155,7 @@ function resolveParentConstructorName(node: MutableGameMakerAstNode): string | n
 function collectStaticFunctions(node: MutableGameMakerAstNode): Map<string, MutableGameMakerAstNode> {
     const staticFunctions = new Map<string, MutableGameMakerAstNode>();
 
-    const statements = Core.getBodyStatements(
-        (node as Record<string, unknown>).body as Record<string, unknown>
-    ) as MutableGameMakerAstNode[];
+    const statements = Core.getBodyStatements((node as Record<string, unknown>).body) as MutableGameMakerAstNode[];
 
     for (const statement of statements) {
         if (!isStaticFunctionDeclaration(statement)) {
@@ -184,7 +182,7 @@ function collectConstructorInfos(ast: MutableGameMakerAstNode): Map<string, Cons
     }
 
     const constructors = new Map<string, ConstructorInfo>();
-    const body = Core.getBodyStatements(ast as Record<string, unknown>);
+    const body = Core.getBodyStatements(ast);
 
     for (const node of body) {
         if (!Core.isNode(node) || node.type !== "ConstructorDeclaration") {

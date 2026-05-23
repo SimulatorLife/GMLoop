@@ -1,5 +1,5 @@
-import type { Stats } from "node:fs";
-import { stat, writeFile as writeFileAsync } from "node:fs/promises";
+import type { Dirent, Stats } from "node:fs";
+import { readdir, stat, writeFile as writeFileAsync } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -22,6 +22,25 @@ type WorkflowPathFilter = Parameters<typeof ensureWorkflowPathsAllowed>[0];
  */
 export function safeStatOrNull(targetPath: string): Promise<Stats | null> {
     return stat(targetPath).catch(() => null);
+}
+
+/**
+ * Safely attempt to read directory entries, returning an empty array if the
+ * directory does not exist or any other error occurs. This mirrors the
+ * safeStatOrNull pattern for directory listing operations.
+ *
+ * @param {string} directoryPath Path to the directory to read.
+ * @param {object} options Options to pass to readdir.
+ * @returns {Promise<Dirent[]>} Directory entries when accessible, otherwise an empty array.
+ */
+export async function safeReaddirOrEmpty(directoryPath: string, options: { withFileTypes: true }): Promise<Dirent[]>;
+export async function safeReaddirOrEmpty(directoryPath: string, options?: { withFileTypes?: false }): Promise<string[]>;
+export async function safeReaddirOrEmpty(
+    directoryPath: string,
+    options?: { withFileTypes?: boolean }
+): Promise<Dirent[] | string[]> {
+    const entries = await readdir(directoryPath, options as Parameters<typeof readdir>[1]).catch(() => []);
+    return entries as Dirent[] | string[];
 }
 
 export interface FileArtifactWriteDetails {

@@ -4,8 +4,12 @@
     "rootDir": ".",
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "baseUrl": "."
+    "paths": {
+      "@gmloop/core": ["../core/index.ts"],
+      "@gmloop/fixture-runner": ["./index.ts"]
+    }
   },
+  "references": [{ "path": "../core" }],
   "include": ["index.ts", "src/**/*.ts", "test/**/*.ts"],
   "exclude": ["dist"]
 }

@@ -66,13 +66,6 @@ export {
     listSemanticProjectIndexDependentCodemodIds
 } from "./codemod-registry.js";
 export * as Codemods from "./codemods/index.js";
-export type {
-    LoopLengthHoistFunctionSuffixes,
-    LoopLengthHoistingCodemodOptions,
-    LoopLengthHoistingCodemodResult,
-    LoopLengthHoistingEdit
-} from "./codemods/loop-length-hoisting/index.js";
-export { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 export { executeNamingConventionCodemod, planNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 export {
     checkHotReloadSafety,
@@ -98,7 +91,7 @@ export {
     groupOccurrencesByFile
 } from "./occurrence-analysis.js";
 export { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
-export { normalizeRefactorProjectConfig } from "./project-config.js";
+export { normalizeRefactorProjectConfig, normalizeRefactorProjectConfigOrNull } from "./project-config.js";
 export type {
     AddProjectResourceRequest,
     DuplicateProjectResourceRequest,
@@ -178,8 +171,6 @@ export type {
     ExecuteBatchRenameRequest,
     ExecuteGlobalvarToGlobalCodemodRequest,
     ExecuteGlobalvarToGlobalCodemodResult,
-    ExecuteLoopLengthHoistingCodemodRequest,
-    ExecuteLoopLengthHoistingCodemodResult,
     ExecuteRenameRequest,
     ExecuteRenameResult,
     FileSymbol,
@@ -191,7 +182,6 @@ export type {
     HotReloadUpdate,
     HotReloadValidationOptions,
     KeywordProvider,
-    LoopLengthHoistingFileSummary,
     MacroExpansionDependency,
     MacroExpansionDependencyProvider,
     MaybePromise,

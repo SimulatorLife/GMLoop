@@ -13,6 +13,7 @@ import {
     isAstNodeWithType,
     isIdentifierNode,
     rangeContainsCommentToken,
+    unwrapParenthesizedExpression,
     walkAstNodes,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
@@ -101,15 +102,6 @@ function readIdentifierName(node: unknown): string | null {
     }
 
     return node.name;
-}
-
-function unwrapParenthesizedExpression(node: unknown): unknown {
-    let current = node;
-    while (isAstNodeRecord(current) && current.type === "ParenthesizedExpression") {
-        current = current.expression;
-    }
-
-    return current;
 }
 
 function readRootIdentifierName(node: unknown): string | null {

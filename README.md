@@ -44,7 +44,7 @@ Lint (`lint --write`) does single-file-scoped semantic/content rewrites (rule-ow
 
 ### 1) Prerequisites
 
-- Node.js `>=22.5.0` (workspace default in `.nvmrc` is `25.0.0`)
+- Node.js `>=25.0.0` (matches the pinned workspace default in `.nvmrc`)
 - pnpm (`corepack enable pnpm`)
 
 ### 2) Clone and install
@@ -52,13 +52,16 @@ Lint (`lint --write`) does single-file-scoped semantic/content rewrites (rule-ow
 ```bash
 git clone https://github.com/SimulatorLife/GMLoop.git
 cd GMLoop
+git submodule update --init --recursive
 nvm use
 pnpm install
 pnpm run cli -- --help
 ```
 
 Need contributor-focused setup and validation expectations? Continue with [`docs/contributor-onboarding.md`](docs/contributor-onboarding.md).
-If vendor submodules are missing in your local clone, run `git submodule update --init --recursive`.
+For a guided docs tour, start with the [documentation index](docs/README.md).
+
+If you're planning architecture or boundary changes, read [`docs/target-state.md`](docs/target-state.md) before implementing so parser/core/format ownership remains aligned.
 
 ### Format from a local clone
 
@@ -161,6 +164,24 @@ pnpm run cli -- lint /path/to/project --write
 # refactor
 pnpm run cli -- refactor --old-name old_name --new-name newName
 
+# refactor codemod (list configured codemods)
+pnpm run cli -- refactor codemod --list
+
+# fix (project-wide: refactor codemods + lint autofixes + format)
+pnpm run cli -- fix --path /path/to/project
+pnpm run cli -- fix --path /path/to/project --write
+
+# graph index (build dual-root semantic graph index)
+pnpm run cli -- graph index
+pnpm run cli -- graph index --path /path/to/project --force
+
+# graph search (query the graph index)
+pnpm run cli -- graph search "player"
+pnpm run cli -- graph search "player" --path /path/to/project
+
+# graph doctor (validate graph index health)
+pnpm run cli -- graph doctor --path /path/to/project
+
 # transpile
 pnpm run cli -- transpile --write --path /path/to/project
 
@@ -168,8 +189,8 @@ pnpm run cli -- transpile --write --path /path/to/project
 pnpm run cli -- watch /path/to/project --verbose
 
 # query the watch status server (--status-port and --status-host mirror watch's flags)
-pnpm run cli -- watch-status
-pnpm run cli -- watch-status --status-port 18000 --endpoint health
+pnpm run cli -- live-reload status
+pnpm run cli -- live-reload status --status-port 18000 --endpoint health
 ```
 
 ## CLI wrapper environment knobs
@@ -307,3 +328,5 @@ Start here for deeper context and plans:
 - [GML Support (VS Code)](https://marketplace.visualstudio.com/items?itemName=electrobrains.gml-support)
 - [Prettier (VS Code)](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
 - [jscpd CLI](https://github.com/kucherenko/jscpd/tree/master/apps/jscpd)
+- [GameMaker Igor CI Building](https://manual.gamemaker.io/lts/en/Settings/Building_via_Command_Line.htm)
+- [GameMaker CLI](https://github.com/YoYoGames/gm-cli)

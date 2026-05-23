@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { type FSWatcher, type PathLike, promises as fs, type WatchListener, type WatchOptions } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { createGraphCommand } from "../src/commands/graph.js";
+import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
 
 const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
 const SKIP_CLI_ENV_VALUE = "1";
@@ -267,19 +267,20 @@ void test("graph visualize builds a missing database before exporting an HTML+as
         assert.equal(payload.payload.outputDirectory, outputDirectory);
         assert.equal(payload.payload.entryHtmlPath, "index.html");
         await fs.access(databasePath);
-        await fs.access(path.join(outputDirectory, "assets", "graph-visualization.css"));
-        await fs.access(path.join(outputDirectory, "assets", "graph-visualization.js"));
-        await fs.access(path.join(outputDirectory, "assets", "vendor", "d3.min.js"));
-        await fs.access(path.join(outputDirectory, "assets", "vendor", "browser-fs-access.js"));
+        const assetNames = await fs.readdir(path.join(outputDirectory, "assets"));
+        const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
+        const styleAsset = assetNames.find((assetName) => assetName.endsWith(".css"));
+        assert.ok(scriptAsset);
+        assert.ok(styleAsset);
         const html = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
-        const script = await fs.readFile(path.join(outputDirectory, "assets", "graph-visualization.js"), "utf8");
+        const script = await fs.readFile(path.join(outputDirectory, "assets", scriptAsset), "utf8");
         assert.match(script, /shared_toolset_fn/u);
         assert.match(script, /gmloop_format/u);
         assert.match(script, /Format GameMaker Language files using the prettier plugin\./u);
         assert.doesNotMatch(html, /id="regenerate"/u);
-        assert.match(html, /assets\/graph-visualization\.js/u);
-        assert.match(html, /assets\/graph-visualization\.css/u);
-        assert.match(html, /assets\/vendor\/d3\.min\.js/u);
+        assert.match(html, /assets\/.+\.js/u);
+        assert.match(html, /assets\/.+\.css/u);
+        assert.doesNotMatch(html, /assets\/vendor\//u);
         assert.doesNotMatch(html, /cdn\./u);
     } finally {
         await fixture.cleanup();
@@ -416,6 +417,147 @@ void test("graph visualize --serve boots without a project path and waits for UI
     } finally {
         serveProcess?.kill("SIGTERM");
         await fs.rm(emptyWorkingDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("graph visualize UI source reload candidate includes Lit web source assets", () => {
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("gm-graph-panel.ts"), true);
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph.css"), true);
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("index.html"), true);
+    assert.equal(
+        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-bundle.gml"),
+        false
+    );
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate(null), false);
+});
+
+void test("graph visualize UI source watcher resolves the repository source tree independently of cwd", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-ui-watch-root-"));
+    const previousWorkingDirectory = process.cwd();
+
+    try {
+        process.chdir(temporaryDirectory);
+        assert.equal(
+            __graphCommandTest__.resolveGraphVisualizationUiSourceWatchRoot(),
+            path.join(REPO_ROOT, "src", "ui", "src")
+        );
+    } finally {
+        process.chdir(previousWorkingDirectory);
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("graph visualize UI source watcher reports watcher errors without throwing", () => {
+    let closeCount = 0;
+    const receivedErrors: Array<string> = [];
+    let errorListener: ((error: Error) => void) | null = null;
+    const fakeWatcher = {
+        close() {
+            closeCount += 1;
+        },
+        on(eventName: string, listener: (error: Error) => void) {
+            if (eventName === "error") {
+                errorListener = listener;
+            }
+            return fakeWatcher;
+        },
+        ref() {
+            return fakeWatcher;
+        },
+        unref() {
+            return fakeWatcher;
+        }
+    } as unknown as FSWatcher;
+
+    const watchFactory = (
+        _path: PathLike,
+        _options?: WatchOptions | BufferEncoding | "buffer",
+        _listener?: WatchListener<string>
+    ): FSWatcher => {
+        void _path;
+        void _options;
+        void _listener;
+        return fakeWatcher;
+    };
+
+    const watcher = __graphCommandTest__.startGraphVisualizationUiSourceWatcher({
+        onError: (error: unknown) => {
+            receivedErrors.push(error instanceof Error ? error.message : "Unknown watcher error");
+        },
+        onReloadCandidate: () => {},
+        watchFactory,
+        watchRoot: REPO_ROOT
+    });
+
+    assert.equal(watcher, fakeWatcher);
+    errorListener?.(new Error("synthetic watcher failure"));
+
+    assert.deepEqual(receivedErrors, ["synthetic watcher failure"]);
+    assert.equal(closeCount, 1);
+});
+
+void test("graph visualize live-reload startup options default to GameMaker temp-root autodetection", () => {
+    const startupOptions = __graphCommandTest__.resolveGraphVisualizationLiveReloadStartupOptions("/tmp/project", {});
+
+    assert.equal(startupOptions.hasBuildConfiguration, false);
+    assert.equal(startupOptions.html5OutputRoot, null);
+    assert.equal(startupOptions.gmTempRoot, "/private/tmp/GameMakerStudio2/GMS2TEMP");
+});
+
+void test("graph visualize live-reload startup options honor runtime.liveReload config", () => {
+    const startupOptions = __graphCommandTest__.resolveGraphVisualizationLiveReloadStartupOptions("/tmp/project", {
+        runtime: {
+            liveReload: {
+                build: {
+                    backend: "igor"
+                },
+                gmTempRoot: ".gm-temp/html5",
+                html5Output: "dist/html5"
+            }
+        }
+    });
+
+    assert.equal(startupOptions.hasBuildConfiguration, true);
+    assert.equal(startupOptions.html5OutputRoot, path.resolve("/tmp/project", "dist/html5"));
+    assert.equal(startupOptions.gmTempRoot, path.resolve("/tmp/project", ".gm-temp/html5"));
+});
+
+void test("graph visualize live-reload startup timeout allows long build-first startup", () => {
+    assert.equal(__graphCommandTest__.GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS, 600_000);
+});
+
+void test("graph visualize live-reload dev args include configured startup paths", () => {
+    const args = __graphCommandTest__.createGraphVisualizationLiveReloadDevCommandArgs("/tmp/project", {
+        gmTempRoot: "/tmp/project/.gm-temp/html5",
+        hasBuildConfiguration: true,
+        html5OutputRoot: "/tmp/project/dist/html5"
+    });
+
+    assert.deepEqual(args, [
+        "live-reload",
+        "dev",
+        "/tmp/project",
+        "--html5-output",
+        "/tmp/project/dist/html5",
+        "--gm-temp-root",
+        "/tmp/project/.gm-temp/html5",
+        "--quiet"
+    ]);
+});
+
+void test("graph visualize serve defaults to the bundled 3DSpider demo from the repository root", () => {
+    const demoProjectRoot = __graphCommandTest__.resolveDefaultGraphVisualizationServeTargetPath(REPO_ROOT);
+
+    assert.equal(demoProjectRoot, path.join(REPO_ROOT, "vendor", "3DSpider"));
+});
+
+void test("graph visualize serve has no bundled demo fallback outside the repository tree", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-demo-fallback-"));
+
+    try {
+        assert.equal(__graphCommandTest__.resolveDefaultGraphVisualizationServeTargetPath(temporaryDirectory), null);
+    } finally {
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
     }
 });
 

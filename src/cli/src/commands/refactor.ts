@@ -23,8 +23,9 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
+import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
 import { isRefactorResourcePath } from "../modules/refactor/gml-resource-path.js";
-import { GmlParserBridge, GmlSemanticBridge, GmlTranspilerBridge } from "../modules/refactor/index.js";
+import { GmlSemanticBridge } from "../modules/refactor/index.js";
 import {
     discoverProjectRoot,
     resolveExistingGmloopConfigPath,
@@ -165,20 +166,6 @@ function normalizeRequestedCodemods(onlyOption: string | undefined): Array<Regis
     });
 }
 
-function resolveDiscoveredProjectRoot(
-    projectRootOption: string | undefined,
-    configPathOption: string | undefined
-): Promise<string> {
-    return discoverProjectRoot({
-        explicitProjectPath: projectRootOption,
-        configPath: configPathOption
-    });
-}
-
-function resolveCodemodConfigPath(projectRoot: string, configPathOption: string | undefined): Promise<string> {
-    return resolveExistingGmloopConfigPath(projectRoot, configPathOption);
-}
-
 function hasExplicitRenameIntent(options: RefactorCommandOptions): boolean {
     return Boolean(options.symbolId || options.oldName || options.newName || options.checkHotReload);
 }
@@ -240,7 +227,10 @@ async function validateRenameOptions(options: RefactorCommandOptions): Promise<V
     }
 
     return {
-        projectRoot: await resolveDiscoveredProjectRoot(options.path, options.config),
+        projectRoot: await discoverProjectRoot({
+            explicitProjectPath: options.path,
+            configPath: options.config
+        }),
         verbose: Boolean(options.verbose),
         symbolId: options.symbolId,
         oldName: options.oldName,
@@ -255,7 +245,10 @@ async function validateCodemodOptions(
     options: RefactorCommandOptions,
     pathArguments: Array<string>
 ): Promise<ValidatedCodemodOptions> {
-    const projectRoot = await resolveDiscoveredProjectRoot(options.path, options.config);
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.path,
+        configPath: options.config
+    });
     const explicitTargetPath = resolveExplicitWorkflowTargetPath(options.path);
     const targetPaths =
         pathArguments.length === 0
@@ -265,7 +258,7 @@ async function validateCodemodOptions(
     return {
         projectRoot,
         verbose: Boolean(options.verbose),
-        configPath: await resolveCodemodConfigPath(projectRoot, options.config),
+        configPath: await resolveExistingGmloopConfigPath(projectRoot, options.config),
         dryRun: !options.write,
         onlyCodemods: normalizeRequestedCodemods(options.only),
         list: Boolean(options.list),
@@ -377,19 +370,14 @@ function createRefactorEngineForProject(
     projectIndex: object | null,
     includeSemanticBridge: boolean = projectIndex !== null
 ): InstanceType<typeof RefactorEngine> {
-    const semantic =
-        includeSemanticBridge && projectIndex !== null
-            ? new GmlSemanticBridge(projectIndex, projectRoot)
-            : includeSemanticBridge
-              ? new GmlSemanticBridge({}, projectRoot)
-              : null;
-    const parser = new GmlParserBridge();
-    const formatter = new GmlTranspilerBridge();
+    const semanticBridge = includeSemanticBridge ? new GmlSemanticBridge(projectIndex ?? {}, projectRoot) : undefined;
+
+    const bridges = createRefactorBridges({ semantic: semanticBridge }, projectRoot);
 
     return new RefactorEngine({
-        semantic,
-        parser,
-        formatter
+        semantic: semanticBridge ?? null,
+        parser: bridges.parser,
+        formatter: bridges.formatter
     });
 }
 
@@ -487,7 +475,7 @@ async function performRename(options: ValidatedRenameOptions): Promise<void> {
                 `Check that the symbol name is correct (including case) and that it refers to a user-defined resource (Script, Macro, Variable, etc.).`;
         }
 
-        throw new Error(`Refactor operation failed: ${message}`);
+        throw new Error(`Refactor operation failed: ${message}`, { cause: error });
     }
 }
 
@@ -626,7 +614,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                 );
 
                 // Access the underlying GmlSemanticBridge and update it directly
-                const semanticBridge = engine.semantic as any;
+                const semanticBridge = engine.semantic as GmlSemanticBridge;
                 if (semanticBridge && typeof semanticBridge.updateProjectIndex === "function") {
                     semanticBridge.updateProjectIndex(updatedProjectIndex);
                 }

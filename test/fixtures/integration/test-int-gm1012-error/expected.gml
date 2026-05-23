@@ -1,4 +1,4 @@
-/// @param value
+/// @param {any} value
 /// @returns {real}
 function example(value) {
     return string_length(string(value));

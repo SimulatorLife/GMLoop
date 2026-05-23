@@ -2,314 +2,190 @@ import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
 import { applySourceTextEdits } from "../codemod-helpers.js";
-import type {
-    LoopLengthHoistingCodemodOptions,
-    LoopLengthHoistingCodemodResult,
-    LoopLengthHoistingEdit
-} from "./types.js";
+import type { LoopLengthHoistingEdit, LoopLengthHoistingResult } from "./types.js";
 
-const DEFAULT_HOIST_ACCESSORS = Object.freeze({
-    array_length: "len"
-});
+const ARRAY_LENGTH_CALL_TEXT = "array_length(";
+const DEFAULT_HOIST_IDENTIFIER = "len";
+const ARRAY_LENGTH_FUNCTION_NAMES = new Set(["array_length"]);
+const IDENTIFIER_PATTERN = /[A-Za-z_][A-Za-z0-9_]*/gu;
 
-type ForStatementContainerContext = Readonly<{
-    forNode: Record<string, unknown>;
+type AstRecord = Record<string, unknown>;
+
+type ForStatementContext = Readonly<{
+    forNode: AstRecord;
     canInsertHoistBeforeLoop: boolean;
 }>;
 
-/**
- * Result of the combined single-pass AST data collection.
- * Both identifier names and for-statement contexts are gathered
- * in one traversal instead of two separate walks.
- */
-type AstDataCollection = {
-    /** All identifier names found anywhere in the AST (mutable, callers may add hoisted names). */
-    identifierNames: Set<string>;
-    /** For-statement container contexts with hoistability flags. */
-    forStatementContexts: ReadonlyArray<ForStatementContainerContext>;
-};
-
-type LoopLengthHoistRewrite = Readonly<{
-    insertionOffset: number;
-    insertionText: string;
-    callRewrites: ReadonlyArray<LoopLengthHoistingEdit>;
-    reportOffset: number;
-}>;
-
-function getLineStartOffset(sourceText: string, offset: number): number {
-    return sourceText.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
+function createUnchangedResult(sourceText: string): LoopLengthHoistingResult {
+    return Object.freeze({
+        changed: false,
+        outputText: sourceText,
+        appliedEdits: Object.freeze([])
+    });
 }
 
-function getLineIndentationAtOffset(sourceText: string, offset: number): string {
-    const lineStart = getLineStartOffset(sourceText, offset);
-    let cursor = lineStart;
-    while (cursor < sourceText.length && (sourceText[cursor] === " " || sourceText[cursor] === "\t")) {
-        cursor += 1;
-    }
-
-    return sourceText.slice(lineStart, cursor);
+function isAstRecord(value: unknown): value is AstRecord {
+    return Core.isObjectLike(value);
 }
 
-/**
- * Collect both identifier names and for-statement container contexts from the
- * AST in a **single recursive pass**, replacing the previous two-pass approach
- * (`collectIdentifierNamesInSubtree` via `Core.walkAst` + a separate
- * `collectForStatementContainerContexts` traversal).
- *
- * For files with many identifiers this halves the number of AST node visits,
- * which is measurable when processing hundreds of GML files in one codemod run.
- */
-function collectAstData(programNode: unknown): AstDataCollection {
-    const identifierNames = new Set<string>();
-    const contexts: Array<ForStatementContainerContext> = [];
+function collectForStatementContexts(programNode: unknown): ReadonlyArray<ForStatementContext> {
+    const contexts: Array<ForStatementContext> = [];
 
-    const visitValue = (value: unknown, canInsertHoistBeforeLoop: boolean): void => {
-        if (!value || typeof value !== "object") {
-            return;
-        }
-
-        if (Array.isArray(value)) {
-            for (const entry of value) {
-                visitValue(entry, false);
+    const visit = (node: unknown, parent: AstRecord | null, parentKey: string | null): void => {
+        if (Array.isArray(node)) {
+            for (const element of node) {
+                visit(element, parent, parentKey);
             }
-
             return;
         }
 
-        const node = value as Record<string, unknown>;
-
-        // Collect identifier names in the same traversal pass.
-        if (node.type === "Identifier" && typeof node.name === "string") {
-            identifierNames.add(node.name);
+        if (!isAstRecord(node)) {
+            return;
         }
 
         if (node.type === "ForStatement") {
             contexts.push(
                 Object.freeze({
                     forNode: node,
-                    canInsertHoistBeforeLoop
+                    canInsertHoistBeforeLoop:
+                        parent !== null &&
+                        parentKey === "body" &&
+                        (parent.type === "Program" || parent.type === "BlockStatement")
                 })
             );
+            return;
         }
 
-        for (const [propertyName, propertyValue] of Object.entries(node)) {
-            if (
-                propertyName === "body" &&
-                Array.isArray(propertyValue) &&
-                (node.type === "Program" || node.type === "BlockStatement")
-            ) {
-                for (const statement of propertyValue) {
-                    visitValue(statement, true);
-                }
-
-                continue;
+        for (const [key, child] of Object.entries(node)) {
+            if (child && typeof child === "object") {
+                visit(child, node, key);
             }
-
-            visitValue(propertyValue, false);
         }
     };
 
-    visitValue(programNode, false);
-    return { identifierNames, forStatementContexts: contexts };
+    visit(programNode, null, null);
+    return contexts;
 }
 
-function resolveLoopLengthHoistIdentifierName(
-    preferredName: string,
-    inScopeIdentifierNames: ReadonlySet<string>
-): string | null {
-    if (!Core.GML_IDENTIFIER_NAME_PATTERN.test(preferredName)) {
-        return null;
-    }
-
-    if (!inScopeIdentifierNames.has(preferredName)) {
-        return preferredName;
-    }
-
-    let suffix = 2;
-    while (suffix < Number.MAX_SAFE_INTEGER) {
-        const candidateName = `${preferredName}${String(suffix)}`;
-        if (!inScopeIdentifierNames.has(candidateName)) {
-            return candidateName;
+function resolveLineIndent(sourceText: string, offset: number): string {
+    const lineStart = sourceText.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
+    let cursor = lineStart;
+    while (cursor < sourceText.length) {
+        const character = sourceText[cursor];
+        if (character !== " " && character !== "\t") {
+            break;
         }
+        cursor += 1;
+    }
 
+    return sourceText.slice(lineStart, cursor);
+}
+
+function collectSourceIdentifierNames(sourceText: string): Set<string> {
+    const names = new Set<string>();
+    for (const match of sourceText.matchAll(IDENTIFIER_PATTERN)) {
+        names.add(match[0]);
+    }
+    return names;
+}
+
+function resolveAvailableHoistIdentifier(usedIdentifierNames: Set<string>): string {
+    if (!usedIdentifierNames.has(DEFAULT_HOIST_IDENTIFIER)) {
+        usedIdentifierNames.add(DEFAULT_HOIST_IDENTIFIER);
+        return DEFAULT_HOIST_IDENTIFIER;
+    }
+
+    let suffix = 1;
+    while (usedIdentifierNames.has(`${DEFAULT_HOIST_IDENTIFIER}_${suffix}`)) {
         suffix += 1;
     }
 
-    return null;
+    const identifierName = `${DEFAULT_HOIST_IDENTIFIER}_${suffix}`;
+    usedIdentifierNames.add(identifierName);
+    return identifierName;
 }
 
-function createLoopLengthHoistRewrite(parameters: {
-    sourceText: string;
-    loopContext: ForStatementContainerContext;
-    suffixMap: ReadonlyMap<string, string>;
-    localIdentifierNames: ReadonlySet<string>;
-    lineEnding: string;
-}): LoopLengthHoistRewrite | null {
-    const { forNode, canInsertHoistBeforeLoop } = parameters.loopContext;
-    if (!canInsertHoistBeforeLoop) {
-        return null;
-    }
+function buildLoopLengthHoistEdits(sourceText: string, ast: unknown): ReadonlyArray<LoopLengthHoistingEdit> {
+    const edits: Array<LoopLengthHoistingEdit> = [];
+    const usedIdentifierNames = collectSourceIdentifierNames(sourceText);
 
-    const accessorCalls = Core.collectLoopLengthAccessorCallsFromAstNode({
-        sourceText: parameters.sourceText,
-        rootNode: forNode.test,
-        enabledFunctionNames: new Set(parameters.suffixMap.keys())
-    });
+    for (const context of collectForStatementContexts(ast)) {
+        if (!context.canInsertHoistBeforeLoop) {
+            continue;
+        }
 
-    if (accessorCalls.length === 0) {
-        return null;
-    }
+        const forStart = Core.getNodeStartIndex(context.forNode);
+        if (typeof forStart !== "number") {
+            continue;
+        }
 
-    const firstCall = accessorCalls[0];
-    const preferredSuffix = parameters.suffixMap.get(firstCall.functionName) ?? "len";
-    const hoistedName = resolveLoopLengthHoistIdentifierName(preferredSuffix, parameters.localIdentifierNames);
-    if (!hoistedName) {
-        return null;
-    }
+        const testExpression = context.forNode.test;
+        const calls = Core.collectLoopLengthAccessorCallsFromAstNode({
+            sourceText,
+            rootNode: testExpression,
+            enabledFunctionNames: ARRAY_LENGTH_FUNCTION_NAMES
+        });
+        const firstCall = calls[0];
+        if (!firstCall) {
+            continue;
+        }
 
-    const forNodeStart = Core.getNodeStartIndex(forNode);
-    const insertionOffset = typeof forNodeStart === "number" ? forNodeStart : 0;
-    const indentation = getLineIndentationAtOffset(parameters.sourceText, insertionOffset);
-    const insertionText = `var ${hoistedName} = ${firstCall.callText};${parameters.lineEnding}${indentation}`;
-
-    const callRewrites = accessorCalls
-        .filter((call) => call.functionName === firstCall.functionName && call.callText === firstCall.callText)
-        .map((call) =>
+        const indent = resolveLineIndent(sourceText, forStart);
+        const hoistIdentifier = resolveAvailableHoistIdentifier(usedIdentifierNames);
+        edits.push(
             Object.freeze({
-                start: call.callStart,
-                end: call.callEnd,
-                text: hoistedName
+                start: forStart,
+                end: forStart,
+                text: `${indent}var ${hoistIdentifier} = ${firstCall.callText};\n`
             })
         );
 
-    return Object.freeze({
-        insertionOffset,
-        insertionText,
-        callRewrites,
-        reportOffset: firstCall.callStart
-    });
-}
-
-/**
- * Perform a cheap lexical pre-check before parsing to detect whether the file
- * could possibly contain any configured loop-length accessor call.
- *
- * This intentionally over-approximates (it may return true for comments or
- * strings) but never under-approximates valid call syntax. Returning `false`
- * lets the codemod skip AST parsing for files that cannot be rewritten.
- */
-function sourceContainsPotentialAccessorCall(sourceText: string, accessorNames: ReadonlySet<string>): boolean {
-    for (const accessorName of accessorNames) {
-        const directCallToken = `${accessorName}(`;
-        if (sourceText.includes(directCallToken)) {
-            return true;
-        }
-
-        const callWithWhitespacePattern = new RegExp(String.raw`\b${accessorName}\s+\(`, "u");
-        if (callWithWhitespacePattern.test(sourceText)) {
-            return true;
+        for (const call of calls) {
+            edits.push(
+                Object.freeze({
+                    start: call.callStart,
+                    end: call.callEnd,
+                    text: hoistIdentifier
+                })
+            );
         }
     }
 
-    return false;
+    return edits;
 }
 
 /**
- * Applies the loop-length hoisting codemod to a single GML source file.
+ * Hoist `array_length(...)` calls from safe `for` loop conditions into a local
+ * `var len = ...` declaration immediately before the loop.
  *
- * The codemod rewrites `for` loop tests that repeatedly call configured
- * length accessors (for example `array_length(items)`) by inserting a cached
- * local variable before the loop and replacing test-call sites with that
- * cached identifier.
+ * The implementation intentionally uses a substring gate before parsing so
+ * realistic projects with many files and few array-length loops skip the AST
+ * path entirely.
+ *
+ * @param sourceText - GML source text to transform.
+ * @returns The transformed source and edit list.
  */
-export function applyLoopLengthHoistingCodemod(
-    sourceText: string,
-    options: LoopLengthHoistingCodemodOptions = {}
-): LoopLengthHoistingCodemodResult {
-    if (!Core.isNonEmptyString(sourceText)) {
-        return Object.freeze({
-            changed: false,
-            outputText: sourceText,
-            appliedEdits: Object.freeze([]),
-            diagnosticOffsets: Object.freeze([])
-        });
-    }
-
-    const suffixMap = Core.resolveIdentifierKeyedSuffixMap(DEFAULT_HOIST_ACCESSORS, options.functionSuffixes);
-    if (suffixMap.size === 0) {
-        return Object.freeze({
-            changed: false,
-            outputText: sourceText,
-            appliedEdits: Object.freeze([]),
-            diagnosticOffsets: Object.freeze([])
-        });
-    }
-
-    if (!sourceContainsPotentialAccessorCall(sourceText, new Set(suffixMap.keys()))) {
-        return Object.freeze({
-            changed: false,
-            outputText: sourceText,
-            appliedEdits: Object.freeze([]),
-            diagnosticOffsets: Object.freeze([])
-        });
+export function applyLoopLengthHoistingCodemod(sourceText: string): LoopLengthHoistingResult {
+    if (!Core.isNonEmptyString(sourceText) || !sourceText.includes(ARRAY_LENGTH_CALL_TEXT)) {
+        return createUnchangedResult(sourceText);
     }
 
     let ast: unknown;
     try {
         ast = Parser.GMLParser.parse(sourceText);
     } catch {
-        return Object.freeze({
-            changed: false,
-            outputText: sourceText,
-            appliedEdits: Object.freeze([]),
-            diagnosticOffsets: Object.freeze([])
-        });
+        return createUnchangedResult(sourceText);
     }
 
-    // Collect identifier names and for-statement contexts in a single AST pass
-    // instead of two separate traversals, cutting per-file node visits in half.
-    // The returned `identifierNames` set is mutable and accumulates hoisted
-    // variable names as loops are processed, preventing naming conflicts.
-    const { identifierNames, forStatementContexts: loopContexts } = collectAstData(ast);
-    const lineEnding = Core.dominantLineEnding(sourceText);
-
-    const edits: Array<LoopLengthHoistingEdit> = [];
-    const diagnosticOffsets: Array<number> = [];
-
-    for (const loopContext of loopContexts) {
-        const rewrite = createLoopLengthHoistRewrite({
-            sourceText,
-            loopContext,
-            suffixMap,
-            localIdentifierNames: identifierNames,
-            lineEnding
-        });
-
-        if (!rewrite) {
-            continue;
-        }
-
-        edits.push(
-            Object.freeze({
-                start: rewrite.insertionOffset,
-                end: rewrite.insertionOffset,
-                text: rewrite.insertionText
-            }),
-            ...rewrite.callRewrites
-        );
-
-        const hoistedIdentifierName = rewrite.callRewrites[0]?.text;
-        if (Core.isNonEmptyString(hoistedIdentifierName)) {
-            identifierNames.add(hoistedIdentifierName);
-        }
-        diagnosticOffsets.push(rewrite.reportOffset);
+    const edits = buildLoopLengthHoistEdits(sourceText, ast);
+    if (edits.length === 0) {
+        return createUnchangedResult(sourceText);
     }
 
     const outputText = applySourceTextEdits(sourceText, edits);
     return Object.freeze({
         changed: outputText !== sourceText,
         outputText,
-        appliedEdits: Object.freeze(edits),
-        diagnosticOffsets: Object.freeze(diagnosticOffsets)
+        appliedEdits: Object.freeze(edits)
     });
 }

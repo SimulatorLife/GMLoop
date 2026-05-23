@@ -1,4 +1,4 @@
-import { Core } from "@gmloop/core";
+import { Core, MEMBER_ACCESSOR_ARRAY } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
@@ -29,8 +29,6 @@ type PreferArrayPushCandidate = Readonly<{
     arrayExpression: unknown;
     valueExpression: unknown;
 }>;
-
-type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
 
 function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
     return isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=");
@@ -65,7 +63,7 @@ function isSafeArrayReceiver(node: unknown): boolean {
                 return false;
             }
 
-            const propertyEntry = Core.getSingleMemberIndexPropertyEntry(node as never);
+            const propertyEntry = Core.getSingleMemberIndexPropertyEntry(node);
             return propertyEntry !== null && isSafeArrayReceiver(propertyEntry);
         }
         default: {
@@ -75,13 +73,7 @@ function isSafeArrayReceiver(node: unknown): boolean {
 }
 
 function sliceNodeText(sourceText: string, node: unknown): string | null {
-    const start = Core.getNodeStartIndex(node);
-    const end = Core.getNodeEndIndex(node);
-    if (typeof start !== "number" || typeof end !== "number") {
-        return null;
-    }
-
-    return sourceText.slice(start, end);
+    return Core.getNodeSourceText(sourceText, node);
 }
 
 function tryGetPreferArrayPushCandidate(node: unknown, sourceText: string): PreferArrayPushCandidate | null {
@@ -89,29 +81,29 @@ function tryGetPreferArrayPushCandidate(node: unknown, sourceText: string): Pref
         return null;
     }
 
-    if (!isMemberIndexExpressionNode(node.left) || node.left.accessor !== "[") {
+    if (!isMemberIndexExpressionNode(node.left) || node.left.accessor !== MEMBER_ACCESSOR_ARRAY) {
         return null;
     }
 
-    const arrayExpression = Core.unwrapParenthesizedExpression(node.left.object as UnwrapParenthesizedExpressionInput);
+    const arrayExpression = Core.unwrapParenthesizedExpression(node.left.object);
     if (!arrayExpression || !isSafeArrayReceiver(arrayExpression)) {
         return null;
     }
 
-    const indexExpression = Core.getSingleMemberIndexPropertyEntry(node.left as never);
+    const indexExpression = Core.getSingleMemberIndexPropertyEntry(node.left);
     if (!isCallExpressionNode(indexExpression)) {
         return null;
     }
 
     if (
-        !Core.isCallExpressionIdentifierMatch(indexExpression as never, "array_length", {
+        !Core.isCallExpressionIdentifierMatch(indexExpression, "array_length", {
             caseInsensitive: true
         })
     ) {
         return null;
     }
 
-    const indexArguments = Core.getCallExpressionArguments(indexExpression as never);
+    const indexArguments = Core.getCallExpressionArguments(indexExpression);
     if (indexArguments.length !== 1) {
         return null;
     }

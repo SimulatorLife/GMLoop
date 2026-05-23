@@ -10,11 +10,10 @@ export type GraphEmbeddingsConfig = Readonly<{
 export type GraphDatabaseRuntimeInfo = Readonly<{
     busyTimeoutMs: number;
     driver: "node:sqlite";
-    experimental: true;
     foreignKeysEnabled: boolean;
     journalMode: string;
+    runtimeStability: "stable";
     synchronousMode: string;
-    warningPolicy: "documented-and-reported";
 }>;
 
 export type GraphDatabaseIntegrityStatus = Readonly<{

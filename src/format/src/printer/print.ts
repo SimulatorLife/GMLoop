@@ -6,10 +6,13 @@
  * This file has been progressively refactored.  Functions that were once
  * inlined here now live in focused sub-modules:
  *
- * - doc-comment-output.ts     – doc-comment block printing for function/variable nodes
- * - expression-print-utils.ts – parenthesis-flattening, ternary printing, and shared
+ * - doc-comment-output.ts      – doc-comment block printing for function/variable nodes
+ * - expression-print-utils.ts  – parenthesis-flattening, ternary printing, and shared
  *                               expression utility helpers (printSimpleDeclaration,
  *                               printEmptyParens, printEmptyBlock, etc.)
+ * - delimited-list.ts         – comma-separated list, argument list, and element
+ *                               printing utilities (printCommaSeparatedList,
+ *                               buildCallArgumentsDocs, printElements, etc.)
  *
  * Contributors should continue placing new domain-specific helpers in the appropriate
  * sub-module rather than growing this file further.
@@ -23,10 +26,16 @@ import {
     LogicalOperatorsStyle,
     normalizeLogicalOperatorsStyle,
     ObjectWrapOption,
-    resolveObjectWrapOption,
-    TRAILING_COMMA
+    resolveObjectWrapOption
 } from "../options/index.js";
-import { DOC_COMMENT_OUTPUT_FLAG, NUMBER_TYPE, OBJECT_TYPE, STRING_TYPE, UNDEFINED_TYPE } from "./constants.js";
+import { NUMBER_TYPE, OBJECT_TYPE, STRING_TYPE, UNDEFINED_TYPE } from "./constants.js";
+import {
+    buildCallArgumentsDocs,
+    buildFunctionParameterDocs,
+    countLeadingSimpleCallArguments,
+    printCommaSeparatedList,
+    shouldAllowTrailingComma
+} from "./delimited-list.js";
 import { printNodeDocComments } from "./doc-comment-output.js";
 import { getEnumNameAlignmentPadding, prepareEnumMembersForPrinting } from "./enum-alignment.js";
 import {
@@ -55,28 +64,41 @@ import {
     softline,
     willBreak
 } from "./prettier-doc-builders.js";
-import {
-    countTrailingBlankLines,
-    getNextNonWhitespaceCharacter,
-    isLastStatement,
-    isSkippableSemicolonWhitespace,
-    optionalSemicolon
-} from "./semicolons.js";
+import { isLastStatement, isSkippableSemicolonWhitespace, optionalSemicolon } from "./semicolons.js";
 import { buildClauseGroup, printSingleClauseStatement } from "./single-clause-statement.js";
 import {
     getOriginalTextFromOptions,
-    macroTextHasExplicitTrailingBlankLine,
     resolveNodeIndexRangeWithSource,
     resolvePrinterSourceMetadata,
     sliceOriginalText,
     stripTrailingLineTerminators
 } from "./source-text.js";
-import { shouldAddNewlinesAroundStatement, shouldSuppressEmptyLineBetween } from "./statement-spacing-policy.js";
-import { isCallbackArgument, isComplexArgumentNode, isInLValueChain, isSimpleCallArgument } from "./type-guards.js";
+import { shouldAddNewlinesAroundStatement } from "./statement-spacing-policy.js";
+import { handleIntermediateTrailingSpacing, handleTerminalTrailingSpacing } from "./statement-traversal-spacing.js";
+import { isComplexArgumentNode, isInLValueChain } from "./type-guards.js";
 import { joinDeclaratorPartsWithCommas } from "./variable-declarator-layout.js";
 
-const forcedStructArgumentBreaks = new WeakMap();
-const MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING = 4;
+// Module-level cache keyed on struct argument AST nodes.
+// See clearStructArgumentBreakCache for the memory-management rationale.
+let forcedStructArgumentBreaks = new WeakMap();
+
+/**
+ * Reset the struct-argument-break cache to an empty WeakMap.
+ *
+ * Standard WeakMaps have no `clear()` method, so the only way to release
+ * the entries without relying on GC is to replace the reference with a
+ * fresh instance.  This is safe because every call to `printCallExpressionNode`
+ * and `printNewExpressionNode` reads the current value of
+ * `forcedStructArgumentBreaks` via the variable binding, not via closure.
+ *
+ * After this function runs the previous WeakMap is eligible for GC (it has
+ * no outgoing references), and the new empty instance immediately starts
+ * collecting new entries for the next format cycle.  This cuts steady-state
+ * heap usage for repeated format calls from O(N entries) to O(1) per cycle.
+ */
+export function clearStructArgumentBreakCache(): void {
+    forcedStructArgumentBreaks = new WeakMap();
+}
 
 function applyLogicalOperatorsStyle(operator, style) {
     const coreStyle = style === LogicalOperatorsStyle.KEYWORDS ? "keyword" : "symbol";
@@ -302,7 +324,13 @@ function tryPrintVariableNode(node, path, options, print) {
             const docComments = printNodeDocComments(node, path, options);
 
             if (node.kind === "static") {
-                // WORKAROUND: Bypass printCommaSeparatedList for static declarations.
+                // WORKAROUND: printCommaSeparatedList adds a soft-break before each
+                // declarator, which is appropriate for `var a, b, c` but produces
+                // visually inconsistent output for `static x = 1, y = 2` where each
+                // declarator already contains its own initializer break.
+                // Bypassing the utility and manually assembling the joined parts keeps
+                // static declarations on a single formatting lane without hard breaks
+                // unless an individual initializer forces one.
                 const parts = path.map(print, "declarations");
                 const joined = joinDeclaratorPartsWithCommas(parts);
 
@@ -724,7 +752,15 @@ function tryPrintDeclarationNode(node, path, options, print) {
         case "IdentifierStatement": {
             return print("name");
         }
-        case "DefineStatement": // TODO: The parser should not emit a different node type for 'DefineStatement'. For now, just let it fall-through. See docs/define-directive-fixing.md
+        case "DefineStatement":
+        // #define vs #macro: both directives declare named constants, but the
+        // parser currently emits them as distinct AST node kinds.  These are
+        // semantically equivalent for formatting purposes (both carry a name
+        // and a value body), so the printer handles them identically here.
+        // If the parser is ever updated to emit a single node kind for both
+        // directives, this fall-through can be removed and the handling code
+        // will be reachable via the `MacroDeclaration` case alone.
+        // fall through
         case "MacroDeclaration": {
             const macroName = typeof node.name === "string" ? node.name : (node.name?.name ?? null);
             const { start: macroStart, end: macroEnd } = Core.getNodeRangeIndices(node);
@@ -979,12 +1015,38 @@ function printSwitchCaseNode(node, path, options, print) {
 // so that any accidental `null` or `undefined` values nested inside raw
 // arrays are coerced into safe string fragments. This prevents Prettier's
 // doc traversal from encountering `null` and throwing `InvalidDocError`.
+/**
+ * Coerce accidental `null` / `undefined` leaves inside a Prettier doc tree
+ * into empty string fragments so that doc traversal never encounters them.
+ *
+ * This guard exists because `_printImpl` may occasionally leave `null` inside
+ * raw arrays when handling edge-case nodes. Prettier's doc traversal will
+ * throw `InvalidDocError` if it reaches a `null` leaf, so this recursive map
+ * strips them before the result reaches Prettier's document printer.
+ *
+ * @param doc - A Prettier doc node (null, string, Doc[], or plain Doc).
+ * @returns The doc with all `null` values replaced by `""`.
+ */
 function _sanitizeDocOutput(doc) {
     if (doc === null) return "";
     if (Array.isArray(doc)) return doc.map(_sanitizeDocOutput);
     return doc;
 }
 
+/**
+ * Format an AST node into a formatted GML string.
+ *
+ * Delegates to the internal `_printImpl` to produce a Prettier document tree,
+ * then passes the result through `_sanitizeDocOutput` to strip any accidental
+ * `null` or `undefined` values that `_printImpl` may have left in raw arrays.
+ * Without this guard, Prettier's doc traversal would throw `InvalidDocError`
+ * when it encounters a `null` leaf node.
+ *
+ * @param path   - Prettier AST path for the node being printed.
+ * @param options - Prettier formatting options (printWidth, tabWidth, etc.).
+ * @param print  - Recursive print function for printing child nodes.
+ * @returns Formatted GML source text.
+ */
 export function gmlPrint(path, options, print) {
     const doc = _printImpl(path, options, print);
     return _sanitizeDocOutput(doc);
@@ -1030,46 +1092,6 @@ function buildTemplateStringParts(atoms, path, print) {
     return parts;
 }
 
-function printDelimitedList(path, print, listKey, startChar, endChar, overrides: any = {}) {
-    const {
-        delimiter = ",",
-        allowTrailingDelimiter = false,
-        leadingNewline = true,
-        trailingNewline = true,
-        forceBreak = false,
-        padding = "",
-        addIndent = true,
-        groupId,
-        forceInline = false,
-        maxElementsPerLine = Infinity
-    } = overrides;
-    const lineBreak = forceBreak ? hardline : line;
-    const finalDelimiter = allowTrailingDelimiter ? delimiter : "";
-
-    const innerDoc = [
-        ifBreak(leadingNewline ? lineBreak : "", padding),
-        printElements(path, print, listKey, delimiter, lineBreak, maxElementsPerLine)
-    ];
-
-    const groupElements = [
-        startChar,
-        addIndent ? indent(innerDoc) : innerDoc,
-        // always print a trailing delimiter if the list breaks
-        ifBreak([finalDelimiter, trailingNewline ? lineBreak : ""], padding),
-        endChar
-    ];
-
-    const groupElementsNoBreak = [
-        startChar,
-        padding,
-        printElements(path, print, listKey, delimiter, " ", maxElementsPerLine),
-        padding,
-        endChar
-    ];
-
-    return forceInline ? groupElementsNoBreak : group(groupElements, { id: groupId });
-}
-
 function normalizeCallTextNewlines(text, endOfLineOption) {
     if (typeof text !== STRING_TYPE) {
         return text;
@@ -1084,101 +1106,6 @@ function normalizeCallTextNewlines(text, endOfLineOption) {
     return normalized;
 }
 
-function shouldAllowTrailingComma(options) {
-    return options?.trailingComma === TRAILING_COMMA.ALL;
-}
-
-function buildCallArgumentsDocs(
-    path,
-    print,
-    options,
-    {
-        forceBreak = false,
-        maxElementsPerLine = Infinity,
-        includeInlineVariant = false,
-        hasCallbackArguments = false,
-        forceInline = false
-    } = {}
-) {
-    const node = path.getValue();
-    const simplePrefixLength = countLeadingSimpleCallArguments(node);
-    const hasTrailingArguments = Array.isArray(node?.arguments) && node.arguments.length > simplePrefixLength;
-
-    if (simplePrefixLength > 1 && hasTrailingArguments && hasCallbackArguments && maxElementsPerLine === Infinity) {
-        const inlineDoc = includeInlineVariant
-            ? printCommaSeparatedList(path, print, "arguments", "(", ")", options, {
-                  addIndent: false,
-                  forceInline: true,
-                  leadingNewline: false,
-                  trailingNewline: false,
-                  maxElementsPerLine
-              })
-            : null;
-
-        const multilineDoc = buildCallbackArgumentsWithSimplePrefix(path, print, simplePrefixLength);
-
-        return { inlineDoc, multilineDoc };
-    }
-
-    const firstArgumentNode = node.arguments[0];
-    const firstArgumentText = firstArgumentNode?.value;
-    const firstArgumentIsStringLiteral =
-        firstArgumentNode?.type === Core.LITERAL &&
-        typeof firstArgumentText === STRING_TYPE &&
-        (firstArgumentText.startsWith('"') || firstArgumentText.startsWith("'") || firstArgumentText.startsWith('@"'));
-
-    // NOTE: intentionally omit logging to keep production output clean.
-
-    if (
-        simplePrefixLength > 1 &&
-        hasTrailingArguments &&
-        !hasCallbackArguments &&
-        maxElementsPerLine === Infinity &&
-        firstArgumentIsStringLiteral
-    ) {
-        const multilineDoc = buildCallbackArgumentsWithSimplePrefix(path, print, simplePrefixLength);
-        return { inlineDoc: null, multilineDoc };
-    }
-
-    const multilineDoc = printCommaSeparatedList(path, print, "arguments", "(", ")", options, {
-        forceBreak,
-        forceInline,
-        maxElementsPerLine
-    });
-
-    const inlineDoc = includeInlineVariant
-        ? printCommaSeparatedList(path, print, "arguments", "(", ")", options, {
-              addIndent: false,
-              forceInline: true,
-              leadingNewline: false,
-              trailingNewline: false,
-              maxElementsPerLine
-          })
-        : null;
-
-    return { inlineDoc, multilineDoc };
-}
-
-function buildFunctionParameterDocs(path, print, options, overrides: any = {}) {
-    const forceInline = overrides.forceInline === true;
-
-    const inlineDoc = printCommaSeparatedList(path, print, "params", "(", ")", options, {
-        addIndent: false,
-        allowTrailingDelimiter: false,
-        forceInline: true,
-        leadingNewline: false,
-        trailingNewline: false
-    });
-
-    const multilineDoc = forceInline
-        ? inlineDoc
-        : printCommaSeparatedList(path, print, "params", "(", ")", options, {
-              allowTrailingDelimiter: false
-          });
-
-    return { inlineDoc, multilineDoc };
-}
-
 function shouldForceInlineFunctionParameters(path, options) {
     const node = path.getValue();
 
@@ -1188,7 +1115,7 @@ function shouldForceInlineFunctionParameters(path, options) {
 
     // For regular function declarations and struct function declarations,
     // always keep parameters inline
-    if (node.type === "FunctionDeclaration" || node.type === "StructFunctionDeclaration") {
+    if (Core.isFunctionLikeDeclaration(node)) {
         return true;
     }
 
@@ -1204,6 +1131,14 @@ function shouldForceInlineFunctionParameters(path, options) {
     }
 
     if (!Core.isNonEmptyArray(node.params)) {
+        return false;
+    }
+
+    // Defensive: verify params array has at least one element before accessing.
+    // The isNonEmptyArray guard above should catch empty arrays, but a malformed
+    // node with an empty params array would cause TypeError when accessing
+    // node.params[0] or node.params.at(-1) below.
+    if (node.params.length === 0) {
         return false;
     }
 
@@ -1267,19 +1202,6 @@ function maybePrintInlineDefaultParameterFunctionBody(path, print) {
     return group(["{ ", statementDoc, semicolon, " }"]);
 }
 
-function printCommaSeparatedList(path, print, listKey, startChar, endChar, options, overrides: any = {}) {
-    const allowTrailingDelimiter =
-        overrides.allowTrailingDelimiter === undefined
-            ? shouldAllowTrailingComma(options)
-            : overrides.allowTrailingDelimiter;
-
-    return printDelimitedList(path, print, listKey, startChar, endChar, {
-        delimiter: ",",
-        ...overrides,
-        allowTrailingDelimiter
-    });
-}
-
 // Force statement-shaped children into explicit `{}` blocks so every call site
 // that relies on this helper inherits the same guard rails. The printer uses it
 // for `if`, loop, and struct bodies where we always emit braces regardless of
@@ -1334,100 +1256,6 @@ function shouldPrintBlockAlternateAsElseIf(node) {
 
     const [onlyStatement] = body;
     return onlyStatement?.type === Core.IF_STATEMENT;
-}
-
-// print a delimited sequence of elements
-// handles the case where a trailing comment follows a delimiter
-function printElements(path, print, listKey, delimiter, lineBreak, maxElementsPerLine = Infinity) {
-    const node = path.getValue();
-    const finalIndex = node[listKey].length - 1;
-    let itemsSinceLastBreak = 0;
-    return path.map((childPath, index) => {
-        const parts: any[] = [];
-        const printed = print();
-        const separator = index === finalIndex ? "" : delimiter;
-
-        if (docHasTrailingComment(printed)) {
-            printed.splice(-1, 0, separator);
-            parts.push(printed);
-        } else {
-            parts.push(printed, separator);
-        }
-
-        if (index !== finalIndex) {
-            const hasLimit = Number.isFinite(maxElementsPerLine) && maxElementsPerLine > 0;
-            itemsSinceLastBreak += 1;
-            if (hasLimit) {
-                const childNode = childPath.getValue();
-                const nextNode = index < finalIndex ? node[listKey][index + 1] : null;
-                const shouldBreakAfter =
-                    isComplexArgumentNode(childNode) ||
-                    isComplexArgumentNode(nextNode) ||
-                    itemsSinceLastBreak >= maxElementsPerLine;
-
-                if (shouldBreakAfter) {
-                    parts.push(hardline);
-                    itemsSinceLastBreak = 0;
-                } else {
-                    parts.push(" ");
-                }
-            } else {
-                parts.push(lineBreak);
-            }
-        }
-
-        return parts;
-    }, listKey);
-}
-
-function countLeadingSimpleCallArguments(node) {
-    if (!node || !Array.isArray(node.arguments)) {
-        return 0;
-    }
-
-    let count = 0;
-    for (const argument of node.arguments) {
-        if (!isSimpleCallArgument(argument)) {
-            break;
-        }
-
-        count += 1;
-    }
-
-    return count;
-}
-
-function buildCallbackArgumentsWithSimplePrefix(path, print, simplePrefixLength) {
-    const node = path.getValue();
-    const args = Core.asArray(node?.arguments);
-    const parts: any[] = [];
-    const trailingArguments = args.slice(simplePrefixLength);
-    const firstCallbackIndex = trailingArguments.findIndex(isCallbackArgument);
-    const hasTrailingNonCallbackArgument =
-        firstCallbackIndex !== -1 &&
-        trailingArguments.slice(firstCallbackIndex + 1).some((argument) => !isCallbackArgument(argument));
-    const shouldForcePrefixBreaks = simplePrefixLength > 1 && hasTrailingNonCallbackArgument;
-
-    for (let index = 0; index < args.length; index++) {
-        parts.push(path.call(print, "arguments", index));
-
-        if (index >= args.length - 1) {
-            continue;
-        }
-
-        parts.push(",");
-
-        if (index < simplePrefixLength - 1 && !shouldForcePrefixBreaks) {
-            parts.push(" ");
-            continue;
-        }
-
-        parts.push(line);
-    }
-
-    const argumentGroup = group(["(", indent([softline, ...parts]), softline, ")"]);
-
-    return shouldForcePrefixBreaks ? concat([breakParent, argumentGroup]) : argumentGroup;
 }
 
 function shouldForceBreakStructArgument(argument, options, previousArgument) {
@@ -1815,463 +1643,6 @@ function applyTrailingSpacing({
     });
 }
 
-function isStaticFunctionVariableDeclaration(node) {
-    if (node?.type !== Core.VARIABLE_DECLARATION || node.kind !== "static" || !Array.isArray(node.declarations)) {
-        return false;
-    }
-
-    return node.declarations.some((declaration) => {
-        const initializerType = declaration?.init?.type;
-        return initializerType === Core.FUNCTION_EXPRESSION || initializerType === Core.FUNCTION_DECLARATION;
-    });
-}
-
-function isLoopLikeStatement(node) {
-    return (
-        node?.type === Core.FOR_STATEMENT ||
-        node?.type === Core.WHILE_STATEMENT ||
-        node?.type === Core.REPEAT_STATEMENT ||
-        node?.type === Core.DO_UNTIL_STATEMENT ||
-        node?.type === Core.WITH_STATEMENT
-    );
-}
-
-function countContiguousVariableDeclarationsBeforeIndexWithSource(
-    statements,
-    index,
-    originalText: string | null
-): number {
-    if (!Array.isArray(statements) || index < 0 || index >= statements.length) {
-        return 0;
-    }
-
-    let count = 0;
-    for (let cursor = index; cursor >= 0; cursor -= 1) {
-        if (statements[cursor]?.type !== Core.VARIABLE_DECLARATION) {
-            break;
-        }
-
-        if (
-            originalText !== null &&
-            cursor < index &&
-            hasCommentBetweenStatements(statements[cursor], statements[cursor + 1], originalText)
-        ) {
-            break;
-        }
-
-        count += 1;
-    }
-
-    return count;
-}
-
-function hasCommentBetweenStatements(leftNode, rightNode, originalText: string): boolean {
-    const leftEndIndex = Core.getNodeEndIndex(leftNode);
-    const rightStartIndex = Core.getNodeStartIndex(rightNode);
-    if (
-        typeof leftEndIndex !== NUMBER_TYPE ||
-        typeof rightStartIndex !== NUMBER_TYPE ||
-        rightStartIndex <= leftEndIndex
-    ) {
-        return false;
-    }
-
-    const betweenText = originalText.slice(leftEndIndex + 1, rightStartIndex);
-    return /\/\/|\/\*/u.test(betweenText);
-}
-
-function hasBlankLineBetweenStatements(leftNode, rightNode, originalText: string): boolean {
-    const leftEndIndex = Core.getNodeEndIndex(leftNode);
-    const rightStartIndex = Core.getNodeStartIndex(rightNode);
-    if (
-        typeof leftEndIndex !== NUMBER_TYPE ||
-        typeof rightStartIndex !== NUMBER_TYPE ||
-        rightStartIndex <= leftEndIndex
-    ) {
-        return false;
-    }
-
-    const betweenText = originalText.slice(leftEndIndex, rightStartIndex);
-    if (betweenText.length === 0) {
-        return false;
-    }
-
-    return /\r?\n[ \t]*\r?\n/u.test(betweenText);
-}
-
-function hasTrailingCommentOnStatementLine(node, originalText: string): boolean {
-    const nodeEndIndex = Core.getNodeEndIndex(node);
-    if (typeof nodeEndIndex !== NUMBER_TYPE || nodeEndIndex < 0 || nodeEndIndex >= originalText.length) {
-        return false;
-    }
-
-    let lineEndIndex = nodeEndIndex;
-    while (lineEndIndex < originalText.length) {
-        const character = originalText[lineEndIndex];
-        if (character === "\n" || character === "\r") {
-            break;
-        }
-
-        lineEndIndex += 1;
-    }
-
-    return /\/\/|\/\*/u.test(originalText.slice(nodeEndIndex, lineEndIndex));
-}
-
-function isNodeImmediatelyPrecededByBlockComment(node, originalText: string): boolean {
-    const nodeStartIndex = Core.getNodeStartIndex(node);
-    if (typeof nodeStartIndex !== NUMBER_TYPE || nodeStartIndex <= 0) {
-        return false;
-    }
-
-    let cursor = nodeStartIndex - 1;
-    while (cursor >= 0) {
-        const character = originalText[cursor];
-        if (character === " " || character === "\t" || character === "\n" || character === "\r") {
-            cursor -= 1;
-            continue;
-        }
-
-        break;
-    }
-
-    if (cursor < 0) {
-        return false;
-    }
-
-    const lineStartIndex = originalText.lastIndexOf("\n", cursor);
-    const sourceLine = originalText.slice(lineStartIndex === -1 ? 0 : lineStartIndex + 1, cursor + 1).trimStart();
-    return sourceLine.startsWith("/*") || sourceLine.endsWith("*/");
-}
-
-function shouldForceVariableBlockBeforeLoopPadding(
-    statements,
-    index,
-    node,
-    nextNode,
-    originalText: string | null
-): boolean {
-    if (node?.type !== Core.VARIABLE_DECLARATION || !isLoopLikeStatement(nextNode)) {
-        return false;
-    }
-
-    const variableBlockSize = countContiguousVariableDeclarationsBeforeIndexWithSource(statements, index, originalText);
-    return variableBlockSize >= MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING;
-}
-
-function canForceAutomaticPadding(
-    nextLineEmpty,
-    shouldSuppressExtraEmptyLine,
-    sanitizedMacroHasExplicitBlankLine
-): boolean {
-    return !nextLineEmpty && !shouldSuppressExtraEmptyLine && !sanitizedMacroHasExplicitBlankLine;
-}
-
-function canForceAutomaticPaddingWithSuppressionGuard(
-    suppressFollowingEmptyLine,
-    nextLineEmpty,
-    shouldSuppressExtraEmptyLine,
-    sanitizedMacroHasExplicitBlankLine
-): boolean {
-    return (
-        !suppressFollowingEmptyLine &&
-        canForceAutomaticPadding(nextLineEmpty, shouldSuppressExtraEmptyLine, sanitizedMacroHasExplicitBlankLine)
-    );
-}
-
-function isRegionDirectiveNode(node): boolean {
-    return (
-        node?.type === "RegionStatement" ||
-        Core.getNormalizedDefineReplacementDirective(node) === Core.DefineReplacementDirective.REGION
-    );
-}
-
-function isEndRegionDirectiveNode(node): boolean {
-    return (
-        node?.type === "EndRegionStatement" ||
-        Core.getNormalizedDefineReplacementDirective(node) === Core.DefineReplacementDirective.END_REGION
-    );
-}
-
-function handleIntermediateTrailingSpacing({
-    parts,
-    statements,
-    index,
-    node,
-    containerNode,
-    options,
-    hardline: hardlineDoc,
-    currentNodeRequiresNewline,
-    nodeEndIndex,
-    suppressFollowingEmptyLine,
-    isTopLevel
-}) {
-    let previousNodeHadNewlineAddedAfter = false;
-    const nextNode = statements ? statements[index + 1] : null;
-    const shouldSuppressExtraEmptyLine = shouldSuppressEmptyLineBetween(node, nextNode);
-    const nextNodeIsMacro = Core.isMacroLikeStatement(nextNode);
-    const shouldSkipStandardHardline =
-        shouldSuppressExtraEmptyLine && Core.isMacroLikeStatement(node) && !nextNodeIsMacro;
-
-    if (!shouldSkipStandardHardline) {
-        parts.push(hardlineDoc);
-    }
-
-    const nextLineProbeIndex =
-        node?.type === Core.DEFINE_STATEMENT || node?.type === Core.MACRO_DECLARATION ? nodeEndIndex : nodeEndIndex + 1;
-
-    const forceFollowingEmptyLine = node?._gmlForceFollowingEmptyLine === true;
-    const originalText = typeof options.originalText === STRING_TYPE ? (options.originalText as string) : null;
-    const currentStatementIsDelete = Core.isDeleteStatementNode(node);
-    const hasSourceBlankLineBeforeNextNode =
-        !suppressFollowingEmptyLine &&
-        originalText !== null &&
-        nextNode != null &&
-        hasBlankLineBetweenStatements(node, nextNode, originalText);
-    const currentStatementHasTrailingComment =
-        originalText !== null && hasTrailingCommentOnStatementLine(node, originalText);
-    const nextLineEmpty = suppressFollowingEmptyLine
-        ? false
-        : util.isNextLineEmpty(options.originalText, nextLineProbeIndex) || hasSourceBlankLineBeforeNextNode;
-
-    const isSanitizedMacro = node?.type === Core.MACRO_DECLARATION && typeof node._featherMacroText === STRING_TYPE;
-    const sanitizedMacroHasExplicitBlankLine =
-        isSanitizedMacro && macroTextHasExplicitTrailingBlankLine(node._featherMacroText);
-    const hasAutomaticPaddingCapacity = canForceAutomaticPadding(
-        nextLineEmpty,
-        shouldSuppressExtraEmptyLine,
-        sanitizedMacroHasExplicitBlankLine
-    );
-    const hasAutomaticPaddingCapacityWithSuppressionGuard = canForceAutomaticPaddingWithSuppressionGuard(
-        suppressFollowingEmptyLine,
-        nextLineEmpty,
-        shouldSuppressExtraEmptyLine,
-        sanitizedMacroHasExplicitBlankLine
-    );
-
-    const isMacroLikeNode = Core.isMacroLikeStatement(node);
-    const isDefineMacroReplacement =
-        Core.getNormalizedDefineReplacementDirective(node) === Core.DefineReplacementDirective.MACRO;
-    const shouldForceMacroPadding =
-        isMacroLikeNode && !isDefineMacroReplacement && !nextNodeIsMacro && hasAutomaticPaddingCapacity;
-    const isLoopStatement = isLoopLikeStatement(node);
-    const nextNodeIsLoop = isLoopLikeStatement(nextNode);
-    const nextNodeIsVariableDeclaration = nextNode?.type === Core.VARIABLE_DECLARATION;
-    const shouldForceLoopSectionPadding =
-        hasAutomaticPaddingCapacityWithSuppressionGuard &&
-        isLoopStatement &&
-        (nextNodeIsVariableDeclaration || nextNodeIsLoop);
-    const shouldForceVariableBlockLoopPadding =
-        isTopLevel &&
-        hasAutomaticPaddingCapacityWithSuppressionGuard &&
-        shouldForceVariableBlockBeforeLoopPadding(
-            statements,
-            index,
-            node,
-            nextNode,
-            typeof options.originalText === STRING_TYPE ? options.originalText : null
-        );
-    const shouldForceConstructorStaticSectionPadding =
-        hasAutomaticPaddingCapacityWithSuppressionGuard &&
-        containerNode?.type === "ConstructorDeclaration" &&
-        isStaticFunctionVariableDeclaration(nextNode);
-    const shouldAddForcedPadding = [
-        shouldForceMacroPadding,
-        shouldForceLoopSectionPadding,
-        shouldForceVariableBlockLoopPadding,
-        shouldForceConstructorStaticSectionPadding,
-        forceFollowingEmptyLine && hasAutomaticPaddingCapacity
-    ].some(Boolean);
-
-    // Suppress the blank line between a #region and an immediately following
-    // #endregion (an empty region). Adding a blank line inside an empty region
-    // would change the source round-trip and create unnecessary noise.
-    const isEmptyRegionPair = isRegionDirectiveNode(node) && isEndRegionDirectiveNode(nextNode);
-
-    const shouldAddPaddingWithNewline =
-        !isEmptyRegionPair && (shouldAddForcedPadding || (currentNodeRequiresNewline && !nextLineEmpty));
-
-    if (shouldAddPaddingWithNewline) {
-        parts.push(hardlineDoc);
-        previousNodeHadNewlineAddedAfter = true;
-    } else if (isEmptyRegionPair) {
-        // Set the flag even though we didn't emit a blank line: this prevents
-        // addLeadingStatementSpacing from inserting one before the #endregion
-        // on the next iteration, preserving the source round-trip.
-        previousNodeHadNewlineAddedAfter = true;
-    } else if (nextLineEmpty && !shouldSuppressExtraEmptyLine && !sanitizedMacroHasExplicitBlankLine) {
-        // When the next statement has a leading comment immediately preceding it
-        // and a blank line separates the current statement from that comment,
-        // Prettier's built-in comment printing already emits a hardline before
-        // the comment. Emitting one here too would produce a double blank line.
-        // Detect this by checking whether the original source has a comment
-        // immediately before the next node; if so, let Prettier handle spacing.
-        const nextNodeStartIndex = nextNode == null ? null : Core.getNodeStartIndex(nextNode);
-        const nextNodeHasLeadingComment =
-            isTopLevel &&
-            typeof nextNodeStartIndex === NUMBER_TYPE &&
-            Core.hasCommentImmediatelyBefore(originalText, nextNodeStartIndex);
-        const nextNodeHasCommentGap =
-            isTopLevel &&
-            originalText !== null &&
-            nextNode != null &&
-            hasCommentBetweenStatements(node, nextNode, originalText);
-        const nextNodeHasBlockCommentImmediatelyBefore =
-            originalText !== null &&
-            nextNode != null &&
-            isNodeImmediatelyPrecededByBlockComment(nextNode, originalText);
-        const nextNodePrintsDocCommentBlock = Core.isNonEmptyArray(nextNode?.docComments);
-
-        const shouldPreserveSourceGapBeforeDocCommentedNode =
-            nextNodePrintsDocCommentBlock && hasSourceBlankLineBeforeNextNode;
-        const shouldPreserveSourceGapAfterTrailingComment =
-            currentStatementHasTrailingComment &&
-            hasSourceBlankLineBeforeNextNode &&
-            (currentStatementIsDelete || !isTopLevel);
-        const shouldCollapseTopLevelTrailingCommentGap =
-            isTopLevel && currentStatementHasTrailingComment && !currentStatementIsDelete;
-
-        const shouldApplyGenericSourceBlankLineSpacing =
-            !shouldCollapseTopLevelTrailingCommentGap &&
-            !nextNodePrintsDocCommentBlock &&
-            !nextNodeHasLeadingComment &&
-            !nextNodeHasCommentGap;
-
-        if (
-            shouldApplyGenericSourceBlankLineSpacing ||
-            nextNodeHasBlockCommentImmediatelyBefore ||
-            shouldPreserveSourceGapBeforeDocCommentedNode ||
-            shouldPreserveSourceGapAfterTrailingComment
-        ) {
-            parts.push(hardlineDoc);
-        }
-    }
-
-    return previousNodeHadNewlineAddedAfter;
-}
-
-function handleTerminalTrailingSpacing({
-    childPath,
-    parts,
-    node,
-    options,
-    hardline: hardlineDoc,
-    nodeEndIndex,
-    suppressFollowingEmptyLine,
-    isStaticDeclaration,
-    hasFunctionInitializer,
-    containerNode: _containerNode
-}) {
-    let previousNodeHadNewlineAddedAfter = false;
-    const parentNode = childPath.parent;
-    const isFunctionDeclarationNode = node?.type === "FunctionDeclaration";
-    const trailingProbeIndex =
-        node?.type === Core.DEFINE_STATEMENT || node?.type === Core.MACRO_DECLARATION ? nodeEndIndex : nodeEndIndex + 1;
-    const enforceTrailingPadding = shouldAddNewlinesAroundStatement(node);
-    const blockParent = safeGetParentNode(childPath) ?? childPath.parent;
-    const constructorAncestor = safeGetParentNode(childPath, 1) ?? blockParent?.parent ?? null;
-    const isConstructorBlock =
-        blockParent?.type === "BlockStatement" && constructorAncestor?.type === "ConstructorDeclaration";
-    const constructorHasParentClause = isConstructorBlock && constructorAncestor.parent != null;
-    const shouldPreserveConstructorStaticPadding = isStaticDeclaration && hasFunctionInitializer && isConstructorBlock;
-    let shouldPreserveTrailingBlankLine = false;
-    const hasAttachedDocComment = node?.[DOC_COMMENT_OUTPUT_FLAG] === true || Core.isNonEmptyArray(node?.docComments);
-    const requiresTrailingPadding =
-        enforceTrailingPadding &&
-        parentNode?.type === "BlockStatement" &&
-        !suppressFollowingEmptyLine &&
-        (!isFunctionDeclarationNode || (isFunctionDeclarationNode && constructorHasParentClause));
-
-    if (parentNode?.type === "BlockStatement" && !suppressFollowingEmptyLine) {
-        const originalText = typeof options.originalText === STRING_TYPE ? options.originalText : null;
-        const trailingBlankLineCount =
-            originalText === null ? 0 : countTrailingBlankLines(originalText, trailingProbeIndex);
-        const hasExplicitTrailingBlankLine = trailingBlankLineCount > 0;
-        const shouldCollapseExcessBlankLines = trailingBlankLineCount > 1;
-
-        if (enforceTrailingPadding) {
-            if (isFunctionDeclarationNode) {
-                const nextCharacter =
-                    originalText === null ? null : findNextTerminalCharacter(originalText, trailingProbeIndex, false);
-                shouldPreserveTrailingBlankLine = hasExplicitTrailingBlankLine && nextCharacter !== "}";
-            } else {
-                shouldPreserveTrailingBlankLine = hasExplicitTrailingBlankLine;
-            }
-        } else if (
-            shouldPreserveConstructorStaticPadding &&
-            hasExplicitTrailingBlankLine &&
-            !shouldCollapseExcessBlankLines
-        ) {
-            const nextCharacter =
-                originalText === null ? null : findNextTerminalCharacter(originalText, trailingProbeIndex, false);
-            // Never keep a trailing blank line when the next non-whitespace character is the
-            // constructor's closing brace; constructors should close without a blank gap
-            // regardless of whether all members are static function declarations.
-            shouldPreserveTrailingBlankLine = nextCharacter !== null && nextCharacter !== "}";
-        } else if (hasExplicitTrailingBlankLine && originalText !== null) {
-            const nextCharacter = findNextTerminalCharacter(originalText, trailingProbeIndex, hasFunctionInitializer);
-            if (isConstructorBlock && nextCharacter !== "}") {
-                shouldPreserveTrailingBlankLine = false;
-            } else {
-                const shouldPreserve = nextCharacter === null ? false : nextCharacter !== "}";
-
-                shouldPreserveTrailingBlankLine = shouldCollapseExcessBlankLines ? false : shouldPreserve;
-            }
-        }
-    }
-
-    if (
-        !shouldPreserveTrailingBlankLine &&
-        !suppressFollowingEmptyLine &&
-        hasAttachedDocComment &&
-        blockParent?.type === "BlockStatement" &&
-        Core.isFunctionLikeDeclaration(node)
-    ) {
-        const originalText = typeof options.originalText === STRING_TYPE ? options.originalText : null;
-        const nextCharacter =
-            originalText === null ? null : findNextTerminalCharacter(originalText, trailingProbeIndex, false);
-        shouldPreserveTrailingBlankLine = nextCharacter !== "}";
-    }
-
-    if (shouldPreserveTrailingBlankLine || requiresTrailingPadding) {
-        parts.push(hardlineDoc);
-        previousNodeHadNewlineAddedAfter = true;
-    }
-
-    return previousNodeHadNewlineAddedAfter;
-}
-
-function findNextTerminalCharacter(
-    originalText: string,
-    startIndex: number,
-    hasFunctionInitializer: boolean
-): string | null {
-    const textLength = originalText.length;
-    let scanIndex = startIndex;
-
-    while (scanIndex < textLength) {
-        const nextCharacter = getNextNonWhitespaceCharacter(originalText, scanIndex);
-
-        if (nextCharacter === ";") {
-            if (hasFunctionInitializer) {
-                return ";";
-            }
-
-            const semicolonIndex = originalText.indexOf(";", scanIndex);
-            if (semicolonIndex === -1) {
-                return null;
-            }
-
-            scanIndex = semicolonIndex + 1;
-            continue;
-        }
-
-        return nextCharacter;
-    }
-
-    return null;
-}
-
 function printGlobalVarStatementAsKeyword(node, path, print, options) {
     const decls =
         node.declarations.length > 1
@@ -2420,11 +1791,6 @@ function consumeBlockComment(source, startIndex) {
     return { index: current, foundLineBreak: false };
 }
 
-/**
- * Builds the document representation for an if statement, ensuring that the
- * orchestration logic in the main printer delegates the clause assembly and
- * alternate handling to a single abstraction layer.
- */
 function buildIfStatementDoc(path, options, print, node) {
     const parts: any[] = [
         printSingleClauseStatement(path, options, print, "if", "test", "consequent", {

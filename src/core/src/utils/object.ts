@@ -675,7 +675,7 @@ export function restoreProperties<TTarget extends Record<PropertyKey, unknown>, 
         if (snapshot[key] === undefined) {
             delete target[key];
         } else {
-            target[key] = snapshot[key] as TTarget[TKey];
+            target[key] = snapshot[key];
         }
     }
 }

@@ -17,6 +17,7 @@ checks.
 ## 2. Install dependencies
 
 ```bash
+git submodule update --init --recursive
 nvm use
 pnpm install
 ```
@@ -26,7 +27,14 @@ Use `pnpm install` only after verifying the lockfile is current.
 
 ## 3. Validate the workspace
 
-Re-run targeted suites when you touch scoped areas:
+Start with the baseline repository checks used in CI-style local validation:
+
+```bash
+pnpm run build:ts
+pnpm run lint:quiet
+```
+
+Then run targeted suites for the workspace(s) you touched:
 
 ```bash
 pnpm run test:parser
@@ -36,7 +44,6 @@ pnpm run test:cli
 pnpm run test:transpiler
 pnpm run test:runtime-wrapper
 pnpm run test:refactor
-pnpm run lint
 ```
 
 Cross-module integration fixtures under `test/fixtures/integration/` are root-level
@@ -84,6 +91,10 @@ scripting automation, and fall back to `pnpm run cli -- --help` for the global
 command inventory. The global CLI help also notes that passing just a file or
 directory path runs the `format` command implicitly, which is useful for quick
 one-off formatting checks.
+
+Before large structural changes, review [`docs/target-state.md`](target-state.md)
+to keep parser/core/format ownership boundaries and workspace API rules aligned
+with project expectations.
 
 When you're ready to try the wrapper against a project, provide the target
 directory explicitly so the command has GameMaker sources to process:

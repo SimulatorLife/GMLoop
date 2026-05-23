@@ -1,4 +1,4 @@
-/// @description legacy style line
+/// @desc legacy style line
 /// Keep me
 /// @param x
 /// @returns {undefined}
@@ -10,7 +10,7 @@ function synth_me(_a, b = 1) {
     return _a + b;
 }
 
-/// @description Existing docs
+/// @desc Existing docs
 /// @param alpha
 /// @param beta
 /// @returns {any}
@@ -49,7 +49,7 @@ var func_default_callback = function (x = function() { return 1; }) {
     return x();
 };
 
-/// @description Updates movement for the active player.
+/// @desc Updates movement for the active player.
 /// @param [angle=90] Current heading in degrees.
 /// @customTag keep this custom metadata
 /// @param speed The per-step speed scalar.
@@ -188,7 +188,7 @@ function local_assignment_container(seed) {
         return;
     };
 
-    /// @description local legacy docs should canonicalize
+    /// @desc local legacy docs should canonicalize
     /// @param amount
     /// @returns {undefined}
     var local_legacy_double_slash = function (amount) {

@@ -42,7 +42,7 @@ export type RunnerSpawnFn = (
  * @param spawnFn - Process-spawn implementation; defaults to Node's built-in
  *   `child_process.spawn`.
  */
-export function createRunnerController(spawnFn: RunnerSpawnFn = spawn as RunnerSpawnFn): RunnerController {
+export function createRunnerController(spawnFn: RunnerSpawnFn = spawn): RunnerController {
     let activeProcess: ChildProcessWithoutNullStreams | null = null;
     let activePid: number | null = null;
 

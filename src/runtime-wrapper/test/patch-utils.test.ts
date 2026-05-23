@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 
-import { calculateTimingMetrics } from "../src/runtime/patch-utils.js";
+import { calculateTimingMetrics } from "../browser/runtime/patch-utils.js";
 
 // Internal test helper that intentionally uses the OLD buggy implementation
 // of calculatePercentile (with strict equality) to demonstrate the problem

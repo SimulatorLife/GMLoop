@@ -33,6 +33,15 @@ const parser = new XMLParser({
     attributeNamePrefix: ""
 });
 
+function xmlContainsPotentialTestElements(xml: string): boolean {
+    const lowered = xml.toLowerCase();
+    return lowered.includes("<testsuite") || lowered.includes("<testsuites") || lowered.includes("<testcase");
+}
+
+function xmlLooksLikeCheckstyle(xml: string): boolean {
+    return xml.toLowerCase().includes("<checkstyle");
+}
+
 function hasAnyOwn(object: Record<string, unknown>, keys: string[]): boolean {
     return keys.some((key) => Object.hasOwn(object, key));
 }
@@ -168,12 +177,38 @@ function resolveNextSuitePath(node, suitePath, { hasTestcase, hasTestsuite }) {
 }
 
 /**
+ * Extract workspace/module name from a report file path.
+ *
+ * For test XML files in a workspace structure like:
+ *   /path/to/workspace/src/cli/test/results/test-report.xml
+ *
+ * The workspace name is extracted from the directory immediately after "src/"
+ * (e.g., "cli", "core", "parser").
+ *
+ * This allows the quality report to break down test results per workspace/module.
+ */
+function extractWorkspaceNameFromReportPath(reportFilePath: string): string {
+    if (!reportFilePath) {
+        return "";
+    }
+    const normalized = reportFilePath.replaceAll("\\", "/");
+    const dir = path.dirname(normalized);
+    const segments = dir.split("/");
+    const srcIndex = segments.indexOf("src");
+    if (srcIndex !== -1 && srcIndex + 1 < segments.length) {
+        return segments[srcIndex + 1];
+    }
+    return segments.at(-1) || "";
+}
+
+/**
  * Record a single testcase result in the aggregate list.
  */
 function recordSuiteTestCase(cases, node, suitePath, reportFilePath = "") {
     const key = buildTestKey(node, suitePath);
     const displayName = describeTestCase(node, suitePath) || key;
     const time = Number.parseFloat(node.time) || 0;
+    const workspace = extractWorkspaceNameFromReportPath(reportFilePath);
 
     cases.push({
         node,
@@ -182,7 +217,8 @@ function recordSuiteTestCase(cases, node, suitePath, reportFilePath = "") {
         status: computeStatus(node),
         displayName,
         time,
-        reportFilePath
+        reportFilePath,
+        workspace
     });
     return cases;
 }
@@ -693,6 +729,20 @@ function readXmlFile(filePath, displayPath) {
 }
 
 function parseXmlTestCases(xml, displayPath, reportFilePath = "") {
+    if (!xmlContainsPotentialTestElements(xml)) {
+        if (xmlLooksLikeCheckstyle(xml)) {
+            return {
+                status: ParseResultStatus.IGNORED,
+                note: `Ignoring checkstyle report ${displayPath}; no test cases found.`
+            };
+        }
+
+        return {
+            status: ParseResultStatus.ERROR,
+            note: `Parsed ${displayPath} but it does not contain any test suites or cases.`
+        };
+    }
+
     try {
         const data = parser.parse(xml);
         if (isCheckstyleDocument(data)) {
@@ -992,7 +1042,8 @@ function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions 
             coverage: scan.coverage,
             lint: scan.lint,
             duplicates,
-            health: scan.health
+            health: scan.health,
+            cases: scan.cases
         };
     }
 
@@ -1400,7 +1451,60 @@ export function runGenerateQualityReport({ command }: any = {}) {
 type ReportTableState = {
     testRows: Array<string>;
     qualityRows: Array<string>;
+    workspaceRows: Array<string>;
 };
+/**
+ * Compute test statistics broken down by workspace/module from test cases.
+ *
+ * This enables the quality report to show per-workspace test metrics,
+ * helping identify which parts of the codebase have test failures.
+ */
+function computeWorkspaceBreakdown(
+    cases: Array<{ time: number; status: string; workspace?: string }>
+): Map<string, { total: number; passed: number; failed: number; skipped: number; time: number }> {
+    const workspaceStats = new Map<
+        string,
+        { total: number; passed: number; failed: number; skipped: number; time: number }
+    >();
+
+    for (const testCase of cases) {
+        const workspace = testCase.workspace || "(unknown)";
+        let stats = workspaceStats.get(workspace);
+        if (!stats) {
+            stats = { total: 0, passed: 0, failed: 0, skipped: 0, time: 0 };
+            workspaceStats.set(workspace, stats);
+        }
+        stats.total += 1;
+        stats.time += testCase.time;
+        switch (testCase.status) {
+            case TestCaseStatus.PASSED: {
+                stats.passed += 1;
+                break;
+            }
+            case TestCaseStatus.FAILED: {
+                stats.failed += 1;
+                break;
+            }
+            case TestCaseStatus.SKIPPED: {
+                stats.skipped += 1;
+                break;
+            }
+        }
+    }
+
+    return workspaceStats;
+}
+
+/**
+ * Format a single workspace row for the report table.
+ */
+function generateWorkspaceRow(
+    workspace: string,
+    stats: { total: number; passed: number; failed: number; skipped: number; time: number }
+): string {
+    const duration = fmtTime(stats.time);
+    return `| ${workspace} | ${stats.total} | ${stats.passed} | ${stats.failed} | ${stats.skipped} | ${duration} |`;
+}
 
 /**
  * Create the report table containers with their headings pre-populated.
@@ -1418,6 +1522,12 @@ function createQualityReportTables(): ReportTableState {
             "",
             "| Target | Lint Warnings | Lint Errors | Duplicated Code | Build Size | Files > 1k LoC | TODOs |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+        ],
+        workspaceRows: [
+            "#### Test Results by Workspace",
+            "",
+            "| Workspace | Total | Passed | Failed | Skipped | Duration |",
+            "| --- | ---: | ---: | ---: | ---: | ---: |"
         ]
     };
 }
@@ -1436,7 +1546,13 @@ function addReportRowForResultSet(
         healthStats = null
     }: {
         label: string;
-        results: { usedDir?: string | null; lint?: unknown; duplicates?: unknown; health?: unknown };
+        results: {
+            usedDir?: string | null;
+            lint?: unknown;
+            duplicates?: unknown;
+            health?: unknown;
+            cases?: Array<{ time: number; status: string; workspace?: string }>;
+        };
         diffStats: any;
         failureBreakdown: unknown;
         healthStats?: unknown;
@@ -1448,6 +1564,16 @@ function addReportRowForResultSet(
 
     tables.testRows.push(generateTestRow(label, results, diffStats, failureBreakdown));
     tables.qualityRows.push(generateQualityRow(label, results, healthStats));
+
+    // Compute and append workspace breakdown rows
+    if (results.cases && results.cases.length > 0) {
+        const workspaceStats = computeWorkspaceBreakdown(results.cases);
+        // Sort workspaces alphabetically for consistent output
+        const sortedWorkspaces = Array.from(workspaceStats.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+        for (const [workspace, stats] of sortedWorkspaces) {
+            tables.workspaceRows.push(generateWorkspaceRow(workspace, stats));
+        }
+    }
 }
 
 /**
@@ -1482,8 +1608,13 @@ function resolveHeadReportLabel({ base, merged }) {
 /**
  * Format the final report markdown table with the test and quality sections.
  */
-function formatQualityReportTable({ testRows, qualityRows }: ReportTableState): string {
-    return [...testRows, "", ...qualityRows].join("\n");
+function formatQualityReportTable({ testRows, qualityRows, workspaceRows }: ReportTableState): string {
+    const parts: string[] = [...testRows, "", ...qualityRows];
+    // Only include workspace section if it has more than header rows
+    if (workspaceRows.length > 2) {
+        parts.push("", ...workspaceRows);
+    }
+    return parts.join("\n");
 }
 
 function formatRegressionComparisonFlow({

@@ -5,16 +5,12 @@
 //	show_debug_message("Caught exception while trying to update crab foot speed: " + string(ex));
 //}
 
-
-
-
 // Make body wobble up and down // This is a trailing comment
 z_wobble = (sin(current_time * 0.004) + 1) * 2 + 2; // value between 0 and 2, this is subtracted from crabs height
 
-
-/// @description Emulation of string_height(), but using Scribble for calculating the width
-/// **Please do ! use this function in conjunction with string_copy()**
-/// @param string    The string to draw
+/// @desc Emulation of string_height(), but using Scribble for calculating the width
+///       **Please do not use this function in conjunction with string_copy()**
+/// @param string The string to draw
 function string_height_scribble(_string) {
     static _scribble_state = __scribble_get_state();
 
@@ -26,15 +22,14 @@ function string_height_scribble(_string) {
 
 // This is an unrelated comment
 
-
-/// @description Tests to see if a font has the given character
-/// @param fontName   The target font, as a string
-/// @param character  Character to test for, as a string
-/// @returns {Boolean} Indicating whether the given character is found in the font
-/// @param font_name
+/// @desc Tests to see if a font has the given character
+/// @param font_name The target font, as a string
+/// @param character Character to test for, as a string
+/// @returns {bool} Indicating whether the given character is found in the font
 function scribble_font_has_character(_font_name, _character) {
     return ds_map_exists(__scribble_get_font_data(_font_name).__glyphs_map, ord(_character));
 }
+
 /// @param x1
 /// @param y1
 /// @param z1
@@ -46,6 +41,7 @@ function scribble_font_has_character(_font_name, _character) {
 /// @param z3
 /// @param length1
 /// @param length2
+/// @returns {array}
 function twojointik(x1, y1, z1, x2dir, y2dir, z2dir, x3, y3, z3, length1, length2) {
     /// @description twojointik(x1, y1, z1, x2dir, y2dir, z2dir, x3, y3, z3, length1, length2)
     /*
@@ -63,15 +59,12 @@ function twojointik(x1, y1, z1, x2dir, y2dir, z2dir, x3, y3, z3, length1, length
     return [x2, y2, z2, x3, y3, z3];
 }
 
-alarm[1] = 10; // ! everything loaded yet, check again in a bit
+alarm[1] = 10; // not everything loaded yet, check again in a bit
 
 #region Collision
 
-
 // Create colmesh shape & mark as trigger - now collision functions can be executed
 colmesh_shape = new ColmeshBlock(scr_matrix_build(round(x), round(y), round(z - 2), 0, 0, 0, max(ceil(sprite_width * 0.5), 10), 4, max(32, sprite_height + 2)));
-/// @param o
-/// @returns {undefined}
 global.room_colmesh.add_shape(colmesh_shape, true, false, true, false, undefined, function (o) { // need a function for trigger so projectiles can collide with this, passthrough and call projectile's function
     gml_pragma("forceinline");
     try {

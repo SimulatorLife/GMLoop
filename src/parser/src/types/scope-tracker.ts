@@ -79,9 +79,7 @@ export interface IdentifierRoleApplicator {
  * a subset should depend on the individual interfaces directly.
  */
 export interface IdentifierRoleManager
-    extends IdentifierRoleContextController,
-        IdentifierRoleApplicator,
-        IdentifierRoleCloner {}
+    extends IdentifierRoleContextController, IdentifierRoleApplicator, IdentifierRoleCloner {}
 
 /**
  * Scope lifecycle management.

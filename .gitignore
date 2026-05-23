@@ -13,6 +13,7 @@ tools/
 /*.cjs
 /*.mjs
 */**/*debug*.txt
+.playwright
 
 # We only want extra markdown files in docs/ and README.md files for each workspace
 *.md
@@ -20,6 +21,11 @@ tools/
 !docs/**/*.md
 !**/*/README.md
 !.github/copilot-instructions.md
+
+.gmloop
+**/.gmloop
+.playwright-mcp/
+*.png
 
 # TypeScript
 *.tsbuildinfo

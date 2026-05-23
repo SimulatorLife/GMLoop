@@ -129,6 +129,6 @@ export function resolvePackageJsonPath(packageName: string, context: string): st
         return fileURLToPath(packageJsonUrl);
     } catch (error) {
         const message = getErrorMessageOrFallback(error);
-        throw new Error(`Unable to resolve ${context} package '${packageName}'. (${message})`);
+        throw new Error(`Unable to resolve ${context} package '${packageName}'. (${message})`, { cause: error });
     }
 }

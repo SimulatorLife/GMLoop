@@ -32,7 +32,7 @@ installRecognitionExceptionLikeGuard();
  */
 function mergeParserOptions(baseOptions: ParserOptions, overrides: Partial<ParserOptions> | undefined): ParserOptions {
     const overrideObject = Core.isObjectLike(overrides) ? overrides : {};
-    const mergedOptions = Object.assign({}, baseOptions, overrideObject) as ParserOptions;
+    const mergedOptions = Object.assign({}, baseOptions, overrideObject);
     mergedOptions.sllPredictionMaxSourceLength = normalizeSllPredictionMaxSourceLength(
         mergedOptions.sllPredictionMaxSourceLength
     );

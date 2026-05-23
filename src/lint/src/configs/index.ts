@@ -15,8 +15,11 @@ export {
     normalizeLintRuleLevel,
     normalizeLintRuleLevelWithFallback
 } from "./lint-rule-level.js";
-export { normalizeLintRulesConfig } from "./project-config.js";
-export { createLintRuleEntriesFromProjectConfig } from "./rule-entries.js";
+export { normalizeLintRulesConfig, normalizeLintRulesConfigOrNull } from "./project-config.js";
+export {
+    createLintRuleEntriesFromProjectConfig,
+    createLintRuleEntriesFromProjectConfigOrNull
+} from "./rule-entries.js";
 
 /**
  * Represents a pinned lint flat-config entry exposed by the lint namespace.

@@ -26,31 +26,62 @@ import type {
     FixtureStageName
 } from "../types.js";
 
-async function snapshotDirectoryTree(rootPath: string): Promise<Map<string, string>> {
-    const relativePaths = await Core.listRelativeFilePathsRecursively(rootPath);
-    const files = await Promise.all(
-        relativePaths.map(
-            async (relativePath) => [relativePath, await readFile(path.join(rootPath, relativePath), "utf8")] as const
-        )
+type DirectoryComparisonStats = Readonly<{
+    totalComparedFiles: number;
+    peakBufferedFileCount: number;
+}>;
+
+/**
+ * Compare two fixture directories by path and UTF-8 file content while keeping
+ * in-memory file buffering bounded to one pair of files at a time.
+ *
+ * @param actualDirectoryPath Produced fixture output directory.
+ * @param expectedDirectoryPath Golden expected fixture directory.
+ * @returns Deterministic comparison stats for tests/profiling assertions.
+ */
+export async function compareDirectoryTrees(
+    actualDirectoryPath: string,
+    expectedDirectoryPath: string
+): Promise<DirectoryComparisonStats> {
+    const [actualPaths, expectedPaths] = await Promise.all([
+        Core.listRelativeFilePathsRecursively(actualDirectoryPath),
+        Core.listRelativeFilePathsRecursively(expectedDirectoryPath)
+    ]);
+
+    const sortedActualPaths = [...actualPaths].sort();
+    const sortedExpectedPaths = [...expectedPaths].sort();
+
+    assert.deepEqual(
+        sortedActualPaths,
+        sortedExpectedPaths,
+        "Project tree output paths must match expected tree paths byte-for-byte."
     );
 
-    return new Map(files);
-}
+    async function compareNextFile(nextIndex: number): Promise<number> {
+        if (nextIndex >= sortedActualPaths.length) {
+            return 0;
+        }
+        const relativePath = sortedActualPaths[nextIndex];
+        if (relativePath === undefined) {
+            throw new Error("Directory comparison encountered an unexpected undefined relative path.");
+        }
+        const [actualText, expectedText] = await Promise.all([
+            readFile(path.join(actualDirectoryPath, relativePath), "utf8"),
+            readFile(path.join(expectedDirectoryPath, relativePath), "utf8")
+        ]);
+        assert.equal(actualText, expectedText, `Project tree file "${relativePath}" must match expected text.`);
+        return 1 + (await compareNextFile(nextIndex + 1));
+    }
 
-const DOC_COMMENT_PATTERN = /^\s*\/\/\/\s*(?:\/\s*)?@/iu;
+    const comparedFiles = await compareNextFile(0);
 
-function removeDocCommentAnnotationLines(text: string): string {
-    return text
-        .split(/\r?\n/u)
-        .filter((line) => !DOC_COMMENT_PATTERN.test(line))
-        .join("\n");
+    return Object.freeze({
+        totalComparedFiles: comparedFiles,
+        peakBufferedFileCount: comparedFiles > 0 ? 2 : 0
+    });
 }
 
 function canonicalizeFixtureText(text: string, comparison: FixtureComparison): string {
-    if (comparison === "trimmed-strip-doc-comment-annotations") {
-        return removeDocCommentAnnotationLines(text).trim();
-    }
-
     if (comparison === "ignore-whitespace-and-line-endings") {
         return text.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
     }
@@ -74,15 +105,7 @@ async function compareFixtureCaseResult(fixtureCase: FixtureCase, caseResult: Fi
             null,
             `Fixture ${fixtureCase.caseId} is missing expected/ directory.`
         );
-        const [actualFiles, expectedFiles] = await Promise.all([
-            snapshotDirectoryTree(caseResult.outputDirectoryPath),
-            snapshotDirectoryTree(fixtureCase.expectedDirectoryPath)
-        ]);
-        assert.deepEqual(
-            [...actualFiles.entries()],
-            [...expectedFiles.entries()],
-            `${fixtureCase.caseId} project tree output must match expected tree byte-for-byte.`
-        );
+        await compareDirectoryTrees(caseResult.outputDirectoryPath, fixtureCase.expectedDirectoryPath);
         return;
     }
 

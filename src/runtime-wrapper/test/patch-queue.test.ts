@@ -1,8 +1,8 @@
 import assert from "node:assert";
 import { test } from "node:test";
 
+import { deduplicatePatchesById } from "../browser/websocket/patch-queue.js";
 import { Clients, Runtime } from "../src/index.js";
-import { deduplicatePatchesById } from "../src/websocket/patch-queue.js";
 
 const { createRuntimeWrapper } = Runtime;
 const { createWebSocketClient } = Clients;
@@ -358,7 +358,7 @@ void test("patch queue preserves input order when dependency graph contains a cy
                     appliedPatchIds.push(
                         ...patches.map((patch) => {
                             if (typeof patch === "object" && patch !== null && "id" in patch) {
-                                const patchId = (patch as { id: unknown }).id;
+                                const patchId = patch.id;
                                 if (typeof patchId === "string") {
                                     return patchId;
                                 }

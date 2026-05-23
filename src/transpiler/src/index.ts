@@ -6,6 +6,7 @@ export const Transpiler = Object.freeze({
     ...Emitter
 });
 
+export { TranspilerError, TranspilerErrorCode } from "./api/errors.js";
 export type {
     ClosurePatch,
     EventPatch,
