@@ -274,6 +274,38 @@ void test("runFixtureSuite records profiling metrics and writes reports", async 
     }
 });
 
+void test("compareDirectoryTrees bounds buffered file content to one file pair", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-directory-compare-"));
+    const actualDirectory = path.join(rootPath, "actual");
+    const expectedDirectory = path.join(rootPath, "expected");
+    await mkdir(actualDirectory, { recursive: true });
+    await mkdir(expectedDirectory, { recursive: true });
+
+    try {
+        const fileCount = 64;
+        const fileContent = "x".repeat(8 * 1024);
+        await Promise.all(
+            Array.from({ length: fileCount }, async (_value, index) => {
+                const relativePath = `nested/file-${String(index).padStart(3, "0")}.txt`;
+                const actualPath = path.join(actualDirectory, relativePath);
+                const expectedPath = path.join(expectedDirectory, relativePath);
+                await mkdir(path.dirname(actualPath), { recursive: true });
+                await mkdir(path.dirname(expectedPath), { recursive: true });
+                await Promise.all([
+                    writeFile(actualPath, fileContent, "utf8"),
+                    writeFile(expectedPath, fileContent, "utf8")
+                ]);
+            })
+        );
+
+        const stats = await FixtureRunner.compareDirectoryTrees(actualDirectory, expectedDirectory);
+        assert.equal(stats.totalComparedFiles, fileCount);
+        assert.equal(stats.peakBufferedFileCount, 2);
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
 void test("runFixtureSuite continues collecting failures for profiling mode", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-continue-on-failure-"));
     await createTextFixtureCase(
