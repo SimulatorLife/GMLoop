@@ -256,10 +256,8 @@ let isPatched = false;
  * import-time setup. Reapplying `Symbol.hasInstance` or
  * `reportNoViableAlternative` wrappers would stack behavior and distort parser
  * diagnostics, so repeated calls become no-ops after the first successful
- * installation.
- *
- * @returns Returns immediately when ANTLR's runtime constructors are missing or
- *          when the guard has already been installed for this process.
+ * installation. The function also returns immediately when ANTLR runtime
+ * constructors are unavailable.
  */
 export function installRecognitionExceptionLikeGuard() {
     if (isPatched) {
