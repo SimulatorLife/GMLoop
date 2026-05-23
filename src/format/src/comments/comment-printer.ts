@@ -24,7 +24,7 @@ type PrinterComment = {
 };
 
 function hasTypeProperty(value: unknown): value is { type?: string } {
-    return value !== null && typeof value === "object";
+    return Core.isObjectLike(value);
 }
 
 /**
