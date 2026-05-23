@@ -1137,7 +1137,12 @@ function performDeadCodeElimination(bodyStatements: any[], sourceText: string, e
                     case "*=":
                     case "/=": {
                         const val = tryEvaluateNumericExpression(expr.right);
-                        if (val === 1) {
+                        // Strict === 1 catches the common exact case without epsilon overhead.
+                        // Epsilon-tolerant check handles the floating-point edge case where
+                        // rounding error produces a value like 0.9999999999999998 instead of 1.
+                        // Without this tolerance, expressions like `x *= 1 - 1e-16` or `x /= 1 + 1e-15`
+                        // would silently bypass the optimization and produce incorrect output.
+                        if (val === 1 || Core.areNumbersApproximatelyEqual(val, 1)) {
                             scheduleNodeRemoval(stmt, sourceText, edits);
                             handled = true;
                         }

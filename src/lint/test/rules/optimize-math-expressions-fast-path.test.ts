@@ -125,3 +125,31 @@ void test("optimize-math-expressions rewrites division by near-2 as multiplicati
     assert.ok(result.output.includes("*"), "output should contain a multiplication, not division");
     assert.equal(result.output.includes("/"), false, "output should not contain division operator");
 });
+
+void test("optimize-math-expressions removes *= 1 and /= 1 using epsilon tolerance for near-1 values", () => {
+    // When `1.0` is written in source, strict === 1 correctly handles it.
+    // But floating-point computation can produce 0.9999999999999998 instead
+    // of exactly 1 (e.g. `1 - 1e-16` or `0.1 + 0.9`). Without epsilon-tolerant
+    // comparison, `x *= 0.9999999999999998` would bypass the removal and the
+    // expression would appear unchanged in the output — a silent correctness
+    // failure that is hard to debug.
+    const exactOneInput = "x *= 1.0;\ny /= 1.0;\n";
+    const exactOneResult = lintWithRule("optimize-math-expressions", exactOneInput, {});
+
+    // Both `*=` and `/=` with exactly 1 should be removed.
+    assert.equal(exactOneResult.messages.length, 1);
+    assert.equal(exactOneResult.output.includes("1.0"), false, "1.0 should be removed from output");
+
+    // The floating-point noise case: `1 - 2.22e-16` evaluates to ~0.9999999999999998.
+    // This should also trigger the removal via epsilon-tolerant matching, proving
+    // the comparison is tolerant rather than strict.
+    const nearOneInput = "x *= (1 - 2.22e-16);\ny /= (1 + 1e-15);\n";
+    const nearOneResult = lintWithRule("optimize-math-expressions", nearOneInput, {});
+
+    // The statements with near-1 multipliers should be removed (output is shorter).
+    assert.equal(nearOneResult.messages.length, 1);
+    assert.ok(
+        nearOneResult.output.length < nearOneInput.length,
+        "near-1 expressions should be removed, making output shorter than input"
+    );
+});
