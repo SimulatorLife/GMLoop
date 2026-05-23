@@ -463,7 +463,7 @@ function printCallExpressionNode(node, path, options, print) {
         const callbackArguments: unknown[] = [];
         const structArguments: unknown[] = [];
         const structArgumentsToBreak: unknown[] = [];
-        const args = node.arguments;
+        const args = node.arguments ?? [];
         const argsLen = args.length;
         for (let i = 0; i < argsLen; i++) {
             const arg = args[i];
@@ -501,7 +501,7 @@ function printCallExpressionNode(node, path, options, print) {
         const shouldForceBreakArguments =
             callbackArguments.length > 1 || structArgumentsToBreak.length > 0 || shouldForceCallbackBreaks;
 
-        const shouldUseCallbackLayout = [node.arguments[0], node.arguments.at(-1)].some(
+        const shouldUseCallbackLayout = [args[0], args.at(-1)].some(
             (argumentNode) =>
                 argumentNode?.type === Core.FUNCTION_DECLARATION ||
                 argumentNode?.type === Core.FUNCTION_EXPRESSION ||
@@ -642,7 +642,7 @@ function printNewExpressionNode(node, path, options, print) {
     const callbackArguments: unknown[] = [];
     const structArguments: unknown[] = [];
     const structArgumentsToBreak: unknown[] = [];
-    const args = node.arguments;
+    const args = node.arguments ?? [];
     const argsLen = args.length;
     for (let i = 0; i < argsLen; i++) {
         const arg = args[i];
@@ -680,7 +680,7 @@ function printNewExpressionNode(node, path, options, print) {
     const shouldForceBreakArguments =
         callbackArguments.length > 1 || structArgumentsToBreak.length > 0 || shouldForceCallbackBreaks;
 
-    const shouldUseCallbackLayout = [node.arguments[0], node.arguments.at(-1)].some(
+    const shouldUseCallbackLayout = [args[0], args.at(-1)].some(
         (argumentNode) =>
             argumentNode?.type === Core.FUNCTION_DECLARATION ||
             argumentNode?.type === Core.FUNCTION_EXPRESSION ||
