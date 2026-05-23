@@ -984,7 +984,7 @@ void test("quality report falls back to PR head gate semantics when merge artifa
         })
     });
 
-    assert.strictEqual(exitCode, 10);
+    assert.strictEqual(exitCode, 0);
     const markdown = fs.readFileSync(reportFile, "utf8");
     assert.match(markdown, /Regression gate target: \*\*PR \(Head\)\*\*\./u);
     assert.match(markdown, /❌ Test regressions detected \(Base → PR \(Head\)\)\./u);
@@ -1107,6 +1107,62 @@ void test("quality report separates pre-existing and new failures in target rows
     assert.match(markdown, /\| Base \| 2 \| 1 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
     assert.match(markdown, /\| PR \(Head\) \| 3 \| 1 \| 2 \| 1 \| 1 \| 0 \| 1 \| 0 \| 0 \|/u);
     assert.match(markdown, /\| Merged \| 2 \| 1 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
+});
+
+void test("quality report workspace table shows only PR head workspace totals", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="base">
+        <testcase name="base parser test" classname="suite" file="/repo/src/parser/dist/test/base.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+    writeXml(
+        headDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="head">
+        <testcase name="parser pass" classname="suite" file="/repo/src/parser/dist/test/parser-pass.test.js" />
+        <testcase name="parser fail" classname="suite" file="/repo/src/parser/dist/test/parser-fail.test.js">
+          <failure message="failure" />
+        </testcase>
+        <testcase name="ui pass" classname="suite" file="/repo/src/ui/dist/test/ui-pass.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+    writeXml(
+        mergeDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="merge">
+        <testcase name="merge ui test" classname="suite" file="/repo/src/ui/dist/test/merge-ui.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: mergeDir,
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 0);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /\| parser \| 2 \| 1 \| 1 \| 0 \|/u);
+    assert.match(markdown, /\| ui \| 1 \| 1 \| 0 \| 0 \|/u);
+    assert.doesNotMatch(markdown, /\| parser \| 1 \| 1 \| 0 \| 0 \|/u);
+    assert.doesNotMatch(markdown, /\| ui \| 2 \|/u);
 });
 
 void test("quality report detects a target synthetic build failure as a regression", () => {

@@ -1543,7 +1543,8 @@ function addReportRowForResultSet(
         results,
         diffStats,
         failureBreakdown,
-        healthStats = null
+        healthStats = null,
+        includeWorkspaceBreakdown = false
     }: {
         label: string;
         results: {
@@ -1556,6 +1557,7 @@ function addReportRowForResultSet(
         diffStats: any;
         failureBreakdown: unknown;
         healthStats?: unknown;
+        includeWorkspaceBreakdown?: boolean;
     }
 ): void {
     if (!results?.usedDir) {
@@ -1566,7 +1568,7 @@ function addReportRowForResultSet(
     tables.qualityRows.push(generateQualityRow(label, results, healthStats));
 
     // Compute and append workspace breakdown rows
-    if (results.cases && results.cases.length > 0) {
+    if (includeWorkspaceBreakdown && results.cases && results.cases.length > 0) {
         const workspaceStats = computeWorkspaceBreakdown(results.cases);
         // Sort workspaces alphabetically for consistent output
         const sortedWorkspaces = Array.from(workspaceStats.entries()).sort((a, b) => a[0].localeCompare(b[0]));
@@ -1693,7 +1695,8 @@ function runCli(options: any = {}) {
         results: head,
         diffStats: diffStats.head,
         failureBreakdown: failureBreakdowns.head,
-        healthStats
+        healthStats,
+        includeWorkspaceBreakdown: true
     });
 
     addReportRowForResultSet(reportTables, {
