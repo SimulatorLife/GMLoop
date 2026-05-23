@@ -264,24 +264,14 @@ export function evaluateMathOptimizationCandidate(
 }
 
 /**
- * Helper to narrow unknown to the shape expected by Core helpers that
- * accept `AstNodeRecord | null | undefined`.
- */
-function isAstNodeRecord(candidate: unknown): candidate is Record<string, unknown> {
-    return candidate !== null && typeof candidate === "object" && !Array.isArray(candidate);
-}
-
-/**
  * Evaluates whether a node should be skipped from traversal-based optimization.
- * This uses the core traversal skip logic in addition to expression-position checks.
+ * Delegates to Core.shouldSkipTraversal, which already handles non-object inputs
+ * by returning `false` — eliminating the need for a separate isAstNodeRecord guard.
  *
  * @param node - The AST node to evaluate
  * @returns true if the node should be skipped
  */
 export function shouldSkipNodeFromTraversal(node: unknown): boolean {
-    if (!isAstNodeRecord(node)) {
-        return false;
-    }
     return shouldSkipTraversal(node);
 }
 
