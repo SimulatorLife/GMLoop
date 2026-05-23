@@ -290,7 +290,3 @@ function createFeatherPluginRuleMap(): Record<string, Rule.RuleModule> {
 export const ruleIds = Object.freeze(createRuleIdMap());
 export const gmlLintRuleMap = Object.freeze(createGmlPluginRuleMap());
 export const featherLintRuleMap = Object.freeze(createFeatherPluginRuleMap());
-export const lintRuleMap = Object.freeze({
-    ...gmlLintRuleMap,
-    ...featherLintRuleMap
-});
