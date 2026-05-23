@@ -150,6 +150,13 @@ void test("performanceOverrideRuleIds is not a separate module-level re-export (
     assertEquals(Lint.performanceOverrideRuleIds, Lint.services.performanceOverrideRuleIds);
 });
 
+void test("malformed scientific-notation helpers are only exposed through Lint namespace", () => {
+    assert.equal("forEachScientificNotationToken" in LintWorkspace, false);
+    assert.equal("toPlainDecimalFromScientificLiteral" in LintWorkspace, false);
+    assert.equal(typeof Lint.forEachScientificNotationToken, "function");
+    assert.equal(typeof Lint.toPlainDecimalFromScientificLiteral, "function");
+});
+
 void test("feather namespace rule IDs are strictly feather/gm#### only", () => {
     const featherRuleShortNames = Object.keys(Lint.featherPlugin.rules);
     assert.ok(featherRuleShortNames.length > 0);

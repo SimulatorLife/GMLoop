@@ -1,4 +1,4 @@
-import { forEachScientificNotationToken, toPlainDecimalFromScientificLiteral } from "@gmloop/lint";
+import { Lint } from "@gmloop/lint";
 
 import { applySourceTextEdits } from "../codemod-helpers.js";
 import type { ScientificNotationEdit, ScientificNotationResult } from "./types.js";
@@ -18,8 +18,8 @@ export function applyScientificNotationCodemod(sourceText: string): ScientificNo
 
     const edits: ScientificNotationEdit[] = [];
 
-    forEachScientificNotationToken(sourceText, (start, end, scientificText) => {
-        const replacement = toPlainDecimalFromScientificLiteral(scientificText);
+    Lint.forEachScientificNotationToken(sourceText, (start, end, scientificText) => {
+        const replacement = Lint.toPlainDecimalFromScientificLiteral(scientificText);
         if (replacement !== null && replacement !== scientificText) {
             edits.push(
                 Object.freeze({
