@@ -176,22 +176,11 @@ function resolveNextSuitePath(node, suitePath, { hasTestcase, hasTestsuite }) {
     return pushNormalizedSuiteSegments([...suitePath], normalizedSuiteName);
 }
 
-/**
- * Extract workspace/module name from a report file path.
- *
- * For test XML files in a workspace structure like:
- *   /path/to/workspace/src/cli/test/results/test-report.xml
- *
- * The workspace name is extracted from the directory immediately after "src/"
- * (e.g., "cli", "core", "parser").
- *
- * This allows the quality report to break down test results per workspace/module.
- */
-function extractWorkspaceNameFromReportPath(reportFilePath: string): string {
-    if (!reportFilePath) {
+function extractWorkspaceNameFromPath(candidatePath: string): string {
+    if (!candidatePath) {
         return "";
     }
-    const normalized = reportFilePath.replaceAll("\\", "/");
+    const normalized = candidatePath.replaceAll("\\", "/");
     const dir = path.dirname(normalized);
     const segments = dir.split("/");
     const srcIndex = segments.indexOf("src");
@@ -208,7 +197,8 @@ function recordSuiteTestCase(cases, node, suitePath, reportFilePath = "") {
     const key = buildTestKey(node, suitePath);
     const displayName = describeTestCase(node, suitePath) || key;
     const time = Number.parseFloat(node.time) || 0;
-    const workspace = extractWorkspaceNameFromReportPath(reportFilePath);
+    const workspace =
+        extractWorkspaceNameFromPath(toTrimmedString(node.file)) || extractWorkspaceNameFromPath(reportFilePath);
 
     cases.push({
         node,
@@ -1543,7 +1533,8 @@ function addReportRowForResultSet(
         results,
         diffStats,
         failureBreakdown,
-        healthStats = null
+        healthStats = null,
+        includeWorkspaceBreakdown = false
     }: {
         label: string;
         results: {
@@ -1556,6 +1547,7 @@ function addReportRowForResultSet(
         diffStats: any;
         failureBreakdown: unknown;
         healthStats?: unknown;
+        includeWorkspaceBreakdown?: boolean;
     }
 ): void {
     if (!results?.usedDir) {
@@ -1566,7 +1558,7 @@ function addReportRowForResultSet(
     tables.qualityRows.push(generateQualityRow(label, results, healthStats));
 
     // Compute and append workspace breakdown rows
-    if (results.cases && results.cases.length > 0) {
+    if (includeWorkspaceBreakdown && results.cases && results.cases.length > 0) {
         const workspaceStats = computeWorkspaceBreakdown(results.cases);
         // Sort workspaces alphabetically for consistent output
         const sortedWorkspaces = Array.from(workspaceStats.entries()).sort((a, b) => a[0].localeCompare(b[0]));
@@ -1693,7 +1685,8 @@ function runCli(options: any = {}) {
         results: head,
         diffStats: diffStats.head,
         failureBreakdown: failureBreakdowns.head,
-        healthStats
+        healthStats,
+        includeWorkspaceBreakdown: true
     });
 
     addReportRowForResultSet(reportTables, {
