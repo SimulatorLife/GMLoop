@@ -1,6 +1,6 @@
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "./rule-definition.js";
+import type { GmlRuleDefinition } from "./index.js";
 import { createNoAssignmentInConditionRule } from "./rules/no-assignment-in-condition-rule.js";
 import { createNoEmptyCommentsRule } from "./rules/no-empty-comments-rule.js";
 import { createNoEmptyRegionsRule } from "./rules/no-empty-regions-rule.js";

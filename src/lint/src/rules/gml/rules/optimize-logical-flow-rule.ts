@@ -2,8 +2,8 @@ import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { gmlRuleAutofixServices } from "../gml-rule-services.js";
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, findPreviousNonWhitespaceIndex, resolveLocFromIndex } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../transforms/logical-expression-traversal-normalization.js";
 
 /**

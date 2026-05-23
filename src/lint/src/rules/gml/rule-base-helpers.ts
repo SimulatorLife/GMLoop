@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "./rule-definition.js";
+import type { GmlRuleDefinition } from "./index.js";
 
 const { clamp, isObjectLike } = Core;
 

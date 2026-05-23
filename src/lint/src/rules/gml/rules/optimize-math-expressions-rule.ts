@@ -2,6 +2,7 @@ import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { gmlRuleAutofixServices } from "../gml-rule-services.js";
+import type { GmlRuleDefinition } from "../index.js";
 import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,
@@ -13,7 +14,6 @@ import {
     type SourceTextEdit,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 import { applyDivisionToMultiplication } from "../transforms/math-division-to-multiplication.js";
 import { cleanupMultiplicativeIdentityParentheses } from "../transforms/math-parentheses-cleanup.js";
 // manual-transforms provide a comprehensive suite of normalization helpers that
