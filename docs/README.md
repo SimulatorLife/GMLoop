@@ -9,15 +9,11 @@ then return here for deeper context.
 
 ## Reference guides
 
-> **Note:** The following sample config files are documented but not yet
-> committed. Each link describes the target; create the file when adding that
-> surface.
-
-- [`examples/example.prettierignore`](examples/example.prettierignore) *(planned)* — Baseline
+- [`examples/example.prettierignore`](examples/example.prettierignore) — Baseline
   ignore file tuned for common GameMaker metadata folders.
-- [`examples/example.prettierrc`](examples/example.prettierrc) *(planned)* — Baseline
+- [`examples/example.prettierrc`](examples/example.prettierrc) — Baseline
   Prettier config for formatting `.gml` files in a GameMaker project.
-- [`examples/example.eslint.config.js`](examples/example.eslint.config.js) *(planned)* —
+- [`examples/example.eslint.config.js`](examples/example.eslint.config.js) —
   Flat ESLint config that composes the `@gmloop/lint` presets (without TypeScript
   requirement).
 - [`examples/example.mcp.json`](examples/example.mcp.json) — MCP client config
@@ -45,6 +41,8 @@ then return here for deeper context.
 - [Contributor onboarding checklist](contributor-onboarding.md) — Environment
   setup, baseline validation (`build:ts`, `lint:quiet`), and supporting
   documentation for new contributors.
+- [Architecture target state](target-state.md) — Canonical rules for workspace
+  ownership boundaries, dependency direction, and forward-looking design.
 - [ANTLR regeneration guide](antlr-regeneration.md) — Canonical steps for
   rebuilding the generated parser artifacts with the vendored toolchain plus
   pointers to the extension hooks that keep custom behaviour outside the
