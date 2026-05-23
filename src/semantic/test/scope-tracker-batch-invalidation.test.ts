@@ -10,7 +10,7 @@ type InvalidationEntry = {
 };
 
 function normalizeInvalidationEntries(entries: ReadonlyArray<InvalidationEntry>): Array<InvalidationEntry> {
-    return [...entries].sort((left, right) => {
+    return [...entries].toSorted((left, right) => {
         if (left.scopeId !== right.scopeId) {
             return left.scopeId.localeCompare(right.scopeId);
         }
