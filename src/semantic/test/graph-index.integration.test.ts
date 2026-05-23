@@ -1712,10 +1712,12 @@ void test("graph visualization keeps object events connected when YY metadata om
             const objectResourceNodeId = "project::resource::objects/oSpider/oSpider.yy";
             const projectNodeId = "project::resource::ConnectedProject.yyp";
 
-            assert.ok(
-                !visualizationData.nodes.some((node) => node.id.includes("::file::")),
-                "expected visualization graph nodes to exclude file entries"
-            );
+            const fileNodes = visualizationData.nodes.filter((node) => node.kind === "file");
+            assert.deepEqual(fileNodes.map((node) => node.filePath).sort(), [
+                "objects/oSpider/Create_0.gml",
+                "objects/oSpider/KeyPress_27.gml",
+                "objects/oSpider/Step_0.gml"
+            ]);
 
             const objectEventNodes = visualizationData.nodes.filter((node) => node.kind === "object_event");
             assert.deepEqual(objectEventNodes.map((node) => node.displayName).sort(), [
@@ -1745,6 +1747,18 @@ void test("graph visualization keeps object events connected when YY metadata om
                 ),
                 "expected the object resource to remain connected to the central project node"
             );
+
+            for (const fileNode of fileNodes) {
+                assert.ok(
+                    visualizationData.edges.some(
+                        (edge) =>
+                            edge.source === objectResourceNodeId &&
+                            edge.target === fileNode.id &&
+                            edge.type === "contains"
+                    ),
+                    `expected file node ${fileNode.displayName} to stay connected to its owning resource`
+                );
+            }
         } finally {
             database.close();
         }

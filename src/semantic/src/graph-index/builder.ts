@@ -215,6 +215,9 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "struct_variable": {
             return `gml/var/struct::${entry.scopeId ?? entry.key ?? name}`;
         }
+        case "file": {
+            return `gml/file/${entry.filePath ?? entry.key ?? name}`;
+        }
         case "anim_curve":
         case "constructor":
         case "data_file":
@@ -990,6 +993,45 @@ function projectFileRecords(context: ProjectionContext): void {
     }
 }
 
+function projectFileNodes(context: ProjectionContext): void {
+    const files = asRecord(context.projectIndex.files);
+    const projectNodeId = resolveProjectRootNodeId(context);
+
+    for (const relativePath of Object.keys(files)) {
+        const resourcePath = resolveResourcePathForFile(context, relativePath);
+        const nodeId = createGraphNodeId(context.graphId, "file", relativePath);
+        const node = createNodeRecord({
+            displayName: path.posix.basename(relativePath),
+            filePath: relativePath,
+            graphId: context.graphId,
+            id: nodeId,
+            kind: "file",
+            name: relativePath,
+            resourcePath,
+            summary: createGraphNodeSummary({
+                filePath: relativePath,
+                kind: "file",
+                name: relativePath,
+                resourcePath
+            })
+        });
+
+        context.nodeRecords.push(node);
+        registerNodeIndexes(context, node);
+
+        const ownerNodeId = resourcePath
+            ? createGraphNodeId(context.graphId, "resource", resourcePath)
+            : (projectNodeId ?? null);
+        if (ownerNodeId) {
+            context.edgeRecords.push({
+                fromId: ownerNodeId,
+                toId: nodeId,
+                type: "contains"
+            });
+        }
+    }
+}
+
 function projectIdentifierCollections(context: ProjectionContext): void {
     const identifiers = asRecord(context.projectIndex.identifiers);
 
@@ -1643,6 +1685,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         projectResources(projectContext);
         projectObjectEventScopes(projectContext);
         projectFileRecords(projectContext);
+        projectFileNodes(projectContext);
         projectIdentifierCollections(projectContext);
         projectRelationshipEdges(projectContext);
         removeDanglingEdges(projectContext);
@@ -1654,6 +1697,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
             projectResources(toolsetContext);
             projectObjectEventScopes(toolsetContext);
             projectFileRecords(toolsetContext);
+            projectFileNodes(toolsetContext);
             projectIdentifierCollections(toolsetContext);
             projectRelationshipEdges(toolsetContext);
             removeDanglingEdges(toolsetContext);
