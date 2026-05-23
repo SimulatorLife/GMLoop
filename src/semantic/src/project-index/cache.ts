@@ -5,8 +5,7 @@ import { Core } from "@gmloop/core";
 
 import { evaluateCacheHitDecision, ProjectIndexCacheMissReason } from "./cache-validation-policy.js";
 import { evaluateProjectIndexCacheSizePolicy, normalizeProjectIndexCacheMaxSizeBytes } from "./cache-write-policy.js";
-import { isProjectManifestPath } from "./constants.js";
-import { PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE } from "./defaults.js";
+import { isProjectManifestPath, PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE } from "./constants.js";
 import { defaultFsFacade, type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 
 export const PROJECT_INDEX_CACHE_SCHEMA_VERSION = 2;
