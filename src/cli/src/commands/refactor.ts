@@ -166,20 +166,6 @@ function normalizeRequestedCodemods(onlyOption: string | undefined): Array<Regis
     });
 }
 
-function resolveDiscoveredProjectRoot(
-    projectRootOption: string | undefined,
-    configPathOption: string | undefined
-): Promise<string> {
-    return discoverProjectRoot({
-        explicitProjectPath: projectRootOption,
-        configPath: configPathOption
-    });
-}
-
-function resolveCodemodConfigPath(projectRoot: string, configPathOption: string | undefined): Promise<string> {
-    return resolveExistingGmloopConfigPath(projectRoot, configPathOption);
-}
-
 function hasExplicitRenameIntent(options: RefactorCommandOptions): boolean {
     return Boolean(options.symbolId || options.oldName || options.newName || options.checkHotReload);
 }
@@ -241,7 +227,10 @@ async function validateRenameOptions(options: RefactorCommandOptions): Promise<V
     }
 
     return {
-        projectRoot: await resolveDiscoveredProjectRoot(options.path, options.config),
+        projectRoot: await discoverProjectRoot({
+            explicitProjectPath: options.path,
+            configPath: options.config
+        }),
         verbose: Boolean(options.verbose),
         symbolId: options.symbolId,
         oldName: options.oldName,
@@ -256,7 +245,10 @@ async function validateCodemodOptions(
     options: RefactorCommandOptions,
     pathArguments: Array<string>
 ): Promise<ValidatedCodemodOptions> {
-    const projectRoot = await resolveDiscoveredProjectRoot(options.path, options.config);
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.path,
+        configPath: options.config
+    });
     const explicitTargetPath = resolveExplicitWorkflowTargetPath(options.path);
     const targetPaths =
         pathArguments.length === 0
@@ -266,7 +258,7 @@ async function validateCodemodOptions(
     return {
         projectRoot,
         verbose: Boolean(options.verbose),
-        configPath: await resolveCodemodConfigPath(projectRoot, options.config),
+        configPath: await resolveExistingGmloopConfigPath(projectRoot, options.config),
         dryRun: !options.write,
         onlyCodemods: normalizeRequestedCodemods(options.only),
         list: Boolean(options.list),
