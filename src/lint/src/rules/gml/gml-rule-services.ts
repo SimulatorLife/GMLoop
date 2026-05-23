@@ -5,7 +5,11 @@ import {
 } from "../../doc-comment/index.js";
 import { printExpression, printNodeForAutofix, readNodeText } from "../../language/autofix-printing.js";
 import { createLimitedRecoveryProjection } from "../../language/index.js";
-import { forEachScientificNotationToken } from "../../malformed/index.js";
+import {
+    forEachScientificNotationToken,
+    toPlainDecimalFromScientificLiteral,
+    trimInsignificantFractionalZeros
+} from "../../malformed/index.js";
 import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
 
 /**
@@ -59,7 +63,9 @@ export const gmlRuleLanguageServices = Object.freeze({
  * implementation file within that layer.
  */
 export const gmlRuleMalformedServices = Object.freeze({
-    forEachScientificNotationToken
+    forEachScientificNotationToken,
+    toPlainDecimalFromScientificLiteral,
+    trimInsignificantFractionalZeros
 });
 
 /**
