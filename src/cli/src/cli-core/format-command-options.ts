@@ -71,11 +71,10 @@ function resolvePrettierConfiguration(
 }
 
 function resolveTargetPathInput(options: CommandOptionsRecord, args?: unknown): TargetPathResolution {
-    // Positional argument takes precedence over --path option.
-    const positionalPath = Array.isArray(args) && args.length > 0 ? args[0] : null;
+    // Positional path arguments are no longer supported for this command.
+    const positionalPath = Array.isArray(args) && args.length > 0;
     const optionPath = options.path ?? null;
-
-    const rawTarget = positionalPath ?? optionPath;
+    const rawTarget = positionalPath ? null : optionPath;
 
     if (rawTarget === null) {
         return {
