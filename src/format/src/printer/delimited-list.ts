@@ -25,8 +25,14 @@ import { isCallbackArgument, isComplexArgumentNode, isSimpleCallArgument } from 
 // ---------------------------------------------------------------------------
 
 /**
- * Inline version of docHasTrailingComment check to avoid circular imports.
- * Returns true when the last item in doc is a trailing comment token.
+ * Inline check for trailing comment tokens in a doc structure.
+ *
+ * Returns true when the last item in `doc` contains a trailing comment token
+ * (a `//` or `/*` string in the final nested array). Checks inline to avoid
+ * circular imports from expression-print-utils.
+ *
+ * @param doc - The doc structure to inspect.
+ * @returns `true` if the doc has a trailing comment token, `false` otherwise.
  */
 function docHasTrailingCommentInline(doc: any): boolean {
     if (!Core.isNonEmptyArray(doc)) {
@@ -49,7 +55,13 @@ function docHasTrailingCommentInline(doc: any): boolean {
 }
 
 /**
- * Checks if trailing commas should be allowed based on the options.
+ * Checks if trailing commas should be allowed based on the Prettier options.
+ *
+ * Trailing commas are allowed when `options.trailingComma` is set to
+ * `TRAILING_COMMA.ALL`, which enables trailing commas in all lists.
+ *
+ * @param options - Prettier formatting options.
+ * @returns `true` if trailing commas are permitted, `false` otherwise.
  */
 export function shouldAllowTrailingComma(options: any): boolean {
     return options?.trailingComma === TRAILING_COMMA.ALL;
@@ -59,6 +71,19 @@ export function shouldAllowTrailingComma(options: any): boolean {
 // Public API
 // ---------------------------------------------------------------------------
 
+/**
+ * Prints a delimited list of AST elements (e.g., function arguments, array
+ * items, struct properties) with configurable delimiter, spacing, and
+ * line-breaking behavior.
+ *
+ * @param path - The AST path for traversal.
+ * @param print - The Prettier print callback.
+ * @param listKey - Property name on the current node containing the element array.
+ * @param startChar - Opening delimiter (e.g., `"("`, `"["`).
+ * @param endChar - Closing delimiter (e.g., `")"`, `"]"`).
+ * @param overrides - Optional settings for delimiter, padding, line breaks, and grouping.
+ * @returns A Prettier doc group for the delimited list.
+ */
 export function printDelimitedList(
     path: any,
     print: any,
@@ -106,6 +131,22 @@ export function printDelimitedList(
     return forceInline ? groupElementsNoBreak : group(groupElements, { id: groupId });
 }
 
+/**
+ * Prints a comma-separated list of AST elements.
+ *
+ * This is a convenience wrapper around {@link printDelimitedList} that
+ * hardcodes the delimiter to `,` and derives the `allowTrailingDelimiter`
+ * setting from the Prettier options.
+ *
+ * @param path - The AST path for traversal.
+ * @param print - The Prettier print callback.
+ * @param listKey - Property name on the current node containing the element array.
+ * @param startChar - Opening delimiter (e.g., `"("`, `"["`).
+ * @param endChar - Closing delimiter (e.g., `")"`, `"]"`).
+ * @param options - Prettier formatting options (used to check `trailingComma`).
+ * @param overrides - Optional settings passed through to {@link printDelimitedList}.
+ * @returns A Prettier doc group for the comma-separated list.
+ */
 export function printCommaSeparatedList(
     path: any,
     print: any,
@@ -127,8 +168,21 @@ export function printCommaSeparatedList(
     });
 }
 
-// print a delimited sequence of elements
-// handles the case where a trailing comment follows a delimiter
+/**
+ * Iterates over the elements in a delimited list and prints each one.
+ *
+ * Handles trailing comment detection to place separators before comments
+ * rather than after. Enforces `maxElementsPerLine` by inserting hardline
+ * breaks when the limit is reached or a complex argument is encountered.
+ *
+ * @param path - The AST path for traversal.
+ * @param print - The Prettier print callback.
+ * @param listKey - Property name on the current node containing the element array.
+ * @param delimiter - String to insert between elements (e.g., `","`).
+ * @param lineBreak - Prettier doc to use for line breaks (usually `line` or `hardline`).
+ * @param maxElementsPerLine - Maximum elements before forcing a break (default: `Infinity`).
+ * @returns A Prettier doc array mapping each element to its printed form with separators.
+ */
 export function printElements(
     path: any,
     print: any,
@@ -180,6 +234,24 @@ export function printElements(
     }, listKey);
 }
 
+/**
+ * Builds inline and multiline Prettier docs for call arguments.
+ *
+ * Selects the appropriate layout strategy based on argument composition:
+ * - Pure callback arguments use standard multiline formatting
+ * - Mixed simple-prefix + callback arguments use a specialized layout
+ *   that breaks after the callback to avoid dangling-close-paren issues
+ * - String literal arguments with simple prefix use compact formatting
+ *
+ * The returned `inlineDoc` is only populated when `includeInlineVariant`
+ * is true and the argument list fits on a single line.
+ *
+ * @param path - The AST path for traversal.
+ * @param print - The Prettier print callback.
+ * @param options - Prettier formatting options.
+ * @param opts - Layout options (`forceBreak`, `maxElementsPerLine`, etc.).
+ * @returns An object with `inlineDoc` and `multilineDoc` Prettier docs.
+ */
 export function buildCallArgumentsDocs(
     path: any,
     print: any,
@@ -252,6 +324,19 @@ export function buildCallArgumentsDocs(
     return { inlineDoc, multilineDoc };
 }
 
+/**
+ * Builds inline and multiline Prettier docs for function parameter lists.
+ *
+ * The inline doc is always compact (no newlines), while the multiline doc
+ * indents elements and allows trailing commas. When `forceInline` is true,
+ * both docs are identical (compact).
+ *
+ * @param path - The AST path for traversal.
+ * @param print - The Prettier print callback.
+ * @param options - Prettier formatting options.
+ * @param overrides - Optional settings; `forceInline` forces both variants to be compact.
+ * @returns An object with `inlineDoc` and `multilineDoc` Prettier docs.
+ */
 export function buildFunctionParameterDocs(path: any, print: any, options: any, overrides: any = {}) {
     const forceInline = overrides.forceInline === true;
 
@@ -272,6 +357,16 @@ export function buildFunctionParameterDocs(path: any, print: any, options: any, 
     return { inlineDoc, multilineDoc };
 }
 
+/**
+ * Counts leading simple arguments in a call expression.
+ *
+ * Scans from the start of the argument list and stops at the first
+ * non-simple argument. Used by `buildCallArgumentsDocs` to decide
+ * whether to use the simple-prefix layout strategy.
+ *
+ * @param node - A call expression node with an `arguments` array.
+ * @returns Number of consecutive leading simple arguments.
+ */
 export function countLeadingSimpleCallArguments(node: any): number {
     const args = node?.arguments;
     if (!Array.isArray(args) || args.length === 0) {
@@ -290,6 +385,21 @@ export function countLeadingSimpleCallArguments(node: any): number {
     return count;
 }
 
+/**
+ * Builds a specialized call arguments doc for mixed simple-prefix + callback layouts.
+ *
+ * Renders arguments inline up to `simplePrefixLength`, then breaks to a new line
+ * for the first callback and any arguments that follow it. This prevents dangling
+ * close-paren issues where a callback closes on the same line as `)`.
+ *
+ * `shouldForcePrefixBreaks` is set when there are arguments after the first callback,
+ * indicating that the break point should be propagated upward to force a full layout break.
+ *
+ * @param path - The AST path for traversal.
+ * @param print - The Prettier print callback.
+ * @param simplePrefixLength - Number of leading arguments to render inline (before callback).
+ * @returns A Prettier doc group for the callback-argument layout.
+ */
 export function buildCallbackArgumentsWithSimplePrefix(path: any, print: any, simplePrefixLength: number) {
     const node = path.getValue();
     const args = node?.arguments;
