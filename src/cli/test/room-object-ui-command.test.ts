@@ -57,6 +57,21 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
     };
     assert.equal(eventListPayload.command, "object event list");
     assert.equal(eventListPayload.payload.state, "not_available");
+
+    const eventUpdateResult = await runCliTestCommand({
+        argv: ["object", "event", "update", "--json", "--write"]
+    });
+    assert.equal(eventUpdateResult.exitCode, 0);
+    const eventUpdatePayload = JSON.parse(eventUpdateResult.stdout) as {
+        command: string;
+        payload: {
+            mode: string;
+            state: string;
+        };
+    };
+    assert.equal(eventUpdatePayload.command, "object event update");
+    assert.equal(eventUpdatePayload.payload.mode, "apply");
+    assert.equal(eventUpdatePayload.payload.state, "not_available");
 });
 
 void test("ui planned leaves emit concrete payloads without unsupported backend state", async () => {

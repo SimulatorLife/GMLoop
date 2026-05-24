@@ -2,7 +2,7 @@ import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
-import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
+import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
     ensureProjectGraphIndex,
     printProjectPayload,
@@ -23,9 +23,14 @@ function printObjectPayload(payload: unknown): void {
     printProjectPayload(payload);
 }
 
+type ObjectMutationOptions = SharedProjectContextOptions &
+    Readonly<{
+        write?: boolean;
+    }>;
+
 function emitObjectUnavailableLeaf(
     commandName: string,
-    options: SharedProjectContextOptions,
+    options: ObjectMutationOptions,
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
@@ -35,6 +40,7 @@ function emitObjectUnavailableLeaf(
         payload: {
             capability,
             details,
+            mode: options.write === true ? "apply" : "dry-run",
             state: "not_available"
         }
     });
@@ -129,8 +135,11 @@ export function createObjectCommand(): Command {
         const nested = addObjectSharedOptions(
             applyStandardCommandOptions(new Command(eventLeaf)).description(`Object event ${eventLeaf}.`)
         );
+        if (eventLeaf === "update") {
+            nested.addOption(createWriteOption());
+        }
         nested.action(function objectEventLeafAction() {
-            const options = this.opts<SharedProjectContextOptions>();
+            const options = this.opts<ObjectMutationOptions>();
             emitObjectUnavailableLeaf(`object event ${eventLeaf}`, options, "object_event_mutation");
         });
         event.addCommand(nested);
