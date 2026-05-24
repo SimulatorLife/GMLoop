@@ -285,6 +285,21 @@ export interface TranspilerProvider {
 }
 
 /**
+ * Bounded collection size configuration.
+ *
+ * Captures the maximum number of entries that a bounded collection can hold.
+ * This contract is extracted from the three state interfaces (PatchHistoryStore,
+ * MetricsCollector, ErrorCollector) that all shared `maxPatchHistory: number`.
+ *
+ * Separating the bounds configuration from the collection state implements ISP:
+ * callers that only need to configure bounds can depend on this interface alone
+ * without being coupled to the full state of patches, metrics, or errors.
+ */
+export interface BoundedCollectionBounds {
+    maxEntries: number;
+}
+
+/**
  * Patch history management.
  *
  * Provides patch summary storage and successful patch caching without
@@ -298,7 +313,7 @@ export interface PatchHistoryStore {
      */
     patches: Array<PatchSummary>;
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>;
-    maxPatchHistory: number;
+    bounds: BoundedCollectionBounds;
 }
 
 /**
@@ -309,7 +324,7 @@ export interface PatchHistoryStore {
  */
 export interface MetricsCollector {
     metrics: Array<TranspilationMetrics>;
-    maxPatchHistory: number;
+    bounds: BoundedCollectionBounds;
 }
 
 /**
@@ -341,7 +356,7 @@ export interface PatchCounter {
  */
 export interface ErrorCollector {
     errors: Array<TranspilationError>;
-    maxPatchHistory: number;
+    bounds: BoundedCollectionBounds;
 }
 
 /**
@@ -690,7 +705,7 @@ export function transpileFile(
             linesProcessed: lines
         };
 
-        addToBoundedCollection(context.metrics, metrics, context.maxPatchHistory);
+        addToBoundedCollection(context.metrics, metrics, context.bounds.maxEntries);
 
         clearStalePatchesForSourcePath(context.lastSuccessfulPatches, filePath, patchPayload.id);
         const previousPatch = context.lastSuccessfulPatches.get(patchPayload.id);
@@ -703,7 +718,7 @@ export function transpileFile(
         }
 
         if (runtimePatchChanged) {
-            addToBoundedCollection(context.patches, createPatchSummary(patchPayload), context.maxPatchHistory);
+            addToBoundedCollection(context.patches, createPatchSummary(patchPayload), context.bounds.maxEntries);
             context.totalPatchCount += 1;
 
             const broadcastResult = context.websocketServer?.broadcast(patchPayload);
@@ -776,7 +791,7 @@ export function transpileFile(
             recoveryHint: classified.recoveryHint
         };
 
-        addToBoundedCollection(context.errors, transpilationError, context.maxPatchHistory);
+        addToBoundedCollection(context.errors, transpilationError, context.bounds.maxEntries);
 
         if (context.websocketServer) {
             const errorNotification = createErrorNotification(filePath, classified.message);
