@@ -1,9 +1,13 @@
 import type { Rule } from "eslint";
 
 import { normalizeDocParamName } from "../../parameter-utils/index.js";
-import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
+import { gmlRuleDeprecatedIdentifierServices } from "../gml/gml-rule-services.js";
 import { findMatchingBraceEndIndex, resolveLocFromIndex } from "../gml/rule-base-helpers.js";
 import type { FeatherManifestEntry } from "./manifest.js";
+
+// Consume deprecated-identifier metadata through the shared rule-services
+// contract so rule callers stay stable if the backing catalog module moves.
+const { getDeprecatedIdentifierCatalogEntry } = gmlRuleDeprecatedIdentifierServices;
 
 type EnumBlockMatch = {
     start: number;
