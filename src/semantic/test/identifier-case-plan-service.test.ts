@@ -6,18 +6,9 @@ import {
     captureIdentifierCasePlanSnapshot,
     getIdentifierCaseRenameForNode,
     prepareIdentifierCasePlan,
-    registerIdentifierCasePlanPreparationProvider,
     registerIdentifierCasePlanProvider,
-    registerIdentifierCasePlanSnapshotApplyProvider,
-    registerIdentifierCasePlanSnapshotCaptureProvider,
-    registerIdentifierCaseRenameLookupProvider,
     resetIdentifierCasePlanProvider,
-    resetIdentifierCasePlanServiceProvider,
-    resolveIdentifierCasePlanPreparationService,
-    resolveIdentifierCasePlanRenameLookupService,
-    resolveIdentifierCasePlanService,
-    resolveIdentifierCasePlanSnapshotApplyService,
-    resolveIdentifierCasePlanSnapshotCaptureService
+    resolveIdentifierCasePlanService
 } from "../src/identifier-case/plan-service.js";
 
 void test("identifier case plan service exposes unified contract with 4 methods", { concurrency: false }, () => {
@@ -41,35 +32,6 @@ void test("identifier case plan service exposes unified contract with 4 methods"
     assert.strictEqual(typeof service.getIdentifierCaseRenameForNode, "function");
     assert.strictEqual(typeof service.captureIdentifierCasePlanSnapshot, "function");
     assert.strictEqual(typeof service.applyIdentifierCasePlanSnapshot, "function");
-
-    resetIdentifierCasePlanProvider();
-});
-
-void test("identifier case plan service resolver aliases return same service instance", { concurrency: false }, () => {
-    resetIdentifierCasePlanProvider();
-    const unified = resolveIdentifierCasePlanService();
-
-    // All alias resolvers should return the same service
-    assert.strictEqual(
-        resolveIdentifierCasePlanPreparationService(),
-        unified,
-        "preparation resolver should return same instance"
-    );
-    assert.strictEqual(
-        resolveIdentifierCasePlanRenameLookupService(),
-        unified,
-        "rename lookup resolver should return same instance"
-    );
-    assert.strictEqual(
-        resolveIdentifierCasePlanSnapshotCaptureService(),
-        unified,
-        "snapshot capture resolver should return same instance"
-    );
-    assert.strictEqual(
-        resolveIdentifierCasePlanSnapshotApplyService(),
-        unified,
-        "snapshot apply resolver should return same instance"
-    );
 
     resetIdentifierCasePlanProvider();
 });
@@ -185,83 +147,6 @@ void test("resetIdentifierCasePlanProvider restores default service", { concurre
     resetIdentifierCasePlanProvider();
 });
 
-void test("legacy segregated provider APIs still work via unified provider", { concurrency: false }, async () => {
-    resetIdentifierCasePlanProvider();
-    const calls = [];
-    const defaultService = resolveIdentifierCasePlanService();
-
-    // Legacy segregated providers wrap their partial implementation and
-    // delegate the rest to the default service
-    registerIdentifierCasePlanPreparationProvider(() => ({
-        prepareIdentifierCasePlan: async (options) => {
-            calls.push({ type: "legacy-prepare", options });
-            return defaultService.prepareIdentifierCasePlan(options);
-        }
-    }));
-
-    registerIdentifierCaseRenameLookupProvider(() => ({
-        getIdentifierCaseRenameForNode: (node, options) => {
-            calls.push({ type: "legacy-lookup", node, options });
-            return defaultService.getIdentifierCaseRenameForNode(node, options);
-        }
-    }));
-
-    registerIdentifierCasePlanSnapshotCaptureProvider(() => ({
-        captureIdentifierCasePlanSnapshot: (options) => {
-            calls.push({ type: "legacy-capture", options });
-            return defaultService.captureIdentifierCasePlanSnapshot(options);
-        }
-    }));
-
-    registerIdentifierCasePlanSnapshotApplyProvider(() => ({
-        applyIdentifierCasePlanSnapshot: (snapshot, options) => {
-            calls.push({ type: "legacy-apply", snapshot, options });
-            return defaultService.applyIdentifierCasePlanSnapshot(snapshot, options);
-        }
-    }));
-
-    try {
-        // Verify the legacy providers are still functional
-        await prepareIdentifierCasePlan({ flag: "legacy-prepare" });
-        getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" }, { flag: "legacy-lookup" });
-        const snapshot = captureIdentifierCasePlanSnapshot({ flag: "legacy-capture" });
-        applyIdentifierCasePlanSnapshot(snapshot, { flag: "legacy-apply" });
-
-        assert.deepStrictEqual(
-            calls.map((entry) => entry.type),
-            ["legacy-prepare", "legacy-lookup", "legacy-capture", "legacy-apply"]
-        );
-    } finally {
-        resetIdentifierCasePlanProvider();
-    }
-});
-
-void test(
-    "resetIdentifierCasePlanServiceProvider aliases resetIdentifierCasePlanProvider",
-    { concurrency: false },
-    () => {
-        resetIdentifierCasePlanServiceProvider();
-        const before = resolveIdentifierCasePlanService();
-
-        registerIdentifierCasePlanProvider(() => ({
-            prepareIdentifierCasePlan: async () => {},
-            getIdentifierCaseRenameForNode: () => null,
-            captureIdentifierCasePlanSnapshot: () => ({}),
-            applyIdentifierCasePlanSnapshot: () => {}
-        }));
-
-        resetIdentifierCasePlanServiceProvider();
-        const after = resolveIdentifierCasePlanService();
-        assert.strictEqual(
-            after,
-            before,
-            "resetIdentifierCasePlanServiceProvider should alias resetIdentifierCasePlanProvider"
-        );
-
-        resetIdentifierCasePlanProvider();
-    }
-);
-
 void test("service caching avoids repeated normalization", { concurrency: false }, () => {
     resetIdentifierCasePlanProvider();
     const calls: unknown[] = [];
@@ -308,33 +193,4 @@ void test("registering new provider invalidates cached service", { concurrency: 
     assert.strictEqual(third, first, "reset should restore the original cached service");
 
     resetIdentifierCasePlanProvider();
-});
-
-void test("unified provider receives all four methods from legacy registration", { concurrency: false }, async () => {
-    resetIdentifierCasePlanProvider();
-    const capturedServices: unknown[] = [];
-
-    // Intercept the normalized service by providing a wrapper that captures it
-    registerIdentifierCasePlanProvider(
-        (() => {
-            const originalDefault = {
-                prepareIdentifierCasePlan: async () => {},
-                getIdentifierCaseRenameForNode: () => null,
-                captureIdentifierCasePlanSnapshot: () => ({}),
-                applyIdentifierCasePlanSnapshot: () => {}
-            };
-            return () => {
-                capturedServices.push("provider");
-                return originalDefault;
-            };
-        })()
-    );
-
-    try {
-        // Trigger resolution
-        resolveIdentifierCasePlanService();
-        assert.deepStrictEqual(capturedServices, ["provider"], "provider should be called");
-    } finally {
-        resetIdentifierCasePlanProvider();
-    }
 });
