@@ -39,6 +39,10 @@ function getEdgeDashArray(type: GraphVisualizationEdgeType): string {
     return dashArray === "none" ? "" : dashArray;
 }
 
+function readEdgeArrowMarkerId(type: GraphVisualizationEdgeType): string {
+    return `arrow-${type}`;
+}
+
 function readGraphNodePathLabel(node: GraphLayoutNode): string | null {
     if (node.filePath !== null && node.resourcePath !== null) {
         return `${node.filePath} (resource: ${node.resourcePath})`;
@@ -385,39 +389,21 @@ export class GmGraphPanel extends LightDomLitElement {
                     @wheel=${this.#onWheel}
                 >
                     <defs>
-                        <marker
-                            id="arrow-calls"
-                            viewBox="0 -5 10 10"
-                            refX="10"
-                            refY="0"
-                            markerWidth="6"
-                            markerHeight="6"
-                            orient="auto"
-                        >
-                            <path d="M0,-5L10,0L0,5"></path>
-                        </marker>
-                        <marker
-                            id="arrow-inherits"
-                            viewBox="0 -5 10 10"
-                            refX="10"
-                            refY="0"
-                            markerWidth="8"
-                            markerHeight="8"
-                            orient="auto"
-                        >
-                            <path d="M0,-5L10,0L0,5"></path>
-                        </marker>
-                        <marker
-                            id="arrow-depends_on"
-                            viewBox="0 -5 10 10"
-                            refX="10"
-                            refY="0"
-                            markerWidth="6"
-                            markerHeight="6"
-                            orient="auto"
-                        >
-                            <path d="M0,-5L10,0L0,5"></path>
-                        </marker>
+                        ${EDGE_LINE_VISUAL_STYLES.map(
+                            (edgeStyle) => svg`
+                                <marker
+                                    id=${readEdgeArrowMarkerId(edgeStyle.type)}
+                                    viewBox="0 -5 10 10"
+                                    refX="10"
+                                    refY="0"
+                                    markerWidth="6"
+                                    markerHeight="6"
+                                    orient="auto"
+                                >
+                                    <path d="M0,-5L10,0L0,5" fill=${edgeStyle.color}></path>
+                                </marker>
+                            `
+                        )}
                     </defs>
                     <g id="container" transform=${`translate(${this.#panX},${this.#panY}) scale(${this.#zoomScale})`}>
                         ${visibleEdges.map((edge) => {
@@ -431,15 +417,7 @@ export class GmGraphPanel extends LightDomLitElement {
                                     y2=${String(geom.y2)}
                                     stroke=${getEdgeColor(edge.type)}
                                     stroke-dasharray=${getEdgeDashArray(edge.type)}
-                                    marker-end=${
-                                        edge.type === "calls"
-                                            ? "url(#arrow-calls)"
-                                            : edge.type === "inherits"
-                                              ? "url(#arrow-inherits)"
-                                              : edge.type === "depends_on"
-                                                ? "url(#arrow-depends_on)"
-                                                : ""
-                                    }
+                                    marker-end=${`url(#${readEdgeArrowMarkerId(edge.type)})`}
                                 ></line>
                             `;
                         })}
