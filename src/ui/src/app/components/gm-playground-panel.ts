@@ -328,12 +328,16 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                           entry.description.toLowerCase().includes(parameters.searchQuery)
                   );
         const selectedCount = parameters.entries.filter((entry) => entry.selected).length;
+        const sectionId = parameters.label.toLowerCase().replaceAll(" ", "-");
+        const entriesListId = `${sectionId}-entries`;
 
         return html`
             <div class="rule-details-section">
                 <button
                     type="button"
                     class="rule-details-header ${parameters.expanded ? "expanded" : ""}"
+                    aria-controls=${entriesListId}
+                    aria-expanded=${parameters.expanded}
                     @click=${parameters.setExpanded}
                 >
                     <span class="rule-details-header-icon">${parameters.expanded ? "▾" : "▸"}</span>
@@ -369,7 +373,12 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                                   Disable all
                               </button>
                           </div>
-                          <div class="rule-details-list">
+                          <div
+                              id=${entriesListId}
+                              class="rule-details-list"
+                              role="group"
+                              aria-label=${parameters.label}
+                          >
                               ${filteredEntries.map((entry) => this.#renderRuleRow(entry))}
                           </div>
                           <div class="rule-details-footer">
@@ -544,6 +553,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                             </div>
                             <textarea
                                 class="playground-input"
+                                aria-label="Playground input GML"
                                 placeholder="Paste or write GML code here..."
                                 .value=${this.#gmlInput}
                                 @input=${this.#onInputChange}
@@ -562,10 +572,12 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                                 <span class="pane-header-status">Read-only</span>
                             </div>
                             ${this.#error
-                                ? html`<div class="playground-output is-error">${this.#error}</div>`
+                                ? html`<div class="playground-output is-error" role="status" aria-live="polite">
+                                      ${this.#error}
+                                  </div>`
                                 : this.#viewMode === "code"
-                                  ? html`<pre class="playground-output">${this.#gmlOutput}</pre>`
-                                  : html`<pre class="playground-output">${this.#astJson}</pre>`}
+                                  ? html`<pre class="playground-output" aria-live="polite">${this.#gmlOutput}</pre>`
+                                  : html`<pre class="playground-output" aria-live="polite">${this.#astJson}</pre>`}
                         </div>
                     </div>
                 </div>
