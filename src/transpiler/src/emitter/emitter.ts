@@ -75,6 +75,7 @@ import {
 import { lowerWithStatement } from "./with-lowering.js";
 
 type StatementLike = GmlNode | undefined | null;
+const EMPTY_ARGUMENT_LIST: readonly string[] = Object.freeze([]);
 
 const DEFAULT_OPTIONS: EmitOptions = Object.freeze({
     globalsIdent: "global",
@@ -944,10 +945,10 @@ export class GmlToJsEmitter {
      * Visit an array of argument nodes and return an array of strings.
      * This is optimized for the builtin function path which needs the array.
      */
-    private visitArguments(args: readonly GmlNode[]): string[] {
+    private visitArguments(args: readonly GmlNode[]): readonly string[] {
         // Fast path: no arguments
         if (args.length === 0) {
-            return [];
+            return EMPTY_ARGUMENT_LIST;
         }
         // Fast path: single argument
         if (args.length === 1) {
