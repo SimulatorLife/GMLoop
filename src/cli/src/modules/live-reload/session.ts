@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import { Core } from "@gmloop/core";
+
 import { runWatchCommand, type WatchCommandOptions } from "../../commands/watch.js";
 import { resolveCommandProjectContext } from "../../workflow/project-root.js";
 import { syncLiveReloadAssets } from "./asset-sync.js";
@@ -197,9 +199,15 @@ function createLiveReloadPreparationError({
         );
     }
 
-    return error instanceof Error ? error : new Error(extractErrorMessage(error));
+    return Core.isErrorLike(error) ? error : new Error(extractErrorMessage(error));
 }
 
+/**
+ * Determine whether an error indicates a missing auto-detected HTML5 output
+ * directory by checking for known substrings in the error message.
+ * Uses the `message` property directly rather than `instanceof` so that
+ * cross-realm error objects (e.g. from sandboxed modules) are handled.
+ */
 function isMissingAutoDetectedHtml5OutputError(error: unknown): boolean {
     const message = extractErrorMessage(error);
     return (
@@ -207,8 +215,16 @@ function isMissingAutoDetectedHtml5OutputError(error: unknown): boolean {
     );
 }
 
+/**
+ * Extract a human-readable message from an unknown error value.
+ * Uses a capability probe (`Core.isErrorLike`) rather than `instanceof Error`
+ * so that cross-realm errors (e.g. from sandboxed modules or worker threads)
+ * and custom error-like objects are handled without relying on prototype-chain
+ * identity. Falls back to string coercion or a generic message for non-error
+ * inputs.
+ */
 function extractErrorMessage(error: unknown): string {
-    if (error instanceof Error) {
+    if (Core.isErrorLike(error)) {
         return error.message;
     }
 

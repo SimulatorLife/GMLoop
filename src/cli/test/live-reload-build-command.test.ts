@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { Core } from "@gmloop/core";
+
 import { runCliTestCommand } from "../src/cli.js";
 import {
     buildGameMakerHtml5Output,
@@ -469,6 +471,72 @@ void test("startLiveReloadDevSession explains how to enable automatic HTML5 buil
             assert.match(error.message, /runtime\.liveReload\.build/u);
             assert.match(error.message, /runtime\.liveReload\.html5Output/u);
             assert.match(error.message, /Igor\/gm-cli automatically/u);
+            return true;
+        }
+    );
+});
+
+/**
+ * Verify that `startLiveReloadDevSession` handles cross-realm error-like
+ * objects — i.e., plain objects that expose `{ message: string }` but are NOT
+ * `instanceof Error` — without breaking. This is the substitution-safety
+ * contract that the `instanceof Error` → `Core.isErrorLike` refactor enables.
+ *
+ * A concrete scenario: errors thrown from sandboxed modules or deserialized
+ * from a worker message port arrive as plain objects, not Error subclasses.
+ * The session layer must extract their message and propagate them correctly.
+ */
+void test("startLiveReloadDevSession accepts cross-realm error-like objects that are not instanceof Error", async () => {
+    await assert.rejects(
+        () =>
+            startLiveReloadDevSession({
+                targetPath: "/tmp/project",
+                bootstrapConfig: {
+                    websocketUrl: "ws://127.0.0.1:17890"
+                },
+                prepareRunner: async () => {
+                    // Simulate a cross-realm error: a plain object with the Error
+                    // shape but NOT instanceof Error.  This is the exact kind of
+                    // object that arrives when errors cross sandboxed-module or
+                    // worker-thread boundaries.  The `Core.isErrorLike` capability
+                    // probe allows the session layer to handle it correctly; the
+                    // `only-throw-error` suppression is intentional — it documents
+                    // that this throw is a test fixture, not a production pattern.
+                    // Intentional throw of a cross-realm error-like object — not instanceof Error.
+                    // Suppress: `only-throw-error` requires thrown values to be Error subclasses,
+                    // which defeats the purpose of this test (verifying Core.isErrorLike handles
+                    // plain error-like objects). The object satisfies the Error shape contract.
+                    // eslint-disable-next-line @typescript-eslint/only-throw-error -- see above
+                    throw Object.freeze({
+                        message:
+                            "GameMaker HTML5 temporary output root '/private/tmp/GameMakerStudio2/GMS2TEMP' was not found. Run the HTML5 build once or pass --html5-output explicitly.",
+                        name: "Error",
+                        stack: "Error: ...\n    at <anonymous>:1:15"
+                    });
+                },
+                projectContextResolver: async () =>
+                    Object.freeze({
+                        projectConfig: {},
+                        projectRoot: "/tmp/project"
+                    }),
+                settingsResolver: async () =>
+                    Object.freeze({
+                        buildConfig: null,
+                        gmTempRoot: "/private/tmp/GameMakerStudio2/GMS2TEMP",
+                        html5OutputRoot: null
+                    }),
+                watchRunner: async () => {
+                    throw new Error("watchRunner should not be reached when preparation fails.");
+                }
+            }),
+        (error) => {
+            // The error is now accepted as Error-like and its message is
+            // propagated; the session layer enriches it with usage guidance.
+            assert.equal(Core.isErrorLike(error), true);
+            if (Core.isErrorLike(error)) {
+                assert.match(error.message, /runtime\.liveReload\.build/u);
+                assert.match(error.message, /runtime\.liveReload\.html5Output/u);
+            }
             return true;
         }
     );
