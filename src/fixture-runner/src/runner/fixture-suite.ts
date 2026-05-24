@@ -306,28 +306,32 @@ export async function runFixtureSuite(parameters: {
     const executionResults: Array<FixtureCaseExecutionResult> = [];
     const failures: Array<FixtureRunFailure> = [];
 
-    await Core.runSequentially(fixtureCases, async (fixtureCase) => {
-        try {
-            executionResults.push(
-                await runDiscoveredFixtureCase({
-                    adapter: parameters.adapter,
-                    fixtureCase,
-                    profileCollector
-                })
-            );
-        } catch (error) {
-            if (!parameters.continueOnFailure) {
-                throw error;
-            }
+    await Core.runInParallelWithLimit(
+        fixtureCases,
+        async (fixtureCase) => {
+            try {
+                executionResults.push(
+                    await runDiscoveredFixtureCase({
+                        adapter: parameters.adapter,
+                        fixtureCase,
+                        profileCollector
+                    })
+                );
+            } catch (error) {
+                if (!parameters.continueOnFailure) {
+                    throw error;
+                }
 
-            failures.push(
-                Object.freeze({
-                    fixtureCase,
-                    error
-                })
-            );
-        }
-    });
+                failures.push(
+                    Object.freeze({
+                        fixtureCase,
+                        error
+                    })
+                );
+            }
+        },
+        /* concurrency limit: */ 8
+    );
 
     if (failures.length > 0 && !parameters.continueOnFailure) {
         throw failures[0]?.error;
