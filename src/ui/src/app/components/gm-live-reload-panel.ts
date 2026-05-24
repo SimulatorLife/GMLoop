@@ -142,6 +142,10 @@ function formatUptime(uptimeMs: number): string {
     return `${String(minutes)}m ${String(seconds).padStart(2, "0")}s`;
 }
 
+function resolveEndpointLabel(value: string | null | undefined): string {
+    return value ?? "Not configured";
+}
+
 /**
  * Live-reload observability surface for watcher, patch stream, and runtime-wrapper status.
  */
@@ -279,12 +283,60 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         `;
     }
 
-    #renderMetricCard(label: string, value: string, description: string) {
+    #renderStatusSummary(
+        status: GraphVisualizationLiveReloadStatusSnapshot | null,
+        hasLiveReloadConfiguration: boolean
+    ): string {
+        if (!hasLiveReloadConfiguration) {
+            return "Start live reload to launch the watcher, patch stream, and runtime bridge.";
+        }
+
+        if (status === null) {
+            return "Waiting for the watcher to report its current status.";
+        }
+
+        const scanState = status.scanComplete ? "scan complete" : "scan in progress";
+        return `Uptime ${formatUptime(status.uptimeMs)} with ${scanState}.`;
+    }
+
+    #renderActionButtons() {
         return html`
-            <gm-card class="live-reload-metric-card" .heading=${label}>
-                <strong class="live-reload-metric-value">${value}</strong>
-                <p>${description}</p>
-            </gm-card>
+            <div class="live-reload-actions">
+                ${this.model?.isServerMode
+                    ? html`
+                          <button
+                              id="start-live-reload"
+                              type="button"
+                              class="top-nav-button live-reload-action-button"
+                              ?disabled=${this.state?.isLiveReloadStartPending}
+                              aria-busy=${this.state?.isLiveReloadStartPending ? "true" : "false"}
+                              @click=${() => this.#emitStartLiveReload()}
+                          >
+                              <span class="button-content">
+                                  ${this.state?.isLiveReloadStartPending
+                                      ? html`<span class="button-spinner" aria-hidden="true"></span>`
+                                      : null}
+                                  <span class="button-label">Start Live Reload</span>
+                              </span>
+                          </button>
+                      `
+                    : null}
+                <button
+                    id="refresh-live-reload"
+                    type="button"
+                    class="top-nav-button live-reload-action-button"
+                    ?disabled=${this.state?.isLiveReloadRefreshPending}
+                    aria-busy=${this.state?.isLiveReloadRefreshPending ? "true" : "false"}
+                    @click=${() => this.#emitRefreshStatus()}
+                >
+                    <span class="button-content">
+                        ${this.state?.isLiveReloadRefreshPending
+                            ? html`<span class="button-spinner" aria-hidden="true"></span>`
+                            : null}
+                        <span class="button-label">Refresh Status</span>
+                    </span>
+                </button>
+            </div>
         `;
     }
 
@@ -295,9 +347,12 @@ export class GmLiveReloadPanel extends LightDomLitElement {
             <gm-card class="live-reload-panel-card" .heading=${"Pipeline Overview"}>
                 <ol class="live-reload-pipeline" aria-label="Live reload pipeline">
                     ${steps.map(
-                        (step) => html`
+                        (step, index) => html`
                             <li>
-                                <span class="live-reload-pipeline-node">${step}</span>
+                                <span class="live-reload-pipeline-node">
+                                    <span class="live-reload-pipeline-index">${String(index + 1)}</span>
+                                    <span>${step}</span>
+                                </span>
                             </li>
                         `
                     )}
@@ -306,61 +361,80 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         `;
     }
 
-    #renderConnectionCards(status: GraphVisualizationLiveReloadStatusSnapshot | null) {
-        const endpoints = this.model?.liveReload?.endpoints;
-        const watcherStatus = status?.watcherStatus ?? (endpoints?.statusUrl ? "offline" : "inactive");
-
+    #renderMetricItem(label: string, value: string, description: string) {
         return html`
-            <div class="live-reload-grid">
-                <gm-card class="live-reload-panel-card" .heading=${"Watcher"}>
-                    ${this.#renderStatusChip(watcherStatus)}
-                    <p>
-                        ${status
-                            ? `Uptime ${formatUptime(status.uptimeMs)}. Initial scan ${status.scanComplete ? "complete" : "pending"}.`
-                            : "No watcher status has been received yet."}
-                    </p>
-                </gm-card>
-                <gm-card class="live-reload-panel-card" .heading=${"Patch Stream"}>
-                    <strong class="live-reload-metric-value">${formatInteger(status?.websocketClients ?? null)}</strong>
-                    <p>Connected WebSocket client${status?.websocketClients === 1 ? "" : "s"}.</p>
-                    <code>${endpoints?.websocketUrl ?? "No WebSocket URL configured"}</code>
-                </gm-card>
-                <gm-card class="live-reload-panel-card" .heading=${"Runtime"}>
-                    <p>
-                        ${endpoints?.runtimeUrl
-                            ? "Game runtime endpoint is configured."
-                            : "No runtime endpoint configured."}
-                    </p>
-                    <code>${endpoints?.runtimeUrl ?? "Runtime URL unavailable"}</code>
-                </gm-card>
+            <div class="live-reload-metric-item">
+                <span>${label}</span>
+                <strong>${value}</strong>
+                <small>${description}</small>
             </div>
         `;
     }
 
-    #renderPatchMetrics(status: GraphVisualizationLiveReloadStatusSnapshot | null) {
+    #renderOverview(status: GraphVisualizationLiveReloadStatusSnapshot | null) {
         return html`
-            <div class="live-reload-metric-grid">
-                ${this.#renderMetricCard(
-                    "Total Patches",
-                    formatInteger(status?.totalPatchCount ?? status?.patchCount ?? null),
-                    "Total live updates prepared during this session."
-                )}
-                ${this.#renderMetricCard(
-                    "Retained History",
-                    `${formatInteger(status?.patchHistorySize ?? null)} / ${formatInteger(status?.maxPatchHistory ?? null)}`,
-                    "Recent update history currently kept for review."
-                )}
-                ${this.#renderMetricCard(
-                    "Average Latency",
-                    formatDurationMs(status?.avgHotReloadLatencyMs ?? null),
-                    "Average time between a file change and the live update becoming available."
-                )}
-                ${this.#renderMetricCard(
-                    "P95 Latency",
-                    formatDurationMs(status?.p95HotReloadLatencyMs ?? null),
-                    "Typical worst-case live-update delay across recent changes."
-                )}
-            </div>
+            <gm-card class="live-reload-overview-card" .heading=${"Overview"}>
+                <div class="live-reload-metric-strip">
+                    ${this.#renderMetricItem(
+                        "Clients",
+                        formatInteger(status?.websocketClients ?? null),
+                        status?.websocketClients === 1 ? "Connected runtime" : "Connected runtimes"
+                    )}
+                    ${this.#renderMetricItem(
+                        "Patches",
+                        formatInteger(status?.totalPatchCount ?? status?.patchCount ?? null),
+                        "Prepared this session"
+                    )}
+                    ${this.#renderMetricItem(
+                        "Average",
+                        formatDurationMs(status?.avgHotReloadLatencyMs ?? null),
+                        "File change to patch"
+                    )}
+                    ${this.#renderMetricItem(
+                        "P95",
+                        formatDurationMs(status?.p95HotReloadLatencyMs ?? null),
+                        "Recent worst case"
+                    )}
+                    ${this.#renderMetricItem(
+                        "History",
+                        `${formatInteger(status?.patchHistorySize ?? null)} / ${formatInteger(status?.maxPatchHistory ?? null)}`,
+                        "Retained updates"
+                    )}
+                </div>
+            </gm-card>
+        `;
+    }
+
+    #renderConnectionDetails() {
+        const endpoints = this.model?.liveReload?.endpoints;
+
+        return html`
+            <gm-card class="live-reload-panel-card" .heading=${"Connection Details"}>
+                <dl class="live-reload-detail-list">
+                    <div>
+                        <dt>Status</dt>
+                        <dd><code>${resolveEndpointLabel(endpoints?.statusUrl)}</code></dd>
+                    </div>
+                    <div>
+                        <dt>WebSocket</dt>
+                        <dd><code>${resolveEndpointLabel(endpoints?.websocketUrl)}</code></dd>
+                    </div>
+                    <div>
+                        <dt>Runtime</dt>
+                        <dd><code>${resolveEndpointLabel(endpoints?.runtimeUrl)}</code></dd>
+                    </div>
+                </dl>
+            </gm-card>
+        `;
+    }
+
+    #renderSetupState() {
+        return html`
+            <gm-card class="live-reload-setup-card" .heading=${"Live Reload Not Connected"}>
+                <p>
+                    Start live reload to watch project files, prepare patches, and connect the GameMaker runtime bridge.
+                </p>
+            </gm-card>
         `;
     }
 
@@ -368,7 +442,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Recent Patches"}>
                 ${patches.length === 0
-                    ? html`<p class="catalog-empty">No live updates have been prepared yet.</p>`
+                    ? html`<p class="catalog-empty">No patches yet.</p>`
                     : html`
                           <ul class="live-reload-event-list">
                               ${patches.map(
@@ -396,7 +470,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Recent Errors"}>
                 ${errors.length === 0
-                    ? html`<p class="catalog-empty">No hot-reload errors reported.</p>`
+                    ? html`<p class="catalog-empty">No errors reported.</p>`
                     : html`
                           <ul class="live-reload-event-list">
                               ${errors.map(
@@ -421,7 +495,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Runtime Health"}>
                 ${runtimeHealth === null
-                    ? html`<p class="catalog-empty">Game runtime details are not available right now.</p>`
+                    ? html`<p class="catalog-empty">Runtime details unavailable.</p>`
                     : html`
                           <dl class="live-reload-health-list">
                               <div>
@@ -464,53 +538,36 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         const liveReload = this.model.liveReload;
         const status = this.#resolveStatusSnapshot();
         const errorMessage = this.state.liveReloadErrorMessage ?? this.#pollErrorMessage;
+        const watcherStatus = status?.watcherStatus ?? (liveReload?.endpoints.statusUrl ? "offline" : "inactive");
+        const statusSummary = this.#renderStatusSummary(status, liveReload !== null);
 
         return html`
             <section id="live-reload-page" class=${activeClassName}>
-                <div class="live-reload-header-row">
-                    <p id="live-reload-meta" class="docs-meta">
-                        ${liveReload
-                            ? html`
-                                  Status <code>${liveReload.endpoints.statusUrl ?? "not configured"}</code> • WebSocket
-                                  <code>${liveReload.endpoints.websocketUrl ?? "not configured"}</code>
-                              `
-                            : "Live reload is not connected right now."}
-                    </p>
-                    <div class="live-reload-actions">
-                        ${this.model.isServerMode
-                            ? html`
-                                  <button
-                                      id="start-live-reload"
-                                      type="button"
-                                      class="top-nav-button"
-                                      ?disabled=${this.state.isLiveReloadStartPending}
-                                      @click=${() => this.#emitStartLiveReload()}
-                                  >
-                                      ${this.state.isLiveReloadStartPending
-                                          ? "Building & Starting..."
-                                          : "Start Live Reload"}
-                                  </button>
-                              `
-                            : null}
-                        <button
-                            id="refresh-live-reload"
-                            type="button"
-                            class="top-nav-button"
-                            ?disabled=${this.state.isLiveReloadRefreshPending}
-                            @click=${() => this.#emitRefreshStatus()}
-                        >
-                            ${this.state.isLiveReloadRefreshPending ? "Refreshing..." : "Refresh Status"}
-                        </button>
+                <div class="live-reload-hero">
+                    <div class="live-reload-title-block">
+                        <div class="live-reload-title-row">
+                            <h2>Live Reload</h2>
+                            ${this.#renderStatusChip(watcherStatus)}
+                        </div>
+                        <p id="live-reload-meta" class="docs-meta">${statusSummary}</p>
                     </div>
+                    ${this.#renderActionButtons()}
                 </div>
                 ${errorMessage ? html`<gm-error-banner .message=${errorMessage}></gm-error-banner>` : null}
                 <div class="live-reload-stack" aria-live="polite">
-                    ${this.#renderPipeline()} ${this.#renderConnectionCards(status)} ${this.#renderPatchMetrics(status)}
-                    <div class="live-reload-grid">
-                        ${this.#renderRecentPatches(status?.recentPatches ?? [])}
-                        ${this.#renderRecentErrors(status?.recentErrors ?? [])}
-                        ${this.#renderRuntimeHealth(liveReload?.runtimeHealth ?? null)}
-                    </div>
+                    ${liveReload === null
+                        ? html`${this.#renderSetupState()} ${this.#renderConnectionDetails()}`
+                        : html`
+                              ${this.#renderOverview(status)} ${this.#renderPipeline()}
+                              <div class="live-reload-activity-grid">
+                                  ${this.#renderRecentPatches(status?.recentPatches ?? [])}
+                                  ${this.#renderRecentErrors(status?.recentErrors ?? [])}
+                              </div>
+                              <div class="live-reload-grid">
+                                  ${this.#renderRuntimeHealth(liveReload.runtimeHealth)}
+                                  ${this.#renderConnectionDetails()}
+                              </div>
+                          `}
                 </div>
             </section>
         `;

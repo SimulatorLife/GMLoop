@@ -26,4 +26,4 @@ jobs:
         skipping elements or sharing unintended state. Rewrite the logic to use
         a safer pattern — cloning, accumulation, or index-based iteration — and
         add tests that fail without the fix. Target a single representative bug
-        and keep the refactor minimal while maintaining behaviour.
+        and keep the refactor small/well-scoped while maintaining behaviour.

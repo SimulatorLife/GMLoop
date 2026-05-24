@@ -34,7 +34,7 @@ jobs:
           extensibility gap without introducing unnecessary abstraction or complexity.
         - When you add a hook or configuration point, document the default
           behavior, the intended consumers, and how it should evolve over time.
-        - Keep the implementation minimal, update any directly affected docs or
+        - Keep the implementation small/well-scoped, update any directly affected docs or
           inline comments, and ensure tests and linters still pass.
 
         If fixing an anti-pattern:

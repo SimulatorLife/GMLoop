@@ -27,7 +27,15 @@ function coerceExtensionValue(value: unknown): string | null {
     const extensionCandidate =
         cleaned.startsWith(".") || !cleaned.includes(".") ? cleaned : path.extname(cleaned) || cleaned;
 
-    const braceTrimmedCandidate = extensionCandidate.replace(/^[{[(<]+/, "").replace(/[}\])>]+$/u, "");
+    const braceTrimmedCandidate = extensionCandidate
+        .replaceAll("{", "")
+        .replaceAll("}", "")
+        .replaceAll("[", "")
+        .replaceAll("]", "")
+        .replaceAll("(", "")
+        .replaceAll(")", "")
+        .replaceAll("<", "")
+        .replaceAll(">", "");
 
     return normalizeExtensionSuffix(braceTrimmedCandidate);
 }

@@ -75,7 +75,7 @@ jobs:
         Focus on one tight cluster at a time and avoid unrelated refactors. Eliminate the
         duplication by consolidating logic into a shared helper, reusing an existing helper,
         or otherwise making a targeted refactor that removes the repeated code. Keep the
-        change minimal, well-named, and aligned with existing domain boundaries. Once you
+        change small/well-scoped, well-named, and aligned with existing domain boundaries. Once you
         have addressed the duplicates, re-run `pnpm run lint:duplicates` to confirm that
         the reported duplicates are resolved and the output no longer shows those matches.
         Include a short summary of what was de-duplicated and where the shared logic now lives.
