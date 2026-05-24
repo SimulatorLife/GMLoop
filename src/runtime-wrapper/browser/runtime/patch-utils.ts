@@ -103,12 +103,16 @@ function resolveScriptNameIndex(scriptNames: Array<string>): ReadonlyMap<string,
 }
 
 function resolveInstanceStore(globalScope: RuntimeBindingGlobals): Record<string, unknown> | undefined {
-    if (globalScope._cx?._dx) {
-        return globalScope._cx._dx;
+    // Prefer the _cx._dx store when available.
+    const cxcDx = Core.readCxcDxStore(globalScope);
+    if (cxcDx) {
+        return cxcDx;
     }
 
-    if (globalScope.g_RunRoom?.m_Active?.pool && Array.isArray(globalScope.g_RunRoom.m_Active.pool)) {
-        return globalScope.g_RunRoom.m_Active.pool as unknown as Record<string, unknown>;
+    // Fall back to the runtime object pool from g_RunRoom.m_Active.pool.
+    const pool = Core.readRuntimeObjectPool(globalScope);
+    if (pool !== undefined) {
+        return pool as Record<string, unknown>;
     }
 
     return undefined;
