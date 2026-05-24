@@ -241,6 +241,20 @@ void test("playground panel renders format/lint/codemod detail sections", () => 
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /Lint Rules/u);
     assert.match(rendered, /Codemods/u);
+    assert.match(rendered, /aria-controls=format-options-entries/u);
+    assert.match(rendered, /aria-controls=lint-rules-entries/u);
+    assert.match(rendered, /aria-controls=codemods-entries/u);
+    assert.match(rendered, /aria-expanded=false/u);
+});
+
+void test("playground panel exposes accessible labels for input and output regions", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /aria-label="Playground input GML"/u);
+    assert.match(rendered, /class="playground-output"\s+aria-live="polite"/u);
 });
 
 void test("playground panel starts with all format/lint/codemod controls unchecked and off", () => {
