@@ -16,6 +16,8 @@ then return here for deeper context.
 - [`examples/example.eslint.config.js`](examples/example.eslint.config.js) —
   Flat ESLint config that composes the `@gmloop/lint` presets (without TypeScript
   requirement).
+- [`examples/example.eslint.all-rules.config.js`](examples/example.eslint.all-rules.config.js) —
+  Flat ESLint config with all available `@gmloop/lint` rules.
 - [`examples/example.mcp.json`](examples/example.mcp.json) — MCP client config
   example that starts the MCP stdio server via the `gmloop mcp` CLI command
   through `pnpm`.
@@ -24,17 +26,17 @@ then return here for deeper context.
 
 ## Usage & rollout
 
-- [Quick start](../README.md#quick-start) &mdash; Installation flows for pnpm
+- [Quick start](../README.md#quick-start) — Installation flows for pnpm
   contributors and project maintainers, including local-clone workflows plus
   wrapper scripts you can copy into your GameMaker project.
-- [Everyday commands](../README.md#everyday-commands) &mdash; Core parser/lint/refactor/
+- [Everyday commands](../README.md#everyday-commands) — Core parser/lint/refactor/
   transpile/watch commands used day-to-day.
-- [Configuration reference](../README.md#configuration-reference) &mdash; Baseline
+- [Configuration reference](../README.md#configuration-reference) — Baseline
   Prettier options for `.gml` files and lint preset wiring examples.
-- [CLI wrapper reference](../README.md#cli-wrapper-environment-knobs) &mdash; Quick
+- [CLI wrapper reference](../README.md#cli-wrapper-environment-knobs) — Quick
   lookup for environment variables and wrapper behaviour when scripting formatter
   runs in CI or editor tooling.
-- [CLI command guide](../src/cli/README.md) &mdash; Full command catalog and
+- [CLI command guide](../src/cli/README.md) — Full command catalog and
   project-config behavior for parser, lint, refactor, transpile, watch, and
   graph workflows.
 
@@ -54,7 +56,7 @@ then return here for deeper context.
 
 ## Architecture, planning
 
-- [Project target state plan](target-state.md) &mdash; Canonical
+- [Project target state plan](target-state.md) — Canonical
   ownership contract for formatter vs lint vs refactor responsibilities, including the two-tier malformed GML strategy and the native codemod model. Concepts, architecture, and integration HTML5 runtime fork, watcher pipeline, and runtime integration seams required for hot-reload tooling.
 - [Feather Data Plan](feather-data-plan.md) — Describes the scraping pipeline
   that collects built-in Feather debugger metadata and how the generated files
@@ -65,5 +67,5 @@ then return here for deeper context.
 
 ## Agent and automation surfaces
 
-- [MCP workspace reference](../src/mcp/README.md) &mdash; Current
+- [MCP workspace reference](../src/mcp/README.md) — Current
   `@gmloop/mcp` package docs for exposing CLI-adjacent workflows to AI tooling.
