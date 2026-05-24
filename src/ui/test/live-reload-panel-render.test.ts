@@ -22,6 +22,10 @@ class TestableGmAppShell extends GmAppShell {
     public override requestUpdate(): void {}
 }
 
+function countOccurrences(value: string, searchValue: string): number {
+    return value.split(searchValue).length - 1;
+}
+
 function createStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot {
     return {
         avgHotReloadLatencyMs: 42,
@@ -117,7 +121,7 @@ function createMockState(): GraphVisualizationUiState {
     };
 }
 
-void test("GmLiveReloadPanel renders configured live-reload status, patches, errors, and runtime health", () => {
+void test("GmLiveReloadPanel renders configured live-reload dashboard sections", () => {
     const panel = new TestableGmLiveReloadPanel();
     panel.model = createMockModel(createStatusSnapshot());
     panel.state = createMockState();
@@ -125,6 +129,11 @@ void test("GmLiveReloadPanel renders configured live-reload status, patches, err
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="live-reload-page"[\s\S]*class=page docs-page active/u);
+    assert.match(rendered, /<h2>Live Reload<\/h2>/u);
+    assert.match(rendered, /Overview/u);
+    assert.match(rendered, /Clients/u);
+    assert.match(rendered, /Patches/u);
+    assert.match(rendered, /Average/u);
     assert.match(rendered, /Pipeline Overview/u);
     assert.match(rendered, /File Watcher/u);
     assert.match(rendered, /Runtime Wrapper/u);
@@ -133,9 +142,12 @@ void test("GmLiveReloadPanel renders configured live-reload status, patches, err
     assert.match(rendered, /Unexpected symbol/u);
     assert.match(rendered, /Registry Version/u);
     assert.match(rendered, /Scripts \/ Events \/ Closures/u);
+    assert.match(rendered, /Connection Details/u);
+    assert.match(rendered, /http:\/\/127\.0\.0\.1:17891\/status/u);
+    assert.match(rendered, /ws:\/\/127\.0\.0\.1:17890/u);
 });
 
-void test("GmLiveReloadPanel renders inactive empty state when host does not provide live-reload config", () => {
+void test("GmLiveReloadPanel renders single inactive setup state when host does not provide live-reload config", () => {
     const panel = new TestableGmLiveReloadPanel();
     panel.model = {
         ...createMockModel(null),
@@ -145,10 +157,13 @@ void test("GmLiveReloadPanel renders inactive empty state when host does not pro
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
+    assert.match(rendered, /Live Reload Not Connected/u);
     assert.match(rendered, /Start Live Reload/u);
-    assert.match(rendered, /No WebSocket URL configured/u);
-    assert.match(rendered, /No live updates have been prepared yet\./u);
-    assert.match(rendered, /Game runtime details are not available right now\./u);
+    assert.match(rendered, /Start live reload to watch project files/u);
+    assert.match(rendered, /Connection Details/u);
+    assert.match(rendered, /Not configured/u);
+    assert.doesNotMatch(rendered, /No patches yet\./u);
+    assert.doesNotMatch(rendered, /Runtime details unavailable\./u);
 });
 
 void test("GmLiveReloadPanel renders live-reload error state from UI state", () => {
@@ -163,6 +178,28 @@ void test("GmLiveReloadPanel renders live-reload error state from UI state", () 
 
     assert.match(rendered, /gm-error-banner/u);
     assert.match(rendered, /Status server is offline\./u);
+    assert.match(rendered, /Recent Errors/u);
+    assert.equal(countOccurrences(rendered, "Status server is offline."), 1);
+});
+
+void test("GmLiveReloadPanel preserves action labels while pending", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = {
+        ...createMockState(),
+        isLiveReloadRefreshPending: true,
+        isLiveReloadStartPending: true
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=true/u);
+    assert.match(rendered, /id="refresh-live-reload"[\s\S]*aria-busy=true/u);
+    assert.match(rendered, /button-spinner/u);
+    assert.match(rendered, /Start Live Reload/u);
+    assert.match(rendered, /Refresh Status/u);
+    assert.doesNotMatch(rendered, /Building & Starting/u);
+    assert.doesNotMatch(rendered, /Refreshing\.\.\./u);
 });
 
 void test("GmAppShell routes live-reload refresh events through the host callback", async () => {

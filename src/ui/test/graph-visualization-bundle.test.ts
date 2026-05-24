@@ -126,7 +126,8 @@ void test("graph visualization module script shows live-reload startup state via
         .map((entry) => decodeBytes(entry.bytes))
         .join("\n");
 
-    assert.match(script, /Building & Starting/u);
+    assert.match(script, /button-spinner/u);
+    assert.match(script, /Start Live Reload/u);
     assert.doesNotMatch(script, /Restarting live reload pipeline\. Waiting for watcher status/u);
 });
 
