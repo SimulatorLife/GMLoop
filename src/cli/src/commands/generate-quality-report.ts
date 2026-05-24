@@ -33,6 +33,19 @@ const parser = new XMLParser({
     attributeNamePrefix: ""
 });
 
+const NON_WORKSPACE_PATH_SEGMENTS = new Set(["dist", "test", "tests", "reports", "report", "node_modules"]);
+const GENERIC_REPORT_FILE_STEMS = new Set([
+    "junit",
+    "junit-report",
+    "report",
+    "results",
+    "root",
+    "suite",
+    "test",
+    "test-results",
+    "tests"
+]);
+
 function xmlContainsPotentialTestElements(xml: string): boolean {
     const lowered = xml.toLowerCase();
     return lowered.includes("<testsuite") || lowered.includes("<testsuites") || lowered.includes("<testcase");
@@ -181,13 +194,35 @@ function extractWorkspaceNameFromPath(candidatePath: string): string {
         return "";
     }
     const normalized = candidatePath.replaceAll("\\", "/");
-    const dir = path.dirname(normalized);
-    const segments = dir.split("/");
+    const segments = normalized.split("/");
     const srcIndex = segments.indexOf("src");
     if (srcIndex !== -1 && srcIndex + 1 < segments.length) {
         return segments[srcIndex + 1];
     }
-    return segments.at(-1) || "";
+    return "";
+}
+
+function extractWorkspaceNameFromReportPath(reportFilePath: string): string {
+    if (!reportFilePath) {
+        return "";
+    }
+
+    const normalized = reportFilePath.replaceAll("\\", "/");
+    const workspaceFromDirectory = extractWorkspaceNameFromPath(normalized);
+    if (workspaceFromDirectory) {
+        return workspaceFromDirectory;
+    }
+
+    const reportFileStem = path.basename(normalized, path.extname(normalized));
+    if (reportFileStem && !GENERIC_REPORT_FILE_STEMS.has(reportFileStem)) {
+        return reportFileStem;
+    }
+
+    const parentDirectoryName = path.basename(path.dirname(normalized));
+    if (!parentDirectoryName || NON_WORKSPACE_PATH_SEGMENTS.has(parentDirectoryName)) {
+        return "";
+    }
+    return parentDirectoryName;
 }
 
 /**
@@ -198,7 +233,7 @@ function recordSuiteTestCase(cases, node, suitePath, reportFilePath = "") {
     const displayName = describeTestCase(node, suitePath) || key;
     const time = Number.parseFloat(node.time) || 0;
     const workspace =
-        extractWorkspaceNameFromPath(toTrimmedString(node.file)) || extractWorkspaceNameFromPath(reportFilePath);
+        extractWorkspaceNameFromPath(toTrimmedString(node.file)) || extractWorkspaceNameFromReportPath(reportFilePath);
 
     cases.push({
         node,
@@ -1458,7 +1493,10 @@ function computeWorkspaceBreakdown(
     >();
 
     for (const testCase of cases) {
-        const workspace = testCase.workspace || "(unknown)";
+        const workspace = testCase.workspace;
+        if (!workspace) {
+            continue;
+        }
         let stats = workspaceStats.get(workspace);
         if (!stats) {
             stats = { total: 0, passed: 0, failed: 0, skipped: 0, time: 0 };

@@ -1,4 +1,4 @@
-import { Core, type GameMakerAstNode } from "@gmloop/core";
+import { type GameMakerAstNode } from "@gmloop/core";
 
 import { prepareIdentifierCasePlan as defaultPrepareIdentifierCasePlan } from "./local-plan.js";
 import {
@@ -13,15 +13,34 @@ import {
 // - Core.assertPlainObject
 
 /**
- * The original IdentifierCasePlanService bundled plan preparation, rename
- * lookups, and snapshot orchestration behind one "service" facade. That wide
- * surface made collaborators depend on behaviours they did not always need.
- * Providers now register role-specific collaborators so consumers can opt into
- * only the behaviour they require. Snapshot capture/apply helpers previously
- * leaked through a single "snapshot service" contract as well, so the helpers
- * below expose them via focused capture/apply facades.
+ * Unified service contract covering plan preparation, rename lookups, and
+ * snapshot capture/apply. Consolidates four formerly separate service types
+ * into one object so callers receive the complete set of helpers without
+ * needing to wire up multiple registries or resolve multiple services.
+ *
+ * Before: callers needed to resolve four separate services (preparation,
+ * rename-lookup, snapshot-capture, snapshot-apply) via four separate registries.
+ * After: a single service object with one frozen interface containing all
+ * four helpers, backed by a single registry with one normalization step.
  */
+export type IdentifierCasePlanService = {
+    prepareIdentifierCasePlan(options: object | null | undefined): Promise<void>;
+    getIdentifierCaseRenameForNode(
+        node: GameMakerAstNode | null,
+        options: Record<string, unknown> | null | undefined
+    ): string | null;
+    captureIdentifierCasePlanSnapshot(options: unknown): ReturnType<typeof defaultCaptureIdentifierCasePlanSnapshot>;
+    applyIdentifierCasePlanSnapshot(
+        snapshot: ReturnType<typeof defaultCaptureIdentifierCasePlanSnapshot>,
+        options: Record<string, unknown> | null | undefined
+    ): void;
+};
 
+export type IdentifierCasePlanProvider = () => IdentifierCasePlanService;
+
+// Legacy type aliases for backward compatibility with existing call sites.
+// These were the separate service types before the consolidation into a
+// single IdentifierCasePlanService.
 export type IdentifierCasePlanPreparationService = {
     prepareIdentifierCasePlan(options: object | null | undefined): Promise<void>;
 };
@@ -49,257 +68,127 @@ export type IdentifierCaseRenameLookupProvider = () => IdentifierCaseRenameLooku
 export type IdentifierCasePlanSnapshotCaptureProvider = () => IdentifierCasePlanSnapshotCaptureService;
 export type IdentifierCasePlanSnapshotApplyProvider = () => IdentifierCasePlanSnapshotApplyService;
 
-const defaultPreparationService = Object.freeze({
-    prepareIdentifierCasePlan: defaultPrepareIdentifierCasePlan
-});
-
-const defaultRenameLookupService = Object.freeze({
-    getIdentifierCaseRenameForNode: defaultGetIdentifierCaseRenameForNode
-});
-
-const defaultSnapshotCaptureService = Object.freeze({
-    captureIdentifierCasePlanSnapshot: defaultCaptureIdentifierCasePlanSnapshot
-});
-
-const defaultSnapshotApplyService = Object.freeze({
+const defaultService: IdentifierCasePlanService = Object.freeze({
+    prepareIdentifierCasePlan: defaultPrepareIdentifierCasePlan,
+    // The default implementation has a looser signature than the public contract.
+    // Cast through `unknown` to keep TypeScript satisfied while preserving runtime
+    // correctness; callers receive the canonical type from the service interface.
+    getIdentifierCaseRenameForNode:
+        defaultGetIdentifierCaseRenameForNode as IdentifierCasePlanService["getIdentifierCaseRenameForNode"],
+    captureIdentifierCasePlanSnapshot: defaultCaptureIdentifierCasePlanSnapshot,
     applyIdentifierCasePlanSnapshot: defaultApplyIdentifierCasePlanSnapshot
 });
 
-function createIdentifierCaseServiceRegistry({
-    defaultService,
-    normalize,
-    providerTypeErrorMessage,
-    missingProviderMessage
-}) {
-    let provider = () => defaultService;
-    let cachedService = null;
+function assertServiceMethod(
+    service: Record<string, unknown>,
+    methodName: string,
+    errorMessage: string
+): (...args: unknown[]) => unknown {
+    const fn = service[methodName];
+    if (typeof fn !== "function") {
+        throw new TypeError(errorMessage);
+    }
+    return fn as (...args: unknown[]) => unknown;
+}
 
-    function resolve() {
-        if (!provider) {
-            throw new Error(missingProviderMessage);
-        }
-
-        if (!cachedService) {
-            // Emit a defensive debug record to help triage which provider was
-            // used to resolve this service during tests. Tests sometimes swap
-            // providers and the global registry can be mutated; logging here
-            // helps correlate runtime behaviour with the provider identity.
-
-            cachedService = normalize(provider());
-        }
-
-        return cachedService;
+function normalizeService(service: Record<string, unknown>): IdentifierCasePlanService {
+    if (typeof service !== "object" || service === null) {
+        throw new TypeError("Identifier case plan service must be provided as an object");
     }
 
-    function register(nextProvider) {
-        provider = Core.assertFunction(nextProvider, "provider", {
-            errorMessage: providerTypeErrorMessage
-        });
+    const prepareFn = assertServiceMethod(
+        service,
+        "prepareIdentifierCasePlan",
+        "Identifier case plan service must provide a prepareIdentifierCasePlan function"
+    );
+    const lookupFn = assertServiceMethod(
+        service,
+        "getIdentifierCaseRenameForNode",
+        "Identifier case plan service must provide a getIdentifierCaseRenameForNode function"
+    );
+    const captureFn = assertServiceMethod(
+        service,
+        "captureIdentifierCasePlanSnapshot",
+        "Identifier case plan service must provide a captureIdentifierCasePlanSnapshot function"
+    );
+    const applyFn = assertServiceMethod(
+        service,
+        "applyIdentifierCasePlanSnapshot",
+        "Identifier case plan service must provide an applyIdentifierCasePlanSnapshot function"
+    );
 
-        cachedService = null;
+    // Cast each method to the expected signature. The assertions above ensure
+    // they exist and are callable; the downstream call sites receive the correct
+    // types through the IdentifierCasePlanService interface.
+    return Object.freeze({
+        prepareIdentifierCasePlan: prepareFn as IdentifierCasePlanService["prepareIdentifierCasePlan"],
+        getIdentifierCaseRenameForNode: lookupFn as IdentifierCasePlanService["getIdentifierCaseRenameForNode"],
+        captureIdentifierCasePlanSnapshot: captureFn as IdentifierCasePlanService["captureIdentifierCasePlanSnapshot"],
+        applyIdentifierCasePlanSnapshot: applyFn as IdentifierCasePlanService["applyIdentifierCasePlanSnapshot"]
+    });
+}
+
+const MISSING_PROVIDER_MESSAGE = "No identifier case plan provider has been registered";
+const PROVIDER_TYPE_ERROR_MESSAGE = "Identifier case plan provider must be a function";
+
+let currentProvider: IdentifierCasePlanProvider = () => defaultService;
+let cachedService: IdentifierCasePlanService | null = null;
+
+/**
+ * Inject a custom provider so embedders can override the complete identifier-
+ * case plan behaviour (preparation, rename lookups, and snapshot operations).
+ * Passing `null` or a non-function will surface a descriptive `TypeError` via
+ * the shared assertion helpers.
+ *
+ * @param {IdentifierCasePlanProvider} provider Factory returning the service
+ *        to use for subsequent calls.
+ */
+export function registerIdentifierCasePlanProvider(provider: IdentifierCasePlanProvider) {
+    if (typeof provider !== "function") {
+        throw new TypeError(PROVIDER_TYPE_ERROR_MESSAGE);
     }
-
-    function reset() {
-        provider = () => defaultService;
-        cachedService = null;
-    }
-
-    return { resolve, register, reset };
-}
-
-function assertServiceFunction(service, property, errorMessage) {
-    return Core.assertFunction(service[property], property, {
-        errorMessage
-    });
-}
-
-function normalizeIdentifierCasePlanPreparationService(service) {
-    const normalized = Core.assertPlainObject(service, {
-        errorMessage: "Identifier case plan preparation service must be provided as an object"
-    });
-
-    return Object.freeze({
-        prepareIdentifierCasePlan: assertServiceFunction(
-            normalized,
-            "prepareIdentifierCasePlan",
-            "Identifier case plan preparation service must provide a prepareIdentifierCasePlan function"
-        )
-    });
-}
-
-function normalizeIdentifierCaseRenameLookupService(service) {
-    const normalized = Core.assertPlainObject(service, {
-        errorMessage: "Identifier case rename lookup service must be provided as an object"
-    });
-
-    return Object.freeze({
-        getIdentifierCaseRenameForNode: assertServiceFunction(
-            normalized,
-            "getIdentifierCaseRenameForNode",
-            "Identifier case rename lookup service must provide a getIdentifierCaseRenameForNode function"
-        )
-    });
-}
-
-function normalizeIdentifierCasePlanSnapshotCaptureService(service) {
-    const normalized = Core.assertPlainObject(service, {
-        errorMessage: "Identifier case plan snapshot capture service must be provided as an object"
-    });
-
-    return Object.freeze({
-        captureIdentifierCasePlanSnapshot: assertServiceFunction(
-            normalized,
-            "captureIdentifierCasePlanSnapshot",
-            "Identifier case plan snapshot capture service must provide a captureIdentifierCasePlanSnapshot function"
-        )
-    });
-}
-
-function normalizeIdentifierCasePlanSnapshotApplyService(service) {
-    const normalized = Core.assertPlainObject(service, {
-        errorMessage: "Identifier case plan snapshot apply service must be provided as an object"
-    });
-
-    return Object.freeze({
-        applyIdentifierCasePlanSnapshot: assertServiceFunction(
-            normalized,
-            "applyIdentifierCasePlanSnapshot",
-            "Identifier case plan snapshot apply service must provide an applyIdentifierCasePlanSnapshot function"
-        )
-    });
-}
-
-const preparationRegistry = createIdentifierCaseServiceRegistry({
-    defaultService: defaultPreparationService,
-    normalize: normalizeIdentifierCasePlanPreparationService,
-    providerTypeErrorMessage: "Identifier case plan preparation provider must be a function",
-    missingProviderMessage: "No identifier case plan preparation provider has been registered"
-});
-
-const renameLookupRegistry = createIdentifierCaseServiceRegistry({
-    defaultService: defaultRenameLookupService,
-    normalize: normalizeIdentifierCaseRenameLookupService,
-    providerTypeErrorMessage: "Identifier case rename lookup provider must be a function",
-    missingProviderMessage: "No identifier case rename lookup provider has been registered"
-});
-
-const snapshotCaptureRegistry = createIdentifierCaseServiceRegistry({
-    defaultService: defaultSnapshotCaptureService,
-    normalize: normalizeIdentifierCasePlanSnapshotCaptureService,
-    providerTypeErrorMessage: "Identifier case plan snapshot capture provider must be a function",
-    missingProviderMessage: "No identifier case plan snapshot capture provider has been registered"
-});
-
-const snapshotApplyRegistry = createIdentifierCaseServiceRegistry({
-    defaultService: defaultSnapshotApplyService,
-    normalize: normalizeIdentifierCasePlanSnapshotApplyService,
-    providerTypeErrorMessage: "Identifier case plan snapshot apply provider must be a function",
-    missingProviderMessage: "No identifier case plan snapshot apply provider has been registered"
-});
-
-/**
- * Inject a custom preparation provider so embedders can override how the
- * identifier-case plan bootstraps itself. Passing `null` or a non-function will
- * surface a descriptive `TypeError` via the shared assertion helpers.
- *
- * @param {IdentifierCasePlanPreparationProvider} provider Factory returning the
- *        preparation service to use for subsequent calls.
- */
-export function registerIdentifierCasePlanPreparationProvider(provider) {
-    preparationRegistry.register(provider);
+    currentProvider = provider;
+    cachedService = null;
 }
 
 /**
- * Register a lookup provider responsible for mapping AST nodes to their case
- * corrections. Consumers typically install this when they need project-aware
- * rename logic during tests or bespoke integrations.
- *
- * @param {IdentifierCaseRenameLookupProvider} provider Function returning the
- *        lookup service implementation.
- */
-export function registerIdentifierCaseRenameLookupProvider(provider) {
-    renameLookupRegistry.register(provider);
-}
-
-/**
- * Register snapshot orchestration hooks so hosts can persist and restore
- * identifier-case state between formatter runs. Used primarily by long-lived
- * processes that cache rename plans across files.
- *
- * @param {IdentifierCasePlanSnapshotCaptureProvider} provider Factory
- *        returning the snapshot capture service implementation.
- */
-export function registerIdentifierCasePlanSnapshotCaptureProvider(provider) {
-    snapshotCaptureRegistry.register(provider);
-}
-
-/**
- * Register snapshot rehydration hooks so hosts can restore identifier-case
- * state between formatter runs. Used primarily by long-lived processes that
- * hydrate rename plans from disk.
- *
- * @param {IdentifierCasePlanSnapshotApplyProvider} provider Factory returning
- *        the snapshot apply service implementation.
- */
-export function registerIdentifierCasePlanSnapshotApplyProvider(provider) {
-    snapshotApplyRegistry.register(provider);
-}
-
-/**
- * Restore the default provider trio. Useful for tests that temporarily swap in
+ * Restore the default provider. Useful for tests that temporarily swap in
  * bespoke collaborators and need a predictable baseline afterwards.
  */
-export function resetIdentifierCasePlanServiceProvider() {
-    preparationRegistry.reset();
-    renameLookupRegistry.reset();
-    snapshotCaptureRegistry.reset();
-    snapshotApplyRegistry.reset();
+export function resetIdentifierCasePlanProvider() {
+    currentProvider = () => defaultService;
+    cachedService = null;
 }
 
 /**
- * Resolve the active preparation service.
+ * Resolve the active plan service.
  *
- * @returns {IdentifierCasePlanPreparationService}
+ * @returns {IdentifierCasePlanService}
  */
-export function resolveIdentifierCasePlanPreparationService() {
-    return preparationRegistry.resolve();
+export function resolveIdentifierCasePlanService(): IdentifierCasePlanService {
+    if (!currentProvider) {
+        throw new Error(MISSING_PROVIDER_MESSAGE);
+    }
+
+    if (!cachedService) {
+        cachedService = normalizeService(currentProvider() as Record<string, unknown>);
+    }
+
+    return cachedService;
 }
 
 /**
- * Resolve the registered rename lookup service.
- *
- * @returns {IdentifierCaseRenameLookupService}
- */
-export function resolveIdentifierCaseRenameLookupService() {
-    return renameLookupRegistry.resolve();
-}
-
-/**
- * Resolve the active snapshot collaborators shared by the capture/apply views.
- *
- * @returns {IdentifierCasePlanSnapshotCollaborators}
- */
-export function resolveIdentifierCasePlanSnapshotCaptureService() {
-    return snapshotCaptureRegistry.resolve();
-}
-
-export function resolveIdentifierCasePlanSnapshotApplyService() {
-    return snapshotApplyRegistry.resolve();
-}
-
-/**
- * Prepare the identifier-case plan using the active preparation service.
+ * Prepare the identifier-case plan using the active service.
  *
  * @param {object | null | undefined} options Caller-provided configuration.
  * @returns {Promise<void>}
  */
 export function prepareIdentifierCasePlan(options) {
-    return resolveIdentifierCasePlanPreparationService().prepareIdentifierCasePlan(options);
+    return resolveIdentifierCasePlanService().prepareIdentifierCasePlan(options);
 }
 
 /**
- * Look up the rename to apply for a given AST node using the registered
- * lookup service.
+ * Look up the rename to apply for a given AST node using the active service.
  *
  * @param node AST node under consideration.
  * @param options Identifier-case options bag captured from the formatter.
@@ -309,7 +198,7 @@ export function getIdentifierCaseRenameForNode(
     node: GameMakerAstNode | null,
     options: Record<string, string> | null | undefined
 ) {
-    return resolveIdentifierCaseRenameLookupService().getIdentifierCaseRenameForNode(node, options);
+    return resolveIdentifierCasePlanService().getIdentifierCaseRenameForNode(node, options);
 }
 
 /**
@@ -320,7 +209,7 @@ export function getIdentifierCaseRenameForNode(
  * @returns {ReturnType<typeof defaultCaptureIdentifierCasePlanSnapshot>}
  */
 export function captureIdentifierCasePlanSnapshot(options) {
-    return resolveIdentifierCasePlanSnapshotCaptureService().captureIdentifierCasePlanSnapshot(options);
+    return resolveIdentifierCasePlanService().captureIdentifierCasePlanSnapshot(options);
 }
 
 /**
@@ -331,5 +220,89 @@ export function captureIdentifierCasePlanSnapshot(options) {
  * @returns {void}
  */
 export function applyIdentifierCasePlanSnapshot(snapshot, options) {
-    return resolveIdentifierCasePlanSnapshotApplyService().applyIdentifierCasePlanSnapshot(snapshot, options);
+    return resolveIdentifierCasePlanService().applyIdentifierCasePlanSnapshot(snapshot, options);
+}
+
+// Backward-compatible aliases for existing call sites that reference the
+// segregated-resolver names. These forward to the unified service so callers
+// can migrate incrementally. Remove in a future release once all consumers
+// have switched to the unified API.
+export { resolveIdentifierCasePlanService as resolveIdentifierCasePlanPreparationService };
+export { resolveIdentifierCasePlanService as resolveIdentifierCasePlanSnapshotCaptureService };
+export { resolveIdentifierCasePlanService as resolveIdentifierCasePlanSnapshotApplyService };
+export { resolveIdentifierCasePlanService as resolveIdentifierCasePlanRenameLookupService };
+
+// Legacy registration functions for backward compatibility. These wrap the
+// unified registration but still allow callers to register just one aspect
+// of the service.
+export function registerIdentifierCasePlanPreparationProvider(provider: IdentifierCasePlanPreparationProvider) {
+    const service = provider();
+    registerIdentifierCasePlanProvider(function (this: unknown) {
+        return {
+            prepareIdentifierCasePlan: service.prepareIdentifierCasePlan.bind(service),
+            getIdentifierCaseRenameForNode: (node, options) =>
+                defaultGetIdentifierCaseRenameForNode(
+                    node as Parameters<typeof defaultGetIdentifierCaseRenameForNode>[0],
+                    options
+                ),
+            captureIdentifierCasePlanSnapshot: defaultCaptureIdentifierCasePlanSnapshot,
+            applyIdentifierCasePlanSnapshot: defaultApplyIdentifierCasePlanSnapshot
+        } as IdentifierCasePlanService;
+    });
+}
+
+export function registerIdentifierCaseRenameLookupProvider(provider: IdentifierCaseRenameLookupProvider) {
+    const service = provider();
+    registerIdentifierCasePlanProvider(function (this: unknown) {
+        return {
+            prepareIdentifierCasePlan: defaultPrepareIdentifierCasePlan,
+            getIdentifierCaseRenameForNode: (node, options) =>
+                service.getIdentifierCaseRenameForNode(
+                    node as Parameters<typeof service.getIdentifierCaseRenameForNode>[0],
+                    options as Parameters<typeof service.getIdentifierCaseRenameForNode>[1]
+                ),
+            captureIdentifierCasePlanSnapshot: defaultCaptureIdentifierCasePlanSnapshot,
+            applyIdentifierCasePlanSnapshot: defaultApplyIdentifierCasePlanSnapshot
+        } as IdentifierCasePlanService;
+    });
+}
+
+export function registerIdentifierCasePlanSnapshotCaptureProvider(provider: IdentifierCasePlanSnapshotCaptureProvider) {
+    const service = provider();
+    registerIdentifierCasePlanProvider(function (this: unknown) {
+        return {
+            prepareIdentifierCasePlan: defaultPrepareIdentifierCasePlan,
+            getIdentifierCaseRenameForNode: (node, options) =>
+                defaultGetIdentifierCaseRenameForNode(
+                    node as Parameters<typeof defaultGetIdentifierCaseRenameForNode>[0],
+                    options
+                ),
+            captureIdentifierCasePlanSnapshot: service.captureIdentifierCasePlanSnapshot.bind(service),
+            applyIdentifierCasePlanSnapshot: defaultApplyIdentifierCasePlanSnapshot
+        } as IdentifierCasePlanService;
+    });
+}
+
+export function registerIdentifierCasePlanSnapshotApplyProvider(provider: IdentifierCasePlanSnapshotApplyProvider) {
+    const service = provider();
+    registerIdentifierCasePlanProvider(function (this: unknown) {
+        return {
+            prepareIdentifierCasePlan: defaultPrepareIdentifierCasePlan,
+            getIdentifierCaseRenameForNode: (node, options) =>
+                defaultGetIdentifierCaseRenameForNode(
+                    node as Parameters<typeof defaultGetIdentifierCaseRenameForNode>[0],
+                    options
+                ),
+            captureIdentifierCasePlanSnapshot: defaultCaptureIdentifierCasePlanSnapshot,
+            applyIdentifierCasePlanSnapshot: service.applyIdentifierCasePlanSnapshot.bind(service)
+        } as IdentifierCasePlanService;
+    });
+}
+
+/**
+ * Restore the default provider. Alias of {@link resetIdentifierCasePlanProvider}
+ * for backward compatibility.
+ */
+export function resetIdentifierCasePlanServiceProvider() {
+    resetIdentifierCasePlanProvider();
 }

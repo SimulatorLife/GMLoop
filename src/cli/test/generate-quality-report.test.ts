@@ -1134,7 +1134,17 @@ void test("quality report workspace table shows only PR head workspace totals", 
         <testcase name="parser fail" classname="suite" file="/repo/src/parser/dist/test/parser-fail.test.js">
           <failure message="failure" />
         </testcase>
+        <testcase name="root integration pass" classname="suite" file="/repo/test/dist/root-integration.test.js" />
         <testcase name="ui pass" classname="suite" file="/repo/src/ui/dist/test/ui-pass.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+    writeXml(
+        headDir,
+        "mcp",
+        `<testsuites>
+      <testsuite name="mcp">
+        <testcase name="mcp pass" classname="suite" file="dist/test/mcp-pass.test.js" />
       </testsuite>
     </testsuites>`
     );
@@ -1159,8 +1169,10 @@ void test("quality report workspace table shows only PR head workspace totals", 
 
     assert.strictEqual(exitCode, 0);
     const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /\| mcp \| 1 \| 1 \| 0 \| 0 \|/u);
     assert.match(markdown, /\| parser \| 2 \| 1 \| 1 \| 0 \|/u);
     assert.match(markdown, /\| ui \| 1 \| 1 \| 0 \| 0 \|/u);
+    assert.doesNotMatch(markdown, /\| dist \|/u);
     assert.doesNotMatch(markdown, /\| parser \| 1 \| 1 \| 0 \| 0 \|/u);
     assert.doesNotMatch(markdown, /\| ui \| 2 \|/u);
 });
@@ -1247,16 +1259,19 @@ void test("quality report prioritizes lint errors before test regression status"
         `<checkstyle version="1.0"><file name="src/example.ts"><error line="1" severity="error" message="lint error" source="lint" /></file></checkstyle>`
     );
 
-    const exitCode = runGenerateQualityReport({
-        command: createMockCommand({
-            base: baseDir,
-            head: headDir,
-            merge: mergeDir,
-            reportFile
-        })
-    });
-
-    assert.strictEqual(exitCode, 11);
+    assert.throws(
+        () =>
+            runGenerateQualityReport({
+                command: createMockCommand({
+                    base: baseDir,
+                    head: headDir,
+                    merge: mergeDir,
+                    reportFile
+                })
+            }),
+        isCliUsageError
+    );
+    process.exitCode = undefined;
     const markdown = fs.readFileSync(reportFile, "utf8");
     assert.match(markdown, /❌ Lint errors detected on gate target \(Merged\): 1\./u);
 });
@@ -1375,6 +1390,5 @@ void test("readTestResults handles missing workspace info gracefully", () => {
     const cases = (result as { cases: Array<{ workspace: string }> }).cases;
 
     assert.strictEqual(cases.length, 1);
-    // Should fallback to parent directory name
-    assert.strictEqual(cases[0].workspace, "reports");
+    assert.strictEqual(cases[0].workspace, "");
 });

@@ -12,6 +12,7 @@ import {
     listGraphNodeKinds
 } from "../graph-layout.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import { GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
@@ -72,16 +73,6 @@ export class GmGraphPanel extends LightDomLitElement {
     #startX = 0;
     #startY = 0;
 
-    public connectedCallback(): void {
-        super.connectedCallback();
-        globalThis.addEventListener(GRAPH_UI_EVENT_RESET_DEFAULTS, this.#onResetDefaults);
-    }
-
-    public disconnectedCallback(): void {
-        globalThis.removeEventListener(GRAPH_UI_EVENT_RESET_DEFAULTS, this.#onResetDefaults);
-        super.disconnectedCallback();
-    }
-
     #onResetDefaults = (): void => {
         this.#syncFilterDefaults(true);
         this.#panX = 0;
@@ -90,6 +81,18 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#selectedNodeId = null;
         this.requestUpdate();
     };
+
+    #eventBus = new EventBusManager(this, [{ event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults }]);
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        this.#eventBus.connect();
+    }
+
+    public disconnectedCallback(): void {
+        this.#eventBus.disconnect();
+        super.disconnectedCallback();
+    }
 
     #syncFilterDefaults(force = false): void {
         if (!this.model) {
