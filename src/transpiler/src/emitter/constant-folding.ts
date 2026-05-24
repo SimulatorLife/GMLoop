@@ -213,7 +213,10 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
     const left = ast.left.value;
     const right = ast.right.value;
 
-    // Handle null/undefined operands conservatively
+    // Abort folding when either operand is null or undefined (the parser uses these
+    // as sentinels for missing or malformed AST fields). Returning null here signals
+    // "cannot fold at compile time" so the caller emits the expression at runtime
+    // instead of crashing on a property access like `.value` or `.operator` of null.
     if (isNullishValue(left) || isNullishValue(right)) {
         return null;
     }
@@ -350,20 +353,28 @@ export function tryFoldConstantUnaryExpression(ast: UnaryExpressionNode): number
 
     const operand = ast.argument.value;
 
-    // Handle null/undefined operands conservatively
+    // Return null when the operand is null or undefined so the caller falls back
+    // to runtime evaluation rather than crashing on a null property access.
     if (isNullishValue(operand)) {
         return null;
     }
 
     const op = ast.operator;
 
-    // Helper to check if a value is a boolean literal (handles parser quirk where
-    // boolean literals are represented as strings "true"/"false")
+    // Detect boolean operands in both native JS and parser-string form.
+    // The GML parser represents boolean literals as strings ("true" / "false")
+    // rather than native booleans, so the check covers both representations.
+    // This guard is critical: applying unary arithmetic to a boolean value
+    // (e.g. `-true`) would silently coerce it to a number (1) in JavaScript,
+    // which is not equivalent to any valid GML constant expression — GML raises
+    // a type error for arithmetic on booleans at runtime. Skipping the fold here
+    // keeps the transpiled output syntactically valid and lets the runtime
+    // produce the same error GML would, rather than silently producing a wrong
+    // numeric result.
     const isBooleanLiteral = typeof operand === "boolean" || operand === "true" || operand === "false";
 
-    // Numeric unary operations
-    // Note: The parser represents numeric literals as strings, so we need to parse them.
-    // Skip boolean values to avoid incorrect numeric conversion (e.g., true → 1)
+    // Numeric unary operations — the parser stores numeric literals as strings,
+    // so we parse them before applying the operator.
     if (!isBooleanLiteral) {
         const numValue = typeof operand === "number" ? operand : Number(operand);
         if (!Number.isNaN(numValue)) {
