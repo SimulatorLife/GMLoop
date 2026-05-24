@@ -34,7 +34,10 @@ void test("assertPlainObject returns the validated reference", () => {
 });
 
 void test("assertPlainObject throws with descriptive error messages", () => {
-    assert.throws(() => assertPlainObject(null), TypeError);
+    assert.throws(
+        () => assertPlainObject(null),
+        (error: unknown) => error instanceof TypeError
+    );
     assert.throws(
         () =>
             assertPlainObject([], {
