@@ -58,6 +58,13 @@ pnpm install
 pnpm run cli -- --help
 ```
 
+### 3) Run baseline validation
+
+```bash
+pnpm run build:ts
+pnpm run lint:quiet
+```
+
 Need contributor-focused setup and validation expectations? Continue with [`docs/contributor-onboarding.md`](docs/contributor-onboarding.md).
 For a guided docs tour, start with the [documentation index](docs/README.md).
 
@@ -321,6 +328,7 @@ Start here for deeper context and plans:
 - [`src/refactor/README.md`](src/refactor/README.md)
 - [`src/lint/README.md`](src/lint/README.md)
 - [`src/mcp/README.md`](src/mcp/README.md)
+- [GitHub Releases](https://github.com/SimulatorLife/GMLoop/releases) (project changelog and release notes)
 
 ## References / Tools / Docs
 

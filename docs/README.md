@@ -27,6 +27,8 @@ then return here for deeper context.
 - [Quick start](../README.md#quick-start) &mdash; Installation flows for pnpm
   contributors and project maintainers, including local-clone workflows plus
   wrapper scripts you can copy into your GameMaker project.
+- [Everyday commands](../README.md#everyday-commands) &mdash; Core parser/lint/refactor/
+  transpile/watch commands used day-to-day.
 - [Configuration reference](../README.md#configuration-reference) &mdash; Baseline
   Prettier options for `.gml` files and lint preset wiring examples.
 - [CLI wrapper reference](../README.md#cli-wrapper-environment-knobs) &mdash; Quick
@@ -48,25 +50,7 @@ then return here for deeper context.
   pointers to the extension hooks that keep custom behaviour outside the
   generated directory.
 - [Validation command reference](contributor-onboarding.md#3-validate-the-workspace) — Profiling and validation commands used before opening a pull request.
-
-## Extension hooks & overrides
-
-The format workspace exposes several extension hooks that let integrators run controlled
-experiments without permanently widening the public option surface. Comprehensive
-documentation for these hooks is pending; consult the source files for
-implementation details:
-
-- **Line-comment options resolver** (`@gmloop/core`)
-  — Adjust commented-code detection heuristics without forking the formatter.
-  Normalization guards keep overrides safe even when hosts
-  provide partial data.
-- **Statement newline padding extension** — Register additional AST node
-  types that should inherit blank-line padding around statements while keeping
-  the opinionated defaults intact for other consumers.
-- **Core option overrides** (`src/format/src/options/core-option-overrides.ts`)
-  — Swap or remove the hard-coded Prettier clamps (such as
-  `trailingComma: "none"`) when a host needs different defaults, all while
-  keeping the formatter opinionated by default.
+- [GitHub Releases](https://github.com/SimulatorLife/GMLoop/releases) — Versioned changelog notes for shipped updates.
 
 ## Architecture, planning
 
