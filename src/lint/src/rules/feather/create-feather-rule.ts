@@ -1341,10 +1341,10 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                 ];
                 const aliasEntries = aliasMatches.map((match) => ({
                     name: match[1],
-                    index: Number.parseInt(match[2])
+                    index: Number.parseInt(match[2], 10)
                 }));
                 const argumentIndexes = [...body.matchAll(/\bargument(\d+)\b/g)].map((match) =>
-                    Number.parseInt(match[1])
+                    Number.parseInt(match[1], 10)
                 );
                 const maxArgumentIndex = argumentIndexes.length === 0 ? -1 : Math.max(...argumentIndexes);
 
@@ -1413,7 +1413,7 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 
                 const functionBody = fullText.slice(openBraceIndex + 1, closeBraceEndIndex - 1);
                 const argumentIndexes = [...functionBody.matchAll(/\bargument(\d+)\b/g)].map((match) =>
-                    Number.parseInt(match[1])
+                    Number.parseInt(match[1], 10)
                 );
                 const maxArgumentIndex = argumentIndexes.length === 0 ? -1 : Math.max(...argumentIndexes);
 
@@ -1422,7 +1422,7 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                     /^\s*var\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*argument(\d+)\s*;\s*$/gm
                 )) {
                     const aliasName = match[1];
-                    const aliasIndex = Number.parseInt(match[2]);
+                    const aliasIndex = Number.parseInt(match[2], 10);
                     aliasNamesByIndex.set(aliasIndex, aliasName);
                 }
 

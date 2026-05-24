@@ -522,9 +522,9 @@ function extractLintRuntimeFailureLocation(errorMessage: string): LintRuntimeFai
     }
 
     const extractedLine =
-        typeof locationMatch[2] === "string" && locationMatch[2].length > 0 ? Number.parseInt(locationMatch[2]) : 1;
+        typeof locationMatch[2] === "string" && locationMatch[2].length > 0 ? Number.parseInt(locationMatch[2], 10) : 1;
     const extractedColumn =
-        typeof locationMatch[3] === "string" && locationMatch[3].length > 0 ? Number.parseInt(locationMatch[3]) : 1;
+        typeof locationMatch[3] === "string" && locationMatch[3].length > 0 ? Number.parseInt(locationMatch[3], 10) : 1;
 
     return Object.freeze({
         filePath: locationMatch[1]?.trim().length ? locationMatch[1].trim() : null,
@@ -693,7 +693,7 @@ function createRetainedLintResult(result: ESLint.LintResult): RetainedLintResult
 
 function normalizeMaxWarnings(rawValue: unknown): number {
     if (typeof rawValue === "string") {
-        const parsed = Number.parseInt(rawValue);
+        const parsed = Number.parseInt(rawValue, 10);
         return Number.isNaN(parsed) ? -1 : parsed;
     }
 

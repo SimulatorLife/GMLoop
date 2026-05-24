@@ -21,7 +21,7 @@ function parseIntegerWithBounds(
     value: string,
     bounds: Readonly<{ errorMessage: string; maximum: number; minimum: number }>
 ): number {
-    const parsed = Number.parseInt(value);
+    const parsed = Number.parseInt(value, 10);
     if (Number.isNaN(parsed) || parsed < bounds.minimum || parsed > bounds.maximum) {
         throw new Error(bounds.errorMessage);
     }
