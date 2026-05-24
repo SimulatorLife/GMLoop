@@ -20,6 +20,8 @@ function createNode(id: string, kind: GraphVisualizationNodeKind, name: string):
         graphId: "project",
         id,
         kind,
+        lineEnd: null,
+        lineStart: null,
         name,
         resourcePath: null,
         snippet: "",

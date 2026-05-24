@@ -47,6 +47,8 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
                 kind,
                 name,
                 display_name as displayName,
+                line_start as lineStart,
+                line_end as lineEnd,
                 relative_path as filePath,
                 resource_path as resourcePath,
                 summary,
@@ -60,6 +62,8 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
         graphId: string;
         id: string;
         kind: string;
+        lineEnd: number | null;
+        lineStart: number | null;
         name: string;
         resourcePath: string | null;
         snippet: string;
@@ -74,6 +78,8 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
                 graphId: n.graphId as GraphIndexScope,
                 id: n.id,
                 kind: n.kind as GraphNodeKind,
+                lineEnd: n.lineEnd,
+                lineStart: n.lineStart,
                 name: n.name,
                 resourcePath: n.resourcePath,
                 snippet: n.snippet,

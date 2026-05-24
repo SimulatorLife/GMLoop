@@ -38,8 +38,8 @@ void describe("exportGraphVisualizationData", () => {
 
         db.prepare(
             `
-            INSERT INTO nodes (id, graph_id, kind, name, display_name, relative_path, resource_path, summary, snippet)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO nodes (id, graph_id, kind, name, display_name, line_start, line_end, relative_path, resource_path, summary, snippet)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
         ).run(
             "node1",
@@ -47,6 +47,8 @@ void describe("exportGraphVisualizationData", () => {
             "script",
             "test_script",
             "test_script()",
+            10,
+            14,
             "scripts/test_script/test_script.gml",
             "scripts/test_script/test_script.yy",
             "A test",
@@ -55,8 +57,8 @@ void describe("exportGraphVisualizationData", () => {
 
         db.prepare(
             `
-            INSERT INTO nodes (id, graph_id, kind, name, display_name, relative_path, resource_path, summary, snippet)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO nodes (id, graph_id, kind, name, display_name, line_start, line_end, relative_path, resource_path, summary, snippet)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
         ).run(
             "node2",
@@ -64,6 +66,8 @@ void describe("exportGraphVisualizationData", () => {
             "object",
             "obj_test",
             "obj_test",
+            null,
+            null,
             null,
             "objects/obj_test/obj_test.yy",
             "Test obj",
@@ -93,9 +97,13 @@ void describe("exportGraphVisualizationData", () => {
         assert.strictEqual(data.nodes[0]?.id, "node1");
         assert.strictEqual(data.nodes[0]?.kind, "script");
         assert.strictEqual(data.nodes[0]?.displayName, "test_script()");
+        assert.strictEqual(data.nodes[0]?.lineStart, 10);
+        assert.strictEqual(data.nodes[0]?.lineEnd, 14);
         assert.strictEqual(data.nodes[0]?.filePath, "scripts/test_script/test_script.gml");
         assert.strictEqual(data.nodes[0]?.resourcePath, "scripts/test_script/test_script.yy");
         assert.strictEqual(data.nodes[1]?.id, "node2");
+        assert.strictEqual(data.nodes[1]?.lineStart, null);
+        assert.strictEqual(data.nodes[1]?.lineEnd, null);
         assert.strictEqual(data.nodes[1]?.filePath, null);
         assert.strictEqual(data.nodes[1]?.resourcePath, "objects/obj_test/obj_test.yy");
 

@@ -51,6 +51,18 @@ function readGraphNodePathLabel(node: GraphLayoutNode): string | null {
     return node.filePath ?? node.resourcePath;
 }
 
+function readGraphNodeLocationLabel(node: GraphLayoutNode): string | null {
+    if (node.lineStart === null) {
+        return null;
+    }
+
+    if (node.lineEnd !== null && node.lineEnd !== node.lineStart) {
+        return `lines ${String(node.lineStart)}-${String(node.lineEnd)}`;
+    }
+
+    return `line ${String(node.lineStart)}`;
+}
+
 /**
  * Graph surface with Lit-owned SVG rendering, filtering, search, JSON, and legend state.
  */
@@ -318,11 +330,13 @@ export class GmGraphPanel extends LightDomLitElement {
         }
 
         const pathLabel = readGraphNodePathLabel(node);
+        const locationLabel = readGraphNodeLocationLabel(node);
         return html`
             <div id="tooltip" class="visible">
                 <h3>${node.displayName}</h3>
                 <div>${node.kind} | ${node.graphId}</div>
                 ${pathLabel ? html`<div>${pathLabel}</div>` : null}
+                ${locationLabel ? html`<div>${locationLabel}</div>` : null}
                 ${node.summary ? html`<p>${node.summary}</p>` : null}
             </div>
         `;

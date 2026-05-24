@@ -170,6 +170,8 @@ export type GraphVisualizationData = Readonly<{
             graphId: GraphIndexScope;
             id: string;
             kind: GraphNodeKind;
+            lineEnd: number | null;
+            lineStart: number | null;
             name: string;
             resourcePath: string | null;
             snippet: string;

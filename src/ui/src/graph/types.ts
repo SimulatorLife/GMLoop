@@ -94,6 +94,8 @@ export type GraphVisualizationNodeRecord = Readonly<{
     graphId: GraphVisualizationScope;
     id: string;
     kind: GraphVisualizationNodeKind;
+    lineEnd: number | null;
+    lineStart: number | null;
     name: string;
     resourcePath: string | null;
     snippet: string;
