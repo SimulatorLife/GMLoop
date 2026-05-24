@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { GRAPH_UI_EVENT_NAVIGATE_PAGE } from "../src/app/components/events.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmConfigPanel } from "../src/app/components/gm-config-panel.js";
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
@@ -98,13 +99,29 @@ function createMockState(): GraphVisualizationUiState {
     };
 }
 
-void test("GmAppShell renders a skip-link element before the app shell", () => {
+void test("GmAppShell targets graph content in skip-link by default", () => {
     const shell = new TestableGmAppShell();
     shell.model = createMockModel();
 
     const rendered = renderTemplateValue(shell.renderForTest());
 
-    assert.match(rendered, /<a class="skip-link" href="#graph-page">Skip to content<\/a>/u);
+    assert.match(rendered, /<a class="skip-link" href=#graph-page>Skip to content<\/a>/u);
+});
+
+void test("GmAppShell skip-link follows the active page target", () => {
+    const shell = new TestableGmAppShell();
+    shell.model = createMockModel();
+    shell.connectedCallback();
+
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_NAVIGATE_PAGE, { detail: { page: "docs" } }));
+    let rendered = renderTemplateValue(shell.renderForTest());
+    assert.match(rendered, /<a class="skip-link" href=#docs-page>Skip to content<\/a>/u);
+
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_NAVIGATE_PAGE, { detail: { page: "fix" } }));
+    rendered = renderTemplateValue(shell.renderForTest());
+    assert.match(rendered, /<a class="skip-link" href=#fix-page>Skip to content<\/a>/u);
+
+    shell.disconnectedCallback();
 });
 
 void test("GmAppShell error banner has role=alert and tabindex=-1 for keyboard focus", () => {

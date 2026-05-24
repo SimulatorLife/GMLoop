@@ -1,4 +1,4 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
 
 import {
     createNoopGraphVisualizationUiCallbacks,
@@ -35,6 +35,16 @@ import { LifecycleParticipantsController } from "./lifecycle-participants-contro
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const LIVE_RELOAD_ERROR_ACTION_TYPE = "set-live-reload-error";
+
+const PAGE_MAIN_SECTION_ID: Readonly<Record<GraphVisualizationUiPage, string>> = Object.freeze({
+    config: "config-page",
+    docs: "docs-page",
+    fix: "fix-page",
+    graph: "graph-page",
+    "live-reload": "live-reload-page",
+    mcp: "mcp-page",
+    playground: "playground-page"
+});
 
 /**
  * Root app shell that composes header, toolbar, and graph/docs/config surfaces.
@@ -265,7 +275,7 @@ export class GmAppShell extends LightDomLitElement {
         }
 
         return html`
-            <a class="skip-link" href="#graph-page">Skip to content</a>
+            <a class="skip-link" href=${`#${PAGE_MAIN_SECTION_ID[this.#state.activePage]}`}>Skip to content</a>
             <div id="app-shell">
                 <gm-app-header .model=${this.model} .state=${this.#state}></gm-app-header>
                 <gm-graph-toolbar .model=${this.model} .state=${this.#state}></gm-graph-toolbar>
@@ -274,7 +284,7 @@ export class GmAppShell extends LightDomLitElement {
                           .message=${this.#state.errorMessage}
                           @gm-error-banner-dismiss=${this.#onDismissErrorBanner}
                       ></gm-error-banner>`
-                    : null}
+                    : nothing}
                 <main>
                     <gm-graph-panel .model=${this.model} .state=${this.#state}></gm-graph-panel>
                     <gm-playground-panel .model=${this.model} .state=${this.#state}></gm-playground-panel>
