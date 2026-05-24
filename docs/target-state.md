@@ -11,7 +11,7 @@ This document synthesizes the target state for the GameMaker Language parser pro
 5. **Bounded-Memory Refactors**: Run large-project semantic indexing and codemod pipelines without retaining monolithic project-wide aggregates in memory. The target architecture uses bounded-memory streaming with spill-to-disk backends and whole-plan validation only where correctness requires it.
 6. **Live Hot-Reloading**: Enable true hot-loading of GML code, assets, and shaders without restarting the game by transpiling GML to JavaScript on demand and injecting it via a runtime wrapper.
 
-Concrete graph-index design and implementation details now live in [docs/gml-graph-index-plan.md](gml-graph-index-plan.md). Graph/search/context retrieval is owned by `@gmloop/semantic`.
+Concrete graph-index, retrieval, and visualization target-state details now live in [docs/gml-graph-index-plan.md](gml-graph-index-plan.md). Graph/search/context retrieval is owned by `@gmloop/semantic`; CLI, MCP, and UI layers present those semantic facts without duplicating graph truth.
 
 ## 2. Workspace Ownership Boundaries
 

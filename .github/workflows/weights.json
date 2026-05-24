@@ -109,6 +109,7 @@
     {"weight": 0.5, "name": "agent-104-test-deduplication", "category": "code", "complexity": 2},
     {"weight": 0.2, "name": "agent-105-semantic-graph-fidelity", "category": "code", "complexity": 3},
     {"weight": 0.1, "name": "agent-106-bad-test-remediation", "category": "code", "complexity": 2},
-    {"weight": 1, "name": "agent-107-ui-workspace", "category": "code", "complexity": 2}
+    {"weight": 1, "name": "agent-107-ui-workspace", "category": "code", "complexity": 2},
+    {"weight": 0.4, "name": "agent-108-autonomous-game-creation", "category": "code", "complexity": 3}
   ]
 }
