@@ -91,5 +91,6 @@ export function createOutputHash(outputText: string): string {
  * Shared `node:test` options for sequential performance tests.
  */
 export const SEQUENTIAL_PERFORMANCE_TEST_OPTIONS = Object.freeze({
-    concurrency: false
+    concurrency: false,
+    timeout: 300_000
 });
