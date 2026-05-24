@@ -61,20 +61,248 @@ export function createGraphLayout(
         connectionCounts.set(edge.target, (connectionCounts.get(edge.target) ?? 0) + 1);
     }
 
+    // 1. Build hierarchy parent/child relationships based on contains and defines edge types.
+    // Parent direction: source is parent, target is child.
+    const parentMap = new Map<string, string>();
+    const childrenMap = new Map<string, string[]>();
+    for (const edge of edges) {
+        if ((edge.type === "contains" || edge.type === "defines") && !parentMap.has(edge.target)) {
+                parentMap.set(edge.target, edge.source);
+                const children = childrenMap.get(edge.source) ?? [];
+                children.push(edge.target);
+                childrenMap.set(edge.source, children);
+            }
+    }
+
+    // Find project nodes (roots)
     const projectNodes = nodes.filter((node) => node.kind === "project");
-    const regularNodes = nodes.filter((node) => node.kind !== "project");
-    const orderedNodes = [...projectNodes, ...regularNodes];
-    const layoutRadius = Math.max(180, Math.min(720, orderedNodes.length * 18));
-    const layoutNodes = orderedNodes.map((node, index): GraphLayoutNode => {
-        const point =
-            node.kind === "project" ? { x: 0, y: 0 } : getCircularPoint(index, orderedNodes.length, layoutRadius);
+
+    // For any node that is not project and does not have a parent, assign its parent to the first project node if available.
+    const defaultParentId = projectNodes.length > 0 ? projectNodes[0].id : null;
+    for (const node of nodes) {
+        if (node.kind !== "project" && !parentMap.has(node.id) && defaultParentId && node.id !== defaultParentId) {
+                parentMap.set(node.id, defaultParentId);
+                const children = childrenMap.get(defaultParentId) ?? [];
+                children.push(node.id);
+                childrenMap.set(defaultParentId, children);
+            }
+    }
+
+    // 2. Initialize positions using hierarchical tree layout
+    const initialPositions = new Map<string, { x: number; y: number; angle: number }>();
+    const visited = new Set<string>();
+
+    function layoutTree(nodeId: string, px: number, py: number, parentAngle: number | null, depth: number) {
+        if (visited.has(nodeId)) {
+            return;
+        }
+        visited.add(nodeId);
+
+        let x = px;
+        let y = py;
+        let angle = parentAngle ?? 0;
+
+        if (depth > 0) {
+            // Place node around its parent
+            const radius = depth === 1 ? 200 : depth === 2 ? 90 : 50;
+            const parentId = parentMap.get(nodeId);
+            const parentNodePos = parentId ? initialPositions.get(parentId) : null;
+            const parentActualAngle = parentNodePos ? parentNodePos.angle : 0;
+
+            const siblings = parentId ? (childrenMap.get(parentId) ?? []) : [];
+            const index = siblings.indexOf(nodeId);
+            const count = siblings.length;
+
+            if (parentAngle === null) {
+                // If parent is root, distribute children evenly on full circle
+                const theta = count > 1 ? (index / count) * Math.PI * 2 : 0;
+                x = px + Math.cos(theta) * radius;
+                y = py + Math.sin(theta) * radius;
+                angle = theta;
+            } else {
+                // Distribute in an arc centered around parentActualAngle pointing outwards
+                const arcWidth = Math.PI * 0.8; // ~144 degrees
+                let theta = parentActualAngle;
+                if (count > 1) {
+                    theta = parentActualAngle - arcWidth / 2 + (index / (count - 1)) * arcWidth;
+                }
+                x = px + Math.cos(theta) * radius;
+                y = py + Math.sin(theta) * radius;
+                angle = theta;
+            }
+        }
+
+        initialPositions.set(nodeId, { x, y, angle });
+
+        const children = childrenMap.get(nodeId) ?? [];
+        for (const childId of children) {
+            layoutTree(childId, x, y, angle, depth + 1);
+        }
+    }
+
+    // Start layouts from project roots
+    for (const projectNode of projectNodes) {
+        layoutTree(projectNode.id, 0, 0, null, 0);
+    }
+
+    // In case there are any leftover nodes not connected to anything
+    for (const node of nodes) {
+        if (!visited.has(node.id)) {
+            layoutTree(node.id, 0, 0, null, 1);
+        }
+    }
+
+    // Copy to mutable structure for force simulation
+    const simNodes = nodes.map((node) => {
+        const radius = getNodeRadius(node, connectionCounts.get(node.id) ?? 0);
+        const pos = initialPositions.get(node.id) ?? { x: 0, y: 0, angle: 0 };
         return {
-            ...node,
-            radius: getNodeRadius(node, connectionCounts.get(node.id) ?? 0),
-            x: point.x,
-            y: point.y
+            id: node.id,
+            kind: node.kind,
+            radius,
+            x: pos.x,
+            y: pos.y,
+            vx: 0,
+            vy: 0
         };
     });
+
+    const simNodeById = new Map(simNodes.map((n) => [n.id, n]));
+
+    // 3. Deterministic Force-Directed Refinement Simulation
+    const iterations = 80;
+    const gravityCoeff = 0.015;
+
+    for (let iter = 0; iter < iterations; iter++) {
+        // Temperature damping (cooling factor)
+        const t = 1 - iter / iterations;
+        const maxStep = 25 * t;
+
+        // Reset velocities
+        for (const sn of simNodes) {
+            sn.vx = 0;
+            sn.vy = 0;
+        }
+
+        // A. Repulsive forces between all pairs
+        for (let i = 0; i < simNodes.length; i++) {
+            const nodeI = simNodes[i];
+            for (let j = i + 1; j < simNodes.length; j++) {
+                const nodeJ = simNodes[j];
+                const dx = nodeI.x - nodeJ.x;
+                const dy = nodeI.y - nodeJ.y;
+                const distSq = dx * dx + dy * dy;
+                const dist = Math.sqrt(distSq) || 1;
+
+                const minDist = nodeI.radius + nodeJ.radius + 35;
+                if (dist < minDist) {
+                    const force = (350 * (minDist - dist)) / dist;
+                    const fx = dx * force;
+                    const fy = dy * force;
+                    nodeI.vx += fx;
+                    nodeI.vy += fy;
+                    nodeJ.vx -= fx;
+                    nodeJ.vy -= fy;
+                } else {
+                    const force = 1000 / (distSq + 20);
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+                    nodeI.vx += fx;
+                    nodeI.vy += fy;
+                    nodeJ.vx -= fx;
+                    nodeJ.vy -= fy;
+                }
+            }
+        }
+
+        // B. Attractive forces along edges
+        for (const edge of edges) {
+            const nodeSource = simNodeById.get(edge.source);
+            const nodeTarget = simNodeById.get(edge.target);
+            if (!nodeSource || !nodeTarget) {
+                continue;
+            }
+
+            const dx = nodeTarget.x - nodeSource.x;
+            const dy = nodeTarget.y - nodeSource.y;
+            const dist = Math.hypot(dx, dy) || 1;
+
+            let restLength = 120;
+            let stiffness = 0.03;
+
+            if (edge.type === "contains" || edge.type === "defines") {
+                restLength = nodeSource.radius + nodeTarget.radius + 25;
+                stiffness = 0.12;
+            } else if (edge.type === "calls" || edge.type === "inherits") {
+                restLength = 90;
+                stiffness = 0.06;
+            }
+
+            const force = (stiffness * (dist - restLength)) / dist;
+            const fx = dx * force;
+            const fy = dy * force;
+
+            nodeSource.vx += fx;
+            nodeSource.vy += fy;
+            nodeTarget.vx -= fx;
+            nodeTarget.vy -= fy;
+        }
+
+        // C. Gravity (pull towards 0, 0)
+        for (const sn of simNodes) {
+            sn.vx -= sn.x * gravityCoeff;
+            sn.vy -= sn.y * gravityCoeff;
+        }
+
+        // D. Update positions
+        for (const sn of simNodes) {
+            const stepLen = Math.hypot(sn.vx, sn.vy);
+            if (stepLen > maxStep) {
+                sn.x += (sn.vx / stepLen) * maxStep;
+                sn.y += (sn.vy / stepLen) * maxStep;
+            } else {
+                sn.x += sn.vx;
+                sn.y += sn.vy;
+            }
+        }
+    }
+
+    // 4. Centering: Center on first project node, or centroid
+    let cx = 0;
+    let cy = 0;
+    const projectSimNode = projectNodes.length > 0 ? simNodeById.get(projectNodes[0].id) : null;
+    if (projectSimNode) {
+        cx = projectSimNode.x;
+        cy = projectSimNode.y;
+    } else {
+        let sx = 0;
+        let sy = 0;
+        for (const sn of simNodes) {
+            sx += sn.x;
+            sy += sn.y;
+        }
+        if (simNodes.length > 0) {
+            cx = sx / simNodes.length;
+            cy = sy / simNodes.length;
+        }
+    }
+
+    for (const sn of simNodes) {
+        sn.x -= cx;
+        sn.y -= cy;
+    }
+
+    // 5. Construct Layout Nodes
+    const layoutNodes = nodes.map((node): GraphLayoutNode => {
+        const sn = simNodeById.get(node.id);
+        return {
+            ...node,
+            radius: sn.radius,
+            x: Math.round(sn.x),
+            y: Math.round(sn.y)
+        };
+    });
+
     const nodeById = new Map(layoutNodes.map((node) => [node.id, node]));
     const layoutEdges = edges.flatMap((edge): ReadonlyArray<GraphLayoutEdge> => {
         const sourceNode = nodeById.get(edge.source);

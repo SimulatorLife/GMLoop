@@ -29,7 +29,7 @@
     },
     {
       "name": "mini-max",
-      "weight": 6,
+      "weight": 5,
       "cadenceTicks": 1,
       "category": ["code"],
       "maxComplexity": 2
