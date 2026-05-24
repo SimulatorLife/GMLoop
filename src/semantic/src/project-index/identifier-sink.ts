@@ -90,7 +90,14 @@ function parseJsonLines(rawContents: string): Array<unknown> {
             continue;
         }
 
-        records.push(JSON.parse(line));
+        try {
+            records.push(JSON.parse(line));
+        } catch {
+            // Skip lines that are not valid JSON — a corrupt spill file should
+            // not propagate an exception through the read path.  The mechanism
+            // will clear the spill-file-to-record-key mapping on I/O errors,
+            // so any remaining good lines will be preserved in the in-memory tail.
+        }
     }
 
     return records;

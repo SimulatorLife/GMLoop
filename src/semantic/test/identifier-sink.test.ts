@@ -132,3 +132,61 @@ void test("TempFileIdentifierSink treats corrupted spill payloads as cache misse
         sink.dispose();
     }
 });
+
+void test("TempFileIdentifierSink reads remaining good records when some JSONL lines are malformed", async () => {
+    const sink = new TempFileIdentifierSink({
+        enabled: true,
+        flushThreshold: 4,
+        retainedEntriesPerKey: 1,
+        readCacheMaxEntries: 4
+    });
+
+    try {
+        sink.append({
+            collection: "scripts",
+            key: "script/partially-corrupt",
+            role: "references",
+            payload: { value: "good-1" }
+        });
+        sink.append({
+            collection: "scripts",
+            key: "script/partially-corrupt",
+            role: "references",
+            payload: { value: "good-2" }
+        });
+        sink.append({
+            collection: "scripts",
+            key: "script/partially-corrupt",
+            role: "references",
+            payload: { value: "good-3" }
+        });
+        sink.append({
+            collection: "scripts",
+            key: "script/partially-corrupt",
+            role: "references",
+            payload: { value: "good-4" }
+        });
+
+        const spillPath = (
+            sink as unknown as {
+                filePathByKey: Map<string, string>;
+            }
+        ).filePathByKey
+            .values()
+            .next().value;
+        assert.equal(typeof spillPath, "string");
+
+        // Overwrite with a mixed file: good line, then malformed line(s), then more good lines.
+        // The per-line JSON.parse guard ensures that a single bad line does not abort
+        // the entire read, so remaining valid records are still returned.
+        await writeFile(spillPath, '{"value":"recovered-1"}\n{"broken JSON here"}\n{"value":"recovered-2"}\n');
+
+        assert.deepEqual(sink.readAll("scripts", "script/partially-corrupt", "references"), [
+            { value: "recovered-1" },
+            { value: "recovered-2" },
+            { value: "good-4" }
+        ]);
+    } finally {
+        sink.dispose();
+    }
+});
