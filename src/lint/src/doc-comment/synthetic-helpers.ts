@@ -101,7 +101,7 @@ export function getArgumentIndexFromIdentifier(name: unknown) {
 
     const match = (name as string).match(/^argument([0-9]+)$/);
     if (match) {
-        return Number.parseInt(match[1]);
+        return Number.parseInt(match[1], 10);
     }
     return null;
 }
@@ -124,7 +124,7 @@ function getArgumentIndexFromNode(node: any) {
         node.property[0]?.type === "Literal"
     ) {
         const literal = node.property[0];
-        const parsed = Number.parseInt(literal.value);
+        const parsed = Number.parseInt(String(literal.value), 10);
         return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
     }
 

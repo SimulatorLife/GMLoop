@@ -82,7 +82,7 @@ export function toPlainDecimalFromScientificLiteral(scientificText: string): str
         return null;
     }
 
-    const exponent = Number.parseInt(exponentText);
+    const exponent = Number.parseInt(exponentText, 10);
     if (!Number.isFinite(exponent)) {
         return null;
     }
