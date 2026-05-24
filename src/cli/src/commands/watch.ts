@@ -792,7 +792,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         metrics: [],
         errors: [],
         lastSuccessfulPatches: new Map(),
-        maxPatchHistory,
+        bounds: { maxEntries: maxPatchHistory },
         totalPatchCount: 0,
         websocketServer: null,
         statusServer: null,
@@ -904,7 +904,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                         patchCount: runtimeContext.metrics.length,
                         totalPatchCount: runtimeContext.totalPatchCount,
                         patchHistorySize: runtimeContext.patches.length,
-                        maxPatchHistory: runtimeContext.maxPatchHistory,
+                        maxPatchHistory: runtimeContext.bounds.maxEntries,
                         errorCount: runtimeContext.errors.length,
                         recentPatches: runtimeContext.metrics.slice(-10).map((m) => ({
                             id: m.patchId,

@@ -155,7 +155,7 @@ function createTranspilationContext(): TranspilationContext {
         transpiler: new Transpiler.GmlTranspiler(),
         patches: [],
         lastSuccessfulPatches: new Map(),
-        maxPatchHistory: 1,
+        bounds: { maxEntries: 1 },
         totalPatchCount: 0,
         metrics: [],
         errors: [],
