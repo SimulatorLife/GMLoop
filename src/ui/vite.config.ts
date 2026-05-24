@@ -11,7 +11,7 @@ const DEFAULT_PREVIEW_SERVER_PORT = 4175;
 const resolveUiPath = (relativePath: string): string => fileURLToPath(new URL(relativePath, import.meta.url));
 
 const resolvePort = (input: string | undefined, fallbackPort: number): number => {
-    const parsedPort = Number.parseInt(input ?? "");
+    const parsedPort = Number.parseInt(input ?? "", 10);
     if (Number.isNaN(parsedPort)) {
         return fallbackPort;
     }

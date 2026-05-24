@@ -349,7 +349,7 @@ function registerGraphResources(server: McpServer): void {
             description: "Structured graph context bundle for a graph node."
         },
         async (uri, variables) => {
-            const depth = Number.parseInt(uri.searchParams.get("depth") ?? "2");
+            const depth = Number.parseInt(uri.searchParams.get("depth") ?? "2", 10);
             const bundle = await runCliJsonCommand<unknown>([
                 "graph",
                 "context",
@@ -369,7 +369,7 @@ function registerGraphResources(server: McpServer): void {
             description: "Graph neighbors around a graph-qualified node id."
         },
         async (uri, variables) => {
-            const depth = Number.parseInt(uri.searchParams.get("depth") ?? "2");
+            const depth = Number.parseInt(uri.searchParams.get("depth") ?? "2", 10);
             const neighbors = await runCliJsonCommand<unknown>([
                 "graph",
                 "neighbors",

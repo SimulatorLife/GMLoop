@@ -672,7 +672,7 @@ void test("overlay guardrail resolves file configs sequentially for large result
             });
             activeCalls -= 1;
 
-            const numericSuffix = Number.parseInt(filePath.match(/(\d+)\.gml$/u)?.[1] ?? "0");
+            const numericSuffix = Number.parseInt(filePath.match(/(\d+)\.gml$/u)?.[1] ?? "0", 10);
             if (numericSuffix % 2 === 0) {
                 return {
                     plugins: { gml: {} },
@@ -742,7 +742,7 @@ void test("processor enforcement evaluates resolved configs sequentially", async
                 });
                 activeCalls -= 1;
 
-                const numericSuffix = Number.parseInt(filePath.match(/(\d+)\.gml$/u)?.[1] ?? "0");
+                const numericSuffix = Number.parseInt(filePath.match(/(\d+)\.gml$/u)?.[1] ?? "0", 10);
                 return {
                     processor: numericSuffix % 2 === 0 ? "markdown/markdown" : undefined
                 };
