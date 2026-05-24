@@ -116,12 +116,24 @@ function hasEntries(record: unknown): boolean {
     return typeof record === "object" && record !== null && Object.keys(record).length > 0;
 }
 
+const MTIME_RELATIVE_TOLERANCE = 1e-9;
+
+function areMtimeValuesEquivalent(expected: number, actual: number): boolean {
+    if (Core.areNumbersApproximatelyEqual(expected, actual)) {
+        return true;
+    }
+
+    const scale = Math.max(1, Math.abs(expected), Math.abs(actual));
+    return Math.abs(expected - actual) <= scale * MTIME_RELATIVE_TOLERANCE;
+}
+
 /**
  * Compares two mtime maps for equality.
  *
- * Numeric values are compared with `Core.areNumbersApproximatelyEqual` to
- * tolerate floating-point rounding on platforms where `stat.mtimeMs` is not
- * an integer. All other value types are compared with strict equality.
+ * Numeric values are compared with an mtime-specific tolerance policy that
+ * combines `Core.areNumbersApproximatelyEqual` with a small relative fallback
+ * window to tolerate floating-point rounding on platforms where `stat.mtimeMs`
+ * is not an integer. All other value types are compared with strict equality.
  *
  * Returns `true` when both maps have the same keys with matching values.
  */
@@ -145,7 +157,7 @@ function areMtimeMapsEqual(expected: Record<string, unknown>, actual: Record<str
         const actualValue = actual[key];
 
         if (typeof value === "number" && typeof actualValue === "number") {
-            return Core.areNumbersApproximatelyEqual(value, actualValue);
+            return areMtimeValuesEquivalent(value, actualValue);
         }
 
         return actualValue === value;
