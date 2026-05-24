@@ -49,3 +49,14 @@ void test("mcp command is excluded from MCP tool catalog", () => {
         false
     );
 });
+
+void test("object event update MCP tool schema includes write mode option", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+    const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_object_event_update");
+    assert.ok(entry);
+
+    const writeField = entry.fields.find((field) => field.attributeName === "write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+});
