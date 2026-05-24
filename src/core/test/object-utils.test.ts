@@ -11,6 +11,8 @@ import {
     incrementMapValue,
     isObjectLike,
     isPlainObject,
+    readCxcDxStore,
+    readRuntimeObjectPool,
     sortObjectKeys,
     withDefinedValue,
     withObjectLike
@@ -450,4 +452,73 @@ void test("sortObjectKeys recursively sorts object keys", () => {
     assert.deepStrictEqual(Object.keys(result as object), ["a", "d", "z"]);
     assert.deepStrictEqual(Object.keys((result as any).a), ["b", "c"]);
     assert.deepStrictEqual(Object.keys((result as any).d[0]), ["e", "f"]);
+});
+
+void test("readRuntimeObjectPool returns undefined when globals is nullish", () => {
+    assert.strictEqual(readRuntimeObjectPool(undefined), undefined);
+});
+
+void test("readRuntimeObjectPool returns undefined when g_RunRoom is absent", () => {
+    const globals: Record<string, unknown> = {};
+    assert.strictEqual(readRuntimeObjectPool(globals), undefined);
+});
+
+void test("readRuntimeObjectPool returns undefined when g_RunRoom is a primitive", () => {
+    const globals: Record<string, unknown> = { g_RunRoom: 42 };
+    assert.strictEqual(readRuntimeObjectPool(globals), undefined);
+});
+
+void test("readRuntimeObjectPool returns undefined when m_Active is absent", () => {
+    const globals: Record<string, unknown> = { g_RunRoom: {} };
+    assert.strictEqual(readRuntimeObjectPool(globals), undefined);
+});
+
+void test("readRuntimeObjectPool returns undefined when m_Active is a primitive", () => {
+    const globals: Record<string, unknown> = { g_RunRoom: { m_Active: "not-an-object" } };
+    assert.strictEqual(readRuntimeObjectPool(globals), undefined);
+});
+
+void test("readRuntimeObjectPool returns pool value when the chain is fully populated", () => {
+    const poolValue = [{ id: 1 }, { id: 2 }];
+    const globals: Record<string, unknown> = {
+        g_RunRoom: { m_Active: { pool: poolValue } }
+    };
+    assert.strictEqual(readRuntimeObjectPool(globals), poolValue);
+});
+
+void test("readRuntimeObjectPool returns pool value even when it is not an array", () => {
+    const globals: Record<string, unknown> = {
+        g_RunRoom: { m_Active: { pool: "not-an-array" } }
+    };
+    assert.strictEqual(readRuntimeObjectPool(globals), "not-an-array");
+});
+
+void test("readCxcDxStore returns undefined when globals is nullish", () => {
+    assert.strictEqual(readCxcDxStore(undefined), undefined);
+});
+
+void test("readCxcDxStore returns undefined when _cx is absent", () => {
+    const globals: Record<string, unknown> = {};
+    assert.strictEqual(readCxcDxStore(globals), undefined);
+});
+
+void test("readCxcDxStore returns undefined when _cx is a primitive", () => {
+    const globals: Record<string, unknown> = { _cx: 42 };
+    assert.strictEqual(readCxcDxStore(globals), undefined);
+});
+
+void test("readCxcDxStore returns undefined when _dx is absent", () => {
+    const globals: Record<string, unknown> = { _cx: {} };
+    assert.strictEqual(readCxcDxStore(globals), undefined);
+});
+
+void test("readCxcDxStore returns undefined when _dx is a primitive", () => {
+    const globals: Record<string, unknown> = { _cx: { _dx: "not-an-object" } };
+    assert.strictEqual(readCxcDxStore(globals), undefined);
+});
+
+void test("readCxcDxStore returns the _dx record when fully populated", () => {
+    const dxRecord = { key: "value" };
+    const globals: Record<string, unknown> = { _cx: { _dx: dxRecord } };
+    assert.strictEqual(readCxcDxStore(globals), dxRecord);
 });
