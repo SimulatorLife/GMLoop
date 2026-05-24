@@ -143,6 +143,7 @@ pnpm run cli -- transpile --write --path /absolute/path/to/MyGame
 | `@gmloop/core` | `src/core/` | Shared AST/types/helpers |
 | `@gmloop/cli` | `src/cli/` | Unified command-line entrypoints |
 | `@gmloop/mcp` | `src/mcp/` | MCP server surface for AI tooling integrations |
+| `@gmloop/ui` | `src/ui/` | Cross-project UI surfaces (graph, docs, fix, live-reload, playground) |
 
 ## Everyday commands
 
