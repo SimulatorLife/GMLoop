@@ -346,6 +346,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                               <input
                                   class="rule-details-search"
                                   type="text"
+                                  aria-label="Search ${parameters.label}"
                                   placeholder="Search ${parameters.label.toLowerCase()}..."
                                   .value=${parameters.searchQuery}
                                   @input=${(event: Event) => {
