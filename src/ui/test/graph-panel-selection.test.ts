@@ -30,6 +30,8 @@ function createGraphModel(): GraphVisualizationUiModel {
                     graphId: "project",
                     id: "script-node",
                     kind: "script",
+                    lineEnd: 14,
+                    lineStart: 10,
                     name: "configure_globals",
                     resourcePath: "scripts/configure_globals/configure_globals.yy",
                     snippet: "",
@@ -74,5 +76,6 @@ void test("graph panel keeps selected node details visible until another node is
     const rendered = renderTemplateValue(panel.renderForTest());
     assert.match(rendered, /id="tooltip" class="visible"/u);
     assert.match(rendered, /configure_globals/u);
+    assert.match(rendered, /lines 10-14/u);
     assert.match(rendered, /Script that configures global values\./u);
 });

@@ -40,6 +40,8 @@ function createMockModel(): GraphVisualizationUiModel {
                     graphId: "project",
                     id: "node-1",
                     kind: "object",
+                    lineEnd: null,
+                    lineStart: null,
                     name: "obj_player",
                     resourcePath: "objects/obj_player",
                     snippet: "",
