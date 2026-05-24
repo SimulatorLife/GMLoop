@@ -49,6 +49,8 @@ function createGraphModel(): GraphVisualizationUiModel {
                     graphId: "project",
                     id: "object-node",
                     kind: "object",
+                    lineEnd: null,
+                    lineStart: null,
                     name: "obj_player",
                     resourcePath: "objects/obj_player/obj_player.yy",
                     snippet: "",

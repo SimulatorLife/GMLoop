@@ -233,6 +233,8 @@ void test("graph visualization bundle preserves relationship edge kinds in expor
                     graphId: "project",
                     id: "project::resource::sprites/spr_player/spr_player.yy",
                     kind: "sprite",
+                    lineEnd: null,
+                    lineStart: null,
                     name: "spr_player",
                     resourcePath: "sprites/spr_player/spr_player.yy",
                     snippet: "",
