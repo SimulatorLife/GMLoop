@@ -20,7 +20,13 @@ class TestableGmGraphPanel extends GmGraphPanel {
 function createGraphModel(): GraphVisualizationUiModel {
     return {
         data: {
-            edges: [],
+            edges: [
+                {
+                    source: "script-node",
+                    target: "object-node",
+                    type: "references"
+                }
+            ],
             generatedAt: "2026-01-01T00:00:00.000Z",
             graphs: [],
             nodes: [
@@ -34,6 +40,17 @@ function createGraphModel(): GraphVisualizationUiModel {
                     resourcePath: "scripts/configure_globals/configure_globals.yy",
                     snippet: "",
                     summary: "Script that configures global values."
+                },
+                {
+                    displayName: "obj_player",
+                    filePath: null,
+                    graphId: "project",
+                    id: "object-node",
+                    kind: "object",
+                    name: "obj_player",
+                    resourcePath: "objects/obj_player/obj_player.yy",
+                    snippet: "",
+                    summary: "Player object."
                 }
             ],
             projectRoot: "/tmp/project"
@@ -75,4 +92,14 @@ void test("graph panel keeps selected node details visible until another node is
     assert.match(rendered, /id="tooltip" class="visible"/u);
     assert.match(rendered, /configure_globals/u);
     assert.match(rendered, /Script that configures global values\./u);
+});
+
+void test("graph panel renders directional edge markers for non-call relationships", () => {
+    const panel = new TestableGmGraphPanel();
+    panel.model = createGraphModel();
+    panel.state = createGraphState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+    assert.match(rendered, /id=arrow-references/u);
+    assert.match(rendered, /marker-end=url\(#arrow-references\)/u);
 });

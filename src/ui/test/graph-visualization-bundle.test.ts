@@ -181,7 +181,7 @@ void test("graph visualization module script embeds workspace rule catalogs when
     assert.match(script, /Raw gmloop\.json/u);
 });
 
-void test("graph visualization bundle exposes object inheritance as a readable edge filter and arrow", async () => {
+void test("graph visualization bundle preserves relationship edge kinds in exported payload", async () => {
     const bundle = await renderGraphVisualizationBundle(
         {
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -191,6 +191,11 @@ void test("graph visualization bundle exposes object inheritance as a readable e
                     source: "project::resource::objects/obj_child/obj_child.yy",
                     target: "project::resource::objects/obj_parent/obj_parent.yy",
                     type: "inherits"
+                },
+                {
+                    source: "project::resource::objects/obj_child/obj_child.yy",
+                    target: "project::resource::sprites/spr_player/spr_player.yy",
+                    type: "references"
                 }
             ],
             nodes: [
@@ -215,6 +220,17 @@ void test("graph visualization bundle exposes object inheritance as a readable e
                     resourcePath: "objects/obj_parent/obj_parent.yy",
                     snippet: "",
                     summary: "Object 'obj_parent'."
+                },
+                {
+                    displayName: "spr_player",
+                    filePath: null,
+                    graphId: "project",
+                    id: "project::resource::sprites/spr_player/spr_player.yy",
+                    kind: "sprite",
+                    name: "spr_player",
+                    resourcePath: "sprites/spr_player/spr_player.yy",
+                    snippet: "",
+                    summary: "Sprite 'spr_player'."
                 }
             ],
             projectRoot: "/tmp/project"
@@ -229,7 +245,7 @@ void test("graph visualization bundle exposes object inheritance as a readable e
         .join("\n");
 
     assert.match(html, /"type":"inherits"/u);
-    assert.match(script, /arrow-inherits/u);
+    assert.match(html, /"type":"references"/u);
     assert.match(script, /inherits/u);
 });
 
