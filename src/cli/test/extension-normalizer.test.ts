@@ -37,3 +37,9 @@ void test("normalizeExtensions handles brace-glob extension lists", () => {
 
     assert.deepStrictEqual(result, [".gml", ".yy"]);
 });
+
+void test("normalizeExtensions ignores negated glob entries", () => {
+    const result = normalizeExtensions(["*.gml", "!*.yy"]);
+
+    assert.deepStrictEqual(result, [".gml"]);
+});

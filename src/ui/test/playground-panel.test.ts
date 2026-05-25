@@ -409,3 +409,71 @@ void test("playground panel falls back to workspace catalogs when project config
     assert.match(rendered, /Lint Rules/u);
     assert.match(rendered, /Codemods/u);
 });
+
+/**
+ * Verify that format options from the project configuration catalog are registered
+ * in the enabled-format-options state map when the model changes. This prevents a bug
+ * where selecting a format option in the playground would not take effect if the option
+ * was not yet in the private state map.
+ */
+void test("playground panel syncs format options from project configuration catalog into internal state map", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = {
+        ...createMockModel(),
+        projectConfigurationCatalog: {
+            format: {
+                entries: [
+                    {
+                        description: "Preferred maximum line width.",
+                        name: "printWidth",
+                        source: "default",
+                        value: 100
+                    },
+                    {
+                        description: "Use trailing commas.",
+                        name: "trailingComma",
+                        source: "default",
+                        value: false
+                    }
+                ]
+            },
+            gameMakerCli: {
+                available: false,
+                cliCommands: [],
+                error: null,
+                invocation: null,
+                mcpServer: {
+                    available: false,
+                    error: null,
+                    name: null,
+                    projectPath: null,
+                    serverId: null,
+                    sourcePath: null,
+                    version: null
+                },
+                mcpTools: [],
+                version: null
+            },
+            githubRepositoryUrl: "",
+            gmloop: {
+                configPath: null,
+                exists: false,
+                projectRoot: "/tmp/test",
+                rawConfig: {}
+            },
+            lint: { rules: [], rulesets: [], ruleset: null },
+            refactor: { codemods: [] }
+        }
+    };
+    panel.state = createMockState();
+    panel.requestUpdate();
+    void 0;
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // The format option section must be visible with entries from the project config.
+    // The section count badge shows how many format options are registered in the internal map
+    // (even when the section is collapsed).
+    assert.match(rendered, /Format Options/u);
+    assert.match(rendered, /0\/2 enabled/u);
+});

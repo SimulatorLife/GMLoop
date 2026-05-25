@@ -15,7 +15,12 @@ function coerceExtensionValue(value: unknown): string | null {
         return null;
     }
 
-    const cleaned = value
+    const trimmedValue = value.trim();
+    if (trimmedValue.startsWith("!")) {
+        return null;
+    }
+
+    const cleaned = trimmedValue
         .toLowerCase()
         .replace(/.*[\\/]/, "")
         .replace(/^[*?]+/, "");

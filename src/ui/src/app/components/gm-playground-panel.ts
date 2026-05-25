@@ -48,6 +48,19 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #enabledCodemods = new Map<string, boolean>();
 
+    #syncEnabledFormatOptionsFromModel(model: GraphVisualizationUiModel | null): void {
+        const formatOptions = this.#resolveFormatOptionsForModel(model);
+        for (const option of formatOptions) {
+            if (!this.#enabledFormatOptions.has(option.name)) {
+                this.#enabledFormatOptions.set(option.name, false);
+            }
+        }
+    }
+
+    #onModelChange = (): void => {
+        this.#syncEnabledFormatOptionsFromModel(this.model);
+    };
+
     #showFormatDetails = false;
 
     #showLintDetails = false;
@@ -77,6 +90,13 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         }
         if (this.state?.activePage === "playground") {
             void this.#processInput();
+        }
+    }
+
+    protected willUpdate(changedProperties: PropertyValues): void {
+        super.willUpdate(changedProperties);
+        if (changedProperties.has("model")) {
+            this.#onModelChange();
         }
     }
 
@@ -234,8 +254,14 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     }
 
     #resolveFormatOptions(): ReadonlyArray<{ description: string; name: string }> {
-        const workspaceRules = this.model?.documentationCatalogs?.workspaceRules;
-        const configuredEntries = this.model?.projectConfigurationCatalog?.format.entries;
+        return this.#resolveFormatOptionsForModel(this.model);
+    }
+
+    #resolveFormatOptionsForModel(
+        model: GraphVisualizationUiModel | null
+    ): ReadonlyArray<{ description: string; name: string }> {
+        const workspaceRules = model?.documentationCatalogs?.workspaceRules;
+        const configuredEntries = model?.projectConfigurationCatalog?.format.entries;
         if (configuredEntries && configuredEntries.length > 0) {
             return configuredEntries.map((entry) => ({ description: entry.description, name: entry.name }));
         }
