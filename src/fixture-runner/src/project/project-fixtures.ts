@@ -3,10 +3,11 @@ import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat } from "no
 import os from "node:os";
 import path from "node:path";
 
-import { Core } from "@gmloop/core";
-import { DEFAULT_PROJECT_EXCLUDES, mergeExcludeRules, type ProjectExcludeRules } from "@gmloop/core/project-config";
+import { Core, type ProjectExcludeRules } from "@gmloop/core";
 
 const DEFAULT_COPY_DIRECTORY_NAME = "project";
+
+export const DEFAULT_EXTERNAL_PROJECT_EXCLUDES: Required<ProjectExcludeRules> = Core.DEFAULT_PROJECT_EXCLUDES;
 
 /**
  * Copied project fixture handle returned by {@link copyExternalProjectFixture}.
@@ -64,7 +65,7 @@ export interface ProjectChangeSummary {
 export type JsonCliPayload = Record<string, unknown> | ReadonlyArray<unknown>;
 
 function shouldExcludeRelativePath(relativePath: string, excludes: Required<ProjectExcludeRules>): boolean {
-    const normalizedPath = Core.path.normalizeRelativePath(relativePath);
+    const normalizedPath = Core.toPosixPath(relativePath);
     const pathSegments = normalizedPath.split("/");
     const entryName = pathSegments.at(-1) ?? "";
     const extension = path.extname(entryName);
@@ -89,7 +90,7 @@ async function collectIncludedFilePaths(
         await Promise.all(
             directoryEntries.map(async (entry) => {
                 const absoluteEntryPath = path.join(currentDirectoryPath, entry.name);
-                const relativePath = Core.path.normalizeRelativePath(path.relative(rootPath, absoluteEntryPath));
+                const relativePath = Core.toPosixPath(path.relative(rootPath, absoluteEntryPath));
 
                 if (shouldExcludeRelativePath(relativePath, excludes)) {
                     return;
@@ -151,7 +152,7 @@ export async function copyExternalProjectFixture(
     const sourceProjectPath = path.resolve(options.sourceProjectPath);
     await assertSourceProjectDirectory(sourceProjectPath);
 
-    const excludes = mergeExcludeRules(DEFAULT_PROJECT_EXCLUDES, options.excludes);
+    const excludes = Core.mergeExcludeRules(DEFAULT_EXTERNAL_PROJECT_EXCLUDES, options.excludes);
     const copiedRelativeFilePaths = await collectIncludedFilePaths(sourceProjectPath, excludes);
     const temporaryRootPath =
         options.temporaryRootPath ?? (await mkdtemp(path.join(os.tmpdir(), "gmloop-external-project-")));
@@ -204,7 +205,7 @@ export async function createProjectFingerprint(
     excludes: ProjectExcludeRules = {}
 ): Promise<ProjectFingerprint> {
     const rootPath = path.resolve(projectRootPath);
-    const mergedExcludes = mergeExcludeRules(DEFAULT_PROJECT_EXCLUDES, excludes);
+    const mergedExcludes = Core.mergeExcludeRules(DEFAULT_EXTERNAL_PROJECT_EXCLUDES, excludes);
     const relativeFilePaths = await collectIncludedFilePaths(rootPath, mergedExcludes);
     const files = await Promise.all(
         relativeFilePaths.map(async (relativePath) => {

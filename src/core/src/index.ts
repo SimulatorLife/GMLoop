@@ -64,6 +64,7 @@ export type { StripCommentsTransformOptions } from "./comments/strip-comments-tr
 export type { FsFacade } from "./fs/io.js";
 export { defaultFsFacade as coreDefaultFsFacade } from "./fs/io.js";
 export type { GmloopProjectConfig } from "./project-config/gmloop-project-config.js";
+export type { ProjectExcludeRules } from "./project-config/project-excludes.js";
 export type { FeatherDiagnostic, FeatherMetadata } from "./resources/feather-metadata.js";
 export type {
     DeprecatedIdentifierDiagnosticOwner,
