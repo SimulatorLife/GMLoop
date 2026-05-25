@@ -76,6 +76,27 @@ export function findPreviousNonWhitespaceCharacter(
     return sourceText[previousIndex];
 }
 
+/**
+ * Finds the nearest non-whitespace character after a source offset.
+ *
+ * @param sourceText Full source text to scan.
+ * @param startIndex Offset whose following text should be inspected.
+ * @returns Index of the nearest non-whitespace character after `startIndex`,
+ *   or `null` if none is found.
+ */
+export function findNextNonWhitespaceIndex(sourceText: string, startIndex: number): number | null {
+    let cursor = startIndex + 1;
+    while (cursor < sourceText.length) {
+        if (!/\s/u.test(sourceText[cursor])) {
+            return cursor;
+        }
+
+        cursor += 1;
+    }
+
+    return null;
+}
+
 export type AstNodeRecord = Record<string, unknown>;
 
 export function isAstNodeRecord(value: unknown): value is AstNodeRecord {

@@ -2,6 +2,7 @@ import { Core } from "@gmloop/core";
 
 import { forEachScientificNotationToken } from "../malformed/scientific-notation-scan.js";
 import { recoverParseSourceFromMissingBrace } from "../malformed/source-preprocessing.js";
+import { findNextNonWhitespaceIndex, findPreviousNonWhitespaceIndex } from "../rules/gml/rule-base-helpers.js";
 
 export type RecoveryMode = "none" | "limited";
 
@@ -66,26 +67,6 @@ function canStartArgumentExpression(character: string): boolean {
 
 function isArgumentBoundaryCharacter(character: string): boolean {
     return character === ")" || character === "]" || character === "}" || character === ",";
-}
-
-function findPreviousNonWhitespaceIndex(sourceText: string, fromIndex: number): number {
-    for (let cursor = fromIndex; cursor >= 0; cursor -= 1) {
-        if (!/\s/u.test(sourceText[cursor] ?? "")) {
-            return cursor;
-        }
-    }
-
-    return -1;
-}
-
-function findNextNonWhitespaceIndex(sourceText: string, fromIndex: number): number {
-    for (let cursor = fromIndex; cursor < sourceText.length; cursor += 1) {
-        if (!/\s/u.test(sourceText[cursor] ?? "")) {
-            return cursor;
-        }
-    }
-
-    return -1;
 }
 
 function maskCommentsAndStringsForRecovery(sourceText: string): string {
@@ -207,8 +188,8 @@ function isLikelyCallArgumentGap(sourceText: string, leftIndex: number): boolean
     while (cursor >= 0) {
         const character = sourceText[cursor] ?? "";
         if (character === "(") {
-            const calleeEndIndex = findPreviousNonWhitespaceIndex(sourceText, cursor - 1);
-            if (calleeEndIndex === -1) {
+            const calleeEndIndex = findPreviousNonWhitespaceIndex(sourceText, cursor, false);
+            if (calleeEndIndex === null) {
                 return false;
             }
 
@@ -218,8 +199,8 @@ function isLikelyCallArgumentGap(sourceText: string, leftIndex: number): boolean
                     return false;
                 }
 
-                const beforeCalleeIndex = findPreviousNonWhitespaceIndex(sourceText, calleeToken.start - 1);
-                if (beforeCalleeIndex === -1) {
+                const beforeCalleeIndex = findPreviousNonWhitespaceIndex(sourceText, calleeToken.start, false);
+                if (beforeCalleeIndex === null) {
                     return true;
                 }
 
@@ -576,9 +557,9 @@ function createArgumentSeparatorProjection(sourceText: string): Readonly<{
         }
         const whitespaceRunEnd = index - 1;
 
-        const previousIndex = findPreviousNonWhitespaceIndex(recoveryScanSource, whitespaceRunStart - 1);
-        const nextIndex = findNextNonWhitespaceIndex(recoveryScanSource, whitespaceRunEnd + 1);
-        if (previousIndex === -1 || nextIndex === -1) {
+        const previousIndex = findPreviousNonWhitespaceIndex(recoveryScanSource, whitespaceRunStart, false);
+        const nextIndex = findNextNonWhitespaceIndex(recoveryScanSource, whitespaceRunEnd);
+        if (previousIndex === null || nextIndex === null) {
             continue;
         }
 
