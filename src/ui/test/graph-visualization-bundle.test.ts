@@ -91,6 +91,8 @@ void test("graph visualization module script embeds serialized graph payload and
                     lineStart: null,
                     name: "InterplanetaryFootball",
                     resourcePath: "InterplanetaryFootball.yyp",
+                    scopeId: null,
+                    scipSymbol: null,
                     snippet: "",
                     summary: "project 'InterplanetaryFootball'. Defined in InterplanetaryFootball.yyp."
                 }
@@ -211,6 +213,8 @@ void test("graph visualization bundle preserves relationship edge kinds in expor
                     lineStart: null,
                     name: "obj_child",
                     resourcePath: "objects/obj_child/obj_child.yy",
+                    scopeId: null,
+                    scipSymbol: null,
                     snippet: "",
                     summary: "Object 'obj_child'."
                 },
@@ -224,6 +228,8 @@ void test("graph visualization bundle preserves relationship edge kinds in expor
                     lineStart: null,
                     name: "obj_parent",
                     resourcePath: "objects/obj_parent/obj_parent.yy",
+                    scopeId: null,
+                    scipSymbol: null,
                     snippet: "",
                     summary: "Object 'obj_parent'."
                 },
@@ -237,6 +243,8 @@ void test("graph visualization bundle preserves relationship edge kinds in expor
                     lineStart: null,
                     name: "spr_player",
                     resourcePath: "sprites/spr_player/spr_player.yy",
+                    scopeId: null,
+                    scipSymbol: null,
                     snippet: "",
                     summary: "Sprite 'spr_player'."
                 }

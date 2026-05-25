@@ -864,6 +864,8 @@ void test("graph visualization data keeps top-level language symbols connected w
                     (candidate) => candidate.kind === expectedNode.kind && candidate.name === expectedNode.name
                 );
                 assert.ok(node, `expected ${expectedNode.kind} ${expectedNode.name} node`);
+                assert.equal(typeof node.scipSymbol, "string", `expected ${expectedNode.kind} to include scipSymbol`);
+                assert.equal(typeof node.scopeId, "string", `expected ${expectedNode.kind} to include scopeId`);
                 assert.ok(
                     connectedVisibleNodeIds.has(node.id),
                     `expected ${expectedNode.kind} ${expectedNode.name} to have a visible non-file edge`
