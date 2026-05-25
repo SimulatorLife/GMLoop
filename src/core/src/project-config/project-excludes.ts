@@ -1,4 +1,4 @@
-import { normalizeRelativePath } from "../utils/path.js";
+import { toPosixPath } from "../fs/path.js";
 
 export interface ProjectExcludeRules {
     directoryNames?: ReadonlyArray<string>;
@@ -72,10 +72,10 @@ export function mergeExcludeRules(
     }
 
     for (const name of sourceExcludes.relativePaths ?? []) {
-        mergedRelativePaths.add(normalizeRelativePath(name));
+        mergedRelativePaths.add(toPosixPath(name));
     }
     for (const name of newExcludes.relativePaths ?? []) {
-        mergedRelativePaths.add(normalizeRelativePath(name));
+        mergedRelativePaths.add(toPosixPath(name));
     }
 
     for (const name of sourceExcludes.extensions ?? []) {

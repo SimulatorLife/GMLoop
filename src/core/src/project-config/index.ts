@@ -4,4 +4,4 @@ export {
     loadGmloopProjectConfig,
     parseGmloopProjectConfig
 } from "./gmloop-project-config.js";
-export { DEFAULT_PROJECT_EXCLUDES, type ProjectExcludeRules } from "./project-excludes.js";
+export { DEFAULT_PROJECT_EXCLUDES, mergeExcludeRules, type ProjectExcludeRules } from "./project-excludes.js";

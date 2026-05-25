@@ -18,6 +18,7 @@ export type {
     MutableDocCommentLines,
     MutableGameMakerAstNode,
     ParserTransform,
+    ProjectExcludeRules,
     ProjectMetadataSchemaName,
     StringCommentScanState,
     StripCommentsTransformOptions
