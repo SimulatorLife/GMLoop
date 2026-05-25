@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
+import type { DocCommentAlignmentEdit, DocCommentAlignmentResult } from "../../types.js";
 import { applySourceTextEdits } from "../codemod-helpers.js";
-import type { DocCommentAlignmentEdit, DocCommentAlignmentResult } from "./types.js";
 
 type FunctionLikeNode = Readonly<{
     type: "FunctionDeclaration" | "ConstructorDeclaration";
