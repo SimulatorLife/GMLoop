@@ -188,7 +188,7 @@ function isLikelyCallArgumentGap(sourceText: string, leftIndex: number): boolean
     while (cursor >= 0) {
         const character = sourceText[cursor] ?? "";
         if (character === "(") {
-            const calleeEndIndex = findPreviousNonWhitespaceIndex(sourceText, cursor - 1, false);
+            const calleeEndIndex = findPreviousNonWhitespaceIndex(sourceText, cursor, false);
             if (calleeEndIndex === null) {
                 return false;
             }
@@ -199,7 +199,7 @@ function isLikelyCallArgumentGap(sourceText: string, leftIndex: number): boolean
                     return false;
                 }
 
-                const beforeCalleeIndex = findPreviousNonWhitespaceIndex(sourceText, calleeToken.start - 1, false);
+                const beforeCalleeIndex = findPreviousNonWhitespaceIndex(sourceText, calleeToken.start, false);
                 if (beforeCalleeIndex === null) {
                     return true;
                 }
@@ -557,8 +557,8 @@ function createArgumentSeparatorProjection(sourceText: string): Readonly<{
         }
         const whitespaceRunEnd = index - 1;
 
-        const previousIndex = findPreviousNonWhitespaceIndex(recoveryScanSource, whitespaceRunStart - 1, false);
-        const nextIndex = findNextNonWhitespaceIndex(recoveryScanSource, whitespaceRunEnd + 1);
+        const previousIndex = findPreviousNonWhitespaceIndex(recoveryScanSource, whitespaceRunStart, false);
+        const nextIndex = findNextNonWhitespaceIndex(recoveryScanSource, whitespaceRunEnd);
         if (previousIndex === null || nextIndex === null) {
             continue;
         }
