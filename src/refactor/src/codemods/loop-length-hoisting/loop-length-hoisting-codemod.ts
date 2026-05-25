@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
+import type { LoopLengthHoistingEdit, LoopLengthHoistingResult } from "../../types.js";
 import { applySourceTextEdits } from "../codemod-helpers.js";
-import type { LoopLengthHoistingEdit, LoopLengthHoistingResult } from "./types.js";
 
 const ARRAY_LENGTH_CALL_TEXT = "array_length(";
 const DEFAULT_HOIST_IDENTIFIER = "len";

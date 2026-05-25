@@ -1,7 +1,7 @@
 import { Lint } from "@gmloop/lint";
 
+import type { ScientificNotationEdit, ScientificNotationResult } from "../../types.js";
 import { applySourceTextEdits } from "../codemod-helpers.js";
-import type { ScientificNotationEdit, ScientificNotationResult } from "./types.js";
 
 /**
  * Replace unsupported scientific-notation numeric literals with equivalent
