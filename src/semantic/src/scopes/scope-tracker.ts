@@ -48,30 +48,6 @@ import type {
     SymbolScopeSummary
 } from "./types.js";
 
-/**
- * Resolves a scope override string to a scope object.
- */
-function resolveStringScopeOverride(
-    tracker: ScopeTracker,
-    scopeOverride: string,
-    currentScope: Scope | null
-): Scope | null {
-    if (isScopeOverrideKeyword(scopeOverride)) {
-        return scopeOverride === SCOPE_OVERRIDE_KEYWORD ? (tracker.getRootScope() ?? currentScope) : currentScope;
-    }
-
-    const found = tracker.getScopeStack().find((scope) => scope.id === scopeOverride);
-
-    if (found) {
-        return found;
-    }
-
-    const keywords = formatKnownScopeOverrideKeywords().join(", ");
-    throw new RangeError(
-        `Unknown scope override string '${String(scopeOverride)}'. Expected one of: ${keywords}, or a known scope identifier.`
-    );
-}
-
 const DEFAULT_DECLARATION_ROLE: ScopeRole = Object.freeze({ type: "declaration" });
 const DEFAULT_REFERENCE_ROLE: ScopeRole = Object.freeze({ type: "reference" });
 const EMPTY_INVALIDATION_SET: Array<{ scopeId: string; scopeKind: string; reason: string }> = [];
@@ -80,6 +56,22 @@ const EMPTY_INVALIDATION_SET: Array<{ scopeId: string; scopeKind: string; reason
  * Manages lexical and structural scopes, symbol declarations, and references.
  */
 export class ScopeTracker {
+    private resolveScopeOverrideFromString(scopeOverride: string, currentScope: Scope | null): Scope | null {
+        if (isScopeOverrideKeyword(scopeOverride)) {
+            return scopeOverride === SCOPE_OVERRIDE_KEYWORD ? (this.getRootScope() ?? currentScope) : currentScope;
+        }
+
+        const found = this.getScopeStack().find((scope) => scope.id === scopeOverride);
+        if (found) {
+            return found;
+        }
+
+        const keywords = formatKnownScopeOverrideKeywords().join(", ");
+        throw new RangeError(
+            `Unknown scope override string '${String(scopeOverride)}'. Expected one of: ${keywords}, or a known scope identifier.`
+        );
+    }
+
     private scopeCounter: number = 0;
     private scopeStack: Scope[];
     private rootScope: Scope | null;
@@ -420,7 +412,7 @@ export class ScopeTracker {
         }
 
         if (typeof scopeOverride === "string") {
-            return resolveStringScopeOverride(this, scopeOverride, currentScope);
+            return this.resolveScopeOverrideFromString(scopeOverride, currentScope);
         }
 
         return currentScope;
