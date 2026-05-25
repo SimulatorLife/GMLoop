@@ -82,10 +82,33 @@ function resolveResourceBaseDirectory(moduleDirectoryPath: string): string {
     return path.resolve(packageDirectoryPath, "../../resources");
 }
 
+function isUnsafeResourcePath(resourcePath: string): boolean {
+    return (
+        resourcePath.length === 0 ||
+        resourcePath === "." ||
+        resourcePath === ".." ||
+        resourcePath.startsWith("../") ||
+        resourcePath.startsWith("/")
+    );
+}
+
 function resolveResourceUrl(resourceName: string): URL {
     const moduleDirectoryPath = path.dirname(fileURLToPath(import.meta.url));
     const resourceBaseDirectory = resolveResourceBaseDirectory(moduleDirectoryPath);
-    return new URL(resourceName, new URL(`${resourceBaseDirectory}/`, "file:"));
+    const normalizedResourcePath = path.posix.normalize(resourceName.replaceAll("\\", "/"));
+    const decodedNormalizedResourcePath = (() => {
+        try {
+            return path.posix.normalize(decodeURIComponent(normalizedResourcePath));
+        } catch {
+            throw new TypeError("Resource name must resolve to a safe relative path within the bundled resources.");
+        }
+    })();
+
+    if (isUnsafeResourcePath(normalizedResourcePath) || isUnsafeResourcePath(decodedNormalizedResourcePath)) {
+        throw new TypeError("Resource name must resolve to a safe relative path within the bundled resources.");
+    }
+
+    return new URL(normalizedResourcePath, new URL(`${resourceBaseDirectory}/`, "file:"));
 }
 
 /**
