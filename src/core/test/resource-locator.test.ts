@@ -40,6 +40,13 @@ void test("resolveBundledResourcePath rejects parent-directory traversal", () =>
     );
 });
 
+void test("resolveBundledResourcePath rejects URL-encoded parent-directory traversal", () => {
+    assert.throws(
+        () => resolveBundledResourcePath("%2e%2e/README.md"),
+        /must resolve to a safe relative path within the bundled resources/u
+    );
+});
+
 void test("resource locator prefers the generated package manifest when present", () => {
     const fixture = createTemporaryCoreWorkspaceFixture();
 
