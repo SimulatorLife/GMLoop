@@ -103,15 +103,10 @@ export function getDefaultProjectIndexParser() {
     return defaultProjectIndexParser;
 }
 
-function resolveProjectIndexParserOverride(options): ((sourceText: string, context?: unknown) => unknown) | null {
-    if (!Core.isObjectLike(options)) {
-        return null;
-    }
+type ProjectIndexParserResolverOptions = {
+    parseGml?: ((sourceText: string, context?: unknown) => unknown) | null;
+};
 
-    const parse = options.parseGml;
-    return typeof parse === "function" ? parse : null;
-}
-
-export function resolveProjectIndexParser(options) {
-    return resolveProjectIndexParserOverride(options) ?? defaultProjectIndexParser;
+export function resolveProjectIndexParser(options: ProjectIndexParserResolverOptions | null = null) {
+    return options?.parseGml ?? defaultProjectIndexParser;
 }

@@ -1324,14 +1324,61 @@ function projectRelationshipEdges(context: ProjectionContext): void {
             continue;
         }
 
+        const edgeType = classifyAssetReferenceEdgeType(reference);
         context.edgeRecords.push({
-            fromId: createGraphNodeId(context.graphId, "resource", fromResourcePath),
+            fromId: resolveAssetReferenceSourceNodeId(context, reference, fromResourcePath, edgeType),
             toId: createGraphNodeId(context.graphId, "resource", targetPath),
-            type: classifyAssetReferenceEdgeType(reference)
+            type: edgeType
         });
     }
 
     projectGlobalVariableReferenceEdges(context);
+}
+
+function resolveAssetReferenceSourceNodeId(
+    context: ProjectionContext,
+    reference: Record<string, unknown>,
+    fromResourcePath: string,
+    edgeType: GraphEdgeType
+): string {
+    if (edgeType !== "placed_in_room") {
+        return createGraphNodeId(context.graphId, "resource", fromResourcePath);
+    }
+
+    const roomLayerNodeId = resolveRoomLayerNodeIdFromAssetReference(context, reference, fromResourcePath);
+    return roomLayerNodeId ?? createGraphNodeId(context.graphId, "resource", fromResourcePath);
+}
+
+function resolveRoomLayerNodeIdFromAssetReference(
+    context: ProjectionContext,
+    reference: Record<string, unknown>,
+    roomResourcePath: string
+): string | null {
+    const propertyPath = getString(reference.propertyPath);
+    if (!propertyPath) {
+        return null;
+    }
+
+    const layerMatch = /^layers\.(\d+)\./u.exec(propertyPath);
+    const layerIndex = Number(layerMatch?.[1]);
+    if (!Number.isInteger(layerIndex) || layerIndex < 0) {
+        return null;
+    }
+
+    const roomRecord = asRecord(asRecord(context.projectIndex.resources)[roomResourcePath]);
+    const layers = roomRecord.layers;
+    if (!Array.isArray(layers) || layerIndex >= layers.length) {
+        return null;
+    }
+
+    const layerRecord = asRecord(layers[layerIndex]);
+    const layerName = getString(layerRecord.name);
+    const layerResourceType = getString(layerRecord.resourceType);
+    if (!layerName || !isGraphRoomLayerResourceType(layerResourceType)) {
+        return null;
+    }
+
+    return createGraphNodeId(context.graphId, "scope", `scope:room-layer:${roomResourcePath}:${layerName}`);
 }
 
 function classifyAssetReferenceEdgeType(reference: Record<string, unknown>): GraphEdgeType {
