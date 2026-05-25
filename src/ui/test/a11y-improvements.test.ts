@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { GRAPH_UI_EVENT_NAVIGATE_PAGE } from "../src/app/components/events.js";
+import { GmAppHeader } from "../src/app/components/gm-app-header.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmConfigPanel } from "../src/app/components/gm-config-panel.js";
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
@@ -16,6 +17,12 @@ class TestableGmAppShell extends GmAppShell {
 }
 
 class TestableGmConfigPanel extends GmConfigPanel {
+    public renderForTest(): unknown {
+        return this.render();
+    }
+}
+
+class TestableGmAppHeader extends GmAppHeader {
     public renderForTest(): unknown {
         return this.render();
     }
@@ -162,4 +169,17 @@ void test("GmDocsPanel uses a dedicated id for MCP docs subview to avoid id coll
 
     assert.equal(Array.from(rendered.matchAll(/id="docs-mcp-page"/gu)).length, 1);
     assert.equal(Array.from(rendered.matchAll(/id="mcp-page"/gu)).length, 0);
+});
+
+void test("GmAppHeader exposes aria-current for the active top-level page only", () => {
+    const header = new TestableGmAppHeader();
+    header.model = createMockModel();
+    header.state = createMockState();
+    header.state = { ...header.state, activePage: "docs" };
+
+    const rendered = renderTemplateValue(header.renderForTest());
+
+    assert.match(rendered, /id="tab-docs"[^>]*aria-current=page/u);
+    assert.doesNotMatch(rendered, /id="tab-graph"[^>]*aria-current=page/u);
+    assert.doesNotMatch(rendered, /id="tab-config"[^>]*aria-current=page/u);
 });
