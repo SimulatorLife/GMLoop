@@ -34,6 +34,18 @@ function getEdgeColor(type: GraphVisualizationEdgeType): string {
     return EDGE_STYLE_BY_TYPE.get(type)?.color ?? "#7f7f7f";
 }
 
+/**
+ * Render legend swatches with the same line semantics used on graph edges so
+ * relationship categories remain visually distinguishable in filter controls.
+ */
+function getEdgeLegendLineStyle(type: GraphVisualizationEdgeType): string {
+    const edgeStyle = EDGE_STYLE_BY_TYPE.get(type);
+    const borderWidth = edgeStyle?.legendBorderWidth ?? "2px";
+    const borderStyle = edgeStyle?.legendBorderStyle ?? "solid";
+    const color = edgeStyle?.color ?? "#7f7f7f";
+    return `border-top: ${borderWidth} ${borderStyle} ${color};`;
+}
+
 function getEdgeDashArray(type: GraphVisualizationEdgeType): string {
     const dashArray = EDGE_STYLE_BY_TYPE.get(type)?.dashArray ?? "none";
     return dashArray === "none" ? "" : dashArray;
@@ -314,7 +326,7 @@ export class GmGraphPanel extends LightDomLitElement {
                                     .checked=${this.#enabledEdgeTypes.has(type)}
                                     @change=${() => this.#toggleEdgeType(type)}
                                 />
-                                <span class="legend-line" style=${`border-color:${getEdgeColor(type)}`}></span>
+                                <span class="legend-line" style=${getEdgeLegendLineStyle(type)}></span>
                                 <span>${formatNodeKindLabel(type)}</span>
                             </label>
                         `
