@@ -88,61 +88,80 @@ void test("identifier case plan provider validates all 4 required service method
     resetIdentifierCasePlanProvider();
 
     // Missing prepareIdentifierCasePlan
-    assert.throws(() => registerIdentifierCasePlanProvider(() => ({}) as never), /prepareIdentifierCasePlan function/);
+    try {
+        registerIdentifierCasePlanProvider(() => ({}) as never);
+        assert.throws(() => resolveIdentifierCasePlanService(), /prepareIdentifierCasePlan/);
+    } finally {
+        resetIdentifierCasePlanProvider();
+    }
 
     // Missing getIdentifierCaseRenameForNode
-    assert.throws(
-        () => registerIdentifierCasePlanProvider(() => ({ prepareIdentifierCasePlan: async () => {} }) as never),
-        /getIdentifierCaseRenameForNode function/
-    );
+    try {
+        registerIdentifierCasePlanProvider(() => ({ prepareIdentifierCasePlan: async () => {} }) as never);
+        assert.throws(() => resolveIdentifierCasePlanService(), /getIdentifierCaseRenameForNode/);
+    } finally {
+        resetIdentifierCasePlanProvider();
+    }
 
     // Missing captureIdentifierCasePlanSnapshot
-    assert.throws(
-        () =>
-            registerIdentifierCasePlanProvider(
-                () =>
-                    ({
-                        prepareIdentifierCasePlan: async () => {},
-                        getIdentifierCaseRenameForNode: () => null
-                    }) as never
-            ),
-        /captureIdentifierCasePlanSnapshot function/
-    );
+    try {
+        registerIdentifierCasePlanProvider(
+            () =>
+                ({
+                    prepareIdentifierCasePlan: async () => {},
+                    getIdentifierCaseRenameForNode: () => null
+                }) as never
+        );
+        assert.throws(() => resolveIdentifierCasePlanService(), /captureIdentifierCasePlanSnapshot/);
+    } finally {
+        resetIdentifierCasePlanProvider();
+    }
 
     // Missing applyIdentifierCasePlanSnapshot
-    assert.throws(
-        () =>
-            registerIdentifierCasePlanProvider(
-                () =>
-                    ({
-                        prepareIdentifierCasePlan: async () => {},
-                        getIdentifierCaseRenameForNode: () => null,
-                        captureIdentifierCasePlanSnapshot: () => ({})
-                    }) as never
-            ),
-        /applyIdentifierCasePlanSnapshot function/
-    );
+    try {
+        registerIdentifierCasePlanProvider(
+            () =>
+                ({
+                    prepareIdentifierCasePlan: async () => {},
+                    getIdentifierCaseRenameForNode: () => null,
+                    captureIdentifierCasePlanSnapshot: () => ({})
+                }) as never
+        );
+        assert.throws(() => resolveIdentifierCasePlanService(), /applyIdentifierCasePlanSnapshot/);
+    } finally {
+        resetIdentifierCasePlanProvider();
+    }
 
     resetIdentifierCasePlanProvider();
 });
 
 void test("resetIdentifierCasePlanProvider restores default service", { concurrency: false }, () => {
     resetIdentifierCasePlanProvider();
-    const before = resolveIdentifierCasePlanService();
+
+    let customLookupCallCount = 0;
 
     registerIdentifierCasePlanProvider(() => ({
         prepareIdentifierCasePlan: async () => {},
-        getIdentifierCaseRenameForNode: () => null,
+        getIdentifierCaseRenameForNode: () => {
+            customLookupCallCount += 1;
+            return "CUSTOM_RENAME";
+        },
         captureIdentifierCasePlanSnapshot: () => ({}),
         applyIdentifierCasePlanSnapshot: () => {}
     }));
 
-    const during = resolveIdentifierCasePlanService();
-    assert.notStrictEqual(during, before, "service should change after registering a custom provider");
+    const customLookupResult = getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" }, {});
+    assert.strictEqual(customLookupResult, "CUSTOM_RENAME", "registered provider should control lookup behavior");
+    assert.strictEqual(customLookupCallCount, 1, "custom provider should receive lookup calls while registered");
 
     resetIdentifierCasePlanProvider();
-    const after = resolveIdentifierCasePlanService();
-    assert.strictEqual(after, before, "service should be restored to default after reset");
+    const afterResetLookupResult = getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" }, {});
+    assert.notStrictEqual(afterResetLookupResult, "CUSTOM_RENAME", "reset should restore default lookup behavior");
+    assert.strictEqual(
+        customLookupCallCount,
+        1,
+        "reset should stop routing lookups to the previously registered provider"
+    );
 
     resetIdentifierCasePlanProvider();
 });
@@ -176,21 +195,65 @@ void test("service caching avoids repeated normalization", { concurrency: false 
 
 void test("registering new provider invalidates cached service", { concurrency: false }, () => {
     resetIdentifierCasePlanProvider();
-    const first = resolveIdentifierCasePlanService();
 
-    registerIdentifierCasePlanProvider(() => ({
-        prepareIdentifierCasePlan: async () => {},
-        getIdentifierCaseRenameForNode: () => null,
-        captureIdentifierCasePlanSnapshot: () => ({}),
-        applyIdentifierCasePlanSnapshot: () => {}
-    }));
+    let firstProviderFactoryCallCount = 0;
+    let firstProviderLookupCallCount = 0;
 
-    const second = resolveIdentifierCasePlanService();
-    assert.notStrictEqual(second, first, "new provider should create a different cached service");
+    registerIdentifierCasePlanProvider(() => {
+        firstProviderFactoryCallCount += 1;
+        return {
+            prepareIdentifierCasePlan: async () => {},
+            getIdentifierCaseRenameForNode: () => {
+                firstProviderLookupCallCount += 1;
+                return "FIRST";
+            },
+            captureIdentifierCasePlanSnapshot: () => ({}),
+            applyIdentifierCasePlanSnapshot: () => {}
+        };
+    });
+
+    const firstProviderLookupResult = getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" }, {});
+    assert.strictEqual(firstProviderLookupResult, "FIRST");
+    assert.strictEqual(firstProviderLookupCallCount, 1, "first provider should serve lookups before replacement");
+    getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" }, {});
+    assert.strictEqual(firstProviderLookupCallCount, 2, "first provider should continue serving lookups while active");
+    assert.strictEqual(firstProviderFactoryCallCount, 1, "provider should be constructed once while cached");
+
+    let secondProviderFactoryCallCount = 0;
+    let secondProviderLookupCallCount = 0;
+
+    registerIdentifierCasePlanProvider(() => {
+        secondProviderFactoryCallCount += 1;
+        return {
+            prepareIdentifierCasePlan: async () => {},
+            getIdentifierCaseRenameForNode: () => {
+                secondProviderLookupCallCount += 1;
+                return "SECOND";
+            },
+            captureIdentifierCasePlanSnapshot: () => ({}),
+            applyIdentifierCasePlanSnapshot: () => {}
+        };
+    });
+
+    const secondProviderLookupResult = getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" }, {});
+    assert.strictEqual(secondProviderLookupResult, "SECOND", "lookup should use the most recently registered provider");
+    assert.strictEqual(secondProviderLookupCallCount, 1);
+    getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" }, {});
+    assert.strictEqual(
+        secondProviderFactoryCallCount,
+        1,
+        "replacement provider should initialize once per registration"
+    );
+    assert.strictEqual(
+        firstProviderLookupCallCount,
+        2,
+        "old provider should no longer receive lookups after replacement"
+    );
 
     resetIdentifierCasePlanProvider();
-    const third = resolveIdentifierCasePlanService();
-    assert.strictEqual(third, first, "reset should restore the original cached service");
+    const afterResetLookupResult = getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" }, {});
+    assert.strictEqual(afterResetLookupResult, null, "reset should route lookups back to default behavior");
+    assert.strictEqual(secondProviderLookupCallCount, 2, "reset should stop routing lookups to replacement provider");
 
     resetIdentifierCasePlanProvider();
 });
