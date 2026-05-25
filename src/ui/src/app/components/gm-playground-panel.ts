@@ -210,7 +210,10 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         const formatOptions = this.#resolveFormatOptions();
         const lintRules = this.#resolveLintRules();
         const codemods = this.#resolveCodemods();
-        const enabledFormatOptionNames = this.#resolveEnabledFormatOptionNames(formatOptions);
+        const configuredFormatOptionNames = this.#resolveConfiguredFormatOptionNames();
+        const enabledFormatOptionNames = this.#resolveEnabledFormatOptionNames(formatOptions).filter((optionName) =>
+            configuredFormatOptionNames.has(optionName)
+        );
         const enabledLintRuleIds = this.#resolveEnabledLintRuleIds(lintRules);
         const enabledCodemodIds = this.#resolveEnabledCodemodIds(codemods);
 
@@ -255,6 +258,14 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #resolveFormatOptions(): ReadonlyArray<{ description: string; name: string }> {
         return this.#resolveFormatOptionsForModel(this.model);
+    }
+
+    #resolveConfiguredFormatOptionNames(): ReadonlySet<string> {
+        const configuredEntries = this.model?.projectConfigurationCatalog?.format.entries;
+        if (!configuredEntries || configuredEntries.length === 0) {
+            return new Set<string>();
+        }
+        return new Set(configuredEntries.map((entry) => entry.name));
     }
 
     #resolveFormatOptionsForModel(
@@ -420,6 +431,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #renderRuleDetails() {
         const formatOptions = this.#resolveFormatOptions();
+        const hasConfiguredFormatOptions = this.#resolveConfiguredFormatOptionNames().size > 0;
         const lintRules = this.#resolveLintRules();
         const codemods = this.#resolveCodemods();
         if (formatOptions.length === 0 && lintRules.length === 0 && codemods.length === 0) {
@@ -429,20 +441,27 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         return html`
             <div class="rule-details">
                 ${formatOptions.length > 0
-                    ? this.#renderRuleSection({
-                          entries: formatOptions.map((option) => ({
-                              description: option.description,
-                              keyText: option.name,
-                              onToggle: () => this.#toggleFormatOption(option.name),
-                              selected: this.#enabledFormatOptions.get(option.name) === true
-                          })),
-                          expanded: this.#showFormatDetails,
-                          label: "Format Options",
-                          searchQuery: this.#formatSearchQuery,
-                          setAllSelected: (enabled) => this.#setAllFormatOptionsEnabled(enabled, formatOptions),
-                          setExpanded: () => this.#toggleFormatDetails(),
-                          setSearchQuery: (value) => this.#setFormatSearchQuery(value)
-                      })
+                    ? html`
+                          ${hasConfiguredFormatOptions
+                              ? null
+                              : html`<p class="rule-details-note" role="note">
+                                    Set formatter values in <code>gmloop.json</code> to apply Playground format options.
+                                </p>`}
+                          ${this.#renderRuleSection({
+                              entries: formatOptions.map((option) => ({
+                                  description: option.description,
+                                  keyText: option.name,
+                                  onToggle: () => this.#toggleFormatOption(option.name),
+                                  selected: this.#enabledFormatOptions.get(option.name) === true
+                              })),
+                              expanded: this.#showFormatDetails,
+                              label: "Format Options",
+                              searchQuery: this.#formatSearchQuery,
+                              setAllSelected: (enabled) => this.#setAllFormatOptionsEnabled(enabled, formatOptions),
+                              setExpanded: () => this.#toggleFormatDetails(),
+                              setSearchQuery: (value) => this.#setFormatSearchQuery(value)
+                          })}
+                      `
                     : null}
                 ${lintRules.length > 0
                     ? this.#renderRuleSection({
