@@ -19,6 +19,10 @@ function addObjectSharedOptions(command: Command): Command {
         .option("--json", "Emit JSON output.");
 }
 
+const OBJECT_NAME_ARGUMENT_DESCRIPTION = "Object name";
+const OBJECT_EVENT_MUTATION_CAPABILITY = "object_event_mutation";
+const EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION = "Event descriptor (category:event)";
+
 function printObjectPayload(payload: unknown): void {
     printProjectPayload(payload);
 }
@@ -100,7 +104,7 @@ export function createObjectCommand(): Command {
     const update = addObjectSharedOptions(
         applyStandardCommandOptions(new Command("update"))
             .description("Update object.")
-            .argument("<object>", "Object name")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
     );
     update.action(function objectUpdateAction(objectName: string) {
         const options = this.opts<SharedProjectContextOptions>();
@@ -131,19 +135,84 @@ export function createObjectCommand(): Command {
     });
 
     const event = applyStandardCommandOptions(new Command("event")).description("Object event operations.");
-    for (const eventLeaf of ["list", "inspect", "add", "update", "delete"]) {
-        const nested = addObjectSharedOptions(
-            applyStandardCommandOptions(new Command(eventLeaf)).description(`Object event ${eventLeaf}.`)
-        );
-        if (eventLeaf === "update") {
-            nested.addOption(createWriteOption());
-        }
-        nested.action(function objectEventLeafAction() {
-            const options = this.opts<ObjectMutationOptions>();
-            emitObjectUnavailableLeaf(`object event ${eventLeaf}`, options, "object_event_mutation");
+
+    const eventList = addObjectSharedOptions(
+        applyStandardCommandOptions(new Command("list"))
+            .description("Object event list.")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
+    );
+    eventList.action(function objectEventListAction(objectName: string) {
+        const options = this.opts<ObjectMutationOptions>();
+        emitObjectUnavailableLeaf("object event list", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
+            object: objectName
         });
-        event.addCommand(nested);
-    }
+    });
+
+    const eventInspect = addObjectSharedOptions(
+        applyStandardCommandOptions(new Command("inspect"))
+            .description("Object event inspect.")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
+            .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
+    );
+    eventInspect.action(function objectEventInspectAction(objectName: string, eventDescriptor: string) {
+        const options = this.opts<ObjectMutationOptions>();
+        emitObjectUnavailableLeaf("object event inspect", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
+            event: eventDescriptor,
+            object: objectName
+        });
+    });
+
+    const eventAdd = addObjectSharedOptions(
+        applyStandardCommandOptions(new Command("add"))
+            .description("Object event add.")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
+            .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
+            .argument("<handler>", "Handler source snippet or statement block")
+    ).addOption(createWriteOption());
+    eventAdd.action(function objectEventAddAction(objectName: string, eventDescriptor: string, handler: string) {
+        const options = this.opts<ObjectMutationOptions>();
+        emitObjectUnavailableLeaf("object event add", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
+            event: eventDescriptor,
+            handler,
+            object: objectName
+        });
+    });
+
+    const eventUpdate = addObjectSharedOptions(
+        applyStandardCommandOptions(new Command("update"))
+            .description("Object event update.")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
+            .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
+            .argument("<handler>", "Updated handler source snippet or statement block")
+    ).addOption(createWriteOption());
+    eventUpdate.action(function objectEventUpdateAction(objectName: string, eventDescriptor: string, handler: string) {
+        const options = this.opts<ObjectMutationOptions>();
+        emitObjectUnavailableLeaf("object event update", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
+            event: eventDescriptor,
+            handler,
+            object: objectName
+        });
+    });
+
+    const eventDelete = addObjectSharedOptions(
+        applyStandardCommandOptions(new Command("delete"))
+            .description("Object event delete.")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
+            .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
+    ).addOption(createWriteOption());
+    eventDelete.action(function objectEventDeleteAction(objectName: string, eventDescriptor: string) {
+        const options = this.opts<ObjectMutationOptions>();
+        emitObjectUnavailableLeaf("object event delete", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
+            event: eventDescriptor,
+            object: objectName
+        });
+    });
+
+    event.addCommand(eventList);
+    event.addCommand(eventInspect);
+    event.addCommand(eventAdd);
+    event.addCommand(eventUpdate);
+    event.addCommand(eventDelete);
 
     command.addCommand(list);
     command.addCommand(inspect);
