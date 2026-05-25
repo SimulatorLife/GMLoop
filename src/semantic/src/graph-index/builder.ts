@@ -1366,7 +1366,7 @@ function resolveRoomLayerNodeIdFromAssetReference(
     }
 
     const roomRecord = asRecord(asRecord(context.projectIndex.resources)[roomResourcePath]);
-    const layers = asRecord(roomRecord.layers);
+    const layers = roomRecord.layers;
     if (!Array.isArray(layers) || layerIndex >= layers.length) {
         return null;
     }
