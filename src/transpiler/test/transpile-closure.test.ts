@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { Transpiler } from "../index.js";
+import { Transpiler } from "@gmloop/transpiler";
 
 type TranspilerInstance = InstanceType<typeof Transpiler.GmlTranspiler>;
 type TranspileClosureArgs = Parameters<TranspilerInstance["transpileClosure"]>[0];
