@@ -203,6 +203,10 @@ importers:
       ws:
         specifier: 'catalog:'
         version: 8.20.1
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
 
   src/core:
     dependencies:

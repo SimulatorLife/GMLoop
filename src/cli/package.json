@@ -37,5 +37,8 @@
     "eslint-formatter-checkstyle": "^9.0.1",
     "fast-xml-parser": "^5.8.0",
     "linkedom": "^0.18.12"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
   }
 }
