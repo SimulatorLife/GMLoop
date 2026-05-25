@@ -26,6 +26,7 @@ import { createTestCommand } from "./commands/test.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
 import { createUiCommand } from "./commands/ui.js";
 import { createValidateCommand } from "./commands/validate.js";
+import { createWatchCommand } from "./commands/watch.js";
 
 type CliCommandRegistrationEnvironment = Readonly<{
     defaultCommandName: string;
@@ -166,6 +167,15 @@ function registerProjectWorkflowCommands({ registry }: CliCommandRegistryContext
         onError: (error) =>
             handleCliError(error, {
                 prefix: "Live-reload command failed.",
+                exitCode: 1
+            })
+    });
+
+    registry.registerCommand({
+        command: createWatchCommand(),
+        onError: (error) =>
+            handleCliError(error, {
+                prefix: "Watch command failed.",
                 exitCode: 1
             })
     });

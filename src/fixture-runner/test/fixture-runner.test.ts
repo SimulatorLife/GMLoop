@@ -191,6 +191,111 @@ void test("discoverFixtureCases assigns fixture paths by kind", async () => {
     }
 });
 
+void test("discoverFixtureCases supports external project fixture descriptors", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-external-project-discovery-"));
+    const casePath = path.join(rootPath, "real-project");
+    await mkdir(casePath, { recursive: true });
+    await writeFile(
+        path.join(casePath, "gmloop.json"),
+        `${JSON.stringify(
+            {
+                fixture: {
+                    kind: "external-project",
+                    externalProject: {
+                        sourcePath: "../../vendor/3DSpider",
+                        excludes: {
+                            directoryNames: [".gmloop"]
+                        }
+                    }
+                }
+            },
+            null,
+            2
+        )}\n`,
+        "utf8"
+    );
+
+    try {
+        const fixtureCases = await FixtureRunner.discoverFixtureCases(rootPath);
+        const fixtureCase = fixtureCases[0];
+
+        assert.equal(fixtureCases.length, 1);
+        assert.equal(fixtureCase?.kind, "external-project");
+        assert.equal(fixtureCase?.assertion, "project-tree");
+        assert.equal(fixtureCase?.projectDirectoryPath, null);
+        assert.equal(fixtureCase?.config.fixture.externalProject?.sourcePath, "../../vendor/3DSpider");
+        assert.deepEqual(fixtureCase?.config.fixture.externalProject?.excludes?.directoryNames, [".gmloop"]);
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
+void test("copyExternalProjectFixture copies a writable project subset with exclusions", async () => {
+    const sourceRootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-external-source-"));
+    await mkdir(path.join(sourceRootPath, ".git"), { recursive: true });
+    await mkdir(path.join(sourceRootPath, ".gmloop"), { recursive: true });
+    await mkdir(path.join(sourceRootPath, "scripts", "Demo"), { recursive: true });
+    await writeFile(path.join(sourceRootPath, ".git", "config"), "ignored\n", "utf8");
+    await writeFile(path.join(sourceRootPath, ".gmloop", "graph-index.sqlite"), "ignored\n", "utf8");
+    await writeFile(path.join(sourceRootPath, "scripts", "Demo", "Demo.gml"), "var value = 1;\n", "utf8");
+    await writeFile(path.join(sourceRootPath, "notes.tmp"), "ignored\n", "utf8");
+
+    const copiedProject = await FixtureRunner.copyExternalProjectFixture({
+        sourceProjectPath: sourceRootPath
+    });
+
+    try {
+        assert.deepEqual(copiedProject.copiedRelativeFilePaths, ["scripts/Demo/Demo.gml"]);
+        assert.equal(
+            await readFile(path.join(copiedProject.workingProjectDirectoryPath, "scripts", "Demo", "Demo.gml"), "utf8"),
+            "var value = 1;\n"
+        );
+        await assert.rejects(readFile(path.join(copiedProject.workingProjectDirectoryPath, ".git", "config"), "utf8"));
+    } finally {
+        await copiedProject.dispose();
+        await rm(sourceRootPath, { recursive: true, force: true });
+    }
+});
+
+void test("project fingerprints and change summaries are stable", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-project-fingerprint-"));
+    await mkdir(path.join(rootPath, "scripts"), { recursive: true });
+    await writeFile(path.join(rootPath, "scripts", "first.gml"), "var first = 1;\n", "utf8");
+    await writeFile(path.join(rootPath, "scripts", "second.gml"), "var second = 2;\n", "utf8");
+
+    try {
+        const before = await FixtureRunner.createProjectFingerprint(rootPath);
+        await writeFile(path.join(rootPath, "scripts", "first.gml"), "var first = 10;\n", "utf8");
+        await writeFile(path.join(rootPath, "scripts", "third.gml"), "var third = 3;\n", "utf8");
+        await rm(path.join(rootPath, "scripts", "second.gml"));
+        const after = await FixtureRunner.createProjectFingerprint(rootPath);
+        const summary = FixtureRunner.collectProjectChangeSummary(before, after);
+
+        assert.notEqual(before.digest, after.digest);
+        assert.deepEqual(summary.added, ["scripts/third.gml"]);
+        assert.deepEqual(summary.modified, ["scripts/first.gml"]);
+        assert.deepEqual(summary.removed, ["scripts/second.gml"]);
+        assert.equal(
+            FixtureRunner.formatProjectChangeSummary(summary),
+            "added=1 [scripts/third.gml]; modified=1 [scripts/first.gml]; removed=1 [scripts/second.gml]"
+        );
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
+void test("assertJsonCliPayload parses command output prefixes and rejects arrays", () => {
+    const payload = FixtureRunner.assertJsonCliPayload('$ node cli\n{"ok":true,"payload":{"total":1}}\n');
+
+    assert.deepEqual(payload, {
+        ok: true,
+        payload: {
+            total: 1
+        }
+    });
+    assert.throws(() => FixtureRunner.assertJsonCliPayload("[1,2,3]"), /Expected CLI JSON payload/u);
+});
+
 void test("runFixtureSuite records profiling metrics and writes reports", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-suite-"));
     const reportPath = path.join(rootPath, "fixture-profile.json");

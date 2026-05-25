@@ -203,6 +203,16 @@ interface WatchCommandOptions
 
 export type { WatchCommandOptions };
 
+type InitialScanRunnerOptions = Readonly<{
+    normalizedPath: string;
+    extensionMatcher: ExtensionMatcher;
+    runtimeContext: RuntimeContext;
+    verbose: boolean;
+    quiet: boolean;
+    maxConcurrentDirs: number;
+    fileDataCache: Map<string, InitialFileData>;
+}>;
+
 /**
  * Core transpilation capabilities required for processing file changes.
  * Focuses on the essential dependencies needed to transpile GML files.
@@ -972,6 +982,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         ...(polling && { persistent: true })
     };
     let watcher: FSWatcher | null = null;
+    let pollingIntervalHandle: NodeJS.Timeout | null = null;
     let resolved = false;
 
     // Internal abort controller used to cancel in-flight file reads (including
@@ -1002,6 +1013,10 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
             if (watcher) {
                 watcher.close();
+            }
+            if (pollingIntervalHandle) {
+                clearInterval(pollingIntervalHandle);
+                pollingIntervalHandle = null;
             }
 
             process.off("SIGINT", handleErrorSignal);
@@ -1109,7 +1124,40 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
             };
         }
 
+        const initialScanOptions: InitialScanRunnerOptions = {
+            normalizedPath,
+            extensionMatcher,
+            runtimeContext,
+            verbose,
+            quiet,
+            maxConcurrentDirs,
+            fileDataCache
+        };
+
         try {
+            if (polling) {
+                void runInitialWatchScan(initialScanOptions)
+                    .then(() => {
+                        pollingIntervalHandle = setInterval(() => {
+                            scheduleUnknownFileChanges(
+                                runtimeContext,
+                                verbose,
+                                quiet,
+                                internalAbortController.signal
+                            ).catch((error) => {
+                                const message = getErrorMessage(error, {
+                                    fallback: "Unknown polling scan error"
+                                });
+                                console.error(`Error during polling scan: ${message}`);
+                            });
+                        }, pollingInterval);
+                        pollingIntervalHandle.unref();
+                        return null;
+                    })
+                    .catch(handleWatcherError);
+                return;
+            }
+
             watcher = watchFactory(
                 normalizedPath,
                 {
@@ -1210,30 +1258,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
             // Perform initial scan after the watcher is established so test harnesses
             // and callers can trigger events immediately without waiting for the scan.
-            if (!quiet && verbose) {
-                console.log("Scanning existing GML files to build dependency graph...");
-            }
-
-            void performInitialScan(
-                normalizedPath,
-                extensionMatcher,
-                runtimeContext,
-                verbose,
-                quiet,
-                maxConcurrentDirs,
-                fileDataCache
-            )
-                .then(() => {
-                    runtimeContext.scanComplete = true;
-                    return null;
-                })
-                .finally(() => {
-                    // The startup cache is only needed during the initial scan. Clear any
-                    // unconsumed entries (for example from transient read errors) so large
-                    // file contents and AST objects are released promptly.
-                    clearInitialFileDataCache(fileDataCache);
-                })
-                .catch(handleWatcherError);
+            void runInitialWatchScan(initialScanOptions).catch(handleWatcherError);
         } catch (error) {
             handleWatcherError(error);
         }
@@ -1512,6 +1537,40 @@ function scheduleUnknownFileChanges(
 
     runtimeContext.unknownScanPromise = unknownScanPromise;
     return unknownScanPromise;
+}
+
+function runInitialWatchScan({
+    normalizedPath,
+    extensionMatcher,
+    runtimeContext,
+    verbose,
+    quiet,
+    maxConcurrentDirs,
+    fileDataCache
+}: InitialScanRunnerOptions): Promise<null> {
+    if (!quiet && verbose) {
+        console.log("Scanning existing GML files to build dependency graph...");
+    }
+
+    return performInitialScan(
+        normalizedPath,
+        extensionMatcher,
+        runtimeContext,
+        verbose,
+        quiet,
+        maxConcurrentDirs,
+        fileDataCache
+    )
+        .then(() => {
+            runtimeContext.scanComplete = true;
+            return null;
+        })
+        .finally(() => {
+            // The startup cache is only needed during the initial scan. Clear any
+            // unconsumed entries (for example from transient read errors) so large
+            // file contents and AST objects are released promptly.
+            clearInitialFileDataCache(fileDataCache);
+        });
 }
 
 async function readFileStats(filePath: string): Promise<Stats | null> {

@@ -24,6 +24,9 @@ catalogs:
     typescript:
       specifier: ^6
       version: 6.0.3
+    ws:
+      specifier: ^8
+      version: 8.20.1
 
 importers:
 
@@ -149,6 +152,9 @@ importers:
       typescript-eslint:
         specifier: ^8
         version: 8.59.3(eslint@10.4.0)(typescript@6.0.3)
+      ws:
+        specifier: 'catalog:'
+        version: 8.20.1
       yaml-eslint-parser:
         specifier: ^1
         version: 1.3.2
@@ -183,7 +189,7 @@ importers:
         specifier: ^14.0.3
         version: 14.0.3
       eslint:
-        specifier: ^10.4.0
+        specifier: 'catalog:'
         version: 10.4.0
       eslint-formatter-checkstyle:
         specifier: ^9.0.1
@@ -195,7 +201,7 @@ importers:
         specifier: ^0.18.12
         version: 0.18.12
       ws:
-        specifier: ^8.20.1
+        specifier: 'catalog:'
         version: 8.20.1
 
   src/core:
