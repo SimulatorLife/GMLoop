@@ -34,6 +34,10 @@ function getEdgeColor(type: GraphVisualizationEdgeType): string {
     return EDGE_STYLE_BY_TYPE.get(type)?.color ?? "#7f7f7f";
 }
 
+/**
+ * Render legend swatches with the same line semantics used on graph edges so
+ * relationship categories remain visually distinguishable in filter controls.
+ */
 function getEdgeLegendLineStyle(type: GraphVisualizationEdgeType): string {
     const edgeStyle = EDGE_STYLE_BY_TYPE.get(type);
     const borderWidth = edgeStyle?.legendBorderWidth ?? "2px";
