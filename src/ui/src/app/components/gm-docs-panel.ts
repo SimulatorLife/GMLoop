@@ -124,7 +124,7 @@ export class GmDocsPanel extends LightDomLitElement {
                         </div>
                     </div>
                     <div
-                        id="mcp-page"
+                        id="docs-mcp-page"
                         class=${this.state.activeDocsView === "mcp" ? "docs-subpage" : "docs-subpage hidden"}
                     >
                         <div id="mcp-content" class="docs-grid">

@@ -49,6 +49,8 @@ void test("hasLoadedGraphIndex returns true when the model includes graph nodes"
                     lineStart: null,
                     name: "obj_player",
                     resourcePath: "objects/obj_player",
+                    scopeId: null,
+                    scipSymbol: null,
                     snippet: "",
                     summary: ""
                 }
@@ -90,6 +92,8 @@ void test("hasGraphEdges returns true when the model includes graph edges", () =
                     lineStart: null,
                     name: "obj_player",
                     resourcePath: "objects/obj_player",
+                    scopeId: null,
+                    scipSymbol: null,
                     snippet: "",
                     summary: ""
                 },
@@ -103,6 +107,8 @@ void test("hasGraphEdges returns true when the model includes graph edges", () =
                     lineStart: null,
                     name: "scr_controller",
                     resourcePath: "scripts/scr_controller",
+                    scopeId: null,
+                    scipSymbol: null,
                     snippet: "",
                     summary: ""
                 }
