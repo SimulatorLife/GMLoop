@@ -152,3 +152,14 @@ void test("GmConfigPanel renders shared view-selector with aria-label group cont
         /<div class="config-view-selector view-selector" role="group" aria-label="Configuration view selector">/u
     );
 });
+
+void test("GmDocsPanel uses a dedicated id for MCP docs subview to avoid id collisions", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.equal(Array.from(rendered.matchAll(/id="docs-mcp-page"/gu)).length, 1);
+    assert.equal(Array.from(rendered.matchAll(/id="mcp-page"/gu)).length, 0);
+});
