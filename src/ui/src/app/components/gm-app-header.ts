@@ -1,4 +1,4 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { hasLoadedGraphIndex } from "../graph-availability.js";
@@ -24,6 +24,14 @@ export class GmAppHeader extends LightDomLitElement {
     public accessor state: GraphVisualizationUiState | null = null;
 
     static readonly #TOP_NAV_BUTTON_BASE_CLASS = "top-nav-button";
+    static readonly #ARIA_CURRENT_PAGE = "page";
+
+    #getAriaCurrentForPage(page: GraphVisualizationUiPage): string | typeof nothing {
+        if (!this.state || this.state.activePage !== page) {
+            return nothing;
+        }
+        return GmAppHeader.#ARIA_CURRENT_PAGE;
+    }
 
     #getMcpStatusLabel(status: GraphVisualizationUiState["mcpServerStatus"]): string {
         if (status === "running") {
@@ -69,6 +77,7 @@ export class GmAppHeader extends LightDomLitElement {
 
         const loadedTarget = this.model.loadedTarget;
         const hasLoadedIndex = hasLoadedGraphIndex(this.model);
+        const liveReloadPage: GraphVisualizationUiPage = "live-reload";
         const activePath = loadedTarget?.activePath ?? this.model.title;
         const mcpStatusLabel = this.#getMcpStatusLabel(this.model.mcpServerStatus);
         const mcpStatusClass =
@@ -134,6 +143,7 @@ export class GmAppHeader extends LightDomLitElement {
                                 <button
                                     id="tab-graph"
                                     aria-pressed=${this.state.activePage === "graph"}
+                                    aria-current=${this.#getAriaCurrentForPage("graph")}
                                     ?disabled=${!hasLoadedIndex}
                                     class=${this.state.activePage === "graph"
                                         ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
@@ -145,6 +155,7 @@ export class GmAppHeader extends LightDomLitElement {
                                 <button
                                     id="tab-docs"
                                     aria-pressed=${this.state.activePage === "docs"}
+                                    aria-current=${this.#getAriaCurrentForPage("docs")}
                                     class=${this.state.activePage === "docs"
                                         ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
                                         : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
@@ -155,6 +166,7 @@ export class GmAppHeader extends LightDomLitElement {
                                 <button
                                     id="tab-config"
                                     aria-pressed=${this.state.activePage === "config"}
+                                    aria-current=${this.#getAriaCurrentForPage("config")}
                                     class=${this.state.activePage === "config"
                                         ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
                                         : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
@@ -165,6 +177,7 @@ export class GmAppHeader extends LightDomLitElement {
                                 <button
                                     id="tab-fix"
                                     aria-pressed=${this.state.activePage === "fix"}
+                                    aria-current=${this.#getAriaCurrentForPage("fix")}
                                     class=${this.state.activePage === "fix"
                                         ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
                                         : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
@@ -175,6 +188,7 @@ export class GmAppHeader extends LightDomLitElement {
                                 <button
                                     id="tab-playground"
                                     aria-pressed=${this.state.activePage === "playground"}
+                                    aria-current=${this.#getAriaCurrentForPage("playground")}
                                     class=${this.state.activePage === "playground"
                                         ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
                                         : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
@@ -185,6 +199,7 @@ export class GmAppHeader extends LightDomLitElement {
                                 <button
                                     id="tab-mcp"
                                     aria-pressed=${this.state.activePage === "mcp"}
+                                    aria-current=${this.#getAriaCurrentForPage("mcp")}
                                     class=${this.state.activePage === "mcp"
                                         ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
                                         : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
@@ -194,11 +209,12 @@ export class GmAppHeader extends LightDomLitElement {
                                 </button>
                                 <button
                                     id="tab-live-reload"
-                                    aria-pressed=${this.state.activePage === "live-reload"}
-                                    class=${this.state.activePage === "live-reload"
+                                    aria-pressed=${this.state.activePage === liveReloadPage}
+                                    aria-current=${this.#getAriaCurrentForPage(liveReloadPage)}
+                                    class=${this.state.activePage === liveReloadPage
                                         ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
                                         : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
-                                    @click=${() => this.#emitNavigatePage("live-reload")}
+                                    @click=${() => this.#emitNavigatePage(liveReloadPage)}
                                 >
                                     Live Reload
                                 </button>
