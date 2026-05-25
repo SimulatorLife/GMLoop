@@ -1774,3 +1774,156 @@ void test("graph visualization keeps object events connected when YY metadata om
         await fixture.cleanup();
     }
 });
+
+void test("buildGraphIndex projects room layers as distinct room_layer nodes with containment edges", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-room-layers-");
+
+    try {
+        await fixture.writeProjectFile(
+            "GameProject.yyp",
+            JSON.stringify({
+                name: "GameProject",
+                resourceType: "GMProject",
+                resources: [
+                    { id: { name: "rmArena", path: "rooms/rmArena/rmArena.yy" } },
+                    { id: { name: "oKnight", path: "objects/oKnight/oKnight.yy" } },
+                    { id: { name: "oDragon", path: "objects/oDragon/oDragon.yy" } }
+                ]
+            })
+        );
+
+        await fixture.writeProjectFile(
+            "rooms/rmArena/rmArena.yy",
+            JSON.stringify({
+                name: "rmArena",
+                resourceType: "GMRoom",
+                layers: [
+                    {
+                        $GMRBackgroundLayer: "",
+                        name: "Background",
+                        resourceType: "GMRBackgroundLayer",
+                        colour: 1,
+                        visible: true
+                    },
+                    {
+                        $GMRInstanceLayer: "",
+                        name: "Instances",
+                        resourceType: "GMRInstanceLayer",
+                        instances: [
+                            {
+                                name: "inst_1",
+                                objectId: { name: "oKnight", path: "objects/oKnight/oKnight.yy" },
+                                resourceType: "GMRInstance"
+                            },
+                            {
+                                name: "inst_2",
+                                objectId: { name: "oDragon", path: "objects/oDragon/oDragon.yy" },
+                                resourceType: "GMRInstance"
+                            }
+                        ]
+                    }
+                ]
+            })
+        );
+
+        await fixture.writeProjectFile(
+            "objects/oKnight/oKnight.yy",
+            JSON.stringify({ name: "oKnight", resourceType: "GMObject" })
+        );
+        await fixture.writeProjectFile(
+            "objects/oDragon/oDragon.yy",
+            JSON.stringify({ name: "oDragon", resourceType: "GMObject" })
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const roomLayerNodes = database
+                .prepare(
+                    "SELECT id, kind, name, display_name AS displayName, resource_path AS resourcePath FROM nodes WHERE kind = 'room_layer' ORDER BY name"
+                )
+                .all() as Array<{
+                displayName: string;
+                id: string;
+                kind: string;
+                name: string;
+                resourcePath: string | null;
+            }>;
+
+            assert.equal(roomLayerNodes.length, 2, "expected two room_layer nodes for Background and Instances layers");
+            assert.deepEqual(
+                roomLayerNodes.map((node) => node.name),
+                ["Background", "Instances"]
+            );
+            assert.ok(
+                roomLayerNodes.every((node) => node.kind === "room_layer"),
+                "expected all room_layer nodes to have kind 'room_layer'"
+            );
+
+            const roomNodeId = "project::resource::rooms/rmArena/rmArena.yy";
+            const backgroundLayerNodeId = roomLayerNodes.find((node) => node.name === "Background")?.id;
+            const instancesLayerNodeId = roomLayerNodes.find((node) => node.name === "Instances")?.id;
+
+            const edgeRows = database
+                .prepare("SELECT from_id AS fromId, to_id AS toId, type FROM edges ORDER BY from_id, to_id, type")
+                .all() as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.ok(
+                edgeRows.some(
+                    (edge) =>
+                        edge.fromId === roomNodeId && edge.toId === backgroundLayerNodeId && edge.type === "contains"
+                ),
+                "expected room to contain the background layer node"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) =>
+                        edge.fromId === roomNodeId && edge.toId === instancesLayerNodeId && edge.type === "contains"
+                ),
+                "expected room to contain the instances layer node"
+            );
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const vizRoomLayerNodes = visualizationData.nodes.filter((node) => node.kind === "room_layer");
+            assert.equal(vizRoomLayerNodes.length, 2, "expected visualization export to include both room_layer nodes");
+            assert.ok(
+                vizRoomLayerNodes.every((node) => node.name === "Background" || node.name === "Instances"),
+                "expected both room_layer nodes to be present with correct names"
+            );
+
+            const vizBackgroundNode = vizRoomLayerNodes.find((node) => node.name === "Background");
+            const vizInstancesNode = vizRoomLayerNodes.find((node) => node.name === "Instances");
+            assert.ok(vizBackgroundNode, "expected Background room_layer in visualization");
+            assert.ok(vizInstancesNode, "expected Instances room_layer in visualization");
+
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === roomNodeId && edge.target === vizBackgroundNode?.id && edge.type === "contains"
+                ),
+                "expected visualization to include room→background containment edge"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === roomNodeId && edge.target === vizInstancesNode?.id && edge.type === "contains"
+                ),
+                "expected visualization to include room→instances containment edge"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});

@@ -31,7 +31,11 @@ function deriveScopeId(kind, parts) {
     return `scope:${kind}:${suffix}`;
 }
 
-function ensureResourceRecord(resourcesMap, resourcePath, resourceData = {}) {
+function ensureResourceRecord(
+    resourcesMap: Map<string, Record<string, unknown>>,
+    resourcePath: string,
+    resourceData: Record<string, unknown> = {}
+) {
     const { name: normalizedName, resourceType: normalizedResourceType } =
         normalizeResourceDocumentMetadata(resourceData);
     const record = Core.getOrCreateMapEntry(resourcesMap, resourcePath, () => {
@@ -43,7 +47,8 @@ function ensureResourceRecord(resourcesMap, resourcePath, resourceData = {}) {
             resourceType: normalizedResourceType ?? "unknown",
             scopes: [],
             gmlFiles: [],
-            assetReferences: []
+            assetReferences: [],
+            layers: []
         };
     });
 
@@ -52,6 +57,10 @@ function ensureResourceRecord(resourcesMap, resourcePath, resourceData = {}) {
     }
     if (normalizedResourceType && record.resourceType !== normalizedResourceType) {
         record.resourceType = normalizedResourceType;
+    }
+
+    if (Array.isArray(resourceData.layers)) {
+        record.layers = resourceData.layers;
     }
 
     return record;
@@ -259,11 +268,12 @@ async function loadResourceDocument(
     }
 }
 
-function ensureResourceRecordForDocument(context, file, parsed) {
-    return ensureResourceRecord(context.resourcesMap, file.relativePath, {
-        name: parsed?.name,
-        resourceType: parsed?.resourceType
-    });
+function ensureResourceRecordForDocument(
+    context: ReturnType<typeof createResourceAnalysisContext>,
+    file: { relativePath: string },
+    parsed: Record<string, unknown> | null
+) {
+    return ensureResourceRecord(context.resourcesMap, file.relativePath, parsed ?? {});
 }
 
 function attachScopeDescriptor({ context, resourceRecord, gmlRelativePath, descriptor }) {

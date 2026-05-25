@@ -9,8 +9,7 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 
 import { Parser } from "@gmloop/parser";
-
-import { Transpiler } from "../index.js";
+import { Transpiler } from "@gmloop/transpiler";
 
 void describe("Transpiler AST reuse", () => {
     void it("accepts pre-parsed AST and produces valid patch", () => {

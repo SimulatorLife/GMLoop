@@ -43,6 +43,7 @@ export type GraphVisualizationNodeKind =
     | "project"
     | "resource"
     | "room"
+    | "room_layer"
     | "script"
     | "sequence"
     | "shader"
