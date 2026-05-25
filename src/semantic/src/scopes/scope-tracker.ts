@@ -1948,7 +1948,7 @@ export class ScopeTracker {
 
         const paths = new Set<string>();
         for (const [trackedPath, lastModified] of this.pathLastModifiedIndex) {
-            if (lastModified > sinceTimestamp) {
+            if (lastModified >= sinceTimestamp) {
                 paths.add(trackedPath);
             }
         }

@@ -20,6 +20,7 @@ import { createResourceCommand } from "./commands/resource.js";
 import { createRoomCommand } from "./commands/room.js";
 import { createRunnerCommand } from "./commands/runner.js";
 import { createRuntimeCommand } from "./commands/runtime.js";
+import { createScriptCommand } from "./commands/script.js";
 import { createSymbolCommand } from "./commands/symbol.js";
 import { createTestCommand } from "./commands/test.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
@@ -193,6 +194,15 @@ function registerProjectWorkflowCommands({ registry }: CliCommandRegistryContext
         onError: (error) =>
             handleCliError(error, {
                 prefix: "Room command failed.",
+                exitCode: 1
+            })
+    });
+
+    registry.registerCommand({
+        command: createScriptCommand(),
+        onError: (error) =>
+            handleCliError(error, {
+                prefix: "Script command failed.",
                 exitCode: 1
             })
     });
