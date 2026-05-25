@@ -254,6 +254,23 @@
   gap: 8px;
 }
 
+.rule-details-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(143, 181, 255, 0.18);
+  background: rgba(143, 181, 255, 0.08);
+  color: var(--gm-text-subdued);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.rule-details-note code {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  color: var(--gm-text);
+  font-size: 11px;
+}
+
 .rule-details-header {
   display: flex;
   align-items: center;
