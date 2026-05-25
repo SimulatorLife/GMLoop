@@ -96,3 +96,4 @@ export {
 } from "./conditional-assignment-sanitizer.js";
 export { stripCommentsTransform };
 export { CommentTracker } from "./comment-tracker.js";
+export { evaluateTruthTablePolicy, TRUTH_TABLE_POLICY_BASELINE } from "./logical-expression-condensation-policy.js";

@@ -3,6 +3,8 @@
  */
 import { Core } from "@gmloop/core";
 
+import { evaluateTruthTablePolicy, TRUTH_TABLE_POLICY_BASELINE } from "./logical-expression-condensation-policy.js";
+
 const {
     cloneAstNode,
     cloneLocation,
@@ -39,18 +41,8 @@ const TRAVERSAL_IGNORED_KEYS = new Set(["body", ...COMMON_IGNORED_NODE_KEYS]);
 
 const IGNORED_NODE_KEYS = new Set(COMMON_IGNORED_NODE_KEYS);
 
-// Cap truth-table generation to prevent exponential blowup. The condensation
-// pass builds truth tables to simplify complex boolean conditions (e.g.,
-// collapsing `(a && b) || (a && !b)` to just `a`). Each boolean variable in
-// the condition doubles the number of truth-table rows (2^n), so a condition
-// with 11 variables would require 2048 rows, and 15 variables would demand
-// 32,768 rows. Beyond a small threshold, the memory and CPU cost of generating
-// and evaluating these tables outweighs the benefit of simplification. By
-// limiting the table size to 10 variables (1024 rows maximum), we ensure the
-// transform completes in reasonable time even for deeply nested or compound
-// conditions. Conditions exceeding this limit are left unchanged rather than
-// risking excessive resource consumption or timeouts.
-const MAX_BOOLEAN_VARIABLES_FOR_TRUTH_TABLE = 10;
+// The truth-table threshold is managed in the policy layer via
+// `evaluateTruthTablePolicy` so the value is independently testable.
 
 /**
  * Condenses logical control-flow branches into simplified boolean return
@@ -284,19 +276,24 @@ function tryCondenseIfStatement(statements, index) {
 
     let argumentAst = null;
 
-    if (
-        testExpr &&
-        consequentExpr &&
-        alternateExpr &&
-        booleanContext.variables.length <= MAX_BOOLEAN_VARIABLES_FOR_TRUTH_TABLE
-    ) {
-        const combinedExpression = combineConditionalBoolean(testExpr, consequentExpr, alternateExpr);
-        const simplifiedCandidates = generateSimplifiedCandidates(combinedExpression, booleanContext);
-        if (simplifiedCandidates.length > 0) {
-            const chosen = chooseBestCandidate(simplifiedCandidates);
-            if (chosen) {
-                const optimizedExpression = postProcessBooleanExpression(chosen);
-                argumentAst = booleanExpressionToAst(optimizedExpression, booleanContext);
+    if (testExpr && consequentExpr && alternateExpr) {
+        // Delegate the "should we build a truth table?" decision to the policy
+        // evaluator so the threshold is managed in one place and remains
+        // independently testable.
+        const truthTableDecision = evaluateTruthTablePolicy(
+            { variableCount: booleanContext.variables.length },
+            TRUTH_TABLE_POLICY_BASELINE
+        );
+
+        if (truthTableDecision.allowTruthTable) {
+            const combinedExpression = combineConditionalBoolean(testExpr, consequentExpr, alternateExpr);
+            const simplifiedCandidates = generateSimplifiedCandidates(combinedExpression, booleanContext);
+            if (simplifiedCandidates.length > 0) {
+                const chosen = chooseBestCandidate(simplifiedCandidates);
+                if (chosen) {
+                    const optimizedExpr = postProcessBooleanExpression(chosen);
+                    argumentAst = booleanExpressionToAst(optimizedExpr, booleanContext);
+                }
             }
         }
     }
