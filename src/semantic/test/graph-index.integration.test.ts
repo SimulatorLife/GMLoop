@@ -1931,6 +1931,33 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                 ),
                 "expected room to contain the tile layer node"
             );
+            const knightObjectNodeId = "project::resource::objects/oKnight/oKnight.yy";
+            const dragonObjectNodeId = "project::resource::objects/oDragon/oDragon.yy";
+            assert.ok(
+                edgeRows.some(
+                    (edge) =>
+                        edge.fromId === instancesLayerNodeId &&
+                        edge.toId === knightObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected placed_in_room edges to originate from the owning instance layer node"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) =>
+                        edge.fromId === instancesLayerNodeId &&
+                        edge.toId === dragonObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected instance layer node to place every referenced room instance object"
+            );
+            assert.ok(
+                !edgeRows.some(
+                    (edge) =>
+                        edge.fromId === roomNodeId && edge.toId === knightObjectNodeId && edge.type === "placed_in_room"
+                ),
+                "expected room-level placed_in_room edges to be replaced by layer-level placement edges"
+            );
 
             const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
             const vizRoomLayerNodes = visualizationData.nodes.filter((node) => node.kind === "room_layer");
@@ -1980,6 +2007,24 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                     (edge) => edge.source === roomNodeId && edge.target === vizTilesNode?.id && edge.type === "contains"
                 ),
                 "expected visualization to include room→tiles containment edge"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === vizInstancesNode?.id &&
+                        edge.target === knightObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected visualization to expose placed_in_room edges from instance layers"
+            );
+            assert.ok(
+                !visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === roomNodeId &&
+                        edge.target === knightObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected visualization to avoid ambiguous room-level placement edges when a layer node exists"
             );
         } finally {
             database.close();

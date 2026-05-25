@@ -245,6 +245,7 @@ void test("playground panel renders format/lint/codemod detail sections", () => 
     assert.match(rendered, /aria-controls=lint-rules-entries/u);
     assert.match(rendered, /aria-controls=codemods-entries/u);
     assert.match(rendered, /aria-expanded=false/u);
+    assert.doesNotMatch(rendered, /Set formatter values in <code>gmloop\.json<\/code>/u);
 });
 
 void test("playground panel exposes accessible labels for input and output regions", () => {
@@ -408,6 +409,7 @@ void test("playground panel falls back to workspace catalogs when project config
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /Lint Rules/u);
     assert.match(rendered, /Codemods/u);
+    assert.match(rendered, /Set formatter values in <code>gmloop\.json<\/code> to apply Playground format options\./u);
 });
 
 /**
