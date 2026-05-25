@@ -81,6 +81,33 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
     assert.equal(eventUpdatePayload.payload.details.event, "Step:Begin");
 });
 
+void test("room instance planned leaves emit write-aware payload details", async () => {
+    const updateResult = await runCliTestCommand({
+        argv: ["room", "instance", "update", "rm_main", "111", "320", "240", "--json", "--write"]
+    });
+
+    assert.equal(updateResult.exitCode, 0);
+    const updatePayload = JSON.parse(updateResult.stdout) as {
+        command: string;
+        payload: {
+            details: {
+                instanceId: string;
+                room: string;
+                x: string;
+                y: string;
+            };
+            mode: string;
+            state: string;
+        };
+    };
+
+    assert.equal(updatePayload.command, "room instance update");
+    assert.equal(updatePayload.payload.mode, "apply");
+    assert.equal(updatePayload.payload.state, "not_available");
+    assert.equal(updatePayload.payload.details.room, "rm_main");
+    assert.equal(updatePayload.payload.details.instanceId, "111");
+});
+
 void test("ui planned leaves emit concrete payloads without unsupported backend state", async () => {
     const previewResult = await runCliTestCommand({
         argv: ["ui", "preview", "--json"]
