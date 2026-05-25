@@ -4,13 +4,9 @@
  */
 import { Core } from "@gmloop/core";
 
-import {
-    attemptCondenseScalarProduct,
-    attemptCondenseSimpleScalarProduct,
-    type ConvertManualMathTransformOptions,
-    isIdentityReplacementSafeExpression,
-    replaceNodeWith
-} from "./math-traversal-normalization.js";
+import type { ConvertManualMathTransformOptions } from "./math-ast-mutation.js";
+import { isIdentityReplacementSafeExpression, replaceNodeWith } from "./math-lengthdir-transforms.js";
+import { attemptCondenseScalarProduct, attemptCondenseSimpleScalarProduct } from "./math-scalar-condensing.js";
 
 const { BINARY_EXPRESSION, PARENTHESIZED_EXPRESSION, UNARY_EXPRESSION, isObjectLike } = Core;
 

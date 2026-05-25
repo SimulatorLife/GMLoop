@@ -19,7 +19,7 @@ import {
     attemptCollectDistributedScalars,
     attemptCondenseNumericChainWithMultipleBases,
     attemptCondenseScalarProduct
-} from "./math-traversal-normalization.js";
+} from "./math-scalar-condensing.js";
 
 const {
     isObjectLike,
