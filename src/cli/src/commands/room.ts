@@ -2,7 +2,7 @@ import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
-import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
+import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
     ensureProjectGraphIndex,
     printProjectPayload,
@@ -10,6 +10,11 @@ import {
 } from "../workflow/project-root.js";
 
 type RoomCommandSharedOptions = SharedProjectContextOptions;
+
+type RoomMutationOptions = SharedProjectContextOptions &
+    Readonly<{
+        write?: boolean;
+    }>;
 
 function addRoomSharedOptions(command: Command): Command {
     return command
@@ -27,7 +32,7 @@ function printRoomPayload(payload: unknown): void {
 
 function emitRoomUnavailableLeaf(
     commandName: string,
-    options: SharedProjectContextOptions,
+    options: RoomMutationOptions,
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
@@ -37,6 +42,7 @@ function emitRoomUnavailableLeaf(
         payload: {
             capability,
             details,
+            mode: options.write === true ? "apply" : "dry-run",
             state: "not_available"
         }
     });
@@ -202,24 +208,55 @@ export function createRoomCommand(): Command {
     const instance = applyStandardCommandOptions(new Command("instance")).description("Room instance operations.");
     const instanceAdd = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("add")).description("Add room instance.")
-    );
-    instanceAdd.action(function roomInstanceAddAction() {
-        const options = this.opts<RoomCommandSharedOptions>();
-        emitRoomUnavailableLeaf("room instance add", options, "room_instance_mutation");
+    )
+        .argument("<room>", "Room name")
+        .argument("<object>", "Object resource name")
+        .argument("<x>", "Instance x coordinate")
+        .argument("<y>", "Instance y coordinate")
+        .addOption(createWriteOption());
+    instanceAdd.action(function roomInstanceAddAction(roomName: string, objectName: string, x: string, y: string) {
+        const options = this.opts<RoomMutationOptions>();
+        emitRoomUnavailableLeaf("room instance add", options, "room_instance_mutation", {
+            object: objectName,
+            room: roomName,
+            x,
+            y
+        });
     });
     const instanceUpdate = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("update")).description("Update room instance.")
-    );
-    instanceUpdate.action(function roomInstanceUpdateAction() {
-        const options = this.opts<RoomCommandSharedOptions>();
-        emitRoomUnavailableLeaf("room instance update", options, "room_instance_mutation");
+    )
+        .argument("<room>", "Room name")
+        .argument("<instance-id>", "Room instance id")
+        .argument("<x>", "Updated instance x coordinate")
+        .argument("<y>", "Updated instance y coordinate")
+        .addOption(createWriteOption());
+    instanceUpdate.action(function roomInstanceUpdateAction(
+        roomName: string,
+        instanceId: string,
+        x: string,
+        y: string
+    ) {
+        const options = this.opts<RoomMutationOptions>();
+        emitRoomUnavailableLeaf("room instance update", options, "room_instance_mutation", {
+            instanceId,
+            room: roomName,
+            x,
+            y
+        });
     });
     const instanceDelete = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("delete")).description("Delete room instance.")
-    );
-    instanceDelete.action(function roomInstanceDeleteAction() {
-        const options = this.opts<RoomCommandSharedOptions>();
-        emitRoomUnavailableLeaf("room instance delete", options, "room_instance_mutation");
+    )
+        .argument("<room>", "Room name")
+        .argument("<instance-id>", "Room instance id")
+        .addOption(createWriteOption());
+    instanceDelete.action(function roomInstanceDeleteAction(roomName: string, instanceId: string) {
+        const options = this.opts<RoomMutationOptions>();
+        emitRoomUnavailableLeaf("room instance delete", options, "room_instance_mutation", {
+            instanceId,
+            room: roomName
+        });
     });
     instance.addCommand(instanceAdd);
     instance.addCommand(instanceUpdate);
