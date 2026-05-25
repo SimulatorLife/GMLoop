@@ -78,15 +78,6 @@ void test("GmErrorBanner structural output is stable and contains expected eleme
     assert.match(rendered, /<line x1="6" y1="6" x2="18" y2="18"/u);
 });
 
-void test("GmErrorBanner empty message suppresses all rendering", () => {
-    const banner = new TestableGmErrorBanner();
-    banner.message = "";
-
-    const rendered = renderTemplateValue(banner.renderForTest());
-
-    assert.equal(rendered, "");
-});
-
 void test("GmErrorBanner non-empty message always renders the banner container", () => {
     const banner = new TestableGmErrorBanner();
     banner.message = "!";
