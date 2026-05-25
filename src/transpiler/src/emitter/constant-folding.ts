@@ -98,79 +98,79 @@ const NUMERIC_OPERATORS = new Map<string, (a: number, b: number) => number | boo
 // to preserve JavaScript's short-circuit semantics (e.g., false && x returns false without evaluating x).
 const BOOLEAN_OPERATORS = new Set(["&&", "and", "||", "or"]);
 
+// Equality operators handled by evaluateEqualityOperator.
+// Any other operator returns null from that function, signalling "cannot fold".
+const EQUALITY_OPERATORS = new Set(["==", "!=", "===", "!=="]);
+
 function evaluateEqualityOperator(
     operator: string,
     left: string | number | boolean,
     right: string | number | boolean
 ): boolean | null {
-    switch (operator) {
-        case "==":
-        case "===": {
-            // Apply epsilon-tolerant comparison for numeric operands to handle
-            // floating-point rounding artifacts from intermediate computation.
-            if (typeof left === "number" && typeof right === "number") {
-                return isApproximatelyEqual(left, right);
-            }
-            // Normalize boolean-string comparisons: "true"/"false" strings compare
-            // equal to their boolean equivalents (true/false), matching GML's
-            // loose equality semantics where the literal token is equivalent to
-            // the keyword form. Non-boolean strings like "maybe" are not comparable
-            // to booleans at compile time, so return null to skip folding.
-            if (typeof left === "string" && typeof right === "boolean") {
-                const normalized = normalizeBooleanString(left);
-                if (normalized !== null) return normalized === right;
-                return null;
-            } else if (typeof left === "boolean" && typeof right === "string") {
-                const normalized = normalizeBooleanString(right);
-                if (normalized !== null) return left === normalized;
-                return null;
-            }
-            // Normalize boolean-number comparisons: in GML loose equality,
-            // true == 1 and false == 0. Strict equality (===) remains false
-            // since the types differ.
-            if (typeof left === "boolean" && typeof right === "number") {
-                if (operator === "==") return (left ? 1 : 0) === right;
-            } else if (typeof left === "number" && typeof right === "boolean" && operator === "==")
-                return left === (right ? 1 : 0);
-            // Both sides are booleans or strings (including normalized boolean strings
-            // like "true"/"false" from the parser). Direct value comparison is safe
-            // and matches JavaScript semantics for same-type comparisons.
-            return left === right;
-        }
-        case "!=":
-        case "!==": {
-            if (typeof left === "number" && typeof right === "number") {
-                return !isApproximatelyEqual(left, right);
-            }
-            // Normalize boolean-string comparisons for inequality.
-            // Non-boolean strings are not comparable to booleans, so return null.
-            if (typeof left === "string" && typeof right === "boolean") {
-                const normalized = normalizeBooleanString(left);
-                if (normalized !== null) return normalized !== right;
-                return null;
-            } else if (typeof left === "boolean" && typeof right === "string") {
-                const normalized = normalizeBooleanString(right);
-                if (normalized !== null) return left !== normalized;
-                return null;
-            }
-            // Normalize boolean-number comparisons for inequality.
-            if (typeof left === "boolean" && typeof right === "number") {
-                if (operator === "!=") return (left ? 1 : 0) !== right;
-            } else if (typeof left === "number" && typeof right === "boolean" && operator === "!=")
-                return left !== (right ? 1 : 0);
-            return left !== right;
-        }
-        default: {
-            return null;
-        }
+    if (!EQUALITY_OPERATORS.has(operator)) {
+        return null;
     }
+
+    const isNegated = operator === "!=" || operator === "!==";
+
+    // Numeric operands: all equality operators use epsilon-tolerant comparison
+    // to handle floating-point rounding artifacts from intermediate computation.
+    // (The strict/loose distinction applies only to boolean-number coercion below.)
+    if (typeof left === "number" && typeof right === "number") {
+        const equal = isApproximatelyEqual(left, right);
+        return isNegated ? !equal : equal;
+    }
+
+    // Boolean-string: "true" == true, "false" == false (loose); types differ (strict).
+    // Return null (cannot fold) when the string is not "true" or "false".
+    if (typeof left === "string" && typeof right === "boolean") {
+        const normalized = normalizeStringToBoolean(left);
+        if (normalized !== null) {
+            const equal = normalized === right;
+            return isNegated ? !equal : equal;
+        }
+        return null;
+    }
+    if (typeof left === "boolean" && typeof right === "string") {
+        const normalized = normalizeStringToBoolean(right);
+        if (normalized !== null) {
+            const equal = left === normalized;
+            return isNegated ? !equal : equal;
+        }
+        return null;
+    }
+
+    // Boolean-number: in GML loose equality true == 1 and false == 0.
+    // Strict equality (===/!==) preserves type identity — always false/true respectively
+    // for mixed types since booleans and numbers are never equal. Loose equality
+    // (==/!=) coerces booleans to 1/0 before comparison.
+    if (typeof left === "boolean" && typeof right === "number") {
+        if (operator === "===" || operator === "!==") {
+            // Types differ, so === is false and !== is true.
+            return operator === "===" ? false : true;
+        }
+        const equal = (left ? 1 : 0) === right;
+        return isNegated ? !equal : equal;
+    }
+    if (typeof left === "number" && typeof right === "boolean") {
+        if (operator === "===" || operator === "!==") {
+            return operator === "===" ? false : true;
+        }
+        const equal = left === (right ? 1 : 0);
+        return isNegated ? !equal : equal;
+    }
+
+    // Same-type comparisons (booleans, non-boolean strings, or unknown operators).
+    // Booleans compare directly; strings were already handled above.
+    const equal = left === right;
+    return isNegated ? !equal : equal;
 }
 
 /**
  * Convert the string literal "true" or "false" to its boolean equivalent.
- * Returns null for any other string value so the caller can bail out safely.
+ * Returns null for any other value so callers can bail out of the fold safely.
  */
-function normalizeBooleanString(value: string): boolean | null {
+function normalizeStringToBoolean(value: unknown): boolean | null {
     if (value === "true") return true;
     if (value === "false") return false;
     return null;
