@@ -114,3 +114,13 @@ void test("graph panel renders directional edge markers for non-call relationshi
     assert.match(rendered, /id=arrow-references/u);
     assert.match(rendered, /marker-end=url\(#arrow-references\)/u);
 });
+
+void test("graph panel legend preserves edge line style metadata for readability", () => {
+    const panel = new TestableGmGraphPanel();
+    panel.model = createGraphModel();
+    panel.state = createGraphState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+    assert.match(rendered, /border-top:\s*1px dashed #999;?/u);
+    assert.match(rendered, /References/u);
+});
