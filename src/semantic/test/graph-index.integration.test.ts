@@ -1821,6 +1821,18 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                                 resourceType: "GMRInstance"
                             }
                         ]
+                    },
+                    {
+                        $GMRAssetLayer: "",
+                        name: "Decor",
+                        resourceType: "GMRAssetLayer",
+                        assets: []
+                    },
+                    {
+                        $GMRTileLayer: "",
+                        name: "Tiles",
+                        resourceType: "GMRTileLayer",
+                        tiles: {}
                     }
                 ]
             })
@@ -1860,10 +1872,23 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                 resourcePath: string | null;
             }>;
 
-            assert.equal(roomLayerNodes.length, 2, "expected two room_layer nodes for Background and Instances layers");
+            assert.equal(
+                roomLayerNodes.length,
+                4,
+                "expected four room_layer nodes for background, instance, asset, and tile layers"
+            );
             assert.deepEqual(
                 roomLayerNodes.map((node) => node.name),
-                ["Background", "Instances"]
+                ["Background", "Decor", "Instances", "Tiles"]
+            );
+            assert.deepEqual(
+                roomLayerNodes.map((node) => node.displayName),
+                [
+                    "Background (Background Layer)",
+                    "Decor (Asset Layer)",
+                    "Instances (Instance Layer)",
+                    "Tiles (Tile Layer)"
+                ]
             );
             assert.ok(
                 roomLayerNodes.every((node) => node.kind === "room_layer"),
@@ -1872,7 +1897,9 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
 
             const roomNodeId = "project::resource::rooms/rmArena/rmArena.yy";
             const backgroundLayerNodeId = roomLayerNodes.find((node) => node.name === "Background")?.id;
+            const decorLayerNodeId = roomLayerNodes.find((node) => node.name === "Decor")?.id;
             const instancesLayerNodeId = roomLayerNodes.find((node) => node.name === "Instances")?.id;
+            const tilesLayerNodeId = roomLayerNodes.find((node) => node.name === "Tiles")?.id;
 
             const edgeRows = database
                 .prepare("SELECT from_id AS fromId, to_id AS toId, type FROM edges ORDER BY from_id, to_id, type")
@@ -1892,19 +1919,41 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                 ),
                 "expected room to contain the instances layer node"
             );
+            assert.ok(
+                edgeRows.some(
+                    (edge) => edge.fromId === roomNodeId && edge.toId === decorLayerNodeId && edge.type === "contains"
+                ),
+                "expected room to contain the asset layer node"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) => edge.fromId === roomNodeId && edge.toId === tilesLayerNodeId && edge.type === "contains"
+                ),
+                "expected room to contain the tile layer node"
+            );
 
             const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
             const vizRoomLayerNodes = visualizationData.nodes.filter((node) => node.kind === "room_layer");
-            assert.equal(vizRoomLayerNodes.length, 2, "expected visualization export to include both room_layer nodes");
+            assert.equal(vizRoomLayerNodes.length, 4, "expected visualization export to include all room_layer nodes");
             assert.ok(
-                vizRoomLayerNodes.every((node) => node.name === "Background" || node.name === "Instances"),
-                "expected both room_layer nodes to be present with correct names"
+                vizRoomLayerNodes.every(
+                    (node) =>
+                        node.name === "Background" ||
+                        node.name === "Instances" ||
+                        node.name === "Decor" ||
+                        node.name === "Tiles"
+                ),
+                "expected room_layer nodes to be present with correct names"
             );
 
             const vizBackgroundNode = vizRoomLayerNodes.find((node) => node.name === "Background");
             const vizInstancesNode = vizRoomLayerNodes.find((node) => node.name === "Instances");
+            const vizDecorNode = vizRoomLayerNodes.find((node) => node.name === "Decor");
+            const vizTilesNode = vizRoomLayerNodes.find((node) => node.name === "Tiles");
             assert.ok(vizBackgroundNode, "expected Background room_layer in visualization");
             assert.ok(vizInstancesNode, "expected Instances room_layer in visualization");
+            assert.ok(vizDecorNode, "expected Decor room_layer in visualization");
+            assert.ok(vizTilesNode, "expected Tiles room_layer in visualization");
 
             assert.ok(
                 visualizationData.edges.some(
@@ -1919,6 +1968,18 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                         edge.source === roomNodeId && edge.target === vizInstancesNode?.id && edge.type === "contains"
                 ),
                 "expected visualization to include room→instances containment edge"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) => edge.source === roomNodeId && edge.target === vizDecorNode?.id && edge.type === "contains"
+                ),
+                "expected visualization to include room→decor containment edge"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) => edge.source === roomNodeId && edge.target === vizTilesNode?.id && edge.type === "contains"
+                ),
+                "expected visualization to include room→tiles containment edge"
             );
         } finally {
             database.close();

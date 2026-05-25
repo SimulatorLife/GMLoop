@@ -1024,16 +1024,13 @@ function projectRoomLayerScopes(context: ProjectionContext): void {
             const layerResourceType = getString(layer.resourceType);
             const layerName = getString(layer.name);
 
-            if (
-                (layerResourceType !== "GMRInstanceLayer" && layerResourceType !== "GMRBackgroundLayer") ||
-                !layerName
-            ) {
+            if (!isGraphRoomLayerResourceType(layerResourceType) || !layerName) {
                 continue;
             }
 
             const scopeId = `scope:room-layer:${resourcePath}:${layerName}`;
             const node = createNodeRecord({
-                displayName: layerName,
+                displayName: createRoomLayerDisplayName(layerName, layerResourceType),
                 filePath: null,
                 graphId: context.graphId,
                 id: createGraphNodeId(context.graphId, "scope", scopeId),
@@ -1058,6 +1055,15 @@ function projectRoomLayerScopes(context: ProjectionContext): void {
             });
         }
     }
+}
+
+function isGraphRoomLayerResourceType(resourceType: string | null): resourceType is string {
+    return typeof resourceType === "string" && /^GMR[A-Za-z0-9]+Layer$/u.test(resourceType);
+}
+
+function createRoomLayerDisplayName(layerName: string, layerResourceType: string): string {
+    const layerTypeLabel = layerResourceType.replace(/^GMR/u, "").replace(/Layer$/u, " Layer");
+    return `${layerName} (${layerTypeLabel})`;
 }
 
 function projectFileRecords(context: ProjectionContext): void {
