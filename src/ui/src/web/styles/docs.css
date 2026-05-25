@@ -75,30 +75,3 @@
   color: var(--gm-text-subdued);
   font-size: 13px;
 }
-
-.mcp-runtime-status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--gm-border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.mcp-runtime-status-chip.running {
-  border-color: rgba(88, 205, 132, 0.45);
-  background: rgba(88, 205, 132, 0.12);
-}
-
-.mcp-runtime-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #f6c46d;
-}
-
-.mcp-runtime-status-chip.running .mcp-runtime-status-dot {
-  background: #58cd84;
-}

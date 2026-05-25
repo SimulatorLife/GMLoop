@@ -39,6 +39,11 @@
     justify-content: flex-start;
   }
 
+  .toolbar-heading-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .toolbar-control-group,
   .toolbar-search-group {
     width: 100%;

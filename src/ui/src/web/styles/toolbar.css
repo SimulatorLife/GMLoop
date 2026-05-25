@@ -17,6 +17,13 @@
   gap: 4px;
 }
 
+.toolbar-heading-row {
+  display: flex;
+  gap: var(--gm-space-related);
+  align-items: center;
+  justify-content: space-between;
+}
+
 .toolbar-title strong {
   color: var(--gm-text);
   font-size: 15px;
@@ -26,6 +33,54 @@
   color: var(--gm-text-subdued);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.toolbar-status {
+  flex: 0 0 auto;
+}
+
+.mcp-runtime-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--gm-text-subdued);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mcp-runtime-status-chip.running {
+  border-color: rgba(88, 205, 132, 0.45);
+  background: rgba(88, 205, 132, 0.12);
+  color: #58cd84;
+}
+
+.mcp-runtime-status-chip.stopped {
+  border-color: rgba(239, 68, 68, 0.42);
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.mcp-runtime-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #94a3b8;
+}
+
+.mcp-runtime-status-chip.running .mcp-runtime-status-dot {
+  background: #58cd84;
+  box-shadow: 0 0 6px rgba(88, 205, 132, 0.6);
+}
+
+.mcp-runtime-status-chip.stopped .mcp-runtime-status-dot {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
 }
 
 .toolbar-controls {

@@ -3,7 +3,11 @@ import { ref } from "lit/directives/ref.js";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { hasLoadedGraphIndex, hasLoadedGraphProject } from "../graph-availability.js";
-import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
+import type {
+    GraphVisualizationUiMcpServerStatus,
+    GraphVisualizationUiPage,
+    GraphVisualizationUiState
+} from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
@@ -242,6 +246,49 @@ export class GmGraphToolbar extends LightDomLitElement {
         `;
     }
 
+    #getMcpStatusLabel(status: GraphVisualizationUiMcpServerStatus): string {
+        if (status === "running") {
+            return "Running";
+        }
+        if (status === "stopped") {
+            return "Stopped";
+        }
+        return "Not Started";
+    }
+
+    #getMcpStatusDescription(status: GraphVisualizationUiMcpServerStatus): string {
+        if (status === "running") {
+            return "The MCP bridge is available for connected clients.";
+        }
+        if (status === "stopped") {
+            return "The MCP bridge stopped. Restart it to continue.";
+        }
+        return "The MCP bridge has not started in this session yet.";
+    }
+
+    #renderMcpStatus() {
+        if (!this.model || this.state?.activePage !== "mcp") {
+            return null;
+        }
+
+        const status = this.model.mcpServerStatus;
+        const statusClassName =
+            status === "running"
+                ? "mcp-runtime-status-chip running"
+                : status === "stopped"
+                  ? "mcp-runtime-status-chip stopped"
+                  : "mcp-runtime-status-chip";
+
+        return html`
+            <div class="toolbar-status">
+                <div class=${statusClassName} role="status" aria-label=${this.#getMcpStatusDescription(status)}>
+                    <span class="mcp-runtime-status-dot" aria-hidden="true"></span>
+                    <strong>${this.#getMcpStatusLabel(status)}</strong>
+                </div>
+            </div>
+        `;
+    }
+
     protected render() {
         if (!this.model || !this.state) {
             return html``;
@@ -283,9 +330,12 @@ export class GmGraphToolbar extends LightDomLitElement {
 
         return html`
             <div id="page-toolbar" class="page-toolbar">
-                <div class="toolbar-title">
-                    <strong id="toolbar-heading">${heading}</strong>
-                    <span id="toolbar-subheading">${subheading}</span>
+                <div class="toolbar-heading-row">
+                    <div class="toolbar-title">
+                        <strong id="toolbar-heading">${heading}</strong>
+                        <span id="toolbar-subheading">${subheading}</span>
+                    </div>
+                    ${this.#renderMcpStatus()}
                 </div>
                 <div id="graph-controls" class=${graphControlsClassName}>
                     <div class="toolbar-control-group toolbar-search-group">

@@ -33,16 +33,6 @@ export class GmAppHeader extends LightDomLitElement {
         return GmAppHeader.#ARIA_CURRENT_PAGE;
     }
 
-    #getMcpStatusLabel(status: GraphVisualizationUiState["mcpServerStatus"]): string {
-        if (status === "running") {
-            return "MCP Running";
-        }
-        if (status === "stopped") {
-            return "MCP Stopped";
-        }
-        return "MCP Not Started";
-    }
-
     #emitNavigatePage(page: GraphVisualizationUiPage): void {
         if (!this.model) {
             return;
@@ -79,14 +69,6 @@ export class GmAppHeader extends LightDomLitElement {
         const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const liveReloadPage: GraphVisualizationUiPage = "live-reload";
         const activePath = loadedTarget?.activePath ?? this.model.title;
-        const mcpStatusLabel = this.#getMcpStatusLabel(this.model.mcpServerStatus);
-        const mcpStatusClass =
-            this.model.mcpServerStatus === "running"
-                ? "mcp-status-badge running"
-                : this.model.mcpServerStatus === "stopped"
-                  ? "mcp-status-badge stopped"
-                  : "mcp-status-badge not-started";
-
         return html`
             <header id="app-header" class="app-header">
                 <div class="topbar-row">
@@ -102,10 +84,6 @@ export class GmAppHeader extends LightDomLitElement {
                                 </div>
                             </div>
                             <div class="header-actions">
-                                <div class=${mcpStatusClass} role="status" aria-label="MCP server status">
-                                    <span class="mcp-status-dot" aria-hidden="true"></span>
-                                    <span class="mcp-status-label">${mcpStatusLabel}</span>
-                                </div>
                                 <a
                                     id="manual-link"
                                     class="header-icon-link"

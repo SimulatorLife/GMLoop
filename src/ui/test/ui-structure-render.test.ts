@@ -131,9 +131,25 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.match(rendered, /id="manual-link"[\s\S]*class="header-icon-link"/u);
     assert.match(rendered, /id="github-link"[\s\S]*class="header-icon-link"/u);
     assert.doesNotMatch(rendered, /class="loaded-path-label"/u);
+    assert.doesNotMatch(rendered, /MCP Not Started/u);
+    assert.doesNotMatch(rendered, /mcp-status-badge/u);
     assert.doesNotMatch(rendered, /id="loaded-source"/u);
     assert.doesNotMatch(rendered, /id="loaded-selected"/u);
     assert.match(rendered, /id="tab-mcp"/u);
+});
+
+void test("MCP toolbar renders server status beside the page title", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = createMockState("mcp");
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /class="toolbar-heading-row"/u);
+    assert.match(rendered, /id="toolbar-heading"[\s\S]*MCP/u);
+    assert.match(rendered, /class="toolbar-status"[\s\S]*class=mcp-runtime-status-chip/u);
+    assert.match(rendered, /Not Started/u);
+    assert.match(rendered, /The MCP bridge has not started in this session yet\./u);
 });
 
 void test("graph toolbar renders grouped controls for search, view state, and actions", () => {

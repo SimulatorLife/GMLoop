@@ -17,27 +17,6 @@ export class GmMcpPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
-    #renderMcpStatusSummary(status: GraphVisualizationUiState["mcpServerStatus"]) {
-        const isRunning = status === "running";
-        const statusClassName = isRunning ? "mcp-runtime-status-chip running" : "mcp-runtime-status-chip";
-        const statusLabel = isRunning ? "Running" : status === "stopped" ? "Stopped" : "Not Started";
-        const statusDescription = isRunning
-            ? "The MCP bridge is available for connected clients."
-            : status === "stopped"
-              ? "The MCP bridge stopped. Restart it to continue."
-              : "The MCP bridge has not started in this session yet.";
-
-        return html`
-            <gm-card class="catalog-card" .heading=${"Runtime Status"}>
-                <p>${statusDescription}</p>
-                <div class=${statusClassName}>
-                    <span class="mcp-runtime-status-dot" aria-hidden="true"></span>
-                    <strong>${statusLabel}</strong>
-                </div>
-            </gm-card>
-        `;
-    }
-
     protected render() {
         if (!this.model || !this.state) {
             return html``;
@@ -51,7 +30,6 @@ export class GmMcpPanel extends LightDomLitElement {
                     Live MCP server status, connection health, and future activity updates.
                 </p>
                 <div id="mcp-content" class="docs-grid">
-                    ${this.#renderMcpStatusSummary(this.model.mcpServerStatus)}
                     <gm-card class="catalog-card" .heading=${"Tool Call Feed"}>
                         <p>No live MCP tool calls have been observed in this UI session yet.</p>
                     </gm-card>

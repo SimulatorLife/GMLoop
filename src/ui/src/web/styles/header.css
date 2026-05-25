@@ -163,67 +163,6 @@
   fill: currentColor;
 }
 
-.mcp-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--gm-border);
-  background: var(--gm-surface-muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
-
-.mcp-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.mcp-status-badge.running {
-  border-color: rgba(72, 199, 142, 0.42);
-  background: rgba(72, 199, 142, 0.12);
-}
-
-.mcp-status-badge.running .mcp-status-dot {
-  background: #48c78e;
-  box-shadow: 0 0 6px rgba(72, 199, 142, 0.6);
-}
-
-.mcp-status-badge.running .mcp-status-label {
-  color: #48c78e;
-}
-
-.mcp-status-badge.stopped {
-  border-color: rgba(239, 68, 68, 0.42);
-  background: rgba(239, 68, 68, 0.12);
-}
-
-.mcp-status-badge.stopped .mcp-status-dot {
-  background: #ef4444;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
-}
-
-.mcp-status-badge.stopped .mcp-status-label {
-  color: #ef4444;
-}
-
-.mcp-status-badge.not-started {
-  border-color: rgba(148, 163, 184, 0.42);
-  background: rgba(148, 163, 184, 0.08);
-}
-
-.mcp-status-badge.not-started .mcp-status-dot {
-  background: #94a3b8;
-}
-
-.mcp-status-badge.not-started .mcp-status-label {
-  color: var(--gm-text-subdued);
-}
-
 .open-button {
   display: inline-flex;
   align-items: center;
