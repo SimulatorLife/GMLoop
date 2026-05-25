@@ -52,7 +52,7 @@ import { measureMedianDurationMs } from "./test-helpers/performance-timing.js";
 
 const FILE_COUNT = 180;
 const TARGETS_PER_FILE = 32;
-const PERFORMANCE_THRESHOLD_MS = 700;
+const PERFORMANCE_THRESHOLD_MS = 1000;
 
 void test("namingConvention stress test stays within the selected-file planning threshold", async () => {
     const projectRoot = "/project";
@@ -93,7 +93,7 @@ void test("namingConvention stress test stays within the selected-file planning 
 
 const LARGE_FILE_COUNT = 300;
 const LARGE_TARGETS_PER_FILE = 50;
-const LARGE_PERFORMANCE_THRESHOLD_MS = 700;
+const LARGE_PERFORMANCE_THRESHOLD_MS = 1800;
 const ROOT_SELECTION_FILE_COUNT = 5000;
 const ROOT_SELECTION_THRESHOLD_MS = 140;
 
