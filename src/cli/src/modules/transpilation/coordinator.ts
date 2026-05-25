@@ -137,7 +137,7 @@ function classifyTranspilationError(error: unknown): {
         // Fallback: parse error without location info.
         return {
             category: "syntax",
-            message: Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error),
+            message: Core.getErrorMessage(error),
             recoveryHint: "Check for syntax errors in the GML source."
         };
     }
@@ -145,7 +145,7 @@ function classifyTranspilationError(error: unknown): {
     if (Core.isErrorWithCode(error, TranspilerErrorCode.VALIDATION_ERROR)) {
         return {
             category: "validation",
-            message: Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error),
+            message: Core.getErrorMessage(error),
             recoveryHint:
                 "The transpiler produced invalid output. This may indicate an internal issue. Try simplifying the code."
         };
@@ -154,7 +154,7 @@ function classifyTranspilationError(error: unknown): {
     if (Core.isErrorWithCode(error, TranspilerErrorCode.REQUEST_ERROR)) {
         return {
             category: "validation",
-            message: Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error),
+            message: Core.getErrorMessage(error),
             recoveryHint: "Ensure the file is a valid GML source file."
         };
     }
@@ -172,7 +172,7 @@ function classifyTranspilationError(error: unknown): {
             };
         }
         // Extract inner message if this is a transpiler-wrapped error.
-        const message = Core.isErrorLike(error) ? error.message : Core.getErrorMessageOrFallback(error);
+        const message = Core.getErrorMessage(error);
         const causeMatch = /Failed to transpile (?:script|event|closure|expression) [^:]+: (?<inner>.+)$/u.exec(
             message
         );
@@ -248,9 +248,10 @@ function classifyTranspilationError(error: unknown): {
         };
     }
 
-    // Use a capability probe rather than `instanceof Error` so that cross-realm
-    // errors (e.g. from sandboxed modules) are handled correctly.
-    const errorString = Core.isErrorLike(error) ? String(error) : "Unknown error";
+    // At this point error is not error-like (all isErrorLike branches returned).
+    // Use Core.getErrorMessage for consistent fallback: it attempts
+    // to produce a meaningful string from strings, objects, and primitives.
+    const errorString = Core.getErrorMessage(error, { fallback: "Unknown error" });
 
     return {
         category: "unknown",
