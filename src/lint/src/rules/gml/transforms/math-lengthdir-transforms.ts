@@ -24,7 +24,7 @@ import {
     attemptCollectDistributedScalars,
     attemptCondenseNumericChainWithMultipleBases,
     attemptCondenseScalarProduct
-} from "./math-traversal-normalization.js";
+} from "./math-scalar-condensing.js";
 import { identifyTrigCall } from "./math-trig-conversions.js";
 
 const {
@@ -1032,3 +1032,5 @@ function shouldPreserveRemovedBlankLine(removedNode: any, nextNode: any, sourceT
     const between = sourceText.slice(removedEnd, nextStart);
     return /^\s*\n\s*\n/.test(between);
 }
+
+export { replaceNode, replaceNodeWith } from "./math-ast-builders.js";
