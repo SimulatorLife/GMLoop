@@ -1922,18 +1922,23 @@ async function collectWatchedFilePaths(
     const discoveredFiles: Array<string> = [];
 
     async function scan(currentPath: string): Promise<void> {
-        const entries = await readdir(currentPath, { withFileTypes: true });
-        const { files, directories } = partitionScannedDirectoryEntries(currentPath, entries, extensionMatcher);
+        try {
+            const entries = await readdir(currentPath, { withFileTypes: true });
+            const { files, directories } = partitionScannedDirectoryEntries(currentPath, entries, extensionMatcher);
 
-        discoveredFiles.push(...files);
+            discoveredFiles.push(...files);
 
-        await Core.runInParallelWithLimit(
-            directories,
-            async (subDirPath) => {
-                await scan(subDirPath);
-            },
-            maxConcurrentDirs
-        );
+            await Core.runInParallelWithLimit(
+                directories,
+                async (subDirPath) => {
+                    await scan(subDirPath);
+                },
+                maxConcurrentDirs
+            );
+        } catch {
+            // Ignore per-directory read errors; the unknown scan should never
+            // crash the watcher just because one subdirectory is inaccessible.
+        }
     }
 
     try {
