@@ -40,6 +40,8 @@ function createGraphModel(): GraphVisualizationUiModel {
                     lineStart: 10,
                     name: "configure_globals",
                     resourcePath: "scripts/configure_globals/configure_globals.yy",
+                    scopeId: "project/scripts/configure_globals",
+                    scipSymbol: "gml/script/configure_globals",
                     snippet: "",
                     summary: "Script that configures global values."
                 },
@@ -53,6 +55,8 @@ function createGraphModel(): GraphVisualizationUiModel {
                     lineStart: null,
                     name: "obj_player",
                     resourcePath: "objects/obj_player/obj_player.yy",
+                    scopeId: null,
+                    scipSymbol: null,
                     snippet: "",
                     summary: "Player object."
                 }
@@ -95,6 +99,8 @@ void test("graph panel keeps selected node details visible until another node is
     const rendered = renderTemplateValue(panel.renderForTest());
     assert.match(rendered, /id="tooltip" class="visible"/u);
     assert.match(rendered, /configure_globals/u);
+    assert.match(rendered, /symbol: gml\/script\/configure_globals/u);
+    assert.match(rendered, /scope: project\/scripts\/configure_globals/u);
     assert.match(rendered, /lines 10-14/u);
     assert.match(rendered, /Script that configures global values\./u);
 });

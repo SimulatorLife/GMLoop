@@ -865,6 +865,14 @@ void test("graph visualization data keeps top-level language symbols connected w
                 );
                 assert.ok(node, `expected ${expectedNode.kind} ${expectedNode.name} node`);
                 assert.ok(
+                    node.scipSymbol === null || typeof node.scipSymbol === "string",
+                    `expected ${expectedNode.kind} to include optional scipSymbol metadata`
+                );
+                assert.ok(
+                    node.scopeId === null || typeof node.scopeId === "string",
+                    `expected ${expectedNode.kind} to include optional scopeId metadata`
+                );
+                assert.ok(
                     connectedVisibleNodeIds.has(node.id),
                     `expected ${expectedNode.kind} ${expectedNode.name} to have a visible non-file edge`
                 );

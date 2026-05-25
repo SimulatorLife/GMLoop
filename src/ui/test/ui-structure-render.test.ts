@@ -44,6 +44,8 @@ function createMockModel(): GraphVisualizationUiModel {
                     lineStart: null,
                     name: "obj_player",
                     resourcePath: "objects/obj_player",
+                    scopeId: null,
+                    scipSymbol: null,
                     snippet: "",
                     summary: ""
                 }

@@ -34,6 +34,8 @@ function createSampleGraphVisualizationData() {
                 lineStart: null,
                 name: "Project",
                 resourcePath: "Project.yyp",
+                scopeId: null,
+                scipSymbol: null,
                 snippet: "",
                 summary: "project root"
             },
@@ -47,6 +49,8 @@ function createSampleGraphVisualizationData() {
                 lineStart: null,
                 name: "player_update",
                 resourcePath: "scripts/player_update/player_update.yy",
+                scopeId: "project/scripts/player_update",
+                scipSymbol: "gml/script/player_update",
                 snippet: "function player_update() {}",
                 summary: "script node"
             }

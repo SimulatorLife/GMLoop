@@ -98,6 +98,8 @@ export type GraphVisualizationNodeRecord = Readonly<{
     lineStart: number | null;
     name: string;
     resourcePath: string | null;
+    scopeId: string | null;
+    scipSymbol: string | null;
     snippet: string;
     summary: string;
 }>;

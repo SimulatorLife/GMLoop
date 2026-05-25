@@ -51,6 +51,8 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
                 line_end as lineEnd,
                 relative_path as filePath,
                 resource_path as resourcePath,
+                scope_id as scopeId,
+                scip_symbol as scipSymbol,
                 summary,
                 snippet
             FROM nodes
@@ -66,6 +68,8 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
         lineStart: number | null;
         name: string;
         resourcePath: string | null;
+        scopeId: string | null;
+        scipSymbol: string | null;
         snippet: string;
         summary: string;
     }>;
@@ -82,6 +86,8 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
                 lineStart: n.lineStart,
                 name: n.name,
                 resourcePath: n.resourcePath,
+                scopeId: n.scopeId,
+                scipSymbol: n.scipSymbol,
                 snippet: n.snippet,
                 summary: n.summary
             }) as const

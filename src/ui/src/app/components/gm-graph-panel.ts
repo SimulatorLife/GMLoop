@@ -335,6 +335,8 @@ export class GmGraphPanel extends LightDomLitElement {
             <div id="tooltip" class="visible">
                 <h3>${node.displayName}</h3>
                 <div>${node.kind} | ${node.graphId}</div>
+                ${node.scipSymbol ? html`<div>symbol: ${node.scipSymbol}</div>` : null}
+                ${node.scopeId ? html`<div>scope: ${node.scopeId}</div>` : null}
                 ${pathLabel ? html`<div>${pathLabel}</div>` : null}
                 ${locationLabel ? html`<div>${locationLabel}</div>` : null}
                 ${node.summary ? html`<p>${node.summary}</p>` : null}

@@ -24,6 +24,8 @@ function createNode(id: string, kind: GraphVisualizationNodeKind, name: string):
         lineStart: null,
         name,
         resourcePath: null,
+        scopeId: null,
+        scipSymbol: null,
         snippet: "",
         summary: ""
     };
