@@ -59,4 +59,19 @@ void test("object event update MCP tool schema includes write mode option", () =
     assert.ok(writeField);
     assert.equal(writeField.kind, "option");
     assert.equal(writeField.valueType, "boolean");
+
+    const objectField = entry.fields.find((field) => field.attributeName === "object");
+    assert.ok(objectField);
+    assert.equal(objectField.kind, "argument");
+    assert.equal(objectField.required, true);
+
+    const eventField = entry.fields.find((field) => field.attributeName === "event");
+    assert.ok(eventField);
+    assert.equal(eventField.kind, "argument");
+    assert.equal(eventField.required, true);
+
+    const handlerField = entry.fields.find((field) => field.attributeName === "handler");
+    assert.ok(handlerField);
+    assert.equal(handlerField.kind, "argument");
+    assert.equal(handlerField.required, true);
 });
