@@ -210,7 +210,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         const formatOptions = this.#resolveFormatOptions();
         const lintRules = this.#resolveLintRules();
         const codemods = this.#resolveCodemods();
-        const configuredFormatOptionNames = this.#resolveConfiguredFormatOptionNames();
+        const configuredFormatOptionNames = this.#extractConfiguredFormatOptionNames();
         const enabledFormatOptionNames = this.#resolveEnabledFormatOptionNames(formatOptions).filter((optionName) =>
             configuredFormatOptionNames.has(optionName)
         );
@@ -260,7 +260,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         return this.#resolveFormatOptionsForModel(this.model);
     }
 
-    #resolveConfiguredFormatOptionNames(): ReadonlySet<string> {
+    #extractConfiguredFormatOptionNames(): ReadonlySet<string> {
         const configuredEntries = this.model?.projectConfigurationCatalog?.format.entries;
         if (!configuredEntries || configuredEntries.length === 0) {
             return new Set<string>();
@@ -431,7 +431,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #renderRuleDetails() {
         const formatOptions = this.#resolveFormatOptions();
-        const hasConfiguredFormatOptions = this.#resolveConfiguredFormatOptionNames().size > 0;
+        const hasConfiguredFormatOptions = this.#extractConfiguredFormatOptionNames().size > 0;
         const lintRules = this.#resolveLintRules();
         const codemods = this.#resolveCodemods();
         if (formatOptions.length === 0 && lintRules.length === 0 && codemods.length === 0) {
