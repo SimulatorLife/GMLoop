@@ -139,3 +139,69 @@ void test("graph panel legend preserves edge line style metadata for readability
     assert.match(rendered, /Contains/u);
     assert.match(rendered, /References/u);
 });
+
+void test("graph panel starts with noisy variable categories disabled for clearer default readability", () => {
+    const panel = new TestableGmGraphPanel();
+    const model = createGraphModel();
+    panel.model = {
+        ...model,
+        data: {
+            ...model.data,
+            nodes: [
+                ...model.data.nodes,
+                {
+                    displayName: "hp",
+                    filePath: "objects/obj_player/obj_player.gml",
+                    graphId: "project",
+                    id: "instance-var-node",
+                    kind: "instance_variable",
+                    lineEnd: 24,
+                    lineStart: 24,
+                    name: "hp",
+                    resourcePath: "objects/obj_player/obj_player.yy",
+                    scopeId: "project/objects/obj_player",
+                    scipSymbol: "gml/object/obj_player#hp",
+                    snippet: "",
+                    summary: "Player hit points."
+                },
+                {
+                    displayName: "speedLimit",
+                    filePath: "scripts/configure_globals/configure_globals.gml",
+                    graphId: "project",
+                    id: "local-var-node",
+                    kind: "local_variable",
+                    lineEnd: 11,
+                    lineStart: 11,
+                    name: "speedLimit",
+                    resourcePath: "scripts/configure_globals/configure_globals.yy",
+                    scopeId: "project/scripts/configure_globals",
+                    scipSymbol: "gml/script/configure_globals#speedLimit",
+                    snippet: "",
+                    summary: "Per-script temporary speed cap."
+                },
+                {
+                    displayName: "StateIdle",
+                    filePath: "scripts/configure_globals/configure_globals.gml",
+                    graphId: "project",
+                    id: "enum-member-node",
+                    kind: "enum_member",
+                    lineEnd: 7,
+                    lineStart: 7,
+                    name: "StateIdle",
+                    resourcePath: "scripts/configure_globals/configure_globals.yy",
+                    scopeId: "project/scripts/configure_globals",
+                    scipSymbol: "gml/enum/PlayerState#StateIdle",
+                    snippet: "",
+                    summary: "Enum member for idle state."
+                }
+            ]
+        }
+    };
+    panel.state = createGraphState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+    assert.doesNotMatch(rendered, /instance-var-node/u);
+    assert.doesNotMatch(rendered, /local-var-node/u);
+    assert.doesNotMatch(rendered, /enum-member-node/u);
+    assert.match(rendered, /script-node/u);
+});
