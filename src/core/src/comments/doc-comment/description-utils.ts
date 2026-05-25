@@ -57,6 +57,13 @@ export function classifyDescriptionContinuationLine(line: unknown): DescriptionC
 }
 export const DESCRIPTION_TAG_PATTERN = /^\/\/\/\s*@description\b/i;
 
+/**
+ * Extract indentation metadata from a line that contains a `@description` tag.
+ *
+ * @param line - A source line that may contain a `/// @description` tag.
+ * @returns An object containing the base indentation string and the prefix
+ *          used before the description text.
+ */
 export function resolveDescriptionIndentation(line: string) {
     const trimmedStart = line.trimStart();
     const indent = line.slice(0, line.length - trimmedStart.length);
@@ -110,6 +117,12 @@ function findDescriptionLineIndex(docCommentDocs: MutableDocCommentLines | reado
     return docCommentDocs.findIndex((line) => typeof line === STRING_TYPE && DESCRIPTION_TAG_PATTERN.test(line.trim()));
 }
 
+/**
+ * Extract all raw continuation lines that immediately follow a `@description` tag.
+ *
+ * @param docCommentDocs - The lines of a doc comment, including the `@description` line.
+ * @returns An array of the raw continuation lines following `@description`.
+ */
 export function collectDescriptionContinuations(docCommentDocs: MutableDocCommentLines | readonly unknown[]): string[] {
     const descriptionIndex = findDescriptionLineIndex(docCommentDocs);
     if (descriptionIndex === -1) {
@@ -179,6 +192,14 @@ export function collectDescriptionContinuationText(
     return { continuations, linesConsumed: lookahead - startIndex };
 }
 
+/**
+ * Apply normalized continuation lines to an existing doc comment after its
+ * `@description` tag, replacing any previously existing continuations.
+ *
+ * @param docCommentDocs - The mutable doc comment lines to modify.
+ * @param continuations - The normalized continuation lines to insert.
+ * @returns The modified doc comment lines.
+ */
 export function applyDescriptionContinuations(
     docCommentDocs: MutableDocCommentLines,
     continuations: string[]
@@ -243,6 +264,13 @@ export function applyDescriptionContinuations(
     return docCommentDocs;
 }
 
+/**
+ * Ensure a doc comment has at least one continuation line after `@description`.
+ *
+ * If no continuation line exists, a single blank continuation line is appended.
+ *
+ * @param docCommentDocs - The mutable doc comment lines to modify in place.
+ */
 export function ensureDescriptionContinuations(docCommentDocs: MutableDocCommentLines) {
     const descriptionIndex = findDescriptionLineIndex(docCommentDocs);
     if (descriptionIndex === -1) {
