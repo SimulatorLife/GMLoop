@@ -12,6 +12,7 @@ import { applyStandardCommandOptions } from "../cli-core/command-standard-option
 import type { CommanderCommandLike } from "../cli-core/commander-types.js";
 import { isMainModule, runAsMainModule } from "../cli-core/main-module-runner.js";
 import { assertSupportedNodeVersion } from "../cli-core/node-version.js";
+import { normalizeManualGeneratorBaseOptions } from "../modules/manual/command-options.js";
 import {
     getDirectElementChildren,
     parseManualDocument,
@@ -233,15 +234,14 @@ export function createGenerateIdentifiersCommand({ env = process.env } = {}) {
 function resolveGenerateIdentifierOptions(command?: CommanderCommandLike): NormalizedGenerateIdentifiersOptions {
     const options: GenerateIdentifiersCommandOptions = command?.opts?.() ?? {};
 
+    const baseOptions = normalizeManualGeneratorBaseOptions(options, DEFAULT_OUTPUT_PATH);
+
     return {
-        outputPath: options.output ?? DEFAULT_OUTPUT_PATH,
-        manualRoot: options.manualRoot ?? null,
-        manualPackage: options.manualPackage ?? null,
+        ...baseOptions,
         manualGmlPath: options.manualGmlPath ?? DEFAULT_GML_SOURCE_PATH,
         manualKeywordsPath: options.manualKeywordsPath ?? DEFAULT_KEYWORDS_PATH,
         manualTagsPath: options.manualTagsPath ?? DEFAULT_TAGS_PATH,
-        vmEvalTimeoutMs: options.vmEvalTimeoutMs === undefined ? getDefaultVmEvalTimeoutMs() : options.vmEvalTimeoutMs,
-        quiet: Boolean(options.quiet)
+        vmEvalTimeoutMs: options.vmEvalTimeoutMs === undefined ? getDefaultVmEvalTimeoutMs() : options.vmEvalTimeoutMs
     };
 }
 
