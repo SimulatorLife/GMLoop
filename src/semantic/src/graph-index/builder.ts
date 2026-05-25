@@ -96,7 +96,16 @@ type ProjectIndexSnapshot = {
     relationships?: {
         assetReferences?: Array<{ fromResourcePath?: string; propertyPath?: string; targetPath?: string }>;
     };
-    resources?: Record<string, { gmlFiles?: Array<string>; name?: string; path?: string; resourceType?: string }>;
+    resources?: Record<
+        string,
+        {
+            gmlFiles?: Array<string>;
+            layers?: Array<Record<string, unknown>>;
+            name?: string;
+            path?: string;
+            resourceType?: string;
+        }
+    >;
     scopes?: Record<string, ProjectIndexScopeRecord>;
 };
 
@@ -231,6 +240,7 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "project":
         case "resource":
         case "room":
+        case "room_layer":
         case "script":
         case "sequence":
         case "shader":
@@ -622,6 +632,12 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
         case "GMRoom": {
             return "room";
         }
+        case "GMRInstanceLayer": {
+            return "room_layer";
+        }
+        case "GMRBackgroundLayer": {
+            return "room_layer";
+        }
         case "GMScript": {
             return "script";
         }
@@ -983,6 +999,64 @@ function projectObjectEventScopes(context: ProjectionContext): void {
             toId: node.id,
             type: "contains"
         });
+    }
+}
+
+function projectRoomLayerScopes(context: ProjectionContext): void {
+    const resources = asRecord(context.projectIndex.resources);
+
+    for (const [resourcePath, rawRecord] of Object.entries(resources)) {
+        const resourceRecord = asRecord(rawRecord);
+        const resourceType = getString(resourceRecord.resourceType);
+
+        if (resourceType !== "GMRoom") {
+            continue;
+        }
+
+        const roomNodeId = createGraphNodeId(context.graphId, "resource", resourcePath);
+        const layers = asRecord(resourceRecord.layers);
+        if (!Array.isArray(layers)) {
+            continue;
+        }
+
+        for (const rawLayer of layers) {
+            const layer = asRecord(rawLayer);
+            const layerResourceType = getString(layer.resourceType);
+            const layerName = getString(layer.name);
+
+            if (
+                (layerResourceType !== "GMRInstanceLayer" && layerResourceType !== "GMRBackgroundLayer") ||
+                !layerName
+            ) {
+                continue;
+            }
+
+            const scopeId = `scope:room-layer:${resourcePath}:${layerName}`;
+            const node = createNodeRecord({
+                displayName: layerName,
+                filePath: null,
+                graphId: context.graphId,
+                id: createGraphNodeId(context.graphId, "scope", scopeId),
+                kind: "room_layer",
+                name: layerName,
+                resourcePath,
+                scopeId,
+                summary: createGraphNodeSummary({
+                    filePath: null,
+                    kind: "room_layer",
+                    name: layerName,
+                    resourcePath
+                })
+            });
+
+            context.nodeRecords.push(node);
+            registerNodeIndexes(context, node);
+            context.edgeRecords.push({
+                fromId: roomNodeId,
+                toId: node.id,
+                type: "contains"
+            });
+        }
     }
 }
 
@@ -1684,6 +1758,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
         projectResources(projectContext);
         projectObjectEventScopes(projectContext);
+        projectRoomLayerScopes(projectContext);
         projectFileRecords(projectContext);
         projectFileNodes(projectContext);
         projectIdentifierCollections(projectContext);
@@ -1696,6 +1771,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
             toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
             projectResources(toolsetContext);
             projectObjectEventScopes(toolsetContext);
+            projectRoomLayerScopes(toolsetContext);
             projectFileRecords(toolsetContext);
             projectFileNodes(toolsetContext);
             projectIdentifierCollections(toolsetContext);
