@@ -16,6 +16,7 @@ export type {
     CopiedExternalProjectFixture,
     ExternalProjectCopyOptions,
     JsonCliPayload,
+    JsonEndpointPayload,
     ProjectChangeSummary,
     ProjectFileFingerprint,
     ProjectFingerprint

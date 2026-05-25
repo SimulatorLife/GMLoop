@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
-import { type AddressInfo, createServer } from "node:net";
 import path from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { FixtureRunner, type ProjectChangeSummary, type ProjectFingerprint } from "@gmloop/fixture-runner";
+import {
+    FixtureRunner,
+    type JsonEndpointPayload,
+    type ProjectChangeSummary,
+    type ProjectFingerprint
+} from "@gmloop/fixture-runner";
 import { RuntimeWrapper } from "@gmloop/runtime-wrapper";
 import { WebSocket } from "ws";
 
@@ -37,7 +41,8 @@ type ResourceAuditPayload = Readonly<{
     };
 }>;
 
-type StatusPayload = Readonly<{
+type StatusPayload = JsonEndpointPayload &
+    Readonly<{
     totalPatchCount?: number;
     patchCount?: number;
     recentPatches?: ReadonlyArray<Readonly<{ filePath?: unknown; id?: unknown }>>;
@@ -123,43 +128,8 @@ async function runCliCommand(args: ReadonlyArray<string>, cwd = REPO_ROOT): Prom
     };
 }
 
-async function createAvailablePortServer(): Promise<ReturnType<typeof createServer>> {
-    return new Promise<ReturnType<typeof createServer>>((resolve, reject) => {
-        const server = createServer();
-
-        server.once("error", (error) => {
-            reject(error);
-        });
-        server.listen(0, "127.0.0.1", () => {
-            resolve(server);
-        });
-    });
-}
-
-async function closeAvailablePortServer(server: ReturnType<typeof createServer>): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-            if (error) {
-                reject(new Error(`Failed to close temporary port server: ${error.message}`, { cause: error }));
-                return;
-            }
-
-            resolve();
-        });
-    });
-}
-
 async function findAvailableStatusAndWebSocketPorts(): Promise<{ statusPort: number; websocketPort: number }> {
-    const servers = await Promise.all([createAvailablePortServer(), createAvailablePortServer()]);
-    const ports = servers.map((server) => {
-        const address = server.address();
-        assert.equal(typeof address, "object");
-        assert.notEqual(address, null);
-        return (address as AddressInfo).port;
-    });
-
-    await Promise.all(servers.map((server) => closeAvailablePortServer(server)));
-
+    const ports = await FixtureRunner.findAvailablePorts(2);
     const [statusPort, websocketPort] = ports;
     assert.notEqual(statusPort, undefined);
     assert.notEqual(websocketPort, undefined);
@@ -171,16 +141,8 @@ async function findAvailableStatusAndWebSocketPorts(): Promise<{ statusPort: num
     };
 }
 
-async function delay(milliseconds: number): Promise<void> {
-    await new Promise<void>((resolve) => {
-        setTimeout(resolve, milliseconds);
-    });
-}
-
-async function fetchStatusPayload(statusPort: number): Promise<StatusPayload> {
-    const response = await fetch(`http://127.0.0.1:${statusPort}/status`);
-    assert.equal(response.ok, true, `Expected watch status endpoint to be available, got ${response.status}.`);
-    return (await response.json()) as StatusPayload;
+function createStatusEndpointUrl(statusPort: number): string {
+    return `http://127.0.0.1:${statusPort}/status`;
 }
 
 function getPatchCount(payload: StatusPayload): number {
@@ -192,22 +154,7 @@ async function waitForStatus(
     predicate: (payload: StatusPayload) => boolean,
     timeoutMs = WATCH_TIMEOUT_MS
 ): Promise<StatusPayload> {
-    const deadline = Date.now() + timeoutMs;
-
-    while (Date.now() < deadline) {
-        try {
-            const payload = await fetchStatusPayload(statusPort);
-            if (predicate(payload)) {
-                return payload;
-            }
-        } catch {
-            // The status server may not be listening yet.
-        }
-
-        await delay(100);
-    }
-
-    throw new Error("Timed out waiting for 3DSpider watch status.");
+    return await FixtureRunner.waitForJsonEndpointPayload(createStatusEndpointUrl(statusPort), predicate, timeoutMs, 100);
 }
 
 function startWatchProcess(

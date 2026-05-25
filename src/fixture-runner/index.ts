@@ -19,5 +19,11 @@ export type {
     FixtureStageName,
     FixtureSuiteDefinition
 } from "./src/index.js";
-export type { JsonCliPayload, ProjectChangeSummary, ProjectFileFingerprint, ProjectFingerprint } from "./src/index.js";
+export type {
+    JsonCliPayload,
+    JsonEndpointPayload,
+    ProjectChangeSummary,
+    ProjectFileFingerprint,
+    ProjectFingerprint
+} from "./src/index.js";
 export { FixtureRunner } from "./src/index.js";

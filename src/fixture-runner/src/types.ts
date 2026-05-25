@@ -1,4 +1,4 @@
-import type { GmloopProjectConfig } from "@gmloop/core";
+import type { GmloopProjectConfig, ProjectExcludeRules } from "@gmloop/core";
 
 export type FixtureKind = "format" | "lint" | "refactor" | "integration" | "external-project";
 export type FixtureAssertion = "transform" | "idempotent" | "project-tree" | "parse-error";
@@ -6,23 +6,12 @@ export type FixtureComparison = "exact" | "ignore-whitespace-and-line-endings";
 export type FixtureStageName = "load" | "format" | "lint" | "refactor" | "compare" | "total";
 
 /**
- * Path exclusion rules used when copying or fingerprinting a whole external
- * project fixture.
- */
-export interface ExternalProjectExcludeRules {
-    directoryNames?: ReadonlyArray<string>;
-    fileNames?: ReadonlyArray<string>;
-    relativePaths?: ReadonlyArray<string>;
-    extensions?: ReadonlyArray<string>;
-}
-
-/**
  * Fixture-owned descriptor for a real project located outside the fixture case
  * directory.
  */
 export interface ExternalProjectFixtureDescriptor {
     sourcePath: string;
-    excludes?: ExternalProjectExcludeRules;
+    excludes?: ProjectExcludeRules;
 }
 
 type FixtureBudgetMap = Readonly<Partial<Record<FixtureStageName, number>>>;

@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { toPosixPath } from "../fs/path.js";
 
 export interface ProjectExcludeRules {
@@ -91,4 +93,28 @@ export function mergeExcludeRules(
         relativePaths: Object.freeze([...mergedRelativePaths].sort()),
         extensions: Object.freeze([...mergedExtensions].sort())
     });
+}
+
+/**
+ * Report whether a project-relative path is covered by project-wide exclusion
+ * rules.
+ *
+ * @param relativePath Project-relative path to test.
+ * @param excludes Exclusion rules to apply.
+ * @returns Whether the relative path should be skipped by project-level
+ *          traversal, copying, indexing, or fingerprinting.
+ */
+export function isProjectPathExcluded(relativePath: string, excludes: ProjectExcludeRules = {}): boolean {
+    const mergedExcludes = mergeExcludeRules(excludes);
+    const normalizedPath = toPosixPath(relativePath);
+    const pathSegments = normalizedPath.split("/").filter((segment) => segment.length > 0);
+    const entryName = pathSegments.at(-1) ?? "";
+    const extension = path.extname(entryName);
+
+    return (
+        mergedExcludes.relativePaths.includes(normalizedPath) ||
+        pathSegments.some((segment) => mergedExcludes.directoryNames.includes(segment)) ||
+        mergedExcludes.fileNames.includes(entryName) ||
+        (extension.length > 0 && mergedExcludes.extensions.includes(extension))
+    );
 }

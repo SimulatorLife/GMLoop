@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -294,6 +295,50 @@ void test("assertJsonCliPayload parses command output prefixes and rejects array
         }
     });
     assert.throws(() => FixtureRunner.assertJsonCliPayload("[1,2,3]"), /Expected CLI JSON payload/u);
+});
+
+void test("findAvailablePorts returns distinct test ports", async () => {
+    const ports = await FixtureRunner.findAvailablePorts(2);
+
+    assert.equal(ports.length, 2);
+    assert.notEqual(ports[0], ports[1]);
+    assert.ok(ports.every((port) => Number.isInteger(port) && port > 0));
+});
+
+void test("waitForJsonEndpointPayload polls until the endpoint payload matches", async () => {
+    let requestCount = 0;
+    const server = createServer((request, response) => {
+        requestCount += 1;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ ready: requestCount >= 2, requestCount }));
+    });
+    const [port] = await FixtureRunner.findAvailablePorts(1);
+    assert.notEqual(port, undefined);
+
+    await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(port, "127.0.0.1", () => {
+            resolve();
+        });
+    });
+
+    try {
+        const payload = await FixtureRunner.waitForJsonEndpointPayload(
+            `http://127.0.0.1:${port}/status`,
+            (candidate) => candidate.ready === true,
+            1000,
+            10
+        );
+
+        assert.equal(payload.ready, true);
+        assert.equal(typeof payload.requestCount, "number");
+    } finally {
+        await new Promise<void>((resolve) => {
+            server.close(() => {
+                resolve();
+            });
+        });
+    }
 });
 
 void test("runFixtureSuite records profiling metrics and writes reports", async () => {

@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
-import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import net, { type Server } from "node:net";
 import os from "node:os";
 import path from "node:path";
 
 import { Core, type ProjectExcludeRules } from "@gmloop/core";
 
 const DEFAULT_COPY_DIRECTORY_NAME = "project";
-
-export const DEFAULT_EXTERNAL_PROJECT_EXCLUDES: Required<ProjectExcludeRules> = Core.DEFAULT_PROJECT_EXCLUDES;
+const DEFAULT_JSON_ENDPOINT_TIMEOUT_MS = 5000;
+const DEFAULT_JSON_ENDPOINT_POLL_INTERVAL_MS = 25;
 
 /**
  * Copied project fixture handle returned by {@link copyExternalProjectFixture}.
@@ -64,52 +65,19 @@ export interface ProjectChangeSummary {
  */
 export type JsonCliPayload = Record<string, unknown> | ReadonlyArray<unknown>;
 
-function shouldExcludeRelativePath(relativePath: string, excludes: Required<ProjectExcludeRules>): boolean {
-    const normalizedPath = Core.toPosixPath(relativePath);
-    const pathSegments = normalizedPath.split("/");
-    const entryName = pathSegments.at(-1) ?? "";
-    const extension = path.extname(entryName);
+export type JsonEndpointPayload = Record<string, unknown>;
 
-    return (
-        excludes.relativePaths.includes(normalizedPath) ||
-        pathSegments.some((segment) => excludes.directoryNames.includes(segment)) ||
-        excludes.fileNames.includes(entryName) ||
-        (extension.length > 0 && excludes.extensions.includes(extension))
-    );
+function createDelay(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, milliseconds);
+    });
 }
 
-async function collectIncludedFilePaths(
-    rootPath: string,
-    excludes: Required<ProjectExcludeRules>
-): Promise<Array<string>> {
-    const relativeFilePaths: Array<string> = [];
-
-    async function walk(currentDirectoryPath: string): Promise<void> {
-        const directoryEntries = await readdir(currentDirectoryPath, { withFileTypes: true });
-
-        await Promise.all(
-            directoryEntries.map(async (entry) => {
-                const absoluteEntryPath = path.join(currentDirectoryPath, entry.name);
-                const relativePath = Core.toPosixPath(path.relative(rootPath, absoluteEntryPath));
-
-                if (shouldExcludeRelativePath(relativePath, excludes)) {
-                    return;
-                }
-
-                if (entry.isDirectory()) {
-                    await walk(absoluteEntryPath);
-                    return;
-                }
-
-                if (entry.isFile()) {
-                    relativeFilePaths.push(relativePath);
-                }
-            })
-        );
-    }
-
-    await walk(rootPath);
-    return relativeFilePaths.toSorted((left, right) => left.localeCompare(right));
+async function collectIncludedFilePaths(rootPath: string, excludes: ProjectExcludeRules): Promise<Array<string>> {
+    return await Core.listRelativeFilePathsRecursively(rootPath, {
+        includeFile: ({ relativePath }) => !Core.isProjectPathExcluded(relativePath, excludes),
+        shouldEnterDirectory: ({ relativePath }) => !Core.isProjectPathExcluded(relativePath, excludes)
+    });
 }
 
 async function assertSourceProjectDirectory(sourceProjectPath: string): Promise<void> {
@@ -152,7 +120,7 @@ export async function copyExternalProjectFixture(
     const sourceProjectPath = path.resolve(options.sourceProjectPath);
     await assertSourceProjectDirectory(sourceProjectPath);
 
-    const excludes = Core.mergeExcludeRules(DEFAULT_EXTERNAL_PROJECT_EXCLUDES, options.excludes);
+    const excludes = Core.mergeExcludeRules(Core.DEFAULT_PROJECT_EXCLUDES, options.excludes);
     const copiedRelativeFilePaths = await collectIncludedFilePaths(sourceProjectPath, excludes);
     const temporaryRootPath =
         options.temporaryRootPath ?? (await mkdtemp(path.join(os.tmpdir(), "gmloop-external-project-")));
@@ -205,7 +173,7 @@ export async function createProjectFingerprint(
     excludes: ProjectExcludeRules = {}
 ): Promise<ProjectFingerprint> {
     const rootPath = path.resolve(projectRootPath);
-    const mergedExcludes = Core.mergeExcludeRules(DEFAULT_EXTERNAL_PROJECT_EXCLUDES, excludes);
+    const mergedExcludes = Core.mergeExcludeRules(Core.DEFAULT_PROJECT_EXCLUDES, excludes);
     const relativeFilePaths = await collectIncludedFilePaths(rootPath, mergedExcludes);
     const files = await Promise.all(
         relativeFilePaths.map(async (relativePath) => {
@@ -328,4 +296,114 @@ export function assertJsonCliPayload(outputText: string): Record<string, unknown
     }
 
     return payload as Record<string, unknown>;
+}
+
+function createAvailablePortServer(host: string): Promise<Server> {
+    return new Promise((resolve, reject) => {
+        const server = net.createServer();
+
+        server.once("error", (error) => {
+            reject(error);
+        });
+        server.listen(0, host, () => {
+            resolve(server);
+        });
+    });
+}
+
+function closeAvailablePortServer(server: Server): Promise<void> {
+    return new Promise((resolve, reject) => {
+        server.close((error) => {
+            if (error) {
+                reject(new Error(`Failed to close temporary port server: ${error.message}`, { cause: error }));
+                return;
+            }
+
+            resolve();
+        });
+    });
+}
+
+/**
+ * Reserve and release a batch of currently available TCP ports.
+ *
+ * @param count Number of ports to allocate.
+ * @param host Host address to bind while probing for ports.
+ * @returns Distinct available port numbers.
+ */
+export async function findAvailablePorts(count: number, host = "127.0.0.1"): Promise<Array<number>> {
+    const servers = await Promise.all(Array.from({ length: count }, async () => await createAvailablePortServer(host)));
+
+    try {
+        return servers.map((server) => {
+            const address = server.address();
+            if (!address || typeof address === "string") {
+                throw new Error("Failed to resolve test port.");
+            }
+
+            return address.port;
+        });
+    } finally {
+        await Promise.all(servers.map(async (server) => await closeAvailablePortServer(server)));
+    }
+}
+
+/**
+ * Fetch a JSON object payload from an HTTP endpoint.
+ *
+ * @param endpointUrl Absolute endpoint URL.
+ * @returns Parsed JSON object payload.
+ */
+export async function fetchJsonEndpointPayload<TPayload extends JsonEndpointPayload>(
+    endpointUrl: string
+): Promise<TPayload> {
+    const response = await fetch(endpointUrl);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch JSON endpoint ${endpointUrl}: ${response.status}`);
+    }
+
+    const payload = (await response.json()) as unknown;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new TypeError(`JSON endpoint ${endpointUrl} did not return an object payload.`);
+    }
+
+    return payload as TPayload;
+}
+
+/**
+ * Poll a JSON endpoint until its payload satisfies a predicate.
+ *
+ * @param endpointUrl Absolute endpoint URL.
+ * @param predicate Predicate that reports whether polling is complete.
+ * @param timeoutMs Maximum wait time.
+ * @param pollIntervalMs Delay between attempts.
+ * @returns The first payload accepted by the predicate.
+ */
+export async function waitForJsonEndpointPayload<TPayload extends JsonEndpointPayload>(
+    endpointUrl: string,
+    predicate: (payload: TPayload) => boolean,
+    timeoutMs = DEFAULT_JSON_ENDPOINT_TIMEOUT_MS,
+    pollIntervalMs = DEFAULT_JSON_ENDPOINT_POLL_INTERVAL_MS
+): Promise<TPayload> {
+    const deadline = Date.now() + timeoutMs;
+
+    async function poll(): Promise<TPayload> {
+        if (Date.now() >= deadline) {
+            throw new Error(`Timed out waiting for JSON endpoint ${endpointUrl}.`);
+        }
+
+        try {
+            const payload = await fetchJsonEndpointPayload<TPayload>(endpointUrl);
+            if (predicate(payload)) {
+                return payload;
+            }
+        } catch {
+            // Endpoint polling intentionally tolerates transient startup failures.
+        }
+
+        await createDelay(pollIntervalMs);
+        return await poll();
+    }
+
+    return await poll();
 }

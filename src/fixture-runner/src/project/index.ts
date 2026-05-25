@@ -2,6 +2,7 @@ export type {
     CopiedExternalProjectFixture,
     ExternalProjectCopyOptions,
     JsonCliPayload,
+    JsonEndpointPayload,
     ProjectChangeSummary,
     ProjectFileFingerprint,
     ProjectFingerprint
@@ -11,7 +12,9 @@ export {
     collectProjectChangeSummary,
     copyExternalProjectFixture,
     createProjectFingerprint,
-    DEFAULT_EXTERNAL_PROJECT_EXCLUDES,
+    fetchJsonEndpointPayload,
+    findAvailablePorts,
     formatProjectChangeSummary,
-    parseJsonCliPayload
+    parseJsonCliPayload,
+    waitForJsonEndpointPayload
 } from "./project-fixtures.js";
