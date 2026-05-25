@@ -85,7 +85,18 @@ function resolveResourceBaseDirectory(moduleDirectoryPath: string): string {
 function resolveResourceUrl(resourceName: string): URL {
     const moduleDirectoryPath = path.dirname(fileURLToPath(import.meta.url));
     const resourceBaseDirectory = resolveResourceBaseDirectory(moduleDirectoryPath);
-    return new URL(resourceName, new URL(`${resourceBaseDirectory}/`, "file:"));
+    const normalizedResourcePath = path.posix.normalize(resourceName.replaceAll("\\", "/"));
+    if (
+        normalizedResourcePath.length === 0 ||
+        normalizedResourcePath === "." ||
+        normalizedResourcePath === ".." ||
+        normalizedResourcePath.startsWith("../") ||
+        normalizedResourcePath.startsWith("/")
+    ) {
+        throw new TypeError("Resource name must resolve to a safe relative path within the bundled resources.");
+    }
+
+    return new URL(normalizedResourcePath, new URL(`${resourceBaseDirectory}/`, "file:"));
 }
 
 /**
