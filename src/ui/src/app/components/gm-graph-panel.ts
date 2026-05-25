@@ -18,6 +18,11 @@ import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const NODE_STYLE_BY_KIND = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
 const EDGE_STYLE_BY_TYPE = new Map(EDGE_LINE_VISUAL_STYLES.map((style) => [style.type, style]));
+const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphVisualizationNodeKind>([
+    "enum_member",
+    "instance_variable",
+    "local_variable"
+]);
 
 function formatNodeKindLabel(kind: string): string {
     return kind
@@ -137,7 +142,9 @@ export class GmGraphPanel extends LightDomLitElement {
             if (hasLoadedGraphIndex(this.model) || force) {
                 this.#enabledNodeKinds.clear();
                 for (const kind of listGraphNodeKinds(this.model.data.nodes)) {
-                    this.#enabledNodeKinds.add(kind);
+                    if (!DEFAULT_DISABLED_NODE_KINDS.has(kind)) {
+                        this.#enabledNodeKinds.add(kind);
+                    }
                 }
                 this.#initializedFiltersForModel = true;
             }
