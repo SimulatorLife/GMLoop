@@ -2048,7 +2048,8 @@ function createProjectIndexResultSnapshot({
             resourceType: record.resourceType,
             scopes: [...record.scopes],
             gmlFiles: [...record.gmlFiles],
-            assetReferences: record.assetReferences.map((reference) => cloneAssetReference(reference))
+            assetReferences: record.assetReferences.map((reference) => cloneAssetReference(reference)),
+            layers: record.layers
         }),
         { sortEntries: false }
     );

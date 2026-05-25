@@ -59,6 +59,7 @@ export type GraphNodeKind =
     | "project"
     | "resource"
     | "room"
+    | "room_layer"
     | "script"
     | "sequence"
     | "shader"
