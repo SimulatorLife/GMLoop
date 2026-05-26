@@ -6,7 +6,7 @@ import { Core } from "@gmloop/core";
 import { evaluateCacheHitDecision, ProjectIndexCacheMissReason } from "./cache-validation-policy.js";
 import { evaluateProjectIndexCacheSizePolicy, normalizeProjectIndexCacheMaxSizeBytes } from "./cache-write-policy.js";
 import { isProjectManifestPath, PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE } from "./constants.js";
-import { defaultFsFacade, type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
+import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 
 export const PROJECT_INDEX_CACHE_SCHEMA_VERSION = 2;
 export const PROJECT_INDEX_CACHE_DIRECTORY = ".gmloop";
@@ -125,7 +125,7 @@ export { applyProjectIndexCacheEnvOverride, getDefaultProjectIndexCacheMaxSize, 
 
 export async function loadProjectIndexCache(
     descriptor,
-    fsFacade: Required<Pick<ProjectIndexFsFacade, "readFile">> = defaultFsFacade,
+    fsFacade: Required<Pick<ProjectIndexFsFacade, "readFile">> = Core.defaultFsFacade as Required<ProjectIndexFsFacade>,
     options = {}
 ) {
     const {
@@ -204,7 +204,9 @@ export async function loadProjectIndexCache(
 
 export async function saveProjectIndexCache(
     descriptor,
-    fsFacade: Required<Pick<ProjectIndexFsFacade, "mkdir" | "writeFile" | "rename" | "unlink">> = defaultFsFacade,
+    fsFacade: Required<
+        Pick<ProjectIndexFsFacade, "mkdir" | "writeFile" | "rename" | "unlink">
+    > = Core.defaultFsFacade as Required<ProjectIndexFsFacade>,
     options = {}
 ) {
     const {
@@ -335,7 +337,9 @@ export async function deriveCacheKey(
         projectRoot?: string | null;
         formatterVersion?: string;
     } = {},
-    fsFacade: Required<Pick<ProjectIndexFsFacade, "readDir" | "stat">> = defaultFsFacade
+    fsFacade: Required<
+        Pick<ProjectIndexFsFacade, "readDir" | "stat">
+    > = Core.defaultFsFacade as Required<ProjectIndexFsFacade>
 ) {
     const hash = createHash("sha256");
     hash.update(String(formatterVersion));

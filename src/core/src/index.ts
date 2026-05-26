@@ -62,7 +62,6 @@ export type { DocCommentLines, MutableDocCommentLines } from "./comments/comment
 export type { DocCommentNodeMetadata } from "./comments/doc-comment/node-metadata.js";
 export type { StripCommentsTransformOptions } from "./comments/strip-comments-transform.js";
 export type { FsFacade } from "./fs/io.js";
-export { defaultFsFacade as coreDefaultFsFacade } from "./fs/io.js";
 export type { GmloopProjectConfig } from "./project-config/gmloop-project-config.js";
 export type { ProjectExcludeRules } from "./project-config/project-excludes.js";
 export type { FeatherDiagnostic, FeatherMetadata } from "./resources/feather-metadata.js";
@@ -79,7 +78,7 @@ export type { AbortSignalLike } from "./utils/abort.js";
 export type { DebouncedFunction } from "./utils/function.js";
 
 // Member-index accessor constants — centralises the finite set of valid `[…` prefixes
-// for MemberIndexExpressionNode.accessor so call sites can use typed constants.
+// accessible on MemberIndexExpressionNode so call sites can use typed constants.
 export type { MemberAccessor } from "./ast/member-accessors.js";
 export {
     isMemberAccessor,
@@ -92,3 +91,10 @@ export {
     MEMBER_ACCESSOR_VALUES,
     MEMBER_INDEX_ACCESSORS
 } from "./ast/member-accessors.js";
+
+// Expose `defaultFsFacade` directly as a named export so call sites can use a
+// simple `Core.defaultFsFacade` access without digging through namespace
+// flattening.  A direct named export (outside the JS spread above) guarantees
+// the property is enumerable on the frozen `Core` object regardless of JS engine
+// implementation details.
+export { defaultFsFacade } from "./fs/io.js";

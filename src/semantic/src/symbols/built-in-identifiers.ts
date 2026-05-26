@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 
 import { createProjectIndexAbortGuard } from "../project-index/abort-guard.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "../project-index/fs-facade.js";
+import type { ProjectIndexFsFacade } from "../project-index/fs-facade.js";
 
 const GML_IDENTIFIER_FILE_PATH = Core.GML_IDENTIFIER_METADATA_PATH;
 
@@ -53,7 +53,9 @@ function areMtimesEquivalent(cachedMtime, currentMtime) {
 }
 
 export function loadBuiltInIdentifiers(
-    fsFacade: Required<Pick<ProjectIndexFsFacade, "readFile" | "stat">> = defaultFsFacade,
+    fsFacade: Required<
+        Pick<ProjectIndexFsFacade, "readFile" | "stat">
+    > = Core.defaultFsFacade as Required<ProjectIndexFsFacade>,
     metrics = null,
     options: any = {}
 ) {
