@@ -50,6 +50,9 @@ export function sanitizeDocCommentMultilineOptionalParamDefaults(text: string): 
 function createSanitizingContext(context: Rule.RuleContext): Rule.RuleContext {
     return {
         ...context,
+        // Explicitly copy sourceCode since it is inherited from the prototype chain
+        // and would not be included in the spread operator.
+        sourceCode: context.sourceCode,
         report(payload: Parameters<Rule.RuleContext["report"]>[0]) {
             if (typeof Reflect.get(payload, "fix") !== "function") {
                 context.report(payload);
@@ -59,17 +62,44 @@ function createSanitizingContext(context: Rule.RuleContext): Rule.RuleContext {
             context.report({
                 ...payload,
                 fix(fixer: Rule.RuleFixer) {
-                    const sanitizingFixer = {
-                        ...fixer,
+                    return Reflect.get(
+                        payload,
+                        "fix"
+                    )({
+                        insertTextAfter(node: Parameters<Rule.RuleFixer["insertTextAfter"]>[0], text: string) {
+                            return fixer.insertTextAfter(node, text);
+                        },
+                        insertTextAfterRange(
+                            range: Parameters<Rule.RuleFixer["insertTextAfterRange"]>[0],
+                            text: string
+                        ) {
+                            return fixer.insertTextAfterRange(range, text);
+                        },
+                        insertTextBefore(node: Parameters<Rule.RuleFixer["insertTextBefore"]>[0], text: string) {
+                            return fixer.insertTextBefore(node, text);
+                        },
+                        insertTextBeforeRange(
+                            range: Parameters<Rule.RuleFixer["insertTextBeforeRange"]>[0],
+                            text: string
+                        ) {
+                            return fixer.insertTextBeforeRange(range, text);
+                        },
+                        replaceText(node: Parameters<Rule.RuleFixer["replaceText"]>[0], text: string) {
+                            return fixer.replaceText(node, text);
+                        },
                         replaceTextRange(range: Parameters<Rule.RuleFixer["replaceTextRange"]>[0], text: string) {
                             return fixer.replaceTextRange(
                                 range,
                                 sanitizeDocCommentMultilineOptionalParamDefaults(text)
                             );
+                        },
+                        remove(node: Parameters<Rule.RuleFixer["remove"]>[0]) {
+                            return fixer.remove(node);
+                        },
+                        removeRange(range: Parameters<Rule.RuleFixer["removeRange"]>[0]) {
+                            return fixer.removeRange(range);
                         }
-                    };
-
-                    return Reflect.get(payload, "fix")(sanitizingFixer);
+                    });
                 }
             });
         }
