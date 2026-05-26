@@ -13,9 +13,14 @@ void test("createInitialFixWorkflowLogLines includes an immediate in-progress st
 });
 
 void test("createRunningFixWorkflowLogLines reports elapsed seconds while the fix workflow is running", () => {
+    const underOneSecond = createRunningFixWorkflowLogLines(200);
     const afterOneSecond = createRunningFixWorkflowLogLines(1000);
     const afterThreeSeconds = createRunningFixWorkflowLogLines(3200);
 
+    assert.deepEqual(underOneSecond, [
+        "Starting project fix workflow...",
+        "Fix workflow is still running (0 seconds elapsed)..."
+    ]);
     assert.deepEqual(afterOneSecond, [
         "Starting project fix workflow...",
         "Fix workflow is still running (1 second elapsed)..."
