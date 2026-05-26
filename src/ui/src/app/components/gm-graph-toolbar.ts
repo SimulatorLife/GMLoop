@@ -1,8 +1,7 @@
 import { html } from "lit";
 import { ref } from "lit/directives/ref.js";
 
-import type { GraphVisualizationUiModel } from "../contracts.js";
-import { hasLoadedGraphIndex, hasLoadedGraphProject } from "../graph-availability.js";
+import { type GraphVisualizationUiModel,hasLoadedGraphIndex, hasLoadedGraphProject } from "../contracts.js";
 import type {
     GraphVisualizationUiMcpServerStatus,
     GraphVisualizationUiPage,

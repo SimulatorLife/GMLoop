@@ -99,3 +99,24 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
         onRefreshLiveReloadStatus: () => null
     };
 }
+
+/**
+ * Return whether the current UI model includes graph data that can be explored.
+ */
+export function hasLoadedGraphIndex(model: GraphVisualizationUiModel): boolean {
+    return model.data.nodes.length > 0;
+}
+
+/**
+ * Return whether the current UI model includes graph edges that can be visualised.
+ */
+export function hasGraphEdges(model: GraphVisualizationUiModel): boolean {
+    return model.data.edges.length > 0;
+}
+
+/**
+ * Return whether the current UI model is associated with a loaded project target.
+ */
+export function hasLoadedGraphProject(model: GraphVisualizationUiModel): boolean {
+    return model.loadedTarget !== null;
+}
