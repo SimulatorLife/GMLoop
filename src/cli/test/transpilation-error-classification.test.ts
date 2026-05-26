@@ -114,11 +114,13 @@ void describe("Transpilation error classification", () => {
         });
 
         const context = createTranspilationContext();
-        context.transpiler = {
-            transpileScript() {
+        class ThrowingScriptTranspiler extends Transpiler.GmlTranspiler {
+            public override transpileScript(): never {
                 throw new Error("Generated patch failed validation");
             }
-        } as unknown as TranspilationContext["transpiler"];
+        }
+
+        context.transpiler = new ThrowingScriptTranspiler();
 
         const result = transpileFile(context, testFile, "function test() { return 1; }", 1, {
             verbose: false,
