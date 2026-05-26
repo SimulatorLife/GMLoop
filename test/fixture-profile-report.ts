@@ -15,6 +15,19 @@ interface DeepCpuProfileFailureEntry {
     message: string;
 }
 
+const MAX_NON_PERFORMANCE_FAILURES_IN_WARNING = 10;
+
+function renderNonPerformanceFailureSummary(failures: ReadonlyArray<string>): string {
+    const visibleFailures = failures.slice(0, MAX_NON_PERFORMANCE_FAILURES_IN_WARNING);
+    const omittedCount = failures.length - visibleFailures.length;
+
+    if (omittedCount <= 0) {
+        return visibleFailures.join("\n- ");
+    }
+
+    return `${visibleFailures.join("\n- ")}\n- ...and ${omittedCount} more non-performance fixture mismatches`;
+}
+
 function profilingEnabled(): boolean {
     return process.env.GMLOOP_FIXTURE_PROFILE === "1";
 }
@@ -196,7 +209,7 @@ async function runProfileCollection(): Promise<void> {
             [
                 "Fixture profiling observed non-performance fixture mismatches.",
                 "These are validated by dedicated correctness suites and do not fail performance profiling:",
-                `- ${nonPerformanceFailures.join("\n- ")}`
+                `- ${renderNonPerformanceFailureSummary(nonPerformanceFailures)}`
             ].join("\n")
         );
     }
