@@ -112,4 +112,107 @@ void describe("exportGraphVisualizationData", () => {
         assert.strictEqual(data.edges[0]?.target, "node1");
         assert.strictEqual(data.edges[0]?.type, "calls");
     });
+
+    void test("excludes generic file and options nodes from visualization exports", async () => {
+        const dbPath = path.join(os.tmpdir(), `test-export-filter-${String(Date.now())}.db`);
+        const db = openGraphIndexDatabase(dbPath);
+
+        db.exec("BEGIN");
+
+        db.prepare(
+            "INSERT INTO graphs (id, scope, root_path, last_indexed_at, schema_version) VALUES (?, ?, ?, ?, ?)"
+        ).run("project", "project", "/fake/root", "2023-01-01", 2);
+        db.prepare(
+            "INSERT INTO index_state (graph_id, file_count, node_count, edge_count, embedding_model, build_duration_ms) VALUES (?, ?, ?, ?, ?, ?)"
+        ).run("project", 3, 5, 4, "disabled", 100);
+
+        const insertNode = db.prepare(
+            `
+                INSERT INTO nodes (
+                    id, graph_id, kind, name, display_name, relative_path, resource_path, summary, snippet
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `
+        );
+
+        insertNode.run("project-node", "project", "project", "Game", "Game", null, "Project.yyp", "Project", "");
+        insertNode.run(
+            "script-node",
+            "project",
+            "script",
+            "scr_player",
+            "scr_player",
+            "scripts/scr_player/scr_player.gml",
+            "scripts/scr_player/scr_player.yy",
+            "Script",
+            ""
+        );
+        insertNode.run(
+            "file-node",
+            "project",
+            "file",
+            "Project.yyp",
+            "Project.yyp",
+            "Project.yyp",
+            null,
+            "Generic file",
+            ""
+        );
+        insertNode.run(
+            "options-node",
+            "project",
+            "resource",
+            "options_windows",
+            "options_windows",
+            null,
+            "options/windows/options_windows.yy",
+            "Options",
+            ""
+        );
+        insertNode.run(
+            "generic-resource-node",
+            "project",
+            "resource",
+            "mystery_resource",
+            "mystery_resource",
+            null,
+            "extensions/mystery_resource/mystery_resource.yy",
+            "Generic resource",
+            ""
+        );
+
+        db.prepare("INSERT INTO edges (from_id, to_id, type, ordinal) VALUES (?, ?, ?, ?)").run(
+            "project-node",
+            "script-node",
+            "contains",
+            0
+        );
+        db.prepare("INSERT INTO edges (from_id, to_id, type, ordinal) VALUES (?, ?, ?, ?)").run(
+            "project-node",
+            "file-node",
+            "contains",
+            0
+        );
+        db.prepare("INSERT INTO edges (from_id, to_id, type, ordinal) VALUES (?, ?, ?, ?)").run(
+            "project-node",
+            "options-node",
+            "contains",
+            0
+        );
+        db.prepare("INSERT INTO edges (from_id, to_id, type, ordinal) VALUES (?, ?, ?, ?)").run(
+            "project-node",
+            "generic-resource-node",
+            "contains",
+            0
+        );
+
+        db.exec("COMMIT");
+
+        const data = exportGraphVisualizationData(db, "/fake/root");
+
+        db.close();
+
+        assert.deepStrictEqual(data.nodes.map((node) => node.id).toSorted(), ["project-node", "script-node"]);
+        assert.deepStrictEqual(data.edges, [{ source: "project-node", target: "script-node", type: "contains" }]);
+    });
 });

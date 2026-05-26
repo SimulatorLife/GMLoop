@@ -595,9 +595,13 @@ void test("buildGraphIndex projects structs, variables, functions, and concrete 
 
         const database = openGraphIndexDatabase(result.databasePath);
         try {
-            const nodeRows = database.prepare("SELECT kind, name FROM nodes").all() as Array<{
+            const nodeRows = database
+                .prepare("SELECT id, kind, name, scip_symbol AS scipSymbol FROM nodes")
+                .all() as Array<{
+                id: string;
                 kind: string;
                 name: string;
+                scipSymbol: string | null;
             }>;
             const nodeKinds = new Set(nodeRows.map((row) => row.kind));
             const nodeNamesByKind = new Map<string, Set<string>>();
@@ -630,6 +634,52 @@ void test("buildGraphIndex projects structs, variables, functions, and concrete 
             assert.ok(nodeNamesByKind.get("struct_variable")?.has("struct_health"));
             assert.ok(nodeNamesByKind.get("instance_variable")?.has("speed_bonus"));
             assert.equal(nodeKinds.has("resource"), false);
+            assert.equal(nodeKinds.has("constructor"), false);
+
+            const structNode = nodeRows.find((row) => row.kind === "struct" && row.name === "Player");
+            const structVariableNode = nodeRows.find(
+                (row) => row.kind === "struct_variable" && row.name === "struct_health"
+            );
+            assert.ok(structNode, "expected Player struct node");
+            assert.ok(structVariableNode, "expected struct_health struct variable node");
+            assert.match(structNode.scipSymbol ?? "", /^gml\/struct\//u);
+
+            const structVariableOwnershipEdge = database
+                .prepare(
+                    `
+                        SELECT COUNT(*) AS count
+                        FROM edges
+                        WHERE from_id = ? AND to_id = ? AND type = 'defines'
+                    `
+                )
+                .get(structNode.id, structVariableNode.id) as { count: number };
+            assert.equal(structVariableOwnershipEdge.count, 1);
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const visualizationStructNode = visualizationData.nodes.find(
+                (node) => node.kind === "struct" && node.name === "Player"
+            );
+            const visualizationStructVariableNode = visualizationData.nodes.find(
+                (node) => node.kind === "struct_variable" && node.name === "struct_health"
+            );
+            assert.ok(visualizationStructNode, "expected Player struct in graph visualization data");
+            assert.ok(
+                visualizationStructVariableNode,
+                "expected struct_health struct variable in graph visualization data"
+            );
+            assert.ok(
+                visualizationData.nodes.every((node) => String(node.kind) !== "constructor"),
+                "constructors must be exported as struct nodes, not constructor nodes"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === visualizationStructNode.id &&
+                        edge.target === visualizationStructVariableNode.id &&
+                        edge.type === "defines"
+                ),
+                "expected graph visualization data to connect struct variables to their struct"
+            );
         } finally {
             database.close();
         }
@@ -1442,6 +1492,18 @@ void test("buildGraphIndex projects the project manifest as the connected projec
                     },
                     {
                         id: {
+                            name: "misplaced_file",
+                            path: "included/misplaced_file/misplaced_file.yy"
+                        }
+                    },
+                    {
+                        id: {
+                            name: "reddit",
+                            path: "platform/reddit/reddit.yy"
+                        }
+                    },
+                    {
+                        id: {
                             name: "mystery_resource",
                             path: "extensions/mystery_resource/mystery_resource.yy"
                         }
@@ -1460,6 +1522,14 @@ void test("buildGraphIndex projects the project manifest as the connected projec
         await fixture.writeProjectFile(
             "datafiles/config/config.yy",
             JSON.stringify({ name: "config", resourceType: "GMIncludedFile" })
+        );
+        await fixture.writeProjectFile(
+            "included/misplaced_file/misplaced_file.yy",
+            JSON.stringify({ name: "misplaced_file", resourceType: "GMIncludedFile" })
+        );
+        await fixture.writeProjectFile(
+            "platform/reddit/reddit.yy",
+            JSON.stringify({ name: "reddit", resourceType: "GMRedditOptions" })
         );
         await fixture.writeProjectFile(
             "extensions/mystery_resource/mystery_resource.yy",
@@ -1519,7 +1589,7 @@ void test("buildGraphIndex projects the project manifest as the connected projec
             const genericResourceNode = database
                 .prepare("SELECT kind FROM nodes WHERE resource_path = ?")
                 .get("extensions/mystery_resource/mystery_resource.yy") as { kind: string } | undefined;
-            assert.equal(genericResourceNode?.kind, "resource");
+            assert.equal(genericResourceNode, undefined);
 
             const fileNodeCount = database.prepare("SELECT COUNT(*) AS count FROM nodes WHERE kind = 'file'").get() as {
                 count: number;
@@ -1527,11 +1597,42 @@ void test("buildGraphIndex projects the project manifest as the connected projec
             assert.equal(fileNodeCount.count, 0);
 
             const optionNodeCount = database
-                .prepare("SELECT COUNT(*) AS count FROM nodes WHERE resource_path LIKE 'options/%'")
+                .prepare(
+                    `
+                        SELECT COUNT(*) AS count
+                        FROM nodes
+                        WHERE resource_path LIKE 'options/%'
+                           OR resource_path = 'platform/reddit/reddit.yy'
+                    `
+                )
                 .get() as {
                 count: number;
             };
             assert.equal(optionNodeCount.count, 0);
+
+            const misplacedIncludedFileNode = database
+                .prepare("SELECT id FROM nodes WHERE resource_path = ?")
+                .get("included/misplaced_file/misplaced_file.yy") as { id: string } | undefined;
+            assert.equal(misplacedIncludedFileNode, undefined);
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            assert.equal(
+                visualizationData.nodes.some((node) => node.kind === "file"),
+                false
+            );
+            assert.ok(
+                visualizationData.nodes.some(
+                    (node) => node.kind === "data_file" && node.resourcePath === "datafiles/config/config.yy"
+                )
+            );
+            assert.equal(
+                visualizationData.nodes.some((node) => node.resourcePath?.startsWith("options/") ?? false),
+                false
+            );
+            assert.equal(
+                visualizationData.nodes.some((node) => node.resourcePath === "platform/reddit/reddit.yy"),
+                false
+            );
 
             const rootEdges = database
                 .prepare(

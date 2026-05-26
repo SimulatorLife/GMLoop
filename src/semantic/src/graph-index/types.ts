@@ -39,7 +39,6 @@ export type GraphIndexBuildOptions = Readonly<{
 
 export type GraphNodeKind =
     | "anim_curve"
-    | "constructor"
     | "data_file"
     | "enum"
     | "enum_member"
@@ -57,7 +56,6 @@ export type GraphNodeKind =
     | "particle_system"
     | "path"
     | "project"
-    | "resource"
     | "room"
     | "room_layer"
     | "script"

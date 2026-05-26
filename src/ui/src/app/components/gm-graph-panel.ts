@@ -8,6 +8,7 @@ import {
     createGraphLayout,
     filterGraphLayoutForDisplay,
     type GraphLayoutNode,
+    type GraphLegendNodeKind,
     type GraphNodeKindLegendItem,
     listGraphEdgeTypes,
     listGraphNodeKindLegendItems,
@@ -21,10 +22,13 @@ import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const NODE_STYLE_BY_KIND = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
 const EDGE_STYLE_BY_TYPE = new Map(EDGE_LINE_VISUAL_STYLES.map((style) => [style.type, style]));
-const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphVisualizationNodeKind>([
+const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphLegendNodeKind>([
     "enum_member",
     "instance_variable",
-    "local_variable"
+    "local_variable",
+    "macro",
+    "note",
+    "room_layer"
 ]);
 
 function formatNodeKindLabel(kind: string): string {
@@ -96,7 +100,7 @@ export class GmGraphPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
-    #enabledNodeKinds = new Set<GraphVisualizationNodeKind>();
+    #enabledNodeKinds = new Set<GraphLegendNodeKind>();
     #enabledEdgeTypes = new Set<GraphVisualizationEdgeType>();
     #selectedNodeId: string | null = null;
     #lastModelReference: GraphVisualizationUiModel | null = null;
@@ -236,17 +240,13 @@ export class GmGraphPanel extends LightDomLitElement {
         };
     }
 
-    #toggleNodeKind(kind: GraphVisualizationNodeKind): void {
+    protected toggleNodeKind(kind: GraphLegendNodeKind): void {
         if (this.#enabledNodeKinds.has(kind)) {
             this.#enabledNodeKinds.delete(kind);
         } else {
             this.#enabledNodeKinds.add(kind);
         }
         this.requestUpdate();
-    }
-
-    protected toggleNodeKindForTest(kind: GraphVisualizationNodeKind): void {
-        this.#toggleNodeKind(kind);
     }
 
     #toggleEdgeType(type: GraphVisualizationEdgeType): void {
@@ -321,9 +321,11 @@ export class GmGraphPanel extends LightDomLitElement {
                     <input
                         type="checkbox"
                         .checked=${this.#enabledNodeKinds.has(item.kind)}
-                        @change=${() => this.#toggleNodeKind(item.kind)}
+                        @change=${() => this.toggleNodeKind(item.kind)}
                     />
-                    <span class="legend-swatch" style=${`background:${getNodeColor(item.kind)}`}></span>
+                    ${item.kind === "resource"
+                        ? html`<span class="legend-swatch legend-swatch-group" aria-hidden="true"></span>`
+                        : html`<span class="legend-swatch" style=${`background:${getNodeColor(item.kind)}`}></span>`}
                     <span>${formatNodeKindLabel(item.kind)}</span>
                 </label>
                 ${childContent}
@@ -370,7 +372,7 @@ export class GmGraphPanel extends LightDomLitElement {
         const pathLabel = readGraphNodePathLabel(node);
         const locationLabel = readGraphNodeLocationLabel(node);
         return html`
-            <div id="tooltip" class="visible">
+            <div id="tooltip" class="visible" role="dialog" aria-live="polite" data-selected-node-id=${node.id}>
                 <h3>${node.displayName}</h3>
                 <div>${node.kind} | ${node.graphId}</div>
                 ${node.scipSymbol ? html`<div>symbol: ${node.scipSymbol}</div>` : null}
@@ -400,7 +402,7 @@ export class GmGraphPanel extends LightDomLitElement {
             matchesNode: (node) => this.#matchesSearch(node)
         });
         const { edges: visibleEdges, nodes: visibleNodes } = visibleLayout;
-        const selectedNode = visibleNodes.find((node) => node.id === this.#selectedNodeId) ?? null;
+        const selectedNode = layout.nodes.find((node) => node.id === this.#selectedNodeId) ?? null;
         const jsonValue = JSON.stringify({ edges: visibleEdges, nodes: visibleNodes }, null, 2);
 
         return html`
@@ -472,6 +474,9 @@ export class GmGraphPanel extends LightDomLitElement {
                                         tabindex="0"
                                         role="button"
                                         aria-label=${node.displayName}
+                                        @pointerdown=${(event: PointerEvent) => {
+                                            event.stopPropagation();
+                                        }}
                                         @click=${() => this.selectNode(node.id)}
                                         @keydown=${(event: KeyboardEvent) => {
                                             if (event.key === "Enter" || event.key === " ") {

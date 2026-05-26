@@ -153,7 +153,6 @@ const GRAPH_RESOURCE_NODE_KINDS = new Set<GraphNodeKind>([
     "particle_system",
     "path",
     "project",
-    "resource",
     "room",
     "script",
     "sequence",
@@ -224,11 +223,13 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "struct_variable": {
             return `gml/var/struct::${entry.scopeId ?? entry.key ?? name}`;
         }
+        case "struct": {
+            return `gml/struct/${identifierId ?? entry.key ?? entry.scopeId ?? name}`;
+        }
         case "file": {
             return `gml/file/${entry.filePath ?? entry.key ?? name}`;
         }
         case "anim_curve":
-        case "constructor":
         case "data_file":
         case "extension":
         case "font":
@@ -238,7 +239,6 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "particle_system":
         case "path":
         case "project":
-        case "resource":
         case "room":
         case "room_layer":
         case "script":
@@ -248,9 +248,6 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "sprite":
         case "tileset":
         case "timeline":
-        case "struct": {
-            return `gml/script/${name}`;
-        }
     }
 }
 
@@ -546,6 +543,36 @@ function resolveEnumOwnerNodeId(context: ProjectionContext, entry: ProjectIndexI
     return enumName ? lookupUniqueNodeByNameAndKind(context, enumName, "enum") : null;
 }
 
+function resolveStructOwnerNodeId(context: ProjectionContext, entry: ProjectIndexIdentifierEntry): string | null {
+    const scopeId = getString(entry.scopeId);
+    if (!scopeId) {
+        return null;
+    }
+
+    const ownerNodeId = context.nodeIdsByScopeId.get(scopeId) ?? null;
+    if (!ownerNodeId) {
+        return null;
+    }
+
+    const ownerNode = context.nodeRecords.find((node) => node.id === ownerNodeId) ?? null;
+    return ownerNode?.kind === "struct" ? ownerNode.id : null;
+}
+
+function projectStructVariableOwnershipEdge(
+    context: ProjectionContext,
+    node: GraphNodeRecord,
+    entry: ProjectIndexIdentifierEntry
+): void {
+    const structNodeId = resolveStructOwnerNodeId(context, entry);
+    if (structNodeId && structNodeId !== node.id) {
+        context.edgeRecords.push({
+            fromId: structNodeId,
+            toId: node.id,
+            type: "defines"
+        });
+    }
+}
+
 function resolveFileSemanticOwnerNodeId(context: ProjectionContext, filePath: string | null): string | null {
     const resourcePath = resolveResourcePathForFile(context, filePath);
     if (!resourcePath) {
@@ -600,7 +627,7 @@ function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKin
     }
 }
 
-function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
+function normalizeResourceKind(resourceType: string | null): GraphNodeKind | null {
     switch (resourceType) {
         case "GMAnimCurve": {
             return "anim_curve";
@@ -660,7 +687,7 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
             return "timeline";
         }
         default: {
-            return "resource";
+            return null;
         }
     }
 }
@@ -883,6 +910,9 @@ function projectResources(context: ProjectionContext): void {
         const name =
             getString(resourceRecord.name) ?? path.posix.basename(resourcePath, path.posix.extname(resourcePath));
         const kind = normalizeResourceKind(getString(resourceRecord.resourceType));
+        if (!kind) {
+            continue;
+        }
         const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
         const primaryGmlFile = gmlFiles.find(
             (gmlFile): gmlFile is string => typeof gmlFile === "string" && gmlFile.trim().length > 0
@@ -1164,6 +1194,10 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                         type: "defines"
                     });
                 }
+            }
+
+            if (kind === "struct_variable") {
+                projectStructVariableOwnershipEdge(context, node, entry);
             }
         }
     }

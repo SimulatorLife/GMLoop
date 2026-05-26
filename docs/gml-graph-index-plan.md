@@ -57,8 +57,9 @@ project::file::<relative-path>
 Target node categories:
 
 - GML symbols: scripts, functions, methods, macros, enums, enum members, variables where project-wide identity is meaningful.
-- GameMaker resources: objects, rooms, sprites, sounds, shaders, scripts, paths, fonts, sequences, tile sets, included files, and other real resource categories.
-- Files and containers only when they clarify ownership or navigation.
+- GameMaker resources: objects, rooms, sprites, sounds, shaders, scripts, paths, fonts, sequences, tile sets, included files, and other real resource categories. The graph must not emit generic `resource` visualization nodes; `resource` is only a UI legend grouping concept.
+- Included files are represented as `data_file` nodes for `datafiles/**` resources. Raw `.gml`, `.yy`, and `.yyp` paths remain provenance metadata on nodes rather than standalone visualization nodes.
+- Files and containers only when they clarify ownership or navigation; the visualization must not create generic file nodes for GameMaker source or metadata files.
 - Built-ins/manual symbols where needed for symbol resolution and context.
 
 Target edge categories:
@@ -269,7 +270,7 @@ Interactive graph views should support:
 - zoom and pan.
 - reset view.
 - accessible labels and keyboard-reachable controls.
-- legend for node kinds and edge types.
+- legend for node kinds and edge types. The node legend uses the full supported visualization kind catalog, excluding the internal `project` and obsolete generic `file` kinds, so filters for resource and symbol categories remain discoverable even when the loaded project has none of that kind. `Resource` appears as a colorless organizational parent for concrete GameMaker resource kinds rather than as a node kind.
 - empty, loading, stale, and error states.
 - large-graph guardrails.
 

@@ -25,9 +25,11 @@ export type GraphLayout = Readonly<{
 
 export type GraphNodeKindLegendItem = Readonly<{
     children: ReadonlyArray<GraphNodeKindLegendItem>;
-    kind: GraphVisualizationNodeKind;
+    kind: GraphLegendNodeKind;
     level: number;
 }>;
+
+export type GraphLegendNodeKind = GraphVisualizationNodeKind | "resource";
 
 const PROJECT_NODE_RADIUS = 17;
 const DEFAULT_NODE_RADIUS = 9;
@@ -39,24 +41,57 @@ const MIN_NODE_DISTANCE_PADDING = 80;
 const CLOSE_NODE_REPULSION = 520;
 const DISTANT_NODE_REPULSION = 1800;
 const PROMOTABLE_HIERARCHY_EDGE_TYPES = new Set<GraphVisualizationEdgeType>(["contains", "defines"]);
-const LEGEND_CHILD_NODE_KINDS = new Set<GraphVisualizationNodeKind>([
+const GRAPH_NODE_KIND_LEGEND_CATALOG: ReadonlyArray<GraphVisualizationNodeKind> = Object.freeze([
+    "anim_curve",
+    "data_file",
+    "enum",
     "enum_member",
+    "extension",
+    "font",
     "function",
     "global_variable",
     "instance_variable",
     "local_variable",
     "macro",
+    "note",
+    "object",
     "object_event",
+    "particle_system",
+    "path",
+    "room",
     "room_layer",
-    "struct_variable"
+    "script",
+    "sequence",
+    "shader",
+    "sound",
+    "sprite",
+    "struct",
+    "struct_variable",
+    "tileset",
+    "timeline"
 ]);
-const LEGEND_PARENT_KIND_BY_CHILD_KIND = new Map<GraphVisualizationNodeKind, GraphVisualizationNodeKind>([
+const RESOURCE_CHILD_NODE_KINDS: ReadonlyArray<GraphVisualizationNodeKind> = Object.freeze([
+    "anim_curve",
+    "data_file",
+    "extension",
+    "font",
+    "note",
+    "object",
+    "particle_system",
+    "path",
+    "room",
+    "script",
+    "sequence",
+    "shader",
+    "sound",
+    "sprite",
+    "tileset",
+    "timeline"
+]);
+const LEGEND_PARENT_KIND_BY_CHILD_KIND = new Map<GraphVisualizationNodeKind, GraphLegendNodeKind>([
+    ...RESOURCE_CHILD_NODE_KINDS.map((kind) => [kind, "resource"] as const),
     ["enum_member", "enum"],
-    ["function", "script"],
-    ["global_variable", "script"],
     ["instance_variable", "object"],
-    ["local_variable", "function"],
-    ["macro", "script"],
     ["object_event", "object"],
     ["room_layer", "room"],
     ["struct_variable", "struct"]
@@ -589,13 +624,22 @@ export function filterGraphLayoutForDisplay(parameters: {
  */
 export function listGraphNodeKinds(
     nodes: ReadonlyArray<GraphVisualizationNodeRecord>
-): ReadonlyArray<GraphVisualizationNodeKind> {
-    return Array.from(new Set(nodes.map((node) => node.kind).filter((kind) => kind !== "project"))).toSorted();
+): ReadonlyArray<GraphLegendNodeKind> {
+    const presentKinds = new Set(nodes.map((node) => node.kind));
+    const catalogKinds = new Set<GraphLegendNodeKind>(["resource", ...GRAPH_NODE_KIND_LEGEND_CATALOG]);
+
+    for (const kind of presentKinds) {
+        if (kind !== "project" && kind !== "file") {
+            catalogKinds.add(kind);
+        }
+    }
+
+    return Array.from(catalogKinds).toSorted();
 }
 
 function createLegendItem(
-    kind: GraphVisualizationNodeKind,
-    childrenByKind: ReadonlyMap<GraphVisualizationNodeKind, ReadonlyArray<GraphVisualizationNodeKind>>,
+    kind: GraphLegendNodeKind,
+    childrenByKind: ReadonlyMap<GraphLegendNodeKind, ReadonlyArray<GraphLegendNodeKind>>,
     level: number
 ): GraphNodeKindLegendItem {
     return Object.freeze({
@@ -614,17 +658,20 @@ export function listGraphNodeKindLegendItems(
     nodes: ReadonlyArray<GraphVisualizationNodeRecord>
 ): ReadonlyArray<GraphNodeKindLegendItem> {
     const nodeKinds = new Set(listGraphNodeKinds(nodes));
-    const childrenByKind = new Map<GraphVisualizationNodeKind, Array<GraphVisualizationNodeKind>>();
-    const rootKinds = new Set<GraphVisualizationNodeKind>();
+    const childrenByKind = new Map<GraphLegendNodeKind, Array<GraphLegendNodeKind>>();
+    const rootKinds = new Set<GraphLegendNodeKind>();
 
     for (const kind of nodeKinds) {
+        if (kind === "resource") {
+            rootKinds.add(kind);
+            continue;
+        }
+
         const parentKind = LEGEND_PARENT_KIND_BY_CHILD_KIND.get(kind) ?? null;
         if (parentKind && nodeKinds.has(parentKind)) {
             const children = childrenByKind.get(parentKind) ?? [];
             children.push(kind);
             childrenByKind.set(parentKind, children);
-        } else if (LEGEND_CHILD_NODE_KINDS.has(kind)) {
-            rootKinds.add(kind);
         } else {
             rootKinds.add(kind);
         }
@@ -639,13 +686,17 @@ export function listGraphNodeKindLegendItems(
 
 function collectDisabledAncestorKinds(
     kind: GraphVisualizationNodeKind,
-    availableNodeKinds: ReadonlySet<GraphVisualizationNodeKind>,
-    enabledNodeKinds: ReadonlySet<GraphVisualizationNodeKind>
-): ReadonlyArray<GraphVisualizationNodeKind> {
-    const disabledAncestors: Array<GraphVisualizationNodeKind> = [];
-    let currentKind = kind;
+    availableNodeKinds: ReadonlySet<GraphLegendNodeKind>,
+    enabledNodeKinds: ReadonlySet<GraphLegendNodeKind>
+): ReadonlyArray<GraphLegendNodeKind> {
+    const disabledAncestors: Array<GraphLegendNodeKind> = [];
+    let currentKind: GraphLegendNodeKind = kind;
 
     while (true) {
+        if (currentKind === "resource") {
+            return disabledAncestors;
+        }
+
         const parentKind = LEGEND_PARENT_KIND_BY_CHILD_KIND.get(currentKind);
         if (!parentKind || !availableNodeKinds.has(parentKind)) {
             return disabledAncestors;
@@ -664,16 +715,17 @@ function collectDisabledAncestorKinds(
  */
 export function resolveEffectiveGraphNodeKinds(
     nodes: ReadonlyArray<GraphVisualizationNodeRecord>,
-    enabledNodeKinds: ReadonlySet<GraphVisualizationNodeKind>
+    enabledNodeKinds: ReadonlySet<GraphLegendNodeKind>
 ): ReadonlySet<GraphVisualizationNodeKind> {
     const availableNodeKinds = new Set(listGraphNodeKinds(nodes));
     const effectiveNodeKinds = new Set<GraphVisualizationNodeKind>();
 
-    for (const kind of availableNodeKinds) {
-        if (
-            enabledNodeKinds.has(kind) &&
-            collectDisabledAncestorKinds(kind, availableNodeKinds, enabledNodeKinds).length === 0
-        ) {
+    for (const kind of GRAPH_NODE_KIND_LEGEND_CATALOG) {
+        if (!availableNodeKinds.has(kind)) {
+            continue;
+        }
+        const disabledAncestorKinds = collectDisabledAncestorKinds(kind, availableNodeKinds, enabledNodeKinds);
+        if (enabledNodeKinds.has(kind) && disabledAncestorKinds.length === 0) {
             effectiveNodeKinds.add(kind);
         }
     }
