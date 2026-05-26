@@ -1021,11 +1021,21 @@ export class RefactorEngine {
         }
 
         // Validate that every individual rename request is structurally valid and
-        // that the batch contains no duplicate source or target names. These checks
-        // are delegated to focused helpers so the orchestration sequence stays
-        // readable at a single abstraction level.
-        assertBatchHasUniqueSymbolIds(renames);
-        assertBatchHasUniqueTargetNames(renames);
+        // that the batch contains no duplicate source or target names. Reuse the
+        // same helpers that validateBatchRenameRequest uses so both paths agree on
+        // what constitutes a conflict, avoiding divergent error messages across
+        // the high-level and low-level entry points.
+        const duplicateSymbolIdErrors = detectDuplicateSourceSymbolIds(renames).map(
+            ({ symbolId, count }) => `Duplicate rename request for symbolId '${symbolId}' (${count} entries)`
+        );
+        const duplicateTargetNameErrors = detectDuplicateTargetNames(renames).map(
+            ({ newName, symbolIds }) => `Cannot rename multiple symbols to '${newName}': ${symbolIds.join(", ")}`
+        );
+
+        if (duplicateSymbolIdErrors.length > 0 || duplicateTargetNameErrors.length > 0) {
+            const allErrors = [...duplicateSymbolIdErrors, ...duplicateTargetNameErrors].join("; ");
+            throw new Error(allErrors);
+        }
 
         // Detect circular rename chains where symbol names form a cycle, such as
         // renaming A→B and B→A simultaneously. These chains create conflicts because
@@ -2524,44 +2534,6 @@ export class RefactorEngine {
      */
     getSemanticCacheStats() {
         return this.semanticCache.getStats();
-    }
-}
-
-/**
- * Assert that every rename request in the batch has a unique source symbol ID.
- * Validates each request's structure and identifier name while detecting
- * duplicates, so both concerns are handled in a single linear pass.
- *
- * @throws {Error} When any request fails structural validation or a symbol ID appears more than once.
- */
-function assertBatchHasUniqueSymbolIds(renames: Array<RenameRequest>): void {
-    const seenSymbolIds = new Set<string>();
-    for (const rename of renames) {
-        assertRenameRequest(rename, "Each rename in planBatchRename");
-        if (seenSymbolIds.has(rename.symbolId)) {
-            throw new Error(`Duplicate rename request for symbolId '${rename.symbolId}'`);
-        }
-        seenSymbolIds.add(rename.symbolId);
-        assertValidIdentifierName(rename.newName);
-    }
-}
-
-/**
- * Assert that no two renames in the batch target the same normalized name.
- * Renaming multiple symbols to the same name would cause them to collide after
- * the refactoring (e.g., renaming both `foo` and `bar` to `baz`), which would
- * produce a corrupted workspace edit.
- *
- * @throws {Error} When two or more renames share the same normalized target name.
- */
-function assertBatchHasUniqueTargetNames(renames: Array<RenameRequest>): void {
-    const seenTargetNames = new Set<string>();
-    for (const rename of renames) {
-        const normalizedNewName = assertValidIdentifierName(rename.newName);
-        if (seenTargetNames.has(normalizedNewName)) {
-            throw new Error(`Cannot rename multiple symbols to '${normalizedNewName}'`);
-        }
-        seenTargetNames.add(normalizedNewName);
     }
 }
 
