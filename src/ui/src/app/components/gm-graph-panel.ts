@@ -2,8 +2,7 @@ import { html, svg } from "lit";
 
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
 import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
-import type { GraphVisualizationUiModel } from "../contracts.js";
-import { hasGraphEdges, hasLoadedGraphIndex } from "../graph-availability.js";
+import { type GraphVisualizationUiModel,hasGraphEdges, hasLoadedGraphIndex } from "../contracts.js";
 import {
     createGraphLayout,
     filterGraphLayoutForDisplay,
