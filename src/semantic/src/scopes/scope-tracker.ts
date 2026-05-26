@@ -217,13 +217,11 @@ export class ScopeTracker {
 
     private readLookupCache(name: string): ScopeSymbolMetadata | null | undefined {
         const cached = this.lookupCache.get(name);
-        if (cached === undefined) {
-            return undefined;
+        if (cached !== undefined) {
+            // Move cache entry to the end to keep a simple insertion-order LRU.
+            this.lookupCache.delete(name);
+            this.lookupCache.set(name, cached);
         }
-
-        // Move cache entry to the end to keep a simple insertion-order LRU.
-        this.lookupCache.delete(name);
-        this.lookupCache.set(name, cached);
         return cached;
     }
 
