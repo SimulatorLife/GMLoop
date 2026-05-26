@@ -1,7 +1,7 @@
 import type { StorageBackend } from "../backends/storage-backend.js";
-import type { GlobalvarToGlobalCodemodOptions } from "../codemods/globalvar-to-global/types.js";
 import type {
     ConflictTypeValue,
+    GlobalvarToGlobalCodemodOptions,
     MaybePromise,
     NamingCategory,
     Range,

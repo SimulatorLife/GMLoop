@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { PropertyValues, TemplateResult } from "lit";
+
 import { GmErrorBanner } from "../src/app/components/primitives/gm-error-banner.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
 
@@ -8,6 +10,34 @@ class TestableGmErrorBanner extends GmErrorBanner {
     public renderForTest(): unknown {
         return this.render();
     }
+
+    public willUpdateForTest(changedProperties: PropertyValuesForTest): void {
+        this.willUpdate(changedProperties as PropertyValues<this>);
+    }
+}
+
+type PropertyValuesForTest = Map<PropertyKey, unknown>;
+
+type TemplateResultWithValues = TemplateResult & {
+    readonly values: readonly unknown[];
+};
+
+function isTemplateResult(value: unknown): value is TemplateResultWithValues {
+    if (typeof value !== "object" || value === null) {
+        return false;
+    }
+
+    return Array.isArray(Reflect.get(value, "strings")) && Array.isArray(Reflect.get(value, "values"));
+}
+
+function getDismissClickHandler(rendered: unknown): () => void {
+    if (!isTemplateResult(rendered)) {
+        assert.fail("Expected a Lit template result.");
+    }
+
+    const handler = rendered.values.find((value): value is () => void => typeof value === "function");
+    assert.equal(typeof handler, "function");
+    return handler;
 }
 
 void test("GmErrorBanner renders nothing when message is empty", () => {
@@ -95,4 +125,35 @@ void test("GmErrorBanner dismiss button is a button element", () => {
     const rendered = renderTemplateValue(banner.renderForTest());
 
     assert.match(rendered, /<button[\s\S]*class="gm-error-banner__dismiss"[\s\S]*>[\s\S]*<\/button>/u);
+});
+
+void test("GmErrorBanner dismiss click hides the current message and emits the dismiss event", () => {
+    const banner = new TestableGmErrorBanner();
+    banner.message = "Dismiss me";
+
+    let dismissEventCount = 0;
+    banner.addEventListener("gm-error-banner-dismiss", () => {
+        dismissEventCount += 1;
+    });
+
+    const dismissClickHandler = getDismissClickHandler(banner.renderForTest());
+    dismissClickHandler();
+
+    assert.equal(dismissEventCount, 1);
+    assert.equal(renderTemplateValue(banner.renderForTest()), "");
+});
+
+void test("GmErrorBanner shows a dismissed message again after the message is cleared", () => {
+    const banner = new TestableGmErrorBanner();
+    banner.message = "Temporary failure";
+
+    const dismissClickHandler = getDismissClickHandler(banner.renderForTest());
+    dismissClickHandler();
+    assert.equal(renderTemplateValue(banner.renderForTest()), "");
+
+    banner.message = "";
+    banner.willUpdateForTest(new Map<PropertyKey, unknown>([["message", "Temporary failure"]]));
+    banner.message = "Temporary failure";
+
+    assert.match(renderTemplateValue(banner.renderForTest()), /Temporary failure/u);
 });

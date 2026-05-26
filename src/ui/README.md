@@ -67,6 +67,8 @@ For the first iteration:
 - `@gmloop/semantic` owns graph-export data generation
 - `@gmloop/cli` owns `graph visualize` command orchestration, file output, server mode, and regeneration endpoints
 - `@gmloop/ui` owns the graph visualization renderer and browser interaction behavior
+- Included-file resources under `datafiles/**` are rendered as `data_file` nodes. `.gml`, `.yy`, and `.yyp` paths may be shown as node provenance, but they are not standalone graph nodes.
+- The graph legend shows every supported user-facing node kind, including absent resource categories such as sounds, particles, timelines, and tile sets. Internal project nodes and obsolete generic file nodes are not filterable legend entries. `Resource` is a colorless organizational parent for concrete resource kinds, not a graph node kind.
 
 This pattern should remain the template for future UI surfaces:
 
@@ -83,7 +85,7 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - bundle assets include the local Vite-built Lit shell and stylesheet assets (no CDN dependencies)
 - CLI host code is responsible for obtaining payloads and writing/serving the emitted bundle artifact
 - graph/docs/config tabs are rendered from live workspace-fed catalogs
-- the Fix tab delegates configured refactor, lint, and format mutation to the CLI host and renders status/log output
+- the Fix tab delegates configured refactor, lint, and format mutation to the CLI host, renders status/log output, and shows elapsed-time progress updates while runs are pending
 - the Live Reload surface renders watcher, WebSocket, patch, latency, error, and optional runtime-wrapper health snapshots from UI-owned DTOs
 - the Docs surface includes `CLI`, `MCP`, and `Rules` subviews for command, tool, and workspace rule catalogs
 - loaded project state is shown in one canonical header location and reflects the active graph/config context

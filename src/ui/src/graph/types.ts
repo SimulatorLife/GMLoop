@@ -23,7 +23,6 @@ export type GraphVisualizationLiveReloadRuntimeStatus = "unknown" | "ready" | "n
  */
 export type GraphVisualizationNodeKind =
     | "anim_curve"
-    | "constructor"
     | "data_file"
     | "enum"
     | "enum_member"
@@ -41,7 +40,6 @@ export type GraphVisualizationNodeKind =
     | "particle_system"
     | "path"
     | "project"
-    | "resource"
     | "room"
     | "room_layer"
     | "script"

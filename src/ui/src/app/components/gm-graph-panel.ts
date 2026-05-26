@@ -8,8 +8,12 @@ import {
     createGraphLayout,
     filterGraphLayoutForDisplay,
     type GraphLayoutNode,
+    type GraphLegendNodeKind,
+    type GraphNodeKindLegendItem,
     listGraphEdgeTypes,
-    listGraphNodeKinds
+    listGraphNodeKindLegendItems,
+    listGraphNodeKinds,
+    resolveEffectiveGraphNodeKinds
 } from "../graph-layout.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
@@ -18,6 +22,14 @@ import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const NODE_STYLE_BY_KIND = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
 const EDGE_STYLE_BY_TYPE = new Map(EDGE_LINE_VISUAL_STYLES.map((style) => [style.type, style]));
+const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphLegendNodeKind>([
+    "enum_member",
+    "instance_variable",
+    "local_variable",
+    "macro",
+    "note",
+    "room_layer"
+]);
 
 function formatNodeKindLabel(kind: string): string {
     return kind
@@ -88,7 +100,7 @@ export class GmGraphPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
-    #enabledNodeKinds = new Set<GraphVisualizationNodeKind>();
+    #enabledNodeKinds = new Set<GraphLegendNodeKind>();
     #enabledEdgeTypes = new Set<GraphVisualizationEdgeType>();
     #selectedNodeId: string | null = null;
     #lastModelReference: GraphVisualizationUiModel | null = null;
@@ -137,7 +149,9 @@ export class GmGraphPanel extends LightDomLitElement {
             if (hasLoadedGraphIndex(this.model) || force) {
                 this.#enabledNodeKinds.clear();
                 for (const kind of listGraphNodeKinds(this.model.data.nodes)) {
-                    this.#enabledNodeKinds.add(kind);
+                    if (!DEFAULT_DISABLED_NODE_KINDS.has(kind)) {
+                        this.#enabledNodeKinds.add(kind);
+                    }
                 }
                 this.#initializedFiltersForModel = true;
             }
@@ -226,7 +240,7 @@ export class GmGraphPanel extends LightDomLitElement {
         };
     }
 
-    #toggleNodeKind(kind: GraphVisualizationNodeKind): void {
+    protected toggleNodeKind(kind: GraphLegendNodeKind): void {
         if (this.#enabledNodeKinds.has(kind)) {
             this.#enabledNodeKinds.delete(kind);
         } else {
@@ -293,8 +307,34 @@ export class GmGraphPanel extends LightDomLitElement {
         `;
     }
 
+    #renderLegendNodeItem(item: GraphNodeKindLegendItem) {
+        const childContent =
+            item.children.length === 0
+                ? null
+                : html`<div class="filter-children">
+                      ${item.children.map((child) => this.#renderLegendNodeItem(child))}
+                  </div>`;
+
+        return html`
+            <div class="filter-node-item" data-kind=${item.kind} data-level=${String(item.level)}>
+                <label class=${`filter-item${item.level > 0 ? " child-filter-item" : ""}`}>
+                    <input
+                        type="checkbox"
+                        .checked=${this.#enabledNodeKinds.has(item.kind)}
+                        @change=${() => this.toggleNodeKind(item.kind)}
+                    />
+                    ${item.kind === "resource"
+                        ? html`<span class="legend-swatch legend-swatch-group" aria-hidden="true"></span>`
+                        : html`<span class="legend-swatch" style=${`background:${getNodeColor(item.kind)}`}></span>`}
+                    <span>${formatNodeKindLabel(item.kind)}</span>
+                </label>
+                ${childContent}
+            </div>
+        `;
+    }
+
     #renderLegend(
-        nodeKinds: ReadonlyArray<GraphVisualizationNodeKind>,
+        nodeItems: ReadonlyArray<GraphNodeKindLegendItem>,
         edgeTypes: ReadonlyArray<GraphVisualizationEdgeType>
     ) {
         const legendClassName = this.state?.activeGraphView === "visual" ? "" : "hidden";
@@ -302,19 +342,7 @@ export class GmGraphPanel extends LightDomLitElement {
             <aside id="legend" class=${legendClassName} aria-label="Graph filters">
                 <div class="filter-section">
                     <strong>Nodes</strong>
-                    ${nodeKinds.map(
-                        (kind) => html`
-                            <label class="filter-item">
-                                <input
-                                    type="checkbox"
-                                    .checked=${this.#enabledNodeKinds.has(kind)}
-                                    @change=${() => this.#toggleNodeKind(kind)}
-                                />
-                                <span class="legend-swatch" style=${`background:${getNodeColor(kind)}`}></span>
-                                <span>${formatNodeKindLabel(kind)}</span>
-                            </label>
-                        `
-                    )}
+                    ${nodeItems.map((item) => this.#renderLegendNodeItem(item))}
                 </div>
                 <div class="filter-section">
                     <strong>Edges</strong>
@@ -344,7 +372,7 @@ export class GmGraphPanel extends LightDomLitElement {
         const pathLabel = readGraphNodePathLabel(node);
         const locationLabel = readGraphNodeLocationLabel(node);
         return html`
-            <div id="tooltip" class="visible">
+            <div id="tooltip" class="visible" role="dialog" aria-live="polite" data-selected-node-id=${node.id}>
                 <h3>${node.displayName}</h3>
                 <div>${node.kind} | ${node.graphId}</div>
                 ${node.scipSymbol ? html`<div>symbol: ${node.scipSymbol}</div>` : null}
@@ -352,6 +380,7 @@ export class GmGraphPanel extends LightDomLitElement {
                 ${pathLabel ? html`<div>${pathLabel}</div>` : null}
                 ${locationLabel ? html`<div>${locationLabel}</div>` : null}
                 ${node.summary ? html`<p>${node.summary}</p>` : null}
+                ${node.snippet ? html`<pre>${node.snippet}</pre>` : null}
             </div>
         `;
     }
@@ -364,16 +393,16 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#syncFilterDefaults();
         const graphPageClassName = this.state.activePage === "graph" ? "page active" : "page";
         const layout = createGraphLayout(this.model.data.nodes, this.model.data.edges);
-        const nodeKinds = listGraphNodeKinds(this.model.data.nodes);
+        const nodeItems = listGraphNodeKindLegendItems(this.model.data.nodes);
         const edgeTypes = listGraphEdgeTypes(this.model.data.edges);
         const visibleLayout = filterGraphLayoutForDisplay({
             enabledEdgeTypes: this.#enabledEdgeTypes,
-            enabledNodeKinds: this.#enabledNodeKinds,
+            enabledNodeKinds: resolveEffectiveGraphNodeKinds(this.model.data.nodes, this.#enabledNodeKinds),
             layout,
             matchesNode: (node) => this.#matchesSearch(node)
         });
         const { edges: visibleEdges, nodes: visibleNodes } = visibleLayout;
-        const selectedNode = visibleNodes.find((node) => node.id === this.#selectedNodeId) ?? null;
+        const selectedNode = layout.nodes.find((node) => node.id === this.#selectedNodeId) ?? null;
         const jsonValue = JSON.stringify({ edges: visibleEdges, nodes: visibleNodes }, null, 2);
 
         return html`
@@ -445,6 +474,9 @@ export class GmGraphPanel extends LightDomLitElement {
                                         tabindex="0"
                                         role="button"
                                         aria-label=${node.displayName}
+                                        @pointerdown=${(event: PointerEvent) => {
+                                            event.stopPropagation();
+                                        }}
                                         @click=${() => this.selectNode(node.id)}
                                         @keydown=${(event: KeyboardEvent) => {
                                             if (event.key === "Enter" || event.key === " ") {
@@ -464,7 +496,7 @@ export class GmGraphPanel extends LightDomLitElement {
                     </g>
                 </svg>
                 <pre id="json-view" class=${this.state.activeGraphView === "json" ? "visible" : ""}>${jsonValue}</pre>
-                ${this.#renderLegend(nodeKinds, edgeTypes)} ${this.#renderSelectedNode(selectedNode)}
+                ${this.#renderLegend(nodeItems, edgeTypes)} ${this.#renderSelectedNode(selectedNode)}
             </section>
         `;
     }

@@ -1,4 +1,15 @@
 /**
+ * Shared codemod types used across all built-in codemods.
+ *
+ * These types describe edits, results, and options for simple text-manipulation
+ * codemods that operate on source text. Each codemod defines its own Edit and
+ * Result types using this shared shape; option types vary per-codemod.
+ */
+
+/**
+ * A single text edit in source-text coordinates.
+ */
+/**
  * Core types and interfaces for the refactor engine.
  * Defines symbols, occurrences, conflicts, dependencies, and validation contracts
  * that coordinate semantic analysis, transpiler integration, and safe renaming.
@@ -6,10 +17,121 @@
 
 import { Core } from "@gmloop/core";
 
-import type { DocCommentAlignmentCodemodOptions } from "./codemods/doc-comment-alignment/types.js";
-import type { GlobalvarToGlobalCodemodOptions } from "./codemods/globalvar-to-global/types.js";
-import type { LoopLengthHoistingCodemodOptions } from "./codemods/loop-length-hoisting/types.js";
-import type { ScientificNotationCodemodOptions } from "./codemods/scientific-notation/types.js";
+export type CodemodEdit = Readonly<{
+    /** Inclusive start offset in the source text. */
+    start: number;
+    /** Exclusive end offset in the source text. */
+    end: number;
+    /** Replacement text for the region [start, end). */
+    text: string;
+}>;
+
+/**
+ * Base result returned by most simple source-text codemods.
+ *
+ * All codemods follow this shape: they report whether anything changed,
+ * return the (potentially transformed) source text, and list the edits
+ * that were applied.
+ */
+export type CodemodResult = Readonly<{
+    /** Whether the source text changed. */
+    changed: boolean;
+    /** Transformed source text, or the original text when unchanged. */
+    outputText: string;
+    /** Edits applied to create the transformed text. */
+    appliedEdits: ReadonlyArray<CodemodEdit>;
+}>;
+
+/**
+ * Options for the doc-comment-alignment codemod.
+ *
+ * No options are currently supported.
+ */
+export type DocCommentAlignmentCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the doc-comment-alignment codemod.
+ */
+export type DocCommentAlignmentEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyDocCommentAlignmentCodemod`.
+ */
+export type DocCommentAlignmentResult = CodemodResult;
+
+/**
+ * A single edit produced by the loop-length hoisting codemod.
+ */
+export type LoopLengthHoistingEdit = CodemodEdit;
+
+/**
+ * Result payload returned by the loop-length hoisting codemod.
+ */
+export type LoopLengthHoistingResult = CodemodResult;
+
+/**
+ * Options for the globalvar-to-global codemod.
+ *
+ * All options are optional; omitting them is equivalent to passing `{}`.
+ */
+export type GlobalvarToGlobalCodemodOptions = Readonly<{
+    /**
+     * Variable names to exclude from migration.
+     *
+     * When specified, `globalvar` declarations for these names are still removed
+     * but their bare identifier references are left as-is.  This is useful when
+     * a legacy compatibility layer already handles a specific global name and you
+     * only want to migrate the remaining ones.
+     *
+     * Defaults to an empty array (all declared names are migrated).
+     */
+    excludeNames?: ReadonlyArray<string>;
+}>;
+
+/**
+ * Per-file result returned by `applyGlobalvarToGlobalCodemod`.
+ */
+export type GlobalvarToGlobalResult = Readonly<{
+    /** Whether any edits were applied. */
+    changed: boolean;
+    /** The transformed source text (equals the input when `changed` is false). */
+    outputText: string;
+    /** All edits applied in the order they were generated (not necessarily sorted). */
+    appliedEdits: ReadonlyArray<CodemodEdit>;
+    /**
+     * The globalvar variable names that were migrated.
+     * Empty when no globalvar declarations were found.
+     */
+    migratedNames: ReadonlyArray<string>;
+}>;
+
+/**
+ * Options for the loop-length hoisting codemod.
+ */
+export type LoopLengthHoistingCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * Options for the scientific-notation codemod.
+ *
+ * No options are currently supported.
+ */
+export type ScientificNotationCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the scientific-notation codemod.
+ */
+export type ScientificNotationEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyScientificNotationCodemod`.
+ */
+export type ScientificNotationResult = CodemodResult;
+
+/**
+ * A single text edit produced by the globalvar-to-global codemod.
+ * Alias for the shared CodemodEdit shape.
+ */
+export type GlobalvarToGlobalEdit = CodemodEdit;
 
 export type MaybePromise<T> = T | Promise<T>;
 

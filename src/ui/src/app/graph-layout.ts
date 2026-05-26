@@ -23,10 +23,79 @@ export type GraphLayout = Readonly<{
     nodes: ReadonlyArray<GraphLayoutNode>;
 }>;
 
+export type GraphNodeKindLegendItem = Readonly<{
+    children: ReadonlyArray<GraphNodeKindLegendItem>;
+    kind: GraphLegendNodeKind;
+    level: number;
+}>;
+
+export type GraphLegendNodeKind = GraphVisualizationNodeKind | "resource";
+
 const PROJECT_NODE_RADIUS = 17;
 const DEFAULT_NODE_RADIUS = 9;
 const CONNECTION_RADIUS_WEIGHT = 1.8;
+const ROOT_HIERARCHY_RADIUS = 320;
+const SECOND_LEVEL_HIERARCHY_RADIUS = 150;
+const DEEP_HIERARCHY_RADIUS = 95;
+const MIN_NODE_DISTANCE_PADDING = 80;
+const CLOSE_NODE_REPULSION = 520;
+const DISTANT_NODE_REPULSION = 1800;
 const PROMOTABLE_HIERARCHY_EDGE_TYPES = new Set<GraphVisualizationEdgeType>(["contains", "defines"]);
+const GRAPH_NODE_KIND_LEGEND_CATALOG: ReadonlyArray<GraphVisualizationNodeKind> = Object.freeze([
+    "anim_curve",
+    "data_file",
+    "enum",
+    "enum_member",
+    "extension",
+    "font",
+    "function",
+    "global_variable",
+    "instance_variable",
+    "local_variable",
+    "macro",
+    "note",
+    "object",
+    "object_event",
+    "particle_system",
+    "path",
+    "room",
+    "room_layer",
+    "script",
+    "sequence",
+    "shader",
+    "sound",
+    "sprite",
+    "struct",
+    "struct_variable",
+    "tileset",
+    "timeline"
+]);
+const RESOURCE_CHILD_NODE_KINDS: ReadonlyArray<GraphVisualizationNodeKind> = Object.freeze([
+    "anim_curve",
+    "data_file",
+    "extension",
+    "font",
+    "note",
+    "object",
+    "particle_system",
+    "path",
+    "room",
+    "script",
+    "sequence",
+    "shader",
+    "sound",
+    "sprite",
+    "tileset",
+    "timeline"
+]);
+const LEGEND_PARENT_KIND_BY_CHILD_KIND = new Map<GraphVisualizationNodeKind, GraphLegendNodeKind>([
+    ...RESOURCE_CHILD_NODE_KINDS.map((kind) => [kind, "resource"] as const),
+    ["enum_member", "enum"],
+    ["instance_variable", "object"],
+    ["object_event", "object"],
+    ["room_layer", "room"],
+    ["struct_variable", "struct"]
+]);
 
 type GraphHierarchy = Readonly<{
     childrenMap: Map<string, Array<string>>;
@@ -176,7 +245,8 @@ function getInitialHierarchyPosition(
         return { angle: parentAngle ?? 0, x: parentX, y: parentY };
     }
 
-    const radius = depth === 1 ? 200 : depth === 2 ? 90 : 50;
+    const radius =
+        depth === 1 ? ROOT_HIERARCHY_RADIUS : depth === 2 ? SECOND_LEVEL_HIERARCHY_RADIUS : DEEP_HIERARCHY_RADIUS;
     const parentId = hierarchy.parentMap.get(nodeId);
     const parentPosition = parentId ? initialPositions.get(parentId) : null;
     const parentActualAngle = parentPosition ? parentPosition.angle : 0;
@@ -263,8 +333,9 @@ function applyRepulsiveForce(nodeA: SimulationNode, nodeB: SimulationNode): void
     const dy = nodeA.y - nodeB.y;
     const distSq = dx * dx + dy * dy;
     const dist = Math.sqrt(distSq) || 1;
-    const minDist = nodeA.radius + nodeB.radius + 35;
-    const force = dist < minDist ? (350 * (minDist - dist)) / dist : 1000 / (distSq + 20);
+    const minDist = nodeA.radius + nodeB.radius + MIN_NODE_DISTANCE_PADDING;
+    const force =
+        dist < minDist ? (CLOSE_NODE_REPULSION * (minDist - dist)) / dist : DISTANT_NODE_REPULSION / (distSq + 20);
     const fx = dist < minDist ? dx * force : (dx / dist) * force;
     const fy = dist < minDist ? dy * force : (dy / dist) * force;
 
@@ -315,21 +386,21 @@ function getEdgeForceProfile(
 ): Readonly<{ restLength: number; stiffness: number }> {
     if (edgeType === "contains" || edgeType === "defines") {
         return {
-            restLength: nodeSource.radius + nodeTarget.radius + 25,
-            stiffness: 0.12
+            restLength: nodeSource.radius + nodeTarget.radius + 90,
+            stiffness: 0.08
         };
     }
 
     if (edgeType === "calls" || edgeType === "inherits") {
         return {
-            restLength: 90,
-            stiffness: 0.06
+            restLength: 170,
+            stiffness: 0.045
         };
     }
 
     return {
-        restLength: 120,
-        stiffness: 0.03
+        restLength: 210,
+        stiffness: 0.025
     };
 }
 
@@ -553,8 +624,113 @@ export function filterGraphLayoutForDisplay(parameters: {
  */
 export function listGraphNodeKinds(
     nodes: ReadonlyArray<GraphVisualizationNodeRecord>
-): ReadonlyArray<GraphVisualizationNodeKind> {
-    return Array.from(new Set(nodes.map((node) => node.kind).filter((kind) => kind !== "project"))).toSorted();
+): ReadonlyArray<GraphLegendNodeKind> {
+    const presentKinds = new Set(nodes.map((node) => node.kind));
+    const catalogKinds = new Set<GraphLegendNodeKind>(["resource", ...GRAPH_NODE_KIND_LEGEND_CATALOG]);
+
+    for (const kind of presentKinds) {
+        if (kind !== "project" && kind !== "file") {
+            catalogKinds.add(kind);
+        }
+    }
+
+    return Array.from(catalogKinds).toSorted();
+}
+
+function createLegendItem(
+    kind: GraphLegendNodeKind,
+    childrenByKind: ReadonlyMap<GraphLegendNodeKind, ReadonlyArray<GraphLegendNodeKind>>,
+    level: number
+): GraphNodeKindLegendItem {
+    return Object.freeze({
+        children: (childrenByKind.get(kind) ?? []).map((childKind) =>
+            createLegendItem(childKind, childrenByKind, level + 1)
+        ),
+        kind,
+        level
+    });
+}
+
+/**
+ * Group graph node kinds into the same parent/child concepts used by graph containment.
+ */
+export function listGraphNodeKindLegendItems(
+    nodes: ReadonlyArray<GraphVisualizationNodeRecord>
+): ReadonlyArray<GraphNodeKindLegendItem> {
+    const nodeKinds = new Set(listGraphNodeKinds(nodes));
+    const childrenByKind = new Map<GraphLegendNodeKind, Array<GraphLegendNodeKind>>();
+    const rootKinds = new Set<GraphLegendNodeKind>();
+
+    for (const kind of nodeKinds) {
+        if (kind === "resource") {
+            rootKinds.add(kind);
+            continue;
+        }
+
+        const parentKind = LEGEND_PARENT_KIND_BY_CHILD_KIND.get(kind) ?? null;
+        if (parentKind && nodeKinds.has(parentKind)) {
+            const children = childrenByKind.get(parentKind) ?? [];
+            children.push(kind);
+            childrenByKind.set(parentKind, children);
+        } else {
+            rootKinds.add(kind);
+        }
+    }
+
+    for (const children of childrenByKind.values()) {
+        children.sort();
+    }
+
+    return [...rootKinds].toSorted().map((kind) => createLegendItem(kind, childrenByKind, 0));
+}
+
+function collectDisabledAncestorKinds(
+    kind: GraphVisualizationNodeKind,
+    availableNodeKinds: ReadonlySet<GraphLegendNodeKind>,
+    enabledNodeKinds: ReadonlySet<GraphLegendNodeKind>
+): ReadonlyArray<GraphLegendNodeKind> {
+    const disabledAncestors: Array<GraphLegendNodeKind> = [];
+    let currentKind: GraphLegendNodeKind = kind;
+
+    while (true) {
+        if (currentKind === "resource") {
+            return disabledAncestors;
+        }
+
+        const parentKind = LEGEND_PARENT_KIND_BY_CHILD_KIND.get(currentKind);
+        if (!parentKind || !availableNodeKinds.has(parentKind)) {
+            return disabledAncestors;
+        }
+
+        if (!enabledNodeKinds.has(parentKind)) {
+            disabledAncestors.push(parentKind);
+        }
+
+        currentKind = parentKind;
+    }
+}
+
+/**
+ * Apply legend parent overrides while preserving each child kind's own toggle state.
+ */
+export function resolveEffectiveGraphNodeKinds(
+    nodes: ReadonlyArray<GraphVisualizationNodeRecord>,
+    enabledNodeKinds: ReadonlySet<GraphLegendNodeKind>
+): ReadonlySet<GraphVisualizationNodeKind> {
+    const availableNodeKinds = new Set(listGraphNodeKinds(nodes));
+    const effectiveNodeKinds = new Set<GraphVisualizationNodeKind>();
+
+    for (const kind of GRAPH_NODE_KIND_LEGEND_CATALOG) {
+        if (!availableNodeKinds.has(kind)) {
+            continue;
+        }
+        const disabledAncestorKinds = collectDisabledAncestorKinds(kind, availableNodeKinds, enabledNodeKinds);
+        if (enabledNodeKinds.has(kind) && disabledAncestorKinds.length === 0) {
+            effectiveNodeKinds.add(kind);
+        }
+    }
+
+    return effectiveNodeKinds;
 }
 
 /**

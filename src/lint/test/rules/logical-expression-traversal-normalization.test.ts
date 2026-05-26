@@ -117,3 +117,61 @@ void test("logical normalization traverses array entries from a stable snapshot 
     assert.equal(normalizedBody[0]?.type, "Identifier");
     assert.equal((normalizedBody[0] as { name?: string }).name, "flag");
 });
+
+void test("logical normalization handles reused IfStatement references without skipping later siblings", () => {
+    const sharedIfNode: MutableRecord = {
+        type: "IfStatement",
+        test: {
+            type: "Identifier",
+            name: "shared_condition"
+        },
+        consequent: {
+            type: "BlockStatement",
+            body: [
+                {
+                    type: "ReturnStatement",
+                    argument: {
+                        type: "Literal",
+                        value: "true"
+                    }
+                }
+            ]
+        }
+    };
+
+    const body: Array<MutableRecord> = [
+        sharedIfNode,
+        {
+            type: "ExpressionStatement",
+            expression: {
+                type: "Literal",
+                value: "noop"
+            }
+        },
+        sharedIfNode,
+        {
+            type: "ReturnStatement",
+            argument: {
+                type: "Literal",
+                value: "false"
+            }
+        }
+    ];
+
+    const ast: MutableGameMakerAstNode = {
+        type: "Program",
+        body
+    };
+
+    applyLogicalNormalizationWithChangeMetadata(ast);
+
+    assert.equal(Array.isArray(ast.body), true);
+    const normalizedBody = ast.body as Array<MutableRecord>;
+
+    assert.equal(
+        normalizedBody[2]?.type,
+        "ReturnStatement",
+        "Expected the later repeated IfStatement reference to still be simplified with its trailing return"
+    );
+    assert.equal((normalizedBody[2]?.argument as { name?: string })?.name, "shared_condition");
+});

@@ -198,11 +198,9 @@ function simplifyStatementList(body: any[]): boolean {
     if (!Array.isArray(body)) return false;
     let changed = false;
 
-    // Iterate over a stable snapshot so that splicing the live array does not skip elements.
-    for (const original of body) {
-        const index = body.indexOf(original);
-        if (index === -1) break;
-
+    // Only sibling pairs can be simplified here (`current` + `next`), so we stop at `length - 1`.
+    // Use explicit index traversal so in-place splices stay aligned with the next sibling pair.
+    for (let index = 0; index < body.length - 1; ) {
         const current = body[index];
         const next = body[index + 1];
 
@@ -219,9 +217,12 @@ function simplifyStatementList(body: any[]): boolean {
                     body[index] = createBooleanReturnStatement(current.test, current.start, next.end, shouldNegate);
                     body.splice(index + 1, 1);
                     changed = true;
+                    continue;
                 }
             }
         }
+
+        index += 1;
     }
     return changed;
 }

@@ -38,6 +38,7 @@ export const CLI_COMMAND_NAMES = Object.freeze(
         "transpile",
         "ui",
         "validate",
+        "watch",
         "help"
     ])
 );

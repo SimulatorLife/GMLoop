@@ -16,6 +16,7 @@ import {
     resolvePortableAbsolutePath,
     walkAncestorDirectories
 } from "../src/fs/path.js";
+import { isProjectPathExcluded } from "../src/project-config/project-excludes.js";
 
 void describe("path-utils", () => {
     void describe("resolveContainedRelativePath", () => {
@@ -232,5 +233,29 @@ void describe("isDirectoryExcludedBySegments", () => {
             ),
             true
         );
+    });
+});
+
+void describe("isProjectPathExcluded", () => {
+    void it("matches nested excluded directory names", () => {
+        assert.strictEqual(
+            isProjectPathExcluded("scripts/node_modules/pkg/index.gml", {
+                directoryNames: ["node_modules"]
+            }),
+            true
+        );
+    });
+
+    void it("matches file names, relative paths, and extensions after POSIX normalization", () => {
+        const excludes = {
+            fileNames: ["Thumbs.db"],
+            relativePaths: ["scripts/generated/cache.gml"],
+            extensions: [".tmp"]
+        };
+
+        assert.strictEqual(isProjectPathExcluded("sprites/Thumbs.db", excludes), true);
+        assert.strictEqual(isProjectPathExcluded(String.raw`scripts\generated\cache.gml`, excludes), true);
+        assert.strictEqual(isProjectPathExcluded("notes/session.tmp", excludes), true);
+        assert.strictEqual(isProjectPathExcluded("scripts/live.gml", excludes), false);
     });
 });

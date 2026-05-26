@@ -153,7 +153,6 @@ const GRAPH_RESOURCE_NODE_KINDS = new Set<GraphNodeKind>([
     "particle_system",
     "path",
     "project",
-    "resource",
     "room",
     "script",
     "sequence",
@@ -224,11 +223,13 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "struct_variable": {
             return `gml/var/struct::${entry.scopeId ?? entry.key ?? name}`;
         }
+        case "struct": {
+            return `gml/struct/${identifierId ?? entry.key ?? entry.scopeId ?? name}`;
+        }
         case "file": {
             return `gml/file/${entry.filePath ?? entry.key ?? name}`;
         }
         case "anim_curve":
-        case "constructor":
         case "data_file":
         case "extension":
         case "font":
@@ -238,7 +239,6 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "particle_system":
         case "path":
         case "project":
-        case "resource":
         case "room":
         case "room_layer":
         case "script":
@@ -248,9 +248,6 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "sprite":
         case "tileset":
         case "timeline":
-        case "struct": {
-            return `gml/script/${name}`;
-        }
     }
 }
 
@@ -546,6 +543,36 @@ function resolveEnumOwnerNodeId(context: ProjectionContext, entry: ProjectIndexI
     return enumName ? lookupUniqueNodeByNameAndKind(context, enumName, "enum") : null;
 }
 
+function resolveStructOwnerNodeId(context: ProjectionContext, entry: ProjectIndexIdentifierEntry): string | null {
+    const scopeId = getString(entry.scopeId);
+    if (!scopeId) {
+        return null;
+    }
+
+    const ownerNodeId = context.nodeIdsByScopeId.get(scopeId) ?? null;
+    if (!ownerNodeId) {
+        return null;
+    }
+
+    const ownerNode = context.nodeRecords.find((node) => node.id === ownerNodeId) ?? null;
+    return ownerNode?.kind === "struct" ? ownerNode.id : null;
+}
+
+function projectStructVariableOwnershipEdge(
+    context: ProjectionContext,
+    node: GraphNodeRecord,
+    entry: ProjectIndexIdentifierEntry
+): void {
+    const structNodeId = resolveStructOwnerNodeId(context, entry);
+    if (structNodeId && structNodeId !== node.id) {
+        context.edgeRecords.push({
+            fromId: structNodeId,
+            toId: node.id,
+            type: "defines"
+        });
+    }
+}
+
 function resolveFileSemanticOwnerNodeId(context: ProjectionContext, filePath: string | null): string | null {
     const resourcePath = resolveResourcePathForFile(context, filePath);
     if (!resourcePath) {
@@ -600,7 +627,7 @@ function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKin
     }
 }
 
-function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
+function normalizeResourceKind(resourceType: string | null): GraphNodeKind | null {
     switch (resourceType) {
         case "GMAnimCurve": {
             return "anim_curve";
@@ -660,7 +687,7 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
             return "timeline";
         }
         default: {
-            return "resource";
+            return null;
         }
     }
 }
@@ -671,6 +698,10 @@ function isGraphResourceProjectionEligible(resourcePath: string, resourceRecord:
     }
 
     const resourceType = getString(resourceRecord.resourceType);
+    if (resourceType === "GMIncludedFile" && !resourcePath.startsWith("datafiles/")) {
+        return false;
+    }
+
     return resourceType === null || !/^GM[A-Za-z0-9]*Options$/u.test(resourceType);
 }
 
@@ -879,6 +910,9 @@ function projectResources(context: ProjectionContext): void {
         const name =
             getString(resourceRecord.name) ?? path.posix.basename(resourcePath, path.posix.extname(resourcePath));
         const kind = normalizeResourceKind(getString(resourceRecord.resourceType));
+        if (!kind) {
+            continue;
+        }
         const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
         const primaryGmlFile = gmlFiles.find(
             (gmlFile): gmlFile is string => typeof gmlFile === "string" && gmlFile.trim().length > 0
@@ -1073,45 +1107,6 @@ function projectFileRecords(context: ProjectionContext): void {
     }
 }
 
-function projectFileNodes(context: ProjectionContext): void {
-    const files = asRecord(context.projectIndex.files);
-    const projectNodeId = resolveProjectRootNodeId(context);
-
-    for (const relativePath of Object.keys(files)) {
-        const resourcePath = resolveResourcePathForFile(context, relativePath);
-        const nodeId = createGraphNodeId(context.graphId, "file", relativePath);
-        const node = createNodeRecord({
-            displayName: path.posix.basename(relativePath),
-            filePath: relativePath,
-            graphId: context.graphId,
-            id: nodeId,
-            kind: "file",
-            name: relativePath,
-            resourcePath,
-            summary: createGraphNodeSummary({
-                filePath: relativePath,
-                kind: "file",
-                name: relativePath,
-                resourcePath
-            })
-        });
-
-        context.nodeRecords.push(node);
-        registerNodeIndexes(context, node);
-
-        const ownerNodeId = resourcePath
-            ? createGraphNodeId(context.graphId, "resource", resourcePath)
-            : (projectNodeId ?? null);
-        if (ownerNodeId) {
-            context.edgeRecords.push({
-                fromId: ownerNodeId,
-                toId: nodeId,
-                type: "contains"
-            });
-        }
-    }
-}
-
 function projectIdentifierCollections(context: ProjectionContext): void {
     const identifiers = asRecord(context.projectIndex.identifiers);
 
@@ -1199,6 +1194,10 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                         type: "defines"
                     });
                 }
+            }
+
+            if (kind === "struct_variable") {
+                projectStructVariableOwnershipEdge(context, node, entry);
             }
         }
     }
@@ -1813,7 +1812,6 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         projectObjectEventScopes(projectContext);
         projectRoomLayerScopes(projectContext);
         projectFileRecords(projectContext);
-        projectFileNodes(projectContext);
         projectIdentifierCollections(projectContext);
         projectRelationshipEdges(projectContext);
         removeDanglingEdges(projectContext);
@@ -1826,7 +1824,6 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
             projectObjectEventScopes(toolsetContext);
             projectRoomLayerScopes(toolsetContext);
             projectFileRecords(toolsetContext);
-            projectFileNodes(toolsetContext);
             projectIdentifierCollections(toolsetContext);
             projectRelationshipEdges(toolsetContext);
             removeDanglingEdges(toolsetContext);
