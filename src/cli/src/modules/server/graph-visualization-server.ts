@@ -40,6 +40,12 @@ type GraphVisualizationServerStartLiveReload = (
 ) => Promise<unknown>;
 
 type GraphVisualizationServerRunFix = () => Promise<Readonly<{ logLines: ReadonlyArray<string> }>>;
+type GraphVisualizationServerFixProgress = Readonly<{
+    isRunning: boolean;
+    logLines: ReadonlyArray<string>;
+}>;
+type GraphVisualizationServerGetFixProgress = () => GraphVisualizationServerFixProgress;
+type GraphVisualizationServerClearFixProgress = () => void;
 
 export type GraphVisualizationServerOptions = Readonly<{
     host?: string;
@@ -50,6 +56,8 @@ export type GraphVisualizationServerOptions = Readonly<{
     openProjectTargets?: GraphVisualizationServerOpenProjectTargets;
     processPlayground?: GraphVisualizationServerProcessPlayground;
     runFix?: GraphVisualizationServerRunFix;
+    getFixProgress?: GraphVisualizationServerGetFixProgress;
+    clearFixProgress?: GraphVisualizationServerClearFixProgress;
     startLiveReload?: GraphVisualizationServerStartLiveReload;
 }>;
 
@@ -88,6 +96,10 @@ export async function startGraphVisualizationServer(
                 return;
             }
 
+            if (handleFixProgressRequest(request, response, options)) {
+                return;
+            }
+
             if (request.method === "GET") {
                 try {
                     const file = await resolveStaticGraphVisualizationFileForRequest(options, request.url);
@@ -96,6 +108,7 @@ export async function startGraphVisualizationServer(
                         response.end("Not found");
                         return;
                     }
+
                     response.writeHead(200, { "Content-Type": file.contentType });
                     response.end(file.bytes);
                 } catch (error: unknown) {
@@ -122,9 +135,11 @@ export async function startGraphVisualizationServer(
                     const fixResult = await options.runFix();
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ logLines: fixResult.logLines, ok: true }));
+                    options.clearFixProgress?.();
                 } catch (error: unknown) {
                     response.writeHead(500, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
+                    options.clearFixProgress?.();
                 }
                 return;
             }
@@ -283,6 +298,19 @@ export async function startGraphVisualizationServer(
         },
         url: resolvedUrl
     });
+}
+
+function handleFixProgressRequest(
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>,
+    options: GraphVisualizationServerOptions
+): boolean {
+    if (request.method !== "GET" || request.url !== "/api/fix/progress" || !options.getFixProgress) {
+        return false;
+    }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ ...options.getFixProgress(), ok: true }));
+    return true;
 }
 
 async function resolveStaticGraphVisualizationFileForRequest(
