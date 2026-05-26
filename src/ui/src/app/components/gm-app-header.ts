@@ -1,6 +1,6 @@
 import { html, nothing } from "lit";
 
-import { type GraphVisualizationUiModel,hasLoadedGraphIndex } from "../contracts.js";
+import { type GraphVisualizationUiModel, hasLoadedGraphIndex } from "../contracts.js";
 import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_NAVIGATE_PAGE,

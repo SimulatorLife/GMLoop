@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
-import { hasGraphEdges, hasLoadedGraphIndex, hasLoadedGraphProject } from "../src/app/contracts.js";
+import {
+    type GraphVisualizationUiModel,
+    hasGraphEdges,
+    hasLoadedGraphIndex,
+    hasLoadedGraphProject
+} from "../src/app/contracts.js";
 
 function createUiModel(): GraphVisualizationUiModel {
     return {

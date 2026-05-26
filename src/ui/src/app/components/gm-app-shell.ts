@@ -5,7 +5,8 @@ import {
     type GraphVisualizationUiCallbacks,
     type GraphVisualizationUiModel,
     hasLoadedGraphIndex,
-    hasLoadedGraphProject} from "../contracts.js";
+    hasLoadedGraphProject
+} from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
 import { createInitialFixWorkflowLogLines, createRunningFixWorkflowLogLines } from "../fix-workflow-progress.js";
 import { GraphVisualizationUiStore } from "../state/store.js";

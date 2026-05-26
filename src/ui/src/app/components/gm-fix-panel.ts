@@ -1,6 +1,6 @@
 import { html } from "lit";
 
-import { type GraphVisualizationUiModel,hasLoadedGraphProject } from "../contracts.js";
+import { type GraphVisualizationUiModel, hasLoadedGraphProject } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { GRAPH_UI_EVENT_TRIGGER_FIX } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
