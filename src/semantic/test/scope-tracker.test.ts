@@ -183,14 +183,6 @@ void test("getSymbolOccurrences finds all occurrences of a symbol across scopes"
     assert.strictEqual(localOccurrences[0].scopeId, childScope.id);
 });
 
-void test("getSymbolOccurrences returns empty array when disabled", () => {
-    const tracker = new ScopeTracker({ enabled: false });
-
-    const result = tracker.getSymbolOccurrences("any");
-
-    assert.deepStrictEqual(result, []);
-});
-
 void test("reference skips tracking when disabled", () => {
     const tracker = new ScopeTracker({ enabled: false });
     const scope = tracker.enterScope("function");
@@ -278,14 +270,6 @@ void test("getScopeSymbols returns empty array for non-existent scope", () => {
     tracker.exitScope();
 
     const result = tracker.getScopeSymbols("nonexistent-scope");
-
-    assert.deepStrictEqual(result, []);
-});
-
-void test("getScopeSymbols returns empty array when disabled", () => {
-    const tracker = new ScopeTracker({ enabled: false });
-
-    const result = tracker.getScopeSymbols("any-scope");
 
     assert.deepStrictEqual(result, []);
 });
@@ -417,21 +401,17 @@ void test("getScopeChain returns single entry for root scope", () => {
     assert.deepStrictEqual(chain, [{ id: rootScope.id, kind: "program" }]);
 });
 
-void test("getScopeChain returns empty array for non-existent scope", () => {
-    const tracker = new ScopeTracker({ enabled: true });
+/** Covers all leaf-accessor methods that return empty arrays when the tracker is disabled. */
+void test("getSymbolOccurrences, getScopeSymbols, getScopeChain, and getScopeDefinitions return empty arrays when disabled", () => {
+    const tracker = new ScopeTracker({ enabled: false });
     tracker.enterScope("program");
 
-    const result = tracker.getScopeChain("nonexistent-scope");
+    assert.deepStrictEqual(tracker.getSymbolOccurrences("any"), []);
+    assert.deepStrictEqual(tracker.getScopeSymbols("any-scope"), []);
+    assert.deepStrictEqual(tracker.getScopeChain("any-scope"), []);
+    assert.deepStrictEqual(tracker.getScopeDefinitions("any-scope"), []);
 
-    assert.deepStrictEqual(result, []);
-});
-
-void test("getScopeChain returns empty array when disabled", () => {
-    const tracker = new ScopeTracker({ enabled: false });
-
-    const result = tracker.getScopeChain("any-scope");
-
-    assert.deepStrictEqual(result, []);
+    tracker.exitScope();
 });
 
 void test("getScopeChain works after exiting scopes", () => {
@@ -476,23 +456,6 @@ void test("getScopeDefinitions returns declarations defined in specific scope", 
                 : [...acc.slice(0, insertIndex), item, ...acc.slice(insertIndex)];
         }, []);
     assert.deepStrictEqual(innerNames, ["anotherInner", "innerVar"]);
-});
-
-void test("getScopeDefinitions returns empty array for non-existent scope", () => {
-    const tracker = new ScopeTracker({ enabled: true });
-    tracker.enterScope("program");
-
-    const result = tracker.getScopeDefinitions("nonexistent-scope");
-
-    assert.deepStrictEqual(result, []);
-});
-
-void test("getScopeDefinitions returns empty array when disabled", () => {
-    const tracker = new ScopeTracker({ enabled: false });
-
-    const result = tracker.getScopeDefinitions("any-scope");
-
-    assert.deepStrictEqual(result, []);
 });
 
 void test("getScopeDefinitions returns cloned metadata", () => {
