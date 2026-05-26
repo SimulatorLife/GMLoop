@@ -36,6 +36,7 @@ import { LifecycleParticipantsController } from "./lifecycle-participants-contro
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const LIVE_RELOAD_ERROR_ACTION_TYPE = "set-live-reload-error";
+const FIX_LOG_LINES_ACTION_TYPE = "set-fix-log-lines";
 
 const PAGE_MAIN_SECTION_ID: Readonly<Record<GraphVisualizationUiPage, string>> = Object.freeze({
     config: "config-page",
@@ -255,19 +256,31 @@ export class GmAppShell extends LightDomLitElement {
 
     async #runFixWorkflow(): Promise<void> {
         const fixWorkflowStartedAt = Date.now();
+        let hasReceivedFixProgress = false;
         const fixWorkflowProgressTimer = setInterval(() => {
+            if (hasReceivedFixProgress) {
+                return;
+            }
             this.#store.dispatch({
                 logLines: createRunningFixWorkflowLogLines(Date.now() - fixWorkflowStartedAt),
-                type: "set-fix-log-lines"
+                type: FIX_LOG_LINES_ACTION_TYPE
             });
         }, 1000);
 
         try {
             this.#store.dispatch({ pending: true, type: "set-fix-pending" });
             this.#store.dispatch({ errorMessage: null, type: "set-fix-error" });
-            this.#store.dispatch({ logLines: createInitialFixWorkflowLogLines(), type: "set-fix-log-lines" });
-            const result = await this.callbacks.onRunFix();
-            this.#store.dispatch({ logLines: result.logLines, type: "set-fix-log-lines" });
+            this.#store.dispatch({ logLines: createInitialFixWorkflowLogLines(), type: FIX_LOG_LINES_ACTION_TYPE });
+            const result = await this.callbacks.onRunFix({
+                onProgress: (progress) => {
+                    if (progress.logLines.length === 0) {
+                        return;
+                    }
+                    hasReceivedFixProgress = true;
+                    this.#store.dispatch({ logLines: progress.logLines, type: FIX_LOG_LINES_ACTION_TYPE });
+                }
+            });
+            this.#store.dispatch({ logLines: result.logLines, type: FIX_LOG_LINES_ACTION_TYPE });
             this.#store.dispatch({ status: result.status, type: "set-fix-status" });
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown fix workflow error");

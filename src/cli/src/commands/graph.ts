@@ -73,7 +73,8 @@ type GraphVisualizationExportResult = Readonly<{
 
 async function runGraphVisualizationFixWorkflow(
     context: GraphResolutionContext,
-    configPath: string | undefined
+    configPath: string | undefined,
+    onLogLine: ((logLine: string) => void) | null = null
 ): Promise<Readonly<{ logLines: ReadonlyArray<string> }>> {
     const cliEntryPath = fileURLToPath(new URL("../../index.js", import.meta.url));
     const args = [cliEntryPath, "fix", "--write", "--path", context.projectRoot];
@@ -81,19 +82,75 @@ async function runGraphVisualizationFixWorkflow(
         args.push("--config", configPath);
     }
 
-    const logText = await new Promise<string>((resolve, reject) => {
-        execFile(process.execPath, args, { cwd: context.projectRoot }, (error, stdout, stderr) => {
-            const combinedOutput = [stdout, stderr].filter((value) => value.length > 0).join("\n");
-            if (error) {
-                reject(new Error(combinedOutput.length > 0 ? combinedOutput : Core.getErrorMessage(error)));
-                return;
-            }
+    const logLines = new Array<string>();
+    const appendLogLine = (logLine: string): void => {
+        if (logLine.trim().length === 0) {
+            return;
+        }
+        const normalizedLogLine = logLine.trimEnd();
+        logLines.push(normalizedLogLine);
+        onLogLine?.(normalizedLogLine);
+    };
 
-            resolve(combinedOutput);
-        });
+    const childProcess = spawn(process.execPath, args, {
+        cwd: context.projectRoot,
+        stdio: ["ignore", "pipe", "pipe"]
     });
 
-    return Object.freeze({ logLines: logText.split(/\r?\n/u).filter((line) => line.length > 0) });
+    const stdoutPromise = streamProcessOutputByLine(childProcess.stdout, appendLogLine);
+    const stderrPromise = streamProcessOutputByLine(childProcess.stderr, appendLogLine);
+
+    const exitCode = await awaitChildProcessExitCode(childProcess);
+    await Promise.all([stdoutPromise, stderrPromise]);
+
+    if (exitCode !== 0) {
+        throw new Error(
+            logLines.length > 0
+                ? logLines.join("\n")
+                : `Fix workflow process exited with code ${exitCode === null ? "unknown" : String(exitCode)}.`
+        );
+    }
+
+    return Object.freeze({ logLines: Object.freeze([...logLines]) });
+}
+
+function streamProcessOutputByLine(stream: NodeJS.ReadableStream, onLogLine: (logLine: string) => void): Promise<void> {
+    return new Promise((resolve, reject) => {
+        let bufferedText = "";
+        stream.setEncoding("utf8");
+        stream.on("data", (chunk: string) => {
+            bufferedText += chunk;
+            while (true) {
+                const nextLineBreakIndex = bufferedText.search(/\r?\n/u);
+                if (nextLineBreakIndex < 0) {
+                    return;
+                }
+
+                const completeLine = bufferedText.slice(0, nextLineBreakIndex);
+                if (completeLine.length > 0) {
+                    onLogLine(completeLine);
+                }
+                const lineBreakLength = bufferedText[nextLineBreakIndex] === "\r" ? 2 : 1;
+                bufferedText = bufferedText.slice(nextLineBreakIndex + lineBreakLength);
+            }
+        });
+        stream.on("error", reject);
+        stream.on("end", () => {
+            if (bufferedText.length > 0) {
+                onLogLine(bufferedText);
+            }
+            resolve();
+        });
+    });
+}
+
+function awaitChildProcessExitCode(childProcess: ChildProcessWithoutNullStreams): Promise<number | null> {
+    return new Promise((resolve, reject) => {
+        childProcess.once("error", reject);
+        childProcess.once("close", (code) => {
+            resolve(code);
+        });
+    });
 }
 
 type GraphVisualizationBundleFile = Readonly<{
@@ -878,6 +935,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     let activeServeBundleCache: GraphVisualizationServeBundleCache | null = null;
     let activeLastFixRun: Readonly<{ logLines: ReadonlyArray<string>; projectRoot: string; status: "success" }> | null =
         null;
+    let activeFixProgressLogLines = new Array<string>();
+    let isFixWorkflowRunning = false;
     const activeLiveReloadSession: GraphVisualizationLiveReloadSessionState = {
         childProcess: null,
         childStderrBuffer: [],
@@ -1323,16 +1382,32 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     throw new Error("Open a GameMaker project before running fixes.");
                 }
 
-                const result = await runGraphVisualizationFixWorkflow(activeContext, options.config);
-                activeLastFixRun = Object.freeze({
-                    logLines: result.logLines,
-                    projectRoot: activeContext.projectRoot,
-                    status: "success"
-                });
-                await ensureGraphIndex({ ...options, force: true }, activeContext);
-                await refreshActiveVisualizationArtifacts(activeContext);
-                markServeRevisionChanged();
-                return result;
+                activeFixProgressLogLines = [];
+                isFixWorkflowRunning = true;
+                try {
+                    const result = await runGraphVisualizationFixWorkflow(activeContext, options.config, (logLine) => {
+                        activeFixProgressLogLines.push(logLine);
+                    });
+                    activeLastFixRun = Object.freeze({
+                        logLines: result.logLines,
+                        projectRoot: activeContext.projectRoot,
+                        status: "success"
+                    });
+                    await ensureGraphIndex({ ...options, force: true }, activeContext);
+                    await refreshActiveVisualizationArtifacts(activeContext);
+                    markServeRevisionChanged();
+                    return result;
+                } finally {
+                    isFixWorkflowRunning = false;
+                }
+            },
+            getFixProgress: () =>
+                Object.freeze({
+                    isRunning: isFixWorkflowRunning,
+                    logLines: Object.freeze([...activeFixProgressLogLines])
+                }),
+            clearFixProgress: () => {
+                activeFixProgressLogLines = [];
             },
             processPlayground: async ({
                 gml,
