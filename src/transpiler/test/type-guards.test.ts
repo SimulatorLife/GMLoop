@@ -23,12 +23,23 @@ import { describe, it } from "node:test";
 
 import { Core } from "@gmloop/core";
 
+// Import all guards from the public surface
 import {
     isAstRecord,
     isFunctionScopeBoundary,
     isLoopStatement,
     isTemplateStringTextNode
 } from "../src/emitter/type-guards.js";
+
+// @gmloop/core also exports isLoopLikeNode and isControlFlowExitStatement.
+// Both workspaces implement the same contract (checking .type discriminant),
+// so we test them here alongside the transpiler's own guards for
+// isLoopStatement (an alias covering the same four loop types) and
+// isControlFlowExitStatement.
+//
+// Note: isControlFlowExitStatement and isLoopLikeNode are accessed via
+// Core.isControlFlowExitStatement and Core.isLoopLikeNode because
+// @gmloop/core's public API flattens all exports into the Core namespace.
 
 /**
  * Helper to create a minimal node object with only a type string.
@@ -100,95 +111,121 @@ void describe("isFunctionScopeBoundary", () => {
     });
 });
 
-void describe("isLoopStatement", () => {
-    void it("returns true for ForStatement", () => {
-        assert.equal(isLoopStatement(nodeOfType("ForStatement", {})), true);
+/**
+ * Unified tests for isLoopLikeNode (Core) + isLoopStatement (transpiler).
+ *
+ * Both guards implement identical behaviour: they return true for ForStatement,
+ * WhileStatement, DoUntilStatement, and RepeatStatement — the four GML loop
+ * constructs that carry a condition and support break/continue.  WithStatement
+ * is excluded because its scope-change semantics differ from pure iteration.
+ *
+ * This single describe block exercises both guards, confirming they agree on
+ * all loop-type and non-loop-type inputs.  The @gmloop/core tests in
+ * `loop-like-node.test.ts` are removed as their coverage is fully subsumed.
+ */
+void describe("isLoopLikeNode (Core) and isLoopStatement (transpiler)", () => {
+    const loopTypes = ["ForStatement", "WhileStatement", "DoUntilStatement", "RepeatStatement"];
+    const nonLoopTypes = [
+        { type: "WithStatement", note: "scope-change, not a loop" },
+        { type: "IfStatement" },
+        { type: "BlockStatement" },
+        { type: "BinaryExpression" },
+        { type: "CallExpression" }
+    ];
+
+    for (const type of loopTypes) {
+        void it(`returns true for ${type}`, () => {
+            const node = nodeOfType(type, {});
+            assert.equal(Core.isLoopLikeNode(node), true, `${type} should pass Core.isLoopLikeNode`);
+            assert.equal(isLoopStatement(node), true, `${type} should pass isLoopStatement`);
+        });
+    }
+
+    for (const { type, note } of nonLoopTypes) {
+        const tag = note ? ` (${note})` : "";
+        void it(`returns false for ${type}${tag}`, () => {
+            const node = nodeOfType(type, {});
+            assert.equal(Core.isLoopLikeNode(node), false, `${type} should fail Core.isLoopLikeNode`);
+            assert.equal(isLoopStatement(node), false, `${type} should fail isLoopStatement`);
+        });
+    }
+
+    void it("returns false for null and undefined", () => {
+        assert.equal(Core.isLoopLikeNode(null), false);
+        assert.equal(Core.isLoopLikeNode(undefined), false);
+        assert.equal(isLoopStatement(null), false);
+        assert.equal(isLoopStatement(undefined), false);
     });
 
-    void it("returns true for WhileStatement", () => {
-        assert.equal(isLoopStatement(nodeOfType("WhileStatement", {})), true);
+    void it("returns false for primitives", () => {
+        assert.equal(Core.isLoopLikeNode(42), false);
+        assert.equal(Core.isLoopLikeNode("ForStatement"), false);
+        assert.equal(Core.isLoopLikeNode(true), false);
     });
 
-    void it("returns true for DoUntilStatement", () => {
-        assert.equal(isLoopStatement(nodeOfType("DoUntilStatement", {})), true);
+    void it("returns false for objects without a type", () => {
+        assert.equal(Core.isLoopLikeNode({}), false);
+        assert.equal(Core.isLoopLikeNode({ body: {} }), false);
     });
 
-    void it("returns true for RepeatStatement", () => {
-        assert.equal(isLoopStatement(nodeOfType("RepeatStatement", {})), true);
-    });
-
-    void it("returns false for WithStatement (scope-change, not a loop)", () => {
-        assert.equal(isLoopStatement(nodeOfType("WithStatement", {})), false);
-    });
-
-    void it("returns false for non-loop nodes", () => {
-        assert.equal(isLoopStatement(nodeOfType("BlockStatement", {})), false);
-        assert.equal(isLoopStatement(nodeOfType("ReturnStatement", {})), false);
+    void it("returns false for objects with a non-string type", () => {
+        assert.equal(Core.isLoopLikeNode({ type: null }), false);
+        assert.equal(Core.isLoopLikeNode({ type: 42 }), false);
     });
 });
 
-void describe("Core guards — delegates verify no import breakage", () => {
-    /**
-     * These tests are not asserting new behavior; they serve as a
-     * smoke-test that the Core namespace is correctly wired and
-     * that all individual node-type guards used by the transpiler
-     * are available from Core.  Full coverage of each guard lives
-     * in @gmloop/core's type-guards.test.ts.
-     */
+/**
+ * Unified tests for isControlFlowExitStatement (Core) + isControlFlowExitStatement (transpiler).
+ *
+ * Both guards return true for ReturnStatement, BreakStatement, ContinueStatement,
+ * ExitStatement, and ThrowStatement — the five GML statement types that prevent
+ * subsequent statements in the same block from executing.  The coverage duplicates
+ * @gmloop/core's `node-classification.test.ts` "identifies control flow exit
+ * statements" / "rejects non-exit statement types" / "safely handles null and
+ * non-object inputs" test group; those three test cases are removed here.
+ */
+void describe("isControlFlowExitStatement (Core) and isControlFlowExitStatement (transpiler)", () => {
+    const exitTypes = ["ReturnStatement", "BreakStatement", "ContinueStatement", "ExitStatement", "ThrowStatement"];
+    const nonExitTypes = ["IfStatement", "ExpressionStatement", "BlockStatement", "FunctionDeclaration"];
 
-    void it("Core.isProgramNode correctly identifies Program nodes", () => {
-        assert.equal(Core.isProgramNode(nodeOfType("Program", { body: [] })), true);
-        assert.equal(Core.isProgramNode(nodeOfType("Identifier", { name: "foo" })), false);
-    });
+    for (const type of exitTypes) {
+        void it(`returns true for ${type}`, () => {
+            const node = nodeOfType(type, {});
+            assert.equal(
+                Core.isControlFlowExitStatement(node),
+                true,
+                `${type} should pass Core.isControlFlowExitStatement`
+            );
+            assert.equal(
+                isControlFlowExitStatement(node),
+                true,
+                `${type} should pass transpiler isControlFlowExitStatement`
+            );
+        });
+    }
 
-    void it("Core.isBlockStatementNode correctly identifies BlockStatement nodes", () => {
-        assert.equal(Core.isBlockStatementNode(nodeOfType("BlockStatement", { body: [] })), true);
-        assert.equal(Core.isBlockStatementNode(nodeOfType("Program", { body: [] })), false);
-    });
+    for (const type of nonExitTypes) {
+        void it(`returns false for ${type}`, () => {
+            const node = nodeOfType(type, {});
+            assert.equal(
+                Core.isControlFlowExitStatement(node),
+                false,
+                `${type} should fail Core.isControlFlowExitStatement`
+            );
+            assert.equal(
+                isControlFlowExitStatement(node),
+                false,
+                `${type} should fail transpiler isControlFlowExitStatement`
+            );
+        });
+    }
 
-    void it("Core.isIdentifierNode correctly identifies Identifier nodes", () => {
-        assert.equal(Core.isIdentifierNode(nodeOfType("Identifier", { name: "foo" })), true);
-        assert.equal(Core.isIdentifierNode(nodeOfType("Literal", { value: 42 })), false);
-    });
-
-    void it("Core.isLiteralNode correctly identifies Literal nodes", () => {
-        assert.equal(Core.isLiteralNode(nodeOfType("Literal", { value: 42 })), true);
-        assert.equal(Core.isLiteralNode(nodeOfType("Identifier", { name: "foo" })), false);
-    });
-
-    void it("Core.isIfStatementNode correctly identifies IfStatement nodes", () => {
-        assert.equal(Core.isIfStatementNode(nodeOfType("IfStatement", {})), true);
-        assert.equal(Core.isIfStatementNode(nodeOfType("BlockStatement", {})), false);
-    });
-
-    void it("Core.isVariableDeclarationNode correctly identifies VariableDeclaration nodes", () => {
-        assert.equal(Core.isVariableDeclarationNode(nodeOfType("VariableDeclaration", { kind: "var" })), true);
-        assert.equal(Core.isVariableDeclarationNode(nodeOfType("VariableDeclarator", {})), false);
-    });
-
-    void it("Core.isVariableDeclaratorNode correctly identifies VariableDeclarator nodes", () => {
-        assert.equal(Core.isVariableDeclaratorNode(nodeOfType("VariableDeclarator", {})), true);
-        assert.equal(Core.isVariableDeclaratorNode(nodeOfType("VariableDeclaration", { kind: "var" })), false);
-    });
-
-    void it("Core.isGlobalVarStatementNode correctly identifies GlobalVarStatement nodes", () => {
-        assert.equal(Core.isGlobalVarStatementNode(nodeOfType("GlobalVarStatement", {})), true);
-        assert.equal(Core.isGlobalVarStatementNode(nodeOfType("VariableDeclaration", { kind: "var" })), false);
-    });
-
-    void it("Core.isFunctionDeclarationNode correctly identifies FunctionDeclaration nodes", () => {
-        assert.equal(Core.isFunctionDeclarationNode(nodeOfType("FunctionDeclaration", {})), true);
-        assert.equal(Core.isFunctionDeclarationNode(nodeOfType("Identifier", {})), false);
-    });
-
-    void it("Core.isConstructorDeclarationNode correctly identifies ConstructorDeclaration nodes", () => {
-        assert.equal(Core.isConstructorDeclarationNode(nodeOfType("ConstructorDeclaration", {})), true);
-        assert.equal(Core.isConstructorDeclarationNode(nodeOfType("FunctionDeclaration", {})), false);
-    });
-
-    void it("Core.isParenthesizedExpressionNode correctly identifies ParenthesizedExpression nodes", () => {
-        assert.equal(Core.isParenthesizedExpressionNode(nodeOfType("ParenthesizedExpression", {})), true);
-        assert.equal(Core.isParenthesizedExpressionNode(nodeOfType("Identifier", {})), false);
+    void it("returns false for null, undefined, and primitives", () => {
+        assert.equal(Core.isControlFlowExitStatement(null), false);
+        assert.equal(Core.isControlFlowExitStatement(undefined), false);
+        assert.equal(Core.isControlFlowExitStatement("ReturnStatement"), false);
+        assert.equal(Core.isControlFlowExitStatement(42), false);
+        assert.equal(Core.isControlFlowExitStatement({}), false);
     });
 });
 
