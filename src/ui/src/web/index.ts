@@ -1,4 +1,5 @@
 import { bootstrapGraphVisualizationLitApp } from "../app/bootstrap.js";
+import type { GraphVisualizationFixRunOptions } from "../app/contracts.js";
 import { resetProjectScopedGraphVisualizationUiStateInCurrentUrl } from "../app/state/url-state.js";
 import type {
     GraphVisualizationData,
@@ -9,6 +10,12 @@ import { registerGraphVisualizationCustomElements } from "./register-components.
 
 type FixApiResponse = Readonly<{
     error?: string;
+    logLines?: ReadonlyArray<string>;
+    ok?: boolean;
+}>;
+
+type FixProgressApiResponse = Readonly<{
+    isRunning?: boolean;
     logLines?: ReadonlyArray<string>;
     ok?: boolean;
 }>;
@@ -173,17 +180,41 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 reloadWhenChanged(result);
                 return { changed: result.changed === true };
             },
-            onRunFix: async () => {
-                const response = await fetch("/api/fix", { method: "POST" });
-                const result = await readJsonResponse<FixApiResponse>(response);
-                if (!response.ok || result.ok !== true) {
-                    throw new Error(result.error ?? "Fix workflow failed.");
-                }
-
-                return {
-                    logLines: result.logLines ?? [],
-                    status: "success"
+            onRunFix: async (options?: GraphVisualizationFixRunOptions) => {
+                const pollFixProgress = async (): Promise<void> => {
+                    const progressResponse = await fetch("/api/fix/progress", {
+                        cache: "no-store",
+                        headers: { Accept: "application/json" }
+                    });
+                    if (!progressResponse.ok) {
+                        return;
+                    }
+                    const progressResult = await readJsonResponse<FixProgressApiResponse>(progressResponse);
+                    if (progressResult.ok !== true || !options?.onProgress) {
+                        return;
+                    }
+                    options.onProgress({ logLines: progressResult.logLines ?? [] });
                 };
+
+                const progressPollInterval = globalThis.setInterval(() => {
+                    void pollFixProgress();
+                }, 1000);
+
+                try {
+                    const response = await fetch("/api/fix", { method: "POST" });
+                    const result = await readJsonResponse<FixApiResponse>(response);
+                    if (!response.ok || result.ok !== true) {
+                        throw new Error(result.error ?? "Fix workflow failed.");
+                    }
+
+                    return {
+                        logLines: result.logLines ?? [],
+                        status: "success"
+                    };
+                } finally {
+                    globalThis.clearInterval(progressPollInterval);
+                    await pollFixProgress();
+                }
             },
             onStartLiveReload: async () => {
                 const response = await fetch("/api/live-reload/start", {
