@@ -18,15 +18,10 @@
  *   declaration appears after the first use.
  */
 
+import { Core } from "@gmloop/core";
+
 import type { ProgramNode } from "./ast.js";
-import {
-    isAstRecord,
-    isFunctionScopeBoundary,
-    isGlobalVarStatementNode,
-    isIdentifierNode,
-    isVariableDeclarationNode,
-    isVariableDeclaratorNode
-} from "./type-guards.js";
+import { isAstRecord, isFunctionScopeBoundary } from "./type-guards.js";
 
 type AstRecord = Record<string, unknown>;
 
@@ -59,17 +54,17 @@ function walkAstNodes(root: unknown, visitNode: (node: AstRecord) => boolean | v
 }
 
 function collectVarDeclaratorNames(node: AstRecord, localNames: Set<string>): void {
-    if (!isVariableDeclarationNode(node) || node.kind !== "var" || !Array.isArray(node.declarations)) {
+    if (!Core.isVariableDeclarationNode(node) || node.kind !== "var" || !Array.isArray(node.declarations)) {
         return;
     }
 
     for (const declaration of node.declarations) {
-        if (!isVariableDeclaratorNode(declaration) || !isAstRecord(declaration.id)) {
+        if (!Core.isVariableDeclaratorNode(declaration) || !isAstRecord(declaration.id)) {
             continue;
         }
 
         const idNode = declaration.id;
-        if (isIdentifierNode(idNode) && idNode.name.length > 0) {
+        if (Core.isIdentifierNode(idNode) && idNode.name.length > 0) {
             localNames.add(idNode.name);
         }
     }
@@ -153,17 +148,17 @@ export function collectGlobalVarNames(ast: ProgramNode): ReadonlySet<string> {
 }
 
 function collectGlobalVarNamesFromDeclaration(declaration: unknown, globalNames: Set<string>): void {
-    if (!isVariableDeclaratorNode(declaration) || !isAstRecord(declaration.id)) {
+    if (!Core.isVariableDeclaratorNode(declaration) || !isAstRecord((declaration as { id?: unknown }).id)) {
         return;
     }
-    const idNode = declaration.id;
-    if (isIdentifierNode(idNode) && idNode.name.length > 0) {
+    const idNode = (declaration as { id: unknown }).id;
+    if (Core.isIdentifierNode(idNode) && idNode.name.length > 0) {
         globalNames.add(idNode.name);
     }
 }
 
 function collectGlobalVarNamesFromNode(node: AstRecord, globalNames: Set<string>): void {
-    if (isGlobalVarStatementNode(node) && Array.isArray(node.declarations)) {
+    if (Core.isGlobalVarStatementNode(node) && Array.isArray(node.declarations)) {
         for (const declaration of node.declarations) {
             collectGlobalVarNamesFromDeclaration(declaration, globalNames);
         }

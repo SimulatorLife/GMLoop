@@ -6,9 +6,10 @@
  * block statements vs single statements, and semicolon insertion.
  */
 
+import { Core } from "@gmloop/core";
+
 import type { GmlNode } from "./ast.js";
 import { ensureStatementTerminated } from "./statement-termination-policy.js";
-import { isBlockStatementNode, isParenthesizedExpressionNode } from "./type-guards.js";
 
 /**
  * Wraps an expression in parentheses for use in conditionals (if, while, etc.).
@@ -43,7 +44,7 @@ export function wrapConditional(
     if (!node) {
         return raw ? "" : "(undefined)";
     }
-    const expression = isParenthesizedExpressionNode(node) ? visitor(node.expression) : visitor(node);
+    const expression = Core.isParenthesizedExpressionNode(node) ? visitor(node.expression) : visitor(node);
     return raw ? expression : `(${expression})`;
 }
 
@@ -75,7 +76,7 @@ export function wrapConditionalBody(node: GmlNode | null | undefined, visitor: (
     if (!node) {
         return " {\n}\n";
     }
-    if (isBlockStatementNode(node)) {
+    if (Core.isBlockStatementNode(node)) {
         return ` ${visitor(node)}`;
     }
     const statement = ensureStatementTerminated(visitor(node));
@@ -108,7 +109,7 @@ export function wrapRawBody(node: GmlNode | null | undefined, visitor: (n: GmlNo
     if (!node) {
         return "{\n}\n";
     }
-    if (isBlockStatementNode(node)) {
+    if (Core.isBlockStatementNode(node)) {
         return visitor(node);
     }
     const statement = ensureStatementTerminated(visitor(node));

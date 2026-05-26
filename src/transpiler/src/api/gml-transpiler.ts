@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
+import type { GmlNode } from "../emitter/ast.js";
 import {
     type CallTargetAnalyzer,
     collectLocalVariables,
@@ -10,9 +11,7 @@ import {
     type FunctionDeclarationNode,
     GmlToJsEmitter,
     type IdentifierAnalyzer,
-    isBlockStatementNode,
     isDefaultParameterNode,
-    isIdentifierNode,
     type ProgramNode,
     StringBuilder
 } from "../emitter/index.js";
@@ -195,9 +194,9 @@ export class GmlTranspiler {
 
             if (typeof parameter === "string") {
                 line = `var ${parameter} = args[${index}];`;
-            } else if (isIdentifierNode(parameter)) {
+            } else if (Core.isIdentifierNode(parameter)) {
                 line = `var ${parameter.name} = args[${index}];`;
-            } else if (isDefaultParameterNode(parameter) && isIdentifierNode(parameter.left)) {
+            } else if (isDefaultParameterNode(parameter) && Core.isIdentifierNode(parameter.left)) {
                 const name = parameter.left.name;
                 if (parameter.right) {
                     const defaultValue = emitter.emit(parameter.right);
@@ -218,13 +217,13 @@ export class GmlTranspiler {
     }
 
     private emitUnwrappedFunctionBody(body: ProgramNode["body"][number], emitter: GmlToJsEmitter): string {
-        if (!isBlockStatementNode(body)) {
+        if (!Core.isBlockStatementNode(body)) {
             return emitter.emit(body).trim();
         }
 
         const builder = new StringBuilder(body.body.length);
         for (const statement of body.body) {
-            const code = emitter.emit(statement);
+            const code = emitter.emit(statement as GmlNode);
             if (!code) {
                 continue;
             }

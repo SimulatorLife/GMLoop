@@ -65,14 +65,20 @@ import { collectGlobalVarNames } from "./local-variable-collector.js";
 import { mapBinaryOperator, mapUnaryOperator } from "./operator-mapping.js";
 import { ensureStatementTerminated } from "./statement-termination-policy.js";
 import { StringBuilder } from "./string-builder.js";
-import {
-    isIdentifierNode,
-    isIfStatementNode,
-    isLiteralNode,
-    isProgramNode,
-    isTemplateStringTextNode
-} from "./type-guards.js";
+import { isTemplateStringTextNode } from "./type-guards.js";
 import { lowerWithStatement } from "./with-lowering.js";
+
+// Individual node-type guards delegated to @gmloop/core.
+// Using Core.isXxx(node) instead of importing isXxx from type-guards.js
+// eliminates ~50 duplicated one-liners that all delegate to the same
+// hasNodeType pattern already implemented in @gmloop/core.
+//
+// NOTE: using Core.isXxx() as a type predicate in an `if` narrows the variable's
+// TS type.  When the narrowed type does not satisfy the parameter type expected
+// by the next function call, a `as` cast is used rather than restructuring
+// the call site.  The cast is safe because the `if` guard already proved the
+// cast is valid.
+const { isIdentifierNode, isIfStatementNode, isLiteralNode, isProgramNode } = Core;
 
 type StatementLike = GmlNode | undefined | null;
 const EMPTY_ARGUMENT_LIST: readonly string[] = Object.freeze([]);
@@ -145,7 +151,7 @@ export class GmlToJsEmitter {
             // identifiers referenced before their `globalvar` declaration (a legal GML
             // forward reference) are emitted as `global.<name>` rather than bare names.
             if (isProgramNode(ast)) {
-                for (const name of collectGlobalVarNames(ast)) {
+                for (const name of collectGlobalVarNames(ast as ProgramNode)) {
                     this.globalVars.add(name);
                 }
             }
