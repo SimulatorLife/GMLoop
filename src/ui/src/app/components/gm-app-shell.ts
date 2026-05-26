@@ -276,7 +276,10 @@ export class GmAppShell extends LightDomLitElement {
                     if (progress.logLines.length === 0) {
                         return;
                     }
-                    hasReceivedFixProgress = true;
+                    if (!hasReceivedFixProgress) {
+                        hasReceivedFixProgress = true;
+                        clearInterval(fixWorkflowProgressTimer);
+                    }
                     this.#store.dispatch({ logLines: progress.logLines, type: FIX_LOG_LINES_ACTION_TYPE });
                 }
             });

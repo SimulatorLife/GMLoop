@@ -196,7 +196,7 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                     options.onProgress({ logLines: progressResult.logLines ?? [] });
                 };
 
-                const progressTimer = globalThis.setInterval(() => {
+                const progressPollInterval = globalThis.setInterval(() => {
                     void pollFixProgress();
                 }, 1000);
 
@@ -212,7 +212,7 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                         status: "success"
                     };
                 } finally {
-                    globalThis.clearInterval(progressTimer);
+                    globalThis.clearInterval(progressPollInterval);
                     await pollFixProgress();
                 }
             },

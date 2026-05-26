@@ -114,24 +114,27 @@ async function runGraphVisualizationFixWorkflow(
     return Object.freeze({ logLines: Object.freeze([...logLines]) });
 }
 
+/**
+ * Stream child-process output incrementally and invoke a callback for each completed line.
+ *
+ * @param stream - Child-process stdout/stderr stream.
+ * @param onLogLine - Callback invoked with each parsed line.
+ */
 function streamProcessOutputByLine(stream: NodeJS.ReadableStream, onLogLine: (logLine: string) => void): Promise<void> {
     return new Promise((resolve, reject) => {
         let bufferedText = "";
         stream.setEncoding("utf8");
         stream.on("data", (chunk: string) => {
             bufferedText += chunk;
-            while (true) {
-                const nextLineBreakIndex = bufferedText.search(/\r?\n/u);
-                if (nextLineBreakIndex < 0) {
-                    return;
-                }
-
+            let nextLineBreakIndex = bufferedText.search(/\r?\n/u);
+            while (nextLineBreakIndex >= 0) {
                 const completeLine = bufferedText.slice(0, nextLineBreakIndex);
                 if (completeLine.length > 0) {
                     onLogLine(completeLine);
                 }
                 const lineBreakLength = bufferedText[nextLineBreakIndex] === "\r" ? 2 : 1;
                 bufferedText = bufferedText.slice(nextLineBreakIndex + lineBreakLength);
+                nextLineBreakIndex = bufferedText.search(/\r?\n/u);
             }
         });
         stream.on("error", reject);
@@ -144,6 +147,11 @@ function streamProcessOutputByLine(stream: NodeJS.ReadableStream, onLogLine: (lo
     });
 }
 
+/**
+ * Await a child process close event and return its exit code.
+ *
+ * @param childProcess - Child process to observe.
+ */
 function awaitChildProcessExitCode(childProcess: ChildProcessWithoutNullStreams): Promise<number | null> {
     return new Promise((resolve, reject) => {
         childProcess.once("error", reject);
