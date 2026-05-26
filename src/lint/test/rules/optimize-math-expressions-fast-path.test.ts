@@ -153,3 +153,32 @@ void test("optimize-math-expressions removes *= 1 and /= 1 using epsilon toleran
         "near-1 expressions should be removed, making output shorter than input"
     );
 });
+
+void test("optimize-math-expressions uses epsilon-safe divisor guard for computed near-zero values", () => {
+    // `tryEvaluateExpression` guards against division by zero using strict
+    // equality (`rightValue === 0`). This guard can miss when a divisor is the
+    // computed result of prior floating-point arithmetic — for example,
+    // `0.1 / 1e20` evaluates to `1e-21` (a near-zero float, not exactly 0).
+    //
+    // With epsilon-safe comparison (`isApproximatelyZero`), such computed
+    // near-zero divisors are detected and the expression returns `undefined`,
+    // preventing the lint rule from producing an over-approximated finite
+    // constant for the whole expression.
+    //
+    // The inner divisor `0.1 / 1e20` is a literal expression that evaluates
+    // to a non-null floating-point value (~1e-21). `isApproximatelyZero` then
+    // classifies it as approximately zero, so `tryEvaluateExpression` for
+    // the outer `/` returns `undefined` and no constant folding occurs.
+    const input = "result = 1 / (0.1 / 1e20);\n";
+    const result = lintWithRule("optimize-math-expressions", input, {});
+
+    // The inner divisor evaluates to ~1e-21 — not exactly zero, but well
+    // within the epsilon tolerance (≈8.9e-15). With the fix, this correctly
+    // triggers the `isApproximatelyZero` guard and the outer expression is
+    // not folded to a finite constant.
+    assert.equal(
+        result.output,
+        input,
+        "outer division should not be folded when inner divisor is a computed near-zero float"
+    );
+});

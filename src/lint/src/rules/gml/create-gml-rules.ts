@@ -13,7 +13,7 @@ import { createNoUnnecessaryStringInterpolationRule } from "./rules/no-unnecessa
 import { createNormalizeBannerCommentsRule } from "./rules/normalize-banner-comments-rule.js";
 import { createNormalizeDataStructureAccessorsRule } from "./rules/normalize-data-structure-accessors-rule.js";
 import { createNormalizeDirectivesRule } from "./rules/normalize-directives-rule.js";
-import { createNormalizeDocCommentsRule } from "./rules/normalize-doc-comments-rule.js";
+import { createNormalizeDocCommentsRule } from "./rules/normalize-doc-comments-multiline-defaults-rule.js";
 import { createNormalizeOperatorAliasesRule } from "./rules/normalize-operator-aliases-rule.js";
 import { createOptimizeLogicalFlowRule } from "./rules/optimize-logical-flow-rule.js";
 import { createOptimizeMathExpressionsRule } from "./rules/optimize-math-expressions-rule.js";

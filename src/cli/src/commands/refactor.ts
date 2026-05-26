@@ -116,7 +116,7 @@ function isRecoverableProjectIndexParseError(error: unknown): boolean {
 
 async function buildProjectIndexWithParseTolerance(
     projectRoot: string,
-    fsFacade: typeof Semantic.defaultFsFacade | undefined,
+    fsFacade: typeof Core.defaultFsFacade | undefined,
     verbose: boolean
 ): Promise<Awaited<ReturnType<typeof buildProjectIndex>>> {
     const parseProjectSource = Semantic.getDefaultProjectIndexParser();
@@ -604,7 +604,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                 const updatedProjectIndex = await buildProjectIndexWithParseTolerance(
                     projectRoot,
                     {
-                        ...Semantic.defaultFsFacade,
+                        ...Core.defaultFsFacade,
                         readFile: async (filePath) => {
                             const content = await context.readFile(filePath);
                             return content ?? (await readFile(resolvePath(filePath), "utf8"));

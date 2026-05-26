@@ -3,7 +3,7 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { createProjectIndexAbortGuard } from "./abort-guard.js";
-import { defaultFsFacade, type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
+import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import {
     normalizeProjectFileCategory,
     ProjectFileCategory,
@@ -162,7 +162,7 @@ async function processDirectoryEntries({
 
 export async function scanProjectTree(
     projectRoot,
-    fsFacade: ProjectIndexFsFacade = defaultFsFacade,
+    fsFacade: ProjectIndexFsFacade = Core.defaultFsFacade,
     metrics = null,
     options = {}
 ) {
