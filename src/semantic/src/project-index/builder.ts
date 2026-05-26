@@ -7,7 +7,7 @@ import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from 
 import { getDefaultProjectIndexCacheMaxSize, loadProjectIndexCache, saveProjectIndexCache } from "./cache.js";
 import { clampConcurrency } from "./concurrency.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
-import { defaultFsFacade, type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
+import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { resolveProjectIndexParser } from "./gml-parser-facade.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
@@ -58,7 +58,7 @@ function cloneEntryCollections(entry, ...keys) {
 }
 export function createProjectIndexCoordinator(options: ProjectIndexCoordinatorOptions = {}) {
     const {
-        fsFacade = defaultFsFacade,
+        fsFacade = Core.defaultFsFacade,
         loadCache = loadProjectIndexCache,
         saveCache = saveProjectIndexCache,
         buildIndex = buildProjectIndex,
@@ -2444,7 +2444,7 @@ function finalizeProjectIndexResult({ metricsReporting, options, projectIndex })
     }
     return projectIndex;
 }
-export async function buildProjectIndex(projectRoot, fsFacade = defaultFsFacade, options = {} as any) {
+export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFacade, options = {} as any) {
     if (!projectRoot) {
         throw new Error("projectRoot must be provided to buildProjectIndex");
     }

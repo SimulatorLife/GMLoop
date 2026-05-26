@@ -3,7 +3,7 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { ProjectIndexCacheStatus } from "./cache.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
+import type { ProjectIndexFsFacade } from "./fs-facade.js";
 
 /** Descriptor passed to {@link ProjectIndexCoordinatorInstance.ensureReady}. */
 type EnsureReadyDescriptor = {
@@ -81,7 +81,7 @@ type GetDefaultCacheSizeFunction = () => number;
  * `./builder.ts` (`createProjectIndexCoordinator`).
  */
 export type CoordinatorCoreOptions = {
-    /** Filesystem facade used by load/save operations. Defaults to `defaultFsFacade`. */
+    /** Filesystem facade used by load/save operations. Defaults to `Core.defaultFsFacade`. */
     fsFacade?: ProjectIndexFsFacade;
     loadCache: LoadCacheFunction;
     saveCache: SaveCacheFunction;
@@ -253,7 +253,7 @@ async function executeEnsureReadyOperation({
  * provides convenient defaults for all required dependencies.
  */
 export function createProjectIndexCoordinator({
-    fsFacade = defaultFsFacade,
+    fsFacade = Core.defaultFsFacade,
     loadCache,
     saveCache,
     buildIndex,
