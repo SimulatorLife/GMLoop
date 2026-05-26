@@ -10,6 +10,8 @@ export function createInitialFixWorkflowLogLines(): ReadonlyArray<string> {
 
 /**
  * Create progress log lines for an in-flight fix workflow using elapsed wall-clock time.
+ *
+ * @param elapsedMilliseconds - Wall-clock milliseconds elapsed since the current fix workflow started.
  */
 export function createRunningFixWorkflowLogLines(elapsedMilliseconds: number): ReadonlyArray<string> {
     const elapsedSeconds = Math.floor(elapsedMilliseconds / 1000);
