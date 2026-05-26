@@ -4,10 +4,11 @@ import test from "node:test";
 import {
     GmAppShell,
     GmLiveReloadPanel,
+    GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD
 } from "../src/app/components/index.js";
-import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+import type { GraphVisualizationFixRunResult, GraphVisualizationUiModel } from "../src/app/contracts.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationLiveReloadStatusSnapshot } from "../src/graph/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -20,6 +21,10 @@ class TestableGmLiveReloadPanel extends GmLiveReloadPanel {
 
 class TestableGmAppShell extends GmAppShell {
     public override requestUpdate(): void {}
+
+    public renderForTest(): unknown {
+        return this.render();
+    }
 }
 
 function countOccurrences(value: string, searchValue: string): number {
@@ -246,4 +251,46 @@ void test("GmAppShell routes live-reload start events through the host callback"
     shell.disconnectedCallback();
 
     assert.equal(startCount, 1);
+});
+
+void test("GmAppShell forwards live fix progress snapshots while a fix run is pending", async () => {
+    const shell = new TestableGmAppShell();
+    let resolveFixRun: ((result: GraphVisualizationFixRunResult) => void) | null = null;
+    const runFixPromise = new Promise<GraphVisualizationFixRunResult>((resolve) => {
+        resolveFixRun = resolve;
+    });
+
+    shell.model = {
+        ...createMockModel(null),
+        loadedTarget: {
+            activePath: "/tmp/test",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test"],
+            source: "working-directory"
+        }
+    };
+    shell.callbacks = {
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onRunFix: (options) => {
+            options?.onProgress({ logLines: ["[1/3 Refactor Codemods]"] });
+            return runFixPromise;
+        },
+        onStartLiveReload: () => null,
+        onRefreshLiveReloadStatus: () => null
+    };
+
+    shell.connectedCallback();
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_FIX, { bubbles: true }));
+    await Promise.resolve();
+
+    const pendingRender = renderTemplateValue(shell.renderForTest());
+    assert.match(pendingRender, /\[1\/3 Refactor Codemods\]/u);
+
+    if (!resolveFixRun) {
+        assert.fail("Expected fix workflow completion callback to be captured.");
+    }
+    resolveFixRun({ logLines: ["Success!"], status: "success" });
+    await Promise.resolve();
+    shell.disconnectedCallback();
 });
