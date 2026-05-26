@@ -15,6 +15,12 @@ import { applyGlobalvarToGlobalCodemod, collectGlobalvarDeclaredNames } from "./
 import { planNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import * as HotReload from "./hot-reload.js";
 import { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
+import {
+    APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT,
+    CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
+    CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES,
+    RENAME_VALIDATION_CACHE_MAX_SIZE
+} from "./refactor-constants.js";
 import { assertRenameRequest, assertValidIdentifierName, extractSymbolName } from "./rename/index.js";
 import {
     detectCircularRenames,
@@ -77,10 +83,6 @@ import {
     WorkspaceEdit
 } from "./workspace-edit.js";
 
-const RENAME_VALIDATION_CACHE_MAX_SIZE = 4096;
-const APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT = 8;
-const CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES = 256;
-const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 2048;
 const validatedWorkspaceRevisions = new WeakMap<object, number>();
 const DEFAULT_HOT_RELOAD_COORDINATOR: RefactorHotReloadCoordinator = Object.freeze({
     checkHotReloadSafety: HotReload.checkHotReloadSafety,

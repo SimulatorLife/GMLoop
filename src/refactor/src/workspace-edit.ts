@@ -4,6 +4,8 @@
  * represent a semantic-safe refactoring operation across multiple files.
  */
 
+import { DUPLICATE_EDIT_CHECK_MAX_SET_SIZE } from "./refactor-constants.js";
+
 /**
  * Well-known symbol that any workspace-edit-like object can implement to expose
  * its current mutation revision without being an instance of {@link WorkspaceEdit}.
@@ -75,7 +77,6 @@ type WorkspaceEditMutableState = {
 const workspaceEditExactKeyState = new WeakMap<WorkspaceEdit, Set<string>>();
 const workspaceEditMutableState = new WeakMap<WorkspaceEdit, WorkspaceEditMutableState>();
 const TEXT_EDIT_IDENTITY_DELIMITER = "\u0000";
-const DUPLICATE_EDIT_CHECK_MAX_SET_SIZE = 1024;
 
 function createTextEditIdentityKey(path: string, start: number, end: number, newText: string): string {
     return `${path}${TEXT_EDIT_IDENTITY_DELIMITER}${start}${TEXT_EDIT_IDENTITY_DELIMITER}${end}${TEXT_EDIT_IDENTITY_DELIMITER}${newText}`;
