@@ -29,6 +29,22 @@ void test("logProjectIndexDebug falls back to debug when log is missing", () => 
     assert.deepEqual(logs, [["debug message"]]);
 });
 
+void test("logProjectIndexDebug preserves logger method context", () => {
+    const logger: ProjectIndexLogger & {
+        readonly prefix: string;
+        calls: Array<string>;
+    } = {
+        prefix: "[semantic]",
+        calls: [],
+        log(this: { prefix: string; calls: Array<string> }, message?: string) {
+            this.calls.push(`${this.prefix} ${message ?? ""}`.trim());
+        }
+    };
+
+    logProjectIndexDebug(logger, "indexing");
+    assert.deepEqual(logger.calls, ["[semantic] indexing"]);
+});
+
 void test("logProjectIndexDebug does nothing when no emitter is available", () => {
     logProjectIndexDebug(null, "should not appear");
     logProjectIndexDebug(undefined, "should not appear");

@@ -14,23 +14,17 @@ export type ProjectIndexLogger = {
  * is unavailable.
  */
 export function logProjectIndexDebug(logger: ProjectIndexLogger, message: string, payload?: unknown): void {
-    if (!logger) {
-        return;
-    }
-
-    const emitter =
-        typeof logger.log === "function" ? logger.log : typeof logger.debug === "function" ? logger.debug : null;
-
-    if (!emitter) {
+    const emitterName = resolveLoggerMethodName(logger, ["log", "debug"]);
+    if (!emitterName) {
         return;
     }
 
     if (payload === undefined) {
-        emitter(message);
+        invokeLoggerMethod(logger, emitterName, [message]);
         return;
     }
 
-    emitter(message, payload);
+    invokeLoggerMethod(logger, emitterName, [message, payload]);
 }
 
 /**
@@ -44,20 +38,8 @@ export function logProjectIndexDebug(logger: ProjectIndexLogger, message: string
  * debug level while keeping the error context available for diagnostics.
  */
 export function logProjectIndexDebugError(logger: ProjectIndexLogger, message: string, error: unknown): void {
-    if (!logger) {
-        return;
-    }
-
-    const emitter =
-        typeof logger.error === "function"
-            ? logger.error
-            : typeof logger.log === "function"
-              ? logger.log
-              : typeof logger.debug === "function"
-                ? logger.debug
-                : null;
-
-    if (!emitter) {
+    const emitterName = resolveLoggerMethodName(logger, ["error", "log", "debug"]);
+    if (!emitterName) {
         return;
     }
 
@@ -67,7 +49,41 @@ export function logProjectIndexDebugError(logger: ProjectIndexLogger, message: s
     const reason = getErrorReason(error);
     const suffix = reason.length > 0 ? `: ${reason}` : "";
 
-    emitter(message + suffix);
+    invokeLoggerMethod(logger, emitterName, [message + suffix]);
+}
+
+function resolveLoggerMethodName(
+    logger: ProjectIndexLogger,
+    candidates: ReadonlyArray<"log" | "debug" | "error">
+): "log" | "debug" | "error" | null {
+    if (!logger) {
+        return null;
+    }
+
+    for (const candidate of candidates) {
+        if (typeof logger[candidate] === "function") {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
+function invokeLoggerMethod(
+    logger: ProjectIndexLogger,
+    methodName: "log" | "debug" | "error",
+    args: ReadonlyArray<unknown>
+): void {
+    if (!logger) {
+        return;
+    }
+
+    const emitter = logger[methodName];
+    if (typeof emitter !== "function") {
+        return;
+    }
+
+    emitter.call(logger, ...args);
 }
 
 /**
