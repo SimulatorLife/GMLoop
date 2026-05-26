@@ -85,7 +85,7 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - bundle assets include the local Vite-built Lit shell and stylesheet assets (no CDN dependencies)
 - CLI host code is responsible for obtaining payloads and writing/serving the emitted bundle artifact
 - graph/docs/config tabs are rendered from live workspace-fed catalogs
-- the Fix tab delegates configured refactor, lint, and format mutation to the CLI host and renders status/log output
+- the Fix tab delegates configured refactor, lint, and format mutation to the CLI host, renders status/log output, and shows elapsed-time progress updates while runs are pending
 - the Live Reload surface renders watcher, WebSocket, patch, latency, error, and optional runtime-wrapper health snapshots from UI-owned DTOs
 - the Docs surface includes `CLI`, `MCP`, and `Rules` subviews for command, tool, and workspace rule catalogs
 - loaded project state is shown in one canonical header location and reflects the active graph/config context

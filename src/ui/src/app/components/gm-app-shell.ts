@@ -6,6 +6,7 @@ import {
     type GraphVisualizationUiModel
 } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
+import { createInitialFixWorkflowLogLines, createRunningFixWorkflowLogLines } from "../fix-workflow-progress.js";
 import { hasLoadedGraphIndex, hasLoadedGraphProject } from "../graph-availability.js";
 import { GraphVisualizationUiStore } from "../state/store.js";
 import type {
@@ -253,10 +254,18 @@ export class GmAppShell extends LightDomLitElement {
     }
 
     async #runFixWorkflow(): Promise<void> {
+        const fixWorkflowStartedAt = Date.now();
+        const fixWorkflowProgressTimer = setInterval(() => {
+            this.#store.dispatch({
+                logLines: createRunningFixWorkflowLogLines(Date.now() - fixWorkflowStartedAt),
+                type: "set-fix-log-lines"
+            });
+        }, 1000);
+
         try {
             this.#store.dispatch({ pending: true, type: "set-fix-pending" });
             this.#store.dispatch({ errorMessage: null, type: "set-fix-error" });
-            this.#store.dispatch({ logLines: ["Starting project fix workflow..."], type: "set-fix-log-lines" });
+            this.#store.dispatch({ logLines: createInitialFixWorkflowLogLines(), type: "set-fix-log-lines" });
             const result = await this.callbacks.onRunFix();
             this.#store.dispatch({ logLines: result.logLines, type: "set-fix-log-lines" });
             this.#store.dispatch({ status: result.status, type: "set-fix-status" });
@@ -265,6 +274,7 @@ export class GmAppShell extends LightDomLitElement {
             this.#store.dispatch({ errorMessage: message, type: "set-fix-error" });
             this.#store.dispatch({ status: "error", type: "set-fix-status" });
         } finally {
+            clearInterval(fixWorkflowProgressTimer);
             this.#store.dispatch({ pending: false, type: "set-fix-pending" });
         }
     }
