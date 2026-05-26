@@ -24,7 +24,7 @@ export type {
     StripCommentsTransformOptions
 } from "./src/index.js";
 export type { MemberAccessor } from "./src/index.js";
-export { Core, coreDefaultFsFacade as defaultFsFacade } from "./src/index.js";
+export { Core, defaultFsFacade } from "./src/index.js";
 export {
     isMemberAccessor,
     MEMBER_ACCESSOR_ARRAY,

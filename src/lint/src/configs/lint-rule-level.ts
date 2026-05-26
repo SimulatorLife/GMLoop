@@ -1,16 +1,4 @@
 /**
- * Typed enumeration for GML lint rule severity levels.
- *
- * This module centralizes the valid severity values used throughout the lint
- * configuration system, replacing raw string literals with typed constants.
- * This provides compile-time safety, IDE autocomplete, and validation helpers.
- */
-
-import { Core } from "@gmloop/core";
-
-const { createEnumeratedOptionHelpers } = Core;
-
-/**
  * Valid lint rule severity levels.
  */
 export const LintRuleLevel = Object.freeze({
@@ -21,14 +9,63 @@ export const LintRuleLevel = Object.freeze({
 
 export type LintRuleLevel = (typeof LintRuleLevel)[keyof typeof LintRuleLevel];
 
+const VALID_LEVELS = Object.freeze(new Set(["off", "warn", "error"])) as ReadonlySet<LintRuleLevel>;
+
+// Pre-compute the sorted list for error messages
+const SORTED_LEVEL_LIST = [...VALID_LEVELS].toSorted().join(", ");
+
 /**
- * Helpers for validating and normalizing lint rule level values.
+ * Format a non-string value for display in error messages.
  */
-const lintRuleLevelHelpers = createEnumeratedOptionHelpers(Object.values(LintRuleLevel), {
-    formatError: (list, received) => `Lint rule level must be one of: ${list}. Received: ${received}.`,
-    enforceStringType: true,
-    valueLabel: "Lint rule level"
-});
+function describeValueForError(value: unknown): string {
+    if (value === null) return "null";
+    if (value === undefined) return "undefined";
+    if (typeof value === "string") return JSON.stringify(value);
+    if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") return String(value);
+    // For objects, prefer custom toString if available, otherwise fall back to Object.prototype.toString
+    if (typeof value === "object" && value !== null) {
+        if (
+            "toString" in value &&
+            typeof (value as unknown as { toString(): string }).toString === "function" &&
+            (value as unknown as { toString(): string }).toString !== Object.prototype.toString
+        ) {
+            // eslint-disable-next-line @typescript-eslint/no-base-to-string -- the guard above confirms this is a custom toString
+            return (value as unknown as { toString(): string }).toString();
+        }
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- explicitly using Object.prototype.toString for plain objects
+        return Object.prototype.toString.call(value);
+    }
+    // For functions, symbols, etc., use JSON.stringify as fallback
+    try {
+        return JSON.stringify(value);
+    } catch {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- last resort fallback for unknown types
+        return Object.prototype.toString.call(value);
+    }
+}
+
+/**
+ * Format an error message for invalid lint rule level values.
+ */
+function formatLintRuleLevelError(received: string): string {
+    return `Lint rule level must be one of: ${SORTED_LEVEL_LIST}. Received: ${received}.`;
+}
+
+/**
+ * Normalize a value to lowercase string or null.
+ */
+function toNormalizedLowerCaseString(value: unknown): string {
+    if (value == null) return "";
+    if (typeof value === "string") return value.trim().toLowerCase();
+    // For non-string values, convert to display string then normalize
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- JSON.stringify is intentional for object display
+        return JSON.stringify(value).trim().toLowerCase();
+    } catch {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- fallback for circular refs and other stringify failures
+        return String(value).trim().toLowerCase();
+    }
+}
 
 /**
  * Validate and normalize a lint rule level value.
@@ -44,7 +81,14 @@ export function normalizeLintRuleLevel(
     value: unknown,
     { errorConstructor }: { errorConstructor?: new (message: string) => Error } = {}
 ): LintRuleLevel {
-    return lintRuleLevelHelpers.requireValue(value, errorConstructor) as LintRuleLevel;
+    if (typeof value !== "string") {
+        throw new TypeError(`Lint rule level must be provided as a string (received type '${typeof value}').`);
+    }
+    const normalized = toNormalizedLowerCaseString(value);
+    if (!VALID_LEVELS.has(normalized as LintRuleLevel)) {
+        throw new (errorConstructor ?? Error)(formatLintRuleLevelError(describeValueForError(value)));
+    }
+    return normalized as LintRuleLevel;
 }
 
 /**
@@ -58,8 +102,11 @@ export function normalizeLintRuleLevelWithFallback(
     value: unknown,
     fallback: LintRuleLevel = LintRuleLevel.OFF
 ): LintRuleLevel {
-    const normalized = lintRuleLevelHelpers.normalize(value, null);
-    return (normalized as LintRuleLevel) ?? fallback;
+    if (typeof value !== "string") {
+        return fallback;
+    }
+    const normalized = toNormalizedLowerCaseString(value);
+    return VALID_LEVELS.has(normalized as LintRuleLevel) ? (normalized as LintRuleLevel) : fallback;
 }
 
 /**
@@ -69,7 +116,7 @@ export function normalizeLintRuleLevelWithFallback(
  * @returns True if value is a valid lint rule level
  */
 export function isLintRuleLevel(value: unknown): value is LintRuleLevel {
-    return lintRuleLevelHelpers.valueSet.has(value as string);
+    return typeof value === "string" && VALID_LEVELS.has(value as LintRuleLevel);
 }
 
 /**
@@ -87,5 +134,5 @@ export function getLintRuleLevelValues(): readonly LintRuleLevel[] {
  * @returns Formatted string listing valid severity values
  */
 export function formatLintRuleLevelList(): string {
-    return lintRuleLevelHelpers.formatList();
+    return SORTED_LEVEL_LIST;
 }
