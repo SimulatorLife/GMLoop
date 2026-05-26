@@ -214,7 +214,7 @@ These are the most commonly used CLI environment overrides.
 | `PRETTIER_PLUGIN_GML_IGNORED_FILE_SAMPLE_LIMIT` | Cap ignored-file samples in formatter summary output. |
 | `PRETTIER_PLUGIN_GML_SKIPPED_DIRECTORY_SAMPLE_LIMIT` | Cap skipped-directory samples in formatter summary output. |
 | `PRETTIER_PLUGIN_GML_UNSUPPORTED_EXTENSION_SAMPLE_LIMIT` | Cap unsupported-extension samples in formatter summary output. |
-| `WATCH_STATUS_HOST` / `WATCH_STATUS_PORT` | Defaults for `watch-status --status-host` / `watch-status --status-port` (mirrors `watch --status-host` / `watch --status-port`). |
+| `WATCH_STATUS_HOST` / `WATCH_STATUS_PORT` | Defaults for `live-reload status --status-host` / `live-reload status --status-port` (mirrors `watch --status-host` / `watch --status-port`). |
 
 Use `pnpm run cli -- <command> --help` for full option details.
 
