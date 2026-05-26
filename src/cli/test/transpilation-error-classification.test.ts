@@ -105,6 +105,32 @@ void describe("Transpilation error classification", () => {
         assert.ok(categories.size > 0, "Should have at least one error category");
     });
 
+    void it("classifies unstructured transpiler errors as unknown without legacy string heuristics", async (t) => {
+        const tempDir = await mkdir(path.join(tmpdir(), `transpile-test-${Date.now()}`), { recursive: true });
+        const testFile = path.join(tempDir, "unknown-classification.gml");
+
+        t.after(async () => {
+            await rm(tempDir, { recursive: true, force: true });
+        });
+
+        const context = createTranspilationContext();
+        context.transpiler = {
+            transpileScript() {
+                throw new Error("Generated patch failed validation");
+            }
+        } as unknown as TranspilationContext["transpiler"];
+
+        const result = transpileFile(context, testFile, "function test() { return 1; }", 1, {
+            verbose: false,
+            quiet: true
+        });
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.error);
+        assert.strictEqual(result.error.category, "unknown");
+        assert.strictEqual(result.error.error, "Generated patch failed validation");
+    });
+
     void it("should successfully transpile valid GML code", async (t) => {
         const tempDir = await mkdir(path.join(tmpdir(), `transpile-test-${Date.now()}`), { recursive: true });
         const testFile = path.join(tempDir, "valid.gml");
