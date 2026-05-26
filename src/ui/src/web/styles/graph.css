@@ -181,6 +181,19 @@ text {
   margin: 8px 0 0;
 }
 
+#tooltip pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(3, 8, 16, 0.62);
+  color: var(--gm-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 #json-view {
   position: absolute;
   inset: 0;
@@ -237,6 +250,15 @@ text {
   cursor: pointer;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.child-filter-item {
+  padding-left: 18px;
+}
+
+.filter-children {
+  margin-left: 8px;
+  border-left: 1px solid rgba(143, 181, 255, 0.16);
 }
 
 .filter-section {

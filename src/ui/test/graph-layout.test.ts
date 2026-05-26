@@ -5,7 +5,9 @@ import {
     createGraphLayout,
     filterGraphLayoutForDisplay,
     type GraphLayoutNode,
-    listGraphNodeKinds
+    listGraphNodeKindLegendItems,
+    listGraphNodeKinds,
+    resolveEffectiveGraphNodeKinds
 } from "../src/app/graph-layout.js";
 import type {
     GraphVisualizationEdgeType,
@@ -129,6 +131,39 @@ void test("listGraphNodeKinds excludes project nodes from filter controls", () =
     assert.deepEqual(listGraphNodeKinds(layout.nodes), ["global_variable", "script"]);
 });
 
+void test("listGraphNodeKindLegendItems nests child kinds under semantic parent kinds", () => {
+    const items = listGraphNodeKindLegendItems([
+        createNode("project", "project", "Game"),
+        createNode("object", "object", "obj_player"),
+        createNode("event", "object_event", "Create_0"),
+        createNode("room", "room", "rm_test"),
+        createNode("layer", "room_layer", "Instances"),
+        createNode("script", "script", "constants"),
+        createNode("macro", "macro", "MAX_SPEED"),
+        createNode("enum", "enum", "CombatState"),
+        createNode("member", "enum_member", "Idle")
+    ]);
+
+    const childKindsByParent = new Map(items.map((item) => [item.kind, item.children.map((child) => child.kind)]));
+
+    assert.deepEqual(childKindsByParent.get("enum"), ["enum_member"]);
+    assert.deepEqual(childKindsByParent.get("object"), ["object_event"]);
+    assert.deepEqual(childKindsByParent.get("room"), ["room_layer"]);
+    assert.deepEqual(childKindsByParent.get("script"), ["macro"]);
+});
+
+void test("resolveEffectiveGraphNodeKinds hides child kinds when their legend parent is disabled", () => {
+    const nodes = [
+        createNode("script", "script", "constants"),
+        createNode("macro", "macro", "MAX_SPEED"),
+        createNode("enum", "enum", "CombatState"),
+        createNode("member", "enum_member", "Idle")
+    ];
+    const enabledKinds = new Set<GraphVisualizationNodeKind>(["macro", "enum", "enum_member"]);
+
+    assert.deepEqual([...resolveEffectiveGraphNodeKinds(nodes, enabledKinds)].toSorted(), ["enum", "enum_member"]);
+});
+
 void test("filterGraphLayoutForDisplay does not promote non-hierarchy relationships through hidden nodes", () => {
     const layout = createGraphLayout(
         [
@@ -155,4 +190,32 @@ void test("filterGraphLayoutForDisplay does not promote non-hierarchy relationsh
         filtered.edges.map((edge) => ({ source: edge.source, target: edge.target, type: edge.type })),
         []
     );
+});
+
+void test("createGraphLayout keeps dense sibling nodes separated for readable labels", () => {
+    const nodes = [
+        createNode("project", "project", "Game"),
+        ...Array.from({ length: 12 }, (_, index) =>
+            createNode(`script-${String(index)}`, "script", `script_with_long_label_${String(index)}`)
+        )
+    ];
+    const edges = nodes
+        .filter((node) => node.id !== "project")
+        .map((node) => ({ source: "project", target: node.id, type: "contains" as const }));
+
+    const layout = createGraphLayout(nodes, edges);
+    const scriptNodes = layout.nodes.filter((node) => node.kind === "script");
+    const distances: Array<number> = [];
+
+    for (let leftIndex = 0; leftIndex < scriptNodes.length; leftIndex++) {
+        for (let rightIndex = leftIndex + 1; rightIndex < scriptNodes.length; rightIndex++) {
+            const left = scriptNodes[leftIndex];
+            const right = scriptNodes[rightIndex];
+            if (left && right) {
+                distances.push(Math.hypot(left.x - right.x, left.y - right.y));
+            }
+        }
+    }
+
+    assert.ok(Math.min(...distances) >= 70);
 });

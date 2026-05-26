@@ -1,4 +1,4 @@
-import { html } from "lit";
+import { html, type PropertyValues } from "lit";
 
 import { LightDomLitElement } from "../light-dom-lit-element.js";
 
@@ -6,7 +6,7 @@ import { LightDomLitElement } from "../light-dom-lit-element.js";
  * Reusable dismissable error banner primitive.
  *
  * Fires a `gm-error-banner-dismiss` event when the user dismisses the banner.
- * The event bubbles and is not composed. Host components must clear the
+ * The event bubbles and is not composed. Host components can still clear the
  * `message` prop themselves after handling the event.
  */
 export class GmErrorBanner extends LightDomLitElement {
@@ -19,7 +19,11 @@ export class GmErrorBanner extends LightDomLitElement {
 
     public accessor message = "";
 
+    #dismissedMessage: string | null = null;
+
     #onDismiss = (): void => {
+        this.#dismissedMessage = this.message;
+        this.requestUpdate();
         this.dispatchEvent(
             new CustomEvent("gm-error-banner-dismiss", {
                 bubbles: true
@@ -27,8 +31,14 @@ export class GmErrorBanner extends LightDomLitElement {
         );
     };
 
+    protected override willUpdate(changedProperties: PropertyValues<this>): void {
+        if (changedProperties.has("message") && this.message === "") {
+            this.#dismissedMessage = null;
+        }
+    }
+
     protected override render() {
-        if (!this.message) {
+        if (!this.message || this.message === this.#dismissedMessage) {
             return null;
         }
 
