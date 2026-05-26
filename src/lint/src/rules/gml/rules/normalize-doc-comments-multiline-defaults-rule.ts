@@ -62,7 +62,10 @@ function createSanitizingContext(context: Rule.RuleContext): Rule.RuleContext {
                     const sanitizingFixer = {
                         ...fixer,
                         replaceTextRange(range: Parameters<Rule.RuleFixer["replaceTextRange"]>[0], text: string) {
-                            return fixer.replaceTextRange(range, sanitizeDocCommentMultilineOptionalParamDefaults(text));
+                            return fixer.replaceTextRange(
+                                range,
+                                sanitizeDocCommentMultilineOptionalParamDefaults(text)
+                            );
                         }
                     };
 
@@ -70,7 +73,7 @@ function createSanitizingContext(context: Rule.RuleContext): Rule.RuleContext {
                 }
             });
         }
-    } as Rule.RuleContext;
+    };
 }
 
 export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): Rule.RuleModule {
