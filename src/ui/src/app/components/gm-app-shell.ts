@@ -3,11 +3,12 @@ import { html, nothing } from "lit";
 import {
     createNoopGraphVisualizationUiCallbacks,
     type GraphVisualizationUiCallbacks,
-    type GraphVisualizationUiModel
+    type GraphVisualizationUiModel,
+    hasLoadedGraphIndex,
+    hasLoadedGraphProject
 } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
 import { createInitialFixWorkflowLogLines, createRunningFixWorkflowLogLines } from "../fix-workflow-progress.js";
-import { hasLoadedGraphIndex, hasLoadedGraphProject } from "../graph-availability.js";
 import { GraphVisualizationUiStore } from "../state/store.js";
 import type {
     GraphVisualizationUiDocsView,
