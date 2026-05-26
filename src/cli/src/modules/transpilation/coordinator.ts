@@ -10,7 +10,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
-import { type EventPatch, type ScriptPatch, type Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
+import { type Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
 
 import { formatCliError } from "../../cli-core/index.js";
 import type { PatchBroadcaster } from "../websocket/server.js";
@@ -22,7 +22,9 @@ import {
 import { extractReferencesFromAst, extractSymbolsFromAst } from "./symbol-extraction.js";
 
 type RuntimeTranspiler = InstanceType<typeof Transpiler.GmlTranspiler>;
-export type RuntimeTranspilerPatch = ScriptPatch | EventPatch;
+export type RuntimeTranspilerPatch =
+    | ReturnType<RuntimeTranspiler["transpileScript"]>
+    | ReturnType<RuntimeTranspiler["transpileEvent"]>;
 
 export interface TranspilationMetrics {
     timestamp: number;
