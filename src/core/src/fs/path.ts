@@ -11,6 +11,38 @@ const UNC_PREFIX_PATTERN = /^\\\\/;
 // when `path.relative` escapes the provided parent without rejecting file names
 // that legitimately begin with `..`.
 const PARENT_SEGMENT_PATTERN = /(?:^|[\\/])\.\.(?:[\\/]|$)/;
+// Patterns for detecting Windows path formats
+const WINDOWS_DRIVE_LETTER_PATH_PATTERN = /^[a-zA-Z]:/;
+const WINDOWS_UNC_PATH_PATTERN = /^\\\\[^\\]+\\[^\\]+/;
+
+// ---------------------------------------------------------------------------
+// Windows path detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect if a path uses Windows-style syntax.
+ *
+ * Returns `true` for:
+ * - Drive letter paths (e.g., `C:\` or `C:/`)
+ * - UNC paths (e.g., `\\server\share`)
+ *
+ * This enables correct path resolution when cross-platform absolute paths
+ * appear in project configurations or user-provided file references.
+ *
+ * @param {string | null | undefined} candidate Path to inspect.
+ * @returns {boolean} `true` when the path uses Windows syntax.
+ */
+export function isWin32Path(candidate: string | null | undefined): boolean {
+    if (!isNonEmptyString(candidate)) {
+        return false;
+    }
+
+    return WINDOWS_DRIVE_LETTER_PATH_PATTERN.test(candidate) || WINDOWS_UNC_PATH_PATTERN.test(candidate);
+}
+
+// ---------------------------------------------------------------------------
+// Normalization helpers
+// ---------------------------------------------------------------------------
 
 // Windows path patterns for root detection and normalization
 const WINDOWS_DRIVE_ROOT_PATTERN = /^[A-Za-z]:\\$/;
@@ -18,7 +50,7 @@ const WINDOWS_DRIVE_ROOT_WITH_OPTIONAL_SEPARATOR_PATTERN = /^(?:[A-Za-z]:)\\?$/;
 const UNC_SHARE_ROOT_PATTERN = /^\\\\[^\\]+\\[^\\]+$/;
 const UNC_SHARE_ROOT_WITH_TRAILING_SEPARATOR_PATTERN = /^\\\\[^\\]+\\[^\\]+\\$/;
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u;
-const WINDOWS_UNC_PATH_PATTERN = /^[\\/]{2}[^/\\]+[\\/][^/\\]+/u;
+const WINDOWS_UNC_PATH_PATTERN_ABSOLUTE = /^[\\/]{2}[^/\\]+[\\/][^/\\]+/u;
 
 /**
  * Replace any Windows-style backslashes with forward slashes so downstream
@@ -70,7 +102,7 @@ export function isPortableAbsolutePath(candidate: string): boolean {
     return (
         path.isAbsolute(candidate) ||
         WINDOWS_ABSOLUTE_PATH_PATTERN.test(candidate) ||
-        WINDOWS_UNC_PATH_PATTERN.test(candidate)
+        WINDOWS_UNC_PATH_PATTERN_ABSOLUTE.test(candidate)
     );
 }
 
@@ -88,7 +120,7 @@ export function isPortableAbsolutePath(candidate: string): boolean {
  * @returns {string} Absolute path resolved with the matching platform flavor.
  */
 export function resolvePortableAbsolutePath(candidate: string): string {
-    if (WINDOWS_ABSOLUTE_PATH_PATTERN.test(candidate) || WINDOWS_UNC_PATH_PATTERN.test(candidate)) {
+    if (WINDOWS_ABSOLUTE_PATH_PATTERN.test(candidate) || WINDOWS_UNC_PATH_PATTERN_ABSOLUTE.test(candidate)) {
         return path.win32.resolve(candidate);
     }
 
