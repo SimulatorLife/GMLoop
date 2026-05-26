@@ -7,7 +7,7 @@ import {
     matchProjectResourceMetadataExtension,
     PROJECT_MANIFEST_EXTENSION
 } from "./constants.js";
-import { defaultFsFacade, type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
+import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { normalizeProjectResourcePath } from "./path-normalization.js";
 import { logProjectIndexDebug, logProjectIndexDebugError, type ProjectIndexLogger } from "./project-index-logger.js";
 import { extractAssetReferencesFromMetadataDocument } from "./resource-reference-extractor.js";
@@ -240,7 +240,7 @@ function createResourceAnalysisContext() {
 
 async function loadResourceDocument(
     file,
-    fsFacade: Required<Pick<ProjectIndexFsFacade, "readFile">> = defaultFsFacade,
+    fsFacade: Required<Pick<ProjectIndexFsFacade, "readFile">> = Core.defaultFsFacade as Required<ProjectIndexFsFacade>,
     options = {}
 ) {
     const { ensureNotAborted } = Core.createAbortGuard(options, {
@@ -402,7 +402,7 @@ function annotateAssetReferenceTargets(assetReferences, resourcesMap) {
 export async function analyseResourceFiles({
     projectRoot,
     yyFiles,
-    fsFacade = defaultFsFacade,
+    fsFacade = Core.defaultFsFacade as Required<Pick<ProjectIndexFsFacade, "readFile">>,
     signal = null,
     logger = null
 }: {

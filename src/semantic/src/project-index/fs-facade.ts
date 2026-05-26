@@ -2,8 +2,6 @@ import { Core, type FsFacade } from "@gmloop/core";
 
 export type ProjectIndexFsFacade = FsFacade;
 
-export const defaultFsFacade: Required<FsFacade> = Core.defaultFsFacade as Required<FsFacade>;
-
 /**
  * Run an async filesystem operation and recover only from missing-path errors
  * (`ENOENT`). All non-missing-path failures are rethrown so callers preserve

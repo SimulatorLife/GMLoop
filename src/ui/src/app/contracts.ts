@@ -16,6 +16,14 @@ export type GraphVisualizationFixRunResult = Readonly<{
     status: "success";
 }>;
 
+export type GraphVisualizationFixProgressSnapshot = Readonly<{
+    logLines: ReadonlyArray<string>;
+}>;
+
+export type GraphVisualizationFixRunOptions = Readonly<{
+    onProgress: (progress: GraphVisualizationFixProgressSnapshot) => void;
+}>;
+
 export type GraphVisualizationHostMutationResult = Readonly<{
     changed: boolean;
 }>;
@@ -45,7 +53,9 @@ export type GraphVisualizationUiCallbacks = Readonly<{
         | GraphVisualizationHostMutationResult
         | void
         | Promise<GraphVisualizationHostMutationResult | void>;
-    onRunFix: () => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
+    onRunFix: (
+        options?: GraphVisualizationFixRunOptions
+    ) => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
     onStartLiveReload: () =>
         | GraphVisualizationLiveReloadModel
         | null

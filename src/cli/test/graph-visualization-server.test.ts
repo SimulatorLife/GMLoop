@@ -93,11 +93,19 @@ async function withGraphVisualizationServer(
 
 void test("graph visualization server serves UI-rendered HTML and exposes regeneration JSON", async (testContext) => {
     let openedPath: string | null = null;
+    let fixProgressLogLines: ReadonlyArray<string> = ["[1/3 Refactor Codemods]"];
     let handle;
     try {
         handle = await startGraphVisualizationServer({
             regenerate: async () => ({ changed: true }),
-            runFix: async () => ({ logLines: ["Project root: /tmp/project", "Success!"] }),
+            runFix: async () => {
+                fixProgressLogLines = ["Project root: /tmp/project", "Success!"];
+                return { logLines: fixProgressLogLines };
+            },
+            getFixProgress: () => ({ isRunning: false, logLines: fixProgressLogLines }),
+            clearFixProgress: () => {
+                fixProgressLogLines = [];
+            },
             openProjectTargets: async (input) => {
                 openedPath = input.path;
                 return { changed: true, projectChanged: input.path !== null };
@@ -138,10 +146,36 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
         const reindexPayload = (await reindexResponse.json()) as { changed: boolean; ok: boolean };
         assert.deepEqual(reindexPayload, { changed: true, ok: true });
 
+        const fixProgressBeforeRunResponse = await fetch(`${handle.url}/api/fix/progress`);
+        assert.equal(fixProgressBeforeRunResponse.status, 200);
+        const fixProgressBeforeRunPayload = (await fixProgressBeforeRunResponse.json()) as {
+            isRunning: boolean;
+            logLines: ReadonlyArray<string>;
+            ok: boolean;
+        };
+        assert.deepEqual(fixProgressBeforeRunPayload, {
+            isRunning: false,
+            logLines: ["[1/3 Refactor Codemods]"],
+            ok: true
+        });
+
         const fixResponse = await fetch(`${handle.url}/api/fix`, { method: "POST" });
         assert.equal(fixResponse.status, 200);
         const fixPayload = (await fixResponse.json()) as { logLines: ReadonlyArray<string>; ok: boolean };
         assert.deepEqual(fixPayload, { logLines: ["Project root: /tmp/project", "Success!"], ok: true });
+
+        const fixProgressAfterRunResponse = await fetch(`${handle.url}/api/fix/progress`);
+        assert.equal(fixProgressAfterRunResponse.status, 200);
+        const fixProgressAfterRunPayload = (await fixProgressAfterRunResponse.json()) as {
+            isRunning: boolean;
+            logLines: ReadonlyArray<string>;
+            ok: boolean;
+        };
+        assert.deepEqual(fixProgressAfterRunPayload, {
+            isRunning: false,
+            logLines: [],
+            ok: true
+        });
 
         const openWithoutBodyResponse = await fetch(`${handle.url}/api/open`, { method: "POST" });
         assert.equal(openWithoutBodyResponse.status, 200);

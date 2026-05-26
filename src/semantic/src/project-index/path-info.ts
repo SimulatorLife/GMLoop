@@ -4,35 +4,6 @@ import { Core } from "@gmloop/core";
 
 const PARENT_SEGMENT_PATTERN = /(?:^|[\\/])\.\.(?:[\\/]|$)/;
 
-/**
- * Detect if a path is a Windows-style path.
- *
- * Returns true if the path contains:
- * - A drive letter (e.g., C:\ or C:/)
- * - UNC notation (e.g., \\server\share)
- *
- * This avoids incorrectly treating POSIX absolute paths (e.g., /tmp/foo)
- * as Windows paths, which would happen if we only used path.win32.isAbsolute().
- */
-export function isWin32Path(candidate: string | null | undefined): boolean {
-    if (!Core.isNonEmptyString(candidate)) {
-        return false;
-    }
-
-    // Check for drive letter (e.g., C:\ or C:/)
-    if (/^[a-zA-Z]:/.test(candidate)) {
-        return true;
-    }
-
-    // Check for UNC path (e.g., \\server\share)
-    // Requires both server and share components
-    if (/^\\\\[^\\]+\\[^\\]+/.test(candidate)) {
-        return true;
-    }
-
-    return false;
-}
-
 function resolveContainedRelativePathWithPath(
     pathApi: typeof path,
     childPath: string,
@@ -78,7 +49,7 @@ export function resolveProjectPathInfo(filePath, projectRoot?: string | null) {
         return null;
     }
 
-    const useWin32 = isWin32Path(filePath) || isWin32Path(projectRoot);
+    const useWin32 = Core.isWin32Path(filePath) || Core.isWin32Path(projectRoot);
     const pathApi = useWin32 ? path.win32 : path;
 
     const absolutePath = pathApi.resolve(filePath);
