@@ -263,24 +263,32 @@ export function createRoomCommand(): Command {
     instance.addCommand(instanceDelete);
 
     const layer = applyStandardCommandOptions(new Command("layer")).description("Room layer operations.");
+    const layerMutationLeaves = new Set(["create", "update", "delete", "reorder", "move-resource"]);
     for (const layerLeaf of ["list", "inspect", "create", "update", "delete", "reorder", "move-resource"]) {
         const nested = addRoomSharedOptions(
             applyStandardCommandOptions(new Command(layerLeaf)).description(`Room layer ${layerLeaf}.`)
         );
+        if (layerMutationLeaves.has(layerLeaf)) {
+            nested.addOption(createWriteOption());
+        }
         nested.action(function roomLayerAction() {
-            const options = this.opts<RoomCommandSharedOptions>();
+            const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room layer ${layerLeaf}`, options, "room_layer_mutation");
         });
         layer.addCommand(nested);
     }
 
     const camera = applyStandardCommandOptions(new Command("camera")).description("Room camera operations.");
+    const cameraMutationLeaves = new Set(["update", "frame"]);
     for (const cameraLeaf of ["list", "inspect", "update", "frame"]) {
         const nested = addRoomSharedOptions(
             applyStandardCommandOptions(new Command(cameraLeaf)).description(`Room camera ${cameraLeaf}.`)
         );
+        if (cameraMutationLeaves.has(cameraLeaf)) {
+            nested.addOption(createWriteOption());
+        }
         nested.action(function roomCameraAction() {
-            const options = this.opts<RoomCommandSharedOptions>();
+            const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room camera ${cameraLeaf}`, options, "room_camera_mutation");
         });
         camera.addCommand(nested);

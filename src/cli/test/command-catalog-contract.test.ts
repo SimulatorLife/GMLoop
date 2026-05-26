@@ -76,6 +76,17 @@ void test("object event update MCP tool schema includes write mode option", () =
     assert.equal(handlerField.required, true);
 });
 
+void test("room layer update MCP tool schema includes write mode option", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+    const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_layer_update");
+    assert.ok(entry);
+
+    const writeField = entry.fields.find((field) => field.attributeName === "write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+});
+
 void test("room instance update MCP tool schema includes mutation arguments and write option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_instance_update");

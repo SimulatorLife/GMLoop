@@ -108,6 +108,27 @@ void test("room instance planned leaves emit write-aware payload details", async
     assert.equal(updatePayload.payload.details.instanceId, "111");
 });
 
+void test("room layer update planned leaf emits apply mode when write is requested", async () => {
+    const updateResult = await runCliTestCommand({
+        argv: ["room", "layer", "update", "--json", "--write"]
+    });
+
+    assert.equal(updateResult.exitCode, 0);
+    const updatePayload = JSON.parse(updateResult.stdout) as {
+        command: string;
+        payload: {
+            capability: string;
+            mode: string;
+            state: string;
+        };
+    };
+
+    assert.equal(updatePayload.command, "room layer update");
+    assert.equal(updatePayload.payload.capability, "room_layer_mutation");
+    assert.equal(updatePayload.payload.mode, "apply");
+    assert.equal(updatePayload.payload.state, "not_available");
+});
+
 void test("ui planned leaves emit concrete payloads without unsupported backend state", async () => {
     const previewResult = await runCliTestCommand({
         argv: ["ui", "preview", "--json"]
