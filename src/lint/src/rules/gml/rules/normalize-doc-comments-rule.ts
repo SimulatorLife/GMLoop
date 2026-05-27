@@ -999,10 +999,8 @@ function synthesizeFunctionDocCommentBlock(
     const name = getFunctionNodeName(functionNode);
     // start with a mutable copy of whatever the user already wrote
     const block = existingLines ? Array.from(existingLines) : [];
-    const hadInputDocLines = block.length > 0;
-    if (block.length === 0 && !allowSynthesisWithoutDocs) {
-        return null;
-    }
+    // hadInputDocLines: only true when there are real existing lines (not empty or synthetic)
+    const hadInputDocLines = existingLines !== null && existingLines.length > 0;
 
     // remove any literal placeholder description that simply repeats the name
     for (let i = block.length - 1; i >= 0; i--) {
@@ -1012,6 +1010,12 @@ function synthesizeFunctionDocCommentBlock(
         ) {
             block.splice(i, 1);
         }
+    }
+
+    // blockBecameEmptyAfterPruning: true when pruning removed only placeholder docs
+    const blockBecameEmptyAfterPruning = block.length === 0 && hadInputDocLines;
+    if (block.length === 0 && !allowSynthesisWithoutDocs && !blockBecameEmptyAfterPruning) {
+        return null;
     }
 
     const indentation = /^((?:\s*)?)\S?/.exec(block[0] || "")?.[1] || "";
@@ -1095,8 +1099,20 @@ function synthesizeFunctionDocCommentBlock(
         inferredReturnType,
         hasExistingReturnLine: hasReturns,
         suppressSyntheticReturns,
-        hasRecognizedFunctionDocTagInBlock: hasRecognizedFunctionDocTag(block)
+        hasRecognizedFunctionDocTagInBlock: hasRecognizedFunctionDocTag(block),
+        blockBecameEmptyAfterPruning
     });
+
+    console.error(
+        "[AST DEBUG] Calling determine for:",
+        name,
+        "- hadInputDocLines:",
+        hadInputDocLines,
+        "hasLeadingIndentation:",
+        hasLeadingIndentation,
+        "params:",
+        functionParameterNamesInOrder.length
+    );
 
     if (hasReturns && shouldSynthesizeReturnLine) {
         const firstExistingReturnType = parseReturnDocType(existingReturnLines[0] ?? "");
@@ -1474,9 +1490,12 @@ function synthesizeTextFallbackDocCommentBlock({
     const fallbackBlock = Array.from(processedBlock);
     const fallbackParamNames = new Set(fallbackParams.map((parameter) => parameter.name));
     const fallbackParamTypesByName = collectDocCommentParamTypesByName(fallbackBlock);
-    const hasRecognizedFunctionTag = hasRecognizedFunctionDocTag(fallbackBlock);
 
     mergeFallbackParamLines(fallbackBlock, fallbackParams, indentation);
+
+    // Only check for recognized function tags AFTER merging params, so that
+    // synthesized @param lines from function signatures are visible to the check.
+    const hasRecognizedFunctionTag = hasRecognizedFunctionDocTag(fallbackBlock);
 
     const hasReturnLine = fallbackBlock.some((docLine) => /^\s*\/\/\/\s*@returns?/.test(docLine));
     const hasConcreteReturnText = hasConcreteReturnTextAfterLine(lines, lineIndex);
@@ -1493,6 +1512,22 @@ function synthesizeTextFallbackDocCommentBlock({
     }
 
     if (!hasReturnLine && !isConstructorFunctionLine && hasRecognizedFunctionTag) {
+        console.error(
+            "[FALLBACK DEBUG] Adding @returns for:",
+            line.trim(),
+            "recognized:",
+            hasRecognizedFunctionTag,
+            "hasReturnLine:",
+            hasReturnLine,
+            "isConstructor:",
+            isConstructorFunctionLine,
+            "inferred:",
+            inferredReturnType,
+            "hasConcrete:",
+            hasConcreteReturnText,
+            "fnCount:",
+            functionHeaderCount
+        );
         if (inferredReturnType !== null) {
             fallbackBlock.push(`${indentation}/// @returns {${inferredReturnType}}`);
         } else if (!hasConcreteReturnText || functionHeaderCount === 1) {
@@ -1548,11 +1583,12 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
 
                         const astFunctionCandidate = functionNodesByLineIndex.get(lineIndex)?.[0] ?? null;
                         const hasAstNode = astFunctionCandidate !== null;
+
                         // when running under the minimalist test harness the AST will be
                         // just `{type:"Program"}` so the map will be empty; fall back to a
                         // simple regex to recognize function headers in that case.
-                        const hasLeadingIndentation = /^\s+/u.test(line);
                         const isTextualFunctionDeclaration = isTextualNamedFunctionDeclarationLine(line);
+                        const hasLeadingIndentation = /^\s+/u.test(line);
                         const isTextualFunctionAssignment = /^\s*(?:var|static)\s+[A-Za-z_]\w*\s*=\s*function\b/u.test(
                             line
                         );
@@ -1676,7 +1712,8 @@ function determineIfShouldSynthesizeReturnLine({
     inferredReturnType,
     hasExistingReturnLine,
     suppressSyntheticReturns,
-    hasRecognizedFunctionDocTagInBlock
+    hasRecognizedFunctionDocTagInBlock,
+    blockBecameEmptyAfterPruning
 }: {
     assignmentStyle: boolean;
     propertyStyle: boolean;
@@ -1689,6 +1726,7 @@ function determineIfShouldSynthesizeReturnLine({
     hasExistingReturnLine: boolean;
     suppressSyntheticReturns: boolean;
     hasRecognizedFunctionDocTagInBlock: boolean;
+    blockBecameEmptyAfterPruning: boolean;
 }): boolean {
     if (suppressSyntheticReturns) {
         return false;
@@ -1710,7 +1748,43 @@ function determineIfShouldSynthesizeReturnLine({
         returnInference.hasConcreteReturn &&
         normalizeReturnTypeForComparison(inferredReturnType) !== "struct";
     const suppressUnknownDocTagOnlyReturn =
-        hadInputDocLines && !hasRecognizedFunctionDocTagInBlock && functionParameterNamesInOrder.length === 0;
+        blockBecameEmptyAfterPruning ||
+        (hadInputDocLines && functionParameterNamesInOrder.length > 0 && !hasRecognizedFunctionDocTagInBlock);
+
+    // Log values for the three failing tests
+    console.error(
+        "[DEBUG] hasReturnStatement:",
+        returnInference.hasReturnStatement,
+        "hasConcreteReturn:",
+        returnInference.hasConcreteReturn,
+        "hasUndefinedReturn:",
+        returnInference.hasUndefinedReturn
+    );
+    console.error(
+        "[DEBUG] hadInputDocLines:",
+        hadInputDocLines,
+        "hasLeadingIndentation:",
+        hasLeadingIndentation,
+        "functionParameterNamesInOrder.length:",
+        functionParameterNamesInOrder.length
+    );
+    console.error(
+        "[DEBUG] suppressNested:",
+        !assignmentStyle,
+        !hadInputDocLines,
+        hasLeadingIndentation,
+        functionParameterNamesInOrder.length === 0,
+        returnInference.hasConcreteReturn
+    );
+    console.error(
+        "[DEBUG] suppressUnknown:",
+        blockBecameEmptyAfterPruning,
+        hadInputDocLines,
+        functionParameterNamesInOrder.length,
+        !hasRecognizedFunctionDocTagInBlock
+    );
+    console.error("[DEBUG] shouldReturn:", !suppressUnknownDocTagOnlyReturn);
+
     const suppressUndocumentedNoParamPropertyFunctionReturn =
         propertyStyle && !hadInputDocLines && functionParameterNamesInOrder.length === 0;
     const suppressUndocumentedFunctionPropertyStructReturn =
