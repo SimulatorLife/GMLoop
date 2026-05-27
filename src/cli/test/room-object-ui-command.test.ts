@@ -106,8 +106,8 @@ void test("room instance planned leaves emit write-aware payload details", async
             details: {
                 instanceId: string;
                 room: string;
-                x: string;
-                y: string;
+                x: number;
+                y: number;
             };
             mode: string;
             state: string;
@@ -175,4 +175,20 @@ void test("ui planned leaves emit concrete payloads without unsupported backend 
 
     assert.equal(scaffoldPayload.command, "ui scaffold");
     assert.equal(scaffoldPayload.payload.state, "not_available");
+});
+
+void test("room instance mutations reject non-numeric coordinates", async () => {
+    const addResult = await runCliTestCommand({
+        argv: ["room", "instance", "add", "rm_main", "obj_player", "left", "240", "--json"]
+    });
+
+    assert.equal(addResult.exitCode, 1);
+    assert.match(addResult.stderr, /Invalid x coordinate "left"\. Expected a finite numeric value\./u);
+
+    const updateResult = await runCliTestCommand({
+        argv: ["room", "instance", "update", "rm_main", "111", "320", "top", "--json"]
+    });
+
+    assert.equal(updateResult.exitCode, 1);
+    assert.match(updateResult.stderr, /Invalid y coordinate "top"\. Expected a finite numeric value\./u);
 });
