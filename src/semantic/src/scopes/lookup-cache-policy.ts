@@ -14,6 +14,8 @@
  * This is a first-in, first-out eviction strategy based on insertion order.
  */
 
+import { Core } from "@gmloop/core";
+
 /**
  * Inputs required to evaluate the lookup cache eviction policy.
  */
@@ -58,15 +60,24 @@ export function evaluateLookupCacheEvictionPolicy(input: LookupCacheEvictionPoli
  * Resolves the configured max entries into a concrete numeric value.
  * Invalid, non-finite, or negative inputs resolve to the provided default.
  *
+ * Delegates to {@link Core.toNormalizedInteger} rather than duplicating the
+ * `Math.max(1, Math.floor(value))` pattern inline. The helper additionally
+ * guards against `null` and `undefined` inputs, handles negative-zero
+ * normalization, and centralizes all numeric-resolution logic so call sites
+ * remain focused on their domain invariants.
+ *
  * @param configuredMaxEntries - The maxEntries value from the caller
  * @param defaultMaxEntries - Fallback when the configured value is invalid
  * @returns The resolved maximum entries count, always a positive integer >= 1
  */
 export function resolveLookupCacheMaxEntries(configuredMaxEntries: unknown, defaultMaxEntries: number): number {
-    if (typeof configuredMaxEntries === "number" && Number.isFinite(configuredMaxEntries)) {
-        return Math.max(1, Math.floor(configuredMaxEntries));
+    const normalized = Core.toNormalizedInteger(configuredMaxEntries);
+    if (normalized !== null) {
+        return Math.max(1, normalized);
     }
-    return Math.max(1, Math.floor(defaultMaxEntries));
+
+    const defaulted = Core.toNormalizedInteger(defaultMaxEntries);
+    return Math.max(1, defaulted ?? 1);
 }
 
 /**
