@@ -39,7 +39,16 @@ export async function probeStdioMcpServer(
         const pendingMessages: Array<Record<string, unknown>> = [];
         let settled = false;
 
+        // Track all polling intervals so they can be cleared atomically during cleanup.
+        // This prevents resource leaks if the child process exits unexpectedly before
+        // the intervals are cleared by their respective match handlers.
+        const activeIntervals = new Set<ReturnType<typeof setInterval>>();
+
         const cleanup = () => {
+            for (const interval of activeIntervals) {
+                clearInterval(interval);
+            }
+            activeIntervals.clear();
             if (childProcess.killed === false) {
                 childProcess.kill("SIGTERM");
             }
@@ -62,6 +71,15 @@ export async function probeStdioMcpServer(
 
             settled = true;
             clearTimeout(timeout);
+            // Remove all intervals from the tracking set *before* clearing them.
+            // This prevents a race where an interval callback fires after
+            // settled=true but before clearInterval() runs — the callback checks
+            // pendingMessages.findIndex and returns early without side effects.
+            for (const interval of activeIntervals) {
+                activeIntervals.delete(interval);
+                clearInterval(interval);
+            }
+            activeIntervals.clear();
             callback();
         };
 
@@ -89,14 +107,23 @@ export async function probeStdioMcpServer(
         const waitForMessage = (
             predicate: (message: Record<string, unknown>) => boolean,
             onMatch: (message: Record<string, unknown>) => void
-        ) => {
+        ): ReturnType<typeof setInterval> => {
             const interval = setInterval(() => {
+                // Skip processing if the promise has already settled. This guards
+                // against a race where the close handler calls finalize() (setting
+                // settled=true) before this tick runs — without this check, the
+                // callback would still execute after the promise is settled.
+                if (settled) {
+                    return;
+                }
+
                 const messageIndex = pendingMessages.findIndex(predicate);
                 if (messageIndex === -1) {
                     return;
                 }
 
                 clearInterval(interval);
+                activeIntervals.delete(interval);
                 const [message] = pendingMessages.splice(messageIndex, 1);
                 if (message === undefined) {
                     finalize(() => reject(new Error(`Received an empty MCP response from ${options.displayName}.`)));
@@ -106,6 +133,7 @@ export async function probeStdioMcpServer(
                 onMatch(message);
             }, 20);
 
+            activeIntervals.add(interval);
             return interval;
         };
 
@@ -154,7 +182,7 @@ export async function probeStdioMcpServer(
             }
         });
 
-        const initializeInterval = waitForMessage(
+        waitForMessage(
             (message) => message.id === 1,
             (message) => {
                 const result = isObjectRecord(message.result) ? message.result : null;
@@ -177,7 +205,7 @@ export async function probeStdioMcpServer(
                     params: {}
                 });
 
-                const toolsInterval = waitForMessage(
+                waitForMessage(
                     (toolsMessage) => toolsMessage.id === 2,
                     (toolsMessage) => {
                         const toolsResult = isObjectRecord(toolsMessage.result) ? toolsMessage.result : null;
@@ -220,16 +248,8 @@ export async function probeStdioMcpServer(
                         );
                     }
                 );
-
-                childProcess.on("close", () => {
-                    clearInterval(toolsInterval);
-                });
             }
         );
-
-        childProcess.on("close", () => {
-            clearInterval(initializeInterval);
-        });
     });
 }
 
