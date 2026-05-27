@@ -42,6 +42,10 @@ function collectSourceFiles(sourceRootPath: string): string[] {
 }
 
 function calculateBuildDirectorySize(distributionRootPath: string): number {
+    if (!fs.existsSync(distributionRootPath)) {
+        return 0;
+    }
+
     let totalSize = 0;
     traverseDirectoryEntries(distributionRootPath, {
         onFile: (filePath) => {
