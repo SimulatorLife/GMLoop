@@ -503,18 +503,17 @@ export class GmlToJsEmitter {
         if (stmts.length === 0) {
             return "{\n}";
         }
-        // Build block body with StringBuilder for efficiency
-        // Capacity: statements count + opening brace + closing brace
-        const builder = new StringBuilder(stmts.length + 2);
-        builder.append("{\n");
+        // Build block body by collecting terminated statements into an array, then
+        // joining.  This avoids allocating a StringBuilder for the common case where
+        // all statements produce output.  The result is wrapped with braces directly.
+        const codeLines: string[] = [];
         for (const stmt of stmts) {
             const code = this.emit(stmt);
             if (code) {
-                builder.append(`${this.ensureStatementTermination(code)}\n`);
+                codeLines.push(this.ensureStatementTermination(code));
             }
         }
-        builder.append("}");
-        return builder.toString();
+        return `{\n${codeLines.join("\n")}\n}`;
     }
 
     private visitIfStatement(ast: IfStatementNode): string {
