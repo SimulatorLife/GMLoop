@@ -250,7 +250,7 @@ function collectLoopMutationSummary(loopNode: LoopNode): LoopMutationSummary {
             return;
         }
 
-        if (node.type === "IncDecExpression" || node.type === "IncDecStatement") {
+        if (Core.isIncDecNode(node)) {
             collectMutatedNamesFromTarget(node.argument, mutatedIdentifierNames, mutatedMemberRoots);
             return;
         }
@@ -294,7 +294,7 @@ function isDisallowedContextForReplacement(parent: AstNodeWithType | null, paren
         return true;
     }
 
-    if ((parent.type === "IncDecExpression" || parent.type === "IncDecStatement") && parentKey === "argument") {
+    if (Core.isIncDecNode(parent) && parentKey === "argument") {
         return true;
     }
 
