@@ -23,6 +23,11 @@ const OBJECT_NAME_ARGUMENT_DESCRIPTION = "Object name";
 const OBJECT_EVENT_MUTATION_CAPABILITY = "object_event_mutation";
 const EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION = "Event descriptor (category:event)";
 
+type ObjectEventDescriptor = Readonly<{
+    category: string;
+    descriptor: string;
+}>;
+
 function printObjectPayload(payload: unknown): void {
     printProjectPayload(payload);
 }
@@ -48,6 +53,21 @@ function emitObjectUnavailableLeaf(
             state: "not_available"
         }
     });
+}
+
+function parseObjectEventDescriptor(eventDescriptor: string): ObjectEventDescriptor {
+    const [rawCategory, ...rawDescriptorSegments] = eventDescriptor.split(":");
+    const category = rawCategory?.trim() ?? "";
+    const descriptor = rawDescriptorSegments.join(":").trim();
+    if (category.length === 0 || descriptor.length === 0) {
+        throw new Error(
+            `Invalid event descriptor "${eventDescriptor}". Expected format: category:event (for example Step:Begin).`
+        );
+    }
+    return {
+        category,
+        descriptor
+    };
 }
 
 export function createObjectCommand(): Command {
@@ -171,8 +191,9 @@ export function createObjectCommand(): Command {
     ).addOption(createWriteOption());
     eventAdd.action(function objectEventAddAction(objectName: string, eventDescriptor: string, handler: string) {
         const options = this.opts<ObjectMutationOptions>();
+        const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
         emitObjectUnavailableLeaf("object event add", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
-            event: eventDescriptor,
+            event: parsedDescriptor,
             handler,
             object: objectName
         });
@@ -187,8 +208,9 @@ export function createObjectCommand(): Command {
     ).addOption(createWriteOption());
     eventUpdate.action(function objectEventUpdateAction(objectName: string, eventDescriptor: string, handler: string) {
         const options = this.opts<ObjectMutationOptions>();
+        const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
         emitObjectUnavailableLeaf("object event update", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
-            event: eventDescriptor,
+            event: parsedDescriptor,
             handler,
             object: objectName
         });
@@ -202,8 +224,9 @@ export function createObjectCommand(): Command {
     ).addOption(createWriteOption());
     eventDelete.action(function objectEventDeleteAction(objectName: string, eventDescriptor: string) {
         const options = this.opts<ObjectMutationOptions>();
+        const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
         emitObjectUnavailableLeaf("object event delete", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
-            event: eventDescriptor,
+            event: parsedDescriptor,
             object: objectName
         });
     });

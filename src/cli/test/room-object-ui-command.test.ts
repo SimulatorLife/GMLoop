@@ -66,7 +66,10 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
         command: string;
         payload: {
             details: {
-                event: string;
+                event: {
+                    category: string;
+                    descriptor: string;
+                };
                 handler: string;
                 object: string;
             };
@@ -78,7 +81,17 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
     assert.equal(eventUpdatePayload.payload.mode, "apply");
     assert.equal(eventUpdatePayload.payload.state, "not_available");
     assert.equal(eventUpdatePayload.payload.details.object, "obj_player");
-    assert.equal(eventUpdatePayload.payload.details.event, "Step:Begin");
+    assert.equal(eventUpdatePayload.payload.details.event.category, "Step");
+    assert.equal(eventUpdatePayload.payload.details.event.descriptor, "Begin");
+});
+
+void test("object event mutations reject invalid event descriptor format", async () => {
+    const eventAddResult = await runCliTestCommand({
+        argv: ["object", "event", "add", "obj_player", "Step", "x += 1;", "--json"]
+    });
+
+    assert.equal(eventAddResult.exitCode, 1);
+    assert.match(eventAddResult.stderr, /Expected format: category:event \(for example Step:Begin\)\./u);
 });
 
 void test("room instance planned leaves emit write-aware payload details", async () => {
