@@ -287,6 +287,35 @@ export function createRoomCommand(): Command {
         if (cameraMutationLeaves.has(cameraLeaf)) {
             nested.addOption(createWriteOption());
         }
+        if (cameraLeaf === "update") {
+            nested
+                .argument("<room>", "Room name")
+                .argument("<camera-id>", "Camera id")
+                .argument("<x>", "Camera x coordinate")
+                .argument("<y>", "Camera y coordinate")
+                .argument("<width>", "Camera width")
+                .argument("<height>", "Camera height");
+            nested.action(function roomCameraUpdateAction(
+                roomName: string,
+                cameraId: string,
+                x: string,
+                y: string,
+                width: string,
+                height: string
+            ) {
+                const options = this.opts<RoomMutationOptions>();
+                emitRoomUnavailableLeaf("room camera update", options, "room_camera_mutation", {
+                    cameraId,
+                    height,
+                    room: roomName,
+                    width,
+                    x,
+                    y
+                });
+            });
+            camera.addCommand(nested);
+            continue;
+        }
         nested.action(function roomCameraAction() {
             const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room camera ${cameraLeaf}`, options, "room_camera_mutation");
