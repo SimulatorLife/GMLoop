@@ -278,7 +278,11 @@ export function createPreferStringInterpolationRule(definition: GmlRuleDefinitio
                 }
 
                 const candidate = node as AstNodeRecord;
-                if (candidate.type === "UpdateExpression" || candidate.type === "IncDecStatement") {
+                if (candidate.type === "UpdateExpression") {
+                    return true;
+                }
+
+                if (Core.isIncDecNode(candidate)) {
                     return true;
                 }
                 if (

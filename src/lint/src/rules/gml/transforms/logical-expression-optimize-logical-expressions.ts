@@ -560,7 +560,7 @@ function collectAssignedIdentifiersFromNode(node: unknown, assignedIdentifiers: 
             return;
         }
 
-        if (child.type === "IncDecExpression" || child.type === "IncDecStatement") {
+        if (Core.isIncDecNode(child)) {
             collectAssignedIdentifiersFromTarget(child.argument, assignedIdentifiers);
         }
     });
