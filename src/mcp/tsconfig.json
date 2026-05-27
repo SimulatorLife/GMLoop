@@ -19,6 +19,6 @@
     }
   },
   "references": [{ "path": "../cli" }],
-  "include": ["*.ts", "src/**/*.ts"],
-  "exclude": ["dist", "test"]
+  "include": ["*.ts", "src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["dist"]
 }
