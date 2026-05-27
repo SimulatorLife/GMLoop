@@ -1094,7 +1094,8 @@ function synthesizeFunctionDocCommentBlock(
         returnInference,
         inferredReturnType,
         hasExistingReturnLine: hasReturns,
-        suppressSyntheticReturns
+        suppressSyntheticReturns,
+        hasRecognizedFunctionDocTagInBlock: hasRecognizedFunctionDocTag(block)
     });
 
     if (hasReturns && shouldSynthesizeReturnLine) {
@@ -1452,6 +1453,10 @@ function isTextualConstructorFunctionLine(line: string): boolean {
     return /\bfunction\b/u.test(line) && /\bconstructor\b/u.test(line);
 }
 
+function hasRecognizedFunctionDocTag(docLines: ReadonlyArray<string>): boolean {
+    return docLines.some((docLine) => /^\s*\/\/\/\s*@(description|desc|param|returns?)\b/u.test(docLine));
+}
+
 function synthesizeTextFallbackDocCommentBlock({
     processedBlock,
     line,
@@ -1469,6 +1474,7 @@ function synthesizeTextFallbackDocCommentBlock({
     const fallbackBlock = Array.from(processedBlock);
     const fallbackParamNames = new Set(fallbackParams.map((parameter) => parameter.name));
     const fallbackParamTypesByName = collectDocCommentParamTypesByName(fallbackBlock);
+    const hasRecognizedFunctionTag = hasRecognizedFunctionDocTag(fallbackBlock);
 
     mergeFallbackParamLines(fallbackBlock, fallbackParams, indentation);
 
@@ -1486,7 +1492,7 @@ function synthesizeTextFallbackDocCommentBlock({
         removeReturnDocLines(fallbackBlock);
     }
 
-    if (!hasReturnLine && !isConstructorFunctionLine) {
+    if (!hasReturnLine && !isConstructorFunctionLine && hasRecognizedFunctionTag) {
         if (inferredReturnType !== null) {
             fallbackBlock.push(`${indentation}/// @returns {${inferredReturnType}}`);
         } else if (!hasConcreteReturnText || functionHeaderCount === 1) {
@@ -1669,7 +1675,8 @@ function determineIfShouldSynthesizeReturnLine({
     returnInference,
     inferredReturnType,
     hasExistingReturnLine,
-    suppressSyntheticReturns
+    suppressSyntheticReturns,
+    hasRecognizedFunctionDocTagInBlock
 }: {
     assignmentStyle: boolean;
     propertyStyle: boolean;
@@ -1681,6 +1688,7 @@ function determineIfShouldSynthesizeReturnLine({
     inferredReturnType: string;
     hasExistingReturnLine: boolean;
     suppressSyntheticReturns: boolean;
+    hasRecognizedFunctionDocTagInBlock: boolean;
 }): boolean {
     if (suppressSyntheticReturns) {
         return false;
@@ -1701,6 +1709,8 @@ function determineIfShouldSynthesizeReturnLine({
         !hasExistingReturnLine &&
         returnInference.hasConcreteReturn &&
         normalizeReturnTypeForComparison(inferredReturnType) !== "struct";
+    const suppressUnknownDocTagOnlyReturn =
+        hadInputDocLines && !hasRecognizedFunctionDocTagInBlock && functionParameterNamesInOrder.length === 0;
     const suppressUndocumentedNoParamPropertyFunctionReturn =
         propertyStyle && !hadInputDocLines && functionParameterNamesInOrder.length === 0;
     const suppressUndocumentedFunctionPropertyStructReturn =
@@ -1713,6 +1723,7 @@ function determineIfShouldSynthesizeReturnLine({
         !suppressUndocumentedAssignmentWithoutParams &&
         !suppressNestedUndocumentedNoParamConcreteReturn &&
         !suppressDocOnlyNoParamConcreteReturn &&
+        !suppressUnknownDocTagOnlyReturn &&
         !suppressUndocumentedNoParamPropertyFunctionReturn &&
         !suppressUndocumentedFunctionPropertyStructReturn
     );
