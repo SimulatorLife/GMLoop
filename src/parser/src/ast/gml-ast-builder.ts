@@ -252,14 +252,6 @@ export default class GameMakerASTBuilder {
         }
 
         if (typeof token === "number") {
-            return Number.isFinite(token) ? token : null;
-        }
-
-        if (typeof token === "number") {
-            return Number.isFinite(token) ? token : null;
-        }
-
-        if (typeof token === "number") {
             return token;
         }
 
