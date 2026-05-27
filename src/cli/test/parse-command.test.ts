@@ -17,11 +17,13 @@ async function withTemporaryDirectory<T>(callback: (directory: string) => Promis
     }
 }
 
-void test("createParseCommand exposes shared parse options without positional targets", () => {
+void test("createParseCommand exposes shared parse options and optional positional path", () => {
     const command = createParseCommand();
 
     assert.equal(command.name(), "parse");
-    assert.equal(command.registeredArguments.length, 0);
+    assert.equal(command.registeredArguments.length, 1);
+    assert.equal(command.registeredArguments[0]?.required, false);
+    assert.equal(command.registeredArguments[0]?.name(), "path");
     assert.ok(command.options.some((option) => option.long === "--path"));
     assert.ok(command.options.some((option) => option.long === "--write"));
     assert.ok(command.options.some((option) => option.long === "--list"));
