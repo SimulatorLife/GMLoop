@@ -7,6 +7,13 @@ import * as OccurrenceAnalysis from "./occurrence-analysis.js";
 import * as ProjectAnalysisProvider from "./project-analysis-provider.js";
 import * as ProjectConfig from "./project-config.js";
 import * as ProjectResources from "./project-resources/index.js";
+import {
+    APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT,
+    CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
+    CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES,
+    DUPLICATE_EDIT_CHECK_MAX_SET_SIZE,
+    RENAME_VALIDATION_CACHE_MAX_SIZE
+} from "./refactor-constants.js";
 import * as RefactorEngineAPI from "./refactor-engine.js";
 import * as Validation from "./rename/rename-validation.js";
 import * as RenamePreview from "./rename-preview.js";
@@ -55,7 +62,13 @@ export const Refactor = Object.freeze({
     SymbolKind,
     isSymbolKind,
     parseSymbolKind,
-    requireSymbolKind
+    requireSymbolKind,
+    // Performance and sizing constants
+    APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT,
+    CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
+    CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES,
+    DUPLICATE_EDIT_CHECK_MAX_SET_SIZE,
+    RENAME_VALIDATION_CACHE_MAX_SIZE
 });
 
 export * as Backends from "./backends/index.js";
@@ -115,6 +128,13 @@ export {
     ProjectResourceKind,
     requireProjectResourceKind
 } from "./project-resources/index.js";
+export {
+    APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT,
+    CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
+    CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES,
+    DUPLICATE_EDIT_CHECK_MAX_SET_SIZE,
+    RENAME_VALIDATION_CACHE_MAX_SIZE
+} from "./refactor-constants.js";
 export { RefactorEngine } from "./refactor-engine.js";
 export type {
     CrossRenameConfusion,
