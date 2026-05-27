@@ -30,6 +30,14 @@ function printRoomPayload(payload: unknown): void {
     printProjectPayload(payload);
 }
 
+function parseCoordinateArgument(value: string, argumentName: "x" | "y"): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        throw new TypeError(`Invalid ${argumentName} coordinate "${value}". Expected a finite numeric value.`);
+    }
+    return parsed;
+}
+
 function emitRoomUnavailableLeaf(
     commandName: string,
     options: RoomMutationOptions,
@@ -216,11 +224,13 @@ export function createRoomCommand(): Command {
         .addOption(createWriteOption());
     instanceAdd.action(function roomInstanceAddAction(roomName: string, objectName: string, x: string, y: string) {
         const options = this.opts<RoomMutationOptions>();
+        const parsedX = parseCoordinateArgument(x, "x");
+        const parsedY = parseCoordinateArgument(y, "y");
         emitRoomUnavailableLeaf("room instance add", options, "room_instance_mutation", {
             object: objectName,
             room: roomName,
-            x,
-            y
+            x: parsedX,
+            y: parsedY
         });
     });
     const instanceUpdate = addRoomSharedOptions(
@@ -238,11 +248,13 @@ export function createRoomCommand(): Command {
         y: string
     ) {
         const options = this.opts<RoomMutationOptions>();
+        const parsedX = parseCoordinateArgument(x, "x");
+        const parsedY = parseCoordinateArgument(y, "y");
         emitRoomUnavailableLeaf("room instance update", options, "room_instance_mutation", {
             instanceId,
             room: roomName,
-            x,
-            y
+            x: parsedX,
+            y: parsedY
         });
     });
     const instanceDelete = addRoomSharedOptions(
