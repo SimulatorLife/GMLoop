@@ -353,8 +353,10 @@ function normalizeWatchedPathSegments(candidatePath: string): Array<string> {
         .filter((segment) => segment.length > 0);
 }
 
-function shouldIgnoreWatchedPath(candidatePath: string): boolean {
-    return normalizeWatchedPathSegments(candidatePath).some((segment) => IGNORED_WATCH_DIRECTORY_NAMES.has(segment));
+function shouldIgnoreWatchedPath(candidatePath: string, watchRoot: string | null = null): boolean {
+    const pathToCheck = watchRoot === null ? candidatePath : path.relative(watchRoot, candidatePath);
+
+    return normalizeWatchedPathSegments(pathToCheck).some((segment) => IGNORED_WATCH_DIRECTORY_NAMES.has(segment));
 }
 
 async function runAutoInjectHotReload(
@@ -593,7 +595,12 @@ async function performInitialScan(
 
             // Delegate low-level entry partitioning so this orchestration flow
             // stays focused on high-level scan steps.
-            const { files, directories } = partitionScannedDirectoryEntries(currentPath, entries, extensionMatcher);
+            const { files, directories } = partitionScannedDirectoryEntries(
+                currentPath,
+                entries,
+                extensionMatcher,
+                dirPath
+            );
 
             // Process all files in this directory concurrently for maximum throughput
             await Core.runInParallel(files, async (filePath) => {
@@ -1916,7 +1923,8 @@ interface ScannedDirectoryEntries {
 function partitionScannedDirectoryEntries(
     currentPath: string,
     entries: Array<Dirent>,
-    extensionMatcher: ExtensionMatcher
+    extensionMatcher: ExtensionMatcher,
+    watchRoot: string
 ): ScannedDirectoryEntries {
     const files: Array<string> = [];
     const directories: Array<string> = [];
@@ -1928,7 +1936,11 @@ function partitionScannedDirectoryEntries(
                 continue;
             }
             directories.push(candidatePath);
-        } else if (entry.isFile() && !shouldIgnoreWatchedPath(candidatePath) && extensionMatcher.matches(entry.name)) {
+        } else if (
+            entry.isFile() &&
+            !shouldIgnoreWatchedPath(candidatePath, watchRoot) &&
+            extensionMatcher.matches(entry.name)
+        ) {
             files.push(candidatePath);
         }
     }
@@ -1946,7 +1958,12 @@ async function collectScriptNames(
 
     async function scan(currentPath: string): Promise<void> {
         const entries = await readdir(currentPath, { withFileTypes: true });
-        const { files, directories } = partitionScannedDirectoryEntries(currentPath, entries, extensionMatcher);
+        const { files, directories } = partitionScannedDirectoryEntries(
+            currentPath,
+            entries,
+            extensionMatcher,
+            rootPath
+        );
 
         // Process all files in this directory concurrently for maximum throughput
         await Core.runInParallel(files, async (filePath) => {
@@ -1983,7 +2000,12 @@ async function collectWatchedFilePaths(
     async function scan(currentPath: string): Promise<void> {
         try {
             const entries = await readdir(currentPath, { withFileTypes: true });
-            const { files, directories } = partitionScannedDirectoryEntries(currentPath, entries, extensionMatcher);
+            const { files, directories } = partitionScannedDirectoryEntries(
+                currentPath,
+                entries,
+                extensionMatcher,
+                rootPath
+            );
 
             discoveredFiles.push(...files);
 
