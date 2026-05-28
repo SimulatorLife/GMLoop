@@ -10,3 +10,4 @@ export {
     trimFormattingCache
 } from "./cache.js";
 export * from "./ignore-rules-negation-tracker.js";
+export * from "./target-path-resolution.js";
