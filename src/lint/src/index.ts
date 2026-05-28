@@ -1,6 +1,6 @@
+import { normalizeDocParamName } from "./doc-comment/normalize-param-name.js";
 import { gmlLanguage } from "./language/gml-language.js";
 import { forEachScientificNotationToken, toPlainDecimalFromScientificLiteral } from "./malformed/index.js";
-import { normalizeDocParamName } from "./parameter-utils/index.js";
 import { configs, featherPlugin, plugin } from "./plugin.js";
 import { ruleIds } from "./rules/catalog.js";
 import { listLintRuleCatalogEntries } from "./rules/rule-catalog.js";
@@ -30,7 +30,7 @@ export const Lint = Object.freeze({
     gmlLanguage,
     performanceOverrideRuleIds,
 
-    // Shared utilities (from parameter-utils)
+    // Shared utilities (from doc-comment)
     normalizeDocParamName,
 
     // Malformed-source helpers (from malformed — avoids deep "../.." imports)
