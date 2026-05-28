@@ -1,5 +1,4 @@
-import { Core } from "@gmloop/core";
-
+import { isErrorLike } from "../support/index.js";
 import { getHighResolutionTime } from "../timing/index.js";
 import {
     computeErrorAnalytics,
@@ -61,7 +60,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
     function recordError(patch: Patch, category: PatchErrorCategory, error: unknown): void {
         const errorMessage = resolveRuntimeErrorMessage(error);
         const stackTrace =
-            Core.isErrorLike(error) && typeof (error as { stack?: unknown }).stack === "string"
+            isErrorLike(error) && typeof (error as { stack?: unknown }).stack === "string"
                 ? (error as { stack: string }).stack
                 : undefined;
 

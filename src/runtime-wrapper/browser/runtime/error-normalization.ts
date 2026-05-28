@@ -1,4 +1,4 @@
-import { Core } from "@gmloop/core";
+import { getErrorMessage } from "../support/index.js";
 
 /**
  * Default fallback message used when an unknown runtime error cannot be
@@ -13,7 +13,7 @@ export const DEFAULT_RUNTIME_ERROR_MESSAGE = "Unknown error";
  * produce consistent diagnostics for non-Error throw values.
  */
 export function resolveRuntimeErrorMessage(error: unknown, fallback = DEFAULT_RUNTIME_ERROR_MESSAGE): string {
-    return Core.getErrorMessage(error, {
+    return getErrorMessage(error, {
         fallback: (fallbackCandidate) => resolveRuntimeErrorFallbackMessage(fallbackCandidate, fallback)
     });
 }
