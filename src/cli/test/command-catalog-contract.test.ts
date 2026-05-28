@@ -105,19 +105,34 @@ void test("room camera update MCP tool schema includes mutation arguments and wr
     }
 });
 
-void test("room instance update MCP tool schema includes mutation arguments and write option", () => {
+void test("room instance add and update MCP tool schemas include mutation arguments and write option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
-    const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_instance_update");
-    assert.ok(entry);
+    const addEntry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_instance_add");
+    assert.ok(addEntry);
 
-    const writeField = entry.fields.find((field) => field.attributeName === "write");
-    assert.ok(writeField);
-    assert.equal(writeField.kind, "option");
-    assert.equal(writeField.valueType, "boolean");
+    const addWriteField = addEntry.fields.find((field) => field.attributeName === "write");
+    assert.ok(addWriteField);
+    assert.equal(addWriteField.kind, "option");
+    assert.equal(addWriteField.valueType, "boolean");
+
+    for (const requiredArgument of ["room", "object", "x", "y"]) {
+        const field = addEntry.fields.find((candidate) => candidate.attributeName === requiredArgument);
+        assert.ok(field, `Missing required add argument field: ${requiredArgument}`);
+        assert.equal(field.kind, "argument");
+        assert.equal(field.required, true);
+    }
+
+    const updateEntry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_instance_update");
+    assert.ok(updateEntry);
+
+    const updateWriteField = updateEntry.fields.find((field) => field.attributeName === "write");
+    assert.ok(updateWriteField);
+    assert.equal(updateWriteField.kind, "option");
+    assert.equal(updateWriteField.valueType, "boolean");
 
     for (const requiredArgument of ["room", "instance_id", "x", "y"]) {
-        const field = entry.fields.find((candidate) => candidate.attributeName === requiredArgument);
-        assert.ok(field, `Missing required argument field: ${requiredArgument}`);
+        const field = updateEntry.fields.find((candidate) => candidate.attributeName === requiredArgument);
+        assert.ok(field, `Missing required update argument field: ${requiredArgument}`);
         assert.equal(field.kind, "argument");
         assert.equal(field.required, true);
     }

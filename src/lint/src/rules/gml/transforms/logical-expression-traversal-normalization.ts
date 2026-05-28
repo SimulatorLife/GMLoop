@@ -448,7 +448,7 @@ function isUndefinedCheck(condition: any, target: any): boolean {
 
 function nodesRecursiveEqual(a: any, b: any): boolean {
     if (a === b) return true;
-    if (!a || !b) return false;
+    if (!isObjectLike(a) || !isObjectLike(b)) return false;
     if (a.type !== b.type) return false;
 
     if (a.type === "Identifier") return a.name === b.name;
@@ -774,7 +774,7 @@ function getBooleanValue(node: any): boolean | undefined {
 
 function nodesAreEqual(a: any, b: any): boolean {
     if (a === b) return true;
-    if (!a || !b) return false;
+    if (!isObjectLike(a) || !isObjectLike(b)) return false;
     if (a.type !== b.type) return false;
 
     if (a.type === "Identifier") {

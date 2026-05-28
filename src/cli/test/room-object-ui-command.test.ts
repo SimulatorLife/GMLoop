@@ -1,8 +1,37 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
+
+import { Core } from "@gmloop/core";
+import { Refactor } from "@gmloop/refactor";
 
 import { runCliTestCommand } from "../src/cli.js";
 import { createRoomCommand } from "../src/commands/room.js";
+
+async function createTemporaryRoomInstanceCliProject(): Promise<string> {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-room-cli-"));
+    await writeFile(
+        path.join(projectRoot, "MyGame.yyp"),
+        `${JSON.stringify({ name: "MyGame", resourceType: "GMProject", resources: [] }, null, 4)}\n`,
+        "utf8"
+    );
+    await writeFile(path.join(projectRoot, "gmloop.json"), "{}\n", "utf8");
+    await Refactor.addProjectResource({
+        dryRun: false,
+        projectRoot,
+        resourceKind: "object",
+        resourceName: "obj_player"
+    });
+    await Refactor.addProjectResource({
+        dryRun: false,
+        projectRoot,
+        resourceKind: "room",
+        resourceName: "rm_main"
+    });
+    return projectRoot;
+}
 
 void test("room command keeps inspection leaves and drops bespoke mutation leaves", () => {
     const command = createRoomCommand();
@@ -226,4 +255,67 @@ void test("room instance mutations reject non-numeric coordinates", async () => 
 
     assert.equal(updateResult.exitCode, 1);
     assert.match(updateResult.stderr, /Invalid y coordinate "top"\. Expected a finite numeric value\./u);
+});
+
+void test("room instance add mutates room metadata through CLI write mode", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+
+    try {
+        const dryRunResult = await runCliTestCommand({
+            argv: ["room", "instance", "add", "rm_main", "obj_player", "12", "34", "--path", projectRoot, "--json"]
+        });
+
+        assert.equal(dryRunResult.exitCode, 0);
+        const dryRunPayload = JSON.parse(dryRunResult.stdout) as {
+            command: string;
+            payload: { dryRun: boolean; objectPath: string; roomPath: string; writtenPaths: Array<string> };
+        };
+        assert.equal(dryRunPayload.command, "room instance add");
+        assert.equal(dryRunPayload.payload.dryRun, true);
+        assert.equal(dryRunPayload.payload.objectPath, "objects/obj_player/obj_player.yy");
+        assert.deepEqual(dryRunPayload.payload.writtenPaths, ["rooms/rm_main/rm_main.yy"]);
+
+        const roomMetadataPath = path.join(projectRoot, "rooms/rm_main/rm_main.yy");
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.deepEqual(dryRunRoomMetadata.instanceCreationOrder, []);
+
+        const writeResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "instance",
+                "add",
+                "rm_main",
+                "obj_player",
+                "56",
+                "78",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+
+        assert.equal(writeResult.exitCode, 0);
+        const writePayload = JSON.parse(writeResult.stdout) as {
+            payload: { dryRun: boolean; instanceId: string; layerName: string; x: number; y: number };
+        };
+        assert.equal(writePayload.payload.dryRun, false);
+        assert.equal(writePayload.payload.layerName, "Instances");
+        assert.equal(writePayload.payload.x, 56);
+        assert.equal(writePayload.payload.y, 78);
+
+        const roomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(roomMetadata.instanceCreationOrder[0].name, writePayload.payload.instanceId);
+        assert.equal(roomMetadata.layers[0].instances[0].objectId.path, "objects/obj_player/obj_player.yy");
+        assert.equal(Number(roomMetadata.layers[0].instances[0].x), 56);
+        assert.equal(Number(roomMetadata.layers[0].instances[0].y), 78);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
 });

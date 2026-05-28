@@ -8,6 +8,7 @@ import { Core } from "@gmloop/core";
 
 import {
     addProjectResource,
+    addRoomInstance,
     duplicateProjectResource,
     moveProjectResource,
     ProjectResourceKind,
@@ -242,6 +243,71 @@ void test("duplicateProjectResource and moveProjectResource support dry-run sema
         });
         assert.equal(moveWrite.resourcePath, "scripts/moved/scr_copy.yy");
         await assert.doesNotReject(access(path.join(projectRoot, "scripts/moved/scr_copy.gml")));
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("addRoomInstance appends an object instance to a room with dry-run safety", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.OBJECT,
+            resourceName: "obj_player"
+        });
+        await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.ROOM,
+            resourceName: "rm_main"
+        });
+
+        const dryRun = await addRoomInstance({
+            dryRun: true,
+            objectName: "obj_player",
+            projectRoot,
+            roomName: "rm_main",
+            x: 32,
+            y: 64
+        });
+        assert.equal(dryRun.action, "add");
+        assert.equal(dryRun.dryRun, true);
+        assert.equal(dryRun.objectPath, "objects/obj_player/obj_player.yy");
+        assert.equal(dryRun.roomPath, "rooms/rm_main/rm_main.yy");
+        assert.deepEqual(dryRun.writtenPaths, ["rooms/rm_main/rm_main.yy"]);
+
+        const roomMetadataPath = path.join(projectRoot, "rooms/rm_main/rm_main.yy");
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.deepEqual(dryRunRoomMetadata.instanceCreationOrder, []);
+
+        const writeResult = await addRoomInstance({
+            dryRun: false,
+            objectName: "obj_player",
+            projectRoot,
+            roomName: "rm_main",
+            x: 128,
+            y: 256
+        });
+        assert.equal(writeResult.dryRun, false);
+        assert.match(writeResult.instanceId, /^inst_[a-f0-9]{32}$/u);
+
+        const roomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(roomMetadata.instanceCreationOrder[0].name, writeResult.instanceId);
+        assert.equal(roomMetadata.instanceCreationOrder[0].path, "rooms/rm_main/rm_main.yy");
+        assert.equal(roomMetadata.layers[0].instances[0].name, writeResult.instanceId);
+        assert.equal(roomMetadata.layers[0].instances[0].objectId.name, "obj_player");
+        assert.equal(roomMetadata.layers[0].instances[0].objectId.path, "objects/obj_player/obj_player.yy");
+        assert.equal(Number(roomMetadata.layers[0].instances[0].x), 128);
+        assert.equal(Number(roomMetadata.layers[0].instances[0].y), 256);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

@@ -107,16 +107,19 @@ export { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.j
 export { normalizeRefactorProjectConfig, normalizeRefactorProjectConfigOrNull } from "./project-config.js";
 export type {
     AddProjectResourceRequest,
+    AddRoomInstanceRequest,
     DuplicateProjectResourceRequest,
     MoveProjectResourceRequest,
     ProjectResourceKindValue,
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
-    RenameProjectResourceRequest
+    RenameProjectResourceRequest,
+    RoomInstanceMutationResult
 } from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
 export {
     addProjectResource,
+    addRoomInstance,
     duplicateProjectResource,
     moveProjectResource,
     removeProjectResource,
