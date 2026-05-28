@@ -1754,7 +1754,7 @@ function mergeDependentFiles(
     previousDependents: ReadonlyArray<string>,
     updatedDependents: ReadonlyArray<string>
 ): Array<string> {
-    return Array.from(new Set([...previousDependents, ...updatedDependents]));
+    return [...previousDependents, ...updatedDependents].filter((item, index, arr) => arr.indexOf(item) === index);
 }
 
 async function retranspileDependentFile(
