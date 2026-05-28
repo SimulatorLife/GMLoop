@@ -146,6 +146,67 @@ function filterEmptyDescriptionTags(docs: DocCommentLines): MutableDocCommentLin
     );
 }
 
+function normalizeParamDocTypeAnnotations(
+    docs: MutableDocCommentLines,
+    docTagHelpers: DocTagHelpers
+): MutableDocCommentLines {
+    return docs.map((line) => {
+        if (!docTagHelpers.isParamLine(line)) {
+            return line;
+        }
+
+        const match = line.match(/^(\/\/\/\s*@param\s*)((?:\{[^}]*\}|<[^>]*>)\s*)?(.*)$/i);
+        if (!match) {
+            return normalizeDocCommentTypeAnnotations(line);
+        }
+
+        const [, prefix, rawTypeSection = "", rawNameSection = ""] = match;
+        const nameSplit = splitParamNameAndRemainder(rawNameSection);
+        if (!nameSplit) {
+            return normalizeDocCommentTypeAnnotations(line);
+        }
+
+        const { name: rawName, remainder } = nameSplit;
+        const normalizedPrefix = `${prefix.replace(/\s*$/, "")} `;
+        let normalizedTypeSection = rawTypeSection.trim();
+        if (normalizedTypeSection.startsWith("{") && normalizedTypeSection.endsWith("}")) {
+            const innerType = normalizedTypeSection.slice(1, -1);
+            const normalizedInner = normalizeGameMakerType(innerType.replaceAll("|", ","));
+            normalizedTypeSection = `{${normalizedInner}}`;
+        } else if (normalizedTypeSection.startsWith("<") && normalizedTypeSection.endsWith(">")) {
+            const innerType = normalizedTypeSection.slice(1, -1);
+            const normalizedInner = normalizeGameMakerType(innerType.replaceAll("|", ","));
+            normalizedTypeSection = `{${normalizedInner}}`;
+        }
+        const typePart = normalizedTypeSection.length > 0 ? `${normalizedTypeSection} ` : "";
+        const normalizedName = rawName.trim();
+        const remainingRemainder = remainder;
+
+        const remainderText = remainingRemainder.trim();
+        const hasDescription = remainderText.length > 0;
+        let descriptionPart = "";
+
+        if (hasDescription) {
+            const hyphenMatch = remainingRemainder.match(/^(\s*-\s*)(.*)$/);
+            let normalizedDescription: string;
+
+            if (hyphenMatch) {
+                const rawDescription = hyphenMatch[2] ?? "";
+                normalizedDescription = rawDescription.trim();
+            } else {
+                normalizedDescription = remainderText.replace(/^[-\s]+/, "");
+            }
+
+            if (normalizedDescription.length > 0) {
+                descriptionPart = ` ${normalizedDescription}`;
+            }
+        }
+
+        const updatedLine = `${normalizedPrefix}${typePart}${normalizedName}${descriptionPart}`;
+        return normalizeDocCommentTypeAnnotations(updatedLine);
+    });
+}
+
 export function mergeSyntheticDocComments(
     node: any,
     existingDocLines: DocCommentLines | string[],
@@ -305,61 +366,7 @@ export function mergeSyntheticDocComments(
         });
     }
 
-    reorderedDocs = reorderedDocs.map((line) => {
-        if (!docTagHelpers.isParamLine(line)) {
-            return line;
-        }
-
-        const match = line.match(/^(\/\/\/\s*@param\s*)((?:\{[^}]*\}|<[^>]*>)\s*)?(.*)$/i);
-        if (!match) {
-            return normalizeDocCommentTypeAnnotations(line);
-        }
-
-        const [, prefix, rawTypeSection = "", rawNameSection = ""] = match;
-        const nameSplit = splitParamNameAndRemainder(rawNameSection);
-        if (!nameSplit) {
-            return normalizeDocCommentTypeAnnotations(line);
-        }
-
-        const { name: rawName, remainder } = nameSplit;
-        const normalizedPrefix = `${prefix.replace(/\s*$/, "")} `;
-        let normalizedTypeSection = rawTypeSection.trim();
-        if (normalizedTypeSection.startsWith("{") && normalizedTypeSection.endsWith("}")) {
-            const innerType = normalizedTypeSection.slice(1, -1);
-            const normalizedInner = normalizeGameMakerType(innerType.replaceAll("|", ","));
-            normalizedTypeSection = `{${normalizedInner}}`;
-        } else if (normalizedTypeSection.startsWith("<") && normalizedTypeSection.endsWith(">")) {
-            const innerType = normalizedTypeSection.slice(1, -1);
-            const normalizedInner = normalizeGameMakerType(innerType.replaceAll("|", ","));
-            normalizedTypeSection = `{${normalizedInner}}`;
-        }
-        const typePart = normalizedTypeSection.length > 0 ? `${normalizedTypeSection} ` : "";
-        const normalizedName = rawName.trim();
-        const remainingRemainder = remainder;
-
-        const remainderText = remainingRemainder.trim();
-        const hasDescription = remainderText.length > 0;
-        let descriptionPart = "";
-
-        if (hasDescription) {
-            const hyphenMatch = remainingRemainder.match(/^(\s*-\s*)(.*)$/);
-            let normalizedDescription: string;
-
-            if (hyphenMatch) {
-                const rawDescription = hyphenMatch[2] ?? "";
-                normalizedDescription = rawDescription.trim();
-            } else {
-                normalizedDescription = remainderText.replace(/^[-\s]+/, "");
-            }
-
-            if (normalizedDescription.length > 0) {
-                descriptionPart = ` ${normalizedDescription}`;
-            }
-        }
-
-        const updatedLine = `${normalizedPrefix}${typePart}${normalizedName}${descriptionPart}`;
-        return normalizeDocCommentTypeAnnotations(updatedLine);
-    });
+    reorderedDocs = normalizeParamDocTypeAnnotations(reorderedDocs, docTagHelpers);
 
     if ((result as any)?._preserveDescriptionBreaks === true) {
         preserveDescriptionBreaks = true;

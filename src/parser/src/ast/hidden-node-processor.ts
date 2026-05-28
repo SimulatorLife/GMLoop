@@ -36,17 +36,6 @@ type HiddenNodeProcessorOptions = {
     lexerTokens: LexerTokenKinds;
 };
 
-function createInitialState(): HiddenNodeState {
-    return {
-        reachedEndOfFile: false,
-        previousComment: null,
-        finalComment: null,
-        pendingWhitespace: "",
-        previousSignificantCharacter: "",
-        sawSignificantToken: false
-    };
-}
-
 function markTopComment(comment: HiddenCommentNode, state: HiddenNodeState): void {
     if (!state.sawSignificantToken) {
         (comment as HiddenCommentMetadata).isTopComment = true;
@@ -105,7 +94,14 @@ function markEndOfFile(state: HiddenNodeState): void {
 }
 
 export function createHiddenNodeProcessor({ comments, whitespaces, lexerTokens }: HiddenNodeProcessorOptions) {
-    const state = createInitialState();
+    const state: HiddenNodeState = {
+        reachedEndOfFile: false,
+        previousComment: null,
+        finalComment: null,
+        pendingWhitespace: "",
+        previousSignificantCharacter: "",
+        sawSignificantToken: false
+    };
 
     return {
         hasReachedEnd() {
