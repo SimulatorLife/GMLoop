@@ -231,12 +231,7 @@ void test("buildProjectIndex collects symbols and relationships across project f
         );
 
         const scriptCallTargets = index.relationships.scriptCalls.map((call) => call.target.name);
-        const sortedScriptCallTargets = [...scriptCallTargets].reduce((acc, item) => {
-            const insertIndex = acc.findIndex((existing) => existing > item);
-            return insertIndex === -1
-                ? [...acc, item]
-                : [...acc.slice(0, insertIndex), item, ...acc.slice(insertIndex)];
-        }, []);
+        const sortedScriptCallTargets = [...scriptCallTargets].sort();
         assert.deepEqual(sortedScriptCallTargets, ["attack", "calc_damage"]);
 
         const spriteReference = index.relationships.assetReferences.find(
