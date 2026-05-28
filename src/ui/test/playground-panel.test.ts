@@ -58,6 +58,38 @@ function createMockState(): GraphVisualizationUiState {
     };
 }
 
+function createEmptyProjectConfigurationCatalog(): GraphVisualizationProjectConfigurationCatalog {
+    return {
+        format: { entries: [] },
+        gameMakerCli: {
+            available: false,
+            cliCommands: [],
+            error: null,
+            invocation: null,
+            mcpServer: {
+                available: false,
+                error: null,
+                name: null,
+                projectPath: null,
+                serverId: null,
+                sourcePath: null,
+                version: null
+            },
+            mcpTools: [],
+            version: null
+        },
+        githubRepositoryUrl: "",
+        gmloop: {
+            configPath: null,
+            exists: false,
+            projectRoot: "/tmp/test",
+            rawConfig: {}
+        },
+        lint: { rules: [], rulesets: [], ruleset: null },
+        refactor: { codemods: [] }
+    };
+}
+
 function createMockProjectConfigurationCatalog(): GraphVisualizationProjectConfigurationCatalog {
     return {
         format: {
@@ -295,35 +327,7 @@ void test("playground panel starts with all format/lint/codemod controls uncheck
                 ]
             }
         },
-        projectConfigurationCatalog: {
-            format: { entries: [] },
-            gameMakerCli: {
-                available: false,
-                cliCommands: [],
-                error: null,
-                invocation: null,
-                mcpServer: {
-                    available: false,
-                    error: null,
-                    name: null,
-                    projectPath: null,
-                    serverId: null,
-                    sourcePath: null,
-                    version: null
-                },
-                mcpTools: [],
-                version: null
-            },
-            githubRepositoryUrl: "",
-            gmloop: {
-                configPath: null,
-                exists: false,
-                projectRoot: "/tmp/test",
-                rawConfig: {}
-            },
-            lint: { rules: [], rulesets: [], ruleset: null },
-            refactor: { codemods: [] }
-        }
+        projectConfigurationCatalog: createEmptyProjectConfigurationCatalog()
     };
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
@@ -373,35 +377,7 @@ void test("playground panel falls back to workspace catalogs when project config
                 ]
             }
         },
-        projectConfigurationCatalog: {
-            format: { entries: [] },
-            gameMakerCli: {
-                available: false,
-                cliCommands: [],
-                error: null,
-                invocation: null,
-                mcpServer: {
-                    available: false,
-                    error: null,
-                    name: null,
-                    projectPath: null,
-                    serverId: null,
-                    sourcePath: null,
-                    version: null
-                },
-                mcpTools: [],
-                version: null
-            },
-            githubRepositoryUrl: "",
-            gmloop: {
-                configPath: null,
-                exists: false,
-                projectRoot: "/tmp/test",
-                rawConfig: {}
-            },
-            lint: { rules: [], rulesets: [], ruleset: null },
-            refactor: { codemods: [] }
-        }
+        projectConfigurationCatalog: createEmptyProjectConfigurationCatalog()
     };
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
@@ -423,6 +399,7 @@ void test("playground panel syncs format options from project configuration cata
     panel.model = {
         ...createMockModel(),
         projectConfigurationCatalog: {
+            ...createEmptyProjectConfigurationCatalog(),
             format: {
                 entries: [
                     {
@@ -438,33 +415,7 @@ void test("playground panel syncs format options from project configuration cata
                         value: false
                     }
                 ]
-            },
-            gameMakerCli: {
-                available: false,
-                cliCommands: [],
-                error: null,
-                invocation: null,
-                mcpServer: {
-                    available: false,
-                    error: null,
-                    name: null,
-                    projectPath: null,
-                    serverId: null,
-                    sourcePath: null,
-                    version: null
-                },
-                mcpTools: [],
-                version: null
-            },
-            githubRepositoryUrl: "",
-            gmloop: {
-                configPath: null,
-                exists: false,
-                projectRoot: "/tmp/test",
-                rawConfig: {}
-            },
-            lint: { rules: [], rulesets: [], ruleset: null },
-            refactor: { codemods: [] }
+            }
         }
     };
     panel.state = createMockState();
