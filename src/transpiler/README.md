@@ -10,16 +10,16 @@ This package implements the GML → JavaScript transpiler for the GMLoop toolcha
 
 ## Architecture
 
-The transpiler consists of three main components:
+The transpiler consists of three main components. The package publishes from the workspace-root `index.ts`, which delegates to `src/index.ts` so `@gmloop/transpiler` follows the same package layout as the other workspaces while preserving the existing public symbols. Internal implementation files remain under `src/` and continue to import each other directly.
 
 ### GmlTranspiler
 
 The main transpiler class that orchestrates the transpilation process:
 
 ```javascript
-import { createTranspiler } from "gamemaker-language-transpiler";
+import { Transpiler } from "@gmloop/transpiler";
 
-const transpiler = createTranspiler();
+const transpiler = new Transpiler.GmlTranspiler();
 
 // Transpile a GML script to a patch object
 const patch = await transpiler.transpileScript({
@@ -42,10 +42,10 @@ const patch = await transpiler.transpileScript({
 The code emitter that walks the GML AST and generates JavaScript:
 
 ```javascript
-import { emitJavaScript } from "gamemaker-language-transpiler/src/emitter.js";
+import { Transpiler } from "@gmloop/transpiler";
 
 const ast = parser.parse();
-const jsCode = emitJavaScript(ast);
+const jsCode = Transpiler.emitJavaScript(ast);
 ```
 
 ### Semantic Analysis Integration
@@ -53,16 +53,15 @@ const jsCode = emitJavaScript(ast);
 The transpiler integrates with the `@gmloop/semantic` package to provide accurate identifier and function call classification:
 
 ```javascript
-import { createSemanticOracle } from "gamemaker-language-transpiler";
+import { Transpiler } from "@gmloop/transpiler";
 
 // Create an oracle with built-in function knowledge
-const oracle = createSemanticOracle({
+const oracle = Transpiler.createSemanticOracle({
     scriptNames: new Set(["scr_player_move", "scr_enemy_ai"])
 });
 
 // Use it with the emitter for improved code generation
-import { GmlToJsEmitter } from "gamemaker-language-transpiler";
-const emitter = new GmlToJsEmitter(oracle);
+const emitter = new Transpiler.GmlToJsEmitter(oracle);
 
 const jsCode = emitter.emit(ast);
 ```
@@ -169,8 +168,8 @@ The transpiler maps GML-specific operators to their JavaScript equivalents:
 
 The transpiler integrates with the broader hot-reload pipeline:
 
-1. **Parser** (`gamemaker-language-parser`) - Parses GML source into an AST
-2. **Semantic** (`gamemaker-language-semantic`) - (Future) Provides scope and type information
+1. **Parser** (`@gmloop/parser`) - Parses GML source into an AST
+2. **Semantic** (`@gmloop/semantic`) - Provides scope and type information
 3. **Transpiler** (this module) - Converts AST to JavaScript
 4. **Runtime Wrapper** (`gamemaker-language-runtime-wrapper`) - Applies patches to the running game
 
