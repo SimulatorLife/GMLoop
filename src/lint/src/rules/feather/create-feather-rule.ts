@@ -1,6 +1,6 @@
 import type { Rule } from "eslint";
 
-import { normalizeDocParamName } from "../../parameter-utils/index.js";
+import { normalizeDocParamName } from "../../doc-comment/normalize-param-name.js";
 import { gmlRuleDeprecatedIdentifierServices } from "../gml/gml-rule-services.js";
 import { findMatchingBraceEndIndex, resolveLocFromIndex } from "../gml/rule-base-helpers.js";
 import type { FeatherManifestEntry } from "./manifest.js";
