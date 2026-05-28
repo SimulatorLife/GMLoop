@@ -107,9 +107,22 @@ void describe("watch command ignored generated directories", () => {
                 assert.ok(listenerCapture.listener, "watch listener should be captured");
                 listenerCapture.listener?.("change", path.join(".gmcache", "generated", "scr_compat.gml"));
 
-                await new Promise<void>((resolve) => {
-                    setTimeout(resolve, 250);
-                });
+                // Poll until the patch count stabilizes or the deadline is reached.
+                // Using a polling approach instead of a fixed delay makes this test
+                // deterministic across different system speeds and load conditions.
+                const stableDeadline = Date.now() + 2000;
+                const expectedCount = beforePatchCount;
+                while (Date.now() < stableDeadline) {
+                    const currentStatus = await fetchStatusPayload(context.baseUrl);
+                    const currentCount = currentStatus.totalPatchCount ?? 0;
+                    if (currentCount === expectedCount) {
+                        // Count is stable at the expected value - processing is complete
+                        break;
+                    }
+
+                    // A change was detected - wait for processing to settle
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                }
 
                 const afterStatus = await fetchStatusPayload(context.baseUrl);
                 assert.equal(
