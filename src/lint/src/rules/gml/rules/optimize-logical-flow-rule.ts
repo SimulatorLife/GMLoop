@@ -101,6 +101,25 @@ function isIfNodeInElseIfChain(node: unknown): boolean {
     return false;
 }
 
+function getAssignmentExpr(stmt: unknown) {
+    if (!stmt || typeof stmt !== "object") {
+        return null;
+    }
+
+    if ((stmt as { type?: string }).type === "AssignmentExpression") {
+        return stmt as { left: unknown; right: unknown; operator: string };
+    }
+
+    if ((stmt as { type?: string }).type === "ExpressionStatement") {
+        const expr = (stmt as { expression?: unknown }).expression;
+        if (expr && (expr as { type?: string }).type === "AssignmentExpression") {
+            return expr as { left: unknown; right: unknown; operator: string };
+        }
+    }
+
+    return null;
+}
+
 function canIfStatementBenefitFromNormalization(node: unknown): boolean {
     const ifNode = unwrapForRule(node);
     if (!ifNode || (ifNode as { type?: string }).type !== "IfStatement") {
@@ -114,22 +133,30 @@ function canIfStatementBenefitFromNormalization(node: unknown): boolean {
     const consequentStatement = (ifNode as { consequent?: unknown }).consequent;
     const alternateStatement = (ifNode as { alternate?: unknown }).alternate;
 
+    // Get body arrays for consequent and alternate
+    const consequentBody =
+        (consequentStatement as { type?: string }).type === "BlockStatement"
+            ? ((consequentStatement as { body?: unknown[] }).body ?? [])
+            : [consequentStatement];
+    const alternateBody = alternateStatement
+        ? (alternateStatement as { type?: string }).type === "BlockStatement"
+            ? ((alternateStatement as { body?: unknown[] }).body ?? [])
+            : [alternateStatement]
+        : [];
+
     if (consequentStatement && alternateStatement) {
+        // Rule 1: if return true/false else return false/true → return cond/!cond
         if (
             (consequentStatement as { type?: string }).type === "ReturnStatement" &&
             (alternateStatement as { type?: string }).type === "ReturnStatement"
         ) {
             const consequentValue = Core.getBooleanLiteralValue(
                 (consequentStatement as { argument?: unknown }).argument,
-                {
-                    acceptBooleanPrimitives: true
-                }
+                { acceptBooleanPrimitives: true }
             );
             const alternateValue = Core.getBooleanLiteralValue(
                 (alternateStatement as { argument?: unknown }).argument,
-                {
-                    acceptBooleanPrimitives: true
-                }
+                { acceptBooleanPrimitives: true }
             );
             return (
                 (consequentValue === "true" && alternateValue === "false") ||
@@ -137,55 +164,28 @@ function canIfStatementBenefitFromNormalization(node: unknown): boolean {
             );
         }
 
-        const consequentBody =
-            (consequentStatement as { type?: string }).type === "BlockStatement"
-                ? ((consequentStatement as { body?: unknown[] }).body ?? [])
-                : [consequentStatement];
-        const alternateBody =
-            (alternateStatement as { type?: string }).type === "BlockStatement"
-                ? ((alternateStatement as { body?: unknown[] }).body ?? [])
-                : [alternateStatement];
-
+        // Rule 3: if (cond) x = A; else x = B; → x = cond ? A : B;
         if (consequentBody.length === 1 && alternateBody.length === 1) {
-            const consequentExpr = (consequentBody[0] as { expression?: unknown })?.expression;
-            const alternateExpr = (alternateBody[0] as { expression?: unknown })?.expression;
-            if (
-                consequentExpr &&
-                alternateExpr &&
-                (consequentExpr as { type?: string }).type === "AssignmentExpression" &&
-                (alternateExpr as { type?: string }).type === "AssignmentExpression" &&
-                (consequentExpr as { operator?: string }).operator === "=" &&
-                (alternateExpr as { operator?: string }).operator === "="
-            ) {
-                return areComparableAssignmentTargetsEquivalent(
-                    (consequentExpr as { left?: unknown }).left,
-                    (alternateExpr as { left?: unknown }).left
-                );
+            const consequentExpr = getAssignmentExpr(consequentBody[0]);
+            const alternateExpr = getAssignmentExpr(alternateBody[0]);
+            if (consequentExpr && alternateExpr && consequentExpr.operator === "=" && alternateExpr.operator === "=") {
+                return areComparableAssignmentTargetsEquivalent(consequentExpr.left, alternateExpr.left);
             }
         }
-    }
-
-    const consequentBody =
-        (consequentStatement as { type?: string }).type === "BlockStatement"
-            ? ((consequentStatement as { body?: unknown[] }).body ?? [])
-            : [consequentStatement];
-    if (consequentBody.length === 1) {
-        const consequentExpr = (consequentBody[0] as { expression?: unknown })?.expression;
-        if (
-            consequentExpr &&
-            (consequentExpr as { type?: string }).type === "AssignmentExpression" &&
-            (consequentExpr as { operator?: string }).operator === "="
-        ) {
-            return isUndefinedCheckAgainstTarget(
-                (ifNode as { test?: unknown }).test,
-                (consequentExpr as { left?: unknown }).left
-            );
+    } else {
+        // Rules 4 & 5 (no else branch): if (is_undefined(x)) x = y; → x ??= y;
+        if (consequentBody.length === 1) {
+            const assignmentExpr = getAssignmentExpr(consequentBody[0]);
+            if (assignmentExpr && assignmentExpr.operator === "=") {
+                return isUndefinedCheckAgainstTarget((ifNode as { test?: unknown }).test, assignmentExpr.left);
+            }
         }
+
+        return false;
     }
 
     return false;
 }
-
 function isUndefinedCheckAgainstTarget(test: unknown, target: unknown): boolean {
     const testNode = unwrapForRule(test);
     const targetNode = target as { type?: string } | null;
