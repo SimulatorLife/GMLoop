@@ -88,7 +88,7 @@ function normalizeByteCount(value: NumericLike): number {
         const numericValue = Number(value);
 
         if (!isFiniteNumber(numericValue)) {
-            return 0;
+            return value > 0n ? Number.MAX_VALUE : 0;
         }
 
         return clamp(numericValue, 0, Number.POSITIVE_INFINITY);
