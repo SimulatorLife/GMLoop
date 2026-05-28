@@ -4,14 +4,19 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { loadFixtureProjectConfig } from "../config/index.js";
-import type { FixtureAssertion, FixtureCase, FixtureComparison, FixtureProjectConfig } from "../types.js";
+import {
+    FixtureAssertion as FA,
+    type FixtureAssertion,
+    type FixtureCase,
+    type FixtureComparison,
+    type FixtureProjectConfig
+} from "../types.js";
 
 const GMLOOP_CONFIG_FILE_NAME = "gmloop.json";
 const INPUT_FILE_NAME = "input.gml";
 const EXPECTED_FILE_NAME = "expected.gml";
 const PROJECT_DIRECTORY_NAME = "project";
 const EXPECTED_DIRECTORY_NAME = "expected";
-const PROJECT_TREE_ASSERTION = "project-tree";
 const EXTERNAL_PROJECT_FIXTURE_KIND = "external-project";
 const TEXT_FIXTURE_KINDS = new Set(["format", "lint", "integration"]);
 const EXTERNAL_PROJECT_FIXTURE_KINDS = new Set([EXTERNAL_PROJECT_FIXTURE_KIND]);
@@ -34,14 +39,14 @@ function deriveDefaultAssertion(config: FixtureProjectConfig, fileNames: Readonl
     }
 
     if (config.fixture.kind === "refactor" || config.fixture.kind === EXTERNAL_PROJECT_FIXTURE_KIND) {
-        return PROJECT_TREE_ASSERTION;
+        return FA.PROJECT_TREE;
     }
 
     if (fileNames.has(EXPECTED_FILE_NAME)) {
-        return "transform";
+        return FA.TRANSFORM;
     }
 
-    return "idempotent";
+    return FA.IDEMPOTENT;
 }
 
 function deriveDefaultComparison(config: FixtureProjectConfig): FixtureComparison {
@@ -92,19 +97,19 @@ function validateTextFixtureCaseLayout(
     const allowedFiles = new Set([GMLOOP_CONFIG_FILE_NAME, INPUT_FILE_NAME]);
     const additionalErrors: Array<string> = [];
 
-    if (assertion === "transform" || assertion === "parse-error") {
+    if (assertion === FA.TRANSFORM || assertion === FA.PARSE_ERROR) {
         allowedFiles.add(EXPECTED_FILE_NAME);
     }
 
-    if (assertion === "transform" && !fileNames.has(EXPECTED_FILE_NAME)) {
+    if (assertion === FA.TRANSFORM && !fileNames.has(EXPECTED_FILE_NAME)) {
         additionalErrors.push(`missing ${EXPECTED_FILE_NAME}`);
     }
 
-    if (assertion === "idempotent" && fileNames.has(EXPECTED_FILE_NAME)) {
+    if (assertion === FA.IDEMPOTENT && fileNames.has(EXPECTED_FILE_NAME)) {
         additionalErrors.push(`${EXPECTED_FILE_NAME} is not allowed for ${assertion} fixtures`);
     }
 
-    if (assertion === "project-tree") {
+    if (assertion === FA.PROJECT_TREE) {
         additionalErrors.push("project-tree assertion is only valid for refactor fixtures");
     }
 
@@ -127,8 +132,7 @@ function validateRefactorFixtureCaseLayout(
         allowedDirectories: new Set([PROJECT_DIRECTORY_NAME, EXPECTED_DIRECTORY_NAME]),
         requiredFiles: [],
         requiredDirectories: [PROJECT_DIRECTORY_NAME, EXPECTED_DIRECTORY_NAME],
-        additionalErrors:
-            assertion === PROJECT_TREE_ASSERTION ? [] : ["refactor fixtures must use the project-tree assertion"]
+        additionalErrors: assertion === FA.PROJECT_TREE ? [] : ["refactor fixtures must use the project-tree assertion"]
     });
 }
 
@@ -156,8 +160,7 @@ function collectFixtureCaseValidationErrors(
             allowedDirectories: new Set(),
             requiredFiles: [GMLOOP_CONFIG_FILE_NAME],
             requiredDirectories: [],
-            additionalErrors:
-                assertion === PROJECT_TREE_ASSERTION ? [] : ["external-project fixtures must use project-tree"]
+            additionalErrors: assertion === FA.PROJECT_TREE ? [] : ["external-project fixtures must use project-tree"]
         });
     }
 

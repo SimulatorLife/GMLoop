@@ -1,7 +1,72 @@
 import type { GmloopProjectConfig, ProjectExcludeRules } from "@gmloop/core";
 
 export type FixtureKind = "format" | "lint" | "refactor" | "integration" | "external-project";
+
+/**
+ * Sentinel object whose keys are used only to derive the `FixtureAssertion` type.
+ * The `assert` and `is` methods are excluded from the type-level enum members.
+ */
+const FIXTURE_ASSERTION_STRING_KEYS = {
+    TRANSFORM: "transform",
+    IDEMPOTENT: "idempotent",
+    PROJECT_TREE: "project-tree",
+    PARSE_ERROR: "parse-error"
+} as const;
+
+/**
+ * Enum-like constant group for valid fixture assertion values.
+ * Use `FixtureAssertion.assert(value)` to validate and narrow untrusted input.
+ */
+export const FixtureAssertion = Object.freeze({
+    TRANSFORM: FIXTURE_ASSERTION_STRING_KEYS.TRANSFORM,
+    IDEMPOTENT: FIXTURE_ASSERTION_STRING_KEYS.IDEMPOTENT,
+    PROJECT_TREE: FIXTURE_ASSERTION_STRING_KEYS.PROJECT_TREE,
+    PARSE_ERROR: FIXTURE_ASSERTION_STRING_KEYS.PARSE_ERROR,
+
+    /**
+     * Validate a raw string as a valid fixture assertion.
+     * Throws a `TypeError` if the value is not one of the known assertion values.
+     *
+     * @param value - A potentially untrusted string to validate.
+     * @param context - Dot-notation path context for error messages (e.g. `"config.fixture.assertion"`).
+     */
+    assert(value: unknown, context = "value"): asserts value is FixtureAssertion {
+        if (
+            value !== FIXTURE_ASSERTION_STRING_KEYS.TRANSFORM &&
+            value !== FIXTURE_ASSERTION_STRING_KEYS.IDEMPOTENT &&
+            value !== FIXTURE_ASSERTION_STRING_KEYS.PROJECT_TREE &&
+            value !== FIXTURE_ASSERTION_STRING_KEYS.PARSE_ERROR
+        ) {
+            const validList = [
+                FIXTURE_ASSERTION_STRING_KEYS.TRANSFORM,
+                FIXTURE_ASSERTION_STRING_KEYS.IDEMPOTENT,
+                FIXTURE_ASSERTION_STRING_KEYS.PROJECT_TREE,
+                FIXTURE_ASSERTION_STRING_KEYS.PARSE_ERROR
+            ].join(", ");
+            const received = typeof value === "string" ? value : JSON.stringify(value);
+            throw new TypeError(`${context} must be one of: ${validList}. Received: ${received}.`);
+        }
+    },
+
+    /**
+     * Check whether a value is a known fixture assertion string.
+     *
+     * @param value - A candidate value to test.
+     * @returns `true` if the value is a valid `FixtureAssertion`, `false` otherwise.
+     */
+    is(value: unknown): value is FixtureAssertion {
+        return (
+            value === FIXTURE_ASSERTION_STRING_KEYS.TRANSFORM ||
+            value === FIXTURE_ASSERTION_STRING_KEYS.IDEMPOTENT ||
+            value === FIXTURE_ASSERTION_STRING_KEYS.PROJECT_TREE ||
+            value === FIXTURE_ASSERTION_STRING_KEYS.PARSE_ERROR
+        );
+    }
+} as const);
+
+/** Valid fixture assertion string values. */
 export type FixtureAssertion = "transform" | "idempotent" | "project-tree" | "parse-error";
+
 export type FixtureComparison = "exact" | "ignore-whitespace-and-line-endings";
 export type FixtureStageName = "load" | "format" | "lint" | "refactor" | "compare" | "total";
 

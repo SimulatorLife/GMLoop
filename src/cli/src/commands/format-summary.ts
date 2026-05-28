@@ -76,33 +76,29 @@ export function buildNoMatchingFilesMessage({
     const ignoredMessageSuffix = "Adjust your .prettierignore files or refine the target path if this is unexpected.";
 
     if (targetIsDirectory) {
-        if (ignoredFilesSkipped) {
-            return [
-                `All files matching ${formattedExtensions} were skipped ${locationDescription} by ignore rules.`,
-                nothingToFormatMessage,
-                ignoredMessageSuffix
-            ].join(" ");
-        } else {
-            return [
-                `No files matching ${formattedExtensions} were found ${locationDescription}.`,
-                nothingToFormatMessage,
-                guidance
-            ].join(" ");
-        }
+        return ignoredFilesSkipped
+            ? [
+                  `All files matching ${formattedExtensions} were skipped ${locationDescription} by ignore rules.`,
+                  nothingToFormatMessage,
+                  ignoredMessageSuffix
+              ].join(" ")
+            : [
+                  `No files matching ${formattedExtensions} were found ${locationDescription}.`,
+                  nothingToFormatMessage,
+                  guidance
+              ].join(" ");
     } else {
-        if (ignoredFilesSkipped) {
-            return [
-                `${locationDescription} was skipped by ignore rules and not formatted.`,
-                nothingToFormatMessage,
-                ignoredMessageSuffix
-            ].join(" ");
-        } else {
-            return [
-                `${locationDescription} does not match the supported extension ${formattedExtensions}.`,
-                nothingToFormatMessage,
-                guidance
-            ].join(" ");
-        }
+        return ignoredFilesSkipped
+            ? [
+                  `${locationDescription} was skipped by ignore rules and not formatted.`,
+                  nothingToFormatMessage,
+                  ignoredMessageSuffix
+              ].join(" ")
+            : [
+                  `${locationDescription} does not match the supported extension ${formattedExtensions}.`,
+                  nothingToFormatMessage,
+                  guidance
+              ].join(" ");
     }
 }
 

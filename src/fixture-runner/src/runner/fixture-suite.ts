@@ -13,17 +13,18 @@ import {
     createProfileCollector,
     createStageTimer
 } from "../profiling/index.js";
-import type {
-    FixtureAdapter,
-    FixtureCase,
-    FixtureCaseExecutionResult,
-    FixtureCaseResult,
-    FixtureComparison,
-    FixtureProfileBudgets,
-    FixtureProfileCollector,
-    FixtureRunFailure,
-    FixtureRunResult,
-    FixtureStageName
+import {
+    type FixtureAdapter,
+    FixtureAssertion as FA,
+    type FixtureCase,
+    type FixtureCaseExecutionResult,
+    type FixtureCaseResult,
+    type FixtureComparison,
+    type FixtureProfileBudgets,
+    type FixtureProfileCollector,
+    type FixtureRunFailure,
+    type FixtureRunResult,
+    type FixtureStageName
 } from "../types.js";
 
 type DirectoryComparisonStats = Readonly<{
@@ -90,11 +91,11 @@ function canonicalizeFixtureText(text: string, comparison: FixtureComparison): s
 }
 
 async function compareFixtureCaseResult(fixtureCase: FixtureCase, caseResult: FixtureCaseResult): Promise<void> {
-    if (fixtureCase.assertion === "parse-error") {
+    if (fixtureCase.assertion === FA.PARSE_ERROR) {
         throw new Error(`Fixture ${fixtureCase.caseId} expected a parse error but completed successfully.`);
     }
 
-    if (fixtureCase.assertion === "project-tree") {
+    if (fixtureCase.assertion === FA.PROJECT_TREE) {
         assert.equal(
             caseResult.resultKind,
             "project-tree",
@@ -111,7 +112,7 @@ async function compareFixtureCaseResult(fixtureCase: FixtureCase, caseResult: Fi
 
     assert.equal(caseResult.resultKind, "text", `Fixture ${fixtureCase.caseId} must return a text result.`);
     const expectedText =
-        fixtureCase.assertion === "idempotent"
+        fixtureCase.assertion === FA.IDEMPOTENT
             ? await readFile(fixtureCase.inputFilePath ?? "", "utf8")
             : await readFile(fixtureCase.expectedFilePath ?? "", "utf8");
     const actualOutput = canonicalizeFixtureText(caseResult.outputText, fixtureCase.comparison);
@@ -201,7 +202,7 @@ async function executeFixtureCase(
         });
 
         await stageTimer.runStage("total", async () => {
-            if (fixtureCase.assertion === "parse-error") {
+            if (fixtureCase.assertion === FA.PARSE_ERROR) {
                 await assert.rejects(
                     adapter.run({
                         fixtureCase,

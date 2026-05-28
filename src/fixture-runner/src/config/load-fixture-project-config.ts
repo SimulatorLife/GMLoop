@@ -1,17 +1,16 @@
 import { Core } from "@gmloop/core";
 
-import type {
-    FixtureAssertion,
-    FixtureComparison,
-    FixtureKind,
-    FixtureProfileBudgets,
-    FixtureProjectConfig,
-    FixtureProjectConfigMetadata,
-    FixtureStageName
+import {
+    FixtureAssertion as FA,
+    type FixtureComparison,
+    type FixtureKind,
+    type FixtureProfileBudgets,
+    type FixtureProjectConfig,
+    type FixtureProjectConfigMetadata,
+    type FixtureStageName
 } from "../types.js";
 
 const FIXTURE_KIND_VALUES = new Set<FixtureKind>(["format", "lint", "refactor", "integration", "external-project"]);
-const FIXTURE_ASSERTION_VALUES = new Set<FixtureAssertion>(["transform", "idempotent", "project-tree", "parse-error"]);
 const FIXTURE_COMPARISON_VALUES = new Set<FixtureComparison>(["exact", "ignore-whitespace-and-line-endings"]);
 const FIXTURE_SECTION_KEYS = new Set(["kind", "assertion", "comparison", "externalProject", "profile"]);
 const EXTERNAL_PROJECT_KEYS = new Set(["sourcePath", "excludes"]);
@@ -133,14 +132,25 @@ function validateExternalProjectExcludes(
         }
 
         const stringArray = validateStringArray(rawValue, `${context}.${key}`);
-        if (key === "directoryNames") {
-            excludes.directoryNames = stringArray;
-        } else if (key === "fileNames") {
-            excludes.fileNames = stringArray;
-        } else if (key === "relativePaths") {
-            excludes.relativePaths = stringArray;
-        } else {
-            excludes.extensions = stringArray;
+        switch (key) {
+            case "directoryNames": {
+                excludes.directoryNames = stringArray;
+
+                break;
+            }
+            case "fileNames": {
+                excludes.fileNames = stringArray;
+
+                break;
+            }
+            case "relativePaths": {
+                excludes.relativePaths = stringArray;
+
+                break;
+            }
+            default: {
+                excludes.extensions = stringArray;
+            }
         }
     }
 
@@ -192,7 +202,12 @@ function validateFixtureMetadata(value: unknown, context: string): FixtureProjec
         kind: kind as FixtureKind
     };
 
-    const assertion = validateOptionalEnumValue(object.assertion, FIXTURE_ASSERTION_VALUES, context, "assertion");
+    const assertion = validateOptionalEnumValue(
+        object.assertion,
+        new Set([FA.TRANSFORM, FA.IDEMPOTENT, FA.PROJECT_TREE, FA.PARSE_ERROR]),
+        context,
+        "assertion"
+    );
     if (assertion !== undefined) {
         metadata.assertion = assertion;
     }
