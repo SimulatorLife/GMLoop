@@ -26,6 +26,20 @@ type ResourceReference = Readonly<{
     path: string;
 }>;
 
+type LocatedRoomInstance = Readonly<{
+    index: number;
+    instance: Record<string, unknown>;
+}>;
+
+type RoomInstanceMutationContext = Readonly<{
+    instanceLayer: RoomInstanceLayerRecord;
+    manifestResources: ReadonlyArray<ProjectManifestEntry>;
+    projectRoot: string;
+    roomAbsolutePath: string;
+    roomDocument: Record<string, unknown>;
+    roomReference: ResourceReference;
+}>;
+
 /**
  * Parameters for adding an object instance to a GameMaker room instance layer.
  */
@@ -39,10 +53,32 @@ export interface AddRoomInstanceRequest {
 }
 
 /**
+ * Parameters for moving an existing object instance inside a GameMaker room.
+ */
+export interface UpdateRoomInstanceRequest {
+    dryRun?: boolean;
+    instanceId: string;
+    projectRoot: string;
+    roomName: string;
+    x: number;
+    y: number;
+}
+
+/**
+ * Parameters for deleting an existing object instance from a GameMaker room.
+ */
+export interface DeleteRoomInstanceRequest {
+    dryRun?: boolean;
+    instanceId: string;
+    projectRoot: string;
+    roomName: string;
+}
+
+/**
  * Summary returned after a room instance mutation.
  */
 export interface RoomInstanceMutationResult {
-    action: "add";
+    action: "add" | "delete" | "update";
     deletedPaths: Array<string>;
     dryRun: boolean;
     instanceId: string;
@@ -205,6 +241,102 @@ function appendRoomInstanceCreationOrder(
     ];
 }
 
+function removeRoomInstanceCreationOrder(roomDocument: Record<string, unknown>, instanceId: string): void {
+    roomDocument.instanceCreationOrder = Core.asArray(roomDocument.instanceCreationOrder).filter((entry) => {
+        if (!Core.isObjectLike(entry)) {
+            return true;
+        }
+        return Core.getNonEmptyString((entry as Record<string, unknown>).name) !== instanceId;
+    });
+}
+
+function getRoomInstanceName(instance: Record<string, unknown>): string | null {
+    return Core.getNonEmptyString(instance.name) ?? Core.getNonEmptyString(instance["%Name"]);
+}
+
+function locateRoomInstance(
+    instanceLayer: RoomInstanceLayerRecord,
+    roomName: string,
+    instanceId: string
+): LocatedRoomInstance {
+    for (const [index, instance] of instanceLayer.instances.entries()) {
+        if (!Core.isObjectLike(instance)) {
+            continue;
+        }
+        const instanceRecord = instance as Record<string, unknown>;
+        if (getRoomInstanceName(instanceRecord) === instanceId) {
+            return Object.freeze({ index, instance: instanceRecord });
+        }
+    }
+
+    throw new Error(`Could not find room instance '${instanceId}' in room '${roomName}'.`);
+}
+
+function readRoomInstanceCoordinate(instance: Record<string, unknown>, coordinateName: "x" | "y"): number {
+    const coordinate = Number(instance[coordinateName]);
+    if (!Number.isFinite(coordinate)) {
+        throw new TypeError(
+            `Room instance '${getRoomInstanceName(instance) ?? "<unnamed>"}' has invalid ${coordinateName} coordinate metadata.`
+        );
+    }
+    return coordinate;
+}
+
+function readRoomInstanceObjectReference(instance: Record<string, unknown>, instanceId: string): ResourceReference {
+    const objectId = instance.objectId;
+    if (!Core.isObjectLike(objectId)) {
+        throw new TypeError(`Room instance '${instanceId}' does not contain an objectId reference.`);
+    }
+
+    const objectRecord = objectId as Record<string, unknown>;
+    const name = Core.getNonEmptyString(objectRecord.name);
+    const resourcePath = Core.getNonEmptyString(objectRecord.path);
+    if (name === null || resourcePath === null) {
+        throw new TypeError(`Room instance '${instanceId}' has incomplete objectId metadata.`);
+    }
+
+    return Object.freeze({ name, path: resourcePath });
+}
+
+async function resolveRoomInstanceMutationContext(
+    projectRootInput: string,
+    roomName: string
+): Promise<RoomInstanceMutationContext> {
+    const projectRoot = path.resolve(projectRootInput);
+    const manifestPath = await resolveProjectManifestPath(projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifestPath);
+    const manifestResources = getManifestResources(manifestDocument);
+    const roomReference = locateResourceReference(manifestResources, ROOM_RESOURCE_DIRECTORY, roomName);
+    const roomAbsolutePath = path.join(projectRoot, Core.fromPosixPath(roomReference.path));
+    const roomDocument = await readProjectMetadataDocument(roomAbsolutePath);
+    const instanceLayer = findInstanceLayer(roomDocument, roomName);
+
+    return Object.freeze({
+        instanceLayer,
+        manifestResources,
+        projectRoot,
+        roomAbsolutePath,
+        roomDocument,
+        roomReference
+    });
+}
+
+async function writeRoomDocumentIfApplying(
+    dryRun: boolean,
+    roomAbsolutePath: string,
+    roomDocument: Record<string, unknown>
+): Promise<void> {
+    if (dryRun) {
+        return;
+    }
+
+    await writeFile(
+        roomAbsolutePath,
+        `${Core.stringifyProjectMetadataDocument(roomDocument, roomAbsolutePath)}\n`,
+        "utf8"
+    );
+}
+
 function assertFiniteCoordinate(value: number, coordinateName: "x" | "y"): void {
     if (!Number.isFinite(value)) {
         throw new TypeError(`Invalid ${coordinateName} coordinate ${String(value)}. Expected a finite numeric value.`);
@@ -221,29 +353,21 @@ export async function addRoomInstance(request: AddRoomInstanceRequest): Promise<
     assertFiniteCoordinate(request.x, "x");
     assertFiniteCoordinate(request.y, "y");
 
-    const projectRoot = path.resolve(request.projectRoot);
-    const manifestPath = await resolveProjectManifestPath(projectRoot);
-    const manifestDocument = await readProjectMetadataDocument(manifestPath);
-    const manifestResources = getManifestResources(manifestDocument);
-    const roomReference = locateResourceReference(manifestResources, ROOM_RESOURCE_DIRECTORY, request.roomName);
-    const objectReference = locateResourceReference(manifestResources, OBJECT_RESOURCE_DIRECTORY, request.objectName);
-    const roomAbsolutePath = path.join(projectRoot, Core.fromPosixPath(roomReference.path));
-    const roomDocument = await readProjectMetadataDocument(roomAbsolutePath);
-    const instanceLayer = findInstanceLayer(roomDocument, request.roomName);
+    const context = await resolveRoomInstanceMutationContext(request.projectRoot, request.roomName);
+    const objectReference = locateResourceReference(
+        context.manifestResources,
+        OBJECT_RESOURCE_DIRECTORY,
+        request.objectName
+    );
+    const instanceLayer = context.instanceLayer;
     const instanceId = `${ROOM_INSTANCE_NAME_PREFIX}${randomUUID().replaceAll("-", "")}`;
     const roomInstance = createRoomInstance(instanceId, objectReference, request.x, request.y);
 
     instanceLayer.instances = [...instanceLayer.instances, roomInstance];
-    appendRoomInstanceCreationOrder(roomDocument, instanceId, roomReference.path);
+    appendRoomInstanceCreationOrder(context.roomDocument, instanceId, context.roomReference.path);
 
     const dryRun = request.dryRun !== false;
-    if (!dryRun) {
-        await writeFile(
-            roomAbsolutePath,
-            `${Core.stringifyProjectMetadataDocument(roomDocument, roomAbsolutePath)}\n`,
-            "utf8"
-        );
-    }
+    await writeRoomDocumentIfApplying(dryRun, context.roomAbsolutePath, context.roomDocument);
 
     return {
         action: "add",
@@ -253,11 +377,84 @@ export async function addRoomInstance(request: AddRoomInstanceRequest): Promise<
         layerName: Core.getNonEmptyString(instanceLayer.name) ?? "Instances",
         objectName: objectReference.name,
         objectPath: objectReference.path,
-        roomName: roomReference.name,
-        roomPath: roomReference.path,
+        roomName: context.roomReference.name,
+        roomPath: context.roomReference.path,
         warnings: [],
-        writtenPaths: [roomReference.path],
+        writtenPaths: [context.roomReference.path],
         x: request.x,
         y: request.y
+    };
+}
+
+/**
+ * Move an existing object instance inside a GameMaker room.
+ *
+ * @param request - Room instance update request.
+ * @returns Summary of the planned or applied room metadata mutation.
+ */
+export async function updateRoomInstance(request: UpdateRoomInstanceRequest): Promise<RoomInstanceMutationResult> {
+    assertFiniteCoordinate(request.x, "x");
+    assertFiniteCoordinate(request.y, "y");
+
+    const context = await resolveRoomInstanceMutationContext(request.projectRoot, request.roomName);
+    const located = locateRoomInstance(context.instanceLayer, context.roomReference.name, request.instanceId);
+    const objectReference = readRoomInstanceObjectReference(located.instance, request.instanceId);
+
+    located.instance.x = request.x;
+    located.instance.y = request.y;
+
+    const dryRun = request.dryRun !== false;
+    await writeRoomDocumentIfApplying(dryRun, context.roomAbsolutePath, context.roomDocument);
+
+    return {
+        action: "update",
+        deletedPaths: [],
+        dryRun,
+        instanceId: request.instanceId,
+        layerName: Core.getNonEmptyString(context.instanceLayer.name) ?? "Instances",
+        objectName: objectReference.name,
+        objectPath: objectReference.path,
+        roomName: context.roomReference.name,
+        roomPath: context.roomReference.path,
+        warnings: [],
+        writtenPaths: [context.roomReference.path],
+        x: request.x,
+        y: request.y
+    };
+}
+
+/**
+ * Delete an existing object instance from a GameMaker room.
+ *
+ * @param request - Room instance deletion request.
+ * @returns Summary of the planned or applied room metadata mutation.
+ */
+export async function deleteRoomInstance(request: DeleteRoomInstanceRequest): Promise<RoomInstanceMutationResult> {
+    const context = await resolveRoomInstanceMutationContext(request.projectRoot, request.roomName);
+    const located = locateRoomInstance(context.instanceLayer, context.roomReference.name, request.instanceId);
+    const objectReference = readRoomInstanceObjectReference(located.instance, request.instanceId);
+    const x = readRoomInstanceCoordinate(located.instance, "x");
+    const y = readRoomInstanceCoordinate(located.instance, "y");
+
+    context.instanceLayer.instances = context.instanceLayer.instances.filter((_, index) => index !== located.index);
+    removeRoomInstanceCreationOrder(context.roomDocument, request.instanceId);
+
+    const dryRun = request.dryRun !== false;
+    await writeRoomDocumentIfApplying(dryRun, context.roomAbsolutePath, context.roomDocument);
+
+    return {
+        action: "delete",
+        deletedPaths: [],
+        dryRun,
+        instanceId: request.instanceId,
+        layerName: Core.getNonEmptyString(context.instanceLayer.name) ?? "Instances",
+        objectName: objectReference.name,
+        objectPath: objectReference.path,
+        roomName: context.roomReference.name,
+        roomPath: context.roomReference.path,
+        warnings: [],
+        writtenPaths: [context.roomReference.path],
+        x,
+        y
     };
 }

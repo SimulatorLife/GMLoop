@@ -198,81 +198,52 @@ void test("constant folding: comparison not equal", () => {
 
 // ---------------------------------------------------------------------------
 // Mixed-type boolean comparisons (GML loose equality semantics)
+// All boolean-normalisation cases (boolean ↔ number, boolean ↔ string boolean)
+// are driven by a single table so every value variant is exercised without
+// separate one-off tests. Each row covers a distinct operator/value combination.
 // ---------------------------------------------------------------------------
 
-void test("constant folding: loose equality boolean == number (true == 1)", () => {
-    // In GML loose equality, boolean true is coerced to number 1 before comparison.
-    const ast = binary("==", true, 1);
+void test("constant folding: mixed-type boolean comparisons via table", () => {
+    // (operator, left, right, expected)
+    const cases: Array<[string, boolean | string | number, boolean | string | number, boolean | null]> = [
+        // Loose equality: boolean vs number
+        ["==", true, 1, true],
+        ["==", false, 0, true],
+        ["!=", true, 0, true],
+        ["!=", false, 1, true],
+        // Strict equality: boolean vs number (type identity preserved)
+        ["===", true, 1, false],
+        ["===", false, 0, false],
+        ["!==", true, 1, true],
+        ["!==", false, 0, true],
+        // Loose equality: string boolean ("true"/"false") vs boolean literal
+        ["==", "true", true, true],
+        ["==", "false", false, true],
+        ["==", true, "true", true],
+        ["!=", "true", false, true],
+        // Loose equality: string boolean vs number (string is not a number → no fold)
+        ["==", "true", 1, null],
+        // String that is not a boolean does not fold
+        ["==", "maybe", true, null]
+    ];
+
+    for (const [op, left, right, expected] of cases) {
+        assert.strictEqual(
+            tryFoldConstantExpression(binary(op, left, right)),
+            expected,
+            `failed for ${op} ${String(left)} ${String(right)}`
+        );
+    }
+});
+
+void test("constant folding: strict equality for identical floats", () => {
+    const ast = binary("===", 42, 42);
     assert.strictEqual(tryFoldConstantExpression(ast), true);
 });
 
-void test("constant folding: loose equality boolean == number (false == 0)", () => {
-    // In GML loose equality, boolean false is coerced to number 0 before comparison.
-    const ast = binary("==", false, 0);
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: loose inequality boolean != number (true != 0)", () => {
-    const ast = binary("!=", true, 0);
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: loose inequality boolean != number (false != 1)", () => {
-    const ast = binary("!=", false, 1);
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: strict equality boolean === number (true === 1)", () => {
-    // Strict equality preserves type identity; true and 1 are different types, so false.
-    const ast = binary("===", true, 1);
+void test("constant folding: strict inequality for identical floats", () => {
+    const ast = binary("!==", 42, 42);
     assert.strictEqual(tryFoldConstantExpression(ast), false);
-});
-
-void test("constant folding: strict equality boolean === number (false === 0)", () => {
-    const ast = binary("===", false, 0);
-    assert.strictEqual(tryFoldConstantExpression(ast), false);
-});
-
-void test("constant folding: strict inequality boolean !== number (true !== 1)", () => {
-    const ast = binary("!==", true, 1);
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: strict inequality boolean !== number (false !== 0)", () => {
-    const ast = binary("!==", false, 0);
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: loose equality string boolean == boolean literal", () => {
-    const ast = binary("==", "true", true);
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: loose equality string boolean == boolean literal (false)", () => {
-    const ast = binary("==", "false", false);
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: loose equality boolean == string boolean (swapped operands)", () => {
-    const ast = binary("==", true, "true");
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: loose inequality string boolean != boolean", () => {
-    const ast = binary("!=", "true", false);
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: string that is not a boolean does not fold", () => {
-    // "maybe" is not "true" or "false", so no normalization applies.
-    const ast = binary("==", "maybe", true);
-    assert.strictEqual(tryFoldConstantExpression(ast), null);
-});
-
-void test("constant folding: number operand is not normalised for boolean string comparison", () => {
-    // "true" is not a number, so this does not fold (no type coercion from string to number here).
-    const ast = binary("==", "true", 1);
-    assert.strictEqual(tryFoldConstantExpression(ast), null);
 });
 
 // ---------------------------------------------------------------------------

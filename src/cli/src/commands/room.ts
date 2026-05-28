@@ -1,4 +1,4 @@
-import { Refactor } from "@gmloop/refactor";
+import { Refactor, type RoomInstanceMutationResult } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
@@ -40,6 +40,24 @@ function parseCoordinateArgument(value: string, argumentName: "x" | "y"): number
     return parsed;
 }
 
+function toRoomInstanceMutationPayload(result: RoomInstanceMutationResult) {
+    return {
+        action: result.action,
+        deletedPaths: result.deletedPaths,
+        dryRun: result.dryRun,
+        instanceId: result.instanceId,
+        layerName: result.layerName,
+        objectName: result.objectName,
+        objectPath: result.objectPath,
+        roomName: result.roomName,
+        roomPath: result.roomPath,
+        warnings: result.warnings,
+        writtenPaths: result.writtenPaths,
+        x: result.x,
+        y: result.y
+    };
+}
+
 async function runRoomInstanceAddAction(
     roomName: string,
     objectName: string,
@@ -57,25 +75,43 @@ async function runRoomInstanceAddAction(
         y
     });
 
-    printRoomPayload({
-        command: "room instance add",
-        ok: true,
-        payload: {
-            action: result.action,
-            deletedPaths: result.deletedPaths,
-            dryRun: result.dryRun,
-            instanceId: result.instanceId,
-            layerName: result.layerName,
-            objectName: result.objectName,
-            objectPath: result.objectPath,
-            roomName: result.roomName,
-            roomPath: result.roomPath,
-            warnings: result.warnings,
-            writtenPaths: result.writtenPaths,
-            x: result.x,
-            y: result.y
-        }
+    printRoomPayload({ command: "room instance add", ok: true, payload: toRoomInstanceMutationPayload(result) });
+}
+
+async function runRoomInstanceUpdateAction(
+    roomName: string,
+    instanceId: string,
+    x: number,
+    y: number,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.updateRoomInstance({
+        dryRun: options.write !== true,
+        instanceId,
+        projectRoot: context.projectRoot,
+        roomName,
+        x,
+        y
     });
+
+    printRoomPayload({ command: "room instance update", ok: true, payload: toRoomInstanceMutationPayload(result) });
+}
+
+async function runRoomInstanceDeleteAction(
+    roomName: string,
+    instanceId: string,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.deleteRoomInstance({
+        dryRun: options.write !== true,
+        instanceId,
+        projectRoot: context.projectRoot,
+        roomName
+    });
+
+    printRoomPayload({ command: "room instance delete", ok: true, payload: toRoomInstanceMutationPayload(result) });
 }
 
 function emitRoomUnavailableLeaf(
@@ -285,12 +321,7 @@ export function createRoomCommand(): Command {
         const options = this.opts<RoomMutationOptions>();
         const parsedX = parseCoordinateArgument(x, "x");
         const parsedY = parseCoordinateArgument(y, "y");
-        emitRoomUnavailableLeaf("room instance update", options, "room_instance_mutation", {
-            instanceId,
-            room: roomName,
-            x: parsedX,
-            y: parsedY
-        });
+        return runRoomInstanceUpdateAction(roomName, instanceId, parsedX, parsedY, options);
     });
     const instanceDelete = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("delete")).description("Delete room instance.")
@@ -300,10 +331,7 @@ export function createRoomCommand(): Command {
         .addOption(createWriteOption());
     instanceDelete.action(function roomInstanceDeleteAction(roomName: string, instanceId: string) {
         const options = this.opts<RoomMutationOptions>();
-        emitRoomUnavailableLeaf("room instance delete", options, "room_instance_mutation", {
-            instanceId,
-            room: roomName
-        });
+        return runRoomInstanceDeleteAction(roomName, instanceId, options);
     });
     instance.addCommand(instanceAdd);
     instance.addCommand(instanceUpdate);
