@@ -25,7 +25,6 @@ const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphLegendNodeKind>([
     "enum_member",
     "instance_variable",
     "local_variable",
-    "macro",
     "note",
     "room_layer"
 ]);

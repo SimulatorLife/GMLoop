@@ -123,33 +123,6 @@ void test("object event mutations reject invalid event descriptor format", async
     assert.match(eventAddResult.stderr, /Expected format: category:event \(for example Step:Begin\)\./u);
 });
 
-void test("room instance planned leaves emit write-aware payload details", async () => {
-    const updateResult = await runCliTestCommand({
-        argv: ["room", "instance", "update", "rm_main", "111", "320", "240", "--json", "--write"]
-    });
-
-    assert.equal(updateResult.exitCode, 0);
-    const updatePayload = JSON.parse(updateResult.stdout) as {
-        command: string;
-        payload: {
-            details: {
-                instanceId: string;
-                room: string;
-                x: number;
-                y: number;
-            };
-            mode: string;
-            state: string;
-        };
-    };
-
-    assert.equal(updatePayload.command, "room instance update");
-    assert.equal(updatePayload.payload.mode, "apply");
-    assert.equal(updatePayload.payload.state, "not_available");
-    assert.equal(updatePayload.payload.details.room, "rm_main");
-    assert.equal(updatePayload.payload.details.instanceId, "111");
-});
-
 void test("room layer update planned leaf emits apply mode when write is requested", async () => {
     const updateResult = await runCliTestCommand({
         argv: ["room", "layer", "update", "--json", "--write"]
@@ -257,7 +230,7 @@ void test("room instance mutations reject non-numeric coordinates", async () => 
     assert.match(updateResult.stderr, /Invalid y coordinate "top"\. Expected a finite numeric value\./u);
 });
 
-void test("room instance add mutates room metadata through CLI write mode", async () => {
+void test("room instance add/update/delete mutate room metadata through CLI write mode", async () => {
     const projectRoot = await createTemporaryRoomInstanceCliProject();
 
     try {
@@ -307,14 +280,75 @@ void test("room instance add mutates room metadata through CLI write mode", asyn
         assert.equal(writePayload.payload.x, 56);
         assert.equal(writePayload.payload.y, 78);
 
-        const roomMetadata = Core.parseProjectMetadataDocumentForMutation(
+        const updateResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "instance",
+                "update",
+                "rm_main",
+                writePayload.payload.instanceId,
+                "320",
+                "240",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+
+        assert.equal(updateResult.exitCode, 0);
+        const updatePayload = JSON.parse(updateResult.stdout) as {
+            command: string;
+            payload: { action: string; dryRun: boolean; instanceId: string; x: number; y: number };
+        };
+        assert.equal(updatePayload.command, "room instance update");
+        assert.equal(updatePayload.payload.action, "update");
+        assert.equal(updatePayload.payload.dryRun, false);
+        assert.equal(updatePayload.payload.instanceId, writePayload.payload.instanceId);
+        assert.equal(updatePayload.payload.x, 320);
+        assert.equal(updatePayload.payload.y, 240);
+
+        const updatedRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
             await readFile(roomMetadataPath, "utf8"),
             roomMetadataPath
         ).document;
-        assert.equal(roomMetadata.instanceCreationOrder[0].name, writePayload.payload.instanceId);
-        assert.equal(roomMetadata.layers[0].instances[0].objectId.path, "objects/obj_player/obj_player.yy");
-        assert.equal(Number(roomMetadata.layers[0].instances[0].x), 56);
-        assert.equal(Number(roomMetadata.layers[0].instances[0].y), 78);
+        assert.equal(updatedRoomMetadata.instanceCreationOrder[0].name, writePayload.payload.instanceId);
+        assert.equal(updatedRoomMetadata.layers[0].instances[0].objectId.path, "objects/obj_player/obj_player.yy");
+        assert.equal(Number(updatedRoomMetadata.layers[0].instances[0].x), 320);
+        assert.equal(Number(updatedRoomMetadata.layers[0].instances[0].y), 240);
+
+        const deleteResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "instance",
+                "delete",
+                "rm_main",
+                writePayload.payload.instanceId,
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+
+        assert.equal(deleteResult.exitCode, 0);
+        const deletePayload = JSON.parse(deleteResult.stdout) as {
+            command: string;
+            payload: { action: string; dryRun: boolean; instanceId: string; x: number; y: number };
+        };
+        assert.equal(deletePayload.command, "room instance delete");
+        assert.equal(deletePayload.payload.action, "delete");
+        assert.equal(deletePayload.payload.dryRun, false);
+        assert.equal(deletePayload.payload.instanceId, writePayload.payload.instanceId);
+        assert.equal(deletePayload.payload.x, 320);
+        assert.equal(deletePayload.payload.y, 240);
+
+        const deletedRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.deepEqual(deletedRoomMetadata.instanceCreationOrder, []);
+        assert.deepEqual(deletedRoomMetadata.layers[0].instances, []);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

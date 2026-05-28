@@ -204,6 +204,8 @@
   outline: none;
   overflow: auto;
   white-space: pre;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .playground-input::placeholder {
@@ -439,4 +441,47 @@
 .ast-type {
   color: #4ec9b0;
   font-weight: bold;
+}
+
+/* GML Syntax Highlighting */
+.gml-keyword {
+  color: #c792ea;
+  font-weight: 600;
+}
+
+.gml-function-name {
+  color: #82aaff;
+}
+
+.gml-string {
+  color: #c3e88d;
+}
+
+.gml-number {
+  color: #f78c6c;
+}
+
+.gml-comment {
+  color: #546e7a;
+  font-style: italic;
+}
+
+.gml-operator {
+  color: #89ddff;
+}
+
+.gml-punctuation {
+  color: #89ddff;
+}
+
+.gml-property-access {
+  color: #e0af68;
+}
+
+.gml-builtin-constant {
+  color: #ff5370;
+}
+
+.gml-plain {
+  color: var(--gm-text);
 }

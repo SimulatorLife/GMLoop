@@ -9,11 +9,13 @@ import { Core } from "@gmloop/core";
 import {
     addProjectResource,
     addRoomInstance,
+    deleteRoomInstance,
     duplicateProjectResource,
     moveProjectResource,
     ProjectResourceKind,
     removeProjectResource,
-    renameProjectResource
+    renameProjectResource,
+    updateRoomInstance
 } from "../src/project-resources/index.js";
 
 async function createTemporaryProjectRoot(): Promise<string> {
@@ -308,6 +310,78 @@ void test("addRoomInstance appends an object instance to a room with dry-run saf
         assert.equal(roomMetadata.layers[0].instances[0].objectId.path, "objects/obj_player/obj_player.yy");
         assert.equal(Number(roomMetadata.layers[0].instances[0].x), 128);
         assert.equal(Number(roomMetadata.layers[0].instances[0].y), 256);
+
+        const updateDryRun = await updateRoomInstance({
+            dryRun: true,
+            instanceId: writeResult.instanceId,
+            projectRoot,
+            roomName: "rm_main",
+            x: 400,
+            y: 500
+        });
+        assert.equal(updateDryRun.action, "update");
+        assert.equal(updateDryRun.dryRun, true);
+        assert.equal(updateDryRun.x, 400);
+        assert.equal(updateDryRun.y, 500);
+
+        const dryRunUpdateMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(Number(dryRunUpdateMetadata.layers[0].instances[0].x), 128);
+        assert.equal(Number(dryRunUpdateMetadata.layers[0].instances[0].y), 256);
+
+        const updateWrite = await updateRoomInstance({
+            dryRun: false,
+            instanceId: writeResult.instanceId,
+            projectRoot,
+            roomName: "rm_main",
+            x: 640,
+            y: 360
+        });
+        assert.equal(updateWrite.action, "update");
+        assert.equal(updateWrite.objectPath, "objects/obj_player/obj_player.yy");
+
+        const updatedMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(Number(updatedMetadata.layers[0].instances[0].x), 640);
+        assert.equal(Number(updatedMetadata.layers[0].instances[0].y), 360);
+
+        const deleteDryRun = await deleteRoomInstance({
+            dryRun: true,
+            instanceId: writeResult.instanceId,
+            projectRoot,
+            roomName: "rm_main"
+        });
+        assert.equal(deleteDryRun.action, "delete");
+        assert.equal(deleteDryRun.dryRun, true);
+        assert.equal(deleteDryRun.x, 640);
+        assert.equal(deleteDryRun.y, 360);
+
+        const dryRunDeleteMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(dryRunDeleteMetadata.instanceCreationOrder[0].name, writeResult.instanceId);
+        assert.equal(dryRunDeleteMetadata.layers[0].instances[0].name, writeResult.instanceId);
+
+        const deleteWrite = await deleteRoomInstance({
+            dryRun: false,
+            instanceId: writeResult.instanceId,
+            projectRoot,
+            roomName: "rm_main"
+        });
+        assert.equal(deleteWrite.action, "delete");
+        assert.equal(deleteWrite.objectName, "obj_player");
+
+        const deletedMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.deepEqual(deletedMetadata.instanceCreationOrder, []);
+        assert.deepEqual(deletedMetadata.layers[0].instances, []);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

@@ -187,8 +187,9 @@ void test("Lint.plugin.rules and Lint.featherPlugin.rules are properly populated
 void test("Lint namespace does not expose internal doc-comment implementation helpers (target-state.md §2.3)", () => {
     // Internal doc-comment helpers must be imported directly from the
     // doc-comment module (src/lint/src/doc-comment/*.ts) rather than leaked
-    // through the public Lint namespace.  The public surface is intentionally
-    // limited to: plugin, featherPlugin, configs, ruleIds, services.
+    // through the public Lint namespace. The public surface is intentionally
+    // limited to: plugin, featherPlugin, configs, ruleIds, services,
+    // listLintRuleCatalogEntries.
     assert.equal("normalizeLintRulesConfig" in Lint, false);
     assert.equal("createLintRuleEntriesFromProjectConfig" in Lint, false);
     assert.equal("projectConfig" in Lint.services, false);
