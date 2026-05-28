@@ -139,6 +139,35 @@ void describe("watch command ignored generated directories", () => {
         );
     });
 
+    void it("still scans legitimate project files when the project root lives under tmp", async () => {
+        const projectRoot = path.join("/tmp", `watch-tmp-root-${Date.now()}-${randomUUID()}`);
+        const projectScriptPath = path.join(projectRoot, "scripts", "scr_player.gml");
+        const abortController = new AbortController();
+        const watchFactory = createMockWatchFactory();
+
+        await mkdir(path.dirname(projectScriptPath), { recursive: true });
+        await writeFile(projectScriptPath, "function scr_player() { return 1; }", "utf8");
+
+        const { statusBaseUrl, watchPromise } = await startWatchServer(projectRoot, abortController, watchFactory);
+
+        try {
+            await waitForStatusReady(statusBaseUrl);
+            await waitForScanComplete(statusBaseUrl);
+
+            const payload = await fetchStatusPayload(statusBaseUrl);
+            assert.equal(
+                payload.totalPatchCount,
+                1,
+                "project files under the external temp root should still be transpiled"
+            );
+            assert.equal(payload.recentPatches?.[0]?.filePath, path.join("scripts", "scr_player.gml"));
+        } finally {
+            abortController.abort();
+            await watchPromise;
+            await rm(projectRoot, { force: true, recursive: true });
+        }
+    });
+
     void it("still scans legitimate project files when the project root lives under vendor/3DSpider", async () => {
         const workspaceRoot = path.join("/tmp", `watch-vendor-root-${Date.now()}-${randomUUID()}`);
         const projectRoot = path.join(workspaceRoot, "vendor", "3DSpider");
