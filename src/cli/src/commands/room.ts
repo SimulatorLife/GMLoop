@@ -1,3 +1,4 @@
+import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
@@ -6,6 +7,7 @@ import { createConfigOption, createPathOption, createWriteOption } from "../cli-
 import {
     ensureProjectGraphIndex,
     printProjectPayload,
+    resolveCommandProjectContext,
     type SharedProjectContextOptions
 } from "../workflow/project-root.js";
 
@@ -36,6 +38,44 @@ function parseCoordinateArgument(value: string, argumentName: "x" | "y"): number
         throw new TypeError(`Invalid ${argumentName} coordinate "${value}". Expected a finite numeric value.`);
     }
     return parsed;
+}
+
+async function runRoomInstanceAddAction(
+    roomName: string,
+    objectName: string,
+    x: number,
+    y: number,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.addRoomInstance({
+        dryRun: options.write !== true,
+        objectName,
+        projectRoot: context.projectRoot,
+        roomName,
+        x,
+        y
+    });
+
+    printRoomPayload({
+        command: "room instance add",
+        ok: true,
+        payload: {
+            action: result.action,
+            deletedPaths: result.deletedPaths,
+            dryRun: result.dryRun,
+            instanceId: result.instanceId,
+            layerName: result.layerName,
+            objectName: result.objectName,
+            objectPath: result.objectPath,
+            roomName: result.roomName,
+            roomPath: result.roomPath,
+            warnings: result.warnings,
+            writtenPaths: result.writtenPaths,
+            x: result.x,
+            y: result.y
+        }
+    });
 }
 
 function emitRoomUnavailableLeaf(
@@ -226,12 +266,7 @@ export function createRoomCommand(): Command {
         const options = this.opts<RoomMutationOptions>();
         const parsedX = parseCoordinateArgument(x, "x");
         const parsedY = parseCoordinateArgument(y, "y");
-        emitRoomUnavailableLeaf("room instance add", options, "room_instance_mutation", {
-            object: objectName,
-            room: roomName,
-            x: parsedX,
-            y: parsedY
-        });
+        return runRoomInstanceAddAction(roomName, objectName, parsedX, parsedY, options);
     });
     const instanceUpdate = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("update")).description("Update room instance.")
