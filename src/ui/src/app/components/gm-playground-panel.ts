@@ -1,9 +1,11 @@
 import { html, type PropertyValues } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE, resolveInitialPlaygroundGmlSource } from "../playground-default-gml.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
+import { highlightGml } from "../syntax-highlight-gml.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
@@ -621,7 +623,9 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                                       ${this.#error}
                                   </div>`
                                 : this.#viewMode === "code"
-                                  ? html`<pre class="playground-output" aria-live="polite">${this.#gmlOutput}</pre>`
+                                  ? html`<div class="playground-output" aria-live="polite">
+                                        ${unsafeHTML(highlightGml(this.#gmlOutput))}
+                                    </div>`
                                   : html`<pre class="playground-output" aria-live="polite">${this.#astJson}</pre>`}
                         </div>
                     </div>
