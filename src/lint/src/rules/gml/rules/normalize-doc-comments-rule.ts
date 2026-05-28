@@ -1100,19 +1100,9 @@ function synthesizeFunctionDocCommentBlock(
         hasExistingReturnLine: hasReturns,
         suppressSyntheticReturns,
         hasRecognizedFunctionDocTagInBlock: hasRecognizedFunctionDocTag(block),
+        hasUnrecognizedFunctionDocTagInBlock: hasUnrecognizedFunctionDocTag(block),
         blockBecameEmptyAfterPruning
     });
-
-    console.error(
-        "[AST DEBUG] Calling determine for:",
-        name,
-        "- hadInputDocLines:",
-        hadInputDocLines,
-        "hasLeadingIndentation:",
-        hasLeadingIndentation,
-        "params:",
-        functionParameterNamesInOrder.length
-    );
 
     if (hasReturns && shouldSynthesizeReturnLine) {
         const firstExistingReturnType = parseReturnDocType(existingReturnLines[0] ?? "");
@@ -1473,6 +1463,13 @@ function hasRecognizedFunctionDocTag(docLines: ReadonlyArray<string>): boolean {
     return docLines.some((docLine) => /^\s*\/\/\/\s*@(description|desc|param|returns?)\b/u.test(docLine));
 }
 
+function hasUnrecognizedFunctionDocTag(docLines: ReadonlyArray<string>): boolean {
+    return docLines.some(
+        (docLine) =>
+            /^\s*\/\/\/\s*@(.+)$/u.test(docLine) && !/^\s*\/\/\/\s*@(description|desc|param|returns?)\b/u.test(docLine)
+    );
+}
+
 function synthesizeTextFallbackDocCommentBlock({
     processedBlock,
     line,
@@ -1512,22 +1509,6 @@ function synthesizeTextFallbackDocCommentBlock({
     }
 
     if (!hasReturnLine && !isConstructorFunctionLine && hasRecognizedFunctionTag) {
-        console.error(
-            "[FALLBACK DEBUG] Adding @returns for:",
-            line.trim(),
-            "recognized:",
-            hasRecognizedFunctionTag,
-            "hasReturnLine:",
-            hasReturnLine,
-            "isConstructor:",
-            isConstructorFunctionLine,
-            "inferred:",
-            inferredReturnType,
-            "hasConcrete:",
-            hasConcreteReturnText,
-            "fnCount:",
-            functionHeaderCount
-        );
         if (inferredReturnType !== null) {
             fallbackBlock.push(`${indentation}/// @returns {${inferredReturnType}}`);
         } else if (!hasConcreteReturnText || functionHeaderCount === 1) {
@@ -1713,6 +1694,7 @@ function determineIfShouldSynthesizeReturnLine({
     hasExistingReturnLine,
     suppressSyntheticReturns,
     hasRecognizedFunctionDocTagInBlock,
+    hasUnrecognizedFunctionDocTagInBlock,
     blockBecameEmptyAfterPruning
 }: {
     assignmentStyle: boolean;
@@ -1726,6 +1708,7 @@ function determineIfShouldSynthesizeReturnLine({
     hasExistingReturnLine: boolean;
     suppressSyntheticReturns: boolean;
     hasRecognizedFunctionDocTagInBlock: boolean;
+    hasUnrecognizedFunctionDocTagInBlock: boolean;
     blockBecameEmptyAfterPruning: boolean;
 }): boolean {
     if (suppressSyntheticReturns) {
@@ -1749,41 +1732,9 @@ function determineIfShouldSynthesizeReturnLine({
         normalizeReturnTypeForComparison(inferredReturnType) !== "struct";
     const suppressUnknownDocTagOnlyReturn =
         blockBecameEmptyAfterPruning ||
-        (hadInputDocLines && functionParameterNamesInOrder.length > 0 && !hasRecognizedFunctionDocTagInBlock);
-
-    // Log values for the three failing tests
-    console.error(
-        "[DEBUG] hasReturnStatement:",
-        returnInference.hasReturnStatement,
-        "hasConcreteReturn:",
-        returnInference.hasConcreteReturn,
-        "hasUndefinedReturn:",
-        returnInference.hasUndefinedReturn
-    );
-    console.error(
-        "[DEBUG] hadInputDocLines:",
-        hadInputDocLines,
-        "hasLeadingIndentation:",
-        hasLeadingIndentation,
-        "functionParameterNamesInOrder.length:",
-        functionParameterNamesInOrder.length
-    );
-    console.error(
-        "[DEBUG] suppressNested:",
-        !assignmentStyle,
-        !hadInputDocLines,
-        hasLeadingIndentation,
-        functionParameterNamesInOrder.length === 0,
-        returnInference.hasConcreteReturn
-    );
-    console.error(
-        "[DEBUG] suppressUnknown:",
-        blockBecameEmptyAfterPruning,
-        hadInputDocLines,
-        functionParameterNamesInOrder.length,
-        !hasRecognizedFunctionDocTagInBlock
-    );
-    console.error("[DEBUG] shouldReturn:", !suppressUnknownDocTagOnlyReturn);
+        (hadInputDocLines &&
+            (functionParameterNamesInOrder.length > 0 || hasUnrecognizedFunctionDocTagInBlock) &&
+            !hasRecognizedFunctionDocTagInBlock);
 
     const suppressUndocumentedNoParamPropertyFunctionReturn =
         propertyStyle && !hadInputDocLines && functionParameterNamesInOrder.length === 0;
