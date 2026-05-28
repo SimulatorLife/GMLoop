@@ -1,5 +1,6 @@
 export type {
     AddProjectResourceRequest,
+    AddRoomInstanceRequest,
     ApplyWorkspaceEditOptions,
     AstNode,
     BatchRenamePlanSummary,
@@ -80,6 +81,7 @@ export type {
     RenameValidationCacheConfig,
     ResolvedNamingConventionRules,
     ResolvedNamingRule,
+    RoomInstanceMutationResult,
     SemanticAnalyzer,
     SemanticCacheConfig,
     SemanticQueryCache,
