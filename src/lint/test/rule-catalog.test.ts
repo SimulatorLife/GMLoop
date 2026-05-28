@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Lint } from "../src/index.js";
+import { listLintRuleCatalogEntries } from "../src/rules/rule-catalog.js";
 
 void test("listLintRuleCatalogEntries exposes built-in rule descriptions and schemas", () => {
-    const entries = Lint.listLintRuleCatalogEntries();
+    const entries = listLintRuleCatalogEntries();
 
     const noGlobalvarRule = entries.find((entry) => entry.ruleId === "gml/no-globalvar");
     assert.ok(noGlobalvarRule);

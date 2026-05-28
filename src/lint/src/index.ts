@@ -22,8 +22,6 @@ export const Lint = Object.freeze({
     plugin,
     featherPlugin,
     configs,
-    ruleIds,
-    listLintRuleCatalogEntries,
     services,
 
     // Flattened aliases for high-traffic access patterns
@@ -35,5 +33,11 @@ export const Lint = Object.freeze({
 
     // Malformed-source helpers (from malformed — avoids deep "../.." imports)
     forEachScientificNotationToken,
-    toPlainDecimalFromScientificLiteral
+    toPlainDecimalFromScientificLiteral,
+
+    // Rule catalog access — kept on Lint for backward compatibility with existing
+    // external consumers. Internal lint code should import directly from the
+    // rules/catalog and rules/rule-catalog modules instead.
+    listLintRuleCatalogEntries,
+    ruleIds
 });
