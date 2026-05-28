@@ -108,22 +108,26 @@ export { normalizeRefactorProjectConfig, normalizeRefactorProjectConfigOrNull } 
 export type {
     AddProjectResourceRequest,
     AddRoomInstanceRequest,
+    DeleteRoomInstanceRequest,
     DuplicateProjectResourceRequest,
     MoveProjectResourceRequest,
     ProjectResourceKindValue,
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
     RenameProjectResourceRequest,
-    RoomInstanceMutationResult
+    RoomInstanceMutationResult,
+    UpdateRoomInstanceRequest
 } from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
 export {
     addProjectResource,
     addRoomInstance,
+    deleteRoomInstance,
     duplicateProjectResource,
     moveProjectResource,
     removeProjectResource,
-    renameProjectResource
+    renameProjectResource,
+    updateRoomInstance
 } from "./project-resources/index.js";
 export {
     isProjectResourceKind,
