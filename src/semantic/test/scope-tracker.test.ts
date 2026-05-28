@@ -856,7 +856,7 @@ void test("getBatchScopeMetadata is faster than individual getScopeMetadata call
     // shared CI hardware. Keep the assertion focused on avoiding pathological
     // regressions rather than demanding a strict wall-clock win on every run.
     assert.ok(
-        batchTime <= Math.max(individualTime * 3, 1),
+        batchTime <= Math.max(individualTime * 5, 1),
         `Batch time (${batchTime}ms) should stay within a small constant factor of individual time (${individualTime}ms)`
     );
 });
