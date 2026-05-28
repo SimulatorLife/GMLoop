@@ -105,7 +105,7 @@ void test("room camera update MCP tool schema includes mutation arguments and wr
     }
 });
 
-void test("room instance add and update MCP tool schemas include mutation arguments and write option", () => {
+void test("room instance add/update/delete MCP tool schemas include mutation arguments and write option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const addEntry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_instance_add");
     assert.ok(addEntry);
@@ -133,6 +133,21 @@ void test("room instance add and update MCP tool schemas include mutation argume
     for (const requiredArgument of ["room", "instance_id", "x", "y"]) {
         const field = updateEntry.fields.find((candidate) => candidate.attributeName === requiredArgument);
         assert.ok(field, `Missing required update argument field: ${requiredArgument}`);
+        assert.equal(field.kind, "argument");
+        assert.equal(field.required, true);
+    }
+
+    const deleteEntry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_instance_delete");
+    assert.ok(deleteEntry);
+
+    const deleteWriteField = deleteEntry.fields.find((field) => field.attributeName === "write");
+    assert.ok(deleteWriteField);
+    assert.equal(deleteWriteField.kind, "option");
+    assert.equal(deleteWriteField.valueType, "boolean");
+
+    for (const requiredArgument of ["room", "instance_id"]) {
+        const field = deleteEntry.fields.find((candidate) => candidate.attributeName === requiredArgument);
+        assert.ok(field, `Missing required delete argument field: ${requiredArgument}`);
         assert.equal(field.kind, "argument");
         assert.equal(field.required, true);
     }

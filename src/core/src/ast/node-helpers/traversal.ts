@@ -6,15 +6,7 @@ const TRAVERSAL_LINK_ENCLOSING_NODE_KEY = "enclosingNode";
 const TRAVERSAL_LINK_PRECEDING_NODE_KEY = "precedingNode";
 const TRAVERSAL_LINK_FOLLOWING_NODE_KEY = "followingNode";
 
-const CLONE_SKIPPED_NODE_KEYS = new Set([
-    TRAVERSAL_LINK_PARENT_KEY,
-    TRAVERSAL_LINK_ENCLOSING_NODE_KEY,
-    TRAVERSAL_LINK_PRECEDING_NODE_KEY,
-    TRAVERSAL_LINK_FOLLOWING_NODE_KEY
-]);
-
 function isTraversalLinkKey(key: string): boolean {
-    // Hot-path check in forEachNodeChild: direct comparisons avoid Set.has() overhead.
     return (
         key === TRAVERSAL_LINK_PARENT_KEY ||
         key === TRAVERSAL_LINK_ENCLOSING_NODE_KEY ||
@@ -65,11 +57,20 @@ function cloneNodeValueWithoutTraversalLinks(nodeValue: unknown, seenNodes: Weak
 
     const clonedRecord: Record<string, unknown> = {};
     seenNodes.set(objectNodeValue, clonedRecord);
-    for (const [key, value] of Object.entries(nodeValue)) {
-        if (CLONE_SKIPPED_NODE_KEYS.has(key)) {
+    const nodeKeys = Object.keys(nodeValue);
+    for (let i = 0, len = nodeKeys.length; i < len; i++) {
+        const key = nodeKeys[i];
+        if (
+            key === TRAVERSAL_LINK_PARENT_KEY ||
+            key === TRAVERSAL_LINK_ENCLOSING_NODE_KEY ||
+            key === TRAVERSAL_LINK_PRECEDING_NODE_KEY ||
+            key === TRAVERSAL_LINK_FOLLOWING_NODE_KEY
+        ) {
             continue;
         }
-        clonedRecord[key] = cloneNodeValueWithoutTraversalLinks(value, seenNodes);
+        // No `Object.entries()` allocation: direct key lookup avoids the
+        // [key, value] tuple allocation that the iterator produces per iteration.
+        clonedRecord[key] = cloneNodeValueWithoutTraversalLinks((nodeValue as Record<string, unknown>)[key], seenNodes);
     }
 
     return clonedRecord;
@@ -105,7 +106,12 @@ function restoreLocalParentLinks(clonedNode: unknown): void {
 
         for (let i = 0, keys = Object.keys(currentRecord), len = keys.length; i < len; i++) {
             const key = keys[i];
-            if (CLONE_SKIPPED_NODE_KEYS.has(key)) {
+            if (
+                key === TRAVERSAL_LINK_PARENT_KEY ||
+                key === TRAVERSAL_LINK_ENCLOSING_NODE_KEY ||
+                key === TRAVERSAL_LINK_PRECEDING_NODE_KEY ||
+                key === TRAVERSAL_LINK_FOLLOWING_NODE_KEY
+            ) {
                 continue;
             }
             const childValue = currentRecord[key];
