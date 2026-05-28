@@ -1,77 +1,154 @@
 .docs-page {
-  overflow: visible;
+    overflow: visible;
 }
 
 .docs-toggle-row {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.docs-search-panel {
+    display: grid;
+    gap: 8px;
+    margin: 0 0 18px;
+    max-width: 720px;
+}
+
+.docs-search-label {
+    color: var(--gm-text);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.docs-search-controls {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+}
+
+.docs-search-input {
+    min-width: 0;
+    flex: 1 1 auto;
+    min-height: 44px;
+    padding: 10px 14px;
+    border: 1px solid rgba(143, 181, 255, 0.24);
+    border-radius: 14px;
+    background: var(--gm-surface-inset);
+    color: var(--gm-text);
+    font: inherit;
+}
+
+.docs-search-input::placeholder {
+    color: var(--gm-text-subdued);
+}
+
+.docs-search-input:focus-visible,
+.docs-search-clear:focus-visible {
+    outline: 2px solid var(--gm-accent-strong);
+    outline-offset: 2px;
+}
+
+.docs-search-clear {
+    min-height: 44px;
+    padding: 0 16px;
+    border: 1px solid rgba(143, 181, 255, 0.24);
+    border-radius: 14px;
+    background: rgba(143, 181, 255, 0.12);
+    color: var(--gm-text);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.docs-search-clear:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.docs-search-summary {
+    min-height: 18px;
+    margin: 0;
+    color: var(--gm-text-subdued);
+    font-size: 12px;
+    line-height: 1.5;
 }
 
 .docs-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
 }
 
 .docs-meta {
-  margin: 0 0 18px;
-  color: var(--gm-text-subdued);
-  font-size: 14px;
-  line-height: 1.5;
+    margin: 0 0 18px;
+    color: var(--gm-text-subdued);
+    font-size: 14px;
+    line-height: 1.5;
 }
 
 .catalog-card h3 {
-  margin: 0 0 10px;
-  color: var(--gm-text);
-  font-size: 16px;
+    margin: 0 0 10px;
+    color: var(--gm-text);
+    font-size: 16px;
 }
 
 .catalog-card p {
-  margin: 0 0 12px;
-  color: var(--gm-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
+    margin: 0 0 12px;
+    color: var(--gm-text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
 }
 
 .catalog-usage {
-  display: block;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: var(--gm-surface-inset);
-  border: 1px solid rgba(143, 181, 255, 0.12);
-  color: var(--gm-accent-strong);
-  font-size: 12px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
+    display: block;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: var(--gm-surface-inset);
+    border: 1px solid rgba(143, 181, 255, 0.12);
+    color: var(--gm-accent-strong);
+    font-size: 12px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
 }
 
 .catalog-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
 .catalog-item {
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(143, 181, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--gm-text-secondary);
-  font-size: 12px;
-  line-height: 1.55;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(143, 181, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--gm-text-secondary);
+    font-size: 12px;
+    line-height: 1.55;
 }
 
 .catalog-item code {
-  color: #f7d081;
+    color: #f7d081;
 }
 
 .catalog-empty {
-  color: var(--gm-text-subdued);
-  font-size: 13px;
+    color: var(--gm-text-subdued);
+    font-size: 13px;
+}
+
+@media (max-width: 560px) {
+    .docs-search-controls {
+        flex-direction: column;
+    }
+
+    .docs-search-clear {
+        width: 100%;
+    }
 }
