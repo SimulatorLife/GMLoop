@@ -142,6 +142,41 @@ void test("room layer update planned leaf emits apply mode when write is request
     assert.equal(updatePayload.payload.state, "not_available");
 });
 
+void test("room camera update planned leaf emits write-aware payload details", async () => {
+    const updateResult = await runCliTestCommand({
+        argv: ["room", "camera", "update", "rm_main", "camera_0", "32", "64", "1280", "720", "--json", "--write"]
+    });
+
+    assert.equal(updateResult.exitCode, 0);
+    const updatePayload = JSON.parse(updateResult.stdout) as {
+        command: string;
+        payload: {
+            capability: string;
+            details: {
+                cameraId: string;
+                height: string;
+                room: string;
+                width: string;
+                x: string;
+                y: string;
+            };
+            mode: string;
+            state: string;
+        };
+    };
+
+    assert.equal(updatePayload.command, "room camera update");
+    assert.equal(updatePayload.payload.capability, "room_camera_mutation");
+    assert.equal(updatePayload.payload.mode, "apply");
+    assert.equal(updatePayload.payload.state, "not_available");
+    assert.equal(updatePayload.payload.details.room, "rm_main");
+    assert.equal(updatePayload.payload.details.cameraId, "camera_0");
+    assert.equal(updatePayload.payload.details.x, "32");
+    assert.equal(updatePayload.payload.details.y, "64");
+    assert.equal(updatePayload.payload.details.width, "1280");
+    assert.equal(updatePayload.payload.details.height, "720");
+});
+
 void test("ui planned leaves emit concrete payloads without unsupported backend state", async () => {
     const previewResult = await runCliTestCommand({
         argv: ["ui", "preview", "--json"]
