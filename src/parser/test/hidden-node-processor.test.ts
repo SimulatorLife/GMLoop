@@ -193,3 +193,24 @@ void test("hidden node processor does not emit debug logs", () => {
     assert.equal(comments.length, 2);
     assert.equal(whitespaces.length, 0);
 });
+
+void test("hidden node processor initializes state with correct defaults", () => {
+    const comments: Array<unknown> = [];
+    const whitespaces: Array<unknown> = [];
+    const lexerTokens = {
+        EOF: 0,
+        SingleLineComment: 1,
+        MultiLineComment: 2,
+        WhiteSpaces: 3,
+        LineTerminator: 4,
+        Identifier: 5
+    };
+
+    const processor = createHiddenNodeProcessor({
+        comments,
+        whitespaces,
+        lexerTokens
+    });
+
+    assert.equal(processor.hasReachedEnd(), false);
+});
