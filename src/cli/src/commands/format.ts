@@ -49,6 +49,12 @@ import {
     trimFormattingCache
 } from "../modules/formatting/index.js";
 import {
+    isHelpRequest,
+    resolveTargetPathFromInput,
+    resolveTargetStats,
+    validateTargetPathInput
+} from "../modules/formatting/target-path-resolution.js";
+import {
     PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES,
     PERIODIC_CLEANUP_INTERVAL
 } from "../runtime-options/format-memory-constants.js";
@@ -80,12 +86,6 @@ import {
     type SkippedDirectorySummary,
     type SkippedFileSummary
 } from "./format-summary.js";
-import {
-    isHelpRequest,
-    resolveTargetPathFromInput,
-    resolveTargetStats,
-    validateTargetPathInput
-} from "./format-target-path.js";
 
 const {
     compactArray,
