@@ -38,6 +38,7 @@ type UiRevisionApiResponse = Readonly<{
 }>;
 
 const SERVER_UI_REVISION_POLL_INTERVAL_MS = 1000;
+const LIVE_RELOAD_START_REQUEST_BODY = JSON.stringify({ restart: true });
 
 async function readJsonResponse<TResponse>(response: Response): Promise<TResponse> {
     return (await response.json()) as TResponse;
@@ -218,7 +219,7 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
             },
             onStartLiveReload: async () => {
                 const response = await fetch("/api/live-reload/start", {
-                    body: JSON.stringify({ restart: false }),
+                    body: LIVE_RELOAD_START_REQUEST_BODY,
                     headers: { "Content-Type": "application/json" },
                     method: "POST"
                 });
@@ -235,3 +236,7 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
         rootElement
     });
 }
+
+export const __test__ = Object.freeze({
+    LIVE_RELOAD_START_REQUEST_BODY
+});

@@ -468,6 +468,52 @@ function hasRegistryDependency(registry: RuntimeRegistry, dependencyId: string):
     return dependencyId in registry.scripts || dependencyId in registry.events || dependencyId in registry.closures;
 }
 
+function hasGlobalFunction(globalScope: Record<string, unknown>, functionName: string): boolean {
+    return typeof globalScope[functionName] === "function";
+}
+
+function hasRuntimeScriptDependency(globalScope: Record<string, unknown>, dependencyId: string): boolean {
+    if (!dependencyId.startsWith("gml/script/")) {
+        return false;
+    }
+
+    const scriptName = dependencyId.slice("gml/script/".length);
+    if (scriptName.length === 0) {
+        return false;
+    }
+
+    return (
+        hasGlobalFunction(globalScope, scriptName) ||
+        hasGlobalFunction(globalScope, `gml_Script_${scriptName}`) ||
+        hasGlobalFunction(globalScope, `gml_GlobalScript_${scriptName}`)
+    );
+}
+
+function hasRuntimeObjectEventDependency(globalScope: Record<string, unknown>, dependencyId: string): boolean {
+    if (!dependencyId.startsWith("gml/event/")) {
+        return false;
+    }
+
+    const parts = dependencyId.split("/");
+    if (parts.length !== 4) {
+        return false;
+    }
+
+    return hasGlobalFunction(globalScope, `gml_Object_${parts[2]}_${parts[3]}`);
+}
+
+function hasRuntimeDependency(dependencyId: string): boolean {
+    const globalScope = globalThis as Record<string, unknown>;
+    return (
+        hasRuntimeScriptDependency(globalScope, dependencyId) ||
+        hasRuntimeObjectEventDependency(globalScope, dependencyId)
+    );
+}
+
+function hasSatisfiedDependency(registry: RuntimeRegistry, dependencyId: string): boolean {
+    return hasRegistryDependency(registry, dependencyId) || hasRuntimeDependency(dependencyId);
+}
+
 function collectMissingDependencies(
     dependencies: ReadonlyArray<unknown>,
     hasDependency: (dependencyId: string) => boolean
@@ -501,7 +547,7 @@ export function validatePatchDependencies(patch: Patch, registry: RuntimeRegistr
     }
 
     const missingDependencies = collectMissingDependencies(dependencies, (dependencyId) =>
-        hasRegistryDependency(registry, dependencyId)
+        hasSatisfiedDependency(registry, dependencyId)
     );
 
     return {
@@ -536,7 +582,7 @@ export function validateBatchPatchDependencies(
             const missingDependencies = collectMissingDependencies(
                 dependencies,
                 (dependencyId) =>
-                    newlySatisfiedDependencies.has(dependencyId) || hasRegistryDependency(registry, dependencyId)
+                    newlySatisfiedDependencies.has(dependencyId) || hasSatisfiedDependency(registry, dependencyId)
             );
             if (missingDependencies.length > 0) {
                 return {
