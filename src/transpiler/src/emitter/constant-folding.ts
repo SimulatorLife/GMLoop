@@ -256,19 +256,25 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
     // leading and trailing quote so we can perform the actual string operation.
     // The emitter then re-wraps the result in `JSON.stringify`, restoring the
     // correct GML syntax for the transpiled output.
+    //
+    // Hoist normalization to local variables so we avoid repeated calls when
+    // both the + operator and equality/comparison checks need the normalized
+    // values — saves up to 3 redundant normalizeStructKeyText calls per operand.
     if (typeof left === "string" && typeof right === "string") {
+        const normalizedLeft = normalizeStructKeyText(left);
+        const normalizedRight = normalizeStructKeyText(right);
+
         if (op === "+") {
-            return normalizeStructKeyText(left) + normalizeStructKeyText(right);
+            return normalizedLeft + normalizedRight;
         }
 
-        const equalityResult = evaluateEqualityOperator(
-            op,
-            normalizeStructKeyText(left),
-            normalizeStructKeyText(right)
-        );
+        const equalityResult = evaluateEqualityOperator(op, normalizedLeft, normalizedRight);
         if (equalityResult !== null) {
             return equalityResult;
         }
+
+        // Mixed-type boolean-string comparisons normalized above, but fall through
+        // here if the operator wasn't handled — no further action needed.
     }
 
     // Mixed-type comparisons where one operand is boolean and the other is numeric.

@@ -1,9 +1,8 @@
-import { Core } from "@gmloop/core";
-
 import { resolveRuntimeErrorMessage } from "../runtime/error-normalization.js";
 import type { Logger } from "../runtime/logger.js";
 import { validatePatch } from "../runtime/patch-utils.js";
 import type { Patch, PatchApplicator, RuntimePatchError, TrySafeApplyResult } from "../runtime/types.js";
+import { isArrayBufferLike, isBinaryDataLike, isErrorLike, parseJsonWithContext, toArray } from "../support/index.js";
 import { getHighResolutionTime } from "../timing/index.js";
 import {
     createInitialConnectionMetrics,
@@ -535,7 +534,7 @@ function createMessageHandler({
             return;
         }
 
-        const patches = Core.toArray(payload);
+        const patches = toArray(payload);
 
         for (const patch of patches) {
             if (!applyIncomingPatch(patch)) {
@@ -572,7 +571,7 @@ function parseWebSocketPayload(
 
 function parsePayloadText(text: string, description: string, onError?: WebSocketClientOptions["onError"]): unknown {
     try {
-        return Core.parseJsonWithContext(text, {
+        return parseJsonWithContext(text, {
             description,
             source: "runtime websocket message"
         });
@@ -587,11 +586,11 @@ function parsePayloadText(text: string, description: string, onError?: WebSocket
 }
 
 function isStructuredPayload(value: unknown): value is object {
-    return Boolean(value) && typeof value === "object" && !Core.isBinaryDataLike(value);
+    return Boolean(value) && typeof value === "object" && !isBinaryDataLike(value);
 }
 
 function isBinaryPayload(value: unknown): value is ArrayBuffer | ArrayBufferView {
-    return Core.isBinaryDataLike(value);
+    return isBinaryDataLike(value);
 }
 
 function decodeBinaryPayload(
@@ -613,7 +612,7 @@ function decodeBinaryPayload(
 }
 
 function toUint8Array(payload: ArrayBuffer | ArrayBufferView): Uint8Array {
-    if (Core.isArrayBufferLike(payload)) {
+    if (isArrayBufferLike(payload)) {
         return new Uint8Array(payload);
     }
 
@@ -683,7 +682,7 @@ function createErrorHandler({ state, onError, logger }: WebSocketErrorHandlerArg
         const websocketState = state;
         websocketState.connectionMetrics.connectionErrors += 1;
 
-        const errorMessage = Core.isErrorLike(event) ? event.message : "Unknown WebSocket error";
+        const errorMessage = isErrorLike(event) ? event.message : "Unknown WebSocket error";
 
         if (logger) {
             logger.websocketError(errorMessage);

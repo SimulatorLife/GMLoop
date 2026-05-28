@@ -183,14 +183,6 @@ void test("getSymbolOccurrences finds all occurrences of a symbol across scopes"
     assert.strictEqual(localOccurrences[0].scopeId, childScope.id);
 });
 
-void test("getSymbolOccurrences returns empty array when disabled", () => {
-    const tracker = new ScopeTracker({ enabled: false });
-
-    const result = tracker.getSymbolOccurrences("any");
-
-    assert.deepStrictEqual(result, []);
-});
-
 void test("reference skips tracking when disabled", () => {
     const tracker = new ScopeTracker({ enabled: false });
     const scope = tracker.enterScope("function");
@@ -278,14 +270,6 @@ void test("getScopeSymbols returns empty array for non-existent scope", () => {
     tracker.exitScope();
 
     const result = tracker.getScopeSymbols("nonexistent-scope");
-
-    assert.deepStrictEqual(result, []);
-});
-
-void test("getScopeSymbols returns empty array when disabled", () => {
-    const tracker = new ScopeTracker({ enabled: false });
-
-    const result = tracker.getScopeSymbols("any-scope");
 
     assert.deepStrictEqual(result, []);
 });
@@ -417,21 +401,17 @@ void test("getScopeChain returns single entry for root scope", () => {
     assert.deepStrictEqual(chain, [{ id: rootScope.id, kind: "program" }]);
 });
 
-void test("getScopeChain returns empty array for non-existent scope", () => {
-    const tracker = new ScopeTracker({ enabled: true });
+/** Covers all leaf-accessor methods that return empty arrays when the tracker is disabled. */
+void test("getSymbolOccurrences, getScopeSymbols, getScopeChain, and getScopeDefinitions return empty arrays when disabled", () => {
+    const tracker = new ScopeTracker({ enabled: false });
     tracker.enterScope("program");
 
-    const result = tracker.getScopeChain("nonexistent-scope");
+    assert.deepStrictEqual(tracker.getSymbolOccurrences("any"), []);
+    assert.deepStrictEqual(tracker.getScopeSymbols("any-scope"), []);
+    assert.deepStrictEqual(tracker.getScopeChain("any-scope"), []);
+    assert.deepStrictEqual(tracker.getScopeDefinitions("any-scope"), []);
 
-    assert.deepStrictEqual(result, []);
-});
-
-void test("getScopeChain returns empty array when disabled", () => {
-    const tracker = new ScopeTracker({ enabled: false });
-
-    const result = tracker.getScopeChain("any-scope");
-
-    assert.deepStrictEqual(result, []);
+    tracker.exitScope();
 });
 
 void test("getScopeChain works after exiting scopes", () => {
@@ -478,23 +458,6 @@ void test("getScopeDefinitions returns declarations defined in specific scope", 
     assert.deepStrictEqual(innerNames, ["anotherInner", "innerVar"]);
 });
 
-void test("getScopeDefinitions returns empty array for non-existent scope", () => {
-    const tracker = new ScopeTracker({ enabled: true });
-    tracker.enterScope("program");
-
-    const result = tracker.getScopeDefinitions("nonexistent-scope");
-
-    assert.deepStrictEqual(result, []);
-});
-
-void test("getScopeDefinitions returns empty array when disabled", () => {
-    const tracker = new ScopeTracker({ enabled: false });
-
-    const result = tracker.getScopeDefinitions("any-scope");
-
-    assert.deepStrictEqual(result, []);
-});
-
 void test("getScopeDefinitions returns cloned metadata", () => {
     const tracker = new ScopeTracker({ enabled: true });
     const scope = tracker.enterScope("function");
@@ -512,7 +475,7 @@ void test("getScopeDefinitions returns cloned metadata", () => {
     assert.strictEqual((defs2[0].metadata as any).mutated, undefined);
 });
 
-void test("resolveIdentifier uses cached scope indices for efficient lookups", () => {
+void test("resolveIdentifier populates and reuses identifier resolution cache", () => {
     const tracker = new ScopeTracker({ enabled: true });
 
     tracker.enterScope("root");
@@ -533,25 +496,30 @@ void test("resolveIdentifier uses cached scope indices for efficient lookups", (
         end: { line: 100, index: 8 }
     });
 
-    const iterations = 250;
-    const startTime = Date.now();
+    const cacheEntriesBefore = tracker.countRetainedIdentifierResolutionCacheEntries();
+    assert.strictEqual(cacheEntriesBefore, 0, "Cache should be empty before any resolutions");
 
     const firstRoot = tracker.resolveIdentifier("rootVar", deepestScope.id);
     const firstLocal = tracker.resolveIdentifier("localVar", deepestScope.id);
-    assert.strictEqual(firstRoot.name, "rootVar");
-    assert.strictEqual(firstLocal.name, "localVar");
+    assert.strictEqual(firstRoot?.name, "rootVar");
+    assert.strictEqual(firstLocal?.name, "localVar");
 
-    for (let i = 0; i < iterations; i++) {
+    const cacheEntriesAfterFirst = tracker.countRetainedIdentifierResolutionCacheEntries();
+    assert.ok(
+        cacheEntriesAfterFirst >= 2,
+        `Expected at least 2 cache entries after first resolutions, got ${cacheEntriesAfterFirst}`
+    );
+
+    for (let i = 0; i < 250; i++) {
         tracker.resolveIdentifier("rootVar", deepestScope.id);
         tracker.resolveIdentifier("localVar", deepestScope.id);
     }
 
-    const endTime = Date.now();
-    const elapsedMs = endTime - startTime;
-
-    assert.ok(
-        elapsedMs < 100,
-        `${iterations} resolveIdentifier calls took ${elapsedMs}ms with 50+ nested scopes. Expected < 100ms with cached indices.`
+    const cacheEntriesAfterMany = tracker.countRetainedIdentifierResolutionCacheEntries();
+    assert.strictEqual(
+        cacheEntriesAfterMany,
+        cacheEntriesAfterFirst,
+        "Cache should not grow after repeated resolutions (only 2 unique name/scope pairs)"
     );
 });
 

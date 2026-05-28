@@ -25,6 +25,16 @@ const {
 
 const STRING_TYPE = "string";
 
+/**
+ * Parse parameter names from a `@function` or `@func` doc-tag value.
+ *
+ * Extracts the parameter list from a tag value like `my_function(arg0, arg1, arg2)`
+ * and returns an array of normalized parameter name strings. Returns an empty
+ * array when the content lacks a valid parenthesized parameter list.
+ *
+ * @param functionTagContent - The raw name value from a `@function` doc tag.
+ * @returns Array of parameter name strings, or an empty array on parse failure.
+ */
 function extractParamsFromFunctionTag(functionTagContent: string): string[] {
     const openParenIndex = functionTagContent.indexOf("(");
     const closeParenIndex = functionTagContent.lastIndexOf(")");
@@ -40,6 +50,18 @@ function extractParamsFromFunctionTag(functionTagContent: string): string[] {
         .filter((p) => p.length > 0);
 }
 
+/**
+ * Suppress canonical `argumentN` fallbacks for documented param names that have
+ * explicit aliases in the GML implicit argument system.
+ *
+ * When a doc comment names a parameter (e.g., `argument0`) that has an alias
+ * mapping from `gatherImplicitArgumentReferences`, the fallback canonical is
+ * added to `suppressed` so it won't be generated as a separate param line.
+ *
+ * @param aliasByIndex - Map of argument index to its aliased name (e.g., index 0 -> "my_arg").
+ * @param documentedParamNames - Set of param names already documented in the comment.
+ * @param suppressed - Set of canonical names to skip generating as implicit fallbacks.
+ */
 function suppressAliasCanonicalOverrides(
     aliasByIndex: Map<number, unknown>,
     documentedParamNames: Set<unknown>,
@@ -58,6 +80,18 @@ function suppressAliasCanonicalOverrides(
     }
 }
 
+/**
+ * Suppress canonical `argumentN` fallbacks for ordinal param names that already
+ * have explicit canonical forms in the doc comment.
+ *
+ * For ordered `@param` entries where the documented name maps to a canonical
+ * different from the `argument{index}` fallback, that fallback is suppressed.
+ * This prevents generating duplicate param lines like `@param argument0` when
+ * `@param arg0` is already present and canonicalizes to the same target.
+ *
+ * @param orderedParamMetadata - Ordered param metadata from the existing doc comment.
+ * @param suppressed - Set of canonical names to skip generating as implicit fallbacks.
+ */
 function suppressOrderedCanonicalFallbacks(orderedParamMetadata: readonly DocMeta[], suppressed: Set<string>): void {
     for (const [ordIndex, ordMeta] of orderedParamMetadata.entries()) {
         if (!ordMeta || typeof ordMeta.name !== STRING_TYPE) {
@@ -82,6 +116,17 @@ type ReturnSummary = Readonly<{
     hasNonUndefinedReturnValue: boolean;
 }>;
 
+/**
+ * Walk the function body AST to collect return-statement statistics.
+ *
+ * Traverses the body with awareness of control-flow structures (if/else branches,
+ * loops, switch cases, try/catch) to determine whether any non-undefined return
+ * values exist. This drives the decision of whether to emit a synthetic
+ * `@returns {undefined}` tag for functions lacking an explicit return doc line.
+ *
+ * @param node - AST node to examine (can be any statement container or expression).
+ * @returns Summary indicating presence of return statements and non-undefined values.
+ */
 function summarizeReturnStatements(node: any): ReturnSummary {
     if (!node) {
         return {
@@ -185,6 +230,23 @@ function summarizeReturnStatements(node: any): ReturnSummary {
     };
 }
 
+/**
+ * Append a synthetic `@returns {undefined}` doc line when the function body
+ * lacks any non-undefined return values and no `@returns` tag is present.
+ *
+ * Skip conditions:
+ * - `overrides.suppressReturns === true` (caller suppressed synthetic returns)
+ * - `hasReturnsTag === true` (comment already has an explicit `@returns`)
+ * - `functionNode` is not a real function (not FunctionDeclaration or StructFunctionDeclaration)
+ * - `_suppressSyntheticReturnsDoc` flag is set on the node (e.g., for built-in overloads)
+ * - Function body is missing (arrow function expression or other body-less form)
+ *
+ * @param lines - Accumulated doc lines array to mutate.
+ * @param functionNode - Function AST node whose body is examined.
+ * @param hasReturnsTag - Whether the existing doc comment already has `@returns`.
+ * @param overrides - Optional overrides including `suppressReturns`.
+ * @returns The same lines array (for chaining convenience, though the input is mutated).
+ */
 function maybeAppendReturnsDoc(lines: string[], functionNode: any, hasReturnsTag: boolean, overrides: any = {}) {
     if (!Array.isArray(lines)) {
         return [];
@@ -317,6 +379,16 @@ export function computeSyntheticFunctionDocLines(
     return finalizeDocLines(lines, node, hasReturnsTag, overrides);
 }
 
+/**
+ * Finalize synthetic doc lines by appending returns documentation and
+ * normalizing type annotations.
+ *
+ * @param lines - Accumulated doc lines.
+ * @param node - Function AST node.
+ * @param hasReturnsTag - Whether existing doc has `@returns`.
+ * @param overrides - Optional overrides for returns suppression.
+ * @returns Finalized and normalized doc lines.
+ */
 function finalizeDocLines(lines: string[], node: any, hasReturnsTag: boolean, overrides: any) {
     return maybeAppendReturnsDoc(lines, node, hasReturnsTag, overrides).map((line) =>
         normalizeDocCommentTypeAnnotations(line)
@@ -433,6 +505,18 @@ function shouldSuppressImplicitOrdinal(
     return true;
 }
 
+/**
+ * Append implicit fallback param lines for arguments that have both an alias
+ * canonical name and a fallback canonical name, but only when the fallback
+ * is referenced directly in code.
+ *
+ * Only emits lines when `hasDirectReference` is true (the fallback name appears
+ * in the function body), preventing doc pollution from unreferenced fallbacks.
+ *
+ * @param implicitArgumentDocNames - Collected implicit argument doc entries.
+ * @param documentedParamNames - Set of already-documented param names (mutated).
+ * @param lines - Accumulated doc lines (mutated).
+ */
 function appendImplicitFallbackDocLines(
     implicitArgumentDocNames: readonly ImplicitArgumentDocEntry[],
     documentedParamNames: Set<unknown>,
@@ -460,6 +544,16 @@ function appendImplicitFallbackDocLines(
     }
 }
 
+/**
+ * Index implicit argument doc entries by their argument index.
+ *
+ * Builds a Map from argument index to the corresponding doc entry, preserving
+ * only the first entry for each index. This index is used to correlate
+ * implicit argument documentation with formal parameter positions.
+ *
+ * @param implicitArgumentDocNames - Flat list of implicit argument doc entries.
+ * @returns Map from argument index to entry (first entry wins on duplicates).
+ */
 function buildImplicitDocEntryByIndex(implicitArgumentDocNames: readonly ImplicitArgumentDocEntry[]) {
     const implicitDocEntryByIndex = new Map<number, ImplicitArgumentDocEntry>();
 
@@ -481,6 +575,22 @@ function buildImplicitDocEntryByIndex(implicitArgumentDocNames: readonly Implici
     return implicitDocEntryByIndex;
 }
 
+/**
+ * Append param doc lines for functions that have no formal `@param` declarations
+ * but do have implicit argument documentation (from Feather or manual references).
+ *
+ * Each implicit argument entry is processed twice:
+ * 1. In the initial loop, already-documented names are expanded with types/descriptions
+ *    from existing metadata, and fallback canonicals are appended when directly referenced.
+ * 2. A second pass in the `try` block handles any remaining referenced fallbacks that
+ *    weren't caught in the first pass (handles edge cases where suppression wasn't known).
+ *
+ * @param lines - Accumulated doc lines (mutated).
+ * @param implicitArgumentDocNames - Implicit argument doc entries for this function.
+ * @param documentedParamNames - Set of already-documented param names (mutated).
+ * @param node - Function AST node (used to query suppressed canonicals).
+ * @param paramMetadataByCanonical - Map from canonical name to param metadata.
+ */
 function appendDocLinesForNoParams(
     lines: string[],
     implicitArgumentDocNames: readonly ImplicitArgumentDocEntry[],

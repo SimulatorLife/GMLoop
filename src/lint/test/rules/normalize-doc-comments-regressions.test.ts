@@ -31,6 +31,14 @@ void test("normalize-doc-comments preserves non-return tag ordering while reorde
     assertEquals(result.output, expected);
 });
 
+void test("normalize-doc-comments preserves unknown doc tags without synthesizing return tags", () => {
+    const input = ["/// @foo", "var foo = function() {}", ""].join("\n");
+
+    const expected = ["/// @foo", "var foo = function () {};", ""].join("\n");
+
+    const result = lintWithRule("normalize-doc-comments", input, {});
+    assertEquals(result.output, expected);
+});
 void test("normalize-doc-comments synthesizes docs for struct-literal property functions with named params", () => {
     const input = [
         "function build_enemy_struct(name, hp = 100) {",

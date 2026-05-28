@@ -44,17 +44,12 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
     assert.ok(!toolNames.includes("gmloop_graph_context"));
     assert.ok(!toolNames.includes("gmloop_graph_neighbors"));
     assert.ok(!toolNames.includes("gmloop_graph_usages"));
-    assert.ok(toolNames.includes("gmloop_resource_add"));
-    assert.ok(toolNames.includes("gmloop_resource_remove"));
-    assert.ok(toolNames.includes("gmloop_resource_list"));
-    assert.ok(toolNames.includes("gmloop_resource_find"));
-    assert.ok(toolNames.includes("gmloop_resource_inspect"));
-    assert.ok(toolNames.includes("gmloop_resource_deps"));
-    assert.ok(toolNames.includes("gmloop_resource_dependents"));
-    assert.ok(toolNames.includes("gmloop_resource_audit"));
-    assert.ok(toolNames.includes("gmloop_resource_rename"));
-    assert.ok(toolNames.includes("gmloop_resource_duplicate"));
-    assert.ok(toolNames.includes("gmloop_resource_move"));
+    assert.ok(toolNames.includes("gmloop_script_add"));
+    assert.ok(toolNames.includes("gmloop_script_remove"));
+    assert.ok(toolNames.includes("gmloop_script_inspect"));
+    assert.ok(toolNames.includes("gmloop_script_update"));
+    assert.ok(toolNames.includes("gmloop_script_rename"));
+    assert.ok(toolNames.includes("gmloop_script_duplicate"));
     assert.ok(toolNames.includes("gmloop_runner_start"));
     assert.ok(toolNames.includes("gmloop_runner_stop"));
     assert.ok(toolNames.includes("gmloop_runner_restart"));
@@ -67,12 +62,72 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
     assert.ok(toolNames.includes("gmloop_runner_room_current"));
     assert.ok(!toolNames.includes("gmloop_mcp"));
 
+    assert.ok(toolNames.includes("gmloop_test_case_create"));
+    assert.ok(toolNames.includes("gmloop_test_case_update"));
+
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_graph_search"));
-    assert.ok(Object.hasOwn(server._registeredTools, "gmloop_resource_add"));
-    assert.ok(Object.hasOwn(server._registeredTools, "gmloop_resource_audit"));
+    assert.ok(Object.hasOwn(server._registeredTools, "gmloop_script_add"));
+    assert.ok(Object.hasOwn(server._registeredTools, "gmloop_script_remove"));
+    assert.ok(Object.hasOwn(server._registeredTools, "gmloop_script_duplicate"));
+    assert.ok(Object.hasOwn(server._registeredTools, "gmloop_test_case_create"));
+    assert.ok(Object.hasOwn(server._registeredTools, "gmloop_test_case_update"));
     assert.ok(Object.hasOwn(server._registeredResources, "gm://graph/overview"));
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-node"));
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-context"));
+});
+
+void test("MCP tool catalog exposes test case create with correct arguments and options", () => {
+    const catalog = listGmloopMcpToolCatalogEntries();
+    const createTool = catalog.find((entry) => entry.toolName === "gmloop_test_case_create");
+    assert.ok(createTool, "gmloop_test_case_create must appear in the MCP tool catalog");
+    assert.equal(createTool.commandDisplayName, "test case create");
+
+    const fieldNames = new Set(createTool.fields.map((field) => field.name));
+    assert.ok(fieldNames.has("cwd"), "test case create must include cwd field");
+    assert.ok(fieldNames.has("target"), "test case create must include target argument");
+    assert.ok(fieldNames.has("name"), "test case create must include name argument");
+    assert.ok(fieldNames.has("--expected"), "test case create must include --expected option");
+    assert.ok(fieldNames.has("--write"), "test case create must include --write option");
+    assert.ok(fieldNames.has("--path"), "test case create must include --path option");
+    assert.ok(fieldNames.has("--json"), "test case create must include --json option");
+
+    const targetField = createTool.fields.find((field) => field.name === "target");
+    assert.ok(targetField);
+    assert.equal(targetField.kind, "argument");
+    assert.equal(targetField.required, true);
+    assert.equal(targetField.valueType, "string");
+
+    const writeField = createTool.fields.find((field) => field.name === "--write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+});
+
+void test("MCP tool catalog exposes test case update with correct arguments and options", () => {
+    const catalog = listGmloopMcpToolCatalogEntries();
+    const updateTool = catalog.find((entry) => entry.toolName === "gmloop_test_case_update");
+    assert.ok(updateTool, "gmloop_test_case_update must appear in the MCP tool catalog");
+    assert.equal(updateTool.commandDisplayName, "test case update");
+
+    const fieldNames = new Set(updateTool.fields.map((field) => field.name));
+    assert.ok(fieldNames.has("cwd"), "test case update must include cwd field");
+    assert.ok(fieldNames.has("target"), "test case update must include target argument");
+    assert.ok(fieldNames.has("name"), "test case update must include name argument");
+    assert.ok(fieldNames.has("--expected"), "test case update must include --expected option");
+    assert.ok(fieldNames.has("--write"), "test case update must include --write option");
+    assert.ok(fieldNames.has("--path"), "test case update must include --path option");
+    assert.ok(fieldNames.has("--json"), "test case update must include --json option");
+
+    const targetField = updateTool.fields.find((field) => field.name === "target");
+    assert.ok(targetField);
+    assert.equal(targetField.kind, "argument");
+    assert.equal(targetField.required, true);
+    assert.equal(targetField.valueType, "string");
+
+    const writeField = updateTool.fields.find((field) => field.name === "--write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
 });
 
 void test("MCP tool catalog exports live tool fields derived from the CLI catalog", () => {

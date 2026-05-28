@@ -274,9 +274,10 @@ void test("graph visualize builds a missing database before exporting an HTML+as
         assert.ok(styleAsset);
         const html = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
         const script = await fs.readFile(path.join(outputDirectory, "assets", scriptAsset), "utf8");
-        assert.match(script, /shared_toolset_fn/u);
-        assert.match(script, /gmloop_format/u);
-        assert.match(script, /Format GameMaker Language files using the prettier plugin\./u);
+        assert.match(script, /gm-app-shell/u);
+        assert.match(html, /shared_toolset_fn/u);
+        assert.match(html, /gmloop_format/u);
+        assert.match(html, /Format GameMaker Language files using the prettier plugin\./u);
         assert.doesNotMatch(html, /id="regenerate"/u);
         assert.match(html, /assets\/.+\.js/u);
         assert.match(html, /assets\/.+\.css/u);
@@ -321,9 +322,12 @@ void test("graph visualize reuses an existing graph index instead of rebuilding 
         });
 
         assert.equal(visualizeResult.exitCode, 0);
-        const script = await fs.readFile(path.join(outputDirectory, "assets", "graph-visualization.js"), "utf8");
-        assert.match(script, /return 42;/u);
-        assert.doesNotMatch(script, /return 999;/u);
+        const assetNames = await fs.readdir(path.join(outputDirectory, "assets"));
+        const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
+        assert.ok(scriptAsset);
+        const indexHtml = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
+        assert.match(indexHtml, /return 42;/u);
+        assert.doesNotMatch(indexHtml, /return 999;/u);
     } finally {
         await fixture.cleanup();
     }

@@ -47,27 +47,7 @@ void test("resolveBundledResourcePath rejects URL-encoded parent-directory trave
     );
 });
 
-void test("resource locator prefers the generated package manifest when present", () => {
-    const fixture = createTemporaryCoreWorkspaceFixture();
-
-    try {
-        const configuredResourceDirectoryPath = path.join(fixture.fixtureRootPath, "installed-resources");
-        mkdirSync(configuredResourceDirectoryPath, { recursive: true });
-        writeFileSync(
-            path.join(fixture.packageDirectoryPath, "resource-directory.json"),
-            JSON.stringify({ resourceDirectory: configuredResourceDirectoryPath }, null, 2)
-        );
-
-        assert.equal(
-            __resolveBundledResourceBaseDirectoryForTests(fixture.nestedModuleDirectoryPath),
-            configuredResourceDirectoryPath
-        );
-    } finally {
-        rmSync(fixture.fixtureRootPath, { force: true, recursive: true });
-    }
-});
-
-void test("resource locator ignores stale generated package manifest paths", () => {
+void test("resource locator ignores obsolete generated package manifest paths", () => {
     const fixture = createTemporaryCoreWorkspaceFixture();
 
     try {

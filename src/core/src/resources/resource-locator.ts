@@ -2,45 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const RESOURCE_DIRECTORY_CONFIG_FILE_NAME = "resource-directory.json";
 const PACKAGE_JSON_FILE_NAME = "package.json";
 const CORE_PACKAGE_NAME = "@gmloop/core";
-
-type ResourceDirectoryConfig = Readonly<{
-    resourceDirectory: string;
-}>;
-
-function isResourceDirectoryConfig(value: unknown): value is ResourceDirectoryConfig {
-    return (
-        typeof value === "object" &&
-        value !== null &&
-        "resourceDirectory" in value &&
-        typeof value.resourceDirectory === "string" &&
-        value.resourceDirectory.trim().length > 0
-    );
-}
-
-function tryReadConfiguredResourceDirectory(packageDirectoryPath: string): string | null {
-    const configPath = path.resolve(packageDirectoryPath, RESOURCE_DIRECTORY_CONFIG_FILE_NAME);
-    if (!existsSync(configPath)) {
-        return null;
-    }
-
-    const configContents = readFileSync(configPath, "utf8");
-    const configValue = JSON.parse(configContents) as unknown;
-    if (!isResourceDirectoryConfig(configValue)) {
-        throw new TypeError(
-            `Resource directory config at ${configPath} must define a non-empty "resourceDirectory" string.`
-        );
-    }
-
-    const resourceDirectoryPath = configValue.resourceDirectory.trim();
-    if (!existsSync(resourceDirectoryPath)) {
-        return null;
-    }
-
-    return resourceDirectoryPath;
-}
 
 function tryReadPackageName(directoryPath: string): string | null {
     const packageJsonPath = path.resolve(directoryPath, PACKAGE_JSON_FILE_NAME);
@@ -74,11 +37,6 @@ function findCorePackageDirectory(moduleDirectoryPath: string): string {
 
 function resolveResourceBaseDirectory(moduleDirectoryPath: string): string {
     const packageDirectoryPath = findCorePackageDirectory(moduleDirectoryPath);
-    const configuredResourceDirectory = tryReadConfiguredResourceDirectory(packageDirectoryPath);
-    if (configuredResourceDirectory) {
-        return configuredResourceDirectory;
-    }
-
     return path.resolve(packageDirectoryPath, "../../resources");
 }
 
@@ -114,10 +72,8 @@ function resolveResourceUrl(resourceName: string): URL {
 /**
  * Resolve a URL pointing at a bundled resource artefact.
  *
- * Resource lookup now anchors itself at the `@gmloop/core` package directory.
- * When present, the build/install-time `resource-directory.json` manifest wins;
- * otherwise local development falls back to the repository `resources/` folder
- * relative to the package root instead of probing multiple hard-coded depths.
+ * Resource lookup anchors itself at the `@gmloop/core` package directory and
+ * resolves the repository `resources/` folder relative to that package root.
  *
  * @param {string} resourceName Name of the resource file to resolve.
  * @returns {URL} Absolute file URL referencing the bundled artefact.
@@ -143,8 +99,8 @@ export function resolveBundledResourcePath(resourceName: string): string {
 /**
  * Resolve the base resource directory for a caller-supplied module directory.
  *
- * This test-only seam validates the package-root lookup and generated manifest
- * handling without coupling unit tests to the real repository layout.
+ * This test-only seam validates the package-root lookup without coupling unit
+ * tests to the real repository layout.
  *
  * @param {string} moduleDirectoryPath Directory containing the calling module.
  * @returns {string} Absolute resource directory for the package installation.

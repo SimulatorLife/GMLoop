@@ -30,6 +30,14 @@ function printRoomPayload(payload: unknown): void {
     printProjectPayload(payload);
 }
 
+function parseCoordinateArgument(value: string, argumentName: "x" | "y"): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        throw new TypeError(`Invalid ${argumentName} coordinate "${value}". Expected a finite numeric value.`);
+    }
+    return parsed;
+}
+
 function emitRoomUnavailableLeaf(
     commandName: string,
     options: RoomMutationOptions,
@@ -216,11 +224,13 @@ export function createRoomCommand(): Command {
         .addOption(createWriteOption());
     instanceAdd.action(function roomInstanceAddAction(roomName: string, objectName: string, x: string, y: string) {
         const options = this.opts<RoomMutationOptions>();
+        const parsedX = parseCoordinateArgument(x, "x");
+        const parsedY = parseCoordinateArgument(y, "y");
         emitRoomUnavailableLeaf("room instance add", options, "room_instance_mutation", {
             object: objectName,
             room: roomName,
-            x,
-            y
+            x: parsedX,
+            y: parsedY
         });
     });
     const instanceUpdate = addRoomSharedOptions(
@@ -238,11 +248,13 @@ export function createRoomCommand(): Command {
         y: string
     ) {
         const options = this.opts<RoomMutationOptions>();
+        const parsedX = parseCoordinateArgument(x, "x");
+        const parsedY = parseCoordinateArgument(y, "y");
         emitRoomUnavailableLeaf("room instance update", options, "room_instance_mutation", {
             instanceId,
             room: roomName,
-            x,
-            y
+            x: parsedX,
+            y: parsedY
         });
     });
     const instanceDelete = addRoomSharedOptions(
@@ -263,24 +275,32 @@ export function createRoomCommand(): Command {
     instance.addCommand(instanceDelete);
 
     const layer = applyStandardCommandOptions(new Command("layer")).description("Room layer operations.");
+    const layerMutationLeaves = new Set(["create", "update", "delete", "reorder", "move-resource"]);
     for (const layerLeaf of ["list", "inspect", "create", "update", "delete", "reorder", "move-resource"]) {
         const nested = addRoomSharedOptions(
             applyStandardCommandOptions(new Command(layerLeaf)).description(`Room layer ${layerLeaf}.`)
         );
+        if (layerMutationLeaves.has(layerLeaf)) {
+            nested.addOption(createWriteOption());
+        }
         nested.action(function roomLayerAction() {
-            const options = this.opts<RoomCommandSharedOptions>();
+            const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room layer ${layerLeaf}`, options, "room_layer_mutation");
         });
         layer.addCommand(nested);
     }
 
     const camera = applyStandardCommandOptions(new Command("camera")).description("Room camera operations.");
+    const cameraMutationLeaves = new Set(["update", "frame"]);
     for (const cameraLeaf of ["list", "inspect", "update", "frame"]) {
         const nested = addRoomSharedOptions(
             applyStandardCommandOptions(new Command(cameraLeaf)).description(`Room camera ${cameraLeaf}.`)
         );
+        if (cameraMutationLeaves.has(cameraLeaf)) {
+            nested.addOption(createWriteOption());
+        }
         nested.action(function roomCameraAction() {
-            const options = this.opts<RoomCommandSharedOptions>();
+            const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room camera ${cameraLeaf}`, options, "room_camera_mutation");
         });
         camera.addCommand(nested);

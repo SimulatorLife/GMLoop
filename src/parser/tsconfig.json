@@ -16,6 +16,13 @@
     }
   },
   "references": [{ "path": "../core" }],
-  "include": ["*.ts", "src/**/*.ts", "test/**/*.ts", "generated/**/*.js", "src/**/*.d.ts"],
+  "include": [
+    "*.ts",
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "generated/**/*.js",
+    "src/parser/src/types/antlr.d.ts",
+    "src/parser/src/types/generated-grammar.d.ts"
+  ],
   "exclude": ["dist"]
 }

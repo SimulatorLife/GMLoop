@@ -66,7 +66,10 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
         command: string;
         payload: {
             details: {
-                event: string;
+                event: {
+                    category: string;
+                    descriptor: string;
+                };
                 handler: string;
                 object: string;
             };
@@ -78,7 +81,17 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
     assert.equal(eventUpdatePayload.payload.mode, "apply");
     assert.equal(eventUpdatePayload.payload.state, "not_available");
     assert.equal(eventUpdatePayload.payload.details.object, "obj_player");
-    assert.equal(eventUpdatePayload.payload.details.event, "Step:Begin");
+    assert.equal(eventUpdatePayload.payload.details.event.category, "Step");
+    assert.equal(eventUpdatePayload.payload.details.event.descriptor, "Begin");
+});
+
+void test("object event mutations reject invalid event descriptor format", async () => {
+    const eventAddResult = await runCliTestCommand({
+        argv: ["object", "event", "add", "obj_player", "Step", "x += 1;", "--json"]
+    });
+
+    assert.equal(eventAddResult.exitCode, 1);
+    assert.match(eventAddResult.stderr, /Expected format: category:event \(for example Step:Begin\)\./u);
 });
 
 void test("room instance planned leaves emit write-aware payload details", async () => {
@@ -93,8 +106,8 @@ void test("room instance planned leaves emit write-aware payload details", async
             details: {
                 instanceId: string;
                 room: string;
-                x: string;
-                y: string;
+                x: number;
+                y: number;
             };
             mode: string;
             state: string;
@@ -106,6 +119,27 @@ void test("room instance planned leaves emit write-aware payload details", async
     assert.equal(updatePayload.payload.state, "not_available");
     assert.equal(updatePayload.payload.details.room, "rm_main");
     assert.equal(updatePayload.payload.details.instanceId, "111");
+});
+
+void test("room layer update planned leaf emits apply mode when write is requested", async () => {
+    const updateResult = await runCliTestCommand({
+        argv: ["room", "layer", "update", "--json", "--write"]
+    });
+
+    assert.equal(updateResult.exitCode, 0);
+    const updatePayload = JSON.parse(updateResult.stdout) as {
+        command: string;
+        payload: {
+            capability: string;
+            mode: string;
+            state: string;
+        };
+    };
+
+    assert.equal(updatePayload.command, "room layer update");
+    assert.equal(updatePayload.payload.capability, "room_layer_mutation");
+    assert.equal(updatePayload.payload.mode, "apply");
+    assert.equal(updatePayload.payload.state, "not_available");
 });
 
 void test("ui planned leaves emit concrete payloads without unsupported backend state", async () => {
@@ -141,4 +175,20 @@ void test("ui planned leaves emit concrete payloads without unsupported backend 
 
     assert.equal(scaffoldPayload.command, "ui scaffold");
     assert.equal(scaffoldPayload.payload.state, "not_available");
+});
+
+void test("room instance mutations reject non-numeric coordinates", async () => {
+    const addResult = await runCliTestCommand({
+        argv: ["room", "instance", "add", "rm_main", "obj_player", "left", "240", "--json"]
+    });
+
+    assert.equal(addResult.exitCode, 1);
+    assert.match(addResult.stderr, /Invalid x coordinate "left"\. Expected a finite numeric value\./u);
+
+    const updateResult = await runCliTestCommand({
+        argv: ["room", "instance", "update", "rm_main", "111", "320", "top", "--json"]
+    });
+
+    assert.equal(updateResult.exitCode, 1);
+    assert.match(updateResult.stderr, /Invalid y coordinate "top"\. Expected a finite numeric value\./u);
 });
