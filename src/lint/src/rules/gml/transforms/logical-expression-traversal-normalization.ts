@@ -208,7 +208,7 @@ function simplifyStatementList(body: any[]): boolean {
             // if (cond) { return true; } return false;
             const consequent = unwrapBlock(current.consequent);
 
-            if (consequent.type === "ReturnStatement" && next.type === "ReturnStatement") {
+            if (consequent && consequent.type === "ReturnStatement" && next.type === "ReturnStatement") {
                 const consBool = getBooleanValue(consequent.argument);
                 const nextBool = getBooleanValue(next.argument);
 
@@ -239,7 +239,7 @@ function simplifyIfStatement(node: any): boolean {
     if (alternate !== null) {
         // Rules 1 & 2: if (cond) return true/false; else return false/true; -> return cond/!cond;
         // These apply even inside else-if chains (a return collapses the entire branch).
-        if (consequent.type === "ReturnStatement" && alternate.type === "ReturnStatement") {
+        if (consequent && consequent.type === "ReturnStatement" && alternate.type === "ReturnStatement") {
             const consBool = getBooleanValue(consequent.argument);
             const altBool = getBooleanValue(alternate.argument);
             const shouldNegate = resolveBooleanReturnNegation(consBool, altBool);
@@ -395,7 +395,7 @@ function createBooleanReturnStatement(
 }
 
 function unwrapBlock(node: any): any {
-    if (node.type === "BlockStatement" && node.body.length === 1) {
+    if (node && node.type === "BlockStatement" && Array.isArray(node.body) && node.body.length === 1) {
         return node.body[0];
     }
     return node;
