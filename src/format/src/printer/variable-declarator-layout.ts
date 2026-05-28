@@ -24,8 +24,7 @@
  * comment attachment—if the parser delivers misattached comments, the
  * parser pass must fix them upstream. (target-state.md §2.2, §3.2)
  *
- * Exported symbols are consumed by the printer (`print.ts`). All other symbols
- * in this file are module-private helpers.
+ * Exported symbols are consumed by the printer (`print.ts`).
  */
 
 /**

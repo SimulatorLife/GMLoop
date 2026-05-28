@@ -325,9 +325,9 @@ void test("graph visualize reuses an existing graph index instead of rebuilding 
         const assetNames = await fs.readdir(path.join(outputDirectory, "assets"));
         const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
         assert.ok(scriptAsset);
-        const script = await fs.readFile(path.join(outputDirectory, "assets", scriptAsset), "utf8");
-        assert.match(script, /return 42;/u);
-        assert.doesNotMatch(script, /return 999;/u);
+        const indexHtml = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
+        assert.match(indexHtml, /return 42;/u);
+        assert.doesNotMatch(indexHtml, /return 999;/u);
     } finally {
         await fixture.cleanup();
     }

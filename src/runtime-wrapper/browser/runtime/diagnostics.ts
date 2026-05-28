@@ -1,5 +1,4 @@
-import { Core } from "@gmloop/core";
-
+import { cloneObjectEntries } from "../support/index.js";
 import { getPatchKindMetadata, getSupportedPatchKinds } from "./patch-kind.js";
 import { calculateTimingMetrics } from "./patch-utils.js";
 import type {
@@ -307,7 +306,7 @@ export function computeErrorAnalytics(
 
     const mostProblematicPatches = sortedEntries.slice(0, 10);
 
-    const recentErrors = Core.cloneObjectEntries(errorHistory.slice(-20));
+    const recentErrors = cloneObjectEntries(errorHistory.slice(-20));
 
     const totalPatches = patchHistory.filter((entry) => entry.action === "apply").length;
     const errorRate = totalPatches > 0 ? totalErrors / totalPatches : 0;

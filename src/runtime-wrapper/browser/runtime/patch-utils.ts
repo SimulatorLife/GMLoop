@@ -1,5 +1,11 @@
-import { Core } from "@gmloop/core";
-
+import {
+    areNumbersApproximatelyEqual,
+    isErrorLike,
+    isNonEmptyArray,
+    isNonEmptyString,
+    readCxcDxStore,
+    readRuntimeObjectPool
+} from "../support/index.js";
 import { resolveBuiltinConstants } from "./builtin-constants.js";
 import { getPatchKindMetadata, isSupportedPatchKind, type RegistryCollectionKey } from "./patch-kind.js";
 import type {
@@ -45,6 +51,8 @@ type ObjectEventPrefixMapping = {
     prefixes: ReadonlyArray<string>;
     eventKey: string;
 };
+
+type InstanceStore = Array<unknown> | Record<string, unknown>;
 
 const EVENT_MAPPINGS: ReadonlyMap<string, EventMapping> = new Map([
     ["PreCreateEvent", { standard: "EVENT_PRE_CREATE", minified: "_qI" }],
@@ -102,24 +110,24 @@ function resolveScriptNameIndex(scriptNames: Array<string>): ReadonlyMap<string,
     return _scriptNameIndex;
 }
 
-function resolveInstanceStore(globalScope: RuntimeBindingGlobals): Record<string, unknown> | undefined {
+function resolveInstanceStore(globalScope: RuntimeBindingGlobals & Record<string, unknown>): InstanceStore | undefined {
     // Prefer the _cx._dx store when available.
-    const cxcDx = Core.readCxcDxStore(globalScope);
+    const cxcDx = readCxcDxStore(globalScope);
     if (cxcDx) {
         return cxcDx;
     }
 
     // Fall back to the runtime object pool from g_RunRoom.m_Active.pool.
-    const pool = Core.readRuntimeObjectPool(globalScope);
+    const pool = readRuntimeObjectPool(globalScope);
     if (pool !== undefined) {
-        return pool as Record<string, unknown>;
+        return pool;
     }
 
     return undefined;
 }
 
 function resolveRuntimeId(patch: ScriptPatch): string {
-    if (Core.isNonEmptyString(patch.runtimeId)) {
+    if (isNonEmptyString(patch.runtimeId)) {
         return patch.runtimeId;
     }
 
@@ -314,7 +322,7 @@ function updateInstance(
 }
 
 function updateInstances(
-    instanceStore: Record<string, unknown>,
+    instanceStore: InstanceStore,
     objectName: string | null,
     instanceKeysToUpdate: Set<string>,
     fn: RuntimeFunction,
@@ -460,6 +468,52 @@ function hasRegistryDependency(registry: RuntimeRegistry, dependencyId: string):
     return dependencyId in registry.scripts || dependencyId in registry.events || dependencyId in registry.closures;
 }
 
+function hasGlobalFunction(globalScope: Record<string, unknown>, functionName: string): boolean {
+    return typeof globalScope[functionName] === "function";
+}
+
+function hasRuntimeScriptDependency(globalScope: Record<string, unknown>, dependencyId: string): boolean {
+    if (!dependencyId.startsWith("gml/script/")) {
+        return false;
+    }
+
+    const scriptName = dependencyId.slice("gml/script/".length);
+    if (scriptName.length === 0) {
+        return false;
+    }
+
+    return (
+        hasGlobalFunction(globalScope, scriptName) ||
+        hasGlobalFunction(globalScope, `gml_Script_${scriptName}`) ||
+        hasGlobalFunction(globalScope, `gml_GlobalScript_${scriptName}`)
+    );
+}
+
+function hasRuntimeObjectEventDependency(globalScope: Record<string, unknown>, dependencyId: string): boolean {
+    if (!dependencyId.startsWith("gml/event/")) {
+        return false;
+    }
+
+    const parts = dependencyId.split("/");
+    if (parts.length !== 4) {
+        return false;
+    }
+
+    return hasGlobalFunction(globalScope, `gml_Object_${parts[2]}_${parts[3]}`);
+}
+
+function hasRuntimeDependency(dependencyId: string): boolean {
+    const globalScope = globalThis as Record<string, unknown>;
+    return (
+        hasRuntimeScriptDependency(globalScope, dependencyId) ||
+        hasRuntimeObjectEventDependency(globalScope, dependencyId)
+    );
+}
+
+function hasSatisfiedDependency(registry: RuntimeRegistry, dependencyId: string): boolean {
+    return hasRegistryDependency(registry, dependencyId) || hasRuntimeDependency(dependencyId);
+}
+
 function collectMissingDependencies(
     dependencies: ReadonlyArray<unknown>,
     hasDependency: (dependencyId: string) => boolean
@@ -488,12 +542,12 @@ function collectMissingDependencies(
 export function validatePatchDependencies(patch: Patch, registry: RuntimeRegistry): DependencyValidationResult {
     const dependencies = patch.metadata?.dependencies;
 
-    if (!Core.isNonEmptyArray(dependencies)) {
+    if (!isNonEmptyArray(dependencies)) {
         return { satisfied: true, missingDependencies: [] };
     }
 
     const missingDependencies = collectMissingDependencies(dependencies, (dependencyId) =>
-        hasRegistryDependency(registry, dependencyId)
+        hasSatisfiedDependency(registry, dependencyId)
     );
 
     return {
@@ -524,11 +578,11 @@ export function validateBatchPatchDependencies(
 
     for (const [index, patch] of patches.entries()) {
         const dependencies = patch.metadata?.dependencies;
-        if (Core.isNonEmptyArray(dependencies)) {
+        if (isNonEmptyArray(dependencies)) {
             const missingDependencies = collectMissingDependencies(
                 dependencies,
                 (dependencyId) =>
-                    newlySatisfiedDependencies.has(dependencyId) || hasRegistryDependency(registry, dependencyId)
+                    newlySatisfiedDependencies.has(dependencyId) || hasSatisfiedDependency(registry, dependencyId)
             );
             if (missingDependencies.length > 0) {
                 return {
@@ -578,7 +632,7 @@ export function testPatchInShadow(patch: Patch): ShadowTestResult {
     } catch (error) {
         return {
             valid: false,
-            error: Core.isErrorLike(error) ? error.message : String(error ?? "Unknown error")
+            error: isErrorLike(error) ? error.message : String(error ?? "Unknown error")
         };
     }
 }
@@ -936,7 +990,7 @@ function calculatePercentile(sorted: Array<number>, percentile: number): number 
     // 8.999999999999998 instead of an exact 9, so we compare the raw index to
     // its rounded integer rather than comparing floor/ceil directly.
     const nearest = Math.round(index);
-    if (Core.areNumbersApproximatelyEqual(index, nearest)) {
+    if (areNumbersApproximatelyEqual(index, nearest)) {
         return sorted[nearest];
     }
 

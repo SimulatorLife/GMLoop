@@ -149,29 +149,17 @@ export function replaceNode(target: unknown, replacement: unknown): void {
 /**
  * Copy `source` (cloned) onto `target` via `replaceNode`.
  * Returns `true` when the replacement was applied.
+ *
+ * `cloneAstNode` already skips traversal link keys (parent, enclosingNode, etc.),
+ * so this function delegates key deletion and copying to Object.assign.
  */
 export function replaceNodeWith(target: unknown, source: unknown): boolean {
-    const replacement = Core.cloneAstNode(source) ?? source;
-    if (!isObjectLike(replacement)) {
+    const clone = Core.cloneAstNode(source);
+    if (!isObjectLike(clone)) {
         return false;
     }
 
-    for (const key of Object.keys(target as object)) {
-        if (key === "parent") {
-            continue;
-        }
-
-        delete (target as any)[key];
-    }
-
-    for (const [key, value] of Object.entries(replacement as object)) {
-        if (key === "parent") {
-            continue;
-        }
-
-        (target as any)[key] = value;
-    }
-
+    Object.assign(target as object, clone);
     return true;
 }
 
