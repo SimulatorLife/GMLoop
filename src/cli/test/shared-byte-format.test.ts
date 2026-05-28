@@ -41,6 +41,11 @@ void describe("byte-format", () => {
             );
         });
 
+        void it("formats extremely large bigint values without collapsing to zero", () => {
+            const oversizedValue = 10n ** 400n;
+            assert.strictEqual(formatByteSize(oversizedValue), "8192.0PB");
+        });
+
         void it("treats non-finite decimal options as zero instead of throwing", () => {
             assert.strictEqual(
                 formatByteSize(1536, {
