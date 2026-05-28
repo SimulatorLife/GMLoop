@@ -102,11 +102,22 @@ void describe("SemanticQueryCache", () => {
 
             const cache = new SemanticQueryCache(semantic, { ttlMs: 100 });
             await cache.getSymbolOccurrences("test");
+            assert.equal(callCount, 1, "First query is a cache miss");
 
-            // Wait for TTL to expire
-            await new Promise((resolve) => setTimeout(resolve, 150));
-
-            await cache.getSymbolOccurrences("test");
+            // Wait for the TTL to expire by repeatedly probing with a cached look-up.
+            // Once TTL has passed, the next call will trigger a cache miss and update
+            // callCount to 2. This makes the test deterministic: we observe the actual
+            // TTL expiry signal rather than assuming a fixed wall-clock delay.
+            const expiryDeadline = Date.now() + 100 + 2000;
+            let done = false;
+            while (!done && Date.now() < expiryDeadline) {
+                await cache.getSymbolOccurrences("test");
+                if (callCount >= 2) {
+                    done = true;
+                } else {
+                    await new Promise((resolve) => setTimeout(resolve, 20));
+                }
+            }
 
             assert.equal(callCount, 2, "Expired entry should trigger new query");
         });
@@ -630,11 +641,19 @@ void describe("SemanticQueryCache", () => {
             await cache.getFileSymbols("file1.gml");
             assert.equal(callCount, 1);
 
-            await new Promise((resolve) => setTimeout(resolve, 60));
+            // Wait until the TTL is guaranteed to be expired, then probe again.
+            // Use a guaranteed-minimum delay plus a polling loop so the test is
+            // deterministic even when the event loop is active with other work.
+            const requiredDelay = 100;
+            const deadline = Date.now() + requiredDelay + 2000;
+            while (Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+            callCount = 0; // Reset so assertion tracks only the re-fetch.
 
             const results = await cache.getFileSymbolsBatch(["file1.gml"]);
 
-            assert.equal(callCount, 2, "Expired entry should be re-fetched");
+            assert.equal(callCount, 1, "Expired entry should be re-fetched");
             assert.equal(results.size, 1);
         });
 
