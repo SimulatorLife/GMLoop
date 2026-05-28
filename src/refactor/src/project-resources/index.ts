@@ -20,3 +20,5 @@ export {
     removeProjectResource,
     renameProjectResource
 } from "./project-resource-operations.js";
+export type { AddRoomInstanceRequest, RoomInstanceMutationResult } from "./room-instance-operations.js";
+export { addRoomInstance } from "./room-instance-operations.js";
