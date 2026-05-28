@@ -215,6 +215,21 @@ void test("graph panel starts with noisy variable categories disabled for cleare
                     scipSymbol: "gml/enum/PlayerState#StateIdle",
                     snippet: "",
                     summary: "Enum member for idle state."
+                },
+                {
+                    displayName: "MAX_SPEED",
+                    filePath: "scripts/configure_globals/configure_globals.gml",
+                    graphId: "project",
+                    id: "macro-node",
+                    kind: "macro",
+                    lineEnd: 1,
+                    lineStart: 1,
+                    name: "MAX_SPEED",
+                    resourcePath: "scripts/configure_globals/configure_globals.yy",
+                    scopeId: null,
+                    scipSymbol: "gml/macro/MAX_SPEED",
+                    snippet: "",
+                    summary: "Project speed limit macro."
                 }
             ]
         }
@@ -225,6 +240,7 @@ void test("graph panel starts with noisy variable categories disabled for cleare
     assert.doesNotMatch(rendered, /instance-var-node/u);
     assert.doesNotMatch(rendered, /local-var-node/u);
     assert.doesNotMatch(rendered, /enum-member-node/u);
+    assert.match(rendered, /macro-node/u);
     assert.match(rendered, /script-node/u);
 });
 
