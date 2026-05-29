@@ -37,6 +37,7 @@ const {
     isIdentifierNode,
     isLogicalAndOperator,
     isLogicalOrOperator,
+    toNumber,
     unwrapParenthesizedExpression: unwrapParenthesized
 } = Core;
 
@@ -198,7 +199,7 @@ function tryEvaluateExpression(node: any): any {
 
 function tryEvaluateNumericExpression(node: any): number | null {
     const result = tryEvaluateExpression(node);
-    return typeof result === "number" ? result : null;
+    return toNumber(result);
 }
 
 function canUseOpaqueMathFactor(node: any): boolean {

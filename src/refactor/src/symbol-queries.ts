@@ -6,14 +6,14 @@
 
 import { Core } from "@gmloop/core";
 
-import {
-    type AstNode,
-    type DependentSymbol,
-    type FileSymbol,
-    type ParserBridge,
-    type PartialSemanticAnalyzer,
-    type SymbolLocation,
-    type SymbolOccurrence
+import type {
+    AstNode,
+    DependentSymbol,
+    FileSymbol,
+    ParserBridge,
+    PartialSemanticAnalyzer,
+    SymbolLocation,
+    SymbolOccurrence
 } from "./types.js";
 
 /**
