@@ -20,6 +20,8 @@ export type GmlFormatComponentContract = Readonly<{
     print: GmlPrintFunction;
     handleComments: GmlHandleComments;
     printComment: GmlPrintCommentFunction;
+    countTrailingBlankLines: (text: string | null | undefined, startIndex: number) => number;
+    getNextNonWhitespaceCharacter: (text: string | null | undefined, startIndex: number) => string | null;
     LogicalOperatorsStyle: LogicalOperatorsStyleMap;
 }>;
 
