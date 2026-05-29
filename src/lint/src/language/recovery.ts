@@ -69,6 +69,33 @@ function isArgumentBoundaryCharacter(character: string): boolean {
     return character === ")" || character === "]" || character === "}" || character === ",";
 }
 
+function isLineTerminator(character: string): boolean {
+    return character === "\n" || character === "\r";
+}
+
+function advanceOverLineComment(sourceText: string, startAfter: number): number {
+    let index = startAfter;
+    while (index < sourceText.length) {
+        if (isLineTerminator(sourceText[index] ?? "")) {
+            break;
+        }
+        index += 1;
+    }
+    return index;
+}
+
+function maskLineComment(sourceText: string, chars: string[], startAfter: number): number {
+    let index = startAfter;
+    while (index < sourceText.length) {
+        if (isLineTerminator(sourceText[index] ?? "")) {
+            break;
+        }
+        chars[index] = " ";
+        index += 1;
+    }
+    return index;
+}
+
 function maskCommentsAndStringsForRecovery(sourceText: string): string {
     const chars = sourceText.split("");
     let index = 0;
@@ -81,14 +108,7 @@ function maskCommentsAndStringsForRecovery(sourceText: string): string {
             chars[index] = " ";
             chars[index + 1] = " ";
             index += 2;
-            while (index < sourceText.length) {
-                const lineCharacter = sourceText[index] ?? "";
-                if (lineCharacter === "\n" || lineCharacter === "\r") {
-                    break;
-                }
-                chars[index] = " ";
-                index += 1;
-            }
+            index = maskLineComment(sourceText, chars, index);
             continue;
         }
 
@@ -460,13 +480,7 @@ function collectStringLiteralLengthWrapInsertions(sourceText: string): ReadonlyA
 
         if (character === "/" && nextCharacter === "/") {
             index += 2;
-            while (index < sourceText.length) {
-                const lineCharacter = sourceText[index] ?? "";
-                if (lineCharacter === "\n" || lineCharacter === "\r") {
-                    break;
-                }
-                index += 1;
-            }
+            index = advanceOverLineComment(sourceText, index);
             continue;
         }
 
