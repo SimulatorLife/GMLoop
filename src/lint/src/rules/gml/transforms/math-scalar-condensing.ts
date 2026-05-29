@@ -37,7 +37,6 @@ const {
     CALL_EXPRESSION,
     IDENTIFIER,
     LITERAL,
-    MEMBER_DOT_EXPRESSION,
     MEMBER_INDEX_EXPRESSION,
     PARENTHESIZED_EXPRESSION,
     UNARY_EXPRESSION,
@@ -60,70 +59,26 @@ type ReciprocalRatioRemovalPlan = {
     replacementsByIndex: Map<number, any[]>;
 };
 
-export function areNodesEquivalent(a, b) {
-    const left = Core.unwrapParenthesizedExpression(a);
-    const right = Core.unwrapParenthesizedExpression(b);
-
-    if (left === right) {
+export function areNodesEquivalent(a: unknown, b: unknown): boolean {
+    if (a === b) {
         return true;
     }
+
+    const left = Core.unwrapParenthesizedExpression(a);
+    const right = Core.unwrapParenthesizedExpression(b);
 
     if (!left || !right || left.type !== right.type) {
         return false;
     }
 
-    switch (left.type) {
-        case IDENTIFIER: {
-            return left.name === right.name;
-        }
-        case LITERAL: {
-            return left.value === right.value;
-        }
-        case MEMBER_DOT_EXPRESSION: {
-            return areNodesEquivalent(left.object, right.object) && areNodesEquivalent(left.property, right.property);
-        }
-        case MEMBER_INDEX_EXPRESSION: {
-            return (
-                areNodesEquivalent(left.object, right.object) && compareIndexProperties(left.property, right.property)
-            );
-        }
-        case BINARY_EXPRESSION: {
-            return (
-                left.operator === right.operator &&
-                areNodesEquivalent(left.left, right.left) &&
-                areNodesEquivalent(left.right, right.right)
-            );
-        }
-        case UNARY_EXPRESSION: {
-            return left.operator === right.operator && areNodesEquivalent(left.argument, right.argument);
-        }
-        case CALL_EXPRESSION: {
-            const leftName = Core.getUnwrappedIdentifierName(left.object);
-            const rightName = Core.getUnwrappedIdentifierName(right.object);
-
-            if (leftName !== rightName) {
-                return false;
-            }
-
-            const leftArgs = Core.asArray(left.arguments);
-            const rightArgs = Core.asArray(right.arguments);
-
-            if (leftArgs.length !== rightArgs.length) {
-                return false;
-            }
-
-            for (const [index, leftArg] of leftArgs.entries()) {
-                if (!areNodesEquivalent(leftArg, rightArgs[index])) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-        default: {
-            return false;
-        }
+    if (left.type === MEMBER_INDEX_EXPRESSION) {
+        return (
+            Core.areExpressionNodesEquivalentIgnoringParentheses(left.object, right.object) &&
+            compareIndexProperties(left.property, right.property)
+        );
     }
+
+    return Core.areExpressionNodesEquivalentIgnoringParentheses(left, right);
 }
 
 export function compareIndexProperties(a, b) {
