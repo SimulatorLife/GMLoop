@@ -133,14 +133,25 @@ function validateExternalProjectExcludes(
         }
 
         const stringArray = validateStringArray(rawValue, `${context}.${key}`);
-        if (key === "directoryNames") {
-            excludes.directoryNames = stringArray;
-        } else if (key === "fileNames") {
-            excludes.fileNames = stringArray;
-        } else if (key === "relativePaths") {
-            excludes.relativePaths = stringArray;
-        } else {
-            excludes.extensions = stringArray;
+        switch (key) {
+            case "directoryNames": {
+                excludes.directoryNames = stringArray;
+
+                break;
+            }
+            case "fileNames": {
+                excludes.fileNames = stringArray;
+
+                break;
+            }
+            case "relativePaths": {
+                excludes.relativePaths = stringArray;
+
+                break;
+            }
+            default: {
+                excludes.extensions = stringArray;
+            }
         }
     }
 

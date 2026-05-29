@@ -28,7 +28,7 @@ async function withFakeTime(callback: (advance: (ms: number) => void) => void | 
     // Assigning an arrow that closes over `currentMs` — rule falsely flags it as
     // a write-after-mutation; there is no actual race since `currentMs` is already
     // declared in this function scope.
-    // eslint-disable-next-line require-atomic-updates -- rule cannot track captured-variable pattern
+
     Date.now = () => currentMs;
 
     const advance = (ms: number): void => {
