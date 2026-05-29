@@ -24,10 +24,6 @@ type FixtureNamingTarget = {
     occurrences: Array<FixtureSymbolOccurrence>;
 };
 
-function escapeRegExp(source: string): string {
-    return source.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
-}
-
 function collectFunctionDeclarations(sourceText: string): Array<{ name: string; start: number }> {
     const declarations: Array<{ name: string; start: number }> = [];
     const declarationPattern = /function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
@@ -48,7 +44,7 @@ function collectFunctionDeclarations(sourceText: string): Array<{ name: string; 
 }
 
 function collectNameOccurrences(sourceText: string, name: string): Array<{ start: number; end: number }> {
-    const escapedName = escapeRegExp(name);
+    const escapedName = Core.escapeRegExp(name);
     const pattern = new RegExp(`(?<=^|[^A-Za-z0-9_])${escapedName}(?=[^A-Za-z0-9_]|$)`, "g");
     const hits: Array<{ start: number; end: number }> = [];
     let match: RegExpExecArray | null = pattern.exec(sourceText);
