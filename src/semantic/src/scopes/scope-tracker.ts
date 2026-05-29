@@ -282,15 +282,16 @@ export class ScopeTracker {
         }
 
         const path = metadata?.path;
-        if (typeof path === "string" && path.length > 0) {
-            const trackedPath = this.normalizeTrackedPath(path);
-            let scopeSet = this.pathToScopesIndex.get(trackedPath);
-            if (!scopeSet) {
-                scopeSet = new Set<string>();
-                this.pathToScopesIndex.set(trackedPath, scopeSet);
-            }
-            scopeSet.add(scope.id);
+        if (!Core.isNonEmptyString(path)) {
+            return;
         }
+        const trackedPath = this.normalizeTrackedPath(path);
+        let scopeSet = this.pathToScopesIndex.get(trackedPath);
+        if (!scopeSet) {
+            scopeSet = new Set<string>();
+            this.pathToScopesIndex.set(trackedPath, scopeSet);
+        }
+        scopeSet.add(scope.id);
 
         // Invalidate lookup cache on scope depth change
         if (this.lookupCacheDepth !== this.scopeStack.length) {

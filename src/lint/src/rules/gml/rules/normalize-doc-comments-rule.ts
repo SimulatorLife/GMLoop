@@ -638,7 +638,7 @@ function getIdentifierNodeName(node: unknown): string | null {
     }
 
     const name = Reflect.get(node, "name");
-    return typeof name === "string" && name.length > 0 ? name : null;
+    return Core.isNonEmptyString(name) ? name : null;
 }
 
 function getNormalizedIdentifierNodeName(node: unknown): string | null {

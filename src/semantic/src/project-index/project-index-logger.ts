@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 /**
  * Flexible logger interface for project index operations.
  * Accepts loggers that expose `.log`, `.debug`, or both (e.g. `console`).
@@ -89,20 +91,10 @@ function invokeLoggerMethod(
 /**
  * Extract a human-readable reason string from an error-like value.
  *
- * Mirrors the `getErrorMessage(error, { fallback: "" })` pattern used
- * throughout the project, returning the error's message property when
- * available, or an empty string when the error cannot be meaningfully
- * stringified.
+ * Delegates to `Core.getErrorMessage` for consistency with the broader
+ * project's error handling strategy: prefer the error's message property,
+ * fall back to string coercion, and fall back to an empty string.
  */
 function getErrorReason(error: unknown): string {
-    if (error && typeof error === "object" && "message" in error) {
-        const msg = error.message;
-        if (typeof msg === "string" && msg.length > 0) {
-            return msg;
-        }
-    }
-    if (typeof error === "string" && error.length > 0) {
-        return error;
-    }
-    return "";
+    return Core.getErrorMessage(error, { fallback: "" });
 }
