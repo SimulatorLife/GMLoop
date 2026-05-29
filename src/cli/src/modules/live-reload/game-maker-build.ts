@@ -5,7 +5,6 @@ import process from "node:process";
 
 import { Core } from "@gmloop/core";
 
-import { safeStatOrNull } from "../../shared/index.js";
 import { DEFAULT_GM_TEMP_ROOT } from "./config.js";
 
 /**
@@ -544,7 +543,7 @@ async function assertHtml5OutputExists(
     retryable: boolean
 ): Promise<void> {
     const indexHtmlPath = path.join(outputRoot, "index.html");
-    const stats = await safeStatOrNull(indexHtmlPath);
+    const stats = await Core.safeStat(indexHtmlPath);
     if (stats?.isFile()) {
         return;
     }
@@ -635,7 +634,7 @@ async function resolveDefaultGameMakerRuntimeRoot(): Promise<string | null> {
 async function collectRuntimeRootsFromCacheRoot(
     cacheRoot: string
 ): Promise<ReadonlyArray<Readonly<{ mtimeMs: number; runtimeRoot: string }>>> {
-    const cacheRootStats = await safeStatOrNull(cacheRoot);
+    const cacheRootStats = await Core.safeStat(cacheRoot);
     if (!cacheRootStats?.isDirectory()) {
         return Object.freeze([]);
     }
@@ -646,7 +645,7 @@ async function collectRuntimeRootsFromCacheRoot(
             .filter((entry) => entry.isDirectory() && entry.name.startsWith("runtime-"))
             .map(async (entry) => {
                 const runtimeRoot = path.join(cacheRoot, entry.name);
-                const runtimeStats = await safeStatOrNull(runtimeRoot);
+                const runtimeStats = await Core.safeStat(runtimeRoot);
                 if (!runtimeStats?.isDirectory()) {
                     return null;
                 }
@@ -691,7 +690,7 @@ function resolveGameMakerRuntimeCacheRoots(): ReadonlyArray<string> {
 
 async function resolveIgorExecutablePathFromRuntimeRoot(runtimeRoot: string): Promise<string | null> {
     const igorRoot = path.join(runtimeRoot, "bin", "igor");
-    const igorRootStats = await safeStatOrNull(igorRoot);
+    const igorRootStats = await Core.safeStat(igorRoot);
     if (!igorRootStats?.isDirectory()) {
         return null;
     }
@@ -720,7 +719,7 @@ async function resolveIgorExecutablePathFromRuntimeRoot(runtimeRoot: string): Pr
     const candidatePaths = candidatePathGroups.flat();
     const candidateMatches = await Promise.all(
         candidatePaths.map(async (candidatePath) => {
-            const candidateStats = await safeStatOrNull(candidatePath);
+            const candidateStats = await Core.safeStat(candidatePath);
             return candidateStats?.isFile() ? candidatePath : null;
         })
     );
@@ -740,7 +739,7 @@ async function resolveIgorIdentityPaths(
 
     if (buildConfig.userFolder !== null) {
         const inferredLicensePath = path.join(buildConfig.userFolder, "licence.plist");
-        const inferredLicenseStats = await safeStatOrNull(inferredLicensePath);
+        const inferredLicenseStats = await Core.safeStat(inferredLicensePath);
         return Object.freeze({
             licenseFile: inferredLicenseStats?.isFile() ? inferredLicensePath : null,
             userFolder: buildConfig.userFolder
@@ -756,7 +755,7 @@ async function resolveIgorIdentityPaths(
     }
 
     const autoDetectedLicensePath = path.join(autoDetectedUserFolder, "licence.plist");
-    const autoDetectedLicenseStats = await safeStatOrNull(autoDetectedLicensePath);
+    const autoDetectedLicenseStats = await Core.safeStat(autoDetectedLicensePath);
     return Object.freeze({
         licenseFile: autoDetectedLicenseStats?.isFile() ? autoDetectedLicensePath : null,
         userFolder: autoDetectedUserFolder
@@ -779,7 +778,7 @@ async function resolveDefaultGameMakerUserFolder(): Promise<string | null> {
 async function collectGameMakerUserFoldersFromSupportRoot(
     supportRoot: string
 ): Promise<ReadonlyArray<Readonly<{ mtimeMs: number; userFolder: string }>>> {
-    const supportRootStats = await safeStatOrNull(supportRoot);
+    const supportRootStats = await Core.safeStat(supportRoot);
     if (!supportRootStats?.isDirectory()) {
         return Object.freeze([]);
     }
@@ -791,7 +790,7 @@ async function collectGameMakerUserFoldersFromSupportRoot(
             .map(async (entry) => {
                 const userFolderPath = path.join(supportRoot, entry.name);
                 const licensePath = path.join(userFolderPath, "licence.plist");
-                const licenseStats = await safeStatOrNull(licensePath);
+                const licenseStats = await Core.safeStat(licensePath);
                 if (!licenseStats?.isFile()) {
                     return null;
                 }

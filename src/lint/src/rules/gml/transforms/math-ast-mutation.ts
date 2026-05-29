@@ -28,7 +28,6 @@ const {
     CALL_EXPRESSION,
     VARIABLE_DECLARATION,
     ASSIGNMENT_EXPRESSION,
-    UNARY_EXPRESSION,
     IDENTIFIER,
     MEMBER_DOT_EXPRESSION,
     MEMBER_INDEX_EXPRESSION,
@@ -552,41 +551,10 @@ export function removeSimplifiedAliasDeclaration(context: any, simplifiedNode: a
 
 /**
  * Structural equivalence for AST nodes used during alias declaration matching.
- * Mirrors the `areNodesEquivalent` implementation in math-traversal-normalization.ts.
+ * Delegates to the canonical Core helper so the logic lives in one place.
  */
-export function areNodesEquivalent(a: any, b: any): boolean {
-    const left = Core.unwrapParenthesizedExpression(a);
-    const right = Core.unwrapParenthesizedExpression(b);
-
-    if (left === right) {
-        return true;
-    }
-
-    if (!left || !right || left.type !== right.type) {
-        return false;
-    }
-
-    if (left.type === LITERAL) {
-        return left.value === right.value;
-    }
-
-    if (left.type === "Identifier" || left.type === IDENTIFIER) {
-        return left.name === right.name;
-    }
-
-    if (left.type === BINARY_EXPRESSION) {
-        if (left.operator !== right.operator) {
-            return false;
-        }
-
-        return areNodesEquivalent(left.left, right.left) && areNodesEquivalent(left.right, right.right);
-    }
-
-    if (left.type === UNARY_EXPRESSION) {
-        return left.operator === right.operator && areNodesEquivalent(left.argument, right.argument);
-    }
-
-    return false;
+export function areNodesEquivalent(a: unknown, b: unknown): boolean {
+    return Core.areExpressionNodesEquivalentIgnoringParentheses(a, b);
 }
 
 // ---------------------------------------------------------------------------

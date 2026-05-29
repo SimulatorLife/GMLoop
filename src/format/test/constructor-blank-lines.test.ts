@@ -110,6 +110,29 @@ void test("omits trailing blank line after nested constructor functions", async 
     );
 });
 
+void test("omits a blank line after nested functions before closing the constructor", async () => {
+    const source = [
+        "function Outer() constructor {",
+        "    function inner() {",
+        "        return 1;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const formatted = await Format.format(source);
+    const lines = formatted.split("\n");
+    const closingBraceIndex = lines.lastIndexOf("}");
+
+    assert.ok(closingBraceIndex > 0, "Formatted constructor should include a closing brace.");
+
+    assert.notStrictEqual(
+        lines[closingBraceIndex - 1],
+        "",
+        "Formatter should not include a blank line between the nested function and the constructor closing brace."
+    );
+});
+
 void test("preserves blank lines between simple constructor assignments", async () => {
     const source = [
         "Demo = function () constructor {",
