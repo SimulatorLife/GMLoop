@@ -260,7 +260,7 @@ export async function loadGameMakerCliCompanionCatalog(
             invocation: invocationDisplayName,
             mcpServer: Object.freeze({
                 available: false,
-                error: Core.isErrorLike(error) ? error.message : "Could not inspect ResourceTool MCP tools.",
+                error: Core.getErrorMessage(error),
                 name: null,
                 projectPath: resolvedProjectPath,
                 serverId: configuredExternalMcpServer?.serverId ?? null,
@@ -711,7 +711,7 @@ function createUnavailableGameMakerCliCompanionCatalog(
     return Object.freeze({
         available: false,
         cliCommands: [],
-        error: Core.isErrorLike(error) ? error.message : "Could not load gm-cli metadata.",
+        error: Core.getErrorMessage(error, { fallback: "Could not load gm-cli metadata." }),
         invocation,
         mcpServer: Object.freeze({
             available: false,
