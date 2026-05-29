@@ -1,4 +1,4 @@
-import { type Dirent, readFileSync as fsReadFileSync, writeFileSync as fsWriteFileSync } from "node:fs";
+import { type Dirent, readFileSync as fsReadFileSync, type Stats, writeFileSync as fsWriteFileSync } from "node:fs";
 import * as fsPromises from "node:fs/promises";
 
 import { createAbortGuard } from "../utils/abort.js";
@@ -246,6 +246,36 @@ export interface FileSystemDirentReader {
  */
 export function safeReaddirDirent(fsFacade: FileSystemDirentReader, directoryPath: string): Promise<FileDirent[]> {
     return runDirectoryReadWithMissingFallback(() => fsFacade.readDir(directoryPath, { withFileTypes: true }));
+}
+
+/**
+ * Retrieve file stats, returning `null` when the file does not exist or is
+ * inaccessible. Errors other than ENOENT are re-thrown so callers can
+ * distinguish benign "not found" cases from permission or I/O failures.
+ *
+ * @param {string} filePath Path to the file or directory to stat.
+ * @returns {Promise<Stats | null>} File stats when accessible, otherwise `null`.
+ */
+export async function safeStat(filePath: string): Promise<Stats | null> {
+    try {
+        return await fsPromises.stat(filePath);
+    } catch (error) {
+        if (isErrorWithCode(error, "ENOENT")) {
+            return null;
+        }
+        throw error;
+    }
+}
+
+/**
+ * Read directory entries with `withFileTypes: true`, returning an empty array
+ * when the directory does not exist or is inaccessible.
+ *
+ * @param {string} directoryPath Path to the directory to read.
+ * @returns {Promise<Dirent[]>} Directory entries when accessible, otherwise an empty array.
+ */
+export async function safeReaddirWithFileTypes(directoryPath: string): Promise<Dirent[]> {
+    return await fsPromises.readdir(directoryPath, { withFileTypes: true }).catch(() => []);
 }
 
 /**
