@@ -71,7 +71,7 @@ async function resolveTranspileTarget(command: CommanderCommandLike): Promise<Re
     try {
         targetStats = await stat(configuredPath);
     } catch (error) {
-        const message = Core.isErrorLike(error) ? error.message : String(error);
+        const message = Core.getErrorMessage(error);
         throw createUsageError(
             `Target path does not exist or cannot be accessed: ${configuredPath} (${message})`,
             command

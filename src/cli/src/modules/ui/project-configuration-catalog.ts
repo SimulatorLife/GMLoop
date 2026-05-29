@@ -288,7 +288,7 @@ export async function createGraphVisualizationProjectConfigurationCatalog(
     if (context === null) {
         const gameMakerCliCatalog = await loadGameMakerCliCatalog({
             projectRoot: null
-        }).catch((error) => createEmptyGameMakerCliCatalog(Core.isErrorLike(error) ? error.message : String(error)));
+        }).catch((error) => createEmptyGameMakerCliCatalog(Core.getErrorMessage(error)));
 
         return Object.freeze({
             format: Object.freeze({ entries: [] }),
@@ -315,7 +315,7 @@ export async function createGraphVisualizationProjectConfigurationCatalog(
     const projectConfig = Core.isObjectLike(context.projectConfig) ? context.projectConfig : {};
     const gameMakerCliCatalog = await loadGameMakerCliCatalog({
         projectRoot: context.projectRoot
-    }).catch((error) => createEmptyGameMakerCliCatalog(Core.isErrorLike(error) ? error.message : String(error)));
+    }).catch((error) => createEmptyGameMakerCliCatalog(Core.getErrorMessage(error)));
 
     return Object.freeze({
         format: Object.freeze({

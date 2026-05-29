@@ -43,7 +43,7 @@ export class GmlTranspilerBridge implements Refactor.TranspilerBridge {
         } catch (error) {
             // Use a capability probe rather than `instanceof Error` so that
             // cross-realm errors (e.g. from sandboxed transpiler instances) are handled.
-            throw new Error(`Transpilation failed: ${Core.isErrorLike(error) ? error.message : String(error)}`, {
+            throw new Error(`Transpilation failed: ${Core.getErrorMessage(error)}`, {
                 cause: error
             });
         }
