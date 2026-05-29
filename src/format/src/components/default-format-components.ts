@@ -7,7 +7,7 @@ import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "../printer/constants.js"
 import { print } from "../printer/index.js";
 import { normalizeFormattedOutput } from "../printer/normalize-formatted-output.js";
 import { normalizeGmlFormatComponents } from "./format-component-normalizer.js";
-import { createGmlFormatProvider } from "./format-provider.js";
+import type { GmlFormatProvider } from "./format-provider.js";
 import type { GmlFormatComponentBundle, GmlFormatComponentContract } from "./format-types.js";
 
 /**
@@ -50,7 +50,7 @@ const DEFAULT_PRETTIER_OPTIONS = Object.freeze({
  * stay behind this component boundary so orchestration code depends only on the
  * provider contract.
  */
-export const defaultGmlFormatProvider = createGmlFormatProvider({
+export const defaultGmlFormatProvider: GmlFormatProvider = Object.freeze({
     components: gmlFormatComponents,
     prettierDefaults: DEFAULT_PRETTIER_OPTIONS,
     normalizeFormattedOutput
