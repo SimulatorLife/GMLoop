@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 
+function normalizeWhitespace(value: string): string {
+    return value.replaceAll(/\s+/gu, "");
+}
+
 function normalizeWhitespaceAndLineEndings(value: string): string {
-    return value.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
+    return normalizeWhitespace(normalizeLineEndings(value));
 }
 
 function normalizeLineEndings(value: string): string {

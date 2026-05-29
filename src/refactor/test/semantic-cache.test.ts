@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import * as Refactor from "../src/index.js";
-import { SemanticQueryCache } from "../src/semantic-cache.js";
+import { DefaultOccurrenceCachePolicy, SemanticQueryCache } from "../src/semantic-cache.js";
 import type { DependentSymbol, FileSymbol, PartialSemanticAnalyzer, SymbolOccurrence } from "../src/types.js";
 
 /**
@@ -168,7 +168,7 @@ void describe("SemanticQueryCache", () => {
             };
 
             const cache = new SemanticQueryCache(semantic, {
-                maxOccurrenceCacheEntries: 3
+                occurrenceCachePolicy: new DefaultOccurrenceCachePolicy(3)
             });
 
             await cache.getSymbolOccurrences("oversized_symbol");
