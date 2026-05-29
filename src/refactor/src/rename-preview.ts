@@ -40,6 +40,65 @@ function appendErrorsAndWarnings(
 }
 
 /**
+ * Structured hot-reload report extracted from a `ValidationSummary`.
+ *
+ * Exists to break the Law-of-Demeter violation where callers navigate
+ * `validation.hotReload` repeatedly to access safety details.
+ *
+ * @example
+ * const report = buildHotReloadReport(validation);
+ * if (report) {
+ *     console.log(`Safe: ${report.safe}`);
+ *     console.log(`Reason: ${report.reason}`);
+ * }
+ */
+export type RenameHotReloadReport = Readonly<{
+    safe: boolean;
+    reason: string;
+    requiresRestart: boolean;
+    canAutoFix: boolean;
+    suggestions: ReadonlyArray<string>;
+}>;
+
+/**
+ * Build a structured hot-reload report from a `ValidationSummary`.
+ *
+ * Returns `null` when the validation has no hot-reload safety data
+ * (i.e., `validation.hotReload` is undefined), allowing callers to
+ * handle the absent case explicitly rather than navigating the chain
+ * repeatedly.
+ *
+ * @param validation - Validation summary that may contain hot-reload details
+ * @returns Structured report, or null when no hot-reload data exists
+ *
+ * @example
+ * const report = buildHotReloadReport(plan.hotReload);
+ * if (report === null) {
+ *     // Hot reload validation was not requested
+ * } else if (report.safe) {
+ *     // Safe to hot reload
+ * } else {
+ *     console.log(`Reason: ${report.reason}`);
+ * }
+ */
+export function buildHotReloadReport(
+    validation: Readonly<{
+        valid: boolean;
+        errors: ReadonlyArray<string>;
+        warnings: ReadonlyArray<string>;
+        hotReload?: RenameHotReloadReport;
+    }> | null
+): RenameHotReloadReport | null {
+    if (validation === null || validation === undefined) {
+        return null;
+    }
+    if (validation.hotReload === undefined) {
+        return null;
+    }
+    return validation.hotReload;
+}
+
+/**
  * Preview entry for a single file in a rename operation.
  * Contains the file path and the edits that will be applied to it.
  */
@@ -241,19 +300,18 @@ export function formatRenamePlanReport(plan: RenamePlanSummary): string {
 
     if (plan.hotReload) {
         lines.push(`Hot Reload Status: ${plan.hotReload.valid ? "SAFE" : "UNSAFE"}`);
-        if (plan.hotReload.hotReload) {
-            // Extract the hot-reload safety details to avoid the confusingly
-            // repetitive plan.hotReload.hotReload.* deep-navigation chain.
-            const hotReloadDetails = plan.hotReload.hotReload;
+
+        const hotReloadReport = buildHotReloadReport(plan.hotReload);
+        if (hotReloadReport !== null) {
             lines.push(
-                `  Reason: ${hotReloadDetails.reason}`,
-                `  Requires Restart: ${hotReloadDetails.requiresRestart ? "Yes" : "No"}`,
-                `  Can Auto-Fix: ${hotReloadDetails.canAutoFix ? "Yes" : "No"}`
+                `  Reason: ${hotReloadReport.reason}`,
+                `  Requires Restart: ${hotReloadReport.requiresRestart ? "Yes" : "No"}`,
+                `  Can Auto-Fix: ${hotReloadReport.canAutoFix ? "Yes" : "No"}`
             );
 
-            if (hotReloadDetails.suggestions.length > 0) {
+            if (hotReloadReport.suggestions.length > 0) {
                 lines.push("  Suggestions:");
-                for (const suggestion of hotReloadDetails.suggestions) {
+                for (const suggestion of hotReloadReport.suggestions) {
                     lines.push(`    • ${suggestion}`);
                 }
             }
