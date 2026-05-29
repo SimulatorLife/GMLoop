@@ -24,6 +24,7 @@
     "vite": "^8.0.13"
   },
   "devDependencies": {
+    "@gmloop/core": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:"
   },
