@@ -362,6 +362,9 @@ importers:
         specifier: ^8.0.13
         version: 8.0.13(@types/node@25.8.0)(yaml@2.9.0)
     devDependencies:
+      '@gmloop/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: 'catalog:'
         version: 25.8.0
