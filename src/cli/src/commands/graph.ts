@@ -668,7 +668,7 @@ async function runUiWorkspaceTypeBuildForServe(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
         execFile("pnpm", ["--filter", "@gmloop/ui", "run", "build:types"], (error) => {
             if (error) {
-                reject(error instanceof Error ? error : new Error("Failed to build @gmloop/ui workspace."));
+                reject(Core.isErrorLike(error) ? error : new Error("Failed to build @gmloop/ui workspace."));
                 return;
             }
             resolve();

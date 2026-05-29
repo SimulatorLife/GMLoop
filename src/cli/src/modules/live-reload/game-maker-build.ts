@@ -75,6 +75,54 @@ type BuildGameMakerHtml5OutputOptions = Readonly<{
     executeProcess?: ProcessExecutor;
 }>;
 
+/**
+ * Nominal shape contract for errors raised by the GameMaker HTML5 build pipeline.
+ *
+ * The concrete {@link GameMakerBuildExecutionError} class sets
+ * `name = "GameMakerBuildExecutionError"` and exposes typed fields (`backend`,
+ * `retryable`, etc.). Defining the shape here decouples call sites — especially
+ * the fallback logic in `buildGameMakerHtml5Output` — from the concrete class so
+ * that cross-realm error-like objects can participate in dispatch without
+ * requiring `instanceof`. Any object that carries the expected `name` discriminant
+ * and required fields satisfies this contract.
+ */
+export interface BuildExecutionError extends Error {
+    readonly name: "GameMakerBuildExecutionError";
+    readonly backend?: Exclude<GameMakerBuildBackend, "auto">;
+    readonly retryable?: boolean;
+    readonly command?: string;
+    readonly stderr?: string;
+    readonly stdout?: string;
+}
+
+/**
+ * Determine whether an arbitrary thrown value satisfies the
+ * {@link BuildExecutionError} contract by checking the stable `name` discriminant.
+ *
+ * This capability probe lets the fallback logic in `buildGameMakerHtml5Output`
+ * handle cross-realm error-like objects (e.g. from sandboxed workers) that are
+ * structurally equivalent to a `GameMakerBuildExecutionError` but fail an
+ * `instanceof` check across execution contexts. Callers use the returned
+ * reference to access the optional typed fields (`backend`, `retryable`, etc.)
+ * without a separate type cast.
+ *
+ * @param error - Candidate value to inspect.
+ * @returns `error is BuildExecutionError` when the name discriminant matches.
+ */
+export function isBuildExecutionError(error: unknown): error is BuildExecutionError {
+    if (error == null || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as { name?: unknown };
+    return candidate.name === "GameMakerBuildExecutionError";
+}
+
+/**
+ * Well-known error name emitted by the GameMaker HTML5 build pipeline.
+ */
+const BUILD_EXECUTION_ERROR_NAME = "GameMakerBuildExecutionError" as const;
+
 class GameMakerBuildExecutionError extends Error {
     backend: Exclude<GameMakerBuildBackend, "auto">;
     command: string;
@@ -91,7 +139,7 @@ class GameMakerBuildExecutionError extends Error {
         stdout: string;
     }) {
         super(parameters.message);
-        this.name = "GameMakerBuildExecutionError";
+        this.name = BUILD_EXECUTION_ERROR_NAME;
         this.backend = parameters.backend;
         this.command = parameters.command;
         this.retryable = parameters.retryable;
@@ -152,12 +200,8 @@ export async function buildGameMakerHtml5Output({
     if (gmCliAvailability.available) {
         try {
             return await executeGameMakerCliHtml5Build(buildConfig, cwd, executeProcess);
-        } catch (error) {
-            if (
-                error instanceof GameMakerBuildExecutionError &&
-                error.backend === "gm-cli" &&
-                error.retryable === true
-            ) {
+        } catch (error: unknown) {
+            if (isBuildExecutionError(error) && error.backend === "gm-cli" && error.retryable === true) {
                 return await executeIgorHtml5Build(buildConfig, cwd, executeProcess);
             }
 
