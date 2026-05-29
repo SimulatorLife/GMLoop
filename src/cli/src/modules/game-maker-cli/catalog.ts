@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 
+import { Core } from "@gmloop/core";
+
 import { safeReaddirOrEmpty } from "../../shared/fs-artifacts.js";
 import {
     type ConfiguredGameMakerCliMcpServer,
@@ -258,7 +260,7 @@ export async function loadGameMakerCliCompanionCatalog(
             invocation: invocationDisplayName,
             mcpServer: Object.freeze({
                 available: false,
-                error: error instanceof Error ? error.message : "Could not inspect ResourceTool MCP tools.",
+                error: Core.isErrorLike(error) ? error.message : "Could not inspect ResourceTool MCP tools.",
                 name: null,
                 projectPath: resolvedProjectPath,
                 serverId: configuredExternalMcpServer?.serverId ?? null,
@@ -709,7 +711,7 @@ function createUnavailableGameMakerCliCompanionCatalog(
     return Object.freeze({
         available: false,
         cliCommands: [],
-        error: error instanceof Error ? error.message : "Could not load gm-cli metadata.",
+        error: Core.isErrorLike(error) ? error.message : "Could not load gm-cli metadata.",
         invocation,
         mcpServer: Object.freeze({
             available: false,
@@ -726,7 +728,8 @@ function createUnavailableGameMakerCliCompanionCatalog(
 }
 
 function isMissingCommandError(error: unknown): error is NodeJS.ErrnoException {
-    return error instanceof Error && "code" in error && error.code === "ENOENT";
+    const like = error as { code?: unknown };
+    return Core.isErrorLike(error) && like.code === "ENOENT";
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {

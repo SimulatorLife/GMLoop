@@ -172,7 +172,8 @@ export type {
 } from "./rename-validation-cache.js";
 export { RenameValidationCache } from "./rename-validation-cache.js";
 export type { CacheStats, SemanticCacheConfig } from "./semantic-cache.js";
-export { SemanticQueryCache } from "./semantic-cache.js";
+export type { OccurrenceCachePolicy } from "./semantic-cache.js";
+export { DefaultOccurrenceCachePolicy, PermissiveOccurrenceCachePolicy, SemanticQueryCache } from "./semantic-cache.js";
 export { readExclusiveSemanticLocationIndex, readSemanticLocationIndex } from "./semantic-index-helpers.js";
 export type {
     ApplyWorkspaceEditOptions,
