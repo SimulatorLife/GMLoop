@@ -138,20 +138,6 @@ export function attachIdentifierCasePlanSnapshot(ast, options) {
                 return;
             }
 
-            try {
-                if (Core.isMapLike(snapshot.renameMap)) {
-                    const samples = [];
-                    let c = 0;
-                    for (const k of snapshot.renameMap.keys()) {
-                        samples.push(String(k));
-                        c += 1;
-                        if (c >= 5) break;
-                    }
-                }
-            } catch {
-                /* ignore */
-            }
-
             Object.defineProperty(objectAst, "__identifierCasePlanSnapshot", {
                 value: snapshot,
                 enumerable: false,
