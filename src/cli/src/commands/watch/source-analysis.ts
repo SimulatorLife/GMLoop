@@ -127,31 +127,66 @@ export function resolveUnknownScanConcurrency(configuredMaximum: number): number
 // ---------------------------------------------------------------------------
 
 /**
- * Waits before retrying a transient empty-file read and supports abort-driven teardown.
+ * Result of scheduling a file-read retry delay.
+ */
+export interface ScheduledRetry {
+    /** Unique timer identifier, or `undefined` when the signal is already aborted. */
+    readonly timerId: ReturnType<typeof setTimeout> | undefined;
+    /** Promise that resolves to `true` when the delay elapses, or `false` when aborted. */
+    readonly completion: Promise<boolean>;
+}
+
+/**
+ * Schedules a delay before retrying a transient empty-file read, with abort support.
+ *
+ * Exposes the timer identifier so callers can track or assert against it directly.
+ * When the abort signal is already aborted, returns immediately without creating a timer.
  *
  * @param durationMs - Delay duration in milliseconds.
  * @param abortSignal - Optional signal used to cancel the pending retry timer.
- * @returns Promise that resolves to true when delay elapsed, or false when aborted.
+ * @returns `ScheduledRetry` containing the timer ID and completion promise.
  */
-export function delayFileReadRetry(durationMs: number, abortSignal?: AbortSignal): Promise<boolean> {
+export function scheduleFileReadRetry(durationMs: number, abortSignal?: AbortSignal): ScheduledRetry {
     if (abortSignal?.aborted) {
-        return Promise.resolve(false);
+        return { timerId: undefined, completion: Promise.resolve(false) };
     }
 
-    return new Promise((resolve) => {
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+
+    const completion = new Promise<boolean>((resolve) => {
         const handleAbort = () => {
-            clearTimeout(timeoutId);
+            if (settled) return;
+            settled = true;
+            if (timerId !== undefined) clearTimeout(timerId);
             abortSignal?.removeEventListener("abort", handleAbort);
             resolve(false);
         };
 
-        const timeoutId = setTimeout(() => {
+        timerId = setTimeout(() => {
+            if (settled) return;
+            settled = true;
             abortSignal?.removeEventListener("abort", handleAbort);
             resolve(true);
         }, durationMs);
 
         abortSignal?.addEventListener("abort", handleAbort, { once: true });
     });
+
+    return { timerId, completion };
+}
+
+/**
+ * Waits before retrying a transient empty-file read and supports abort-driven teardown.
+ *
+ * @param durationMs - Delay duration in milliseconds.
+ * @param abortSignal - Optional signal used to cancel the pending retry timer.
+ * @returns Promise that resolves to true when delay elapsed, or false when aborted.
+ * @deprecated Use {@link scheduleFileReadRetry} for new code; this function is retained
+ *            for backwards-compatible callers that only need the completion promise.
+ */
+export function delayFileReadRetry(durationMs: number, abortSignal?: AbortSignal): Promise<boolean> {
+    return scheduleFileReadRetry(durationMs, abortSignal).completion;
 }
 
 /**
