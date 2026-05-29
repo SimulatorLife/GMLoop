@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import * as Refactor from "../src/index.js";
 import { SemanticQueryCache } from "../src/semantic-cache.js";
 import type { DependentSymbol, FileSymbol, PartialSemanticAnalyzer, SymbolOccurrence } from "../src/types.js";
 
@@ -664,6 +665,101 @@ void describe("SemanticQueryCache", () => {
             assert.equal(results.size, 2);
             assert.deepEqual(results.get("file1.gml"), []);
             assert.deepEqual(results.get("file2.gml"), []);
+        });
+    });
+});
+
+void describe("OccurrenceCachePolicy", () => {
+    void describe("DefaultOccurrenceCachePolicy", () => {
+        void it("shouldCacheOccurrences returns false when entry count is at or below threshold", () => {
+            const policy = new Refactor.DefaultOccurrenceCachePolicy(3);
+            const occurrences = [
+                { path: "a.gml", start: 0, end: 1 },
+                { path: "b.gml", start: 0, end: 1 },
+                { path: "c.gml", start: 0, end: 1 }
+            ] as Array<import("../src/types.js").SymbolOccurrence>;
+
+            assert.equal(policy.shouldCacheOccurrences(occurrences), false);
+        });
+
+        void it("shouldCacheOccurrences returns true when entry count exceeds threshold", () => {
+            const policy = new Refactor.DefaultOccurrenceCachePolicy(3);
+            const occurrences = [
+                { path: "a.gml", start: 0, end: 1 },
+                { path: "b.gml", start: 0, end: 1 },
+                { path: "c.gml", start: 0, end: 1 },
+                { path: "d.gml", start: 0, end: 1 }
+            ] as Array<import("../src/types.js").SymbolOccurrence>;
+
+            assert.equal(policy.shouldCacheOccurrences(occurrences), true);
+        });
+
+        void it("shouldCacheOccurrences returns false for empty arrays", () => {
+            const policy = new Refactor.DefaultOccurrenceCachePolicy(3);
+            assert.equal(policy.shouldCacheOccurrences([]), false);
+        });
+
+        void it("uses threshold of 0 to skip all caches", () => {
+            const policy = new Refactor.DefaultOccurrenceCachePolicy(0);
+            const occurrences = [{ path: "a.gml", start: 0, end: 1 }] as Array<
+                import("../src/types.js").SymbolOccurrence
+            >;
+
+            assert.equal(policy.shouldCacheOccurrences(occurrences), true);
+        });
+
+        void it("cache bypasses storage when default policy threshold exceeded", async () => {
+            let callCount = 0;
+            const semantic: PartialSemanticAnalyzer = {
+                getSymbolOccurrences: async () => {
+                    callCount++;
+                    return Array.from({ length: 4 }, (_, i) => ({
+                        path: `file-${i}.gml`,
+                        start: i,
+                        end: i + 1
+                    }));
+                }
+            };
+
+            const cache = new Refactor.SemanticQueryCache(semantic, {
+                occurrenceCachePolicy: new Refactor.DefaultOccurrenceCachePolicy(3)
+            });
+
+            await cache.getSymbolOccurrences("big_symbol");
+            await cache.getSymbolOccurrences("big_symbol");
+
+            assert.equal(callCount, 2, "Oversized results should be fetched every time");
+        });
+    });
+
+    void describe("PermissiveOccurrenceCachePolicy", () => {
+        void it("shouldCacheOccurrences always returns false", () => {
+            const policy = new Refactor.PermissiveOccurrenceCachePolicy();
+            const occurrences = Array.from({ length: 1_000_000 }, (_, i) => ({
+                path: `file-${i}.gml`,
+                start: i,
+                end: i + 1
+            })) as Array<import("../src/types.js").SymbolOccurrence>;
+
+            assert.equal(policy.shouldCacheOccurrences(occurrences), false);
+        });
+
+        void it("allows custom policy via config option", async () => {
+            let callCount = 0;
+            const semantic: PartialSemanticAnalyzer = {
+                getSymbolOccurrences: async () => {
+                    callCount++;
+                    return [{ path: "a.gml", start: 0, end: 1 }];
+                }
+            };
+
+            const policy = new Refactor.PermissiveOccurrenceCachePolicy();
+            const cache = new Refactor.SemanticQueryCache(semantic, { occurrenceCachePolicy: policy });
+
+            await cache.getSymbolOccurrences("any_symbol");
+            await cache.getSymbolOccurrences("any_symbol");
+
+            assert.equal(callCount, 1, "Permissive policy should cache all results");
         });
     });
 });

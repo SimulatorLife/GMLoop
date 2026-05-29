@@ -6,6 +6,7 @@ import * as assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+    buildHotReloadReport,
     formatBatchRenamePlanReport,
     formatOccurrencePreview,
     formatRenamePlanReport,
@@ -610,5 +611,63 @@ void describe("formatOccurrencePreview", () => {
         assert.ok(preview.includes("a.gml (2 occurrences):"));
         assert.ok(preview.includes("b.gml (1 occurrence):"));
         assert.ok(preview.includes("c.gml (1 occurrence):"));
+    });
+});
+
+void describe("buildHotReloadReport", () => {
+    void it("returns null for null input", () => {
+        const result = buildHotReloadReport(null);
+        assert.equal(result, null);
+    });
+
+    void it("returns null when hotReload property is undefined", () => {
+        const validation = {
+            valid: true,
+            errors: [],
+            warnings: []
+        };
+        const result = buildHotReloadReport(validation);
+        assert.equal(result, null);
+    });
+
+    void it("returns structured report when hotReload data exists", () => {
+        const validation = {
+            valid: false,
+            errors: [],
+            warnings: [],
+            hotReload: {
+                safe: false,
+                reason: "Script renames require recompilation",
+                requiresRestart: false,
+                canAutoFix: false,
+                suggestions: ["Consider a full restart"]
+            }
+        };
+        const result = buildHotReloadReport(validation);
+        assert.ok(result !== null);
+        assert.equal(result.safe, false);
+        assert.equal(result.reason, "Script renames require recompilation");
+        assert.equal(result.requiresRestart, false);
+        assert.equal(result.canAutoFix, false);
+        assert.deepEqual(result.suggestions, ["Consider a full restart"]);
+    });
+
+    void it("preserves all suggestion items in report", () => {
+        const suggestions = ["Suggestion one", "Suggestion two", "Suggestion three"];
+        const validation = {
+            valid: false,
+            errors: [],
+            warnings: [],
+            hotReload: {
+                safe: true,
+                reason: "Safe to reload",
+                requiresRestart: false,
+                canAutoFix: true,
+                suggestions
+            }
+        };
+        const result = buildHotReloadReport(validation);
+        assert.ok(result !== null);
+        assert.deepEqual(result.suggestions, suggestions);
     });
 });
