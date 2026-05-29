@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { resolveFromRepoRoot, safeStatOrNull } from "../../shared/index.js";
+import { resolveFromRepoRoot } from "../../shared/index.js";
 import {
     HOT_RELOAD_DIR_NAME,
     LIVE_RELOAD_ASSET_ROOT_RELATIVE_PATH,
@@ -156,7 +156,7 @@ async function collectRuntimeWrapperAssetManifestEntries(
     const directoryEntries = await Promise.all(
         PUBLIC_RUNTIME_WRAPPER_ASSET_DIRECTORIES.map(async (relativeDirectory) => {
             const sourceDirectory = path.join(runtimeWrapperDistRoot, relativeDirectory);
-            const directoryStats = await safeStatOrNull(sourceDirectory);
+            const directoryStats = await Core.safeStat(sourceDirectory);
             if (!directoryStats?.isDirectory()) {
                 throw new Error(`Expected runtime wrapper asset directory '${sourceDirectory}' to exist.`);
             }
@@ -224,7 +224,7 @@ export async function syncLiveReloadAssets({
         await collectRuntimeWrapperAssetManifestEntries(resolvedDistRoot)
     );
     const existingManifest = await readRuntimeWrapperAssetManifest(manifestPath);
-    const targetStats = await safeStatOrNull(targetRoot);
+    const targetStats = await Core.safeStat(targetRoot);
     const manifestUnchanged =
         targetStats?.isDirectory() &&
         existingManifest !== null &&
