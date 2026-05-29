@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
     clearIdentifierCaseDryRunContexts,
     setIdentifierCaseDryRunContext
-} from "../src/identifier-case/identifier-case-context.js";
+} from "../src/identifier-case/identifier-case-helpers.js";
 import { clearIdentifierCaseOptionStore, getIdentifierCaseOptionStore } from "../src/identifier-case/option-store.js";
 import {
     createIdentifierCaseProject,
