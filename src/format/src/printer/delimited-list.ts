@@ -284,22 +284,16 @@ export function buildCallArgumentsDocs(
         return { inlineDoc, multilineDoc };
     }
 
-    const firstArgumentNode = node.arguments?.[0];
-    const firstArgumentText = firstArgumentNode?.value;
-    const firstArgumentIsStringLiteral =
-        firstArgumentNode != null &&
-        firstArgumentNode.type === Core.LITERAL &&
-        typeof firstArgumentText === "string" &&
-        (firstArgumentText.startsWith('"') || firstArgumentText.startsWith("'") || firstArgumentText.startsWith('@"'));
-
-    // NOTE: intentionally omit logging to keep production output clean.
+    const args = node?.arguments;
+    const trailingArgs = Array.isArray(args) && simplePrefixLength < args.length ? args.slice(simplePrefixLength) : [];
+    const trailingHasCallback = trailingArgs.some(isCallbackArgument);
 
     if (
         simplePrefixLength > 1 &&
         hasTrailingArguments &&
         !hasCallbackArguments &&
-        maxElementsPerLine === Infinity &&
-        firstArgumentIsStringLiteral
+        !trailingHasCallback &&
+        maxElementsPerLine === Infinity
     ) {
         const multilineDoc = buildCallbackArgumentsWithSimplePrefix(path, print, simplePrefixLength);
         return { inlineDoc: null, multilineDoc };
