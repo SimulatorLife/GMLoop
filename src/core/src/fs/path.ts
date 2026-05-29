@@ -146,9 +146,14 @@ export function resolveContainedRelativePath(childPath, parentPath) {
         return null;
     }
 
-    const shouldUseWin32Relative = isWindowsLikeBoundaryPath(childPath) || isWindowsLikeBoundaryPath(parentPath);
+    const isChildWindows = WINDOWS_DRIVE_LETTER_PATTERN.test(childPath) || UNC_PREFIX_PATTERN.test(childPath);
+    const isParentWindows = WINDOWS_DRIVE_LETTER_PATTERN.test(parentPath) || UNC_PREFIX_PATTERN.test(parentPath);
+    const shouldUseWin32Relative = isChildWindows || isParentWindows;
     const relative = shouldUseWin32Relative
-        ? path.win32.relative(normalizeBoundarySeparators(parentPath), normalizeBoundarySeparators(childPath))
+        ? path.win32.relative(
+              isParentWindows ? parentPath.replaceAll("/", "\\") : parentPath.replaceAll("\\", "/"),
+              isChildWindows ? childPath.replaceAll("/", "\\") : childPath.replaceAll("\\", "/")
+          )
         : path.relative(parentPath, childPath);
 
     if (relative === "") {
@@ -283,33 +288,30 @@ export function trimTrailingSeparators(value: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Path-boundary canonicalization (moved from lint workspace per TODO)
+// Path-boundary canonicalization
 // ---------------------------------------------------------------------------
 
-function isWindowsLikeBoundaryPath(value: string): boolean {
-    return WINDOWS_DRIVE_LETTER_PATTERN.test(value) || UNC_PREFIX_PATTERN.test(value);
-}
-
-function normalizeBoundarySeparators(value: string): string {
-    if (isWindowsLikeBoundaryPath(value)) {
-        return value.replaceAll("/", "\\");
-    }
-
-    return value.replaceAll("\\", "/");
-}
-
-function canonicalizeBoundaryPathCase(value: string): string {
-    if (isWindowsLikeBoundaryPath(value)) {
-        return value.toLowerCase();
-    }
-
-    return value;
-}
-
+/**
+ * Normalize path separators and case for prefix comparisons.
+ *
+ * Converts all path separators to `/` on POSIX or `\` on Windows, then applies
+ * case folding on Windows. This canonicalizes the path for use in
+ * {@link normalizeBoundaryPath} and {@link isPathWithinBoundary}.
+ *
+ * @param value Path to canonicalize.
+ * @returns Canonicalized path with normalized separators and case.
+ */
 function canonicalizeFromString(value: string): string {
-    const withNormalizedSeparators = normalizeBoundarySeparators(value);
+    const isWindows = WINDOWS_DRIVE_LETTER_PATTERN.test(value) || UNC_PREFIX_PATTERN.test(value);
+
+    // Normalize separators: Windows uses backslash, POSIX uses forward slash.
+    const withNormalizedSeparators = isWindows ? value.replaceAll("/", "\\") : value.replaceAll("\\", "/");
+
+    // Trim trailing separators from the normalized result (not the original input).
     const trimmed = trimTrailingSeparators(withNormalizedSeparators);
-    return canonicalizeBoundaryPathCase(trimmed);
+
+    // Case-fold Windows paths; POSIX is already case-sensitive.
+    return isWindows ? trimmed.toLowerCase() : trimmed;
 }
 
 /**
@@ -332,7 +334,8 @@ export function normalizeBoundaryPath(pathValue: string): string {
 }
 
 function boundaryPathSeparatorFor(pathValue: string): string {
-    return isWindowsLikeBoundaryPath(pathValue) ? "\\" : "/";
+    const isWindows = WINDOWS_DRIVE_LETTER_PATTERN.test(pathValue) || UNC_PREFIX_PATTERN.test(pathValue);
+    return isWindows ? "\\" : "/";
 }
 
 function splitPathSegments(pathValue: string): Array<string> {
