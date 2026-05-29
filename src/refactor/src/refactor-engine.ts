@@ -31,7 +31,7 @@ import {
     validateCrossFileConsistency
 } from "./rename/rename-validation.js";
 import { RenameValidationCache } from "./rename-validation-cache.js";
-import { SemanticQueryCache } from "./semantic-cache.js";
+import { DefaultOccurrenceCachePolicy, SemanticQueryCache } from "./semantic-cache.js";
 import * as SymbolQueries from "./symbol-queries.js";
 import {
     type ApplyWorkspaceEditOptions,
@@ -302,7 +302,7 @@ export class RefactorEngine {
             // results so the planning phase can reuse the validation lookups.
             maxSize: 8192,
             ttlMs: 300_000,
-            maxOccurrenceCacheEntries: 4000
+            occurrenceCachePolicy: new DefaultOccurrenceCachePolicy(4000)
         });
     }
 
