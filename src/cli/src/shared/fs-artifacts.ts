@@ -7,7 +7,12 @@ import { Core } from "@gmloop/core";
 import { ensureWorkflowPathsAllowed } from "../workflow/path-filter.js";
 import { ensureDir } from "./ensure-dir.js";
 
-const { isNonEmptyString, stringifyJsonForFile, safeStat, safeReaddirWithFileTypes } = Core;
+const {
+    isNonEmptyString,
+    stringifyJsonForFile,
+    safeStat: coreSafeStat,
+    safeReaddirWithFileTypes: coreSafeReaddirWithFileTypes
+} = Core;
 
 type WorkflowPathFilter = Parameters<typeof ensureWorkflowPathsAllowed>[0];
 
@@ -22,7 +27,7 @@ type WorkflowPathFilter = Parameters<typeof ensureWorkflowPathsAllowed>[0];
  * @deprecated Use {@link Core.safeStat} instead.
  */
 export function safeStatOrNull(targetPath: string): Promise<Stats | null> {
-    return safeStat(targetPath);
+    return coreSafeStat(targetPath);
 }
 
 /**
@@ -41,7 +46,7 @@ export async function safeReaddirOrEmpty(
     directoryPath: string,
     options?: { withFileTypes?: boolean }
 ): Promise<Dirent[] | string[]> {
-    const entries = await safeReaddirWithFileTypes(directoryPath);
+    const entries = await coreSafeReaddirWithFileTypes(directoryPath);
     if (options?.withFileTypes) {
         return entries;
     }
