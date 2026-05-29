@@ -1154,6 +1154,49 @@ void test("prefer-hoistable-loop-accessors reports unsafeFix when insertion requ
     assertEquals(result.output, input);
 });
 
+void test("prefer-hoistable-loop-accessors reports configured non-array_length functions in while loops", () => {
+    const input = [
+        "function process_list(list) {",
+        "    while (ready) {",
+        "        sum += ds_list_size(list);",
+        "        sum += ds_list_size(list);",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-hoistable-loop-accessors", input, {
+        functionSuffixes: {
+            ds_list_size: "sz"
+        }
+    });
+
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages[0]?.messageId, "preferHoistableLoopAccessor");
+});
+
+void test("prefer-hoistable-loop-accessors reports configured functions in repeat loops", () => {
+    const input = [
+        "function check_list(list) {",
+        "    repeat (3) {",
+        "        if (ds_list_size(list) > 0) {",
+        "            count += ds_list_size(list);",
+        "        }",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-hoistable-loop-accessors", input, {
+        functionSuffixes: {
+            ds_list_size: "sz"
+        }
+    });
+
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages[0]?.messageId, "preferHoistableLoopAccessor");
+});
+
 void test("require-control-flow-braces does not rewrite multiline condition continuations", () => {
     const input = [
         "if (p.DistanceTo(vertices[0][0].p) < self.vertLength * 1.5)",
