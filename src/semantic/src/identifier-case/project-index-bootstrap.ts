@@ -407,7 +407,7 @@ export async function bootstrapProjectIndex(options, storeOption) {
               }
             : undefined,
         parseGml
-    } as any);
+    });
 
     const descriptor = createProjectIndexDescriptor({
         projectRoot,
@@ -416,7 +416,7 @@ export async function bootstrapProjectIndex(options, storeOption) {
         formatterVersion: getFormatterVersion(options) ?? undefined,
         pluginVersion: getPluginVersion(options) ?? undefined,
         buildOptions
-    } as any);
+    });
 
     let ready;
     try {
