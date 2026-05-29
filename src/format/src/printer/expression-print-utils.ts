@@ -176,10 +176,6 @@ export function shouldOmitSyntheticParens(path: any, _options: any): boolean {
         return shouldFlattenMultiplicationChain(parent, expression, path);
     }
 
-    if (parent.type === "CallExpression") {
-        return shouldFlattenSyntheticCall(parent, expression, path);
-    }
-
     if (parent.type !== "BinaryExpression") {
         return false;
     }
@@ -548,10 +544,6 @@ function shouldFlattenMultiplicationChain(parent: any, expression: any, _path: a
         (parent.operator === "*" || parent.operator === "/") &&
         (expression.operator === "*" || expression.operator === "/")
     );
-}
-
-function shouldFlattenSyntheticCall(_parent: any, _expression: any, _path: any): boolean {
-    return false;
 }
 
 function shouldFlattenComparisonLogicalTest(parent: any, expression: any, _path: any): boolean {
