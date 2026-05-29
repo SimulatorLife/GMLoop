@@ -225,13 +225,7 @@ export function applyIdentifierCasePlanSnapshot(snapshot, options) {
                     const size = isMap && typeof value.size === "number" ? value.size : 0;
                     if (isMap && size > 0 && !object[optionKey]) {
                         setIdentifierCaseOption(object, optionKey, value);
-                        logIdentifierCaseRenameMapSamples(value as Map<unknown, unknown>);
                     }
-                    // After writing the option, emit an identity check to confirm
-                    // whether the snapshot's map instance is the same object that
-                    // now lives on the options bag. This helps detect cases where
-                    // the map may have been cloned, cleared, or replaced between
-                    // capture and apply.
 
                     continue;
                 }
@@ -263,43 +257,3 @@ export function applyIdentifierCasePlanSnapshot(snapshot, options) {
 }
 
 export { buildRenameKey };
-
-function logIdentifierCaseRenameMapSamples(value: Map<unknown, unknown>): void {
-    try {
-        const formatKey = (key: unknown) => {
-            if (typeof key === "string") {
-                return key;
-            }
-
-            if (key === null) {
-                return "null";
-            }
-
-            if (key === undefined) {
-                return "undefined";
-            }
-
-            if (typeof key === "number" || typeof key === "boolean") {
-                return String(key);
-            }
-
-            try {
-                return JSON.stringify(key);
-            } catch {
-                return Object.prototype.toString.call(key);
-            }
-        };
-
-        const samples: Array<string> = [];
-        let count = 0;
-        for (const key of value.keys()) {
-            samples.push(formatKey(key));
-            count += 1;
-            if (count >= 3) {
-                break;
-            }
-        }
-    } catch {
-        /* ignore */
-    }
-}
