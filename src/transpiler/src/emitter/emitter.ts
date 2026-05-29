@@ -84,8 +84,13 @@ const DEFAULT_OPTIONS: EmitOptions = Object.freeze({
 });
 
 export class GmlToJsEmitter {
-    private readonly identifierAnalyzer: IdentifierAnalyzer;
-    private readonly callTargetAnalyzer: CallTargetAnalyzer;
+    /**
+     * Semantic oracle combining identifier analysis and call-target classification.
+     *
+     * Both capabilities are provided by the same object (e.g. `DefaultSemanticOracle`
+     * or `EventContextOracle`) so a single field suffices for both roles.
+     */
+    private readonly semantic: IdentifierAnalyzer & CallTargetAnalyzer;
     private readonly options: EmitOptions;
     private readonly globalVars: Set<string>;
     private readonly initializedGlobalVars: Set<string>;
@@ -103,8 +108,7 @@ export class GmlToJsEmitter {
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
     constructor(semantic: IdentifierAnalyzer & CallTargetAnalyzer, options: Partial<EmitOptions> = {}) {
-        this.identifierAnalyzer = semantic;
-        this.callTargetAnalyzer = semantic;
+        this.semantic = semantic;
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this.globalVars = new Set();
         this.initializedGlobalVars = new Set();
@@ -346,8 +350,8 @@ export class GmlToJsEmitter {
     }
 
     private visitIdentifier(ast: IdentifierNode): string {
-        const kind = this.identifierAnalyzer.kindOfIdent(ast);
-        const name = this.identifierAnalyzer.nameOfIdent(ast);
+        const kind = this.semantic.kindOfIdent(ast);
+        const name = this.semantic.nameOfIdent(ast);
         if (this.globalVars.has(name)) {
             return `${this.options.globalsIdent}.${name}`;
         }
@@ -450,7 +454,7 @@ export class GmlToJsEmitter {
     }
 
     private visitCallExpression(ast: CallExpressionNode): string {
-        const kind = this.callTargetAnalyzer.callTargetKind(ast);
+        const kind = this.semantic.callTargetKind(ast);
 
         // Fast path: builtin functions. Avoid eagerly joining arguments here so
         // the builtin path only visits each argument once.
@@ -464,7 +468,7 @@ export class GmlToJsEmitter {
         const argsList = this.joinArguments(ast.arguments);
 
         if (kind === "script") {
-            const scriptSymbol = this.callTargetAnalyzer.callTargetSymbol(ast);
+            const scriptSymbol = this.semantic.callTargetSymbol(ast);
             const scriptId = scriptSymbol ?? this.resolveIdentifierName(ast.object) ?? this.visit(ast.object);
             // Record this script reference for dependency tracking. The set is
             // populated during the single emission pass and exposed via getDependencies().
@@ -914,7 +918,7 @@ export class GmlToJsEmitter {
             return (node as IdentifierMetadata).name;
         }
         if (isIdentifierNode(node)) {
-            return this.identifierAnalyzer.nameOfIdent(node);
+            return this.semantic.nameOfIdent(node);
         }
         return null;
     }
@@ -935,7 +939,7 @@ export class GmlToJsEmitter {
 
     private resolveMemberDotProperty(node: GmlNode): string {
         if (isIdentifierNode(node)) {
-            return this.identifierAnalyzer.nameOfIdent(node);
+            return this.semantic.nameOfIdent(node);
         }
         return this.visit(node);
     }

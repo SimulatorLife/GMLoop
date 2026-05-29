@@ -1,7 +1,7 @@
 /**
  * Supported top-level UI surface identifiers.
  */
-export type UISurfaceId = "ast" | "docs" | "fix" | "graph" | "rules" | "playground";
+export type UISurfaceId = "ast" | "config" | "docs" | "fix" | "graph" | "live-reload" | "mcp" | "rules" | "playground";
 
 /**
  * Delivery status for a top-level UI surface.
@@ -38,6 +38,12 @@ export const UI_SURFACE_DEFINITIONS: ReadonlyArray<UISurfaceDefinition> = Object
         status: PLANNED_SURFACE_STATUS
     },
     {
+        description: "Project configuration review surface for currently loaded gmloop settings and tool catalogs.",
+        id: "config",
+        owningWorkspace: UI_OWNING_WORKSPACE,
+        status: "implemented"
+    },
+    {
         description: "Combined CLI and MCP documentation browsing surface with an internal view toggle.",
         id: "docs",
         owningWorkspace: UI_OWNING_WORKSPACE,
@@ -50,16 +56,28 @@ export const UI_SURFACE_DEFINITIONS: ReadonlyArray<UISurfaceDefinition> = Object
         status: "implemented"
     },
     {
-        description: "Formatter, lint, and refactor rule explorer surfaces sourced from workspace-owned rule catalogs.",
-        id: "rules",
+        description: "Live-reload observability surface for watcher, patch stream, and runtime-wrapper status.",
+        id: "live-reload",
         owningWorkspace: UI_OWNING_WORKSPACE,
-        status: PLANNED_SURFACE_STATUS
+        status: "implemented"
+    },
+    {
+        description: "MCP server status and tool-access surface for connected automation workflows.",
+        id: "mcp",
+        owningWorkspace: UI_OWNING_WORKSPACE,
+        status: "implemented"
     },
     {
         description: "Interactive GML playground for parsing, formatting, and rule application experiments.",
         id: "playground",
         owningWorkspace: UI_OWNING_WORKSPACE,
         status: "implemented"
+    },
+    {
+        description: "Formatter, lint, and refactor rule explorer surfaces sourced from workspace-owned rule catalogs.",
+        id: "rules",
+        owningWorkspace: UI_OWNING_WORKSPACE,
+        status: PLANNED_SURFACE_STATUS
     }
 ]);
 
