@@ -188,7 +188,7 @@ function readLocationIndex(location: Record<string, unknown> | null): number | n
 }
 
 function readFirstDeclaration(entry: ProjectIndexIdentifierEntry): Record<string, unknown> | null {
-    const declarations = Array.isArray(entry.declarations) ? entry.declarations : [];
+    const declarations = Core.toArray(entry.declarations);
     return declarations.length > 0 && Core.isObjectLike(declarations[0]) ? declarations[0] : null;
 }
 
@@ -913,7 +913,7 @@ function projectResources(context: ProjectionContext): void {
         if (!kind) {
             continue;
         }
-        const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
+        const gmlFiles = Core.toArray(resourceRecord.gmlFiles);
         const primaryGmlFile = gmlFiles.find(
             (gmlFile): gmlFile is string => typeof gmlFile === "string" && gmlFile.trim().length > 0
         );
@@ -999,7 +999,7 @@ function projectObjectEventScopes(context: ProjectionContext): void {
 
         const scopeId = getString(scopeRecord.id);
         const resourcePath = getString(scopeRecord.resourcePath);
-        const filePath_ = (Array.isArray(scopeRecord.filePaths) ? scopeRecord.filePaths : []).find(
+        const filePath_ = Core.toArray(scopeRecord.filePaths).find(
             (filePath): filePath is string => typeof filePath === "string" && filePath.trim().length > 0
         );
         const firstFilePath = filePath_ ?? null;
@@ -1229,7 +1229,7 @@ function projectIdentifierOwnershipEdges(
             continue;
         }
 
-        const declarations = Array.isArray(entry.declarations) ? entry.declarations : [];
+        const declarations = Core.toArray(entry.declarations);
         for (const rawDeclaration of declarations) {
             const declaration = asRecord(rawDeclaration);
             const filePath = getString(declaration.filePath) ?? getString(entry.filePath);
@@ -1253,7 +1253,7 @@ function projectIdentifierOwnershipEdges(
             });
         }
 
-        const references = Array.isArray(entry.references) ? entry.references : [];
+        const references = Core.toArray(entry.references);
         for (const rawReference of references) {
             const reference = asRecord(rawReference);
             const filePath = getString(reference.filePath) ?? getString(entry.filePath);
@@ -1283,7 +1283,7 @@ function projectRelationshipEdges(context: ProjectionContext): void {
     const files = asRecord(context.projectIndex.files);
     for (const [relativePath, rawFileRecord] of Object.entries(files)) {
         const fileRecord = asRecord(rawFileRecord);
-        const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
+        const scriptCalls = Core.toArray(fileRecord.scriptCalls);
         const callerOwnerNodeId =
             resolveFileSemanticOwnerNodeId(context, relativePath) ?? resolveProjectRootNodeId(context);
         if (!callerOwnerNodeId) {
@@ -1409,7 +1409,7 @@ function addCrossGraphEdges(
 
     for (const [relativePath, rawFileRecord] of Object.entries(projectIndexedFiles)) {
         const fileRecord = asRecord(rawFileRecord);
-        const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
+        const scriptCalls = Core.toArray(fileRecord.scriptCalls);
         const projectCallerOwnerNodeId =
             resolveFileSemanticOwnerNodeId(projectContext, relativePath) ?? resolveProjectRootNodeId(projectContext);
         if (!projectCallerOwnerNodeId) {
