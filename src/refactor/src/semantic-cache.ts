@@ -493,7 +493,6 @@ export class SemanticQueryCache {
 
     /**
      * Get a cached value if it exists and hasn't expired.
-     * @private
      */
     private getCached<T>(cache: Map<string, CacheEntry<T>>, key: string, promoteOnHit = true): T | null {
         const entry = cache.get(key);
