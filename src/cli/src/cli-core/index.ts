@@ -11,6 +11,8 @@ export * from "./env-overrides.js";
 export * from "./errors.js";
 export * from "./format-command-options.js";
 export * from "./main-module-runner.js";
+export * from "./mcp-command-exclusion.js";
+export * from "./mcp-tool-catalog.js";
 export * from "./node-version.js";
 export * from "./shared-command-options.js";
 export * from "./version.js";

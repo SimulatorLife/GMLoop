@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -51,19 +52,15 @@ void describe("watch command", () => {
         assert.equal(command.description(), "Watch GML source files and coordinate hot-reload pipeline actions");
 
         const options = command.options;
-        assert.ok(options.some((opt) => opt.long === "--extensions"));
         assert.ok(options.some((opt) => opt.long === "--polling"));
         assert.ok(options.some((opt) => opt.long === "--polling-interval"));
         assert.ok(options.some((opt) => opt.long === "--verbose"));
     });
 
-    void it("should have default extension set to .gml", () => {
+    void it("does not expose a user-configurable extension option", () => {
         const command = createWatchCommand();
         const extensionsOption = command.options.find((opt) => opt.long === "--extensions");
-
-        assert.ok(extensionsOption);
-        assert.deepEqual(extensionsOption.defaultValue, [".gml"]);
-        assert.equal(extensionsOption.defaultValueDescription, "Defaults to .gml; custom extensions are allowed");
+        assert.equal(extensionsOption, undefined);
     });
 
     void it("should have default polling interval of 1000ms", () => {
@@ -139,17 +136,19 @@ void describe("watch command", () => {
     });
 
     void it("resolveUnknownScanConcurrency clamps values to at least one", () => {
-        assert.equal(resolveUnknownScanConcurrency(16), 16);
+        const cpuBound = Math.max(1, availableParallelism());
+        assert.equal(resolveUnknownScanConcurrency(cpuBound + 50), cpuBound);
         assert.equal(resolveUnknownScanConcurrency(1), 1);
         assert.equal(resolveUnknownScanConcurrency(0), 1);
         assert.equal(resolveUnknownScanConcurrency(-5), 1);
-        assert.equal(resolveUnknownScanConcurrency(8.7), 8);
+        assert.equal(resolveUnknownScanConcurrency(8.7), Math.min(8, cpuBound));
     });
 
-    void it("resolveUnknownScanConcurrency preserves non-finite number behavior", () => {
-        assert.equal(resolveUnknownScanConcurrency(Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
-        assert.equal(resolveUnknownScanConcurrency(Number.NEGATIVE_INFINITY), 1);
-        assert.ok(Number.isNaN(resolveUnknownScanConcurrency(Number.NaN)));
+    void it("resolveUnknownScanConcurrency normalizes non-finite values to CPU-bound defaults", () => {
+        const cpuBound = Math.max(1, availableParallelism());
+        assert.equal(resolveUnknownScanConcurrency(Number.POSITIVE_INFINITY), cpuBound);
+        assert.equal(resolveUnknownScanConcurrency(Number.NEGATIVE_INFINITY), cpuBound);
+        assert.equal(resolveUnknownScanConcurrency(Number.NaN), cpuBound);
     });
 });
 
@@ -290,22 +289,22 @@ void describe("watch command integration", () => {
     });
 });
 
-void describe("watch command help consistency", () => {
+void describe("live-reload dev command help consistency", () => {
     void it("shows 'Show this help message.' for --help flag, matching all other commands", async () => {
-        const { stdout } = await runCliTestCommand({ argv: ["watch", "--help"] });
+        const { stdout } = await runCliTestCommand({ argv: ["live-reload", "dev", "--help"] });
 
         assert.match(stdout, /--help.*Show this help message\./);
     });
 
     void it("shows help hint on unknown option, matching the pattern of lint and format", async () => {
-        const { stdout, stderr } = await runCliTestCommand({ argv: ["watch", "--unknown-flag-xyz"] });
+        const { stdout, stderr } = await runCliTestCommand({ argv: ["live-reload", "dev", "--unknown-flag-xyz"] });
 
         const combined = stdout + stderr;
         assert.match(combined, /add --help for usage information/);
     });
 
     void it("exits non-zero when an unknown option is passed", async () => {
-        const { exitCode } = await runCliTestCommand({ argv: ["watch", "--unknown-flag-xyz"] });
+        const { exitCode } = await runCliTestCommand({ argv: ["live-reload", "dev", "--unknown-flag-xyz"] });
 
         assert.notEqual(exitCode, 0);
     });

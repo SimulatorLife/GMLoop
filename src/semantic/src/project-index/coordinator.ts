@@ -3,7 +3,7 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { ProjectIndexCacheStatus } from "./cache.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
+import type { ProjectIndexFsFacade } from "./fs-facade.js";
 
 /** Descriptor passed to {@link ProjectIndexCoordinatorInstance.ensureReady}. */
 type EnsureReadyDescriptor = {
@@ -81,7 +81,7 @@ type GetDefaultCacheSizeFunction = () => number;
  * `./builder.ts` (`createProjectIndexCoordinator`).
  */
 export type CoordinatorCoreOptions = {
-    /** Filesystem facade used by load/save operations. Defaults to `defaultFsFacade`. */
+    /** Filesystem facade used by load/save operations. Defaults to `Core.defaultFsFacade`. */
     fsFacade?: ProjectIndexFsFacade;
     loadCache: LoadCacheFunction;
     saveCache: SaveCacheFunction;
@@ -157,20 +157,18 @@ function trackInFlightOperation(
     key: string,
     createOperation: () => Promise<EnsureReadyResult>
 ): Promise<EnsureReadyResult> {
-    if (map.has(key)) {
-        return map.get(key);
-    }
-
-    const pending = (async () => {
-        try {
-            return await createOperation();
-        } finally {
-            map.delete(key);
-        }
-    })();
-
-    map.set(key, pending);
-    return pending;
+    // Use Core.getOrCreateMapEntry instead of the manual has/get/set pattern.
+    // The initializer returns the cached promise when one is already in flight,
+    // avoiding the double-lookup that the manual pattern required.
+    return Core.getOrCreateMapEntry(map, key, () =>
+        (async () => {
+            try {
+                return await createOperation();
+            } finally {
+                map.delete(key);
+            }
+        })()
+    );
 }
 
 type ExecuteOperationOptions = {
@@ -255,7 +253,7 @@ async function executeEnsureReadyOperation({
  * provides convenient defaults for all required dependencies.
  */
 export function createProjectIndexCoordinator({
-    fsFacade = defaultFsFacade,
+    fsFacade = Core.defaultFsFacade,
     loadCache,
     saveCache,
     buildIndex,

@@ -1,6 +1,6 @@
 # Refactor Engine Module
 
-This package powers GML-native codemods and semantic refactoring transactions, as outlined in the [formatter/linter split plan](../../docs/formatter-linter-split-plan.md). It implements a native, GML-centric Collection API (inspired by `jscodeshift`) to handle atomic cross-file edits, metadata updates (`.yy`, `.yyp`), and structural migrations.
+This package powers GML-native codemods and semantic refactoring transactions, as outlined in the [target-state architecture plan](../../docs/target-state.md). It implements a native, GML-centric Collection API (inspired by `jscodeshift`) to handle atomic cross-file edits, metadata updates (`.yy`, `.yyp`), and structural migrations.
 
 ## Ownership Boundaries
 
@@ -10,11 +10,12 @@ This package powers GML-native codemods and semantic refactoring transactions, a
 - Owns atomic cross-file edits, metadata updates, and structural migrations.
 - Implements a jscodeshift-like Collection API for GML ASTs.
 - Is the ONLY layer that should decide whether a rename requires cross-file edits or metadata changes.
+- **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 
 It does not replace lint or formatter domains:
 
-- `@gmloop/lint` owns **Diagnostic Reporting** and **Local Repairs** (single-file fixes).
-- `@gmloop/format` is **Formatter-only** (layout/canonical rendering) and does not own refactor transactions.
+- `@gmloop/lint` owns **Diagnostic Reporting** and **Local Repairs** (single-file fixes). **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
+- `@gmloop/format` is **Formatter-only** (layout/canonical rendering) and does not own refactor transactions. **The formatter never repairs invalid syntax and only formats valid AST.**
 - `@gmloop/cli` is the composition root that invokes refactor workflows through the `refactor` command.
 
 ## Responsibilities
@@ -50,7 +51,7 @@ Current guardrails focus on the two hottest naming-convention paths that showed 
 
 The refactor workspace keeps naming-convention codemod stress tests in the regular TypeScript test suite:
 
-- [`src/refactor/test/naming-convention-performance.test.ts`](./test/naming-convention-performance.test.ts) exercises high-volume local rename planning and edit application.
+- [`src/refactor/test/naming-convention-performance.test.ts`](test/naming-convention-performance.test.ts) exercises high-volume local rename planning and edit application.
 - [`src/cli/test/refactor-codemod-performance.test.ts`](../cli/test/refactor-codemod-performance.test.ts) exercises the indexed CLI bridge path for large top-level rename batches.
 - [`src/cli/test/refactor-codemod-command-performance.test.ts`](../cli/test/refactor-codemod-command-performance.test.ts) exercises end-to-end `refactor codemod --write` execution on a larger synthetic GameMaker project so CLI indexing, planning, and write-back stay bounded.
 - [`src/cli/test/refactor-naming-target-discovery-performance.test.ts`](../cli/test/refactor-naming-target-discovery-performance.test.ts) exercises naming-target discovery on mixed declaration/reference workloads so reference-only files do not rebuild local-reference indexes unnecessarily.
@@ -58,7 +59,7 @@ The refactor workspace keeps naming-convention codemod stress tests in the regul
 - [`src/cli/test/refactor-script-resource-naming-performance.test.ts`](../cli/test/refactor-script-resource-naming-performance.test.ts) exercises script-backed function naming on large resource sets so repeated script-resource scans stay bounded.
 - [`src/cli/test/refactor-metadata-resource-naming-performance.test.ts`](../cli/test/refactor-metadata-resource-naming-performance.test.ts) exercises metadata-backed script resource renames on disk so repeated manifest/resource metadata parsing stays bounded.
 
-Use `pnpm run test:performance` to execute only the compiled performance suite locally. CI also runs that script explicitly on the `head` leg in addition to the normal `pnpm run test:ci` coverage pass, so performance regressions stay visible even when the broader test matrix is green.
+Use `pnpm run test:performance` to execute only the performance suite locally.
 
 ### Project-wide Codemod Execution
 
@@ -425,11 +426,8 @@ configures the `function` category.
                     "rm_": "roomResourceName"
                 }
             },
-            "loopLengthHoisting": {
-                "functionSuffixes": {
-                    "array_length": "len"
-                }
-            }
+            "scientificNotation": {},
+            "docCommentAlignment": {}
         }
     }
 }
@@ -452,7 +450,7 @@ Selected-path namingConvention runs now resolve naming targets with one
 filtered semantic query for the whole file set instead of rescanning the full
 project index once per file. The refactor test suite includes a tracked
 stress test for this path, so the existing `pnpm run test:refactor` and
-`pnpm run test:ci` jobs catch regressions in both behavior and runtime.
+`pnpm run test:report` jobs catch regressions in both behavior and runtime.
 Naming-target discovery now also preserves the semantic provider method context
 (`this`) when invoking `listNamingConventionTargets`, so bridge-backed
 project-root resolution keeps working during batched resource rename queries.

@@ -3,13 +3,13 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
+import { evaluateCacheHitDecision, ProjectIndexCacheMissReason } from "./cache-validation-policy.js";
 import { evaluateProjectIndexCacheSizePolicy, normalizeProjectIndexCacheMaxSizeBytes } from "./cache-write-policy.js";
-import { isProjectManifestPath } from "./constants.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
-import { runWithMissingPathFallback } from "./missing-path-fallback.js";
+import { isProjectManifestPath, PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE } from "./constants.js";
+import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 
 export const PROJECT_INDEX_CACHE_SCHEMA_VERSION = 2;
-export const PROJECT_INDEX_CACHE_DIRECTORY = ".prettier-plugin-gml";
+export const PROJECT_INDEX_CACHE_DIRECTORY = ".gmloop";
 export const PROJECT_INDEX_CACHE_FILENAME = "project-index-cache.json";
 export const PROJECT_INDEX_CACHE_MAX_SIZE_ENV_VAR = "GML_PROJECT_INDEX_CACHE_MAX_SIZE";
 // The identifier-case rollout docs promise an 8 MiB default cache ceiling so
@@ -17,7 +17,6 @@ export const PROJECT_INDEX_CACHE_MAX_SIZE_ENV_VAR = "GML_PROJECT_INDEX_CACHE_MAX
 // Exceeding that limit risks unbounded cache growth on large projects, while
 // Keep this baseline in sync with the published guidance so operational
 // runbooks stay trustworthy.
-export const PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE = 8 * 1024 * 1024; // 8 MiB
 
 const projectIndexCacheSizeConfig = Core.createEnvConfiguredValueWithFallback({
     defaultValue: PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE,
@@ -46,19 +45,6 @@ const projectIndexCacheSizeConfig = Core.createEnvConfiguredValueWithFallback({
     computeFallback: ({ defaultValue }) => defaultValue
 });
 
-export const DEFAULT_MAX_PROJECT_INDEX_CACHE_SIZE = PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE;
-
-export const ProjectIndexCacheMissReason = Object.freeze({
-    NOT_FOUND: "not-found",
-    INVALID_JSON: "invalid-json",
-    INVALID_SCHEMA: "invalid-schema",
-    PROJECT_ROOT_MISMATCH: "project-root-mismatch",
-    FORMATTER_VERSION_MISMATCH: "formatter-version-mismatch",
-    PLUGIN_VERSION_MISMATCH: "plugin-version-mismatch",
-    MANIFEST_MTIME_MISMATCH: "manifest-mtime-mismatch",
-    SOURCE_MTIME_MISMATCH: "source-mtime-mismatch"
-});
-
 export const ProjectIndexCacheStatus = Object.freeze({
     MISS: "miss",
     HIT: "hit",
@@ -85,6 +71,29 @@ export function assertProjectIndexCacheStatus(value) {
     );
 }
 
+/**
+ * Normalize the project index payload extracted from a cache hit.
+ *
+ * After a successful cache hit decision, the parsed payload's `projectIndex`
+ * field has already passed structural validation (via
+ * `validateCachePayloadStructure`) — specifically, it was confirmed to be an
+ * object. However, a valid object is not necessarily a usable project index.
+ * We additionally guard that the value is a plain object (not a proxy, Map, or
+ * other exotic object) and fall back to an empty index when it is not, so that
+ * callers downstream receive a consistent, index-shaped value rather than
+ * `undefined` or a primitive.
+ *
+ * @param rawProjectIndex - The raw value from the cache payload.
+ * @returns A plain-object project index, or a minimal empty index.
+ */
+function normalizeProjectIndexPayload(rawProjectIndex: unknown): Record<string, unknown> {
+    if (Core.isPlainObject(rawProjectIndex)) {
+        return rawProjectIndex as Record<string, unknown>;
+    }
+
+    return Object.create(null);
+}
+
 function createCacheResult(status, details) {
     return {
         status: assertProjectIndexCacheStatus(status),
@@ -100,10 +109,6 @@ function createCacheMiss(cacheFilePath, type, details = {}) {
             ...details
         }
     });
-}
-
-function hasEntries(record) {
-    return typeof record === "object" && record !== null && Object.keys(record).length > 0;
 }
 
 function getDefaultProjectIndexCacheMaxSize() {
@@ -139,85 +144,11 @@ function cloneMtimeMap(source) {
     );
 }
 
-function areMtimeMapsEqual(expected = {}, actual = {}) {
-    if (expected === actual) {
-        return true;
-    }
-
-    if (!Core.isObjectLike(expected)) {
-        return false;
-    }
-
-    if (!Core.isObjectLike(actual)) {
-        return false;
-    }
-
-    const expectedEntries = Object.entries(expected);
-    const actualKeys = Object.keys(actual);
-
-    if (expectedEntries.length !== actualKeys.length) {
-        return false;
-    }
-
-    return expectedEntries.every(([key, value]) => {
-        const actualValue = actual[key];
-
-        if (typeof value === "number" && typeof actualValue === "number") {
-            return Core.areNumbersApproximatelyEqual(value, actualValue);
-        }
-
-        return actualValue === value;
-    });
-}
-
-function validateCachePayload(payload) {
-    if (!Core.isObjectLike(payload)) {
-        return false;
-    }
-
-    if (payload.schemaVersion !== PROJECT_INDEX_CACHE_SCHEMA_VERSION) {
-        return false;
-    }
-
-    if (typeof payload.projectRoot !== "string" || payload.projectRoot.length === 0) {
-        return false;
-    }
-
-    if (typeof payload.formatterVersion !== "string") {
-        return false;
-    }
-
-    if (typeof payload.pluginVersion !== "string") {
-        return false;
-    }
-
-    if (!Core.isObjectLike(payload.manifestMtimes)) {
-        return false;
-    }
-
-    if (!Core.isObjectLike(payload.sourceMtimes)) {
-        return false;
-    }
-
-    // Allow `metricsSummary` to be omitted, to be an object, or explicitly
-    // `null` (null indicates no metrics were collected). Treat any other
-    // non-object value as invalid.
-    if (payload.metricsSummary != null && !Core.isObjectLike(payload.metricsSummary)) {
-        return false;
-    }
-
-    if (!Core.isObjectLike(payload.projectIndex)) {
-        return false;
-    }
-
-    return true;
-}
-
 export { applyProjectIndexCacheEnvOverride, getDefaultProjectIndexCacheMaxSize, setDefaultProjectIndexCacheMaxSize };
 
 export async function loadProjectIndexCache(
     descriptor,
-    fsFacade: Required<Pick<ProjectIndexFsFacade, "readFile">> = defaultFsFacade,
+    fsFacade: Required<Pick<ProjectIndexFsFacade, "readFile">> = Core.defaultFsFacade as Required<ProjectIndexFsFacade>,
     options = {}
 ) {
     const {
@@ -264,35 +195,23 @@ export async function loadProjectIndexCache(
 
     ensureNotAborted();
 
-    if (!validateCachePayload(parsed)) {
-        return createCacheMiss(cacheFilePath, ProjectIndexCacheMissReason.INVALID_SCHEMA);
+    // Delegate all hit/miss policy decisions to the pure evaluator.
+    // "NOT_FOUND" and "INVALID_JSON" are the only misses handled here
+    // (they reflect I/O failures, not policy outcomes).
+    const hitDecision = evaluateCacheHitDecision(parsed, {
+        resolvedRoot,
+        schemaVersion: PROJECT_INDEX_CACHE_SCHEMA_VERSION,
+        formatterVersion,
+        pluginVersion,
+        manifestMtimes,
+        sourceMtimes
+    });
+
+    if (hitDecision.valid === false) {
+        return createCacheMiss(cacheFilePath, hitDecision.missReason);
     }
 
-    if (path.resolve(parsed.projectRoot) !== resolvedRoot) {
-        return createCacheMiss(cacheFilePath, ProjectIndexCacheMissReason.PROJECT_ROOT_MISMATCH);
-    }
-
-    if (formatterVersion && parsed.formatterVersion !== String(formatterVersion)) {
-        return createCacheMiss(cacheFilePath, ProjectIndexCacheMissReason.FORMATTER_VERSION_MISMATCH);
-    }
-
-    if (pluginVersion && parsed.pluginVersion !== String(pluginVersion)) {
-        return createCacheMiss(cacheFilePath, ProjectIndexCacheMissReason.PLUGIN_VERSION_MISMATCH);
-    }
-
-    const hasManifestExpectations = hasEntries(manifestMtimes);
-    if (hasManifestExpectations && !areMtimeMapsEqual(manifestMtimes, parsed.manifestMtimes)) {
-        return createCacheMiss(cacheFilePath, ProjectIndexCacheMissReason.MANIFEST_MTIME_MISMATCH);
-    }
-
-    const hasSourceExpectations = hasEntries(sourceMtimes);
-    if (hasSourceExpectations && !areMtimeMapsEqual(sourceMtimes, parsed.sourceMtimes)) {
-        return createCacheMiss(cacheFilePath, ProjectIndexCacheMissReason.SOURCE_MTIME_MISMATCH);
-    }
-
-    const projectIndex = {
-        ...parsed.projectIndex
-    };
+    const projectIndex = normalizeProjectIndexPayload(parsed.projectIndex);
     if (parsed.metricsSummary !== undefined) {
         projectIndex.metrics = parsed.metricsSummary;
     }
@@ -306,7 +225,9 @@ export async function loadProjectIndexCache(
 
 export async function saveProjectIndexCache(
     descriptor,
-    fsFacade: Required<Pick<ProjectIndexFsFacade, "mkdir" | "writeFile" | "rename" | "unlink">> = defaultFsFacade,
+    fsFacade: Required<
+        Pick<ProjectIndexFsFacade, "mkdir" | "writeFile" | "rename" | "unlink">
+    > = Core.defaultFsFacade as Required<ProjectIndexFsFacade>,
     options = {}
 ) {
     const {
@@ -377,6 +298,9 @@ export async function saveProjectIndexCache(
     const uniqueSuffix = randomUUID();
     const tempFilePath = `${cacheFilePath}.${uniqueSuffix}.tmp`;
 
+    let tempFileCleanedUp = false;
+    let pendingError: unknown = null;
+
     try {
         await fsFacade.writeFile(tempFilePath, serialized, "utf8");
         ensureNotAborted();
@@ -384,17 +308,38 @@ export async function saveProjectIndexCache(
         await fsFacade.rename(tempFilePath, cacheFilePath);
         ensureNotAborted();
     } catch (error) {
-        try {
-            await fsFacade.unlink(tempFilePath);
-        } catch {
-            // The rename failure above is the actionable error for callers; a
-            // secondary failure while deleting the uniquely named temp file is
-            // best-effort hygiene. Dropping that error preserves the original
-            // stack trace while still leaving a breadcrumb that the write was
-            // attempted—the random suffix prevents future writes from
-            // colliding even if the orphaned file lingers.
+        // Capture the error from the try block so we can re-throw it after cleanup.
+        // JavaScript's finally-block-replaces-error behavior means we must capture
+        // the original error here rather than relying on implicit re-throw.
+        pendingError = error;
+    } finally {
+        // Always attempt cleanup of the temp file, even when the abort signal fires
+        // during the async rename or ensureNotAborted() calls. Without the finally block,
+        // an aborted abort signal between writeFile and the catch block would leave the
+        // temp file orphaned — the catch block's unlink would throw (signal already
+        // aborted), and the error would propagate without cleanup.
+        if (!tempFileCleanedUp) {
+            try {
+                await fsFacade.unlink(tempFilePath);
+                tempFileCleanedUp = true;
+            } catch {
+                // Best-effort hygiene. The primary error (writeFile failure, rename
+                // failure, or abort) is the actionable one for callers and is propagated
+                // below. Dropping the cleanup error here preserves the original stack
+                // trace and keeps the function's error surface stable. The uniquely-named
+                // temp file prevents collision with future writes even if it lingers
+                // temporarily.
+            }
         }
-        throw error;
+    }
+
+    // Re-throw the captured error, if any. This must be done after the finally block
+    // because in JavaScript, a `finally` block that throws replaces any error that was
+    // propagating from the `try` block — we capture the original error in `pendingError`
+    // and explicitly re-throw it here so the abort or write/rename error takes priority
+    // over a spurious unlink failure.
+    if (pendingError !== null) {
+        throw pendingError;
     }
 
     return createCacheResult(ProjectIndexCacheStatus.WRITTEN, {
@@ -413,7 +358,9 @@ export async function deriveCacheKey(
         projectRoot?: string | null;
         formatterVersion?: string;
     } = {},
-    fsFacade: Required<Pick<ProjectIndexFsFacade, "readDir" | "stat">> = defaultFsFacade
+    fsFacade: Required<
+        Pick<ProjectIndexFsFacade, "readDir" | "stat">
+    > = Core.defaultFsFacade as Required<ProjectIndexFsFacade>
 ) {
     const hash = createHash("sha256");
     hash.update(String(formatterVersion));

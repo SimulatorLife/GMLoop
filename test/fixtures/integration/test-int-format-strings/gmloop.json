@@ -5,6 +5,11 @@
     "gml/normalize-doc-comments": "error",
     "gml/prefer-string-interpolation": "error"
   },
+  "refactor": {
+    "codemods": {
+      "docCommentAlignment": {}
+    }
+  },
   "fixture": {
     "kind": "integration",
     "assertion": "transform",

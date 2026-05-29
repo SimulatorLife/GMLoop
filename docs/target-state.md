@@ -11,15 +11,15 @@ This document synthesizes the target state for the GameMaker Language parser pro
 5. **Bounded-Memory Refactors**: Run large-project semantic indexing and codemod pipelines without retaining monolithic project-wide aggregates in memory. The target architecture uses bounded-memory streaming with spill-to-disk backends and whole-plan validation only where correctness requires it.
 6. **Live Hot-Reloading**: Enable true hot-loading of GML code, assets, and shaders without restarting the game by transpiling GML to JavaScript on demand and injecting it via a runtime wrapper.
 
-Concrete graph-index design and implementation details now live in [docs/gml-graph-index-plan.md](/Users/henrykirk/GMLoop/docs/gml-graph-index-plan.md). Graph/search/context retrieval is owned by `@gmloop/semantic`.
+Concrete graph-index, retrieval, and visualization target-state details now live in [docs/gml-graph-index-plan.md](gml-graph-index-plan.md). Graph/search/context retrieval is owned by `@gmloop/semantic`; CLI, MCP, and UI layers present those semantic facts without duplicating graph truth.
 
 ## 2. Workspace Ownership Boundaries
 
 ### 2.1 General Ownership
 
-- **Formatter (`/format`)**: Layout-only printing, indentation, wrapping, spacing, semicolon layout, print-width wrapping, and logical-operator style rendering. Must not synthesize or normalize semantic content. Lexical canonicalization is permitted, but syntactic and semantic rewriting is not. Any structural or semantic fixes must live in the `lint` workspace.
-- **Linter (`/lint`)**: Semantic and content rewrites, synthetic tag generation, legacy prefix or tag normalization, default placeholder comment cleanup, and local single-file diagnostics and autofix rewrites.
-- **Refactor (`/refactor`)**: Codemod and migration transforms, explicit rename or refactor transactions, cross-file edits, metadata edits, impact analysis, hot-reload validation, project-wide identifier indexing, rename safety, hoist-name generation, and all other project-aware functionality.
+- **Formatter (`/format`)**: Layout-only printing, indentation, wrapping, spacing, semicolon layout, print-width wrapping, and logical-operator style rendering. Must not synthesize or normalize semantic content. Lexical canonicalization is permitted, but syntactic and semantic rewriting is not. **The formatter never repairs invalid syntax and only formats valid AST.**
+- **Linter (`/lint`)**: Semantic and content rewrites, synthetic tag generation, legacy prefix or tag normalization, default placeholder comment cleanup, and local single-file diagnostics and autofix rewrites. **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
+- **Refactor (`/refactor`)**: Codemod and migration transforms, explicit rename or refactor transactions, cross-file edits, metadata edits, impact analysis, hot-reload validation, project-wide identifier indexing, rename safety, hoist-name generation, and all other project-aware functionality. **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 - **Core (`/core`)**: Shared doc-comment helpers, AST metadata utilities, and normalization primitives.
 - **CLI Watcher (`/cli`)**: Monitors the filesystem, coordinates the transpilation pipeline, emits telemetry, and manages the WebSocket server.
 - **Transpiler (`/transpiler`)**: Parses GML via ANTLR4, converts GML AST to JavaScript, and generates patch objects.
@@ -33,7 +33,7 @@ Concrete graph-index design and implementation details now live in [docs/gml-gra
 - **Core** owns shared doc-comment helpers used by lint and format.
 - **Clarification**: Promotion of a plain comment into documentation form is a content-aware rewrite because it requires interpreting comment text to infer documentation structure. Such transformations must always live in lint rules, never in the formatter.
 
-_Migration rule_: Do not add new doc-comment content mutation logic in formatter printers or transforms. Any new doc-comment synthesis, promotion, or tag or content rewrite must be implemented as lint rule behavior.
+_Migration rule_: Do not add new doc-comment content mutation logic in formatter printers or transforms. Any new doc-comment synthesis, promotion, or tag or content rewrite must be implemented as lint rule or refactor behavior.
 
 ### 2.3 Lint/Refactor Overlap Resolution
 
@@ -142,7 +142,7 @@ Running the refactor codemod pipeline on a large real project can exceed 15 GB o
 
 Example workload:
 
-- `pnpm run cli -- fix --path /Users/henrykirk/GameMakerStudio2/InterplanetaryFootball`
+- `pnpm run cli -- fix --path GameMakerStudio2/InterplanetaryFootball`
 
 Root-cause pattern:
 
@@ -417,7 +417,7 @@ Allowed variation:
 
 1. `pnpm run test:fixtures:profile`
 2. `pnpm run test:fixtures:profile:deep-cpu`
-3. `pnpm run cli -- fix --path /Users/henrykirk/GameMakerStudio2/InterplanetaryFootball`
+3. `pnpm run cli -- fix --path GameMakerStudio2/InterplanetaryFootball`
 
 Track:
 
@@ -539,33 +539,11 @@ Profiling suites:
 Real-project workload:
 
 1. Run the fix workflow against the target project.
-   - `pnpm run cli -- fix --path /Users/henrykirk/GameMakerStudio2/InterplanetaryFootball`
+   - `pnpm run cli -- fix --path GameMakerStudio2/InterplanetaryFootball`
 2. Capture telemetry emitted by:
    - `src/cli/src/commands/fix.ts` stage telemetry (duration plus RSS and heap high-water)
    - semantic project-index metrics metadata (`maxRss`, `maxHeapUsed`)
    - refactor codemod overlay telemetry (queue, overlay, spill, and cache counters)
-
-Pass gate:
-
-1. No semantic or output regressions in fixtures and integration suites.
-2. Memory reduction or throughput improvements satisfy thresholds:
-   - at least 20 percent wall-clock improvement, or
-   - at least 25 percent max-RSS reduction
-
-Current blocker status (as of 2026-03-15):
-
-1. `pnpm run test:semantic` passes.
-2. `pnpm run test:refactor` passes.
-3. `pnpm run test:fixtures:profile` currently fails due to fixture correctness regressions, not budget failures, including:
-   - `[format] test-operators` parse error (`unexpected symbol 'myCount'`)
-   - `[integration] test-int-comments-ops` output mismatch
-   - `[integration] test-int-logic-flow` output mismatch
-4. `pnpm run test:fixtures:profile:deep-cpu` fails for the same fixture correctness regressions.
-
-Interpretation:
-
-1. Option C memory and streaming plumbing is benchmark-ready.
-2. Final benchmark sign-off remains blocked until the existing fixture correctness regressions are resolved.
 
 ## 6. Transpiler & Hot Reload Pipeline
 
@@ -575,6 +553,8 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 
 ### 6.2 System Architecture
 
+- **GameMaker build tooling (external)**: Produces the HTML5 export through `gm-cli` or Igor. GMLoop delegates export generation to these tools instead of reimplementing the GameMaker build pipeline.
+- **GameMaker project editing/manual lookup (external)**: ResourceTool and manual search stay owned by `gm-cli`; GMLoop should delegate those workflows instead of maintaining parallel CLI mutation/search implementations.
 - **Dev server (Node.js/CLI)**: Watches GML files, transpiles them into JavaScript functions on demand, and broadcasts them as JSON patches via WebSocket.
 - **Runtime wrapper (browser)**: Listens for patches via WebSocket and swaps function references in the GameMaker engine's internal registry.
 
@@ -604,3 +584,42 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 - Asset hot-reloading for sprites and sounds via stable resource-ID swapping.
 - Source-map generation for in-game debugging of patched GML.
 - In-game UI for patch rollback and version management.
+
+## 7. UI Workspace Target State (`@gmloop/ui`)
+
+### 7.1 Core UI Architecture
+
+- `@gmloop/ui` is the sole owner of browser-facing UI rendering and interaction surfaces.
+- UI implementation is Lit + TypeScript only; all UI components, state models, and events must be fully typed.
+- UI behavior is organized as reusable, domain-specific Lit components rather than one-off string templates or ad-hoc DOM mutation.
+- Graph rendering keeps D3 for layout/simulation where needed, but integrates through typed adapter boundaries that are framework-aware (`mount`, `update`, `dispose`).
+
+### 7.2 Asset and Delivery Contract
+
+- UI delivery is bundle-based, not single-inline-document based:
+  - entry document (`index.html`)
+  - bundled scripts and styles under `assets/`
+  - deterministic renderer artifact metadata for CLI/server consumers.
+- Production assets must be optimized by the build pipeline (bundled/minified/sourcemapped according to environment mode).
+- CDN-hosted runtime dependencies are prohibited for shipped UI artifacts.
+- Runtime JS/CSS dependencies (including visualization/runtime libraries) must be served from local bundle files only.
+
+### 7.3 Styling Contract
+
+- UI uses a single global stylesheet entrypoint for the application shell.
+- Component and surface styling is authored in dedicated standalone `.css` files and composed through that global stylesheet entrypoint.
+- Inline style strings and template-embedded standalone CSS blocks are not permitted for primary UI styling.
+- Design tokens (colors, spacing, typography, elevation, motion timings) are centralized and reused across components.
+
+### 7.4 Live / Hot Reload Workflow
+
+- UI local development uses a dedicated dev server with hot module replacement (HMR) for fast feedback loops.
+- CLI-hosted API endpoints (`/api/*`) are consumed through local proxying in dev mode so UI iteration does not require manual rebuild/restart loops.
+- HMR is a development-only delivery path; production artifacts remain static bundle outputs consumed by CLI export/serve flows.
+
+### 7.5 Type and Reuse Guarantees
+
+- Public UI render contracts are typed and versioned by explicit TypeScript interfaces.
+- Component inputs/outputs are typed (properties, custom events, callback contracts) with no untyped `any` escape hatches.
+- Shared primitives (buttons/cards/badges/layout shells) are reused across surfaces to prevent duplication and drift.
+- New UI surfaces must extend existing primitives/contracts before introducing new visual or state abstractions.

@@ -25,7 +25,7 @@ void test("transpile --help output documents examples and shared options", async
 
     assert.equal(result.exitCode, 0);
     assert.match(result.stdout, /Examples:/);
-    assert.match(result.stdout, /prettier-plugin-gml transpile --path path\/to\/script\.gml/);
+    assert.match(result.stdout, /gmloop transpile --path path\/to\/script\.gml/);
     assert.match(result.stdout, /--path <path>/);
     assert.match(result.stdout, /--write/);
     assert.match(result.stdout, /--list/);

@@ -18,6 +18,20 @@ import { test } from "node:test";
 
 import { normalizeFormattedOutput } from "../src/printer/normalize-formatted-output.js";
 
+void test("normalizeFormattedOutput does not promote plain // description comments into doc comments", () => {
+    const input = ["// description Updates velocity", "function update_velocity() {", "    return 1;", "}", ""].join(
+        "\n"
+    );
+
+    const result = normalizeFormattedOutput(input);
+
+    assert.strictEqual(
+        result,
+        input,
+        "promoting plain comments into doc-comment syntax is a lint-owned content rewrite, not formatter post-processing (target-state.md §2.2, §3.2)"
+    );
+});
+
 void test("normalizeFormattedOutput preserves @function tags (content rewrites belong in lint)", () => {
     const input = [
         "/// @function update_ground_dist(ray_len)",

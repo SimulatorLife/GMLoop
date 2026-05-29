@@ -577,6 +577,26 @@ void test("normalize-data-structure-accessors does not keep stale constructor in
     const result = lintWithRule("normalize-data-structure-accessors", input, {});
     assertEquals(result.output, input);
 });
+void test("normalize-data-structure-accessors rewrites single-coordinate grid access with wrong accessor token", () => {
+    // A grid created via ds_grid_create() should always be accessed with "[#".
+    // When code mistakenly uses "[?" or "[|" for a single-coordinate grid access
+    // (i.e., a misuse that compiles but is incorrect), the rule should normalize
+    // it to the tracked "[#" accessor so it matches the constructor's declaration.
+
+    // Grid accessed with "[?" (should be "[#")
+    const inputMapStyle = ["var level_grid = ds_grid_create();", "var cell = level_grid[? 5];", ""].join("\n");
+    const expectedMapStyle = ["var level_grid = ds_grid_create();", "var cell = level_grid[# 5];", ""].join("\n");
+
+    const resultMapStyle = lintWithRule("normalize-data-structure-accessors", inputMapStyle, {});
+    assertEquals(resultMapStyle.output, expectedMapStyle);
+
+    // Grid accessed with "[|" (should be "[#")
+    const inputListStyle = ["var game_grid = ds_grid_create();", "var val = game_grid[| 3];", ""].join("\n");
+    const expectedListStyle = ["var game_grid = ds_grid_create();", "var val = game_grid[# 3];", ""].join("\n");
+
+    const resultListStyle = lintWithRule("normalize-data-structure-accessors", inputListStyle, {});
+    assertEquals(resultListStyle.output, expectedListStyle);
+});
 
 void test("normalize-data-structure-accessors ignores malformed identifier metadata without throwing", () => {
     const sourceText = 'var value = my_map[| "key"];\n';
@@ -818,6 +838,30 @@ void test("prefer-is-undefined-check rewrites undefined comparisons in either op
         "if (undefined != lives) return;",
         "if (!(score == undefined)) return;",
         "if (!(undefined == lives)) return;",
+        ""
+    ].join("\n");
+    const expected = [
+        "if (is_undefined(score)) return;",
+        "if (is_undefined(lives)) return;",
+        "if (!is_undefined(score)) return;",
+        "if (!is_undefined(lives)) return;",
+        "if (!is_undefined(score)) return;",
+        "if (!is_undefined(lives)) return;",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-is-undefined-check", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-is-undefined-check rewrites UNDEFINED in any case variant", () => {
+    const input = [
+        "if (score == UNDEFINED) return;",
+        "if (Undefined == lives) return;",
+        "if (score != UNDEFINED) return;",
+        "if (UNdefined != lives) return;",
+        "if (!(score == UNDEFINED)) return;",
+        "if (!(Undefined == lives)) return;",
         ""
     ].join("\n");
     const expected = [
@@ -1248,6 +1292,35 @@ void test("optimize-math-expressions folds lengthdir_x half-subtraction pattern 
     assertEquals(result.output, expected);
 });
 
+void test("optimize-math-expressions merges three consecutive lengthdir scalar assignment patterns", () => {
+    // Regression test: the original for-loop with "index -= 1" after splice+1 caused the loop
+    // to make zero net progress (splice shrinks body by 1, then index -= 1, then loop increments
+    // index += 1, so net: index += 0). This skipped every other element, so three consecutive
+    // merges would only merge the first and second, leaving the third untouched.
+    // The while-loop fix ensures each merge is attempted and no pattern is skipped.
+    const input = [
+        "var speed = 1.0;",
+        "speed = speed - speed / 2 - lengthdir_x(speed / 2, angle);",
+        "speed = speed - speed / 2 - lengthdir_y(speed / 2, angle);",
+        "speed = speed - speed / 2 - lengthdir_x(speed / 2, angle);",
+        ""
+    ].join("\n");
+    // With the while-loop fix, all three assignment statements are individually condensed.
+    // Each assignment is transformed from "speed - speed / 2 - lengthdir_(speed / 2, angle)"
+    // to "speed * 0.5 * (1 - lengthdir_(1, angle))". All three are processed correctly,
+    // whereas the buggy for-loop would have skipped one or more assignments.
+    const expected = [
+        "var speed = 1.0;",
+        "speed = speed * 0.5 * (1 - lengthdir_x(1, angle));",
+        "speed = speed * 0.5 * (1 - lengthdir_y(1, angle));",
+        "speed = speed * 0.5 * (1 - lengthdir_x(1, angle));",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("optimize-math-expressions", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("optimize-math-expressions does not force the lengthdir half-difference canonicalization on unrelated subtraction patterns", () => {
     const input = ["var s = size * 0.104;", "s = s * 0.5 - lengthdir_x(1, swim_rot);", ""].join("\n");
     const result = lintWithRule("optimize-math-expressions", input, {});
@@ -1399,6 +1472,30 @@ void test("optimize-math-expressions simplifies trigonometric degree/radian wrap
         "var f = darctan2(vy, vx);",
         ""
     ].join("\n");
+
+    const result = lintWithRule("optimize-math-expressions", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("optimize-math-expressions rewrites pi * (1/180) * angle (reciprocal-first bug regression)", () => {
+    // Regression: sequential findIndex + splice mutates the operands array between
+    // the two findIndex calls. When reciprocalIndex < piIndex (reciprocal appears
+    // before pi in the flattened operands), the second findIndex operates on a
+    // shifted array and fails to locate pi. This leaves operands.length == 2
+    // instead of 1, so the function returns null and the simplification is skipped.
+    //
+    // With pi * (1/180) * angle, left-assoc associativity produces operands
+    // [pi, 1/180, angle]. reciprocalIndex=1, piIndex=0. After splicing pi at 0,
+    // operands becomes [1/180, angle] — pi is gone and the second findIndex finds
+    // nothing.
+    //
+    // The fix collects splice positions first, then removes from high to low index
+    // so later removals are not affected by earlier shifts.
+    // Before the fix: pi * (1/180) * angle was left unchanged (no simplification).
+    // After the fix: pi * (1/180) is correctly rewritten to degtorad(1), yielding
+    // degtorad(1) * angle.
+    const input = "var radians = pi * (1 / 180) * angle;\n";
+    const expected = "var radians = degtorad(1) * angle;\n";
 
     const result = lintWithRule("optimize-math-expressions", input, {});
     assertEquals(result.output, expected);
@@ -1672,8 +1769,10 @@ void test("optimize-logical-flow rewrites both undefined guard forms to ??=", ()
 void test("optimize-logical-flow simplifies boolean literal comparisons in if conditions", () => {
     const input = [
         "if (xinput == true) { return move_horizontal(); }",
+        "if (true == xinput) { return move_horizontal(); }",
         "if (xinput != false) { return move_horizontal(); }",
         "if (yinput == false) { return move_vertical(); }",
+        "if (false == yinput) { return move_vertical(); }",
         "if (yinput != true) { return move_vertical(); }",
         ""
     ].join("\n");
@@ -1681,6 +1780,8 @@ void test("optimize-logical-flow simplifies boolean literal comparisons in if co
     const expected = [
         "if (xinput) { return move_horizontal(); }",
         "if (xinput) { return move_horizontal(); }",
+        "if (xinput) { return move_horizontal(); }",
+        "if (!yinput) { return move_vertical(); }",
         "if (!yinput) { return move_vertical(); }",
         "if (!yinput) { return move_vertical(); }",
         ""

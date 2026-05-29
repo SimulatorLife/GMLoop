@@ -11,7 +11,7 @@ import { createRefactorCommand } from "../src/commands/refactor.js";
 void describe("Refactor command", () => {
     void it("should create refactor command with correct name", () => {
         const command = createRefactorCommand();
-        assert.equal(command.name(), "refactor");
+        assert.strictEqual(command.name(), "refactor");
     });
 
     void it("should have required options", () => {
@@ -36,10 +36,10 @@ void describe("Refactor command", () => {
         assert.ok(oldNameOption, "Should have --old-name option");
         assert.ok(newNameOption, "Should have --new-name option");
         assert.ok(pathOption, "Should have --path option");
-        assert.equal(legacyProjectOption, undefined, "Should not expose legacy --project option");
-        assert.equal(legacyProjectRootOption, undefined, "Should not expose legacy --project-root option");
+        assert.strictEqual(legacyProjectOption, undefined, "Should not expose legacy --project option");
+        assert.strictEqual(legacyProjectRootOption, undefined, "Should not expose legacy --project-root option");
         assert.ok(configOption, "Should have --config option");
-        assert.equal(dryRunOption, undefined, "Should not expose --dry-run option");
+        assert.strictEqual(dryRunOption, undefined, "Should not expose --dry-run option");
         assert.ok(writeOption, "Should have --write option");
         assert.ok(onlyOption, "Should have --only option");
         assert.ok(listOption, "Should have --list option");
@@ -57,23 +57,23 @@ void describe("Refactor command", () => {
         const verboseOption = options.find((opt) => opt.long === "--verbose");
         const checkHotReloadOption = options.find((opt) => opt.long === "--check-hot-reload");
 
-        assert.equal(pathOption.defaultValue, undefined);
-        assert.equal(writeOption.defaultValue, false);
-        assert.equal(listOption.defaultValue, false);
-        assert.equal(verboseOption.defaultValue, false);
-        assert.equal(checkHotReloadOption.defaultValue, false);
+        assert.strictEqual(pathOption.defaultValue, undefined);
+        assert.strictEqual(writeOption.defaultValue, false);
+        assert.strictEqual(listOption.defaultValue, false);
+        assert.strictEqual(verboseOption.defaultValue, false);
+        assert.strictEqual(checkHotReloadOption.defaultValue, false);
     });
 
     void it("should have correct description", () => {
         const command = createRefactorCommand();
-        assert.equal(command.description(), "Perform safe, project-wide code transformations");
+        assert.strictEqual(command.description(), "Perform safe, project-wide code transformations");
     });
 
     void it("should expose codemod operation arguments", () => {
         const command = createRefactorCommand();
-        assert.equal(command.registeredArguments.length, 2);
-        assert.equal(command.registeredArguments[0]?.required, false);
-        assert.equal(command.registeredArguments[1]?.variadic, true);
+        assert.strictEqual(command.registeredArguments.length, 2);
+        assert.strictEqual(command.registeredArguments[0]?.required, false);
+        assert.strictEqual(command.registeredArguments[1]?.variadic, true);
     });
 
     void it("surfaces missing-argument errors as actionable usage guidance without a stack trace", async () => {
@@ -82,7 +82,7 @@ void describe("Refactor command", () => {
         // usage text so the contributor knows what to provide next.
         const result = await runCliTestCommand({ argv: ["refactor"] });
 
-        assert.equal(result.exitCode, 1, "Should exit with code 1 when mode cannot be inferred");
+        assert.strictEqual(result.exitCode, 1, "Should exit with code 1 when mode cannot be inferred");
         assert.match(
             result.stderr,
             /Could not infer refactor mode\. Provide --old-name\/--symbol-id with --new-name for renames/,
@@ -90,7 +90,7 @@ void describe("Refactor command", () => {
         );
         assert.match(
             result.stderr,
-            /Usage: prettier-plugin-gml refactor \[options\] \[operation\] \[paths\.\.\.\]/,
+            /Usage: gmloop refactor \[options\] \[operation\] \[paths\.\.\.\]/,
             "Should include usage text so the user knows what to provide"
         );
         // No internal file path fragments should appear in the error output – the

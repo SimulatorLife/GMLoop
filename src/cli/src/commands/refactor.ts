@@ -23,8 +23,9 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
+import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
 import { isRefactorResourcePath } from "../modules/refactor/gml-resource-path.js";
-import { GmlParserBridge, GmlSemanticBridge, GmlTranspilerBridge } from "../modules/refactor/index.js";
+import { GmlSemanticBridge } from "../modules/refactor/index.js";
 import {
     discoverProjectRoot,
     resolveExistingGmloopConfigPath,
@@ -115,7 +116,7 @@ function isRecoverableProjectIndexParseError(error: unknown): boolean {
 
 async function buildProjectIndexWithParseTolerance(
     projectRoot: string,
-    fsFacade: typeof Semantic.defaultFsFacade | undefined,
+    fsFacade: typeof Core.defaultFsFacade | undefined,
     verbose: boolean
 ): Promise<Awaited<ReturnType<typeof buildProjectIndex>>> {
     const parseProjectSource = Semantic.getDefaultProjectIndexParser();
@@ -163,20 +164,6 @@ function normalizeRequestedCodemods(onlyOption: string | undefined): Array<Regis
 
         return requestedId as RegisteredCodemodId;
     });
-}
-
-function resolveDiscoveredProjectRoot(
-    projectRootOption: string | undefined,
-    configPathOption: string | undefined
-): Promise<string> {
-    return discoverProjectRoot({
-        explicitProjectPath: projectRootOption,
-        configPath: configPathOption
-    });
-}
-
-function resolveCodemodConfigPath(projectRoot: string, configPathOption: string | undefined): Promise<string> {
-    return resolveExistingGmloopConfigPath(projectRoot, configPathOption);
 }
 
 function hasExplicitRenameIntent(options: RefactorCommandOptions): boolean {
@@ -240,7 +227,10 @@ async function validateRenameOptions(options: RefactorCommandOptions): Promise<V
     }
 
     return {
-        projectRoot: await resolveDiscoveredProjectRoot(options.path, options.config),
+        projectRoot: await discoverProjectRoot({
+            explicitProjectPath: options.path,
+            configPath: options.config
+        }),
         verbose: Boolean(options.verbose),
         symbolId: options.symbolId,
         oldName: options.oldName,
@@ -255,7 +245,10 @@ async function validateCodemodOptions(
     options: RefactorCommandOptions,
     pathArguments: Array<string>
 ): Promise<ValidatedCodemodOptions> {
-    const projectRoot = await resolveDiscoveredProjectRoot(options.path, options.config);
+    const projectRoot = await discoverProjectRoot({
+        explicitProjectPath: options.path,
+        configPath: options.config
+    });
     const explicitTargetPath = resolveExplicitWorkflowTargetPath(options.path);
     const targetPaths =
         pathArguments.length === 0
@@ -265,7 +258,7 @@ async function validateCodemodOptions(
     return {
         projectRoot,
         verbose: Boolean(options.verbose),
-        configPath: await resolveCodemodConfigPath(projectRoot, options.config),
+        configPath: await resolveExistingGmloopConfigPath(projectRoot, options.config),
         dryRun: !options.write,
         onlyCodemods: normalizeRequestedCodemods(options.only),
         list: Boolean(options.list),
@@ -377,19 +370,14 @@ function createRefactorEngineForProject(
     projectIndex: object | null,
     includeSemanticBridge: boolean = projectIndex !== null
 ): InstanceType<typeof RefactorEngine> {
-    const semantic =
-        includeSemanticBridge && projectIndex !== null
-            ? new GmlSemanticBridge(projectIndex, projectRoot)
-            : includeSemanticBridge
-              ? new GmlSemanticBridge({}, projectRoot)
-              : null;
-    const parser = new GmlParserBridge();
-    const formatter = new GmlTranspilerBridge();
+    const semanticBridge = includeSemanticBridge ? new GmlSemanticBridge(projectIndex ?? {}, projectRoot) : undefined;
+
+    const bridges = createRefactorBridges({ semantic: semanticBridge }, projectRoot);
 
     return new RefactorEngine({
-        semantic,
-        parser,
-        formatter
+        semantic: semanticBridge ?? null,
+        parser: bridges.parser,
+        formatter: bridges.formatter
     });
 }
 
@@ -487,7 +475,7 @@ async function performRename(options: ValidatedRenameOptions): Promise<void> {
                 `Check that the symbol name is correct (including case) and that it refers to a user-defined resource (Script, Macro, Variable, etc.).`;
         }
 
-        throw new Error(`Refactor operation failed: ${message}`);
+        throw new Error(`Refactor operation failed: ${message}`, { cause: error });
     }
 }
 
@@ -530,9 +518,8 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         ...rawConfig,
         refactor: normalizeRefactorProjectConfig(rawConfig.refactor)
     });
-    const selectedCodemodLines = formatCodemodSelectionSummary(config, onlyCodemods);
-
     if (list) {
+        const selectedCodemodLines = formatCodemodSelectionSummary(config, onlyCodemods);
         const selectedCodemods = onlyCodemods.length > 0 ? onlyCodemods.join(", ") : "(all configured codemods)";
         console.log(`Project root: ${projectRoot}`);
         console.log(`Config path: ${configPath}`);
@@ -617,7 +604,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                 const updatedProjectIndex = await buildProjectIndexWithParseTolerance(
                     projectRoot,
                     {
-                        ...Semantic.defaultFsFacade,
+                        ...Core.defaultFsFacade,
                         readFile: async (filePath) => {
                             const content = await context.readFile(filePath);
                             return content ?? (await readFile(resolvePath(filePath), "utf8"));
@@ -627,7 +614,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                 );
 
                 // Access the underlying GmlSemanticBridge and update it directly
-                const semanticBridge = engine.semantic as any;
+                const semanticBridge = engine.semantic as GmlSemanticBridge;
                 if (semanticBridge && typeof semanticBridge.updateProjectIndex === "function") {
                     semanticBridge.updateProjectIndex(updatedProjectIndex);
                 }
@@ -697,10 +684,10 @@ export function createRefactorCommand(): Command {
             [
                 "",
                 "Examples:",
-                "  pnpm dlx prettier-plugin-gml refactor --old-name my_script --new-name my_renamed_script path/to/project",
-                "  pnpm dlx prettier-plugin-gml refactor --symbol-id gml/script/my_func --new-name my_func_v2",
-                "  pnpm dlx prettier-plugin-gml refactor codemod --list",
-                "  pnpm dlx prettier-plugin-gml refactor codemod --write path/to/project"
+                "  pnpm dlx gmloop refactor --old-name my_script --new-name my_renamed_script path/to/project",
+                "  pnpm dlx gmloop refactor --symbol-id gml/script/my_func --new-name my_func_v2",
+                "  pnpm dlx gmloop refactor codemod --list",
+                "  pnpm dlx gmloop refactor codemod --write path/to/project"
             ].join("\n")
         );
 

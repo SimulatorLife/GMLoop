@@ -6,7 +6,7 @@ import { Core } from "@gmloop/core";
 import { buildProjectIndex } from "../src/project-index/index.js";
 import { createTempProjectWorkspace } from "./test-project-helpers.js";
 
-// Use Core.Reporting.createMetricsTracker instead of destructuring the namespace.
+// Use Core.createMetricsTracker instead of destructuring the namespace.
 
 async function createProjectFixture(prefix = "project-index-metrics-") {
     const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace(prefix);

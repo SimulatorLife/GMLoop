@@ -3,8 +3,26 @@ import { getErrorMessageOrFallback } from "./error.js";
 import { assertPlainObject } from "./object.js";
 import { isNonEmptyString, toTrimmedString } from "./string.js";
 
-const JSON_PARSE_ERROR_CAPABILITY = Symbol.for("prettier-plugin-gml.json-parse-error");
+const JSON_PARSE_ERROR_CAPABILITY = Symbol.for("gmloop.json-parse-error");
 
+/**
+ * Structural check for values that expose the {@link JsonParseError} contract
+ * without relying on `instanceof` checks that fail across execution realms.
+ *
+ * The guard evaluates three conditions derived from the properties populated
+ * by {@link parseJsonWithContext}:
+ *   1. The value itself is Error-like (has a `message` string).
+ *   2. Its `cause` chain is also Error-like (provides a clean diagnostic path
+ *      when the outer error is opaque to cross-realm consumers).
+ *   3. A non-blank `description` is present so callers can label the failure
+ *      in human-readable terms.
+ *
+ * The `source` field is accepted but not required—it is only present when the
+ * parser could determine the file path of the JSON that failed.
+ *
+ * @param {unknown} value Candidate value to interrogate.
+ * @returns {boolean} `true` when the value matches the structural contract.
+ */
 function hasJsonParseErrorContract(value: unknown) {
     if (!isErrorLike(value)) {
         return false;
@@ -33,6 +51,19 @@ function hasJsonParseErrorContract(value: unknown) {
     return true;
 }
 
+/**
+ * Normalize an arbitrary thrown value into a proper `Error` instance.
+ *
+ * When the candidate is already Error-like it is returned unchanged so
+ * existing error chains (for example wrapped `SyntaxError` or `TypeError`)
+ * are preserved. Non-Error values are wrapped in a fresh `Error` using a
+ * best-effort message derived from {@link getErrorMessageOrFallback}. The
+ * fallback name `"NonErrorThrown"` follows the Node.js convention and
+ * allows consumers to distinguish synthetic wrappers from genuine errors.
+ *
+ * @param {unknown} value Candidate thrown value.
+ * @returns {Error} An Error-compatible reference.
+ */
 function toError(value) {
     if (isErrorLike(value)) {
         return value;
@@ -109,7 +140,7 @@ export class JsonParseError extends SyntaxError {
  *
  * The guard honours the symbol capability applied by {@link JsonParseError}
  * instances so downstream collaborators can opt-in by branding their own
- * facades with {@link Symbol.for "prettier-plugin-gml.json-parse-error"}.
+ * facades with {@link Symbol.for "gmloop.json-parse-error"}.
  * When the capability is absent, the function falls back to structural checks
  * that mirror the properties populated by {@link parseJsonWithContext},
  * allowing callers to branch on enriched metadata without relying on
@@ -127,12 +158,33 @@ export function isJsonParseError(value) {
     return hasJsonParseErrorContract(value);
 }
 
+/**
+ * Normalize a human-readable label for the JSON payload being parsed.
+ *
+ * Falls back to `"JSON"` when the description is missing or blank, keeping
+ * error messages grammatical even when callers omit the label parameter.
+ *
+ * @param {unknown} description Candidate label string.
+ * @returns {string} Non-empty normalized description.
+ */
 function normalizeDescription(description) {
     const normalized = toTrimmedString(description);
 
     return normalized.length > 0 ? normalized : "JSON";
 }
 
+/**
+ * Normalize the source path attached to a parse error.
+ *
+ * Accepts `null` (returns `null`) or strings that survive
+ * {@link isNonEmptyString}. Values that fail both checks are coerced via
+ * `String(source)` so unexpected types still contribute to error messages.
+ * An empty string after coercion is returned as `null` to keep the caller
+ * from adding a redundant "from" clause to the message.
+ *
+ * @param {unknown} source Candidate file path or description.
+ * @returns {string | null} Normalized source string or `null`.
+ */
 function normalizeSource(source) {
     if (source == null) {
         return null;
@@ -147,19 +199,52 @@ function normalizeSource(source) {
     }
 }
 
+/**
+ * Extract a human-readable message string from an error-like candidate.
+ *
+ * Returns the trimmed `message` property when present and non-empty;
+ * otherwise yields `"Unknown error"` so callers always have a string to
+ * append or log without additional guards.
+ *
+ * @param {unknown} error Candidate error value.
+ * @returns {string} The error message or a safe fallback.
+ */
 function extractErrorDetails(error) {
     const normalized = toTrimmedString(error?.message);
 
     return normalized.length > 0 ? normalized : "Unknown error";
 }
 
+/**
+ * Narrow a candidate to a plain object when it is object-like, otherwise
+ * return `undefined`.
+ *
+ * Centralizes the pattern of accepting union types that include
+ * non-object branches (for example `T | null | undefined`) and producing
+ * the narrowed form or a safe sentinel so callers can avoid repeating the
+ * `typeof` guard at each call site.
+ *
+ * @template T
+ * @param {T | null | undefined} candidate Value to narrow.
+ * @returns {T | undefined} The narrowed object or `undefined`.
+ */
 function toObjectOrUndefined(candidate) {
     return candidate && typeof candidate === "object" ? candidate : undefined;
 }
 
 /**
- * Describe the payload when JSON serialization fails so error messages stay
- * readable without relying on nested ternaries inside the guard clause.
+ * Produce a context label for the payload that caused a JSON serialization
+ * failure.
+ *
+ * The function maps `undefined`, `function`, and `symbol` inputs to
+ * human-readable labels so that error messages read grammatically without
+ * callers having to inline the same conditional tree. All other types
+ * (including `null`, numbers, and objects) fall through to `"provided
+ * payload"` to keep the label informative while avoiding repeated type
+ * checks downstream.
+ *
+ * @param {unknown} payload Value that failed to serialize.
+ * @returns {string} Context label for the error message.
  */
 function describePayloadForSerializationError(payload) {
     if (payload === undefined) {
@@ -218,35 +303,6 @@ export function parseJsonWithContext(text, options: ParseJsonOptions = {}) {
             description: normalizedDescription
         });
     }
-}
-
-/**
- * Remove trailing commas from JSON strings to make them parseable by JSON.parse.
- * GameMaker's .yy and .yyp files use a non-standard JSON format that includes
- * trailing commas after the last element in arrays and objects.
- *
- * @param {string} text Raw JSON text that may contain trailing commas.
- * @returns {string} Cleaned JSON text without trailing commas.
- */
-function stripTrailingCommas(text: string): string {
-    // This regex matches:
-    // - A comma followed by optional whitespace/newlines
-    // - Followed by ] (end of array) or } (end of object)
-    return text.replaceAll(/,(\s*[\]}])/g, "$1");
-}
-
-/**
- * Parse a GameMaker JSON file (.yy, .yyp) which uses non-standard JSON with
- * trailing commas. This function strips trailing commas before parsing.
- *
- * @param {string} text Raw JSON text from a GameMaker file.
- * @param {ParseJsonOptions} [options] Parsing options.
- * @returns {any} Parsed JavaScript value.
- * @throws {JsonParseError} When parsing fails.
- */
-export function parseGameMakerJson(text: string, options: ParseJsonOptions = {}) {
-    const cleanedText = stripTrailingCommas(text);
-    return parseJsonWithContext(cleanedText, options);
 }
 
 /**

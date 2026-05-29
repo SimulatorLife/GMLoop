@@ -8,7 +8,6 @@ export * from "./environment.js";
 export * from "./error.js";
 export * from "./function.js";
 export * from "./json.js";
-export * from "./metrics.js";
 export * from "./number.js";
 export * from "./numeric-options.js";
 export * from "./object.js";

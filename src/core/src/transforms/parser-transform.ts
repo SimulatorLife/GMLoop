@@ -20,8 +20,11 @@ export interface ParserTransform<
 
 /**
  * Factory function that creates a transform object from a name, default options, and implementation.
+ *
+ * The default options are shallow-frozen so callers can safely merge them with
+ * user-provided overrides without mutating the shared defaults.
  */
-export function createParserTransform<Options extends TransformOptions = EmptyTransformOptions>(
+export function createParserTransform<Options extends TransformOptions = TransformOptions>(
     name: string,
     defaultOptions: Options,
     execute: (ast: MutableGameMakerAstNode, options: Options) => MutableGameMakerAstNode
@@ -32,9 +35,7 @@ export function createParserTransform<Options extends TransformOptions = EmptyTr
         name,
         defaultOptions: frozenDefaults,
         transform(ast: MutableGameMakerAstNode, options?: Options): MutableGameMakerAstNode {
-            const resolvedOptions = options ? (Object.assign({}, frozenDefaults, options) as Options) : frozenDefaults;
-
-            return execute(ast, resolvedOptions);
+            return execute(ast, options === undefined ? frozenDefaults : { ...frozenDefaults, ...options });
         }
     };
 }

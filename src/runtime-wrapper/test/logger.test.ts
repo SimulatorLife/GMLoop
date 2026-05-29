@@ -2,126 +2,76 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+    type ConsoleOutput,
     createChangeEventLogger,
     createLogger,
     type LogLevel,
     LogLevels,
     parseLogLevel
-} from "../src/runtime/logger.js";
-import type { Patch, RegistryChangeEvent } from "../src/runtime/types.js";
+} from "../browser/runtime/logger.js";
+import type { Patch, RegistryChangeEvent } from "../browser/runtime/types.js";
 
-class MockConsole implements Console {
-    public logs: Array<{ level: string; args: Array<unknown> }> = [];
-    Console = globalThis.console.Console;
+/**
+ * Captured log entry produced by a {@link MockConsoleOutput}.
+ */
+interface MockLogEntry {
+    level: string;
+    args: Array<unknown>;
+}
 
-    log(...args: Array<unknown>): void {
-        this.logs.push({ level: "log", args });
-    }
+/**
+ * Minimal console stub that records every call for assertion in tests.
+ *
+ * Satisfies {@link ConsoleOutput} — the narrow interface the logger actually
+ * uses — without implementing the full Node.js `Console` API.  This keeps
+ * the setup from breaking whenever the global `Console` type gains new
+ * required members.
+ */
+interface MockConsoleOutput extends ConsoleOutput {
+    readonly logs: Array<MockLogEntry>;
+    /** Discard all previously captured entries. */
+    clear(): void;
+}
 
-    error(...args: Array<unknown>): void {
-        this.logs.push({ level: "error", args });
-    }
-
-    warn(...args: Array<unknown>): void {
-        this.logs.push({ level: "warn", args });
-    }
-
-    info(...args: Array<unknown>): void {
-        this.logs.push({ level: "info", args });
-    }
-
-    debug(...args: Array<unknown>): void {
-        this.logs.push({ level: "debug", args });
-    }
-
-    assert(condition?: boolean, ...data: Array<unknown>): void {
-        if (!condition) {
-            this.error("Assertion failed", ...data);
+function createMockConsole(): MockConsoleOutput {
+    const logs: Array<MockLogEntry> = [];
+    return {
+        logs,
+        log(...args: Array<unknown>): void {
+            logs.push({ level: "log", args });
+        },
+        error(...args: Array<unknown>): void {
+            logs.push({ level: "error", args });
+        },
+        warn(...args: Array<unknown>): void {
+            logs.push({ level: "warn", args });
+        },
+        debug(...args: Array<unknown>): void {
+            logs.push({ level: "debug", args });
+        },
+        clear(): void {
+            logs.length = 0;
         }
-    }
-
-    clear(): void {
-        this.logs = [];
-    }
-
-    count(label?: string): void {
-        this.log("count", label);
-    }
-
-    countReset(label?: string): void {
-        this.log("countReset", label);
-    }
-
-    dir(item?: unknown, options?: unknown): void {
-        this.log("dir", item, options);
-    }
-
-    dirxml(...data: Array<unknown>): void {
-        this.log("dirxml", ...data);
-    }
-
-    group(...data: Array<unknown>): void {
-        this.log("group", ...data);
-    }
-
-    groupCollapsed(...data: Array<unknown>): void {
-        this.log("groupCollapsed", ...data);
-    }
-
-    groupEnd(): void {
-        this.log("groupEnd");
-    }
-
-    table(tabularData?: unknown, properties?: Array<string>): void {
-        this.log("table", tabularData, properties);
-    }
-
-    time(label?: string): void {
-        this.log("time", label);
-    }
-
-    timeEnd(label?: string): void {
-        this.log("timeEnd", label);
-    }
-
-    timeLog(label?: string, ...data: Array<unknown>): void {
-        this.log("timeLog", label, ...data);
-    }
-
-    trace(...data: Array<unknown>): void {
-        this.log("trace", ...data);
-    }
-
-    profile(label?: string): void {
-        this.log("profile", label);
-    }
-
-    profileEnd(label?: string): void {
-        this.log("profileEnd", label);
-    }
-
-    timeStamp(label?: string): void {
-        this.log("timeStamp", label);
-    }
+    };
 }
 
 void describe("Logger", () => {
     void it("should create logger with default options", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole });
 
         assert.equal(logger.getLevel(), "error");
     });
 
     void it("should create logger with custom level", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "debug" });
 
         assert.equal(logger.getLevel(), "debug");
     });
 
     void it("should validate log level strings", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const invalidLevel = "verbose" as LogLevel;
 
         assert.equal(parseLogLevel(LogLevels.info), LogLevels.info);
@@ -129,7 +79,7 @@ void describe("Logger", () => {
     });
 
     void it("should respect log levels", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "warn" });
 
         logger.debug("debug message");
@@ -144,7 +94,7 @@ void describe("Logger", () => {
     });
 
     void it("should log nothing when level is silent", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "silent" });
 
         logger.debug("debug");
@@ -156,7 +106,7 @@ void describe("Logger", () => {
     });
 
     void it("should allow changing log level", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "error" });
 
         logger.info("before");
@@ -168,7 +118,7 @@ void describe("Logger", () => {
     });
 
     void it("should log patch applied with version", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
         const patch: Patch = { kind: "script", id: "script:test", js_body: "return 42;" };
@@ -182,7 +132,7 @@ void describe("Logger", () => {
     });
 
     void it("should include duration when provided", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
         const patch: Patch = { kind: "script", id: "script:test", js_body: "return 42;" };
@@ -194,7 +144,7 @@ void describe("Logger", () => {
     });
 
     void it("should log patch undone", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
         logger.patchUndone("script:test", 4);
@@ -207,7 +157,7 @@ void describe("Logger", () => {
     });
 
     void it("should log patch rolled back", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "error", styled: false });
 
         const patch: Patch = { kind: "script", id: "script:test", js_body: "bad" };
@@ -222,7 +172,7 @@ void describe("Logger", () => {
     });
 
     void it("should log registry cleared", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
         logger.registryCleared(10);
@@ -234,7 +184,7 @@ void describe("Logger", () => {
     });
 
     void it("should log validation errors", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "error", styled: false });
 
         logger.validationError("script:bad", "Missing js_body");
@@ -247,7 +197,7 @@ void describe("Logger", () => {
     });
 
     void it("should log shadow validation failures", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "warn", styled: false });
 
         logger.shadowValidationFailed("script:test", "Cannot create function");
@@ -259,7 +209,7 @@ void describe("Logger", () => {
     });
 
     void it("should log WebSocket events", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
         logger.websocketConnected("ws://localhost:17890");
@@ -275,7 +225,7 @@ void describe("Logger", () => {
     });
 
     void it("should log patch queue operations", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "debug", styled: false });
 
         logger.patchQueued("script:test", 5);
@@ -289,7 +239,7 @@ void describe("Logger", () => {
     });
 
     void it("should include prefix in messages", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({
             console: mockConsole,
             level: "info",
@@ -305,7 +255,7 @@ void describe("Logger", () => {
     });
 
     void it("should include timestamps when enabled", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({
             console: mockConsole,
             level: "info",
@@ -322,7 +272,7 @@ void describe("Logger", () => {
     });
 
     void it("should format durations correctly", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
         const patch: Patch = { kind: "script", id: "script:test", js_body: "return 42;" };
@@ -345,7 +295,7 @@ void describe("Logger", () => {
     });
 
     void it("should support custom console implementation", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info" });
 
         logger.info("test");
@@ -353,30 +303,33 @@ void describe("Logger", () => {
         assert.equal(mockConsole.logs.length, 1);
     });
 
-    void it("should handle emoji styling option", () => {
-        const mockConsole = new MockConsole();
-        const styledLogger = createLogger({ console: mockConsole, level: "info", styled: true });
-        const unstyledLogger = createLogger({ console: mockConsole, level: "info", styled: false });
+    void it("styled output includes the operation emoji; unstyled output omits it", () => {
+        const styledConsole = createMockConsole();
+        const unstyledConsole = createMockConsole();
+        const styledLogger = createLogger({ console: styledConsole, level: "info", styled: true });
+        const unstyledLogger = createLogger({ console: unstyledConsole, level: "info", styled: false });
 
         const patch: Patch = { kind: "script", id: "script:test", js_body: "return 42;" };
 
         styledLogger.patchApplied(patch, 1);
-        const styledMessage = mockConsole.logs[0].args[0] as string;
-
-        mockConsole.clear();
+        const styledMessage = styledConsole.logs[0].args[0] as string;
 
         unstyledLogger.patchApplied(patch, 1);
-        const unstyledMessage = mockConsole.logs[0].args[0] as string;
+        const unstyledMessage = unstyledConsole.logs[0].args[0] as string;
 
-        // Styled should have emoji (longer message)
-        // This is a weak test but sufficient for our purposes
-        assert.ok(styledMessage.length >= unstyledMessage.length);
+        // Styled output must contain the success emoji for patch-applied.
+        assert.ok(styledMessage.includes("✅"), `expected ✅ in styled message: "${styledMessage}"`);
+        // Unstyled output must not contain that emoji.
+        assert.ok(!unstyledMessage.includes("✅"), `unexpected ✅ in unstyled message: "${unstyledMessage}"`);
+        // Both messages still contain the patch id and version.
+        assert.match(styledMessage, /script:test/);
+        assert.match(unstyledMessage, /script:test/);
     });
 });
 
 void describe("createChangeEventLogger", () => {
     void it("should log patch-applied events", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
         const eventLogger = createChangeEventLogger(logger);
 
@@ -395,7 +348,7 @@ void describe("createChangeEventLogger", () => {
     });
 
     void it("should log patch-undone events", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
         const eventLogger = createChangeEventLogger(logger);
 
@@ -413,7 +366,7 @@ void describe("createChangeEventLogger", () => {
     });
 
     void it("should log patch-rolled-back events", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "error", styled: false });
         const eventLogger = createChangeEventLogger(logger);
 
@@ -431,7 +384,7 @@ void describe("createChangeEventLogger", () => {
     });
 
     void it("should log registry-cleared events", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
         const eventLogger = createChangeEventLogger(logger);
 
@@ -448,7 +401,7 @@ void describe("createChangeEventLogger", () => {
     });
 
     void it("should integrate with runtime wrapper onChange hook", () => {
-        const mockConsole = new MockConsole();
+        const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
         const eventLogger = createChangeEventLogger(logger);
 

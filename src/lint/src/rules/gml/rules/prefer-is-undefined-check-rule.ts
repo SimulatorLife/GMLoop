@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, isAstNodeRecord } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { unwrapParenthesizedExpression } = Core;
 
@@ -12,10 +12,14 @@ function isUndefinedIdentifier(expression: unknown): boolean {
     }
 
     if (expression.type === "Identifier") {
-        return expression.name === "undefined";
+        return typeof expression.name === "string" && expression.name.toLowerCase() === "undefined";
     }
 
-    return expression.type === "Literal" && expression.value === "undefined";
+    if (expression.type === "Literal" && typeof expression.value === "string") {
+        return expression.value.toLowerCase() === "undefined";
+    }
+
+    return false;
 }
 
 export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition): Rule.RuleModule {

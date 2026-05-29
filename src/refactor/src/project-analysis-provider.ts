@@ -149,7 +149,7 @@ export const DEFAULT_PROJECT_ANALYSIS_PROVIDER: RefactorProjectAnalysisProvider 
         }
 
         const occurrences = await context.semantic.getSymbolOccurrences?.(identifierName);
-        if (Array.isArray(occurrences) && occurrences.length > 0) {
+        if (Core.isNonEmptyArray(occurrences)) {
             return true;
         }
 
@@ -166,7 +166,7 @@ export const DEFAULT_PROJECT_ANALYSIS_PROVIDER: RefactorProjectAnalysisProvider 
         }
 
         const occurrences = await context.semantic.getSymbolOccurrences?.(identifierName);
-        if (!Array.isArray(occurrences)) {
+        if (!Core.isNonEmptyArray(occurrences)) {
             return files;
         }
 

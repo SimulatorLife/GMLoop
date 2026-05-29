@@ -1,8 +1,7 @@
 import type { Rule } from "eslint";
 
 import { createFeatherRule, featherManifest } from "./feather/index.js";
-import { createGmlRule } from "./gml/index.js";
-import type { GmlRuleDefinition } from "./gml/rule-definition.js";
+import { createGmlRule, type GmlRuleDefinition } from "./gml/index.js";
 
 export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freeze([
     {
@@ -107,6 +106,12 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         shortName: "no-empty-regions",
         fullId: "gml/no-empty-regions",
         messageId: "noEmptyRegions"
+    },
+    {
+        mapKey: "GmlNoEmptyComments",
+        shortName: "no-empty-comments",
+        fullId: "gml/no-empty-comments",
+        messageId: "noEmptyComments"
     },
     {
         mapKey: "GmlNoLegacyApi",
@@ -284,7 +289,3 @@ function createFeatherPluginRuleMap(): Record<string, Rule.RuleModule> {
 export const ruleIds = Object.freeze(createRuleIdMap());
 export const gmlLintRuleMap = Object.freeze(createGmlPluginRuleMap());
 export const featherLintRuleMap = Object.freeze(createFeatherPluginRuleMap());
-export const lintRuleMap = Object.freeze({
-    ...gmlLintRuleMap,
-    ...featherLintRuleMap
-});

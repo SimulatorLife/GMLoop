@@ -13,11 +13,19 @@ tools/
 /*.cjs
 /*.mjs
 */**/*debug*.txt
+.playwright
 
 # We only want extra markdown files in docs/ and README.md files for each workspace
 *.md
+!docs/*.md
 !docs/**/*.md
 !**/*/README.md
+!.github/copilot-instructions.md
+
+.gmloop
+**/.gmloop
+.playwright-mcp/
+*.png
 
 # TypeScript
 *.tsbuildinfo
@@ -37,12 +45,19 @@ src/**/*.js
 !/eslint.config.js
 
 # AI / agents
-.gemini/*
+.gemini/**
+!.gemini/
+!.gemini/**/
 !.gemini/settings.json
+!.gemini/policies/tools.toml
 .qwen/*
 !.qwen/settings.json
 .codex/*
 !.codex/config.toml
+.agents/**
+!.agents/
+!.agents/**/
+!.agents/skills/**/SKILL.md
 
 # GitHub App credentials
 gha-creds-*.json

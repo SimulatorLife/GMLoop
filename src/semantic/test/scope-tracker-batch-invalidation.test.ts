@@ -10,7 +10,7 @@ type InvalidationEntry = {
 };
 
 function normalizeInvalidationEntries(entries: ReadonlyArray<InvalidationEntry>): Array<InvalidationEntry> {
-    return [...entries].sort((left, right) => {
+    return [...entries].toSorted((left, right) => {
         if (left.scopeId !== right.scopeId) {
             return left.scopeId.localeCompare(right.scopeId);
         }
@@ -243,6 +243,26 @@ void describe("ScopeTracker batch invalidation", () => {
         );
     });
 
+    void it("reuses the canonical empty invalidation set for missing normalized paths", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        const windowsPath = String.raw`\project\missing.gml`;
+        const posixPath = "/project/missing.gml";
+        const results = tracker.getBatchInvalidationSets([windowsPath, posixPath]);
+
+        const windowsResults = results.get(windowsPath);
+        const posixResults = results.get(posixPath);
+
+        assert.ok(windowsResults, "Windows path result should exist");
+        assert.ok(posixResults, "POSIX path result should exist");
+        assert.strictEqual(
+            windowsResults,
+            posixResults,
+            "Missing normalized paths should share one empty result array"
+        );
+        assert.strictEqual(windowsResults.length, 0, "Missing normalized path result should be empty");
+    });
+
     void it("handles empty input gracefully", () => {
         const tracker = new ScopeTracker({ enabled: true });
 
@@ -257,12 +277,7 @@ void describe("ScopeTracker batch invalidation", () => {
         tracker.enterScope("program", { path: "/project/valid.gml" });
         tracker.declare("x", { name: "x" });
 
-        const results = tracker.getBatchInvalidationSets([
-            "",
-            null as unknown as string,
-            undefined as unknown as string,
-            "/project/valid.gml"
-        ]);
+        const results = tracker.getBatchInvalidationSets(["", null, undefined, "/project/valid.gml"]);
 
         assert.ok(results.has("/project/valid.gml"), "Should process valid path");
         const validResults = results.get("/project/valid.gml");

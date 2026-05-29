@@ -2,11 +2,13 @@
 
 Command-line interface for the GMLoop toolchain. Provides utilities for formatting GameMaker Language files, watching for changes, generating metadata, and coordinating the hot-reload development pipeline.
 
+If you are just getting started, begin with the [repository quick start](../../README.md#quick-start), then use this guide as the command reference.
+
 ## Formatter/Linter/Refactor contract
 
 - Run `refactor` to execute global transactions (Codemods), atomic cross-file edits (e.g. rename transactions), and metadata updates via a native Collection API through `@gmloop/refactor`.
 - Run `parse` to inspect `.gml` parser AST output through `@gmloop/parser`.
-- Run `lint` for and syntax repairs/rewrites (applies local single-file ESLint diagnostics/fixes through `@gmloop/lint`).
+- Run `lint` for syntax diagnostics and single-file repairs/rewrites (applies local ESLint diagnostics/fixes through `@gmloop/lint`).
 - Run `format` for layout-only formatting (formatter-only AST normalization + printing through `@gmloop/format`).
 - Run `fix` to execute all three in one pass: project codemods, lint autofixes, and formatting.
 
@@ -122,6 +124,42 @@ pnpm run cli -- fix --only namingConvention
 
 `fix` is intentionally project-scoped and write-only. It runs the configured codemod set first so cross-file/project-aware edits happen before single-file lint fixes and final formatting normalization.
 
+### `mcp` - Start MCP Stdio Server
+
+Starts the GMLoop MCP server (`@gmloop/mcp`) over stdio so MCP clients can
+invoke CLI-derived tools through a single `gmloop` entrypoint.
+
+```bash
+pnpm run cli -- mcp
+```
+
+This command is intended to be launched by an MCP host process, not from the
+in-process CLI test/capture runner.
+
+### Official `gm-cli`
+
+GMLoop does not wrap or mirror the official GameMaker CLI. Use `gm-cli`
+directly for GameMaker-native workflows such as manual lookup, ResourceTool
+project edits, compile/package/run, and ResourceTool MCP hosting.
+
+```bash
+npx @gamemaker/gm-cli@latest manual read "data structures"
+npx @gamemaker/gm-cli@latest resourcetool eval "resource list"
+npx @gamemaker/gm-cli@latest resourcetool mcp path/to/project.yyp
+npx @gamemaker/gm-cli@latest compile --target=html5
+npx @gamemaker/gm-cli@latest init --name="TestGame" --ai --actions --no-interactive --template "Blank Pixel Game"
+```
+
+GMLoop keeps its own graph-backed read/query commands such as `resource list`,
+`resource inspect`, `room list`, and `room inspect`, but it does not own
+GameMaker-native mutation/manual/MCP command surfaces that already live in
+`gm-cli`.
+
+When the graph visualization Config page is open, GMLoop inspects the
+configured external `gm-cli` ResourceTool MCP server definition from the local
+MCP config files and renders the live `tools/list` catalog directly from that
+server instead of hardcoding a mirrored tool list.
+
 ### `watch` - Monitor Files for Hot-Reload Pipeline
 
 **NEW**: Now integrated with the transpiler to generate JavaScript patches when GML files change.
@@ -201,33 +239,75 @@ Slowest transpilation: 5.67ms (complex_script.gml)
 -------------------------------
 ```
 
-**Automatic Hot-Reload Setup:**
+**Live-Reload Workflow:**
 
-The `--auto-inject` flag streamlines the development workflow by automatically preparing the hot-reload environment before starting the watcher. This eliminates the need to manually run `prepare-hot-reload` as a separate step:
+Use the dedicated `live-reload` command group instead of mixing manual injection with `watch`:
 
 ```bash
-# Traditional two-step workflow (still supported):
-pnpm run cli -- prepare-hot-reload --html5-output /path/to/output
-pnpm run cli -- watch /path/to/project
+# Build the configured GameMaker project into the live-reload HTML5 output
+pnpm run cli -- live-reload build /path/to/project
 
-# Streamlined one-step workflow with --auto-inject:
-pnpm run cli -- watch /path/to/project --auto-inject
+# Prepare an existing HTML5 output explicitly
+pnpm run cli -- live-reload prepare --html5-output /path/to/output
 
-# Specify custom HTML5 output directory:
-pnpm run cli -- watch /path/to/project --auto-inject --html5-output /path/to/output
+# Start the full live-reload dev session (builds first when configured)
+pnpm run cli -- live-reload dev /path/to/project
 
-# Use custom WebSocket port for both injection and server:
-pnpm run cli -- watch /path/to/project --auto-inject --websocket-port 18000
+# Query the running status server
+pnpm run cli -- live-reload status
 ```
 
-When `--auto-inject` is enabled, the watch command will:
+The `live-reload dev` command will:
 
-1. Locate the most recent GameMaker HTML5 output (or use the path specified with `--html5-output`)
-2. Copy the runtime wrapper assets into the output directory
-3. Inject the WebSocket client bootstrap snippet into `index.html`
-4. Start the file watcher and WebSocket server
+1. Resolve `runtime.liveReload` from `gmloop.json`
+2. Build the GameMaker project into `runtime.liveReload.html5Output` when `runtime.liveReload.build` is configured
+3. Otherwise, locate an existing HTML5 output via `--html5-output`, `runtime.liveReload.html5Output`, or the latest GameMaker temp output
+4. Copy the self-contained `@gmloop/runtime-wrapper/dist/browser` asset tree into the output directory
+5. Inject a single module bootstrap tag into `index.html`
+6. Start the file watcher plus the runtime, patch, and status servers against that prepared HTML5 output
 
-The WebSocket URL injected into the HTML5 output will match the `--websocket-host` and `--websocket-port` options, ensuring seamless connectivity between the game and the watcher.
+The injected bootstrap uses the configured `--websocket-host`, `--websocket-port`, `--status-host`, and `--status-port` values so the running game can connect deterministically to the live-reload services.
+The watcher ignores generated/cache directories such as `.gmcache`, `.gml-hot-reload`, `dist`, and `node_modules` so the patch stream stays focused on project-owned GML sources.
+
+**Project config for one-click graph UI startup:**
+
+When using `graph visualize --serve`, the `Start Live Reload` button now reads `runtime.liveReload` from `gmloop.json` and forwards that configuration to `live-reload dev`. This allows the graph UI to build the HTML5 export first when build orchestration is configured, instead of relying only on transient `GMS2TEMP` auto-detection.
+
+```json
+{
+  "runtime": {
+    "liveReload": {
+      "build": {
+        "backend": "auto",
+        "configuration": "Default"
+      },
+      "html5Output": "build/html5",
+      "gmTempRoot": ".gm-temp/html5"
+    }
+  }
+}
+```
+
+- `runtime.liveReload.html5Output` - Stable HTML5 output directory to inject and serve for live reload. Relative paths resolve from the project root.
+- `runtime.liveReload.gmTempRoot` - Optional fallback root for GameMaker temporary HTML5 outputs when `html5Output` is not set. Relative paths resolve from the project root.
+- `runtime.liveReload.build.backend` - Build backend selection: `auto` (default), `gm-cli`, or `igor`.
+- `runtime.liveReload.build.project` - Optional explicit `.yyp` path. Defaults to the single `.yyp` discovered under the selected project root.
+- `runtime.liveReload.build.configuration` - Optional GameMaker build configuration name. Defaults to `Default`.
+- `runtime.liveReload.build.toolPath` - Optional explicit path to `gm-cli` or Igor.
+- `runtime.liveReload.build.runtimeRoot` - Optional explicit GameMaker runtime root for Igor.
+- `runtime.liveReload.build.userFolder` - Optional explicit GameMaker user folder for Igor.
+- `runtime.liveReload.build.licenseFile` - Optional explicit GameMaker license plist path.
+- `runtime.liveReload.build.cacheDir` - Optional explicit build cache directory.
+- `runtime.liveReload.build.tempDir` - Optional explicit build temp directory for Igor.
+- `runtime.liveReload.build.extraArgs` - Optional extra command-line arguments appended to the selected backend invocation.
+
+When `runtime.liveReload.build` is present, `Start Live Reload` and `live-reload dev` always rebuild the HTML5 export into `runtime.liveReload.html5Output` before injection and watcher startup.
+
+**Build prerequisites:**
+
+- `gm-cli` or an installed GameMaker runtime with Igor must be available.
+- Command-line GameMaker builds still require a valid GameMaker login/license context.
+- Igor builds require either a license plist or a GameMaker user folder. Configure them explicitly when auto-detection is not sufficient.
 
 **Debouncing File Changes:**
 
@@ -472,29 +552,60 @@ The watch command includes robust error handling to maintain stability:
 ✅ **Transpilation metrics tracking** ✨
 ✅ **Performance statistics on watch stop** ✨
 
-### `prepare-hot-reload` - Inject Runtime Wrapper
-
-Injects the hot-reload runtime wrapper into the most recent GameMaker HTML5 output
-so the running game connects to the patch server automatically.
+### `live-reload prepare` - Sync Bootstrap Assets
 
 ```bash
-# Inject into the latest HTML5 output
-pnpm run cli -- prepare-hot-reload
+# Prepare the latest detected HTML5 output
+pnpm run cli -- live-reload prepare
 
-# Inject into a specific HTML5 output directory
-pnpm run cli -- prepare-hot-reload --html5-output /path/to/html5/output
+# Prepare a specific HTML5 output directory
+pnpm run cli -- live-reload prepare --html5-output /path/to/html5/output
 ```
 
 **Options:**
 
 - `--html5-output <path>` - Path to the HTML5 output directory
 - `--gm-temp-root <path>` - Root directory for GameMaker HTML5 temp outputs
-- `--websocket-url <url>` - WebSocket URL for hot-reload patches
+- `--websocket-host <host>` - WebSocket host for hot-reload patches
+- `--websocket-port <port>` - WebSocket port for hot-reload patches
+- `--status-host <host>` - Status server host embedded in the bootstrap config
+- `--status-port <port>` - Status server port embedded in the bootstrap config
 - `--force` - Re-inject even if snippet already exists
 - `--quiet` - Suppress informational output
 
-When GameMaker is running the HTML5 server, the command auto-detects the active
-`-root` folder from the GMWebServ process and targets that output first.
+### `live-reload build` - Build HTML5 Output
+
+Build the configured GameMaker project into the HTML5 output directory used by live reload.
+
+```bash
+# Build the current project
+pnpm run cli -- live-reload build
+
+# Build a specific project directory or .yyp
+pnpm run cli -- live-reload build /path/to/project
+```
+
+`live-reload build` reads `runtime.liveReload.build` and `runtime.liveReload.html5Output` from `gmloop.json`, selects `gm-cli` or Igor, runs the external GameMaker build, and verifies that the produced output contains `index.html`.
+
+**Options:**
+
+- `--verbose` - Print the selected backend command line
+- `--quiet` - Suppress informational output
+
+### `live-reload dev` - Build, Prepare, And Watch
+
+Start the full live-reload session for a GameMaker project.
+
+```bash
+# Build first when runtime.liveReload.build is configured, then watch
+pnpm run cli -- live-reload dev /path/to/project
+
+# Force an existing output directory when build orchestration is not configured
+pnpm run cli -- live-reload dev /path/to/project --html5-output /path/to/html5/output
+```
+
+When `runtime.liveReload.build` exists, `live-reload dev` treats `runtime.liveReload.html5Output` as the canonical output directory, rebuilds it before injection, and serves that same prepared output as the runtime URL shown by the UI.
+
 ✅ **Configurable patch history limit** ✨
 ✅ **Error recovery and graceful degradation** ✨
 ✅ **Patch validation before broadcast** ✨
@@ -512,28 +623,28 @@ When GameMaker is running the HTML5 server, the command auto-detects the active
 - Event transpilation (not just scripts)
 - Shader and asset hot-reloading
 
-### `watch-status` - Query Watch Command Status
+### `live-reload status` - Query Live-Reload Status
 
-Queries the running watch command's status server for real-time metrics and diagnostics without interrupting the watcher. This provides a convenient human-friendly interface to the watch command's HTTP status server.
+Queries the running live-reload status server for real-time metrics and diagnostics without interrupting the watcher.
 
 ```bash
 # Query full status with metrics and recent patches
-pnpm run cli -- watch-status
+pnpm run cli -- live-reload status
 
 # Get health check information
-pnpm run cli -- watch-status --endpoint health
+pnpm run cli -- live-reload status --endpoint health
 
-# Check if watch command is running (lightweight ping)
-pnpm run cli -- watch-status --endpoint ping
+# Check if live reload is running (lightweight ping)
+pnpm run cli -- live-reload status --endpoint ping
 
 # Query readiness status (for Kubernetes/orchestration)
-pnpm run cli -- watch-status --endpoint ready
+pnpm run cli -- live-reload status --endpoint ready
 
 # Get JSON output for scripting/automation
-pnpm run cli -- watch-status --format json
+pnpm run cli -- live-reload status --format json
 
 # Query custom host/port
-pnpm run cli -- watch-status --status-host 127.0.0.1 --status-port 18000
+pnpm run cli -- live-reload status --status-host 127.0.0.1 --status-port 18000
 ```
 
 **Options:**
@@ -546,8 +657,8 @@ pnpm run cli -- watch-status --status-host 127.0.0.1 --status-port 18000
 **Example Output:**
 
 ```
-$ pnpm run cli -- watch-status
-=== Watch Command Status ===
+$ pnpm run cli -- live-reload status
+=== Live Reload Status ===
 
 Uptime: 2h 15m 43s
 Total patches: 42
@@ -693,21 +804,7 @@ Generates GML identifier metadata from the GameMaker manual repository.
 pnpm run cli -- generate-gml-identifiers
 ```
 
-### `lookup-gml-identifier` - Query Built-In Metadata
-
-Looks up a built-in GML keyword/function/identifier from `gml-identifiers.json`
-(the manual-derived snapshot). This command does not maintain a separate glossary;
-it reads the identifier snapshot directly.
-
-```bash
-pnpm run cli -- lookup-gml-identifier draw_text
-pnpm run cli -- lookup-gml-identifier draw_text --json
-```
-
-Behavior:
-
-- Exit code `0`: identifier exists in the snapshot.
-- Exit code `2`: identifier is not recognized as a built-in.
+For interactive manual lookup/search, use `gm-cli manual read <query>` or `gm-cli manual open <query>` instead of a GMLoop-specific manual-search implementation.
 
 ### `generate-feather-metadata` - Generate Feather Metadata
 
@@ -715,6 +812,80 @@ Generates Feather metadata for GameMaker's static analysis.
 
 ```bash
 pnpm run cli -- generate-feather-metadata
+```
+
+### `graph` - Build and Query the Dual-Root Semantic Graph Index
+
+Manages the SQLite-backed dual-root graph index for symbol search, node inspection,
+and project analysis.
+
+```bash
+# Build / rebuild the graph index
+pnpm run cli -- graph index
+pnpm run cli -- graph index --path path/to/project --force
+
+# Search the index
+pnpm run cli -- graph search "player"
+pnpm run cli -- graph search "player" --path path/to/project
+
+# Validate graph index health
+pnpm run cli -- graph doctor --path path/to/project
+
+# Visualize the graph index in the browser
+pnpm run cli -- graph visualize --path path/to/project
+pnpm run cli -- graph visualize --port 7890
+
+# Export graph visualization as a standalone bundle
+pnpm run cli -- graph visualize --path path/to/project --output ./graph-output
+```
+
+**Options:**
+
+- `--path <path>` - Project root or `.yyp` file path
+- `--toolset-root <path>` - Optional toolset root for dual-root indexing
+- `--database-path <path>` - Override the SQLite database path (default:
+  `.gmloop/graph.db` under the project root)
+- `--force` - Force full rebuild even when a database already exists
+- `--json` - Return machine-readable JSON envelope
+- `--config <path>` - Path to `gmloop.json` for graph config
+
+**JSON envelope format:**
+
+All `--json` commands return a stable envelope:
+
+```json
+{
+  "command": "graph search",
+  "projectRoot": "/path/to/project",
+  "databasePath": "/path/to/project/.gmloop/graph.db",
+  "graphIds": ["project"],
+  "payload": { ... }
+}
+```
+
+**Ownership note:** The graph index is a semantic analysis and retrieval surface.
+It does not perform refactoring, formatting, or linting. It is backed by
+`@gmloop/semantic` and exposed through the CLI for human and agent use.
+
+### `symbol` - Inspect Symbols and Relationships
+
+Queries the graph index to inspect symbol definitions, references, and dependencies.
+All symbol subcommands accept either a plain identifier (e.g., `scr_player`) or
+a full graph node id (e.g., `project::gml/script/scr_player`).
+
+```bash
+# Inspect a symbol by name or graph id
+pnpm run cli -- symbol inspect scr_player
+pnpm run cli -- symbol inspect project::gml/script/scr_player
+
+# Get context around a symbol (declaration + neighbors)
+pnpm run cli -- symbol context project::gml/script/scr_player --depth 3
+
+# Get neighboring symbols
+pnpm run cli -- symbol neighbors project::gml/script/scr_player --depth 2
+
+# Find all usages of a symbol
+pnpm run cli -- symbol usages project::gml/script/scr_player
 ```
 
 ## Architecture
@@ -775,7 +946,6 @@ The CLI package is organized into focused, single-responsibility modules:
 - `refactor.ts` - Safe, project-wide code transformations
 - `format.ts` - GML code formatting
 - `generate-gml-identifiers.ts` - Identifier metadata generation
-- `lookup-gml-identifier.ts` - Built-in identifier lookup from manual-derived metadata
 - `generate-feather-metadata.ts` - Feather metadata generation
 
 **Modules** (`src/modules/`)
@@ -896,8 +1066,7 @@ Provides ANTLR-based GML parsing used by the transpiler.
 
 ## References
 
-- [Hot Reload Architecture](../../docs/hot-reload.md) - Overall hot-reload architecture
-- [Semantic Scope Plan](../../docs/semantic-scope-plan.md) - Semantic analysis integration
+- [Target State Architecture Plan](../../docs/target-state.md) - Overall hot-reload and semantic architecture
 - [Transpiler README](../transpiler/README.md) - GML → JavaScript transpilation details
 - [Runtime Wrapper README](../runtime-wrapper/README.md) - Patch application and hot-swapping
 

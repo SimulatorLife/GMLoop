@@ -19,7 +19,7 @@ defaults:
 
 jobs:
   invoke:
-    if: ${{ github.event.issue.pull_request && (github.event.comment.body == '@aider' || startsWith(github.event.comment.body || '', '@aider ')) }}
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body || '', '@aider') }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
@@ -27,7 +27,6 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: aider
-      max_agent_retries: ${{ fromJSON(vars.LOCAL_AGENT_MAX_RETRIES || '2') }}
       agent_setup_command: |
         set -euo pipefail
 
@@ -67,38 +66,8 @@ jobs:
       agent_command: |
         set -euo pipefail
 
-        if [ -z "${ADDITIONAL_CONTEXT:-}" ]; then
-          echo "❌ Missing prompt context from PR comment."
-          exit 1
-        fi
-
         export NO_PROXY="${NO_PROXY:+${NO_PROXY},}127.0.0.1,localhost"
         export no_proxy="${no_proxy:+${no_proxy},}127.0.0.1,localhost"
-
-        if ! command -v aider >/dev/null 2>&1; then
-          python3 -m pip install --user aider-chat
-          export PATH="$HOME/.local/bin:$PATH"
-        fi
-
-        if ! command -v aider >/dev/null 2>&1; then
-          echo "❌ Could not install Aider CLI."
-          exit 1
-        fi
-
-        AIDER_TASK_MESSAGE_FILE="${RUNNER_TEMP:-/tmp}/aider-task-message.txt"
-        cat > "${AIDER_TASK_MESSAGE_FILE}" <<PROMPT
-        You are aider, running in GitHub Actions against a local Ollama-backed OpenAI-compatible endpoint.
-        Inspect the repository and make the requested code changes.
-        Start with the first validation or inspection command requested by the user, then base file selection only on command output or repository files you actually read.
-        If the task asks for lint fixes, run \`pnpm run lint\` first, choose one deterministic ESLint issue from the real output, edit the actual source file that produced it, then re-run \`pnpm run lint\`, \`pnpm run build:ts\`, and \`pnpm run lint:quiet\`.
-        Do not speculate about likely files, helper names, or rule failures before command output identifies them.
-        Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree unless a real command or file-access blocker prevents edits.
-        Do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless the user explicitly asks for those files.
-        For non-documentation code changes, run \`pnpm run build:ts\` and \`pnpm run lint:quiet\` after edits unless a real blocker prevents validation.
-
-        User task from PR comment:
-        ${ADDITIONAL_CONTEXT}
-        PROMPT
 
         set +e
         stdbuf -oL -eL aider \
@@ -107,7 +76,7 @@ jobs:
           --subtree-only \
           --no-auto-commits \
           --no-dirty-commits \
-          --message-file "${AIDER_TASK_MESSAGE_FILE}" 2>&1 | tee "$RUNNER_TEMP/aider.log"
+          --message-file "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/aider.log"
         aider_status="${PIPESTATUS[0]}"
         set -e
 

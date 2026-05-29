@@ -1,9 +1,10 @@
 import { strict as assert } from "node:assert";
 import { describe, test } from "node:test";
 
-import { validateBatchPatchDependencies, validatePatchDependencies } from "../src/runtime/patch-utils.js";
-import { createRuntimeWrapper } from "../src/runtime/runtime-wrapper.js";
-import type { Patch, RuntimeRegistry } from "../src/runtime/types.js";
+import { validateBatchPatchDependencies, validatePatchDependencies } from "../browser/runtime/patch-utils.js";
+import { createRuntimeWrapper } from "../browser/runtime/runtime-wrapper.js";
+import type { Patch, RuntimeRegistry } from "../browser/runtime/types.js";
+import { restoreGlobalProperties, snapshotGlobalProperties } from "./test-helpers/runtime-global-state.js";
 
 void describe("Dependency Validation", () => {
     // Strict assertion helpers replace deprecated assert.equal usage.
@@ -145,6 +146,67 @@ void describe("Dependency Validation", () => {
         assert.strictEqual(result.missingDependencies.length, 0);
     });
 
+    void test("validatePatchDependencies accepts script dependencies already present in the GameMaker runtime", () => {
+        const snapshot = snapshotGlobalProperties(["dbg_section"]);
+        const globals = globalThis as Record<string, unknown>;
+
+        try {
+            globals.dbg_section = () => undefined;
+            const registry: RuntimeRegistry = {
+                version: 0,
+                scripts: {},
+                events: {},
+                closures: {}
+            };
+
+            const patch: Patch = {
+                kind: "event",
+                id: "gml/event/obj_spider/Create_0",
+                js_body: "return dbg_section();",
+                metadata: {
+                    dependencies: ["gml/script/dbg_section"]
+                }
+            };
+
+            const result = validatePatchDependencies(patch, registry);
+            assert.strictEqual(result.satisfied, true);
+            assert.deepStrictEqual(result.missingDependencies, []);
+        } finally {
+            restoreGlobalProperties(snapshot);
+        }
+    });
+
+    void test("validateBatchPatchDependencies accepts runtime script dependencies during replay", () => {
+        const snapshot = snapshotGlobalProperties(["show_debug_overlay"]);
+        const globals = globalThis as Record<string, unknown>;
+
+        try {
+            globals.show_debug_overlay = () => undefined;
+            const registry: RuntimeRegistry = {
+                version: 0,
+                scripts: {},
+                events: {},
+                closures: {}
+            };
+
+            const patches: Array<Patch> = [
+                {
+                    kind: "event",
+                    id: "gml/event/obj_spider/Create_0",
+                    js_body: "return show_debug_overlay();",
+                    metadata: {
+                        dependencies: ["gml/script/show_debug_overlay"]
+                    }
+                }
+            ];
+
+            const result = validateBatchPatchDependencies(patches, registry);
+            assert.strictEqual(result.satisfied, true);
+        } finally {
+            restoreGlobalProperties(snapshot);
+        }
+    });
+
     void test("validatePatchDependencies detects multiple missing dependencies", () => {
         const registry: RuntimeRegistry = {
             version: 1,
@@ -208,7 +270,7 @@ void describe("Dependency Validation", () => {
             id: "script:test",
             js_body: "return 42;",
             metadata: {
-                dependencies: ["script:real", null as any, 123 as any, "" as any]
+                dependencies: ["script:real", null, 123 as any, ""]
             }
         };
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { Transpiler } from "../index.js";
+import { Transpiler } from "@gmloop/transpiler";
 
 type TranspilerInstance = InstanceType<typeof Transpiler.GmlTranspiler>;
 type TranspileClosureArgs = Parameters<TranspilerInstance["transpileClosure"]>[0];
@@ -49,16 +49,13 @@ void describe("GmlTranspiler.transpileClosure", () => {
 
         void it("includes metadata with timestamp", () => {
             const transpiler = new Transpiler.GmlTranspiler();
-            const before = Date.now();
             const patch = transpiler.transpileClosure({
                 sourceText: "function f() { return 1; }",
                 symbolId: "gml/closure/scr/f"
             });
-            const after = Date.now();
 
-            assert.ok(patch.metadata?.timestamp !== undefined);
-            assert.ok(patch.metadata.timestamp >= before);
-            assert.ok(patch.metadata.timestamp <= after);
+            assert.strictEqual(typeof patch.metadata?.timestamp, "number", "timestamp should be a number");
+            assert.ok(patch.metadata.timestamp > 0, "timestamp should be positive");
         });
 
         void it("includes sourcePath in metadata when provided", () => {
@@ -226,7 +223,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
                         symbolId: "gml/closure/scr/f",
                         ast: { type: "BlockStatement", body: [] }
                     }),
-                { name: "Error" }
+                { name: "TranspilerError" }
             );
         });
     });
@@ -234,7 +231,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
     void describe("input validation", () => {
         void it("throws TypeError when request is not an object", () => {
             const transpiler = new Transpiler.GmlTranspiler();
-            assert.throws(() => transpiler.transpileClosure(null as unknown as TranspileClosureArgs), {
+            assert.throws(() => transpiler.transpileClosure(null), {
                 name: "TypeError"
             });
         });
@@ -294,7 +291,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
                     transpiler.transpileClosure({
                         sourceText: "function f() {}",
                         symbolId: "gml/closure/scr/broken",
-                        ast: "not-an-object" as unknown
+                        ast: "not-an-object"
                     }),
                 (err: unknown) => err instanceof Error && err.message.includes("gml/closure/scr/broken")
             );

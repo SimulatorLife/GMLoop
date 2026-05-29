@@ -29,6 +29,7 @@ export interface ParserToken extends Token {
 export type {
     GlobalIdentifierTracker,
     IdentifierRoleApplicator,
+    IdentifierRoleCloner,
     IdentifierRoleContextController,
     IdentifierRoleManager,
     ScopeLifecycle,
@@ -191,7 +192,8 @@ export interface PredictionStrategyOptions {
  * when possible.
  */
 export interface ParserOptions
-    extends CommentProcessingOptions,
+    extends
+        CommentProcessingOptions,
         LocationMetadataOptions,
         ScopeTrackingOptions,
         DocCommentAttachmentOptions,

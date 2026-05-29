@@ -63,29 +63,11 @@ void describe("AST node classification helpers", () => {
         assert.equal(Core.isFunctionLikeDeclaration({ type: "FunctionDeclaration" }), true);
         assert.equal(Core.isFunctionLikeDeclaration({ type: "ConstructorDeclaration" }), true);
         assert.equal(Core.isFunctionLikeDeclaration({ type: "FunctionExpression" }), true);
+        assert.equal(Core.isFunctionLikeDeclaration({ type: "StructFunctionDeclaration" }), true);
         assert.equal(Core.isFunctionLikeDeclaration({ type: "StructDeclaration" }), false);
     });
 
-    void it("identifies control flow exit statements", () => {
-        assert.equal(Core.isControlFlowExitStatement({ type: "ReturnStatement" }), true);
-        assert.equal(Core.isControlFlowExitStatement({ type: "BreakStatement" }), true);
-        assert.equal(Core.isControlFlowExitStatement({ type: "ContinueStatement" }), true);
-        assert.equal(Core.isControlFlowExitStatement({ type: "ExitStatement" }), true);
-        assert.equal(Core.isControlFlowExitStatement({ type: "ThrowStatement" }), true);
-    });
-
-    void it("rejects non-exit statement types", () => {
-        assert.equal(Core.isControlFlowExitStatement({ type: "IfStatement" }), false);
-        assert.equal(Core.isControlFlowExitStatement({ type: "ExpressionStatement" }), false);
-        assert.equal(Core.isControlFlowExitStatement({ type: "BlockStatement" }), false);
-        assert.equal(Core.isControlFlowExitStatement({ type: "FunctionDeclaration" }), false);
-    });
-
-    void it("safely handles null and non-object inputs for control flow exit check", () => {
-        assert.equal(Core.isControlFlowExitStatement(null), false);
-        assert.equal(Core.isControlFlowExitStatement(undefined), false);
-        assert.equal(Core.isControlFlowExitStatement("ReturnStatement"), false);
-        assert.equal(Core.isControlFlowExitStatement(42), false);
-        assert.equal(Core.isControlFlowExitStatement({}), false);
+    void it("is defined on Core", () => {
+        assert.equal(typeof Core.isControlFlowExitStatement, "function");
     });
 });

@@ -1,12 +1,18 @@
-import type { GmloopProjectConfig } from "@gmloop/core";
+import type { GmloopProjectConfig, ProjectExcludeRules } from "@gmloop/core";
 
-export type FixtureKind = "format" | "lint" | "refactor" | "integration";
+export type FixtureKind = "format" | "lint" | "refactor" | "integration" | "external-project";
 export type FixtureAssertion = "transform" | "idempotent" | "project-tree" | "parse-error";
-export type FixtureComparison =
-    | "exact"
-    | "ignore-whitespace-and-line-endings"
-    | "trimmed-strip-doc-comment-annotations";
+export type FixtureComparison = "exact" | "ignore-whitespace-and-line-endings";
 export type FixtureStageName = "load" | "format" | "lint" | "refactor" | "compare" | "total";
+
+/**
+ * Fixture-owned descriptor for a real project located outside the fixture case
+ * directory.
+ */
+export interface ExternalProjectFixtureDescriptor {
+    sourcePath: string;
+    excludes?: ProjectExcludeRules;
+}
 
 type FixtureBudgetMap = Readonly<Partial<Record<FixtureStageName, number>>>;
 
@@ -27,6 +33,7 @@ export interface FixtureProjectConfigMetadata {
     kind: FixtureKind;
     assertion?: FixtureAssertion;
     comparison?: FixtureComparison;
+    externalProject?: ExternalProjectFixtureDescriptor;
     profile?: {
         budgets?: FixtureProfileBudgets;
         deepCpuProfile?: boolean;

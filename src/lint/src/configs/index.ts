@@ -1,13 +1,25 @@
 import type { LintPluginShape } from "../contracts/index.js";
 import {
     FEATHER_RULE_LEVELS,
+    LintRuleLevel,
     PERFORMANCE_RULE_LEVELS,
     RECOMMENDED_GML_RULE_LEVELS,
     RECOMMENDED_SAFE_FEATHER_RULE_LEVELS
 } from "./rule-level-presets.js";
 
-export { normalizeLintRulesConfig } from "./project-config.js";
-export { createLintRuleEntriesFromProjectConfig } from "./rule-entries.js";
+export {
+    formatLintRuleLevelList,
+    getLintRuleLevelValues,
+    isLintRuleLevel,
+    LintRuleLevel,
+    normalizeLintRuleLevel,
+    normalizeLintRuleLevelWithFallback
+} from "./lint-rule-level.js";
+export { normalizeLintRulesConfig, normalizeLintRulesConfigOrNull } from "./project-config.js";
+export {
+    createLintRuleEntriesFromProjectConfig,
+    createLintRuleEntriesFromProjectConfigOrNull
+} from "./rule-entries.js";
 
 /**
  * Represents a pinned lint flat-config entry exposed by the lint namespace.
@@ -19,7 +31,7 @@ export type FlatConfig = Readonly<{
     languageOptions?: Readonly<{
         recovery: "none" | "limited";
     }>;
-    rules: Readonly<Record<string, "off" | "warn" | "error">>;
+    rules: Readonly<Record<string, LintRuleLevel>>;
 }>;
 
 export const GML_LINT_FILES_GLOB = Object.freeze(["**/*.gml"]);
@@ -34,16 +46,10 @@ export type LintConfigSets = Readonly<{
 }>;
 
 /**
- * Legacy helper that builds all config sets from a single plugin object.
- * Prefer `createLintConfigsWithPlugins` when gml/feather plugins differ.
+ * Builds all config sets from separate gml and feather plugin objects.
+ * The gml and feather configs may differ; pass the same plugin instance
+ * to both fields to replicate the deprecated single-plugin behavior.
  */
-export function createLintConfigs(plugin: LintPluginShape): LintConfigSets {
-    return createLintConfigsWithPlugins({
-        gmlPlugin: plugin,
-        featherPlugin: plugin
-    });
-}
-
 type LintConfigPluginSet = Readonly<{
     gmlPlugin: LintPluginShape;
     featherPlugin: LintPluginShape;

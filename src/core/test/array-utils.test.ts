@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 // Node deprecated the loose equality helpers (for example `assert.equal`).
 // These tests intentionally rely on the strict variants so future refactors do
@@ -65,6 +65,13 @@ void test("mergeUniqueValues combines unique values and can coerce entries", () 
     assert.ok(!Object.isFrozen(result));
 });
 
+void test("mergeUniqueValues passes values through unchanged when no coerce is provided", () => {
+    const result = mergeUniqueValues(["alpha", "beta"], ["beta", "gamma"]);
+
+    assert.deepEqual(result, ["alpha", "beta", "gamma"]);
+    assert.ok(Object.isFrozen(result));
+});
+
 void test("toArrayFromIterable snapshots arrays before mutation", () => {
     const input = ["alpha", "beta"];
 
@@ -103,6 +110,10 @@ void test("compactArray tolerates iterables and optional freezing", () => {
 void test("compactArray normalizes nullish inputs to empty arrays", () => {
     assert.deepEqual(compactArray(null), []);
     assert.deepEqual(compactArray(), []);
+});
+
+void test("compactArray ignores non-iterable values", () => {
+    assert.deepEqual(compactArray({ value: "alpha" }), []);
 });
 
 void test("pushUnique appends values that are not present", () => {
@@ -144,18 +155,34 @@ void test("findLastIndex returns the index of the last matching element", () => 
     assert.strictEqual(index, 3);
 });
 
-void test("findLastIndex returns -1 when no element matches", () => {
-    const entries = [1, 2, 3];
+void test("findLastIndex returns -1 for non-matching and nullish inputs", () => {
+    const cases: Array<{
+        label: string;
+        entries: number[] | null | undefined;
+        predicate: (value: number) => boolean;
+    }> = [
+        {
+            label: "no matching element",
+            entries: [1, 2, 3],
+            predicate: (value) => value === 5
+        },
+        {
+            label: "null input",
+            entries: null,
+            predicate: () => true
+        },
+        {
+            label: "undefined input",
+            entries: undefined,
+            predicate: () => true
+        }
+    ];
 
-    const index = findLastIndex(entries, (value) => value === 5);
+    for (const testCase of cases) {
+        const index = findLastIndex(testCase.entries, testCase.predicate);
 
-    assert.strictEqual(index, -1);
-});
-
-void test("findLastIndex returns -1 for null input", () => {
-    const index = findLastIndex(null, () => true);
-
-    assert.strictEqual(index, -1);
+        assert.strictEqual(index, -1, `expected -1 for ${testCase.label}`);
+    }
 });
 
 void test("toMutableArray returns the original array when clone is false", () => {
@@ -189,12 +216,6 @@ void test("toMutableArray does not copy doc comment flags by default", () => {
     assert.strictEqual(result._preserveDescriptionBreaks, undefined);
     assert.strictEqual(result._suppressLeadingBlank, undefined);
     assert.strictEqual(result._blockCommentDocs, undefined);
-});
-
-void test("findLastIndex returns -1 for undefined input", () => {
-    const index = findLastIndex(undefined, () => true);
-
-    assert.strictEqual(index, -1);
 });
 
 void test("findLastIndex provides index and array to predicate", () => {

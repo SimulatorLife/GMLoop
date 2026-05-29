@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 import {
     clearIdentifierMetadataCache,
@@ -112,5 +112,5 @@ void test("Memory measurement: unbounded vs bounded cache comparison", () => {
 
     // The savings should be substantial (90% since 10/100 = 10%)
     assert.ok(memorySaved > 0, "LRU cache should provide memory savings");
-    assert.ok(Number.parseInt(percentSaved) >= 85, `Expected at least 85% memory savings, got ${percentSaved}%`);
+    assert.ok(Number.parseInt(percentSaved, 10) >= 85, `Expected at least 85% memory savings, got ${percentSaved}%`);
 });

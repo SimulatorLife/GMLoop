@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Parser } from "@gmloop/parser";
-
-import { Transpiler } from "../index.js";
+import { Transpiler } from "@gmloop/transpiler";
 
 type SemanticAnalyzers = ConstructorParameters<typeof Transpiler.GmlToJsEmitter>[0];
 
@@ -138,9 +137,10 @@ void test("GmlToJsEmitter emits escaped literals for folded strings with control
     assert.equal(result, String.raw`value = "line\nnext\t\"quoted\"";`);
 });
 
-void test("GmlToJsEmitter passes through GML div operator unchanged (div is special-cased in the emitter)", () => {
-    assert.equal(Transpiler.mapBinaryOperator("div"), "div");
-});
+// Individual operator-mapping assertions (mapBinaryOperator / mapUnaryOperator) are
+// exhaustively covered by operator-mapping.test.ts, which tests every GML→JS mapping
+// including edge cases, unknown operators, and all unary operators. Only the integration
+// test below — which exercises the full emitter pipeline — is kept here.
 
 void test("GmlToJsEmitter lowers GML div operator to Math.trunc integer division", () => {
     // `div` must lower to Math.trunc(a / b), not plain `/`.
@@ -150,57 +150,6 @@ void test("GmlToJsEmitter lowers GML div operator to Math.trunc integer division
     const ast = parser.parse();
     const result = Transpiler.emitJavaScript(ast);
     assert.match(result, /Math\.trunc\(a \/ b\)/, "Should emit Math.trunc(a / b) for the div operator");
-});
-
-void test("GmlToJsEmitter maps GML mod operator to JavaScript modulo", () => {
-    assert.equal(Transpiler.mapBinaryOperator("mod"), "%");
-});
-
-void test("GmlToJsEmitter maps GML and operator to JavaScript &&", () => {
-    assert.equal(Transpiler.mapBinaryOperator("and"), "&&");
-});
-
-void test("GmlToJsEmitter maps GML or operator to JavaScript ||", () => {
-    assert.equal(Transpiler.mapBinaryOperator("or"), "||");
-});
-
-void test("GmlToJsEmitter maps GML not operator to JavaScript !", () => {
-    assert.equal(Transpiler.mapUnaryOperator("not"), "!"); // GML does not support the operator 'not'; this is included to automatic fixing
-});
-
-void test("GmlToJsEmitter maps == to === for strict equality", () => {
-    assert.equal(Transpiler.mapBinaryOperator("=="), "===");
-});
-
-void test("GmlToJsEmitter maps != to !== for strict inequality", () => {
-    assert.equal(Transpiler.mapBinaryOperator("!="), "!==");
-});
-
-void test("GmlToJsEmitter maps bitwise AND operator", () => {
-    assert.equal(Transpiler.mapBinaryOperator("&"), "&");
-});
-
-void test("GmlToJsEmitter maps bitwise OR operator", () => {
-    assert.equal(Transpiler.mapBinaryOperator("|"), "|");
-});
-
-void test("GmlToJsEmitter maps bitwise XOR operator", () => {
-    assert.equal(Transpiler.mapBinaryOperator("xor"), "^");
-});
-
-void test("GmlToJsEmitter maps left shift operator", () => {
-    assert.equal(Transpiler.mapBinaryOperator("<<"), "<<");
-});
-
-void test("GmlToJsEmitter maps right shift operator", () => {
-    assert.equal(Transpiler.mapBinaryOperator(">>"), ">>");
-});
-
-void test("GmlToJsEmitter preserves standard JavaScript operators", () => {
-    assert.equal(Transpiler.mapBinaryOperator("+"), "+");
-    assert.equal(Transpiler.mapBinaryOperator("-"), "-");
-    assert.equal(Transpiler.mapBinaryOperator("*"), "*");
-    assert.equal(Transpiler.mapBinaryOperator("/"), "/");
 });
 
 void test("Transpiler.emitJavaScript exports a function", () => {
@@ -773,45 +722,52 @@ void test("Transpiler.emitJavaScript handles while loop with continue", () => {
     assert.ok(result.includes("continue"), "Should include continue");
 });
 
-// Repeat statement tests
-void test("Transpiler.emitJavaScript handles repeat statements", () => {
-    const source = "repeat (5) { x += 1; }";
-    const parser = new Parser.GMLParser(source, {});
-    const ast = parser.parse();
-    const result = Transpiler.emitJavaScript(ast);
-    assert.ok(result.includes("for"), "Should convert to for loop");
-    assert.ok(result.includes("__repeat_count"), "Should use __repeat_count variable");
-    assert.ok(result.includes("5"), "Should include repeat count");
-    assert.ok(result.includes("x += 1"), "Should include body");
-});
+// Repeat statement tests — consolidated into table-driven structure.
+// Each entry covers a distinct combination of count type (literal, variable,
+// expression) and body style (block vs single-statement). Distinct edge cases
+// (nested loops, break/continue) remain as separate tests below.
 
-void test("Transpiler.emitJavaScript handles repeat with variable count", () => {
-    const source = "repeat (n) { total += 1; }";
-    const parser = new Parser.GMLParser(source, {});
-    const ast = parser.parse();
-    const result = Transpiler.emitJavaScript(ast);
-    assert.ok(result.includes("for"), "Should convert to for loop");
-    assert.ok(result.includes("n"), "Should include variable count");
-    assert.ok(result.includes("total += 1"), "Should include body");
-});
+interface RepeatTestCase {
+    description: string;
+    source: string;
+    expectCount: string;
+}
 
-void test("Transpiler.emitJavaScript handles repeat with expression count", () => {
-    const source = "repeat (x + y) { z += 1; }";
-    const parser = new Parser.GMLParser(source, {});
-    const ast = parser.parse();
-    const result = Transpiler.emitJavaScript(ast);
-    assert.ok(result.includes("for"), "Should convert to for loop");
-    assert.ok(result.includes("x") && result.includes("y"), "Should include expression");
-});
+const REPEAT_TEST_CASES: RepeatTestCase[] = [
+    {
+        description: "literal count with block body",
+        source: "repeat (5) { x += 1; }",
+        expectCount: "5"
+    },
+    {
+        description: "variable count with block body",
+        source: "repeat (n) { total += 1; }",
+        expectCount: "n"
+    },
+    {
+        description: "expression count with block body",
+        source: "repeat (x + y) { z += 1; }",
+        expectCount: "x + y"
+    },
+    {
+        description: "literal count without block body",
+        source: "repeat (3) x += 1",
+        expectCount: "3"
+    }
+];
 
-void test("Transpiler.emitJavaScript handles repeat without braces", () => {
-    const source = "repeat (3) x += 1";
-    const parser = new Parser.GMLParser(source, {});
-    const ast = parser.parse();
-    const result = Transpiler.emitJavaScript(ast);
-    assert.ok(result.includes("for"), "Should convert to for loop");
-    assert.ok(result.includes("{") && result.includes("}"), "Should add braces");
-});
+for (const tc of REPEAT_TEST_CASES) {
+    void test(`Transpiler.emitJavaScript handles repeat with ${tc.description}`, () => {
+        const parser = new Parser.GMLParser(tc.source, {});
+        const ast = parser.parse();
+        const result = Transpiler.emitJavaScript(ast);
+
+        assert.ok(result.includes("for"), "Should convert to for loop");
+        assert.ok(result.includes(tc.expectCount), `Should include count expression: ${tc.expectCount}`);
+        // The emitter always wraps the body in braces.
+        assert.ok(result.includes("{") && result.includes("}"), "Should emit braces");
+    });
+}
 
 void test("Transpiler.emitJavaScript handles nested repeat statements", () => {
     const source = "repeat (x) { repeat (y) { z += 1; } }";

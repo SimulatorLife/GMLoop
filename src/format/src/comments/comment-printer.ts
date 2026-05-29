@@ -24,7 +24,7 @@ type PrinterComment = {
 };
 
 function hasTypeProperty(value: unknown): value is { type?: string } {
-    return value !== null && typeof value === "object";
+    return Core.isObjectLike(value);
 }
 
 /**
@@ -394,12 +394,25 @@ function resolveCommentSourceIndentationWidth(comment, originalText): number | n
     const { startIndex } = sourceSpan;
     const previousLineBreakIndex = sourceSpan.originalText.lastIndexOf("\n", startIndex - 1);
     const lineStartIndex = previousLineBreakIndex === -1 ? 0 : previousLineBreakIndex + 1;
-    const linePrefix = sourceSpan.originalText.slice(lineStartIndex, startIndex).replaceAll("\r", "");
+    const linePrefix = sourceSpan.originalText.slice(lineStartIndex, startIndex);
     if (linePrefix.trim().length > 0) {
         return null;
     }
 
-    return linePrefix.replaceAll("\t", "    ").length;
+    // Compute indentation width without allocating any intermediate strings.
+    // Tabs expand to 4 spaces (3 extra chars each) — add 3 * tabCount to the
+    // raw character count.  \r is a non-printing line-break character on the
+    // same line and does not contribute to indentation width.
+    let width = 0;
+    for (let i = 0; i < linePrefix.length; i++) {
+        const cp = linePrefix.charCodeAt(i);
+        if (cp === 9) {
+            width += 4; // tab expands to 4 columns
+        } else if (cp !== 13) {
+            width++; // space or other visible char
+        }
+    }
+    return width;
 }
 
 function resolvePreviousSignificantSourceCharacterBeforeComment(comment, originalText): string | null {

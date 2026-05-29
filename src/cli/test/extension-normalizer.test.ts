@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
 
-import { normalizeExtensions } from "../src/workflow/extension-normalizer.js";
+import { normalizeExtensions } from "../src/commands/watch/extension-normalizer.js";
 
 void test("normalizeExtensions splits strings on commas and path delimiters", () => {
     const input = ["scripts/*.gml,.YY", `.OBJ${path.delimiter}rooms/*.gml`].join(path.delimiter);
@@ -30,4 +30,16 @@ void test("normalizeExtensions falls back when no valid fragments remain", () =>
     const result = normalizeExtensions(null, fallback);
 
     assert.deepStrictEqual(result, fallback);
+});
+
+void test("normalizeExtensions handles brace-glob extension lists", () => {
+    const result = normalizeExtensions("scripts/*.{gml,yy}");
+
+    assert.deepStrictEqual(result, [".gml", ".yy"]);
+});
+
+void test("normalizeExtensions ignores negated glob entries", () => {
+    const result = normalizeExtensions(["*.gml", "!*.yy"]);
+
+    assert.deepStrictEqual(result, [".gml"]);
 });

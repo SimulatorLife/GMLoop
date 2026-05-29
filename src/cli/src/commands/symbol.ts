@@ -1,0 +1,139 @@
+import { Semantic } from "@gmloop/semantic";
+import { Command } from "commander";
+
+import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
+import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
+import { ensureProjectGraphIndex } from "../workflow/project-root.js";
+
+type SymbolCommandSharedOptions = Readonly<{
+    config?: string;
+    databasePath?: string;
+    depth?: number;
+    force?: boolean;
+    json?: boolean;
+    path?: string;
+    toolsetRoot?: string;
+}>;
+
+function printSymbolResult(result: unknown, asJson: boolean): void {
+    if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+    }
+    console.log(typeof result === "string" ? result : JSON.stringify(result, null, 2));
+}
+
+async function runSymbolInspectAction(identifierOrNodeId: string, options: SymbolCommandSharedOptions): Promise<void> {
+    const context = await ensureProjectGraphIndex(options);
+    const query = identifierOrNodeId;
+    const nodeId = query.includes("::")
+        ? query
+        : (Semantic.searchGraphIndex({
+              databasePath: options.databasePath,
+              limit: 1,
+              projectConfig: context.projectConfig,
+              projectRoot: context.projectRoot,
+              query,
+              toolsetRoot: options.toolsetRoot
+          }).results[0]?.id ?? null);
+    if (!nodeId) {
+        throw new Error(`Could not resolve symbol '${identifierOrNodeId}'.`);
+    }
+    const node = Semantic.getGraphNode({
+        databasePath: options.databasePath,
+        nodeId,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    });
+    if (!node) {
+        throw new Error(`Graph node '${nodeId}' was not found.`);
+    }
+    printSymbolResult(node, options.json === true);
+}
+
+export function createSymbolCommand(): Command {
+    const command = applyStandardCommandOptions(new Command("symbol")).description(
+        "Inspect symbols and relationships from built-in metadata and/or project graph index."
+    );
+    const addShared = (nested: Command): Command =>
+        nested
+            .addOption(createPathOption())
+            .addOption(createConfigOption())
+            .option("--database-path <path>", "Graph index database path override.")
+            .option("--toolset-root <path>", "Toolset project root path override.")
+            .option("--force", "Rebuild graph index before query.")
+            .option("--json", "Emit JSON output.")
+            .option("--depth <n>", "Traversal depth.", Number.parseInt);
+
+    const inspect = addShared(
+        applyStandardCommandOptions(new Command("inspect"))
+            .description("Inspect one symbol by identifier or graph node id.")
+            .argument("<identifierOrId>", "Identifier name or graph node id.")
+    );
+    inspect.action(async function symbolInspectAction(identifierOrNodeId: string) {
+        await runSymbolInspectAction(identifierOrNodeId, this.opts<SymbolCommandSharedOptions>());
+    });
+
+    const context = addShared(
+        applyStandardCommandOptions(new Command("context"))
+            .description("Show symbol context bundle.")
+            .argument("<nodeId>", "Graph node id.")
+    );
+    context.action(async function symbolContextAction(nodeId: string) {
+        const options = this.opts<SymbolCommandSharedOptions>();
+        const resolved = await ensureProjectGraphIndex(options);
+        const payload = Semantic.getGraphContext({
+            databasePath: options.databasePath,
+            depth: options.depth,
+            nodeId,
+            projectConfig: resolved.projectConfig,
+            projectRoot: resolved.projectRoot,
+            toolsetRoot: options.toolsetRoot
+        });
+        printSymbolResult(payload, options.json === true);
+    });
+
+    const neighbors = addShared(
+        applyStandardCommandOptions(new Command("neighbors"))
+            .description("Show symbol neighbors.")
+            .argument("<nodeId>", "Graph node id.")
+    );
+    neighbors.action(async function symbolNeighborsAction(nodeId: string) {
+        const options = this.opts<SymbolCommandSharedOptions>();
+        const resolved = await ensureProjectGraphIndex(options);
+        const payload = Semantic.getGraphNeighbors({
+            databasePath: options.databasePath,
+            depth: options.depth,
+            nodeId,
+            projectConfig: resolved.projectConfig,
+            projectRoot: resolved.projectRoot,
+            toolsetRoot: options.toolsetRoot
+        });
+        printSymbolResult(payload, options.json === true);
+    });
+
+    const usages = addShared(
+        applyStandardCommandOptions(new Command("usages"))
+            .description("Show symbol usages.")
+            .argument("<nodeId>", "Graph node id.")
+    );
+    usages.action(async function symbolUsagesAction(nodeId: string) {
+        const options = this.opts<SymbolCommandSharedOptions>();
+        const resolved = await ensureProjectGraphIndex(options);
+        const payload = Semantic.getGraphUsages({
+            databasePath: options.databasePath,
+            nodeId,
+            projectConfig: resolved.projectConfig,
+            projectRoot: resolved.projectRoot,
+            toolsetRoot: options.toolsetRoot
+        });
+        printSymbolResult(payload, options.json === true);
+    });
+
+    command.addCommand(inspect);
+    command.addCommand(context);
+    command.addCommand(neighbors);
+    command.addCommand(usages);
+    return command;
+}

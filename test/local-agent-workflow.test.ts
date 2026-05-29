@@ -40,12 +40,24 @@ async function readAllWorkflowSources(): Promise<string> {
     return workflowSources.join("\n");
 }
 
-function getRequiredQwenTaskPrompt(source: string): string {
-    const match = /QWEN_TASK_PROMPT="\$\(cat <<'PROMPT'\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*\)"/u.exec(source);
+function getRequiredSharedAgentPrompt(source: string): string {
+    const heredocMatch =
+        /cat > "\$\{AGENT_PROMPT_FILE\}" <<PROMPT\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*export AGENT_PROMPT_FILE/u.exec(
+            source
+        );
+    if (heredocMatch?.groups?.prompt) {
+        return heredocMatch.groups.prompt;
+    }
 
-    assert.ok(match?.groups?.prompt, "Qwen workflow must define a task prompt heredoc.");
+    const writerMatch =
+        /write_agent_prompt_file\(\) \{\n(?<promptWriter>[\s\S]*?)\n\s*export AGENT_PROMPT_FILE\n\s*\}/u.exec(source);
 
-    return match.groups.prompt;
+    assert.ok(
+        writerMatch?.groups?.promptWriter,
+        "Parent workflow must materialize a shared AGENT_PROMPT_FILE for child agents."
+    );
+
+    return writerMatch.groups.promptWriter;
 }
 
 function getRequiredWorkflowInputBlock(source: string, inputName: string): string {
@@ -54,14 +66,6 @@ function getRequiredWorkflowInputBlock(source: string, inputName: string): strin
     assert.ok(match?.groups?.block, `Workflow must define ${inputName}.`);
 
     return match.groups.block;
-}
-
-function getRequiredAiderMessageTemplate(source: string): string {
-    const match = /cat > "\$\{AIDER_TASK_MESSAGE_FILE\}" <<PROMPT\n(?<prompt>[\s\S]*?)\n\s*PROMPT/u.exec(source);
-
-    assert.ok(match?.groups?.prompt, "Aider workflow must write a task message heredoc.");
-
-    return match.groups.prompt;
 }
 
 function getRequiredChildWorkflowCommand(source: string, inputName: string): string {
@@ -77,7 +81,63 @@ function getRequiredChildWorkflowCommand(source: string, inputName: string): str
     return source.slice(start, end);
 }
 
+function getRequiredAiderCommand(source: string): string {
+    const commandStartIndex = source.indexOf("stdbuf -oL -eL aider \\");
+    assert.notEqual(commandStartIndex, -1, "Aider workflow must invoke aider with explicit CLI flags.");
+
+    const commandTail = source.slice(commandStartIndex);
+    const commandLines = commandTail.split("\n");
+    const capturedCommandLines: string[] = [];
+
+    for (const line of commandLines) {
+        if (capturedCommandLines.length > 0 && line.includes("| tee ")) {
+            capturedCommandLines.push(line);
+            break;
+        }
+        if (capturedCommandLines.length > 0 || line.includes("stdbuf -oL -eL aider")) {
+            capturedCommandLines.push(line);
+        }
+    }
+
+    assert.ok(capturedCommandLines.length > 0, "Aider workflow command block must not be empty.");
+
+    return capturedCommandLines.join("\n");
+}
+
+function assertAiderCommandIncludesRequiredFlags(commandSource: string): void {
+    const commandLines = commandSource
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    const requiredFlags = [
+        "--yes-always",
+        "--no-browser",
+        "--subtree-only",
+        "--no-auto-commits",
+        "--no-dirty-commits",
+        "--message"
+    ];
+
+    for (const requiredFlag of requiredFlags) {
+        assert.ok(
+            commandLines.some((line) => line.includes(requiredFlag)),
+            `Aider command must include ${requiredFlag}.`
+        );
+    }
+}
+
+function assertWorkflowDispatchesToReusableAgent(source: string, agentName: string): void {
+    assert.match(
+        source,
+        new RegExp(String.raw`contains\(github\.event\.comment\.body \|\| '', '@${agentName}'\)`, "u")
+    );
+    assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
+    assert.match(source, new RegExp(String.raw`agent: ${agentName}`, "u"));
+}
+
 function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
+    assert.match(prompt, /Repository root:/u);
+    assert.match(prompt, /User task from PR comment:/u);
     assert.match(prompt, /pnpm run lint/u);
     assert.match(prompt, /pnpm run build:ts/u);
     assert.match(prompt, /pnpm run lint:quiet/u);
@@ -87,55 +147,6 @@ function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
     assert.match(prompt, /generated files/u);
     assert.match(prompt, /dist files/u);
 }
-
-function assertQwenUsesLocalAgentLoop(source: string): void {
-    const prompt = getRequiredQwenTaskPrompt(source);
-    const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
-    const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
-
-    assert.match(source, /github\.event\.comment\.body == '@qwen'/u);
-    assert.match(source, /startsWith\(github\.event\.comment\.body \|\| '', '@qwen '\)/u);
-    assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
-    assert.match(source, /agent: qwen/u);
-    assert.doesNotMatch(source, /agent_cli:/u);
-    assertPromptEnforcesCommandGroundedEditLoop(prompt);
-    assert.match(prompt, /absolute paths under the repository root/u);
-    assert.match(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
-    assert.match(source, /^\s*QWEN_TASK_PROMPT=/mu);
-    assert.match(source, /REPOSITORY_ROOT="\$\(pwd\)"/u);
-    assert.match(source, /Repository root: %s/u);
-    assert.doesNotMatch(source, /local-qwen-smoke/u);
-    assert.match(source, /stdbuf -oL -eL qwen \\/u);
-    assert.match(source, /--prompt "\$\{QWEN_AGENT_PROMPT\}"/u);
-    assert.doesNotMatch(source, /printf '%s\\n' "\$\{QWEN_AGENT_PROMPT\}" \| stdbuf -oL -eL qwen/u);
-    assert.match(setupCommand, /pull_qwen_configured_model\(\)/u);
-    assert.match(setupCommand, /\.qwen\/settings\.json/u);
-    assert.match(setupCommand, /ollama pull "\$\{configured_model\}"/u);
-    assert.doesNotMatch(agentCommand, /ollama pull/u);
-    assert.match(source, /--approval-mode yolo/u);
-    assert.match(source, /--channel CI/u);
-    assert.match(source, /--append-system-prompt "\$\{QWEN_CI_SYSTEM_PROMPT\}"/u);
-    assert.doesNotMatch(source, /--prompt-interactive/u);
-}
-
-void test("qwen invoke is the single local-only Qwen workflow", async () => {
-    const source = await readWorkflowSource("qwen-invoke.yml");
-    const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
-
-    assertQwenUsesLocalAgentLoop(source);
-    assert.ok(
-        source.lastIndexOf("agent_setup_command") < source.lastIndexOf("agent_command"),
-        "Qwen must pull the configured local model before invoking the real task."
-    );
-    assert.match(source, /agent_package: \$\{\{ vars\.QWEN_CODE_PACKAGE \|\| '@qwen-code\/qwen-code@0\.14\.5' \}\}/u);
-    assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
-    assert.doesNotMatch(source, /verify_qwen_/u);
-    assert.doesNotMatch(source, /openai-tool-registry/u);
-    assert.doesNotMatch(source, /OPENROUTER_API_KEY/u);
-    assert.doesNotMatch(source, /QWEN_OPENAI_MODEL/u);
-    assert.doesNotMatch(source, /@qwen-local/u);
-    assert.ok(!workflowFileNames.includes("qwen-local-code-tasks.yml"));
-});
 
 void test("qwen invoke uses checked-in settings for local model selection", async () => {
     const workflowSource = await readWorkflowSource("qwen-invoke.yml");
@@ -149,55 +160,59 @@ void test("qwen invoke uses checked-in settings for local model selection", asyn
     assert.ok(settings.model.name.length > 0, "Qwen settings must declare a local model name.");
     assert.ok(settings.permissions.allow.includes("Read"));
     assert.ok(settings.permissions.allow.includes("Edit"));
-    assert.ok(settings.permissions.allow.includes("Bash(pnpm run *)"));
-    assert.ok(settings.permissions.deny.includes("WebSearch"));
-    assert.ok(settings.permissions.deny.includes("WebFetch"));
+    assert.ok(
+        settings.permissions.allow.some((permission) => /^Bash\(pnpm\b/u.test(permission)),
+        "Qwen settings must allow pnpm-backed repository validation commands."
+    );
+    assert.ok(
+        settings.permissions.deny.some(
+            (permission) => permission.toLowerCase() === "websearch" || permission === "web_search"
+        ),
+        "Qwen settings must deny web search tooling."
+    );
+    assert.ok(
+        settings.permissions.deny.some((permission) => permission.toLowerCase() === "webfetch"),
+        "Qwen settings must deny web fetch tooling."
+    );
 });
 
 void test("aider invoke is the single local-only Aider workflow", async () => {
     const source = await readWorkflowSource("aider-invoke.yml");
+    const parentSource = await readWorkflowSource("agent-invoke.yml");
     const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
-    const prompt = getRequiredAiderMessageTemplate(source);
+    const sharedPrompt = getRequiredSharedAgentPrompt(parentSource);
     const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
     const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
+    const aiderCommand = getRequiredAiderCommand(source);
 
     assert.match(source, /name: '▶️ Aider Invoke'/u);
-    assert.match(source, /github\.event\.comment\.body == '@aider'/u);
-    assert.match(source, /startsWith\(github\.event\.comment\.body \|\| '', '@aider '\)/u);
-    assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
-    assert.match(source, /agent: aider/u);
-    assert.match(source, /max_agent_retries: \$\{\{ fromJSON\(vars\.LOCAL_AGENT_MAX_RETRIES \|\| '2'\) \}\}/u);
+    assertWorkflowDispatchesToReusableAgent(source, "aider");
+    assert.doesNotMatch(source, /max_agent_retries:/u);
     assert.doesNotMatch(source, /agent_cli:/u);
     assert.match(setupCommand, /pull_aider_configured_model\(\)/u);
     assert.match(setupCommand, /\.aider\.conf\.yml/u);
     assert.match(setupCommand, /ollama_model="\$\{configured_model#openai\/\}"/u);
     assert.match(setupCommand, /ollama pull "\$\{ollama_model\}"/u);
     assert.doesNotMatch(agentCommand, /ollama pull/u);
-    assertPromptEnforcesCommandGroundedEditLoop(prompt);
+    assert.doesNotMatch(agentCommand, /command -v aider/u);
+    assert.doesNotMatch(agentCommand, /pip install --user aider-chat/u);
+    assert.doesNotMatch(agentCommand, /HOME\/\.local\/bin/u);
+    assert.doesNotMatch(agentCommand, /Could not install Aider CLI/u);
+    assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
+    assert.match(agentCommand, /--message-file "\$\{AGENT_PROMPT_FILE\}"/u);
+    assert.doesNotMatch(source, /AIDER_TASK_MESSAGE_FILE/u);
+    assert.doesNotMatch(source, /--message "\$\(cat/u);
     assert.ok(
         source.lastIndexOf("agent_setup_command") < source.indexOf("agent_command"),
         "Aider must pull the configured local model before invoking the CLI."
     );
-    assert.match(
-        source,
-        /aider[\s\S]*--yes-always[\s\S]*--no-browser[\s\S]*--subtree-only[\s\S]*--no-auto-commits[\s\S]*--no-dirty-commits[\s\S]*--message-file/u
-    );
+    assertAiderCommandIncludesRequiredFlags(aiderCommand);
     assert.match(source, /aider_status="\$\{PIPESTATUS\[0\]\}"/u);
     assert.doesNotMatch(source, /Aider completed without producing local file changes/u);
     assert.doesNotMatch(source, /OPENAI_API_TYPE/u);
     assert.doesNotMatch(source, /@aider-local/u);
     assert.doesNotMatch(source, /--model/u);
     assert.ok(!workflowFileNames.includes("aider-local-code-tasks.yml"));
-});
-
-void test("aider invoke uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
-    const source = await readFile(path.resolve(process.cwd(), ".aider.conf.yml"), "utf8");
-
-    assert.doesNotMatch(source, /provider:/u);
-    assert.doesNotMatch(source, /openai-api-type:/u);
-    assert.match(source, /^model:\s*\S+/mu);
-    assert.match(source, /^openai-api-key:\s*\S+/mu);
-    assert.match(source, /^openai-api-base:\s*http:\/\/(?:127\.0\.0\.1|localhost):\d+\/v1\s*$/mu);
 });
 
 void test("agent invoke validates local OpenAI-compatible endpoint without loading models", async () => {
@@ -212,8 +227,8 @@ void test("agent invoke validates local OpenAI-compatible endpoint without loadi
     assert.doesNotMatch(source, /LOCAL_MODEL/u);
     assert.doesNotMatch(source, /ollama pull/u);
     assert.doesNotMatch(source, /chat\/completions/u);
-    assert.match(source, /validate_local_endpoint:/u);
-    assert.match(source, /OLLAMA_NATIVE_URL='http:\/\/127\.0\.0\.1:11434'/u);
+    assert.match(source, /OLLAMA_NATIVE_URL="\$\{OPENAI_BASE_URL%\/\}"/u);
+    assert.match(source, /OLLAMA_NATIVE_URL="\$\{OLLAMA_NATIVE_URL%\/v1\}"/u);
     assert.match(source, /\$\{OLLAMA_NATIVE_URL\}\/api\/version/u);
     assert.match(source, /\$\{OPENAI_BASE_URL%\/\}\/models/u);
     assert.match(source, /jq -e 'type == "object"'/u);
@@ -226,7 +241,12 @@ void test("agent invoke exports OpenAI API type for every child agent", async ()
     const parentSource = await readWorkflowSource("agent-invoke.yml");
     const aiderSource = await readWorkflowSource("aider-invoke.yml");
 
-    assert.match(parentSource, /env:\n\s+OPENAI_API_TYPE: openai/u);
+    assert.match(
+        parentSource,
+        /env:\n\s+OPENAI_API_TYPE: openai\n\s+OPENAI_BASE_URL: \$\{\{ inputs\.openai_base_url \}\}/u
+    );
+    assert.match(parentSource, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \|\| 'ollama' \}\}/u);
+    assert.doesNotMatch(parentSource, /NODE_OPTIONS: --max-old-space-size/u);
     assert.doesNotMatch(aiderSource, /export OPENAI_API_TYPE=/u);
     assert.doesNotMatch(aiderSource, /--set-env OPENAI_API_TYPE=openai/u);
 });
@@ -234,25 +254,59 @@ void test("agent invoke exports OpenAI API type for every child agent", async ()
 void test("agent invoke streams custom command output while preserving exit status", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
     const setupInputBlock = getRequiredWorkflowInputBlock(source, "agent_setup_command");
+    const setupFileInputBlock = getRequiredWorkflowInputBlock(source, "agent_setup_command_file");
 
     assert.match(setupInputBlock, /type: string/u);
     assert.match(setupInputBlock, /required: false/u);
+    assert.match(setupFileInputBlock, /type: string/u);
+    assert.match(setupFileInputBlock, /required: false/u);
     assert.match(source, /- name: Run agent setup command/u);
-    assert.match(source, /if: \$\{\{ inputs\.agent_setup_command != '' \}\}/u);
-    assert.match(source, /cat >"\$setup_script" <<'SCRIPT'/u);
-    assert.match(source, /\$\{\{ inputs\.agent_setup_command \}\}/u);
+    assert.match(
+        source,
+        /if: \$\{\{ inputs\.agent_setup_command != '' \|\| inputs\.agent_setup_command_file != '' \}\}/u
+    );
+    assert.match(source, /AGENT_SETUP_COMMAND: \$\{\{ inputs\.agent_setup_command \}\}/u);
+    assert.match(source, /AGENT_SETUP_COMMAND_FILE: \$\{\{ inputs\.agent_setup_command_file \}\}/u);
+    assert.match(source, /if \[ -n "\$\{AGENT_SETUP_COMMAND_FILE:-\}" \]; then/u);
+    assert.match(source, /\/\*\|\.\.\/\*\|\*\/\.\.\/\*\|\*\/\.\.\|\.\.\)/u);
+    assert.match(source, /agent_setup_command_file must be a safe repository-relative path/u);
+    assert.match(source, /source_setup_script="\$\{GITHUB_WORKSPACE\}\/\$\{AGENT_SETUP_COMMAND_FILE\}"/u);
+    assert.match(source, /cp "\$\{source_setup_script\}" "\$setup_script"/u);
+    assert.match(source, /printf '%s\\n' "\$\{AGENT_SETUP_COMMAND\}" > "\$setup_script"/u);
+    assert.match(source, /sed -i 's\/\\r\$\/\/' "\$setup_script"/u);
     assert.match(source, /stdbuf -oL -eL bash "\$setup_script" 2>&1 \| tee "\$RUNNER_TEMP\/agent-setup\.log"/u);
     assert.match(source, /- name: Run agent custom command with retries/u);
+    assert.match(source, /if: \$\{\{ inputs\.agent_command != '' \|\| inputs\.agent_command_file != '' \}\}/u);
+    assert.match(source, /AGENT_COMMAND: \$\{\{ inputs\.agent_command \}\}/u);
+    assert.match(source, /AGENT_COMMAND_FILE: \$\{\{ inputs\.agent_command_file \}\}/u);
+    assert.match(source, /if \[ -n "\$\{AGENT_COMMAND_FILE:-\}" \]; then/u);
+    assert.match(source, /agent_command_file must be a safe repository-relative path/u);
     assert.match(source, /stdbuf -oL -eL bash "\$script" 2>&1 \| tee "\$\{attempt_log\}"/u);
     assert.match(source, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
     assert.match(source, /return "\$\{agent_status\}"/u);
     assert.match(source, /cp "\$\{attempt_log\}" "\$RUNNER_TEMP\/agent-live\.log"/u);
 });
 
+void test("agent invoke accepts marker-prefixed agent comments but still requires the first meaningful line to target the agent", async () => {
+    const source = await readWorkflowSource("agent-invoke.yml");
+
+    assert.match(source, /BEGIN \{ skipping = 1 \}/u);
+    assert.match(source, /if \(skipping && line ~ \/\^\[\[:space:\]\]\*\$\/\) next/u);
+    assert.match(source, /line ~ \/\^\[\[:space:\]\]\*<!--\.\*-->\[\[:space:\]\]\*\$\/\) next/u);
+    assert.match(source, /grep -qE "\^\$\{mention\}\(\[\[:space:\]\]\|\$\)"/u);
+    assert.match(source, /Comment does not start with \$\{mention\} after optional marker lines; aborting\./u);
+    assert.match(source, /sed -E "1s\/\^\$\{mention\}\[\[:space:\]\]\*\/\/"/u);
+});
+
 void test("agent invoke workflow fails when a successful agent run produces no push", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
-    assert.match(source, /if \[ "\$\{\{ steps\.run_agent\.outcome \}\}" = "failure" \] \|\| \[ "\$\{\{ steps\.run_agent\.conclusion \}\}" = "failure" \]; then/u);
+    assert.match(source, /RUN_AGENT_OUTCOME: \$\{\{ steps\.run_agent\.outcome \|\| '' \}\}/u);
+    assert.match(source, /RUN_AGENT_CONCLUSION: \$\{\{ steps\.run_agent\.conclusion \|\| '' \}\}/u);
+    assert.match(
+        source,
+        /if \[ "\$\{RUN_AGENT_OUTCOME\}" = "failure" \] \|\| \[ "\$\{RUN_AGENT_CONCLUSION\}" = "failure" \]; then/u
+    );
     assert.match(source, /if \[ -f "\$SENTINEL" \]; then/u);
     assert.match(source, /Agent completed without producing pushable local changes/u);
     assert.match(source, /Agent exhausted \$\{total_attempts\} attempt\(s\) without producing pushable local changes/u);
@@ -264,29 +318,35 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
     const retryStepIndex = source.indexOf("- name: Run agent custom command with retries");
     const cleanupStepIndex = source.indexOf("- name: Close empty failed agent PR");
 
-    assert.match(source, /max_agent_retries:\n\s+type: number\n\s+required: false\n\s+default: 2/u);
+    assert.match(source, /max_agent_retries:\n\s+type: number\n\s+required: false\n\s+default: 1/u);
     assert.ok(retryStepIndex > 0, "agent command must run from a retry-aware step.");
     assert.ok(cleanupStepIndex > retryStepIndex, "empty PR cleanup must run only after retry-aware execution.");
     assert.match(source, /MAX_AGENT_RETRIES: \$\{\{ inputs\.max_agent_retries \}\}/u);
     assert.match(source, /total_attempts=\$\(\(MAX_AGENT_RETRIES \+ 1\)\)/u);
     assert.match(source, /for \(\(attempt = 1; attempt <= total_attempts; attempt\+\+\)\); do/u);
-    assert.match(source, /The previous attempt was invalid because it completed without producing any pushable repository changes/u);
-    assert.match(source, /Work in the checked-out repository, not uploaded chat snippets/u);
-    assert.match(source, /run `pnpm run lint` before code selection/u);
-    assert.match(source, /quote the exact lint summary line/u);
-    assert.match(source, /If no concrete diff is produced, this retry will fail/u);
-    assert.match(source, /ADDITIONAL_CONTEXT="\$\(build_attempt_context "\$\{attempt\}"\)"/u);
+    assert.match(source, /write_agent_prompt_file "\$\{ADDITIONAL_CONTEXT:-\}"/u);
+    assert.match(source, /if \[ ! -f "\$\{AGENT_PROMPT_FILE\}" \]; then/u);
+    assert.match(source, /Parent workflow failed to materialize AGENT_PROMPT_FILE/u);
+    assert.doesNotMatch(source, /retry_prompt_file/u);
+    assert.doesNotMatch(source, /build_attempt_context/u);
     assert.match(source, /push_current_branch_if_needed/u);
     assert.match(source, /NO_CHANGE_SENTINEL="\$\{RUNNER_TEMP:-\/tmp\}\/\.agent_no_change_retries_exhausted"/u);
     assert.match(source, /date \+"%F %T" > "\$NO_CHANGE_SENTINEL"/u);
     assert.match(source, /RETRY_COMMENT_SENTINEL="\$\{RUNNER_TEMP:-\/tmp\}\/\.agent_retry_comment_posted"/u);
     assert.match(source, /post_retry_comment_once\(\)/u);
     assert.match(source, /Retry comment already posted; skipping duplicate PR comment/u);
-    assert.match(source, /did not produce pushable repository changes on attempt \$\{failed_attempt\}\/\$\{total_attempts\}/u);
+    assert.match(
+        source,
+        /did not produce pushable repository changes on attempt \$\{failed_attempt\}\/\$\{total_attempts\}/u
+    );
     assert.match(source, /starting retry attempt \$\{next_attempt\}\/\$\{total_attempts\}/u);
+    assert.doesNotMatch(source, /stricter command-grounded instructions/u);
     assert.match(source, /gh issue comment "\$\{PR_NUMBER\}" --body "\$\{retry_message\}" --repo "\$\{REPOSITORY\}"/u);
     assert.match(source, /post_retry_comment_once "\$\{attempt\}" "\$\(\(attempt \+ 1\)\)"/u);
-    assert.match(source, /Attempt \$\{attempt\}\/\$\{total_attempts\} produced no pushable changes; starting a fresh retry session/u);
+    assert.match(
+        source,
+        /Attempt \$\{attempt\}\/\$\{total_attempts\} produced no pushable changes; starting a fresh retry session/u
+    );
     assert.match(source, /reset_branch_to_retry_baseline\(\)/u);
     assert.match(source, /git reset --hard "origin\/\$\{target_ref\}"/u);
     assert.match(source, /git submodule update --init --recursive/u);
@@ -295,7 +355,9 @@ void test("agent invoke retries no-change local agent attempts before cleanup ca
 
 void test("agent invoke closes only empty PRs on expected agent branches after reporting failure", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
-    const failureCommentIndex = source.indexOf('if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then');
+    const failureCommentIndex = source.indexOf(
+        'if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then'
+    );
     const cleanupStepIndex = source.indexOf("- name: Close empty failed agent PR");
 
     assert.ok(failureCommentIndex > 0, "failure path must post the failure comment.");
@@ -312,8 +374,14 @@ void test("agent invoke closes only empty PRs on expected agent branches after r
     assert.match(source, /\.changed_files/u);
     assert.match(source, /if \[ "\$\{pr_state\}" != "open" \]; then/u);
     assert.match(source, /if \[ "\$\{changed_files\}" != "0" \]; then/u);
-    assert.match(source, /codex\/task-\*\|copilot\/task-\*\|gemini\/task-\*\|qwen\/task-\*\|qwen-local\/task-\*\|aider\/task-\*/u);
-    assert.match(source, /main\|master\|develop\|development\|trunk\|production\|release\|feature\/\*\|bugfix\/\*\|hotfix\/\*/u);
+    assert.match(
+        source,
+        /codex\/task-\*\|copilot\/task-\*\|gemini\/task-\*\|qwen\/task-\*\|qwen-local\/task-\*\|aider\/task-\*/u
+    );
+    assert.match(
+        source,
+        /main\|master\|develop\|development\|trunk\|production\|release\|feature\/\*\|bugfix\/\*\|hotfix\/\*/u
+    );
     assert.match(source, /if \[ "\$\{head_ref\}" = "\$\{base_ref\}" \]; then/u);
     assert.match(source, /if \[ "\$\{head_repo\}" != "\$\{REPOSITORY\}" \]; then/u);
     assert.match(source, /gh pr close "\$\{ISSUE_NUMBER\}" --repo "\$\{REPOSITORY\}"/u);
@@ -370,24 +438,36 @@ void test("agent invoke workflow checks and pushes changes after every agent att
     assert.doesNotMatch(source, /No local commits ahead of \$\{remote_ref\}; nothing to push/u);
 });
 
-void test("reusable agent workflow reads Node and pnpm versions from repository sources", async () => {
+void test("agent invoke requests merge-conflict resolution with the same agent after a successful dirty push", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
-    assert.match(source, /Read Node version from \.nvmrc/u);
-    assert.match(source, /echo "version=\$\(cat \.nvmrc\)" >> "\$GITHUB_OUTPUT"/u);
-    assert.match(source, /Read pnpm version from package\.json/u);
-    assert.match(source, /packageManager\.split\('@'\)\[1\]/u);
-    assert.match(source, /version: \$\{\{ steps\.read-pnpm-version\.outputs\.version \}\}/u);
-    assert.match(source, /uses: actions\/setup-node@v6/u);
-    assert.match(source, /node-version: \$\{\{ steps\.read-node-version\.outputs\.version \}\}/u);
-    assert.doesNotMatch(source, /version: 10\.32\.1/u);
-    assert.doesNotMatch(source, /node-version: "22"/u);
+    assert.match(
+        source,
+        /outputs:\n\s+should_request_merge_conflict_resolution: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.should_request_merge_conflict_resolution \|\| 'false' \}\}/u
+    );
+    assert.match(
+        source,
+        /follow_up_agent: \$\{\{ steps\.evaluate_merge_conflicts\.outputs\.follow_up_agent \|\| '' \}\}/u
+    );
+    assert.match(source, /- name: Evaluate merge conflicts after successful push/u);
+    assert.match(source, /if: always\(\) && steps\.report_outcome\.outputs\.agent_failed != 'true'/u);
+    assert.match(source, /FOLLOW_UP_AGENT: \$\{\{ inputs\.agent \}\}/u);
+    assert.match(source, /gh api "repos\/\$\{REPOSITORY\}\/pulls\/\$\{PR_NUMBER\}"/u);
+    assert.match(source, /mergeableState: \(\.mergeable_state \/\/ "unknown"\)/u);
+    assert.match(source, /if \[ "\$\{mergeable_state\}" != "dirty" \]; then/u);
+    assert.match(source, /requesting merge-conflict resolution with @\$\{FOLLOW_UP_AGENT\}/u);
+    assert.match(source, /request_merge_conflict_resolution:/u);
+    assert.match(source, /needs: invoke/u);
+    assert.match(source, /if: \$\{\{ needs\.invoke\.outputs\.should_request_merge_conflict_resolution == 'true' \}\}/u);
+    assert.match(source, /uses: \.\/\.github\/workflows\/agent-02-resolve-merge-conflicts\.yml/u);
+    assert.match(source, /target_pr_number: \$\{\{ needs\.invoke\.outputs\.target_pr_number \}\}/u);
+    assert.match(source, /agent: \$\{\{ needs\.invoke\.outputs\.follow_up_agent \}\}/u);
 });
 
 void test("GitHub workflows do not hardcode repository Node or pnpm versions", async () => {
     const source = await readAllWorkflowSources();
 
-    assert.doesNotMatch(source, /^\s*version:\s*10\.32\.1\s*$/mu);
-    assert.doesNotMatch(source, /^\s*node-version:\s*["']?22["']?\s*$/mu);
-    assert.doesNotMatch(source, /pnpm@10\.32\.1/u);
+    assert.doesNotMatch(source, /^\s*version:\s.*$/mu);
+    assert.doesNotMatch(source, /^\s*node-version:\s.*$/mu);
+    assert.doesNotMatch(source, /pnpm@.*/u);
 });

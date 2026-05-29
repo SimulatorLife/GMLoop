@@ -33,6 +33,28 @@ const parser = new XMLParser({
     attributeNamePrefix: ""
 });
 
+const NON_WORKSPACE_PATH_SEGMENTS = new Set(["dist", "test", "tests", "reports", "report", "node_modules"]);
+const GENERIC_REPORT_FILE_STEMS = new Set([
+    "junit",
+    "junit-report",
+    "report",
+    "results",
+    "root",
+    "suite",
+    "test",
+    "test-results",
+    "tests"
+]);
+
+function xmlContainsPotentialTestElements(xml: string): boolean {
+    const lowered = xml.toLowerCase();
+    return lowered.includes("<testsuite") || lowered.includes("<testsuites") || lowered.includes("<testcase");
+}
+
+function xmlLooksLikeCheckstyle(xml: string): boolean {
+    return xml.toLowerCase().includes("<checkstyle");
+}
+
 function hasAnyOwn(object: Record<string, unknown>, keys: string[]): boolean {
     return keys.some((key) => Object.hasOwn(object, key));
 }
@@ -167,6 +189,42 @@ function resolveNextSuitePath(node, suitePath, { hasTestcase, hasTestsuite }) {
     return pushNormalizedSuiteSegments([...suitePath], normalizedSuiteName);
 }
 
+function extractWorkspaceNameFromPath(candidatePath: string): string {
+    if (!candidatePath) {
+        return "";
+    }
+    const normalized = candidatePath.replaceAll("\\", "/");
+    const segments = normalized.split("/");
+    const srcIndex = segments.indexOf("src");
+    if (srcIndex !== -1 && srcIndex + 1 < segments.length) {
+        return segments[srcIndex + 1];
+    }
+    return "";
+}
+
+function extractWorkspaceNameFromReportPath(reportFilePath: string): string {
+    if (!reportFilePath) {
+        return "";
+    }
+
+    const normalized = reportFilePath.replaceAll("\\", "/");
+    const workspaceFromDirectory = extractWorkspaceNameFromPath(normalized);
+    if (workspaceFromDirectory) {
+        return workspaceFromDirectory;
+    }
+
+    const reportFileStem = path.basename(normalized, path.extname(normalized));
+    if (reportFileStem && !GENERIC_REPORT_FILE_STEMS.has(reportFileStem)) {
+        return reportFileStem;
+    }
+
+    const parentDirectoryName = path.basename(path.dirname(normalized));
+    if (!parentDirectoryName || NON_WORKSPACE_PATH_SEGMENTS.has(parentDirectoryName)) {
+        return "";
+    }
+    return parentDirectoryName;
+}
+
 /**
  * Record a single testcase result in the aggregate list.
  */
@@ -174,6 +232,8 @@ function recordSuiteTestCase(cases, node, suitePath, reportFilePath = "") {
     const key = buildTestKey(node, suitePath);
     const displayName = describeTestCase(node, suitePath) || key;
     const time = Number.parseFloat(node.time) || 0;
+    const workspace =
+        extractWorkspaceNameFromPath(toTrimmedString(node.file)) || extractWorkspaceNameFromReportPath(reportFilePath);
 
     cases.push({
         node,
@@ -182,7 +242,8 @@ function recordSuiteTestCase(cases, node, suitePath, reportFilePath = "") {
         status: computeStatus(node),
         displayName,
         time,
-        reportFilePath
+        reportFilePath,
+        workspace
     });
     return cases;
 }
@@ -287,9 +348,9 @@ function readCoverage(lcovFiles) {
             const text = readTextFileSync(file);
             for (const line of text.split(/\r?\n/)) {
                 if (line.startsWith("LF:")) {
-                    found += Number.parseInt(line.slice(3)) || 0;
+                    found += Number.parseInt(line.slice(3), 10) || 0;
                 } else if (line.startsWith("LH:")) {
-                    hit += Number.parseInt(line.slice(3)) || 0;
+                    hit += Number.parseInt(line.slice(3), 10) || 0;
                 }
             }
         } catch {
@@ -693,6 +754,20 @@ function readXmlFile(filePath, displayPath) {
 }
 
 function parseXmlTestCases(xml, displayPath, reportFilePath = "") {
+    if (!xmlContainsPotentialTestElements(xml)) {
+        if (xmlLooksLikeCheckstyle(xml)) {
+            return {
+                status: ParseResultStatus.IGNORED,
+                note: `Ignoring checkstyle report ${displayPath}; no test cases found.`
+            };
+        }
+
+        return {
+            status: ParseResultStatus.ERROR,
+            note: `Parsed ${displayPath} but it does not contain any test suites or cases.`
+        };
+    }
+
     try {
         const data = parser.parse(xml);
         if (isCheckstyleDocument(data)) {
@@ -992,7 +1067,8 @@ function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions 
             coverage: scan.coverage,
             lint: scan.lint,
             duplicates,
-            health: scan.health
+            health: scan.health,
+            cases: scan.cases
         };
     }
 
@@ -1391,7 +1467,7 @@ export function runGenerateQualityReport({ command }: any = {}) {
 
     if (exitCode !== 0) {
         process.exitCode = exitCode;
-        throw new CliUsageError("Test regressions detected.");
+        throw new CliUsageError(exitCode === 11 ? "Lint errors detected." : "Test regressions detected.");
     }
 
     return 0;
@@ -1400,7 +1476,63 @@ export function runGenerateQualityReport({ command }: any = {}) {
 type ReportTableState = {
     testRows: Array<string>;
     qualityRows: Array<string>;
+    workspaceRows: Array<string>;
 };
+/**
+ * Compute test statistics broken down by workspace/module from test cases.
+ *
+ * This enables the quality report to show per-workspace test metrics,
+ * helping identify which parts of the codebase have test failures.
+ */
+function computeWorkspaceBreakdown(
+    cases: Array<{ time: number; status: string; workspace?: string }>
+): Map<string, { total: number; passed: number; failed: number; skipped: number; time: number }> {
+    const workspaceStats = new Map<
+        string,
+        { total: number; passed: number; failed: number; skipped: number; time: number }
+    >();
+
+    for (const testCase of cases) {
+        const workspace = testCase.workspace;
+        if (!workspace) {
+            continue;
+        }
+        let stats = workspaceStats.get(workspace);
+        if (!stats) {
+            stats = { total: 0, passed: 0, failed: 0, skipped: 0, time: 0 };
+            workspaceStats.set(workspace, stats);
+        }
+        stats.total += 1;
+        stats.time += testCase.time;
+        switch (testCase.status) {
+            case TestCaseStatus.PASSED: {
+                stats.passed += 1;
+                break;
+            }
+            case TestCaseStatus.FAILED: {
+                stats.failed += 1;
+                break;
+            }
+            case TestCaseStatus.SKIPPED: {
+                stats.skipped += 1;
+                break;
+            }
+        }
+    }
+
+    return workspaceStats;
+}
+
+/**
+ * Format a single workspace row for the report table.
+ */
+function generateWorkspaceRow(
+    workspace: string,
+    stats: { total: number; passed: number; failed: number; skipped: number; time: number }
+): string {
+    const duration = fmtTime(stats.time);
+    return `| ${workspace} | ${stats.total} | ${stats.passed} | ${stats.failed} | ${stats.skipped} | ${duration} |`;
+}
 
 /**
  * Create the report table containers with their headings pre-populated.
@@ -1418,6 +1550,12 @@ function createQualityReportTables(): ReportTableState {
             "",
             "| Target | Lint Warnings | Lint Errors | Duplicated Code | Build Size | Files > 1k LoC | TODOs |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+        ],
+        workspaceRows: [
+            "#### Test Results by Workspace",
+            "",
+            "| Workspace | Total | Passed | Failed | Skipped | Duration |",
+            "| --- | ---: | ---: | ---: | ---: | ---: |"
         ]
     };
 }
@@ -1433,13 +1571,21 @@ function addReportRowForResultSet(
         results,
         diffStats,
         failureBreakdown,
-        healthStats = null
+        healthStats = null,
+        includeWorkspaceBreakdown = false
     }: {
         label: string;
-        results: { usedDir?: string | null; lint?: unknown; duplicates?: unknown; health?: unknown };
+        results: {
+            usedDir?: string | null;
+            lint?: unknown;
+            duplicates?: unknown;
+            health?: unknown;
+            cases?: Array<{ time: number; status: string; workspace?: string }>;
+        };
         diffStats: any;
         failureBreakdown: unknown;
         healthStats?: unknown;
+        includeWorkspaceBreakdown?: boolean;
     }
 ): void {
     if (!results?.usedDir) {
@@ -1448,6 +1594,16 @@ function addReportRowForResultSet(
 
     tables.testRows.push(generateTestRow(label, results, diffStats, failureBreakdown));
     tables.qualityRows.push(generateQualityRow(label, results, healthStats));
+
+    // Compute and append workspace breakdown rows
+    if (includeWorkspaceBreakdown && results.cases && results.cases.length > 0) {
+        const workspaceStats = computeWorkspaceBreakdown(results.cases);
+        // Sort workspaces alphabetically for consistent output
+        const sortedWorkspaces = Array.from(workspaceStats.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+        for (const [workspace, stats] of sortedWorkspaces) {
+            tables.workspaceRows.push(generateWorkspaceRow(workspace, stats));
+        }
+    }
 }
 
 /**
@@ -1482,8 +1638,13 @@ function resolveHeadReportLabel({ base, merged }) {
 /**
  * Format the final report markdown table with the test and quality sections.
  */
-function formatQualityReportTable({ testRows, qualityRows }: ReportTableState): string {
-    return [...testRows, "", ...qualityRows].join("\n");
+function formatQualityReportTable({ testRows, qualityRows, workspaceRows }: ReportTableState): string {
+    const parts: string[] = [...testRows, "", ...qualityRows];
+    // Only include workspace section if it has more than header rows
+    if (workspaceRows.length > 2) {
+        parts.push("", ...workspaceRows);
+    }
+    return parts.join("\n");
 }
 
 function formatRegressionComparisonFlow({
@@ -1562,7 +1723,8 @@ function runCli(options: any = {}) {
         results: head,
         diffStats: diffStats.head,
         failureBreakdown: failureBreakdowns.head,
-        healthStats
+        healthStats,
+        includeWorkspaceBreakdown: true
     });
 
     addReportRowForResultSet(reportTables, {
@@ -1583,8 +1745,13 @@ function runCli(options: any = {}) {
 
     let exitCode = 0;
     let statusLine;
+    const lintErrorCount = Number(target.lint?.errors ?? 0);
+    const hasLintErrors = Number.isFinite(lintErrorCount) && lintErrorCount > 0;
 
-    if (base.usedDir && target.usedDir) {
+    if (hasLintErrors) {
+        exitCode = 11;
+        statusLine = `❌ Lint errors detected on gate target (${usingMerged ? "Merged" : "PR (Head)"}): ${String(lintErrorCount)}.`;
+    } else if (base.usedDir && target.usedDir) {
         const regressions = detectRegressions(base, target);
         const gateLabel = usingMerged ? "Base → Merged" : "Base → PR (Head)";
         if (regressions.length > 0) {

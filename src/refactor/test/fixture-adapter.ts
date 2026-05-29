@@ -4,7 +4,7 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 import type { FixtureAdapter } from "@gmloop/fixture-runner";
 
-import { isPathSelectedByLists } from "../src/codemods/naming-convention/path-selection.js";
+import { createPathSelectionMatcher } from "../src/codemods/naming-convention/path-selection.js";
 import { normalizeRefactorProjectConfig } from "../src/project-config.js";
 import { RefactorEngine } from "../src/refactor-engine.js";
 
@@ -23,10 +23,6 @@ type FixtureNamingTarget = {
     symbolId: string;
     occurrences: Array<FixtureSymbolOccurrence>;
 };
-
-function escapeRegExp(source: string): string {
-    return source.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
-}
 
 function collectFunctionDeclarations(sourceText: string): Array<{ name: string; start: number }> {
     const declarations: Array<{ name: string; start: number }> = [];
@@ -48,7 +44,7 @@ function collectFunctionDeclarations(sourceText: string): Array<{ name: string; 
 }
 
 function collectNameOccurrences(sourceText: string, name: string): Array<{ start: number; end: number }> {
-    const escapedName = escapeRegExp(name);
+    const escapedName = Core.escapeRegExp(name);
     const pattern = new RegExp(`(?<=^|[^A-Za-z0-9_])${escapedName}(?=[^A-Za-z0-9_]|$)`, "g");
     const hits: Array<{ start: number; end: number }> = [];
     let match: RegExpExecArray | null = pattern.exec(sourceText);
@@ -121,7 +117,8 @@ async function createFixtureSemanticAnalyzer(projectRoot: string, gmlFilePaths: 
                 return namingTargets;
             }
 
-            return namingTargets.filter((target) => isPathSelectedByLists(projectRoot, target.path, filePaths, []));
+            const isSelectedPath = createPathSelectionMatcher(projectRoot, filePaths, []);
+            return namingTargets.filter((target) => isSelectedPath(target.path));
         },
         getSymbolOccurrences(symbolName: string) {
             return occurrencesByName.get(symbolName) ?? [];

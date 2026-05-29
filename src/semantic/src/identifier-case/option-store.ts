@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 
 import { getDefaultIdentifierCaseOptionStoreMaxEntries } from "./option-store-defaults.js";
-import { IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES_OPTION_NAME } from "./options.js";
+import { evaluateOptionStoreEvictionPolicy, resolveOptionStoreMaxEntries } from "./option-store-policy.js";
 
 // Use canonical Core namespace instead of destructuring
 // Helpers used from Core.Utils:
@@ -30,22 +30,22 @@ function getIdentifierCaseOptionsObject(options: unknown): Record<string, unknow
 }
 
 function trimOptionStoreMap(maxEntries = getDefaultIdentifierCaseOptionStoreMaxEntries()) {
-    if (!Number.isFinite(maxEntries)) {
+    if (!Number.isFinite(maxEntries) || maxEntries === Infinity || maxEntries <= 0) {
         return;
     }
 
-    const limit = Math.floor(maxEntries);
-    if (limit <= 0 || optionStoreMap.size <= limit) {
+    const evictionDecision = evaluateOptionStoreEvictionPolicy({
+        currentStoreSize: optionStoreMap.size,
+        maxEntries
+    });
+
+    if (evictionDecision.entriesToEvict === 0) {
         return;
     }
 
-    while (optionStoreMap.size > limit) {
-        const { value, done } = optionStoreMap.keys().next();
-        if (done) {
-            break;
-        }
-
-        optionStoreMap.delete(value);
+    const { value: oldestKey, done } = optionStoreMap.keys().next();
+    if (!done && oldestKey !== undefined) {
+        optionStoreMap.delete(oldestKey);
     }
 }
 
@@ -62,29 +62,8 @@ function trimOptionStoreMap(maxEntries = getDefaultIdentifierCaseOptionStoreMaxE
  * @returns {number} The normalized entry limit, defaulting to the shared
  * baseline when the caller omits or misconfigures the override.
  */
-function resolveMaxOptionStoreEntries(options) {
-    const resolvedOptions = getIdentifierCaseOptionsObject(options);
-    if (!resolvedOptions) {
-        return getDefaultIdentifierCaseOptionStoreMaxEntries();
-    }
-
-    const configured = resolvedOptions[IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES_OPTION_NAME];
-
-    if (configured === Infinity) {
-        return configured;
-    }
-
-    const numericConfigured = Core.toFiniteNumber(configured);
-
-    if (numericConfigured === null) {
-        return getDefaultIdentifierCaseOptionStoreMaxEntries();
-    }
-
-    if (numericConfigured <= 0) {
-        return 0;
-    }
-
-    return Math.floor(numericConfigured);
+function resolveMaxOptionStoreEntries(options: unknown): number {
+    return resolveOptionStoreMaxEntries(options, getDefaultIdentifierCaseOptionStoreMaxEntries);
 }
 
 function getStoreKey(options) {

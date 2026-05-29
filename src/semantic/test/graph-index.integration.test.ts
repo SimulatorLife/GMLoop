@@ -6,6 +6,7 @@ import test from "node:test";
 import {
     buildGraphIndex,
     doctorGraphIndex,
+    exportGraphVisualizationData,
     getGraphContext,
     getGraphUsages,
     openExistingGraphIndexDatabase,
@@ -54,6 +55,9 @@ async function createDualRootFixture(): Promise<{
     };
 }
 
+const SHARED_TOOLSET_SCRIPT_NODE_ID = "toolset::resource::scripts/shared_toolset_fn/shared_toolset_fn.yy";
+const PLAYER_UPDATE_SCRIPT_RESOURCE_NODE_ID = "project::resource::scripts/player_update/player_update.yy";
+
 void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edges", async () => {
     const fixture = await createDualRootFixture();
 
@@ -68,15 +72,15 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
             query: "shared_toolset_fn",
             toolsetRoot: fixture.toolsetRoot
         });
-        assert.equal(search.results[0]?.id, "toolset::gml/script/shared_toolset_fn");
+        assert.equal(search.results[0]?.id, SHARED_TOOLSET_SCRIPT_NODE_ID);
 
         const context = getGraphContext({
-            nodeId: "toolset::gml/script/shared_toolset_fn",
+            nodeId: SHARED_TOOLSET_SCRIPT_NODE_ID,
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
         assert.ok(context);
-        assert.equal(context?.target.id, "toolset::gml/script/shared_toolset_fn");
+        assert.equal(context?.target.id, SHARED_TOOLSET_SCRIPT_NODE_ID);
         assert.ok((context?.summary.length ?? 0) > 0);
 
         const database = openGraphIndexDatabase(result.databasePath);
@@ -93,14 +97,99 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
             assert.ok(
                 edgeRows.some(
                     (entry) =>
-                        entry.fromId ===
-                            "project::gml/function/function:scripts/player_update/player_update.gml::1:9:9" &&
-                        entry.toId === "toolset::gml/script/shared_toolset_fn"
+                        entry.fromId === PLAYER_UPDATE_SCRIPT_RESOURCE_NODE_ID &&
+                        entry.toId === SHARED_TOOLSET_SCRIPT_NODE_ID
                 )
             );
         } finally {
             database.close();
         }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex includes macro, enum, and enum member symbol nodes", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-symbol-kinds-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/combat_state/combat_state.yy",
+            JSON.stringify({ name: "combat_state", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/combat_state/combat_state.gml",
+            [
+                "#macro MAX_ENEMIES 8",
+                "enum CombatState {",
+                "    Idle,",
+                "    Attacking",
+                "}",
+                "",
+                "function combat_state() {",
+                "    return CombatState.Attacking + MAX_ENEMIES;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const symbolRows = (
+                database
+                    .prepare(
+                        "SELECT kind, name FROM nodes WHERE kind IN ('macro', 'enum', 'enum_member') ORDER BY kind, name"
+                    )
+                    .all() as Array<{ kind: string; name: string }>
+            ).map((row) => ({ kind: row.kind, name: row.name }));
+
+            assert.deepEqual(symbolRows, [
+                { kind: "enum", name: "CombatState" },
+                { kind: "enum_member", name: "Attacking" },
+                { kind: "enum_member", name: "Idle" },
+                { kind: "macro", name: "MAX_ENEMIES" }
+            ]);
+        } finally {
+            database.close();
+        }
+
+        const macroSearch = searchGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot,
+            query: "MAX_ENEMIES"
+        });
+        assert.equal(macroSearch.results[0]?.kind, "macro");
+
+        const enumMemberSearch = searchGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot,
+            query: "Attacking"
+        });
+        assert.equal(enumMemberSearch.results[0]?.kind, "enum_member");
     } finally {
         await fixture.cleanup();
     }
@@ -184,7 +273,7 @@ void test("buildGraphIndex honors disabled embeddings and doctor reports stale f
         assert.ok(report.issues.some((issue) => issue.code === "GRAPH_DB_STALE"));
         assert.ok(!report.issues.some((issue) => issue.code === "GRAPH_EMBEDDINGS_MISSING"));
         assert.equal(report.runtime?.driver, "node:sqlite");
-        assert.equal(report.runtime?.experimental, true);
+        assert.equal(report.runtime?.runtimeStability, "stable");
         assert.equal(report.integrity?.ok, true);
     } finally {
         await fixture.cleanup();
@@ -401,16 +490,13 @@ void test("graph usages return incoming usage records with source and target nod
         });
 
         const usages = getGraphUsages({
-            nodeId: "toolset::gml/script/shared_toolset_fn",
+            nodeId: SHARED_TOOLSET_SCRIPT_NODE_ID,
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
 
-        assert.equal(
-            usages[0]?.from.id,
-            "project::gml/function/function:scripts/player_update/player_update.gml::1:9:9"
-        );
-        assert.equal(usages[0]?.to.id, "toolset::gml/script/shared_toolset_fn");
+        assert.equal(usages[0]?.from.id, PLAYER_UPDATE_SCRIPT_RESOURCE_NODE_ID);
+        assert.equal(usages[0]?.to.id, SHARED_TOOLSET_SCRIPT_NODE_ID);
     } finally {
         await fixture.cleanup();
     }
@@ -509,9 +595,13 @@ void test("buildGraphIndex projects structs, variables, functions, and concrete 
 
         const database = openGraphIndexDatabase(result.databasePath);
         try {
-            const nodeRows = database.prepare("SELECT kind, name FROM nodes").all() as Array<{
+            const nodeRows = database
+                .prepare("SELECT id, kind, name, scip_symbol AS scipSymbol FROM nodes")
+                .all() as Array<{
+                id: string;
                 kind: string;
                 name: string;
+                scipSymbol: string | null;
             }>;
             const nodeKinds = new Set(nodeRows.map((row) => row.kind));
             const nodeNamesByKind = new Map<string, Set<string>>();
@@ -544,6 +634,135 @@ void test("buildGraphIndex projects structs, variables, functions, and concrete 
             assert.ok(nodeNamesByKind.get("struct_variable")?.has("struct_health"));
             assert.ok(nodeNamesByKind.get("instance_variable")?.has("speed_bonus"));
             assert.equal(nodeKinds.has("resource"), false);
+            assert.equal(nodeKinds.has("constructor"), false);
+
+            const structNode = nodeRows.find((row) => row.kind === "struct" && row.name === "Player");
+            const structVariableNode = nodeRows.find(
+                (row) => row.kind === "struct_variable" && row.name === "struct_health"
+            );
+            assert.ok(structNode, "expected Player struct node");
+            assert.ok(structVariableNode, "expected struct_health struct variable node");
+            assert.match(structNode.scipSymbol ?? "", /^gml\/struct\//u);
+
+            const structVariableOwnershipEdge = database
+                .prepare(
+                    `
+                        SELECT COUNT(*) AS count
+                        FROM edges
+                        WHERE from_id = ? AND to_id = ? AND type = 'defines'
+                    `
+                )
+                .get(structNode.id, structVariableNode.id) as { count: number };
+            assert.equal(structVariableOwnershipEdge.count, 1);
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const visualizationStructNode = visualizationData.nodes.find(
+                (node) => node.kind === "struct" && node.name === "Player"
+            );
+            const visualizationStructVariableNode = visualizationData.nodes.find(
+                (node) => node.kind === "struct_variable" && node.name === "struct_health"
+            );
+            assert.ok(visualizationStructNode, "expected Player struct in graph visualization data");
+            assert.ok(
+                visualizationStructVariableNode,
+                "expected struct_health struct variable in graph visualization data"
+            );
+            assert.ok(
+                visualizationData.nodes.every((node) => String(node.kind) !== "constructor"),
+                "constructors must be exported as struct nodes, not constructor nodes"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === visualizationStructNode.id &&
+                        edge.target === visualizationStructVariableNode.id &&
+                        edge.type === "defines"
+                ),
+                "expected graph visualization data to connect struct variables to their struct"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex exports object parent metadata as inherits relationships", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-object-inheritance-");
+
+    try {
+        await fixture.writeProjectFile(
+            "Project.yyp",
+            JSON.stringify({
+                name: "Project",
+                resourceType: "GMProject",
+                resources: [
+                    { id: { name: "obj_parent", path: "objects/obj_parent/obj_parent.yy" } },
+                    { id: { name: "obj_child", path: "objects/obj_child/obj_child.yy" } }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_parent/obj_parent.yy",
+            JSON.stringify({ name: "obj_parent", resourceType: "GMObject" })
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_child/obj_child.yy",
+            JSON.stringify({
+                name: "obj_child",
+                resourceType: "GMObject",
+                parentObjectId: {
+                    name: "obj_parent",
+                    path: "objects/obj_parent/obj_parent.yy"
+                }
+            })
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const inheritanceEdges = database
+                .prepare(
+                    `
+                        SELECT from_id AS fromId, to_id AS toId, type
+                        FROM edges
+                        WHERE type = 'inherits'
+                    `
+                )
+                .all() as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.deepEqual(
+                inheritanceEdges.map((edge) => ({ fromId: edge.fromId, toId: edge.toId, type: edge.type })),
+                [
+                    {
+                        fromId: "project::resource::objects/obj_child/obj_child.yy",
+                        toId: "project::resource::objects/obj_parent/obj_parent.yy",
+                        type: "inherits"
+                    }
+                ]
+            );
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === "project::resource::objects/obj_child/obj_child.yy" &&
+                        edge.target === "project::resource::objects/obj_parent/obj_parent.yy" &&
+                        edge.type === "inherits"
+                ),
+                "expected graph visualization export to preserve object inheritance edge semantics"
+            );
         } finally {
             database.close();
         }
@@ -609,14 +828,200 @@ void test("buildGraphIndex connects macro, global, and local variable symbols to
 
             for (const node of [macroNode, globalNode, localNode]) {
                 const incomingEdges = database
-                    .prepare("SELECT from_id AS fromId, type FROM edges WHERE to_id = ? ORDER BY from_id, type")
-                    .all(node.id) as Array<{ fromId: string; type: string }>;
+                    .prepare(
+                        `
+                            SELECT edges.from_id AS fromId, edges.type, nodes.kind AS fromKind
+                            FROM edges
+                            LEFT JOIN nodes ON nodes.id = edges.from_id
+                            WHERE edges.to_id = ?
+                            ORDER BY edges.from_id, edges.type
+                        `
+                    )
+                    .all(node.id) as Array<{ fromId: string; fromKind: string | null; type: string }>;
 
                 assert.ok(
-                    incomingEdges.some((edge) => edge.fromId.startsWith("project::gml/")),
+                    incomingEdges.some((edge) => edge.fromKind !== "file" && edge.fromId.startsWith("project::")),
                     `expected ${node.kind} ${node.name} to be connected from a visible semantic owner`
                 );
             }
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("graph visualization data keeps top-level language symbols connected without file nodes", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-visible-symbol-owners-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/visible_symbols/visible_symbols.yy",
+            JSON.stringify({ name: "visible_symbols", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/visible_symbols/visible_symbols.gml",
+            [
+                "#macro STARTING_SCORE 10",
+                "globalvar visible_global_score;",
+                "enum VisibleState {",
+                "    Ready,",
+                "    Active",
+                "}",
+                "function visible_symbols() {",
+                "    visible_global_score = STARTING_SCORE;",
+                "    return VisibleState.Active;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const visibleNodeIds = new Set(visualizationData.nodes.map((node) => node.id));
+            const visibleEdges = visualizationData.edges.filter(
+                (edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)
+            );
+            const connectedVisibleNodeIds = new Set<string>();
+            for (const edge of visibleEdges) {
+                connectedVisibleNodeIds.add(edge.source);
+                connectedVisibleNodeIds.add(edge.target);
+            }
+
+            for (const expectedNode of [
+                { kind: "macro", name: "STARTING_SCORE" },
+                { kind: "global_variable", name: "visible_global_score" },
+                { kind: "enum", name: "VisibleState" },
+                { kind: "enum_member", name: "Ready" },
+                { kind: "enum_member", name: "Active" },
+                { kind: "function", name: "visible_symbols" }
+            ]) {
+                const node = visualizationData.nodes.find(
+                    (candidate) => candidate.kind === expectedNode.kind && candidate.name === expectedNode.name
+                );
+                assert.ok(node, `expected ${expectedNode.kind} ${expectedNode.name} node`);
+                assert.ok(
+                    node.scipSymbol === null || typeof node.scipSymbol === "string",
+                    `expected ${expectedNode.kind} to include optional scipSymbol metadata`
+                );
+                assert.ok(
+                    node.scopeId === null || typeof node.scopeId === "string",
+                    `expected ${expectedNode.kind} to include optional scopeId metadata`
+                );
+                assert.ok(
+                    connectedVisibleNodeIds.has(node.id),
+                    `expected ${expectedNode.kind} ${expectedNode.name} to have a visible non-file edge`
+                );
+            }
+
+            assert.ok(
+                visibleEdges.some(
+                    (edge) =>
+                        edge.source.includes("gml/enum/enum:scripts/visible_symbols/visible_symbols.gml") &&
+                        edge.target.includes(
+                            "gml/enum-member/enum-member:scripts/visible_symbols/visible_symbols.gml"
+                        ) &&
+                        edge.type === "defines"
+                ),
+                "expected enum members to be directly connected to their enum"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex keeps same-named enum members distinct across different enums", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-enum-member-collisions-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/state_graph/state_graph.yy",
+            JSON.stringify({ name: "state_graph", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/state_graph/state_graph.gml",
+            [
+                "enum MoveState {",
+                "    Idle,",
+                "    Run",
+                "}",
+                "",
+                "enum CombatState {",
+                "    Idle,",
+                "    Attack",
+                "}",
+                "",
+                "function state_graph() {",
+                "    return [MoveState.Idle, CombatState.Idle];",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const idleMemberNodes = database
+                .prepare(
+                    `
+                        SELECT id, scip_symbol AS scipSymbol
+                        FROM nodes
+                        WHERE kind = 'enum_member' AND name = 'Idle'
+                        ORDER BY id
+                    `
+                )
+                .all() as Array<{ id: string; scipSymbol: string }>;
+
+            assert.equal(idleMemberNodes.length, 2);
+            assert.notEqual(idleMemberNodes[0]?.id, idleMemberNodes[1]?.id);
+            assert.notEqual(idleMemberNodes[0]?.scipSymbol, idleMemberNodes[1]?.scipSymbol);
+
+            const enumOwnershipEdges = database
+                .prepare(
+                    `
+                        SELECT from_id AS fromId, to_id AS toId, type
+                        FROM edges
+                        WHERE type = 'defines' AND from_id IN (
+                            SELECT id FROM nodes WHERE kind = 'enum'
+                        ) AND to_id IN (
+                            SELECT id FROM nodes WHERE kind = 'enum_member' AND name = 'Idle'
+                        )
+                        ORDER BY from_id, to_id
+                    `
+                )
+                .all() as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.equal(enumOwnershipEdges.length, 2);
+            assert.notEqual(enumOwnershipEdges[0]?.fromId, enumOwnershipEdges[1]?.fromId);
+            assert.notEqual(enumOwnershipEdges[0]?.toId, enumOwnershipEdges[1]?.toId);
         } finally {
             database.close();
         }
@@ -707,12 +1112,36 @@ void test("buildGraphIndex connects function call edges for script-local and obj
                 .all() as Array<{ fromId: string; toId: string; type: string }>;
 
             assert.ok(
-                callEdges.some((edge) => edge.fromId === graphFunctionsNode.id && edge.toId === helperNode.id),
-                "expected the top-level function node to call the helper function node"
+                callEdges.some(
+                    (edge) =>
+                        (edge.fromId === graphFunctionsNode.id ||
+                            edge.fromId === "project::resource::scripts/graph_functions/graph_functions.yy") &&
+                        edge.toId === helperNode.id
+                ),
+                "expected the top-level script owner to call the helper function node"
             );
             assert.ok(
                 callEdges.some((edge) => edge.fromId !== localHelperNode.id && edge.toId === localHelperNode.id),
                 "expected object-event calls to resolve to local function nodes"
+            );
+
+            const ownershipEdges = database
+                .prepare(
+                    `
+                        SELECT from_id AS fromId, to_id AS toId, type
+                        FROM edges
+                        WHERE to_id = ?
+                        ORDER BY from_id, type
+                    `
+                )
+                .all(localHelperNode.id) as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.ok(
+                ownershipEdges.some(
+                    (edge) =>
+                        edge.fromId === "project::resource::objects/obj_player/obj_player.yy" && edge.type === "defines"
+                ),
+                "expected object-defined functions to stay connected to their owning object resource"
             );
         } finally {
             database.close();
@@ -751,12 +1180,8 @@ void test("buildGraphIndex connects global variables to their defining and refer
             const globalNode = database
                 .prepare("SELECT id FROM nodes WHERE kind = 'global_variable' AND name = 'enemy_limit'")
                 .get() as { id: string } | undefined;
-            const configureFunctionNode = database
-                .prepare("SELECT id FROM nodes WHERE kind = 'function' AND name = 'configure_globals'")
-                .get() as { id: string } | undefined;
 
             assert.ok(globalNode);
-            assert.ok(configureFunctionNode);
 
             const edges = database
                 .prepare(
@@ -772,26 +1197,41 @@ void test("buildGraphIndex connects global variables to their defining and refer
             assert.ok(
                 edges.some(
                     (edge) =>
-                        edge.fromId === "project::file::scripts/configure_globals/configure_globals.gml" &&
+                        edge.fromId === "project::resource::scripts/configure_globals/configure_globals.yy" &&
                         edge.type === "defines"
                 ),
-                "expected the global variable node to stay connected to its defining file"
+                "expected the global variable node to stay connected to its defining script resource"
             );
             assert.ok(
                 edges.some(
                     (edge) =>
-                        edge.fromId === "project::file::scripts/configure_globals/configure_globals.gml" &&
+                        edge.fromId === "project::resource::scripts/configure_globals/configure_globals.yy" &&
                         edge.type === "references"
                 ),
-                "expected the defining file to reference the global variable node"
+                "expected the owning script to reference the global variable node"
             );
             assert.ok(
                 edges.some(
                     (edge) =>
-                        edge.fromId === "project::file::scripts/configure_globals/configure_globals.gml" &&
-                        edge.type === "references"
+                        edge.type === "references" &&
+                        edge.fromId !== "project::file::scripts/configure_globals/configure_globals.gml"
                 ),
-                "expected tracked global references to connect to the global variable node"
+                "expected at least one visible owner to reference the global variable node"
+            );
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const visibleNodeIds = new Set(visualizationData.nodes.map((node) => node.id));
+            const visibleGlobalEdges = visualizationData.edges.filter(
+                (edge) =>
+                    visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target) && edge.target === globalNode.id
+            );
+            assert.ok(
+                visibleGlobalEdges.some(
+                    (edge) =>
+                        edge.source === "project::resource::scripts/configure_globals/configure_globals.yy" &&
+                        edge.type === "defines"
+                ),
+                "expected top-level global declarations to remain visibly connected without file nodes"
             );
         } finally {
             database.close();
@@ -810,6 +1250,20 @@ void test("buildGraphIndex skips dangling edges from stale project references in
             JSON.stringify({
                 name: "InterplanetaryFootball",
                 resourceType: "GMProject",
+                Options: [
+                    {
+                        id: {
+                            name: "Windows",
+                            path: "options/windows/options_windows.yy"
+                        }
+                    },
+                    {
+                        id: {
+                            name: "HTML5",
+                            path: "options/html5/options_html5.yy"
+                        }
+                    }
+                ],
                 resources: [
                     {
                         id: {
@@ -887,6 +1341,133 @@ void test("buildGraphIndex skips dangling edges from stale project references in
     }
 });
 
+void test("buildGraphIndex merges script scope identifiers into the script resource node instead of creating duplicates", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-script-dedup-");
+
+    try {
+        await fixture.writeProjectFile(
+            "InterplanetaryFootball.yyp",
+            JSON.stringify({
+                name: "InterplanetaryFootball",
+                resourceType: "GMProject",
+                resources: [
+                    {
+                        id: {
+                            name: "macros",
+                            path: "scripts/macros/macros.yy"
+                        }
+                    }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "scripts/macros/macros.yy",
+            JSON.stringify({
+                name: "macros",
+                resourceType: "GMScript"
+            })
+        );
+        await fixture.writeProjectFile(
+            "scripts/macros/macros.gml",
+            ["/// @description Macro helpers.", "function macros() {", "    return 1;", "}", ""].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const scriptNodes = database
+                .prepare(
+                    `
+                        SELECT
+                            id,
+                            display_name AS displayName,
+                            relative_path AS filePath,
+                            resource_path AS resourcePath,
+                            scip_symbol AS scipSymbol,
+                            summary
+                        FROM nodes
+                        WHERE kind = 'script'
+                        ORDER BY id
+                    `
+                )
+                .all() as Array<{
+                displayName: string;
+                filePath: string | null;
+                id: string;
+                resourcePath: string | null;
+                scipSymbol: string | null;
+                summary: string;
+            }>;
+
+            assert.deepEqual(
+                scriptNodes.map((node) => ({
+                    displayName: node.displayName,
+                    filePath: node.filePath,
+                    id: node.id,
+                    resourcePath: node.resourcePath,
+                    summary: node.summary
+                })),
+                [
+                    {
+                        displayName: "macros",
+                        filePath: "scripts/macros/macros.gml",
+                        id: "project::resource::scripts/macros/macros.yy",
+                        resourcePath: "scripts/macros/macros.yy",
+                        summary: "script 'macros'. Defined in scripts/macros/macros.gml."
+                    }
+                ]
+            );
+            assert.equal(scriptNodes[0]?.scipSymbol, "gml/script/macros");
+
+            const duplicateScopeNodeCount = database
+                .prepare("SELECT COUNT(*) AS count FROM nodes WHERE kind = 'script' AND display_name = 'script.macros'")
+                .get() as {
+                count: number;
+            };
+            assert.equal(duplicateScopeNodeCount.count, 0);
+
+            const standaloneScriptSymbolNodeCount = database
+                .prepare("SELECT COUNT(*) AS count FROM nodes WHERE id LIKE '%::gml/script/%'")
+                .get() as {
+                count: number;
+            };
+            assert.equal(standaloneScriptSymbolNodeCount.count, 0);
+
+            const functionNode = database
+                .prepare("SELECT id FROM nodes WHERE kind = 'function' AND name = 'macros'")
+                .get() as { id: string } | undefined;
+            assert.ok(functionNode);
+
+            const functionOwnershipEdge = database
+                .prepare(
+                    `
+                        SELECT COUNT(*) AS count
+                        FROM edges
+                        WHERE from_id = ? AND to_id = ? AND type = 'defines'
+                    `
+                )
+                .get("project::resource::scripts/macros/macros.yy", functionNode.id) as {
+                count: number;
+            };
+            assert.equal(functionOwnershipEdge.count, 1);
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
 void test("buildGraphIndex projects the project manifest as the connected project root", async () => {
     const fixture = await createTempProjectWorkspace("graph-index-project-root-");
 
@@ -911,6 +1492,18 @@ void test("buildGraphIndex projects the project manifest as the connected projec
                     },
                     {
                         id: {
+                            name: "misplaced_file",
+                            path: "included/misplaced_file/misplaced_file.yy"
+                        }
+                    },
+                    {
+                        id: {
+                            name: "reddit",
+                            path: "platform/reddit/reddit.yy"
+                        }
+                    },
+                    {
+                        id: {
                             name: "mystery_resource",
                             path: "extensions/mystery_resource/mystery_resource.yy"
                         }
@@ -931,8 +1524,24 @@ void test("buildGraphIndex projects the project manifest as the connected projec
             JSON.stringify({ name: "config", resourceType: "GMIncludedFile" })
         );
         await fixture.writeProjectFile(
+            "included/misplaced_file/misplaced_file.yy",
+            JSON.stringify({ name: "misplaced_file", resourceType: "GMIncludedFile" })
+        );
+        await fixture.writeProjectFile(
+            "platform/reddit/reddit.yy",
+            JSON.stringify({ name: "reddit", resourceType: "GMRedditOptions" })
+        );
+        await fixture.writeProjectFile(
             "extensions/mystery_resource/mystery_resource.yy",
             JSON.stringify({ name: "mystery_resource", resourceType: "GMMysteryResource" })
+        );
+        await fixture.writeProjectFile(
+            "options/windows/options_windows.yy",
+            JSON.stringify({ name: "Windows", resourceType: "GMWindowsOptions" })
+        );
+        await fixture.writeProjectFile(
+            "options/html5/options_html5.yy",
+            JSON.stringify({ name: "HTML5", resourceType: "GMHtml5Options" })
         );
 
         const result = await buildGraphIndex({
@@ -980,7 +1589,50 @@ void test("buildGraphIndex projects the project manifest as the connected projec
             const genericResourceNode = database
                 .prepare("SELECT kind FROM nodes WHERE resource_path = ?")
                 .get("extensions/mystery_resource/mystery_resource.yy") as { kind: string } | undefined;
-            assert.equal(genericResourceNode?.kind, "resource");
+            assert.equal(genericResourceNode, undefined);
+
+            const fileNodeCount = database.prepare("SELECT COUNT(*) AS count FROM nodes WHERE kind = 'file'").get() as {
+                count: number;
+            };
+            assert.equal(fileNodeCount.count, 0);
+
+            const optionNodeCount = database
+                .prepare(
+                    `
+                        SELECT COUNT(*) AS count
+                        FROM nodes
+                        WHERE resource_path LIKE 'options/%'
+                           OR resource_path = 'platform/reddit/reddit.yy'
+                    `
+                )
+                .get() as {
+                count: number;
+            };
+            assert.equal(optionNodeCount.count, 0);
+
+            const misplacedIncludedFileNode = database
+                .prepare("SELECT id FROM nodes WHERE resource_path = ?")
+                .get("included/misplaced_file/misplaced_file.yy") as { id: string } | undefined;
+            assert.equal(misplacedIncludedFileNode, undefined);
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            assert.equal(
+                visualizationData.nodes.some((node) => node.kind === "file"),
+                false
+            );
+            assert.ok(
+                visualizationData.nodes.some(
+                    (node) => node.kind === "data_file" && node.resourcePath === "datafiles/config/config.yy"
+                )
+            );
+            assert.equal(
+                visualizationData.nodes.some((node) => node.resourcePath?.startsWith("options/") ?? false),
+                false
+            );
+            assert.equal(
+                visualizationData.nodes.some((node) => node.resourcePath === "platform/reddit/reddit.yy"),
+                false
+            );
 
             const rootEdges = database
                 .prepare(
@@ -1008,6 +1660,472 @@ void test("buildGraphIndex projects the project manifest as the connected projec
                         type: "contains"
                     }
                 ]
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex projects object event scopes as readable visualization nodes", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-object-event-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/target_script/target_script.yy",
+            JSON.stringify({ name: "target_script", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/target_script/target_script.gml",
+            ["function target_script() {", "    return 1;", "}", ""].join("\n")
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_player/obj_player.yy",
+            JSON.stringify({
+                name: "obj_player",
+                resourceType: "GMObject",
+                eventList: [
+                    {
+                        eventType: 0,
+                        eventNum: 0,
+                        eventContents: "objects/obj_player/obj_player_Create_0.gml"
+                    }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_player/obj_player_Create_0.gml",
+            ["score = target_script();", ""].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const eventNodeId = "project::scope::scope:object:obj_player::0_0";
+        const objectNodeId = "project::resource::objects/obj_player/obj_player.yy";
+        const targetScriptNodeId = "project::resource::scripts/target_script/target_script.yy";
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const eventNode = database
+                .prepare(
+                    "SELECT id, kind, name, display_name AS displayName, relative_path AS filePath, resource_path AS resourcePath, summary FROM nodes WHERE id = ?"
+                )
+                .get(eventNodeId) as
+                | {
+                      displayName: string;
+                      filePath: string;
+                      id: string;
+                      kind: string;
+                      name: string;
+                      resourcePath: string;
+                      summary: string;
+                  }
+                | undefined;
+
+            assert.ok(eventNode, "expected object event scope to become a graph node");
+            assert.equal(eventNode.kind, "object_event");
+            assert.equal(eventNode.name, "obj_player.0_0");
+            assert.equal(eventNode.displayName, "object.obj_player.0_0");
+            assert.equal(eventNode.filePath, "objects/obj_player/obj_player_Create_0.gml");
+            assert.equal(eventNode.resourcePath, "objects/obj_player/obj_player.yy");
+            assert.match(eventNode.summary, /object event 'obj_player\.0_0'/u);
+
+            const edgeRows = database
+                .prepare("SELECT from_id AS fromId, to_id AS toId, type FROM edges ORDER BY from_id, to_id, type")
+                .all() as Array<{ fromId: string; toId: string; type: string }>;
+            assert.ok(
+                edgeRows.some(
+                    (edge) => edge.fromId === objectNodeId && edge.toId === eventNodeId && edge.type === "contains"
+                ),
+                "expected object resources to contain their event nodes"
+            );
+            assert.ok(
+                !edgeRows.some((edge) => edge.fromId.includes("::file::") || edge.toId.includes("::file::")),
+                "expected object event graph edges to exclude backing file nodes"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) => edge.fromId === eventNodeId && edge.toId === targetScriptNodeId && edge.type === "calls"
+                ),
+                "expected event-owned calls to originate from the object event node"
+            );
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const visualizationEventNode = visualizationData.nodes.find((node) => node.id === eventNodeId);
+            assert.equal(visualizationEventNode?.kind, "object_event");
+            assert.equal(visualizationEventNode?.displayName, "object.obj_player.0_0");
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) => edge.source === eventNodeId && edge.target === targetScriptNodeId && edge.type === "calls"
+                ),
+                "expected visualization export to preserve event-to-script call ownership"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("graph visualization keeps object events connected when YY metadata omits explicit event file paths", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-object-event-file-ownership-");
+
+    try {
+        await fixture.writeProjectFile(
+            "ConnectedProject.yyp",
+            JSON.stringify({ name: "ConnectedProject", resourceType: "GMProject" })
+        );
+        await fixture.writeProjectFile(
+            "objects/oSpider/oSpider.yy",
+            JSON.stringify({
+                name: "oSpider",
+                resourceType: "GMObject",
+                eventList: [
+                    { eventNum: 0, eventType: 0, resourceType: "GMEvent" },
+                    { eventNum: 0, eventType: 3, resourceType: "GMEvent" },
+                    { eventNum: 27, eventType: 9, resourceType: "GMEvent" }
+                ]
+            })
+        );
+        await fixture.writeProjectFile("objects/oSpider/Create_0.gml", "hp = 100;\n");
+        await fixture.writeProjectFile("objects/oSpider/Step_0.gml", "hp -= 1;\n");
+        await fixture.writeProjectFile("objects/oSpider/KeyPress_27.gml", 'show_debug_message("pressed");\n');
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const objectResourceNodeId = "project::resource::objects/oSpider/oSpider.yy";
+            const projectNodeId = "project::resource::ConnectedProject.yyp";
+
+            const fileNodes = visualizationData.nodes.filter((node) => node.kind === "file");
+            assert.deepEqual(fileNodes.map((node) => node.filePath).sort(), [
+                "objects/oSpider/Create_0.gml",
+                "objects/oSpider/KeyPress_27.gml",
+                "objects/oSpider/Step_0.gml"
+            ]);
+
+            const objectEventNodes = visualizationData.nodes.filter((node) => node.kind === "object_event");
+            assert.deepEqual(objectEventNodes.map((node) => node.displayName).sort(), [
+                "object.oSpider.Create_0",
+                "object.oSpider.KeyPress_27",
+                "object.oSpider.Step_0"
+            ]);
+
+            for (const objectEventNode of objectEventNodes) {
+                assert.ok(
+                    visualizationData.edges.some(
+                        (edge) =>
+                            edge.source === objectResourceNodeId &&
+                            edge.target === objectEventNode.id &&
+                            edge.type === "contains"
+                    ),
+                    `expected ${objectEventNode.displayName} to stay connected to the object resource node`
+                );
+            }
+
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === projectNodeId &&
+                        edge.target === objectResourceNodeId &&
+                        edge.type === "contains"
+                ),
+                "expected the object resource to remain connected to the central project node"
+            );
+
+            for (const fileNode of fileNodes) {
+                assert.ok(
+                    visualizationData.edges.some(
+                        (edge) =>
+                            edge.source === objectResourceNodeId &&
+                            edge.target === fileNode.id &&
+                            edge.type === "contains"
+                    ),
+                    `expected file node ${fileNode.displayName} to stay connected to its owning resource`
+                );
+            }
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex projects room layers as distinct room_layer nodes with containment edges", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-room-layers-");
+
+    try {
+        await fixture.writeProjectFile(
+            "GameProject.yyp",
+            JSON.stringify({
+                name: "GameProject",
+                resourceType: "GMProject",
+                resources: [
+                    { id: { name: "rmArena", path: "rooms/rmArena/rmArena.yy" } },
+                    { id: { name: "oKnight", path: "objects/oKnight/oKnight.yy" } },
+                    { id: { name: "oDragon", path: "objects/oDragon/oDragon.yy" } }
+                ]
+            })
+        );
+
+        await fixture.writeProjectFile(
+            "rooms/rmArena/rmArena.yy",
+            JSON.stringify({
+                name: "rmArena",
+                resourceType: "GMRoom",
+                layers: [
+                    {
+                        $GMRBackgroundLayer: "",
+                        name: "Background",
+                        resourceType: "GMRBackgroundLayer",
+                        colour: 1,
+                        visible: true
+                    },
+                    {
+                        $GMRInstanceLayer: "",
+                        name: "Instances",
+                        resourceType: "GMRInstanceLayer",
+                        instances: [
+                            {
+                                name: "inst_1",
+                                objectId: { name: "oKnight", path: "objects/oKnight/oKnight.yy" },
+                                resourceType: "GMRInstance"
+                            },
+                            {
+                                name: "inst_2",
+                                objectId: { name: "oDragon", path: "objects/oDragon/oDragon.yy" },
+                                resourceType: "GMRInstance"
+                            }
+                        ]
+                    },
+                    {
+                        $GMRAssetLayer: "",
+                        name: "Decor",
+                        resourceType: "GMRAssetLayer",
+                        assets: []
+                    },
+                    {
+                        $GMRTileLayer: "",
+                        name: "Tiles",
+                        resourceType: "GMRTileLayer",
+                        tiles: {}
+                    }
+                ]
+            })
+        );
+
+        await fixture.writeProjectFile(
+            "objects/oKnight/oKnight.yy",
+            JSON.stringify({ name: "oKnight", resourceType: "GMObject" })
+        );
+        await fixture.writeProjectFile(
+            "objects/oDragon/oDragon.yy",
+            JSON.stringify({ name: "oDragon", resourceType: "GMObject" })
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const roomLayerNodes = database
+                .prepare(
+                    "SELECT id, kind, name, display_name AS displayName, resource_path AS resourcePath FROM nodes WHERE kind = 'room_layer' ORDER BY name"
+                )
+                .all() as Array<{
+                displayName: string;
+                id: string;
+                kind: string;
+                name: string;
+                resourcePath: string | null;
+            }>;
+
+            assert.equal(
+                roomLayerNodes.length,
+                4,
+                "expected four room_layer nodes for background, instance, asset, and tile layers"
+            );
+            assert.deepEqual(
+                roomLayerNodes.map((node) => node.name),
+                ["Background", "Decor", "Instances", "Tiles"]
+            );
+            assert.deepEqual(
+                roomLayerNodes.map((node) => node.displayName),
+                [
+                    "Background (Background Layer)",
+                    "Decor (Asset Layer)",
+                    "Instances (Instance Layer)",
+                    "Tiles (Tile Layer)"
+                ]
+            );
+            assert.ok(
+                roomLayerNodes.every((node) => node.kind === "room_layer"),
+                "expected all room_layer nodes to have kind 'room_layer'"
+            );
+
+            const roomNodeId = "project::resource::rooms/rmArena/rmArena.yy";
+            const backgroundLayerNodeId = roomLayerNodes.find((node) => node.name === "Background")?.id;
+            const decorLayerNodeId = roomLayerNodes.find((node) => node.name === "Decor")?.id;
+            const instancesLayerNodeId = roomLayerNodes.find((node) => node.name === "Instances")?.id;
+            const tilesLayerNodeId = roomLayerNodes.find((node) => node.name === "Tiles")?.id;
+
+            const edgeRows = database
+                .prepare("SELECT from_id AS fromId, to_id AS toId, type FROM edges ORDER BY from_id, to_id, type")
+                .all() as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.ok(
+                edgeRows.some(
+                    (edge) =>
+                        edge.fromId === roomNodeId && edge.toId === backgroundLayerNodeId && edge.type === "contains"
+                ),
+                "expected room to contain the background layer node"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) =>
+                        edge.fromId === roomNodeId && edge.toId === instancesLayerNodeId && edge.type === "contains"
+                ),
+                "expected room to contain the instances layer node"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) => edge.fromId === roomNodeId && edge.toId === decorLayerNodeId && edge.type === "contains"
+                ),
+                "expected room to contain the asset layer node"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) => edge.fromId === roomNodeId && edge.toId === tilesLayerNodeId && edge.type === "contains"
+                ),
+                "expected room to contain the tile layer node"
+            );
+            const knightObjectNodeId = "project::resource::objects/oKnight/oKnight.yy";
+            const dragonObjectNodeId = "project::resource::objects/oDragon/oDragon.yy";
+            assert.ok(
+                edgeRows.some(
+                    (edge) =>
+                        edge.fromId === instancesLayerNodeId &&
+                        edge.toId === knightObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected placed_in_room edges to originate from the owning instance layer node"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) =>
+                        edge.fromId === instancesLayerNodeId &&
+                        edge.toId === dragonObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected instance layer node to place every referenced room instance object"
+            );
+            assert.ok(
+                !edgeRows.some(
+                    (edge) =>
+                        edge.fromId === roomNodeId && edge.toId === knightObjectNodeId && edge.type === "placed_in_room"
+                ),
+                "expected room-level placed_in_room edges to be replaced by layer-level placement edges"
+            );
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const vizRoomLayerNodes = visualizationData.nodes.filter((node) => node.kind === "room_layer");
+            assert.equal(vizRoomLayerNodes.length, 4, "expected visualization export to include all room_layer nodes");
+            assert.ok(
+                vizRoomLayerNodes.every(
+                    (node) =>
+                        node.name === "Background" ||
+                        node.name === "Instances" ||
+                        node.name === "Decor" ||
+                        node.name === "Tiles"
+                ),
+                "expected room_layer nodes to be present with correct names"
+            );
+
+            const vizBackgroundNode = vizRoomLayerNodes.find((node) => node.name === "Background");
+            const vizInstancesNode = vizRoomLayerNodes.find((node) => node.name === "Instances");
+            const vizDecorNode = vizRoomLayerNodes.find((node) => node.name === "Decor");
+            const vizTilesNode = vizRoomLayerNodes.find((node) => node.name === "Tiles");
+            assert.ok(vizBackgroundNode, "expected Background room_layer in visualization");
+            assert.ok(vizInstancesNode, "expected Instances room_layer in visualization");
+            assert.ok(vizDecorNode, "expected Decor room_layer in visualization");
+            assert.ok(vizTilesNode, "expected Tiles room_layer in visualization");
+
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === roomNodeId && edge.target === vizBackgroundNode?.id && edge.type === "contains"
+                ),
+                "expected visualization to include room→background containment edge"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === roomNodeId && edge.target === vizInstancesNode?.id && edge.type === "contains"
+                ),
+                "expected visualization to include room→instances containment edge"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) => edge.source === roomNodeId && edge.target === vizDecorNode?.id && edge.type === "contains"
+                ),
+                "expected visualization to include room→decor containment edge"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) => edge.source === roomNodeId && edge.target === vizTilesNode?.id && edge.type === "contains"
+                ),
+                "expected visualization to include room→tiles containment edge"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === vizInstancesNode?.id &&
+                        edge.target === knightObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected visualization to expose placed_in_room edges from instance layers"
+            );
+            assert.ok(
+                !visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === roomNodeId &&
+                        edge.target === knightObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected visualization to avoid ambiguous room-level placement edges when a layer node exists"
             );
         } finally {
             database.close();

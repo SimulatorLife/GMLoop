@@ -70,8 +70,11 @@ function resolvePrettierConfiguration(
     };
 }
 
-function resolveTargetPathInput(options: CommandOptionsRecord): TargetPathResolution {
-    const rawTarget = options.path ?? null;
+function resolveTargetPathInput(options: CommandOptionsRecord, args?: unknown): TargetPathResolution {
+    // Positional path arguments are no longer supported for this command.
+    const positionalPath = Array.isArray(args) && args.length > 0;
+    const optionPath = options.path ?? null;
+    const rawTarget = positionalPath ? null : optionPath;
 
     if (rawTarget === null) {
         return {
@@ -101,7 +104,8 @@ export function collectFormatCommandOptions(
     { defaultParseErrorAction, defaultPrettierLogLevel }: CollectFormatCommandOptionsParameters = {}
 ): FormatCommandOptionsResult {
     const options = (command?.opts?.() ?? {}) as CommandOptionsRecord;
-    const { targetPathInput, targetPathProvided, rawTargetPathInput } = resolveTargetPathInput(options);
+    const commandArgs = command?.args;
+    const { targetPathInput, targetPathProvided, rawTargetPathInput } = resolveTargetPathInput(options, commandArgs);
 
     const { skippedDirectorySampleLimit, ignoredFileSampleLimit, unsupportedExtensionSampleLimit } =
         resolveFormatCommandSampleLimits(options);
@@ -115,7 +119,7 @@ export function collectFormatCommandOptions(
     return {
         targetPathInput,
         targetPathProvided,
-        configPath: getNonEmptyTrimmedString(options.config as string | undefined) ?? null,
+        configPath: getNonEmptyTrimmedString(options.config) ?? null,
         prettierLogLevel,
         onParseError,
         dryRunMode,

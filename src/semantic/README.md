@@ -1,6 +1,6 @@
 # Semantic Analyzer Subsystem
 
-This `src/semantic` subsystem is a semantic layer that annotates parse tree(s) to add _meaning_ to the parsed GML code so the emitter/transpiler can make correct decisions. See the plan for this component/feature in [../../docs/semantic-scope-plan.md](../../docs/semantic-scope-plan.md).
+This `src/semantic` subsystem is a semantic layer that annotates parse tree(s) to add _meaning_ to the parsed GML code so the emitter/transpiler can make correct decisions. See the current architecture plan in [../../docs/target-state.md](../../docs/target-state.md).
 
 ## Ownership Boundaries
 
@@ -10,7 +10,7 @@ This `src/semantic` subsystem is a semantic layer that annotates parse tree(s) t
 - Does **not** own refactor edit planning or rename application.
 - Does **not** depend on `@gmloop/refactor`.
 
-The graph index is SQLite-backed through a semantic-owned adapter seam. The current runtime uses Node's `node:sqlite`, which remains experimentally labeled by Node itself; that status is treated as an explicit runtime constraint and is surfaced through graph-doctor reporting rather than left as an implicit implementation detail.
+The graph index is SQLite-backed through a semantic-owned adapter seam. The current runtime uses Node's `node:sqlite`, which is treated as a stable runtime capability and is surfaced through graph-doctor reporting rather than left as an implicit implementation detail.
 
 Downstream tools consume semantic data:
 
@@ -1043,59 +1043,14 @@ for (const p of sorted) {
 // parseAndRegisterScopes(tracker, sorted[1]);  // app.gml second
 ```
 
-## Identifier Case Bootstrap Controls
-
-Formatter options that tune project discovery and cache behaviour now live in
-the semantic layer. They continue to be part of the plugin’s public surface,
-but their canonical documentation sits here alongside the implementation.
-
-| Option                                       | Default                                                                                                                                                     | Summary                                                                                                                                                                           |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gmlIdentifierCaseDiscoverProject`           | `true`                                                                                                                                                      | Controls whether the formatter auto-discovers the nearest `.yyp` manifest to bootstrap the project index.                                                                         |
-| `gmlIdentifierCaseProjectRoot`               | `""`                                                                                                                                                        | Pins project discovery to a specific directory when auto-detection is undesirable (e.g. CI or monorepos).                                                                         |
-| `gmlIdentifierCaseProjectIndexCacheMaxBytes` | `8 MiB`                                                                                                                                                     | Upper bound for the persisted project-index cache. Set the option or `GML_PROJECT_INDEX_CACHE_MAX_SIZE` to `0` to disable the size guard when coordinating cache writes manually. |
-| `gmlIdentifierCaseProjectIndexConcurrency`   | `4` (overridable via `GML_PROJECT_INDEX_CONCURRENCY`, clamped between `1` and the configured max; defaults to `16` via `GML_PROJECT_INDEX_MAX_CONCURRENCY`) | Caps how many GameMaker source files are parsed in parallel while building the identifier-case project index.                                                                     |
-
-When rolling out rename scopes, continue to warm the project index cache
-before enabling write mode so the semantic layer can reuse cached dependency
-analysis. The bootstrap generates `.prettier-plugin-gml/project-index-cache.json`
-the first time a rename-enabled scope executes; pin `gmlIdentifierCaseProjectRoot`
-in CI builds to avoid repeated discovery work.
-
-## Resource Metadata Extension Hook
-
-> TODO: Remove this option/extension – handling custom resource metadata is out of scope. Keep this implementation 'opinionated'.
-
-**Pre-change analysis.** The project index previously treated only `.yy`
-resource documents as metadata, so integrations experimenting with alternate
-GameMaker exports (for example, bespoke build pipelines that emit `.meta`
-descriptors) had to fork the scanner whenever they wanted those files to be
-indexed. The formatter’s defaults remain correct for the vast majority of
-users, so the new seam keeps the behavior opinionated while allowing internal
-callers to extend it on demand.
-
-Use `setProjectResourceMetadataExtensions()` from the semantic project-index
-package to register additional metadata suffixes. The helper normalizes and
-deduplicates the list, seeds it with the default `.yy` entry, and is intended
-for host integrations, tests, or future live tooling—not end-user
-configuration. `resetProjectResourceMetadataExtensions()` restores the
-defaults, and `getProjectResourceMetadataExtensions()` exposes the frozen list
-for diagnostics. Production consumers should treat the defaults as canonical
-until downstream formats stabilize; the hook exists to unblock experimentation
-without diluting the formatter’s standard behavior.
-
 ## TODO
 
-- Add the following to the graph visualization UI:
-  - **BUG**: in the tooltip-box that appears when hovering over a node, the text can extend outside the box; should wrap text and/or expand the box to fit the text
-  - **BUG**: Many of the node colors are the same/similar and so cannot be distinguished (e.g. `Resource`, `Room`, `Shader`, and `Sprite`).
-- **FEAT**: Node types `Local variable`, `Instance variable`, and `Enun member` should be unchecked/disabled by default in the visualization, since they are very common and can create a lot of visual noise in the graph. Instead, the user can choose to enable them if they want to see those details.
+- **FEAT**: Node types `Local variable`, `Instance variable`, and `Enum member` should be unchecked/disabled by default in the visualization, since they are very common and can create a lot of visual noise in the graph. Instead, the user can choose to enable them if they want to see those details.
+- **FEAT/BUG**: We should NOT have node types for these & they should not be included in the graph index:
+  1. ALL `*.gml` `*.yy`, `*.yyp` files should be excluded (these are currently being considered `File` type nodes). Just the *actual* node that the two files together define/represent should be in the index as a single node (e.g. a single `Object` node named `obj_spider` instead of `objects/obj_spider/obj_spider.yy` and `objects/obj_spider/obj_spider.gml`)
+  2. ALL options should be excluded/removed (`tvOS`, `Reddit`, `macOS`, `HTML5`, etc.) these are currently being considered 'Resource' type nodes in the graph index
 - **BUG**: A few node types like `Macro`, `Enum`, `global variable`, etc. do not show in the visualzation if their parent is disabled. So, for instance, if a global variable is defined in a script, the `global variable` node-type is enabled and the `script` node-type is *disabled*, then `global variable` are not viewable. Instead, do we want a way for the leaf-node (e.g. `global variable`) to go up a level in the hirerarchy to the next non-disabled ancestor? For instance, if ALL node types are disabled in the visualization EXCEPT `global variable`, then it would link directly to the center node; the `game` node itself.
-- **BUG**: The center node – the game itself should NOT be of type `Resource`. It should also not be disable-able.
-- **FEAT**: When a node is selected in the visualization, the tooltip box should stay open until another node is selected (will allow for future the user-interactions with the tooltip box)
-- **BUG**: The project root node in the visualization says "game Kind: project | Graph: project Connections: 0 in, 0 out Project root node" – it has zero connections? And then we also seem to have a second 'root' node that seems to be type 'data file', but data files are a specific resource type for files in directory `datafiles` only: "InterplanetaryFootball
-Kind: data_file | Graph: project
-Connections: 0 in, 765 out
-data file 'InterplanetaryFootball'. Defined in InterplanetaryFootball.yyp."
-- **FEAT**: We should have a button/way to regenerate the project's graph index directly in the UI-visualization, so that if the user has made changes to their project and wants to see those reflected in the graph, they can easily do so without having to manually trigger a re-indexing through the CLI
+- **BUG**: The main/center node – the 'Project Node' should NOT be disable-able. And should NOT be included in the legend/key.
+- **FEAT/BUG**: When a node is selected in the Graph Index visualization, a tooltip with details about it is supposed to show (this used to work but now nothing shows). When a node is selected in the visualization, the tooltip box should stay open until another node is selected (will allow for future the user-interactions with the tooltip box)
 - **BUG**: The graph index and/or visualization has a `Script resource` node, a `Script` node, and a `Function` node. Instead, we should have the `Script` node which should be a child of the `Resource` node/category. A `Script` node should represent a script file/resource (e.g. `player.gml`). A `script` can contain one or many `Function` nodes (`Function` nodes can also be defined elswhere like in objects)
+- **BUG/FEAT**: The nodes are all equidistant from the center-project node. Instead, it can be a bit more freeform/less-contrained, and children of a node should be allowed to be attracted/near/grouped around their parent naturally (e.g. a `Local variable` node should be connected to and nearby its parent `Object Event` node where it is defined, and that `Object Event` node should be connected/nearby its parent `Object` node, etc.)

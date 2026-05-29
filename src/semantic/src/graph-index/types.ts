@@ -10,11 +10,10 @@ export type GraphEmbeddingsConfig = Readonly<{
 export type GraphDatabaseRuntimeInfo = Readonly<{
     busyTimeoutMs: number;
     driver: "node:sqlite";
-    experimental: true;
     foreignKeysEnabled: boolean;
     journalMode: string;
+    runtimeStability: "stable";
     synchronousMode: string;
-    warningPolicy: "documented-and-reported";
 }>;
 
 export type GraphDatabaseIntegrityStatus = Readonly<{
@@ -40,7 +39,6 @@ export type GraphIndexBuildOptions = Readonly<{
 
 export type GraphNodeKind =
     | "anim_curve"
-    | "constructor"
     | "data_file"
     | "enum"
     | "enum_member"
@@ -58,8 +56,8 @@ export type GraphNodeKind =
     | "particle_system"
     | "path"
     | "project"
-    | "resource"
     | "room"
+    | "room_layer"
     | "script"
     | "sequence"
     | "shader"
@@ -167,10 +165,16 @@ export type GraphVisualizationData = Readonly<{
     nodes: ReadonlyArray<
         Readonly<{
             displayName: string;
+            filePath: string | null;
             graphId: GraphIndexScope;
             id: string;
             kind: GraphNodeKind;
+            lineEnd: number | null;
+            lineStart: number | null;
             name: string;
+            resourcePath: string | null;
+            scopeId: string | null;
+            scipSymbol: string | null;
             snippet: string;
             summary: string;
         }>

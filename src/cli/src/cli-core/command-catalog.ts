@@ -1,5 +1,7 @@
 import type { Argument, Command, Option } from "commander";
 
+import { isCommandExcludedFromMcpTools } from "./mcp-command-exclusion.js";
+
 export type CliCatalogArgument = Readonly<{
     choices: ReadonlyArray<string>;
     defaultValue: unknown;
@@ -30,6 +32,7 @@ export type CliCatalogEntry = Readonly<{
     commandPath: ReadonlyArray<string>;
     description: string;
     displayName: string;
+    excludeFromMcp: boolean;
     options: ReadonlyArray<CliCatalogOption>;
     usage: string;
 }>;
@@ -37,7 +40,7 @@ export type CliCatalogEntry = Readonly<{
 function normalizeArgument(argument: Argument): CliCatalogArgument {
     return Object.freeze({
         choices: Object.freeze([...(argument.argChoices ?? [])]),
-        defaultValue: argument.defaultValue,
+        defaultValue: argument.defaultValue as unknown,
         description: argument.description ?? "",
         name: argument.name(),
         required: argument.required,
@@ -67,13 +70,18 @@ function buildUsage(command: Command, commandPath: ReadonlyArray<string>): strin
     return `${commandPath.join(" ")}${usageText ? ` ${usageText}` : ""}`.trim();
 }
 
-function collectLeafCommands(command: Command, ancestry: ReadonlyArray<string>): Array<CliCatalogEntry> {
+function collectLeafCommands(
+    command: Command,
+    ancestry: ReadonlyArray<string>,
+    parentExcludedFromMcpTools: boolean
+): Array<CliCatalogEntry> {
     const commandName = command.name();
     if (commandName === "help") {
         return [];
     }
 
     const commandPath = [...ancestry, commandName];
+    const excludedFromMcpTools = parentExcludedFromMcpTools || isCommandExcludedFromMcpTools(command);
     const childCommands = [...command.commands].filter((child) => child.name() !== "help");
     if (childCommands.length === 0) {
         return [
@@ -83,13 +91,14 @@ function collectLeafCommands(command: Command, ancestry: ReadonlyArray<string>):
                 commandPath: Object.freeze(commandPath),
                 description: command.description() ?? "",
                 displayName: commandPath.join(" "),
+                excludeFromMcp: excludedFromMcpTools,
                 options: Object.freeze(command.options.map((option) => normalizeOption(option))),
                 usage: buildUsage(command, commandPath)
             })
         ];
     }
 
-    return childCommands.flatMap((child) => collectLeafCommands(child, commandPath));
+    return childCommands.flatMap((child) => collectLeafCommands(child, commandPath, excludedFromMcpTools));
 }
 
 /**
@@ -97,5 +106,5 @@ function collectLeafCommands(command: Command, ancestry: ReadonlyArray<string>):
  * discovery and MCP tool generation.
  */
 export function createCliCommandCatalog(program: Command): Array<CliCatalogEntry> {
-    return [...program.commands].flatMap((command) => collectLeafCommands(command, []));
+    return [...program.commands].flatMap((command) => collectLeafCommands(command, [], false));
 }

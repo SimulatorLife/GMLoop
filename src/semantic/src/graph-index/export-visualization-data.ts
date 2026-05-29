@@ -47,17 +47,32 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
                 kind,
                 name,
                 display_name as displayName,
+                line_start as lineStart,
+                line_end as lineEnd,
+                relative_path as filePath,
+                resource_path as resourcePath,
+                scope_id as scopeId,
+                scip_symbol as scipSymbol,
                 summary,
                 snippet
             FROM nodes
+            WHERE kind NOT IN ('file', 'resource')
+              AND (resource_path IS NULL OR resource_path NOT LIKE 'options/%')
+              AND (relative_path IS NULL OR relative_path NOT LIKE '%.yy' AND relative_path NOT LIKE '%.yyp')
         `
         )
         .all() as unknown as ReadonlyArray<{
         displayName: string;
+        filePath: string | null;
         graphId: string;
         id: string;
         kind: string;
+        lineEnd: number | null;
+        lineStart: number | null;
         name: string;
+        resourcePath: string | null;
+        scopeId: string | null;
+        scipSymbol: string | null;
         snippet: string;
         summary: string;
     }>;
@@ -66,14 +81,21 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
         (n) =>
             ({
                 displayName: n.displayName,
+                filePath: n.filePath,
                 graphId: n.graphId as GraphIndexScope,
                 id: n.id,
                 kind: n.kind as GraphNodeKind,
+                lineEnd: n.lineEnd,
+                lineStart: n.lineStart,
                 name: n.name,
+                resourcePath: n.resourcePath,
+                scopeId: n.scopeId,
+                scipSymbol: n.scipSymbol,
                 snippet: n.snippet,
                 summary: n.summary
             }) as const
     );
+    const exportedNodeIds = new Set(nodes.map((node) => node.id));
 
     // 3. Fetch edges
     const edgesResult = database
@@ -92,14 +114,16 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
         type: string;
     }>;
 
-    const edges = edgesResult.map(
-        (e) =>
-            ({
-                source: e.source,
-                target: e.target,
-                type: e.type as GraphEdgeType
-            }) as const
-    );
+    const edges = edgesResult
+        .filter((edge) => exportedNodeIds.has(edge.source) && exportedNodeIds.has(edge.target))
+        .map(
+            (edge) =>
+                ({
+                    source: edge.source,
+                    target: edge.target,
+                    type: edge.type as GraphEdgeType
+                }) as const
+        );
 
     return {
         edges,

@@ -113,6 +113,12 @@ void test("semver-sensitive lint constants are pinned", () => {
     for (const ruleId of Lint.services.performanceOverrideRuleIds) {
         assert.match(ruleId, /^(?:gml|feather)\/.+$/);
     }
+
+    // Verify canonical access path: performanceOverrideRuleIds is accessible
+    // directly on the Lint namespace (flattened alias), not as a separate
+    // module-level re-export that bypassed the services namespace.
+    assert.ok(Array.isArray(Lint.performanceOverrideRuleIds));
+    assertEquals(Lint.performanceOverrideRuleIds, Lint.services.performanceOverrideRuleIds);
 });
 
 void test("services namespace excludes project-aware analysis helpers", () => {
@@ -131,6 +137,26 @@ void test("services namespace excludes project-aware analysis helpers", () => {
     }
 });
 
+void test("performanceOverrideRuleIds is not a separate module-level re-export (legacy-path removed)", () => {
+    // The canonical source for performanceOverrideRuleIds is the services object.
+    // A previous pattern exported it directly from the module as a convenience
+    // re-export (effectively `export { PERFORMANCE_OVERRIDE_RULE_IDS as performanceOverrideRuleIds }`).
+    // That legacy path has been removed; the constant is now only accessible via:
+    //   1. Lint.services.performanceOverrideRuleIds  (primary through namespace)
+    //   2. Lint.performanceOverrideRuleIds          (flattened alias on Lint namespace)
+    // The separate module-level re-export that bypassed the namespace is gone.
+    assert.equal("performanceOverrideRuleIds" in Lint.services, true);
+    assert.equal("performanceOverrideRuleIds" in Lint, true);
+    assertEquals(Lint.performanceOverrideRuleIds, Lint.services.performanceOverrideRuleIds);
+});
+
+void test("malformed scientific-notation helpers are only exposed through Lint namespace", () => {
+    assert.equal("forEachScientificNotationToken" in LintWorkspace, false);
+    assert.equal("toPlainDecimalFromScientificLiteral" in LintWorkspace, false);
+    assert.equal(typeof Lint.forEachScientificNotationToken, "function");
+    assert.equal(typeof Lint.toPlainDecimalFromScientificLiteral, "function");
+});
+
 void test("feather namespace rule IDs are strictly feather/gm#### only", () => {
     const featherRuleShortNames = Object.keys(Lint.featherPlugin.rules);
     assert.ok(featherRuleShortNames.length > 0);
@@ -139,11 +165,31 @@ void test("feather namespace rule IDs are strictly feather/gm#### only", () => {
     }
 });
 
+void test("Lint.plugin.rules and Lint.featherPlugin.rules are properly populated from catalog (no intermediate pass-through)", () => {
+    // Verify that plugin rules contain the expected short names sourced directly from
+    // the catalog. Previously rules/index.ts exported gmlLintRules and featherLintRules
+    // as thin aliases of the catalog maps. Removing that file is safe because plugin.ts
+    // and rule-entries.ts now import directly from catalog.ts.
+    assert.ok(Lint.plugin.rules, "Lint.plugin.rules must be defined");
+    assertEquals(Object.isFrozen(Lint.plugin.rules), true);
+    assert.ok(Lint.plugin.rules["prefer-array-push"], "prefer-array-push must be in plugin rules");
+    assert.ok(Lint.plugin.rules["no-globalvar"], "no-globalvar must be in plugin rules");
+
+    assert.ok(Lint.featherPlugin.rules, "Lint.featherPlugin.rules must be defined");
+    assertEquals(Object.isFrozen(Lint.featherPlugin.rules), true);
+    assert.ok(Lint.featherPlugin.rules.gm1000, "gm1000 must be in feather plugin rules");
+    assert.ok(
+        typeof Lint.featherPlugin.rules.gm1000?.meta?.docs?.description === "string",
+        "feather rule gm1000 must have a docs description"
+    );
+});
+
 void test("Lint namespace does not expose internal doc-comment implementation helpers (target-state.md §2.3)", () => {
     // Internal doc-comment helpers must be imported directly from the
     // doc-comment module (src/lint/src/doc-comment/*.ts) rather than leaked
-    // through the public Lint namespace.  The public surface is intentionally
-    // limited to: plugin, featherPlugin, configs, ruleIds, services.
+    // through the public Lint namespace. The public surface is intentionally
+    // limited to: plugin, featherPlugin, configs, ruleIds, services,
+    // listLintRuleCatalogEntries.
     assert.equal("normalizeLintRulesConfig" in Lint, false);
     assert.equal("createLintRuleEntriesFromProjectConfig" in Lint, false);
     assert.equal("projectConfig" in Lint.services, false);

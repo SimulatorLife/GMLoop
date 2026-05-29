@@ -157,7 +157,7 @@ const NOOP_METRIC_REPORTING_GROUPS = Object.freeze({
     }),
     caches: Object.freeze({
         cachesSnapshot: () => ({}),
-        cacheSnapshot: () => ({}) as Record<string, number>
+        cacheSnapshot: () => ({})
     }),
     logger: Object.freeze({
         logSummary: Core.noop

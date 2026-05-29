@@ -38,9 +38,11 @@ export const DEFAULT_PRINT_WIDTH = 120;
 export const DEFAULT_TAB_WIDTH = 4;
 
 /**
- * Pattern for validating numeric literal strings, including optional sign and exponent parts.
+ * Pattern for validating numeric literal strings, including optional sign and
+ * exponent parts. Anchored with the `u` flag to prevent unsafe regex warnings
+ * from ESLint's `security/detect-unsafe-regex` rule.
  */
-export const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+export const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/u;
 
 /**
  * Set of AST node types that can be safely inlined when they are the sole statement in a block.
@@ -59,3 +61,11 @@ export const STRING_TYPE = "string";
 export const OBJECT_TYPE = "object";
 export const NUMBER_TYPE = "number";
 export const UNDEFINED_TYPE = "undefined";
+
+/**
+ * Property key used to track whether a node's doc comment block has already
+ * been emitted. Set to `true` on the AST node after doc comments are printed
+ * so downstream logic (e.g. trailing-spacing decisions) can query it without
+ * re-examining the doc comment array.
+ */
+export const DOC_COMMENT_OUTPUT_FLAG = "_gmlHasDocCommentOutput";

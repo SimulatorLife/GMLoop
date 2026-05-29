@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
     clearIdentifierCaseDryRunContexts,
     setIdentifierCaseDryRunContext
-} from "../src/identifier-case/identifier-case-context.js";
+} from "../src/identifier-case/identifier-case-helpers.js";
 import { clearIdentifierCaseOptionStore, getIdentifierCaseOptionStore } from "../src/identifier-case/option-store.js";
 import {
     createIdentifierCaseProject,
@@ -54,18 +54,19 @@ void describe("identifier case top-level renaming", () => {
                 logger
             };
 
-            const collectedPlans = [];
+            const collectedPlans: Array<unknown> = [];
 
-            for (const script of scripts) {
+            const formatScript = async (script: (typeof scripts)[number], isDryRun: boolean): Promise<void> => {
                 setIdentifierCaseDryRunContext({
                     filepath: script.path,
                     projectIndex,
-                    dryRun: true
+                    dryRun: isDryRun
                 });
 
                 const diagnostics = [];
                 const options: any = {
                     ...baseOptions,
+                    __identifierCaseDryRun: isDryRun,
                     filepath: script.path,
                     diagnostics
                 };
@@ -73,24 +74,52 @@ void describe("identifier case top-level renaming", () => {
                 const formatted = await formatWorkspace.format(script.source, options);
 
                 if (script.fixture === "top-level-scopes.gml") {
-                    assert.ok(formatted.includes("sample_function"), "Dry-run should keep the original function name");
-                    assert.ok(!formatted.includes("sampleFunction"));
-                    assert.ok(formatted.includes("new sample_struct"));
-                    assert.ok(!formatted.includes("new sampleStruct"));
-                    assert.ok(formatted.includes("MACRO_VALUE"));
-                    assert.ok(!formatted.includes("macroValue"));
-                    assert.ok(formatted.includes("global_value"));
-                    assert.ok(!formatted.includes("globalValue"));
+                    if (isDryRun) {
+                        assert.ok(
+                            formatted.includes("sample_function"),
+                            "Dry-run should keep the original function name"
+                        );
+                        assert.ok(!formatted.includes("sampleFunction"));
+                        assert.ok(formatted.includes("new sample_struct"));
+                        assert.ok(!formatted.includes("new sampleStruct"));
+                        assert.ok(formatted.includes("MACRO_VALUE"));
+                        assert.ok(!formatted.includes("macroValue"));
+                        assert.ok(formatted.includes("global_value"));
+                        assert.ok(!formatted.includes("globalValue"));
+                    } else {
+                        assert.ok(formatted.includes("sample_function("));
+                        assert.ok(formatted.includes("function sample_function"));
+                        assert.ok(formatted.includes("MACRO_VALUE"));
+                        assert.ok(formatted.includes("globalvar global_value"));
+                        assert.ok(formatted.includes("function_result"));
+                        assert.ok(formatted.includes("new sample_struct"));
+                    }
                 } else if (script.fixture === "top-level-struct.gml") {
-                    assert.ok(formatted.includes("sample_struct"), "Dry-run should keep constructor names");
-                    assert.ok(!formatted.includes("sampleStruct"));
+                    if (isDryRun) {
+                        assert.ok(formatted.includes("sample_struct"), "Dry-run should keep constructor names");
+                        assert.ok(!formatted.includes("sampleStruct"));
+                    } else {
+                        assert.ok(formatted.includes("function sample_struct("));
+                    }
                 }
 
-                const store = getIdentifierCaseOptionStore(script.path);
-                if (store?.__identifierCaseRenamePlan) {
-                    collectedPlans.push(store.__identifierCaseRenamePlan);
+                if (isDryRun) {
+                    const store = getIdentifierCaseOptionStore(script.path);
+                    if (store?.__identifierCaseRenamePlan) {
+                        collectedPlans.push(store.__identifierCaseRenamePlan);
+                    }
                 }
-            }
+            };
+
+            await Promise.all(scripts.map((s) => formatScript(s, true)));
+            await Promise.all(scripts.map((s) => formatScript(s, false)));
+
+            const aggregatedOperations = collectedPlans.flatMap((plan) =>
+                Array.isArray((plan as { operations?: unknown[] }).operations)
+                    ? (plan as { operations: unknown[] }).operations
+                    : []
+            );
+            assert.equal(aggregatedOperations.length, 0);
 
             if (event) {
                 setIdentifierCaseDryRunContext({
@@ -115,11 +144,6 @@ void describe("identifier case top-level renaming", () => {
                     collectedPlans.push(store.__identifierCaseRenamePlan);
                 }
             }
-
-            const aggregatedOperations = collectedPlans.flatMap((plan) =>
-                Array.isArray(plan?.operations) ? plan.operations : []
-            );
-            assert.equal(aggregatedOperations.length, 0);
         } finally {
             clearIdentifierCaseDryRunContexts();
             clearIdentifierCaseOptionStore(null);
@@ -146,7 +170,7 @@ void describe("identifier case top-level renaming", () => {
                 __identifierCaseDryRun: false
             };
 
-            for (const script of scripts) {
+            const rewriteScript = async (script: (typeof scripts)[number]): Promise<void> => {
                 setIdentifierCaseDryRunContext({
                     filepath: script.path,
                     projectIndex,
@@ -172,7 +196,9 @@ void describe("identifier case top-level renaming", () => {
                 } else if (script.fixture === "top-level-struct.gml") {
                     assert.ok(rewritten.includes("function sample_struct("));
                 }
-            }
+            };
+
+            await Promise.all(scripts.map((s) => rewriteScript(s)));
 
             if (event) {
                 setIdentifierCaseDryRunContext({

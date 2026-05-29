@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 /**
  * Default polling interval (milliseconds) used by the watch command.
  */
@@ -17,6 +19,15 @@ export const DEFAULT_WATCH_MAX_CONCURRENT_DIRS = 4;
  * Default max in-memory patch history retained by the watch command.
  */
 export const DEFAULT_WATCH_MAX_PATCH_HISTORY = 100;
+
+/**
+ * Generated or dependency-managed directories that should never participate in
+ * live-reload source discovery.
+ *
+ * These paths do not represent author-owned game source and create noisy,
+ * misleading patch streams when watched recursively.
+ */
+export const DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES = Core.DEFAULT_PROJECT_EXCLUDES.directoryNames;
 
 /**
  * Number of attempts used when retrying transient empty-file reads.

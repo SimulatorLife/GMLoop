@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
-import { createMetricsTracker } from "../src/utils/metrics.js";
+import { createMetricsTracker } from "../src/reporting/metrics.js";
 
 void test("snapshot exposes accumulated metrics as plain objects", () => {
     const tracker = createMetricsTracker({ category: "demo" });
@@ -176,4 +176,16 @@ void test("snapshot returns fresh copies of accumulated metrics", () => {
     const second = reporting.summary.snapshot();
     assert.deepEqual(second.counters, { runs: 1 });
     assert.deepEqual(second.caches.cache, { hits: 1, misses: 0, stale: 0 });
+});
+
+void test("timers and counters both record through shared increment path", async () => {
+    const tracker = createMetricsTracker();
+    const { recording, reporting } = tracker;
+
+    recording.counters.increment("files", 2);
+    await recording.timers.timeAsync("parse", async () => {});
+
+    const report = reporting.summary.snapshot();
+    assert.equal(report.counters.files, 2);
+    assert.ok(typeof report.timings.parse === "number");
 });

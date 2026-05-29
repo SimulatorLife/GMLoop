@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 import { Core } from "@gmloop/core";
 
@@ -20,7 +20,7 @@ void test("stripCommentsTransform removes comment nodes from AST", () => {
         ]
     };
 
-    stripCommentsTransform.transform(ast as any);
+    stripCommentsTransform.transform(ast);
 
     // Root-level comments array is cleared
     assert.deepEqual((ast as any).comments, []);
@@ -36,7 +36,7 @@ void test("stripCommentsTransform removes JSDoc properties when stripJsDoc is tr
         jsdoc: { params: [] }
     };
 
-    stripCommentsTransform.transform(ast as any, {
+    stripCommentsTransform.transform(ast, {
         stripComments: false,
         stripJsDoc: true,
         dropCommentedOutCode: false
@@ -54,7 +54,7 @@ void test("stripCommentsTransform preserves non-comment nodes when stripComments
         body: []
     };
 
-    stripCommentsTransform.transform(ast as any, {
+    stripCommentsTransform.transform(ast, {
         stripComments: false,
         stripJsDoc: false,
         dropCommentedOutCode: false
@@ -71,7 +71,7 @@ void test("stripCommentsTransform filters only comment nodes from mixed comments
         comments: [{ type: "CommentLine", value: "// remove" }, nonCommentEntry]
     };
 
-    stripCommentsTransform.transform(ast as any);
+    stripCommentsTransform.transform(ast);
 
     // The non-comment entry is preserved, the comment node is removed
     const remaining = (ast as any).comments as unknown[];
@@ -80,7 +80,7 @@ void test("stripCommentsTransform filters only comment nodes from mixed comments
 });
 
 void test("stripCommentsTransform returns the ast unchanged when given a non-object", () => {
-    const result = stripCommentsTransform.transform(null as any);
+    const result = stripCommentsTransform.transform(null);
     assert.equal(result, null);
 });
 

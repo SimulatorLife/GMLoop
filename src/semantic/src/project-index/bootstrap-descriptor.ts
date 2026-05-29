@@ -8,21 +8,15 @@ type ProjectIndexConcurrencySettings = {
 type ProjectIndexBuildOptions = {
     logger?: { debug?: (message?: string, payload?: unknown) => void } | null;
     logMetrics?: boolean;
-    // Historical option names accepted by some callers. Keep both names so we
-    // can accept either legacy or current option shapes passed by callers.
     concurrency?: ProjectIndexConcurrencySettings | null;
-    projectIndexConcurrency?: number | ProjectIndexConcurrencySettings | null;
-    parserOverride?: {
-        parse?: (text: string, filePath?: string) => unknown;
-    } | null;
     parseGml?: (text: string, filePath?: string) => unknown;
 };
 
 export function createProjectIndexBuildOptions({
     logger = null,
     logMetrics = false,
-    projectIndexConcurrency,
-    parserOverride = null
+    concurrency,
+    parseGml
 }: ProjectIndexBuildOptions = {}) {
     const buildOptions: ProjectIndexBuildOptions = {
         logger,
@@ -30,17 +24,9 @@ export function createProjectIndexBuildOptions({
     };
 
     Core.withDefinedValue(
-        projectIndexConcurrency,
+        concurrency,
         (value) => {
             if (value === null) {
-                return;
-            }
-
-            if (typeof value === "number") {
-                buildOptions.concurrency = {
-                    gml: value,
-                    gmlParsing: value
-                };
                 return;
             }
 
@@ -52,13 +38,9 @@ export function createProjectIndexBuildOptions({
         () => {}
     );
 
-    if (!parserOverride) {
-        return buildOptions;
+    if (parseGml) {
+        buildOptions.parseGml = parseGml;
     }
-
-    const { parse } = parserOverride;
-
-    buildOptions.parseGml = parse as ((text: string, filePath?: string) => unknown) | null;
 
     return buildOptions;
 }

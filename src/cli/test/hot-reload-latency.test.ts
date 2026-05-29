@@ -31,6 +31,57 @@ import {
 } from "./test-helpers/watch-fixtures.js";
 
 // ---------------------------------------------------------------------------
+// shared helpers for integration test setup
+// ---------------------------------------------------------------------------
+
+type WatchTestContext = {
+    abortController: AbortController;
+    statusBaseUrl: string;
+    watchPromise: Promise<unknown>;
+    listenerCapture: { listener: WatchListener<string> | undefined };
+};
+
+/** Creates a WatchTestContext with port allocation, abort controller, and optional mock watcher. */
+async function createWatchTestContext(_fixture: WatchTestFixture): Promise<WatchTestContext> {
+    const statusPort = await findAvailablePort();
+    const abortController = new AbortController();
+    const listenerCapture: { listener: WatchListener<string> | undefined } = { listener: undefined };
+    return {
+        abortController,
+        statusBaseUrl: `http://127.0.0.1:${statusPort}`,
+        watchPromise: Promise.resolve(),
+        listenerCapture
+    };
+}
+
+/**
+ * Launches runWatchCommand with the standard non-runtime options used across
+ * integration tests in this suite.  Returns the watch promise so callers can
+ * await or abort it in cleanup.
+ */
+function launchWatchWithDefaults(
+    fixture: WatchTestFixture,
+    options: {
+        statusPort: number;
+        abortSignal: AbortSignal;
+        watchFactory?: (path: string, options?: unknown, listener?: WatchListener<string>) => unknown;
+    }
+): Promise<unknown> {
+    return runWatchCommand(fixture.dir, {
+        extensions: [".gml"],
+        verbose: false,
+        quiet: true,
+        websocketServer: false,
+        statusServer: true,
+        statusPort: options.statusPort,
+        debounceDelay: 0,
+        runtimeServer: false,
+        abortSignal: options.abortSignal,
+        watchFactory: options.watchFactory as Parameters<typeof runWatchCommand>[1]["watchFactory"]
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Unit tests for computeHotReloadLatencyStats
 // ---------------------------------------------------------------------------
 
@@ -78,6 +129,19 @@ void describe("computeHotReloadLatencyStats", () => {
         assert.strictEqual(result.p95, 19);
     });
 
+    void it("computes p95 correctly when latencies arrive out of order", () => {
+        const result = computeHotReloadLatencyStats([
+            { hotReloadLatencyMs: 200 },
+            { hotReloadLatencyMs: 50 },
+            { hotReloadLatencyMs: 150 },
+            { hotReloadLatencyMs: 100 }
+        ]);
+
+        assert.ok(result !== undefined, "Should return stats");
+        assert.strictEqual(result.avg, 125);
+        assert.strictEqual(result.p95, 200);
+    });
+
     void it("average rounds correctly for non-integer averages", () => {
         const result = computeHotReloadLatencyStats([
             { hotReloadLatencyMs: 10 },
@@ -114,40 +178,26 @@ void describe("Hot reload latency tracking in watch pipeline", () => {
             throw new Error("Watch fixture was not initialized");
         }
 
-        const statusPort = await findAvailablePort();
-        const abortController = new AbortController();
-
-        const listenerCapture: { listener: WatchListener<string> | undefined } = { listener: undefined };
-        const watchFactory = createMockWatchFactory(listenerCapture);
-
-        const watchPromise = runWatchCommand(fixture.dir, {
-            extensions: [".gml"],
-            verbose: false,
-            quiet: true,
-            websocketServer: false,
-            statusServer: true,
-            statusPort,
-            debounceDelay: 0,
-            runtimeServer: false,
-            abortSignal: abortController.signal,
-            watchFactory
+        const ctx = await createWatchTestContext(fixture);
+        const watchPromise = launchWatchWithDefaults(fixture, {
+            statusPort: Number.parseInt(new URL(ctx.statusBaseUrl).port, 10),
+            abortSignal: ctx.abortController.signal,
+            watchFactory: createMockWatchFactory(ctx.listenerCapture)
         });
 
-        const statusBaseUrl = `http://127.0.0.1:${statusPort}`;
-
         try {
-            await waitForScanComplete(statusBaseUrl, 5000, 25);
+            await waitForScanComplete(ctx.statusBaseUrl, 5000, 25);
 
-            const initialStatus = await fetchStatusPayload(statusBaseUrl);
+            const initialStatus = await fetchStatusPayload(ctx.statusBaseUrl);
             const initialPatchCount = initialStatus.totalPatchCount ?? initialStatus.patchCount ?? 0;
 
             // Trigger a live file change via the mock watcher
             await writeFile(fixture.script1, "var latency_test = 1;", "utf8");
-            listenerCapture.listener?.("change", "script1.gml");
+            ctx.listenerCapture.listener?.("change", "script1.gml");
 
-            await waitForPatchCount(statusBaseUrl, initialPatchCount + 1, 5000, 25);
+            await waitForPatchCount(ctx.statusBaseUrl, initialPatchCount + 1, 5000, 25);
 
-            const finalStatus = await fetchStatusPayload(statusBaseUrl);
+            const finalStatus = await fetchStatusPayload(ctx.statusBaseUrl);
 
             // The status server should expose latency stats after a live change
             assert.ok(
@@ -168,7 +218,7 @@ void describe("Hot reload latency tracking in watch pipeline", () => {
                 "At least one recent patch should have hotReloadLatencyMs recorded"
             );
         } finally {
-            abortController.abort();
+            ctx.abortController.abort();
 
             try {
                 await watchPromise;
@@ -183,26 +233,16 @@ void describe("Hot reload latency tracking in watch pipeline", () => {
             throw new Error("Watch fixture was not initialized");
         }
 
-        const statusPort = await findAvailablePort();
-        const abortController = new AbortController();
-        const statusBaseUrl = `http://127.0.0.1:${statusPort}`;
-
-        const watchPromise = runWatchCommand(fixture.dir, {
-            extensions: [".gml"],
-            verbose: false,
-            quiet: true,
-            websocketServer: false,
-            statusServer: true,
-            statusPort,
-            debounceDelay: 0,
-            runtimeServer: false,
-            abortSignal: abortController.signal
+        const ctx = await createWatchTestContext(fixture);
+        const watchPromise = launchWatchWithDefaults(fixture, {
+            statusPort: Number.parseInt(new URL(ctx.statusBaseUrl).port, 10),
+            abortSignal: ctx.abortController.signal
         });
 
         try {
-            await waitForScanComplete(statusBaseUrl, 5000, 25);
+            await waitForScanComplete(ctx.statusBaseUrl, 5000, 25);
 
-            const status = await fetchStatusPayload(statusBaseUrl);
+            const status = await fetchStatusPayload(ctx.statusBaseUrl);
 
             // avgHotReloadLatencyMs should be absent (undefined) when only scan patches exist,
             // since scan patches are not triggered by live file-change events.
@@ -212,7 +252,7 @@ void describe("Hot reload latency tracking in watch pipeline", () => {
                 "avgHotReloadLatencyMs should be absent when only initial scan patches exist"
             );
         } finally {
-            abortController.abort();
+            ctx.abortController.abort();
 
             try {
                 await watchPromise;
@@ -227,52 +267,38 @@ void describe("Hot reload latency tracking in watch pipeline", () => {
             throw new Error("Watch fixture was not initialized");
         }
 
-        const statusPort = await findAvailablePort();
-        const abortController = new AbortController();
-
-        const listenerCapture: { listener: WatchListener<string> | undefined } = { listener: undefined };
-        const watchFactory = createMockWatchFactory(listenerCapture);
-
-        const watchPromise = runWatchCommand(fixture.dir, {
-            extensions: [".gml"],
-            verbose: false,
-            quiet: true,
-            websocketServer: false,
-            statusServer: true,
-            statusPort,
-            debounceDelay: 0,
-            runtimeServer: false,
-            abortSignal: abortController.signal,
-            watchFactory
+        const ctx = await createWatchTestContext(fixture);
+        const watchPromise = launchWatchWithDefaults(fixture, {
+            statusPort: Number.parseInt(new URL(ctx.statusBaseUrl).port, 10),
+            abortSignal: ctx.abortController.signal,
+            watchFactory: createMockWatchFactory(ctx.listenerCapture)
         });
-
-        const statusBaseUrl = `http://127.0.0.1:${statusPort}`;
 
         try {
             // After initial scan, no latency data yet
-            await waitForScanComplete(statusBaseUrl, 5000, 25);
+            await waitForScanComplete(ctx.statusBaseUrl, 5000, 25);
 
-            let status = await fetchStatusPayload(statusBaseUrl);
+            let status = await fetchStatusPayload(ctx.statusBaseUrl);
             assert.strictEqual(status.avgHotReloadLatencyMs, undefined, "No latency before live events");
 
             // Trigger two live file changes
             await writeFile(fixture.script1, "var a = 1;", "utf8");
-            listenerCapture.listener?.("change", "script1.gml");
+            ctx.listenerCapture.listener?.("change", "script1.gml");
 
             const countAfterFirst = (status.totalPatchCount ?? status.patchCount ?? 0) + 1;
-            await waitForPatchCount(statusBaseUrl, countAfterFirst, 5000, 25);
+            await waitForPatchCount(ctx.statusBaseUrl, countAfterFirst, 5000, 25);
 
             await writeFile(fixture.script2, "var b = 2;", "utf8");
-            listenerCapture.listener?.("change", "script2.gml");
+            ctx.listenerCapture.listener?.("change", "script2.gml");
 
             await waitForStatus(
-                statusBaseUrl,
+                ctx.statusBaseUrl,
                 (s) => (s.totalPatchCount ?? s.patchCount ?? 0) >= countAfterFirst + 1,
                 5000,
                 25
             );
 
-            status = await fetchStatusPayload(statusBaseUrl);
+            status = await fetchStatusPayload(ctx.statusBaseUrl);
             assert.ok(
                 typeof status.avgHotReloadLatencyMs === "number",
                 "avgHotReloadLatencyMs present after two live events"
@@ -286,7 +312,7 @@ void describe("Hot reload latency tracking in watch pipeline", () => {
             assert.ok((status.avgHotReloadLatencyMs ?? -1) >= 0, "avg latency is non-negative");
             assert.ok((status.p95HotReloadLatencyMs ?? -1) >= 0, "p95 latency is non-negative");
         } finally {
-            abortController.abort();
+            ctx.abortController.abort();
 
             try {
                 await watchPromise;

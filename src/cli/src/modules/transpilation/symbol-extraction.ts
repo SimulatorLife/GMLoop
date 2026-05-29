@@ -138,82 +138,90 @@ function resolveRuntimeIdFromPath(filePath: string, symbolName: string): string 
 
 /**
  * Recursively walks an AST node and extracts all symbol definitions.
+ *
+ * `filePath` is captured in a closure so the recursive descent does not need to
+ * thread it as a parameter through every intermediate call site — it is only
+ * consumed at the leaf extraction helpers.
  */
-function walkNode(node: unknown, filePath: string, symbols: Array<string>): void {
-    if (!node || typeof node !== "object") {
-        return;
-    }
+function buildWalkNode(filePath: string, symbols: Array<string>): (node: unknown) => void {
+    function walkNode(node: unknown): void {
+        if (!node || typeof node !== "object") {
+            return;
+        }
 
-    const astNode = node as AstNode;
+        const astNode = node as AstNode;
 
-    // Extract from FunctionDeclaration nodes
-    if (astNode.type === FUNCTION_DECLARATION) {
-        const functionName = extractIdentifierName(astNode.id);
-        if (functionName) {
-            const runtimeId = resolveRuntimeIdFromPath(filePath, functionName);
-            if (runtimeId) {
-                symbols.push(runtimeId);
+        // Extract from FunctionDeclaration nodes
+        if (astNode.type === FUNCTION_DECLARATION) {
+            const functionName = extractIdentifierName(astNode.id);
+            if (functionName) {
+                const runtimeId = resolveRuntimeIdFromPath(filePath, functionName);
+                if (runtimeId) {
+                    symbols.push(runtimeId);
+                }
+            }
+        }
+
+        // Extract from VariableDeclarator nodes (var myFunc = function() {})
+        if (astNode.type === VARIABLE_DECLARATOR) {
+            symbols.push(...extractFromVariableDeclarator(astNode, filePath));
+        }
+
+        // Extract from AssignmentExpression nodes (myFunc = function() {})
+        if (astNode.type === ASSIGNMENT_EXPRESSION) {
+            symbols.push(...extractFromAssignment(astNode, filePath));
+        }
+
+        // Recursively walk body — as a statement array (Program, BlockStatement.body)
+        // or as a nested BlockStatement node (FunctionDeclaration.body).
+        if (Array.isArray(astNode.body)) {
+            for (const child of astNode.body) {
+                walkNode(child);
+            }
+        } else if (astNode.body !== null && astNode.body !== undefined) {
+            walkNode(astNode.body);
+        }
+
+        // Recursively walk declarations array (for VariableDeclaration, etc.)
+        if (Array.isArray(astNode.declarations)) {
+            for (const child of astNode.declarations) {
+                walkNode(child);
+            }
+        }
+
+        // Walk common single-node AST properties that might contain nested function definitions.
+        // Includes: SwitchStatement.discriminant, ForStatement.update, TryStatement.block/handler/finalizer.
+        for (const prop of [
+            "init",
+            "left",
+            "right",
+            "argument",
+            "test",
+            "consequent",
+            "alternate",
+            "expression",
+            "discriminant",
+            "update",
+            "block",
+            "handler",
+            "finalizer"
+        ] as const) {
+            const value = astNode[prop];
+            if (value) {
+                walkNode(value);
+            }
+        }
+
+        // Walk SwitchStatement.cases — an array of SwitchCase nodes that is not covered
+        // by `body` or `declarations`, so it requires its own traversal step.
+        if (Array.isArray(astNode.cases)) {
+            for (const switchCase of astNode.cases) {
+                walkNode(switchCase);
             }
         }
     }
 
-    // Extract from VariableDeclarator nodes (var myFunc = function() {})
-    if (astNode.type === VARIABLE_DECLARATOR) {
-        symbols.push(...extractFromVariableDeclarator(astNode, filePath));
-    }
-
-    // Extract from AssignmentExpression nodes (myFunc = function() {})
-    if (astNode.type === ASSIGNMENT_EXPRESSION) {
-        symbols.push(...extractFromAssignment(astNode, filePath));
-    }
-
-    // Recursively walk body — as a statement array (Program, BlockStatement.body)
-    // or as a nested BlockStatement node (FunctionDeclaration.body).
-    if (Array.isArray(astNode.body)) {
-        for (const child of astNode.body) {
-            walkNode(child, filePath, symbols);
-        }
-    } else if (astNode.body !== null && astNode.body !== undefined) {
-        walkNode(astNode.body, filePath, symbols);
-    }
-
-    // Recursively walk declarations array (for VariableDeclaration, etc.)
-    if (Array.isArray(astNode.declarations)) {
-        for (const child of astNode.declarations) {
-            walkNode(child, filePath, symbols);
-        }
-    }
-
-    // Walk common single-node AST properties that might contain nested function definitions.
-    // Includes: SwitchStatement.discriminant, ForStatement.update, TryStatement.block/handler/finalizer.
-    for (const prop of [
-        "init",
-        "left",
-        "right",
-        "argument",
-        "test",
-        "consequent",
-        "alternate",
-        "expression",
-        "discriminant",
-        "update",
-        "block",
-        "handler",
-        "finalizer"
-    ] as const) {
-        const value = astNode[prop];
-        if (value) {
-            walkNode(value, filePath, symbols);
-        }
-    }
-
-    // Walk SwitchStatement.cases — an array of SwitchCase nodes that is not covered
-    // by `body` or `declarations`, so it requires its own traversal step.
-    if (Array.isArray(astNode.cases)) {
-        for (const switchCase of astNode.cases) {
-            walkNode(switchCase, filePath, symbols);
-        }
-    }
+    return walkNode;
 }
 
 /**
@@ -225,7 +233,8 @@ function walkNode(node: unknown, filePath: string, symbols: Array<string>): void
  */
 export function extractSymbolsFromAst(ast: AstNode, filePath: string): Array<string> {
     const symbols: Array<string> = [];
-    walkNode(ast, filePath, symbols);
+    const walkNode = buildWalkNode(filePath, symbols);
+    walkNode(ast);
     return Core.uniqueArray(symbols) as Array<string>;
 }
 

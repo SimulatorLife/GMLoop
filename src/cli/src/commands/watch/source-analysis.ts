@@ -13,12 +13,13 @@
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 
 import { Core } from "@gmloop/core";
 
-import { normalizeExtensions } from "../../workflow/extension-normalizer.js";
+import { normalizeExtensions } from "./extension-normalizer.js";
 
-const { clamp, getLineBreakCount } = Core;
+const { clamp, getLineBreakCount, toFiniteNumber } = Core;
 
 // ---------------------------------------------------------------------------
 // Extension matching
@@ -115,7 +116,10 @@ export function hashSourceContent(source: string): string {
  * @returns {number} Safe unknown scan concurrency value (minimum 1).
  */
 export function resolveUnknownScanConcurrency(configuredMaximum: number): number {
-    return clamp(Math.trunc(configuredMaximum), 1, Number.POSITIVE_INFINITY);
+    const detectedParallelism = Math.max(1, availableParallelism());
+    const normalizedMaximum = toFiniteNumber(configuredMaximum) ?? detectedParallelism;
+
+    return clamp(normalizedMaximum, 1, detectedParallelism);
 }
 
 // ---------------------------------------------------------------------------
@@ -215,8 +219,9 @@ export function computeHotReloadLatencyStats(
     const sum = latencies.reduce((acc, val) => acc + val, 0);
     const avg = sum / latencies.length;
 
-    // Sort a copy for p95 computation to avoid mutating the input array.
-    const sorted = latencies.slice().sort((a, b) => a - b);
+    // Use the built-in non-mutating sorter so p95 ordering never mutates the
+    // collected latency window.
+    const sorted = latencies.toSorted((a, b) => a - b);
     const p95Index = Math.max(0, Math.ceil(sorted.length * 0.95) - 1);
     const p95 = sorted.at(p95Index) ?? sorted.at(-1) ?? 0;
 
@@ -233,6 +238,12 @@ export function computeHotReloadLatencyStats(
 export interface InitialFileData {
     content: string;
     ast: unknown;
+    /** Cached symbol definitions extracted during the startup scan.
+     *  Reusing them avoids a second AST traversal in transpileFile. */
+    symbols: Array<string>;
+    /** Cached symbol references extracted during the startup scan.
+     *  Reusing them avoids a second AST traversal in transpileFile. */
+    references: Array<string>;
 }
 
 /**

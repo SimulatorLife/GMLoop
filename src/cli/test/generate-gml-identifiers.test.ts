@@ -5,6 +5,8 @@ import vm from "node:vm";
 import { __test__ } from "../src/commands/generate-gml-identifiers.js";
 
 const {
+    applyFirstWin,
+    mergeEntry,
     parseArrayLiteral,
     collectManualArrayIdentifiers,
     assertManualIdentifierArray,
@@ -20,6 +22,228 @@ const KEYWORDS = [
 `;
 
 void describe("generate-gml-identifiers", () => {
+    void describe("applyFirstWin", () => {
+        void it("returns incoming when incoming is defined", () => {
+            assert.equal(applyFirstWin("incoming", "current"), "incoming");
+        });
+
+        void it("falls back to current when incoming is undefined", () => {
+            assert.equal(applyFirstWin(undefined, "current"), "current");
+        });
+
+        void it("returns undefined when both are undefined", () => {
+            assert.equal(applyFirstWin(undefined, undefined), undefined);
+        });
+
+        void it("treats null as a nullish value that falls back to current", () => {
+            assert.equal(applyFirstWin(null, "current"), "current");
+        });
+
+        void it("treats false as a defined value", () => {
+            assert.equal(applyFirstWin(false as unknown as string, "current"), false);
+        });
+    });
+
+    void describe("mergeEntry", () => {
+        void it("creates a new entry when identifier is absent from map", () => {
+            const map = new Map();
+            mergeEntry(map, "foo", { type: "function", sources: ["manual:gml.js:KEYWORDS"] });
+            const entry = map.get("foo");
+            assert.ok(entry !== undefined);
+            assert.equal(entry!.type, "function");
+            assert.deepEqual([...entry!.sources], ["manual:gml.js:KEYWORDS"]);
+            assert.equal(entry!.deprecated, false);
+        });
+
+        void it("sets deprecated to true when data.deprecated is true", () => {
+            const map = new Map();
+            mergeEntry(map, "foo", { type: "function", deprecated: true });
+            const entry = map.get("foo")!;
+            assert.equal(entry.deprecated, true);
+        });
+
+        void it("creates entry with empty sources Set when sources is empty array", () => {
+            const map = new Map();
+            mergeEntry(map, "foo", { type: "function", sources: [] });
+            const entry = map.get("foo")!;
+            assert.deepEqual([...entry.sources], []);
+        });
+
+        void it("creates entry with empty tags Set when tags is absent", () => {
+            const map = new Map();
+            mergeEntry(map, "foo", { type: "function" });
+            const entry = map.get("foo")!;
+            assert.deepEqual([...entry.tags], []);
+        });
+
+        void it("adds sources to existing entry", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(["source-a"]),
+                tags: new Set<string>(),
+                deprecated: false
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { sources: ["source-b"] });
+            assert.deepEqual([...existingEntry.sources].sort(), ["source-a", "source-b"]);
+        });
+
+        void it("adds tags to existing entry", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(["tag-a"]),
+                deprecated: false
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { tags: ["tag-b"] });
+            assert.deepEqual([...existingEntry.tags].sort(), ["tag-a", "tag-b"]);
+        });
+
+        void it("sets first-win field when current is absent", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false,
+                manualPath: "test"
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { legacyCategory: "Obsolete Arrays" });
+            assert.equal((existingEntry as { legacyCategory?: string }).legacyCategory, "Obsolete Arrays");
+        });
+
+        void it("ignores first-win field when current is already set and incoming is undefined", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false,
+                legacyCategory: "Existing Category",
+                manualPath: "test"
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", {});
+            assert.equal(existingEntry.legacyCategory, "Existing Category");
+        });
+
+        void it("accumulates deprecated: true without clobbering false", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { deprecated: true });
+            assert.equal(existingEntry.deprecated, true);
+        });
+
+        void it("does not reset deprecated: true when incoming deprecated is false", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: true
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { deprecated: false });
+            assert.equal(existingEntry.deprecated, true);
+        });
+
+        void it("upgrades replacement when incoming priority is higher", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false,
+                replacement: undefined,
+                replacementKind: "none" as const,
+                manualPath: "test"
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", {
+                replacement: "new_func",
+                replacementKind: "manual-migration"
+            });
+            assert.equal(existingEntry.replacement, "new_func");
+            assert.equal(existingEntry.replacementKind, "manual-migration");
+        });
+
+        void it("upgrades replacementKind even when replacement is undefined but priority is higher", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false,
+                replacement: undefined,
+                replacementKind: "manual-migration" as const,
+                manualPath: "test"
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", {
+                replacementKind: "direct-rename"
+            });
+            assert.equal(existingEntry.replacementKind, "direct-rename");
+            assert.equal(existingEntry.replacement, undefined);
+        });
+
+        void it("does not downgrade replacement when incoming priority is lower", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false,
+                replacement: "direct_replacement",
+                replacementKind: "direct-rename" as const,
+                manualPath: "test"
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", {
+                replacement: "less_preferred",
+                replacementKind: "manual-migration"
+            });
+            assert.equal(existingEntry.replacement, "direct_replacement");
+            assert.equal(existingEntry.replacementKind, "direct-rename");
+        });
+
+        void it("upgrades type when incoming priority is higher", () => {
+            const existingEntry = {
+                type: "literal",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { type: "function" });
+            assert.equal(existingEntry.type, "function");
+        });
+
+        void it("does not downgrade type when incoming priority is lower", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { type: "literal" });
+            assert.equal(existingEntry.type, "function");
+        });
+
+        void it("sets type to 'unknown' when neither incoming nor current has a defined type", () => {
+            const existingEntry = {
+                type: "unknown",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { type: "unknown" });
+            assert.equal(existingEntry.type, "unknown");
+        });
+    });
+
     void it("normalizes VM evaluation failures", () => {
         const thrown = Object.create(null);
         const restoreVm = mock.method(vm, "runInNewContext", () => {

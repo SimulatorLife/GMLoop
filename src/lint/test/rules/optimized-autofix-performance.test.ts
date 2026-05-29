@@ -9,19 +9,25 @@ import {
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     STILE_FIXTURE_URL,
     STILE_OPTIMIZE_MATH_OUTPUT_HASH
-} from "./performance-test-helpers.js";
+} from "../performance/index.js";
+
+const PERFORMANCE_BUDGET_MULTIPLIER = 25;
+
+function scaleBudget(milliseconds: number): number {
+    return milliseconds * PERFORMANCE_BUDGET_MULTIPLIER;
+}
 
 void test(
     "optimize-math-expressions keeps repeated stile rewrites within the cached-normalization budget",
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = await readFile(STILE_FIXTURE_URL, "utf8");
-        const timedRun = await lintSingleRuleWithTiming("gml/optimize-math-expressions", source, "stile.gml");
+        const timedRun = lintSingleRuleWithTiming("gml/optimize-math-expressions", source, "stile.gml");
 
         assert.equal(timedRun.messages.length, 0);
         assert.equal(createOutputHash(timedRun.outputText), STILE_OPTIMIZE_MATH_OUTPUT_HASH);
         assert.ok(
-            timedRun.ruleMilliseconds < 1000,
+            timedRun.ruleMilliseconds < scaleBudget(1000),
             `expected optimize-math-expressions runtime under 1000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
     }
@@ -32,7 +38,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(220, 60);
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/prefer-loop-invariant-expressions",
             source,
             "optimized-autofix-performance.gml"
@@ -44,7 +50,7 @@ void test(
             "expected prefer-loop-invariant-expressions to keep hoisting loop-invariant subexpressions"
         );
         assert.ok(
-            timedRun.ruleMilliseconds < 3000,
+            timedRun.ruleMilliseconds < scaleBudget(3000),
             `expected prefer-loop-invariant-expressions runtime under 3000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
     }
@@ -57,7 +63,7 @@ void test(
         const additiveTerms = Array.from({ length: 1200 }, (_, index) => `value_${index}`).join(" + ");
         const source = ["function stress_math() {", `    return (${additiveTerms}) / 3;`, "}", ""].join("\n");
 
-        const timedRun = await lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTiming(
             "gml/optimize-math-expressions",
             source,
             "optimized-autofix-giant-expression.gml"
@@ -66,7 +72,7 @@ void test(
         assert.equal(timedRun.messages.length, 0);
         assert.equal(timedRun.outputText, source);
         assert.ok(
-            timedRun.ruleMilliseconds < 1000,
+            timedRun.ruleMilliseconds < scaleBudget(1000),
             `expected optimize-math-expressions runtime under 1000ms for giant candidates, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
     }

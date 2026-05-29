@@ -1,0 +1,70 @@
+:root {
+  color-scheme: dark;
+  --gm-text: #f3f7fd;
+  --gm-text-secondary: #d7e3f2;
+  --gm-text-subdued: #adbbd0;
+  --gm-text-interactive: #f8fbff;
+  --gm-accent: #8ee0f0;
+  --gm-accent-strong: #73c8ff;
+  --gm-surface-app-top: #08101b;
+  --gm-surface-app-bottom: #0e1726;
+  --gm-surface-elevated: rgba(16, 28, 46, 0.94);
+  --gm-surface-elevated-strong: rgba(11, 20, 34, 0.98);
+  --gm-surface-muted: rgba(255, 255, 255, 0.055);
+  --gm-surface-inset: rgba(5, 12, 22, 0.74);
+  --gm-surface-overlay: rgba(10, 18, 30, 0.96);
+  --gm-surface-highlight: rgba(142, 224, 240, 0.12);
+  --gm-border: rgba(143, 181, 255, 0.18);
+  --gm-border-strong: rgba(143, 181, 255, 0.3);
+  --gm-focus-ring: rgba(142, 224, 240, 0.65);
+  --gm-error-text: #ffd6d6;
+  --gm-error-border: rgba(255, 137, 137, 0.42);
+  --gm-error-surface: rgba(118, 31, 41, 0.4);
+  --gm-shadow: 0 20px 44px rgba(0, 0, 0, 0.32);
+  --gm-space-tight: 8px;
+  --gm-space-related: 14px;
+  --gm-space-far: 22px;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+  font-family: "Manrope", system-ui, sans-serif;
+  font-size: 15px;
+  color: var(--gm-text);
+  background:
+    radial-gradient(circle at top left, rgba(89, 195, 195, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(139, 92, 246, 0.18), transparent 24%),
+    linear-gradient(180deg, var(--gm-surface-app-top) 0%, #0b1220 45%, var(--gm-surface-app-bottom) 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+body {
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(115, 200, 255, 0.28);
+  color: #fff;
+}

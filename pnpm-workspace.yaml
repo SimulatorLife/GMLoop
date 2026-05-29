@@ -4,9 +4,30 @@ packages:
   - src/format
   - src/parser
   - src/core
+  - src/ui
   - src/semantic
   - src/transpiler
   - src/runtime-wrapper
   - src/refactor
   - src/fixture-runner
   - src/mcp
+
+catalog:
+  "@eslint/compat": "^2"
+  "@eslint/js": "^10"
+  "@types/node": "^25"
+  eslint: "^10"
+  eslint-plugin-boundaries: "^6"
+  prettier: "^3"
+  typescript: "^6"
+  ws: "^8"
+
+onlyBuiltDependencies:
+  - esbuild
+  - fast-folder-size
+  - unrs-resolver
+
+allowBuilds:
+  esbuild: true
+  fast-folder-size: true
+  unrs-resolver: true

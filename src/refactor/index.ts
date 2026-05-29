@@ -1,4 +1,6 @@
 export type {
+    AddProjectResourceRequest,
+    AddRoomInstanceRequest,
     ApplyWorkspaceEditOptions,
     AstNode,
     BatchRenamePlanSummary,
@@ -18,6 +20,7 @@ export type {
     ConflictEntry,
     ConflictTypeValue,
     CrossRenameConfusion,
+    DeleteRoomInstanceRequest,
     DependencyAnalyzer,
     DependentSymbol,
     DuplicateSymbolIdEntry,
@@ -55,6 +58,8 @@ export type {
     ParserBridge,
     PartialSemanticAnalyzer,
     PrepareRenamePlanOptions,
+    ProjectResourceKindValue,
+    ProjectResourceMutationResult,
     Range,
     RefactorCodemodConfigEntry,
     RefactorCodemodConfigMap,
@@ -65,6 +70,7 @@ export type {
     RefactorProjectConfig,
     RegisteredCodemod,
     RegisteredCodemodSelection,
+    RemoveProjectResourceRequest,
     RenameImpactAnalysis,
     RenameImpactGraph,
     RenameImpactNode,
@@ -76,6 +82,7 @@ export type {
     RenameValidationCacheConfig,
     ResolvedNamingConventionRules,
     ResolvedNamingRule,
+    RoomInstanceMutationResult,
     SemanticAnalyzer,
     SemanticCacheConfig,
     SemanticQueryCache,
@@ -87,6 +94,7 @@ export type {
     SymbolResolver,
     TranspilerBridge,
     TranspilerPatch,
+    UpdateRoomInstanceRequest,
     ValidateRenameRequestOptions,
     ValidationCacheStats,
     ValidationSummary,
@@ -96,3 +104,4 @@ export type {
     WorkspaceWriteFile
 } from "./src/index.js";
 export { Refactor, WORKSPACE_EDIT_REVISION_TOKEN } from "./src/index.js";
+export { readExclusiveSemanticLocationIndex, readSemanticLocationIndex } from "./src/index.js";

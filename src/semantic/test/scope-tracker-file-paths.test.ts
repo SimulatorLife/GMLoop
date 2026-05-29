@@ -2,8 +2,34 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { ScopeTracker } from "../src/scopes/scope-tracker.js";
+import { wrapNormalizedPathSpy } from "./scope-tracker-helpers.js";
 
-const delay = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 10));
+/**
+ * Replaces wall-clock sleeps with a deterministic timestamp sequence so the
+ * modification-cutoff assertions do not depend on scheduler delays or clock
+ * granularity.  Scopes created while the clock is controlled receive stable,
+ * monotonically-increasing timestamps, making assertions about "modified after
+ * X" fully deterministic across all platforms and load conditions.
+ */
+function withDeterministicDateNow(
+    callback: (advanceTimestamp: () => number) => void | Promise<void>
+): Promise<void> | void {
+    const originalDateNow = Date.now;
+    let currentTimestamp = 1000;
+
+    Date.now = () => currentTimestamp;
+
+    const advanceTimestamp = (): number => {
+        currentTimestamp += 1;
+        return currentTimestamp;
+    };
+
+    try {
+        return callback(advanceTimestamp);
+    } finally {
+        Date.now = originalDateNow;
+    }
+}
 
 void describe("ScopeTracker: getFilePathsReferencingSymbol", () => {
     void it("returns empty set for null symbol name", () => {
@@ -235,30 +261,9 @@ void describe("ScopeTracker: getBatchFilePathsReferencingSymbols", () => {
         tracker.reference("beta", { name: "beta" });
         tracker.exitScope();
 
-        const trackerPrototype = Object.getPrototypeOf(tracker) as {
-            normalizeTrackedPath(path: string): string;
-        };
-        const originalNormalizeTrackedPath = trackerPrototype.normalizeTrackedPath.bind(tracker);
-        const seenInputs = new Set<string>();
-        let repeatedPathNormalizations = 0;
-        Object.defineProperty(tracker, "normalizeTrackedPath", {
-            value: (path: string): string => {
-                if (seenInputs.has(path)) {
-                    repeatedPathNormalizations += 1;
-                } else {
-                    seenInputs.add(path);
-                }
-                return originalNormalizeTrackedPath(path);
-            },
-            configurable: true
-        });
+        const { tracker: instrumented, repeatedPathNormalizations } = wrapNormalizedPathSpy(tracker);
 
-        const results = tracker.getBatchFilePathsReferencingSymbols(["alpha", "beta"]);
-
-        Object.defineProperty(tracker, "normalizeTrackedPath", {
-            value: originalNormalizeTrackedPath,
-            configurable: true
-        });
+        const results = instrumented.getBatchFilePathsReferencingSymbols(["alpha", "beta"]);
 
         assert.deepEqual([...(results.get("alpha") ?? [])], ["project/shared/consumer.gml"]);
         assert.deepEqual([...(results.get("beta") ?? [])], ["project/shared/consumer.gml", "project/shared/other.gml"]);
@@ -278,208 +283,229 @@ void describe("ScopeTracker: getChangedFilePaths", () => {
         tracker.enterScope("program", { path: "/project/a.gml" });
         tracker.declare("x", { name: "x" });
 
-        // Use a far-future timestamp
+        // Use a far-future timestamp that cannot be reached by any realistic test clock.
         const futureTimestamp = Date.now() + 100_000;
         assert.equal(tracker.getChangedFilePaths(futureTimestamp).size, 0);
     });
 
-    void it("returns file paths for scopes modified after the given timestamp", async () => {
-        const tracker = new ScopeTracker({ enabled: true });
+    void it("returns file paths for scopes modified after the given timestamp", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            const tracker = new ScopeTracker({ enabled: true });
 
-        tracker.enterScope("program", { path: "/project/a.gml" });
-        tracker.declare("x", { name: "x" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/a.gml" });
+            tracker.declare("x", { name: "x" });
+            tracker.exitScope();
 
-        const timestamp = Date.now();
-        await delay();
+            // advanceTimestamp() returns the current clock value before incrementing,
+            // so subtract 1 to obtain a checkpoint that is strictly less than any
+            // subsequently-created scope's timestamp.
+            const checkpoint = advanceTimestamp() - 1;
+            advanceTimestamp(); // consume the increment so new scopes see a greater value
 
-        tracker.enterScope("program", { path: "/project/b.gml" });
-        tracker.declare("y", { name: "y" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/b.gml" });
+            tracker.declare("y", { name: "y" });
+            tracker.exitScope();
 
-        const paths = tracker.getChangedFilePaths(timestamp);
-        assert.ok(paths.has("/project/b.gml"), "b.gml was modified after the snapshot");
-        assert.ok(!paths.has("/project/a.gml"), "a.gml was modified before the snapshot");
-    });
+            const paths = tracker.getChangedFilePaths(checkpoint);
+            assert.ok(paths.has("/project/b.gml"), "b.gml was modified after the checkpoint");
+            assert.ok(!paths.has("/project/a.gml"), "a.gml was modified before the checkpoint");
+        }));
 
-    void it("deduplicates multiple modified scopes from the same file", async () => {
-        const tracker = new ScopeTracker({ enabled: true });
+    void it("deduplicates multiple modified scopes from the same file", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            const tracker = new ScopeTracker({ enabled: true });
 
-        const timestamp = Date.now();
-        await delay();
+            advanceTimestamp(); // checkpoint
 
-        tracker.enterScope("program", { path: "/project/multi.gml" });
-        tracker.declare("x", { name: "x" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/multi.gml" });
+            tracker.declare("x", { name: "x" });
+            tracker.exitScope();
 
-        tracker.enterScope("function", { path: "/project/multi.gml" });
-        tracker.declare("y", { name: "y" });
-        tracker.exitScope();
+            tracker.enterScope("function", { path: "/project/multi.gml" });
+            tracker.declare("y", { name: "y" });
+            tracker.exitScope();
 
-        const paths = tracker.getChangedFilePaths(timestamp);
-        assert.equal(paths.size, 1, "Multiple modified scopes in the same file yield one path");
-        assert.ok(paths.has("/project/multi.gml"));
-    });
+            const paths = tracker.getChangedFilePaths(advanceTimestamp() - 1);
+            assert.equal(paths.size, 1, "Multiple modified scopes in the same file yield one path");
+            assert.ok(paths.has("/project/multi.gml"));
+        }));
 
-    void it("skips scopes that have no path metadata", async () => {
-        const tracker = new ScopeTracker({ enabled: true });
+    void it("skips scopes that have no path metadata", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            const tracker = new ScopeTracker({ enabled: true });
 
-        const timestamp = Date.now();
-        await delay();
+            advanceTimestamp(); // checkpoint
 
-        // Scope with no path (e.g., an anonymous block)
-        tracker.enterScope("function");
-        tracker.declare("localVar", { name: "localVar" });
-        tracker.exitScope();
+            // Scope with no path (e.g., an anonymous block)
+            tracker.enterScope("function");
+            tracker.declare("localVar", { name: "localVar" });
+            tracker.exitScope();
 
-        const paths = tracker.getChangedFilePaths(timestamp);
-        assert.equal(paths.size, 0, "Scopes without path metadata must be excluded");
-    });
+            const paths = tracker.getChangedFilePaths(advanceTimestamp() - 1);
+            assert.equal(paths.size, 0, "Scopes without path metadata must be excluded");
+        }));
 
-    void it("returns all modified file paths when sinceTimestamp is 0", async () => {
-        const tracker = new ScopeTracker({ enabled: true });
+    void it("returns all modified file paths when sinceTimestamp is 0", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            advanceTimestamp(); // warm clock
 
-        await delay();
+            const tracker = new ScopeTracker({ enabled: true });
 
-        tracker.enterScope("program", { path: "/project/a.gml" });
-        tracker.declare("x", { name: "x" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/a.gml" });
+            tracker.declare("x", { name: "x" });
+            tracker.exitScope();
 
-        tracker.enterScope("program", { path: "/project/b.gml" });
-        tracker.declare("y", { name: "y" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/b.gml" });
+            tracker.declare("y", { name: "y" });
+            tracker.exitScope();
 
-        const paths = tracker.getChangedFilePaths(0);
-        assert.ok(paths.has("/project/a.gml"));
-        assert.ok(paths.has("/project/b.gml"));
-    });
+            const paths = tracker.getChangedFilePaths(0);
+            assert.ok(paths.has("/project/a.gml"));
+            assert.ok(paths.has("/project/b.gml"));
+        }));
 
-    void it("normalizes file paths with mixed separators for changed-file exports", async () => {
-        const tracker = new ScopeTracker({ enabled: true });
+    void it("normalizes file paths with mixed separators for changed-file exports", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            const tracker = new ScopeTracker({ enabled: true });
 
-        const timestamp = Date.now();
-        await delay();
+            advanceTimestamp(); // checkpoint
 
-        tracker.enterScope("program", { path: String.raw`project\scripts\modified.gml` });
-        tracker.declare("x", { name: "x" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: String.raw`project\scripts\modified.gml` });
+            tracker.declare("x", { name: "x" });
+            tracker.exitScope();
 
-        tracker.enterScope("function", { path: "project/scripts/modified.gml" });
-        tracker.declare("y", { name: "y" });
-        tracker.exitScope();
+            tracker.enterScope("function", { path: "project/scripts/modified.gml" });
+            tracker.declare("y", { name: "y" });
+            tracker.exitScope();
 
-        const paths = tracker.getChangedFilePaths(timestamp);
+            const paths = tracker.getChangedFilePaths(advanceTimestamp() - 1);
 
-        assert.deepEqual([...paths], ["project/scripts/modified.gml"]);
-    });
+            assert.deepEqual([...paths], ["project/scripts/modified.gml"]);
+        }));
 
-    void it("returns a new independent Set on each call", async () => {
-        const tracker = new ScopeTracker({ enabled: true });
+    void it("returns a new independent Set on each call", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            const tracker = new ScopeTracker({ enabled: true });
 
-        const timestamp = Date.now();
-        await delay();
+            advanceTimestamp(); // checkpoint
 
-        tracker.enterScope("program", { path: "/project/a.gml" });
-        tracker.declare("x", { name: "x" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/a.gml" });
+            tracker.declare("x", { name: "x" });
+            tracker.exitScope();
 
-        const result1 = tracker.getChangedFilePaths(timestamp);
-        result1.add("/project/injected.gml");
+            const result1 = tracker.getChangedFilePaths(advanceTimestamp() - 1);
+            result1.add("/project/injected.gml");
 
-        const result2 = tracker.getChangedFilePaths(timestamp);
-        assert.ok(!result2.has("/project/injected.gml"), "Results should be independent Sets");
-    });
+            const result2 = tracker.getChangedFilePaths(advanceTimestamp() - 1);
+            assert.ok(!result2.has("/project/injected.gml"), "Results should be independent Sets");
+        }));
 
-    void it("hot-reload: only reports scopes that are actually modified", async () => {
-        const tracker = new ScopeTracker({ enabled: true });
+    void it("hot-reload: only reports scopes that are actually modified", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            const tracker = new ScopeTracker({ enabled: true });
 
-        tracker.enterScope("program", { path: "/project/config.gml" });
-        tracker.declare("MAX_HP", { name: "MAX_HP" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/config.gml" });
+            tracker.declare("MAX_HP", { name: "MAX_HP" });
+            tracker.exitScope();
 
-        const snapshotTimestamp = Date.now();
-        await delay();
+            // advanceTimestamp() returns the current clock value before incrementing,
+            // so subtract 1 to obtain a checkpoint that is strictly less than any
+            // subsequently-created scope's timestamp.
+            const snapshotTimestamp = advanceTimestamp() - 1;
+            advanceTimestamp(); // consume the increment so new scopes see a greater value
 
-        tracker.enterScope("program", { path: "/project/player.gml" });
-        tracker.declare("playerHealth", { name: "playerHealth" });
-        tracker.reference("MAX_HP", { name: "MAX_HP" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/player.gml" });
+            tracker.declare("playerHealth", { name: "playerHealth" });
+            tracker.reference("MAX_HP", { name: "MAX_HP" });
+            tracker.exitScope();
 
-        const changedPaths = tracker.getChangedFilePaths(snapshotTimestamp);
-        assert.equal(changedPaths.size, 1, "Only player.gml should be detected as changed");
-        assert.ok(changedPaths.has("/project/player.gml"));
-        assert.ok(!changedPaths.has("/project/config.gml"));
-    });
+            const changedPaths = tracker.getChangedFilePaths(snapshotTimestamp);
+            assert.equal(changedPaths.size, 1, "Only player.gml should be detected as changed");
+            assert.ok(changedPaths.has("/project/player.gml"));
+            assert.ok(!changedPaths.has("/project/config.gml"));
+        }));
 
-    void it("drops a previous path from changed-file results after metadata path moves", async () => {
-        const tracker = new ScopeTracker({ enabled: true });
+    void it("drops a previous path from changed-file results after metadata path moves", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            const tracker = new ScopeTracker({ enabled: true });
 
-        const scope = tracker.enterScope("program", { path: "/project/old.gml" });
-        tracker.declare("x", { name: "x" });
-        tracker.exitScope();
+            const scope = tracker.enterScope("program", { path: "/project/old.gml" });
+            tracker.declare("x", { name: "x" });
+            tracker.exitScope();
 
-        const snapshotTimestamp = Date.now();
-        await delay();
+            // advanceTimestamp() returns the current clock value before incrementing,
+            // so subtract 1 to obtain a checkpoint that is strictly less than any
+            // subsequently-created scope's timestamp.
+            const snapshotTimestamp = advanceTimestamp() - 1;
+            advanceTimestamp(); // consume the increment so new scopes see a greater value
 
-        tracker.updateScopeMetadata(scope.id, { path: "/project/new.gml" });
+            tracker.updateScopeMetadata(scope.id, { path: "/project/new.gml" });
 
-        const changedPaths = tracker.getChangedFilePaths(snapshotTimestamp);
-        assert.equal(changedPaths.size, 1);
-        assert.ok(changedPaths.has("/project/new.gml"));
-        assert.ok(!changedPaths.has("/project/old.gml"));
-    });
+            const changedPaths = tracker.getChangedFilePaths(snapshotTimestamp);
+            assert.equal(changedPaths.size, 1);
+            assert.ok(changedPaths.has("/project/new.gml"));
+            assert.ok(!changedPaths.has("/project/old.gml"));
+        }));
 
-    void it("removes cleared file paths from changed-file exports", async () => {
-        const tracker = new ScopeTracker({ enabled: true });
+    void it("removes cleared file paths from changed-file exports", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            const tracker = new ScopeTracker({ enabled: true });
 
-        tracker.enterScope("program", { path: "/project/removed.gml" });
-        tracker.declare("x", { name: "x" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/removed.gml" });
+            tracker.declare("x", { name: "x" });
+            tracker.exitScope();
 
-        const snapshotTimestamp = Date.now();
-        await delay();
+            // advanceTimestamp() returns the current clock value before incrementing,
+            // so subtract 1 to obtain a checkpoint that is strictly less than any
+            // subsequently-created scope's timestamp.
+            const snapshotTimestamp = advanceTimestamp() - 1;
+            advanceTimestamp(); // consume the increment so new scopes see a greater value
 
-        const removedCount = tracker.clearScopesForPath("/project/removed.gml");
-        assert.ok(removedCount > 0);
+            const removedCount = tracker.clearScopesForPath("/project/removed.gml");
+            assert.ok(removedCount > 0);
 
-        const changedPaths = tracker.getChangedFilePaths(snapshotTimestamp);
-        assert.equal(changedPaths.size, 0);
-    });
+            const changedPaths = tracker.getChangedFilePaths(snapshotTimestamp);
+            assert.equal(changedPaths.size, 0);
+        }));
 });
 
 void describe("ScopeTracker: file-path query integration for hot reload", () => {
-    void it("combines getChangedFilePaths and getFilePathsReferencingSymbol for invalidation", async () => {
-        const tracker = new ScopeTracker({ enabled: true });
+    void it("combines getChangedFilePaths and getFilePathsReferencingSymbol for invalidation", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            const tracker = new ScopeTracker({ enabled: true });
 
-        // Simulate initial project state
-        tracker.enterScope("program", { path: "/project/utils.gml" });
-        tracker.declare("computeScore", { name: "computeScore" });
-        tracker.exitScope();
+            // Simulate initial project state
+            tracker.enterScope("program", { path: "/project/utils.gml" });
+            tracker.declare("computeScore", { name: "computeScore" });
+            tracker.exitScope();
 
-        tracker.enterScope("program", { path: "/project/hud.gml" });
-        tracker.reference("computeScore", { name: "computeScore" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/hud.gml" });
+            tracker.reference("computeScore", { name: "computeScore" });
+            tracker.exitScope();
 
-        tracker.enterScope("program", { path: "/project/leaderboard.gml" });
-        tracker.reference("computeScore", { name: "computeScore" });
-        tracker.exitScope();
+            tracker.enterScope("program", { path: "/project/leaderboard.gml" });
+            tracker.reference("computeScore", { name: "computeScore" });
+            tracker.exitScope();
 
-        const snapshotTimestamp = Date.now();
-        await delay();
+            // advanceTimestamp() returns the current clock value before incrementing,
+            // so subtract 1 to obtain a checkpoint that is strictly less than any
+            // subsequently-created scope's timestamp.
+            const snapshotTimestamp = advanceTimestamp() - 1;
+            advanceTimestamp(); // consume the increment so new scopes see a greater value
 
-        // Simulate re-analysing utils.gml after an edit
-        tracker.enterScope("program", { path: "/project/utils.gml" });
-        tracker.declare("computeScore", { name: "computeScore" });
-        tracker.declare("resetScore", { name: "resetScore" });
-        tracker.exitScope();
+            // Simulate re-analysing utils.gml after an edit
+            tracker.enterScope("program", { path: "/project/utils.gml" });
+            tracker.declare("computeScore", { name: "computeScore" });
+            tracker.declare("resetScore", { name: "resetScore" });
+            tracker.exitScope();
 
-        // Step 1: detect which files were re-analysed
-        const changedFiles = tracker.getChangedFilePaths(snapshotTimestamp);
-        assert.ok(changedFiles.has("/project/utils.gml"), "utils.gml should be detected as changed");
+            // Step 1: detect which files were re-analysed
+            const changedFiles = tracker.getChangedFilePaths(snapshotTimestamp);
+            assert.ok(changedFiles.has("/project/utils.gml"), "utils.gml should be detected as changed");
 
-        // Step 2: find all files that reference symbols declared in the changed files
-        const dependents = tracker.getFilePathsReferencingSymbol("computeScore");
-        assert.ok(dependents.has("/project/hud.gml"), "hud.gml references computeScore");
-        assert.ok(dependents.has("/project/leaderboard.gml"), "leaderboard.gml references computeScore");
-    });
+            // Step 2: find all files that reference symbols declared in the changed files
+            const dependents = tracker.getFilePathsReferencingSymbol("computeScore");
+            assert.ok(dependents.has("/project/hud.gml"), "hud.gml references computeScore");
+            assert.ok(dependents.has("/project/leaderboard.gml"), "leaderboard.gml references computeScore");
+        }));
 });

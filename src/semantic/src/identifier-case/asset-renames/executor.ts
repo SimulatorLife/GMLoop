@@ -3,14 +3,9 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import {
-    getProjectMetadataValueAtPath,
-    parseProjectMetadataDocumentForMutation,
-    readProjectMetadataDocumentForMutationFromFile,
-    stringifyProjectMetadataDocument,
-    updateProjectMetadataReferenceByPath,
-    writeProjectMetadataDocumentToFile
-} from "../../project-metadata/index.js";
-import { DEFAULT_WRITE_ACCESS_MODE, defaultIdentifierCaseFsFacade as defaultFsFacade } from "../fs-facade.js";
+    DEFAULT_WRITE_ACCESS_MODE,
+    defaultIdentifierCaseFsFacade as defaultFsFacade
+} from "../identifier-case-helpers.js";
 
 type IdentifierCaseProjectIndex = {
     projectRoot?: string | null;
@@ -68,8 +63,9 @@ function readJsonFile(fsFacade, absolutePath, cache, preferYyFileIo = false) {
     }
 
     const resourceJson = preferYyFileIo
-        ? readProjectMetadataDocumentForMutationFromFile(absolutePath).document
-        : parseProjectMetadataDocumentForMutation(fsFacade.readFileSync(absolutePath, "utf8"), absolutePath).document;
+        ? Core.readProjectMetadataDocumentForMutationFromFile(absolutePath).document
+        : Core.parseProjectMetadataDocumentForMutation(fsFacade.readFileSync(absolutePath, "utf8"), absolutePath)
+              .document;
     if (cache) {
         cache.set(absolutePath, resourceJson);
     }
@@ -81,7 +77,7 @@ function getObjectAtPath(json, propertyPath) {
         return null;
     }
 
-    return getProjectMetadataValueAtPath(json, propertyPath ?? "");
+    return Core.getProjectMetadataValueAtPath(json, propertyPath ?? "");
 }
 
 function updateReferenceObject(json, propertyPath, newResourcePath, newName) {
@@ -89,7 +85,7 @@ function updateReferenceObject(json, propertyPath, newResourcePath, newName) {
         return false;
     }
 
-    return updateProjectMetadataReferenceByPath({
+    return Core.updateProjectMetadataReferenceByPath({
         document: json,
         propertyPath: Core.getNonEmptyString(propertyPath) ?? "",
         newResourcePath: Core.getNonEmptyString(newResourcePath) ?? null,
@@ -342,7 +338,7 @@ export function createAssetRenameExecutor({
             const writeActions = [...pendingWrites.entries()].map(([filePath, jsonData]) => ({
                 filePath,
                 jsonData,
-                contents: stringifyProjectMetadataDocument(jsonData, filePath)
+                contents: Core.stringifyProjectMetadataDocument(jsonData, filePath)
             }));
 
             if (writeActions.length === 0 && renameActions.length === 0) {
@@ -365,7 +361,7 @@ export function createAssetRenameExecutor({
             for (const action of writeActions) {
                 ensureWritableDirectory(effectiveFs, path.dirname(action.filePath));
                 if (preferYyFileIo) {
-                    writeProjectMetadataDocumentToFile(action.filePath, action.jsonData);
+                    Core.writeProjectMetadataDocumentToFile(action.filePath, action.jsonData);
                     continue;
                 }
 

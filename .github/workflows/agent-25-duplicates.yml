@@ -16,44 +16,29 @@ permissions:
 jobs:
   check_duplicates:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     outputs:
       duplicates_found: ${{ steps.run_duplicates.outputs.duplicates_found }}
       duplicates_output: ${{ steps.run_duplicates.outputs.duplicates_output }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - name: Read Node version from .nvmrc
-        id: read-node-version
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
 
-      - name: Use Node.js
+      - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.read-node-version.outputs.version }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Enable pnpm via Corepack
-        run: |
-          corepack enable
-          corepack prepare $(node -p "require('./package.json').packageManager") --activate
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: |
-          set -o pipefail
-          install_log="$(mktemp)"
-          if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-            exit 0
-          fi
-
-          if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-            echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-            pnpm install --no-frozen-lockfile
-            exit 0
-          fi
-
-          echo "::error::Dependency install failed for a reason other than outdated lockfile."
-          exit 1
+        run: pnpm install --frozen-lockfile --recursive
 
       - name: Run duplicate scan
         id: run_duplicates
@@ -90,7 +75,7 @@ jobs:
         Focus on one tight cluster at a time and avoid unrelated refactors. Eliminate the
         duplication by consolidating logic into a shared helper, reusing an existing helper,
         or otherwise making a targeted refactor that removes the repeated code. Keep the
-        change minimal, well-named, and aligned with existing domain boundaries. Once you
+        change small/well-scoped, well-named, and aligned with existing domain boundaries. Once you
         have addressed the duplicates, re-run `pnpm run lint:duplicates` to confirm that
         the reported duplicates are resolved and the output no longer shows those matches.
         Include a short summary of what was de-duplicated and where the shared logic now lives.

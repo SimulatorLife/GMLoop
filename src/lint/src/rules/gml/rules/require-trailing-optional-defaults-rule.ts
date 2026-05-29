@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import {
     applySourceTextEdits,
     type AstNodeRecord,
@@ -11,9 +12,8 @@ import {
     type SourceTextEdit,
     walkAstNodes
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
-const { getNodeStartIndex, getNodeEndIndex, unwrapParenthesizedExpression: unwrapParenthesized } = Core;
+const { compactArray, getNodeStartIndex, getNodeEndIndex, unwrapParenthesizedExpression: unwrapParenthesized } = Core;
 
 type LeadingArgumentFallback = Readonly<{
     parameterName: string;
@@ -71,7 +71,7 @@ function getMemberArgumentIndex(node: any): number | null {
         return null;
     }
 
-    const parsed = Number.parseInt(String(property.value));
+    const parsed = Number.parseInt(String(property.value), 10);
     return Number.isInteger(parsed) ? parsed : null;
 }
 
@@ -90,7 +90,7 @@ function getArgumentCountGuardIndex(testNode: any): number | null {
         return null;
     }
 
-    const parsed = Number.parseInt(String(right.value));
+    const parsed = Number.parseInt(String(right.value), 10);
     return Number.isInteger(parsed) ? (testNode.operator === ">" ? parsed : null) : null;
 }
 
@@ -230,7 +230,7 @@ function splitTopLevelCommaSegments(text: string): string[] {
         current += char;
     }
     segments.push(current.trim());
-    return segments.filter(Boolean);
+    return compactArray(segments) as string[];
 }
 
 function expandEditRangeToWholeLines(sourceText: string, start: number, end: number): { start: number; end: number } {
@@ -555,7 +555,7 @@ export function rewriteTrailingOptionalDefaultsProgram(sourceText: string, progr
     const callEdits: SourceTextEdit[] = [];
 
     walkAstNodes(programNode, (node) => {
-        if (node?.type === "FunctionDeclaration" || node?.type === "ConstructorDeclaration") {
+        if (Core.isFunctionLikeDeclaration(node)) {
             const edit = rewriteFunctionForOptionalDefaults(sourceText, node);
             if (edit) {
                 functionEdits.push(edit);

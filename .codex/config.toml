@@ -1,18 +1,41 @@
 # OpenAI Codex configuration file
 # See https://developers.openai.com/codex/config-basic
 
-model = "gpt-5.4"
 model_verbosity = "low"
 approval_policy = "never"
-model_supports_reasoning_summaries = true # Force reasoning
+model_supports_reasoning_summaries = true # Force reasoning summary metadata, not reasoning itself
 personality = "pragmatic"
 sandbox_mode = "workspace-write"
 background_terminal_max_timeout = 600000
+
+[mcp_servers.gmloop]
+command = "gmloop"
+args = ["mcp"]
+enabled = true
+default_tools_approval_mode = "approve"
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+enabled = true
+default_tools_approval_mode = "approve"
+
+[mcp_servers.playwright.tools.browser_run_code_unsafe]
+approval_mode = "approve"
+
+[mcp_servers.gm-cli]
+command = "gm-cli"
+args = ["resourcetool", "mcp"]
+enabled = true
+default_tools_approval_mode = "approve"
 
 [features]
 shell_snapshot = true           # Speed up repeated commands
 unified_exec = true
 steer = true
+multi_agent = true
+fast_mode = false
+image_generation = false
 
 [analytics]
 enabled = false
@@ -25,3 +48,30 @@ enabled = true
 
 [projects."/Users/henrykirk/GMLoop"]
 trust_level = "trusted"
+
+[projects."/home/runner/work/GMLoop/GMLoop"]
+trust_level = "trusted"
+
+[sandbox_workspace_write]
+network_access = true
+
+[agents]
+max_threads = 5
+max_depth = 1
+
+[model_providers.minimax]
+name = "MiniMax"
+base_url = "https://api.minimax.io/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+
+[profiles.minimax]
+model_provider = "minimax"
+model = "MiniMax-M2.7"
+
+[profiles.minimax.features]
+multi_agent = false
+browser_use = true
+computer_use = false
+in_app_browser = true
+plugins = false

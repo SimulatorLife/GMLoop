@@ -6,7 +6,7 @@ import { asErrorLike } from "../shared/error-guards.js";
 
 const DEFAULT_INDENT = "  ";
 
-const CLI_USAGE_ERROR_BRAND = Symbol.for("prettier-plugin-gml/cli-usage-error");
+const CLI_USAGE_ERROR_BRAND = Symbol.for("gmloop/cli-usage-error");
 
 export interface ErrorWithMetadata extends Error {
     usage?: string | null;
@@ -106,9 +106,8 @@ function formatAggregateErrors(error: unknown, seen: Set<unknown>): string | nul
     }
 
     const aggregate = error as { errors: Array<unknown> };
-    const formatted = Core.compactArray(aggregate.errors.map((entry) => formatErrorValue(entry, seen))).map((text) =>
-        indentBlock(`- ${text.replaceAll("\n", "\n  ")}`)
-    );
+    const mapped: Array<string> = aggregate.errors.map((entry) => formatErrorValue(entry, seen));
+    const formatted = Core.compactArray(mapped).map((text) => indentBlock(`- ${text.replaceAll("\n", "\n  ")}`));
 
     if (formatted.length === 0) {
         return null;

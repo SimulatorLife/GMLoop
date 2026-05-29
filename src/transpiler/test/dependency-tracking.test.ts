@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { Parser } from "@gmloop/parser";
+import { Transpiler } from "@gmloop/transpiler";
 
-import { Transpiler } from "../index.js";
 import type { CallExpressionNode } from "../src/emitter/ast.js";
 
 type SemanticAnalyzers = ConstructorParameters<typeof Transpiler.GmlToJsEmitter>[0];
@@ -150,7 +150,17 @@ void describe("GmlToJsEmitter.getDependencies()", () => {
         assert.equal(secondOutput, "score = 2;");
     });
 
-    void it("deduplicates repeated globalvar initializers within one top-level emission", () => {
+    void it("re-emits globalvar initializer on a new top-level emit", () => {
+        const emitter = new Transpiler.GmlToJsEmitter(Transpiler.createSemanticOracle());
+
+        const firstOutput = emitter.emit(Parser.GMLParser.parse("globalvar score;"));
+        const secondOutput = emitter.emit(Parser.GMLParser.parse("globalvar score;"));
+
+        assert.match(firstOutput, /hasOwnProperty\.call\(global, "score"\)/);
+        assert.match(secondOutput, /hasOwnProperty\.call\(global, "score"\)/);
+    });
+
+    void it("deduplicates duplicate globalvar declarations to a single initializer", () => {
         const emitter = new Transpiler.GmlToJsEmitter(Transpiler.createSemanticOracle());
 
         const output = emitter.emit(Parser.GMLParser.parse("globalvar score; globalvar score; score += 1;"));

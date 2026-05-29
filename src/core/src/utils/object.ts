@@ -675,9 +675,41 @@ export function restoreProperties<TTarget extends Record<PropertyKey, unknown>, 
         if (snapshot[key] === undefined) {
             delete target[key];
         } else {
-            target[key] = snapshot[key] as TTarget[TKey];
+            target[key] = snapshot[key];
         }
     }
+}
+
+/**
+ * Recursively sort the keys of an object (or objects within an array) to ensure
+ * deterministic JSON serialization.
+ *
+ * Consolidates the repeated logic used across CLI runtime modules (such as
+ * `project-state-store` and `artifact-store`) so all deterministic artifacts
+ * share the same sorting semantics. The helper preserves array order while
+ * recursively sorting any nested plain objects.
+ *
+ * @param {unknown} value The value to sort.
+ * @returns {unknown} A new object with sorted keys, or the original value if it's
+ *                    not a plain object or array.
+ */
+export function sortObjectKeys(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map(sortObjectKeys);
+    }
+
+    if (!isPlainObject(value)) {
+        return value;
+    }
+
+    const sorted: Record<string, unknown> = {};
+    const keys = Object.keys(value).sort();
+
+    for (const key of keys) {
+        sorted[key] = sortObjectKeys((value as Record<string, unknown>)[key]);
+    }
+
+    return sorted;
 }
 
 /**
@@ -719,4 +751,48 @@ export function resolveIdentifierKeyedSuffixMap(
     }
 
     return suffixMap;
+}
+
+/**
+ * Attempt to retrieve the runtime object pool from the GameMaker globals.
+ *
+ * Collapses the chained property walk `globalScope.g_RunRoom?.m_Active?.pool`
+ * into a single call with explicit null checks at each level. The returned
+ * pool is returned as-is even when it is not an `Array`; callers that need
+ * a type refinement should add their own `Array.isArray(...)` guard.
+ *
+ * @param globalScope - The runtime binding globals object.
+ * @returns The pool array-like value when found, otherwise `undefined`.
+ */
+export function readRuntimeObjectPool(globalScope: Record<string, unknown> | undefined): unknown {
+    if (!globalScope) return undefined;
+
+    const runRoom = globalScope.g_RunRoom;
+    if (!isObjectLike(runRoom)) return undefined;
+
+    const mActive = (runRoom as Record<string, unknown>).m_Active;
+    if (!isObjectLike(mActive)) return undefined;
+
+    return (mActive as Record<string, unknown>).pool;
+}
+
+/**
+ * Attempt to retrieve the `_cx._dx` store from the GameMaker globals.
+ *
+ * Collapses the optional-chain walk `globalScope._cx?._dx` into a single call
+ * with an explicit null check on the intermediate `_cx` value.
+ *
+ * @param globalScope - The runtime binding globals object.
+ * @returns The `_dx` record when found, otherwise `undefined`.
+ */
+export function readCxcDxStore(globalScope: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+    if (!globalScope) return undefined;
+
+    const cx = globalScope._cx;
+    if (!isObjectLike(cx)) return undefined;
+
+    const dx = (cx as Record<string, unknown>)._dx;
+    if (!isObjectLike(dx)) return undefined;
+
+    return dx as Record<string, unknown>;
 }

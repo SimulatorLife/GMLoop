@@ -67,7 +67,7 @@ void test("missing rules means no overlay rules applied", () => {
 });
 
 void test("overlay matching uses exact canonical full rule IDs", () => {
-    const performanceId = LintWorkspace.Lint.services.performanceOverrideRuleIds[0];
+    const performanceId = Lint.performanceOverrideRuleIds[0];
 
     assert.equal(
         __lintCommandTest__.hasOverlayRuleApplied({
@@ -316,7 +316,6 @@ void test("appendRetainedLintResults strips autofix payloads before aggregation"
                     message: "Example warning",
                     line: 1,
                     column: 1,
-                    nodeType: "Identifier",
                     fix: { range: [0, 3], text: "foo" },
                     suggestions: [{ desc: "Apply suggestion", fix: { range: [0, 3], text: "bar" } }]
                 }
@@ -340,8 +339,7 @@ void test("appendRetainedLintResults strips autofix payloads before aggregation"
                     severity: 1,
                     message: "Example warning",
                     line: 1,
-                    column: 1,
-                    nodeType: "Identifier"
+                    column: 1
                 }
             ],
             suppressedMessages: [],
@@ -674,7 +672,7 @@ void test("overlay guardrail resolves file configs sequentially for large result
             });
             activeCalls -= 1;
 
-            const numericSuffix = Number.parseInt(filePath.match(/(\d+)\.gml$/u)?.[1] ?? "0");
+            const numericSuffix = Number.parseInt(filePath.match(/(\d+)\.gml$/u)?.[1] ?? "0", 10);
             if (numericSuffix % 2 === 0) {
                 return {
                     plugins: { gml: {} },
@@ -744,7 +742,7 @@ void test("processor enforcement evaluates resolved configs sequentially", async
                 });
                 activeCalls -= 1;
 
-                const numericSuffix = Number.parseInt(filePath.match(/(\d+)\.gml$/u)?.[1] ?? "0");
+                const numericSuffix = Number.parseInt(filePath.match(/(\d+)\.gml$/u)?.[1] ?? "0", 10);
                 return {
                     processor: numericSuffix % 2 === 0 ? "markdown/markdown" : undefined
                 };

@@ -18,8 +18,8 @@ import {
 import { type TranspilationContext, transpileFile } from "../modules/transpilation/index.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 
-const TRANSPILE_COMMAND_CLI_EXAMPLE = "pnpm dlx prettier-plugin-gml transpile --path path/to/script.gml";
-const TRANSPILE_COMMAND_FIX_EXAMPLE = "pnpm dlx prettier-plugin-gml transpile --write --path path/to/project";
+const TRANSPILE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop transpile --path path/to/script.gml";
+const TRANSPILE_COMMAND_FIX_EXAMPLE = "pnpm dlx gmloop transpile --write --path path/to/project";
 
 type TranspileCommandOptions = {
     path?: string;
@@ -53,7 +53,10 @@ function createUsageError(message: string, command: CommanderCommandLike): CliUs
 
 function resolvePathOptionValue(command: CommanderCommandLike): string {
     const options = (command.opts() ?? {}) as TranspileCommandOptions;
-    const configuredPath = typeof options.path === "string" ? options.path.trim() : "";
+    // Positional argument takes precedence over --path option.
+    const positionalPath = Array.isArray(command.args) && command.args.length > 0 ? command.args[0] : null;
+    const configuredPath =
+        typeof (positionalPath ?? options.path) === "string" ? (positionalPath ?? options.path).trim() : "";
     if (configuredPath.length === 0) {
         return process.cwd();
     }
@@ -68,7 +71,7 @@ async function resolveTranspileTarget(command: CommanderCommandLike): Promise<Re
     try {
         targetStats = await stat(configuredPath);
     } catch (error) {
-        const message = Core.isErrorLike(error) ? error.message : String(error);
+        const message = Core.getErrorMessage(error);
         throw createUsageError(
             `Target path does not exist or cannot be accessed: ${configuredPath} (${message})`,
             command
@@ -152,7 +155,7 @@ function createTranspilationContext(): TranspilationContext {
         transpiler: new Transpiler.GmlTranspiler(),
         patches: [],
         lastSuccessfulPatches: new Map(),
-        maxPatchHistory: 1,
+        bounds: { maxEntries: 1 },
         totalPatchCount: 0,
         metrics: [],
         errors: [],
@@ -190,7 +193,9 @@ function emitDryRunOutput(parameters: { outputs: Array<{ sourcePath: string; jsB
 export function createTranspileCommand(): Command {
     return applyStandardCommandOptions(
         new Command("transpile")
+            .usage("[path] [options]")
             .description("Transpile GameMaker Language files to JavaScript using @gmloop/transpiler")
+            .argument("[path]", "Target .gml file, GameMaker project directory, or .yyp path")
             .addOption(createPathOption())
             .addOption(createWriteOption())
             .addOption(createListOption())

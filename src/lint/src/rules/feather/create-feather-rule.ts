@@ -1,8 +1,13 @@
 import type { Rule } from "eslint";
 
-import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
-import { resolveLocFromIndex } from "../gml/rule-base-helpers.js";
+import { normalizeDocParamName } from "../../doc-comment/normalize-param-name.js";
+import { gmlRuleDeprecatedIdentifierServices } from "../gml/gml-rule-services.js";
+import { findMatchingBraceEndIndex, resolveLocFromIndex } from "../gml/rule-base-helpers.js";
 import type { FeatherManifestEntry } from "./manifest.js";
+
+// Consume deprecated-identifier metadata through the shared rule-services
+// contract so rule callers stay stable if the backing catalog module moves.
+const { getDeprecatedIdentifierCatalogEntry } = gmlRuleDeprecatedIdentifierServices;
 
 type EnumBlockMatch = {
     start: number;
@@ -94,10 +99,6 @@ function appendLineIfMissing(sourceText: string, lineToAppend: string): string {
     return `${sourceText}${hasTerminalNewline ? "" : "\n"}${lineToAppend}\n`;
 }
 
-function toDocParameterName(parameterName: string): string {
-    return parameterName.replace(/^_+/u, "");
-}
-
 function extractFunctionParameterNames(parameterListText: string): Array<string> {
     return parameterListText
         .split(",")
@@ -184,26 +185,6 @@ function collapseAdjacentDuplicateParamDocs(sourceText: string): string {
     }
 
     return dedupedLines.join("\n");
-}
-
-function findMatchingBraceEndIndex(sourceText: string, openBraceIndex: number): number {
-    let depth = 0;
-    for (let index = openBraceIndex; index < sourceText.length; index += 1) {
-        const character = sourceText[index];
-        if (character === "{") {
-            depth += 1;
-            continue;
-        }
-
-        if (character === "}") {
-            depth -= 1;
-            if (depth === 0) {
-                return index + 1;
-            }
-        }
-    }
-
-    return -1;
 }
 
 function getDirectDeprecatedReplacement(identifierName: string): string | null {
@@ -540,7 +521,7 @@ function createGm1012Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                 }
 
                 const docs = parameterNames
-                    .map((parameterName) => `${indentation}/// @param ${toDocParameterName(parameterName)}`)
+                    .map((parameterName) => `${indentation}/// @param ${normalizeDocParamName(parameterName)}`)
                     .join("\n");
                 return `${docs}\n${fullMatch}`;
             }
@@ -753,38 +734,38 @@ function createGm1030Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 function splitCodeAndTrailingLineComment(line: string): { codeSegment: string; trailingComment: string } {
-    let inSingleQuotedString = false;
-    let inDoubleQuotedString = false;
-    let escaped = false;
+    // Track position within the line and current parsing mode using a discriminated
+    // union instead of three separate boolean flags. This makes the state transitions
+    // explicit and eliminates the verbose compound boolean checks (e.g. "!inSingleQuotedString
+    // && !inDoubleQuotedString").
+    let state: "outside" | "'" | '"' | "escaped" = "outside";
+
     for (let index = 0; index < line.length - 1; index += 1) {
         const character = line[index];
         const nextCharacter = line[index + 1];
 
-        if (escaped) {
-            escaped = false;
-            continue;
-        }
-
-        if ((inSingleQuotedString || inDoubleQuotedString) && character === "\\") {
-            escaped = true;
-            continue;
-        }
-
-        if (!inDoubleQuotedString && character === "'") {
-            inSingleQuotedString = !inSingleQuotedString;
-            continue;
-        }
-
-        if (!inSingleQuotedString && character === '"') {
-            inDoubleQuotedString = !inDoubleQuotedString;
-            continue;
-        }
-
-        if (!inSingleQuotedString && !inDoubleQuotedString && character === "/" && nextCharacter === "/") {
-            return {
-                codeSegment: line.slice(0, index),
-                trailingComment: line.slice(index)
-            };
+        if (state === "escaped") {
+            state = "outside";
+        } else if (state === "'" || state === '"') {
+            if (character === "\\") {
+                state = "escaped";
+            } else if (character === state) {
+                state = "outside";
+            }
+        } else {
+            // "outside"
+            if (character === "\\") {
+                state = "escaped";
+            } else if (character === "'") {
+                state = "'";
+            } else if (character === '"') {
+                state = '"';
+            } else if (character === "/" && nextCharacter === "//") {
+                return {
+                    codeSegment: line.slice(0, index),
+                    trailingComment: line.slice(index)
+                };
+            }
         }
     }
 
@@ -1360,10 +1341,10 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                 ];
                 const aliasEntries = aliasMatches.map((match) => ({
                     name: match[1],
-                    index: Number.parseInt(match[2])
+                    index: Number.parseInt(match[2], 10)
                 }));
                 const argumentIndexes = [...body.matchAll(/\bargument(\d+)\b/g)].map((match) =>
-                    Number.parseInt(match[1])
+                    Number.parseInt(match[1], 10)
                 );
                 const maxArgumentIndex = argumentIndexes.length === 0 ? -1 : Math.max(...argumentIndexes);
 
@@ -1432,7 +1413,7 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 
                 const functionBody = fullText.slice(openBraceIndex + 1, closeBraceEndIndex - 1);
                 const argumentIndexes = [...functionBody.matchAll(/\bargument(\d+)\b/g)].map((match) =>
-                    Number.parseInt(match[1])
+                    Number.parseInt(match[1], 10)
                 );
                 const maxArgumentIndex = argumentIndexes.length === 0 ? -1 : Math.max(...argumentIndexes);
 
@@ -1441,7 +1422,7 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                     /^\s*var\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*argument(\d+)\s*;\s*$/gm
                 )) {
                     const aliasName = match[1];
-                    const aliasIndex = Number.parseInt(match[2]);
+                    const aliasIndex = Number.parseInt(match[2], 10);
                     aliasNamesByIndex.set(aliasIndex, aliasName);
                 }
 
@@ -1472,7 +1453,7 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                 }
 
                 const parameterDocLines = parameterDocNames.map(
-                    (parameterName) => `${indentation}/// @param ${toDocParameterName(parameterName)}`
+                    (parameterName) => `${indentation}/// @param ${normalizeDocParamName(parameterName)}`
                 );
                 const canonicalDocLines = [...descriptionLines, ...parameterDocLines, ...returnsLines];
                 if (canonicalDocLines.length === 0) {
@@ -1606,7 +1587,7 @@ function createGm1062Rule(entry: FeatherManifestEntry): Rule.RuleModule {
             /^([ \t]*\/\/\/\s*@param\s*)\{([^}]*)\}(\s+)([A-Za-z_][A-Za-z0-9_]*)(.*)$/gm,
             (_fullMatch, prefix: string, typeText: string, spacing: string, parameterName: string, suffix: string) => {
                 const normalizedType = normalizeFeatherDocTypeText(typeText);
-                const normalizedParameterName = toDocParameterName(parameterName);
+                const normalizedParameterName = normalizeDocParamName(parameterName);
                 const normalizedSuffix = suffix.replace(/^\s*-\s*/u, " ");
                 return `${prefix}{${normalizedType}}${spacing}${normalizedParameterName}${normalizedSuffix}`;
             }
@@ -1854,8 +1835,16 @@ function createGm2031Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createFullTextRewriteRule(entry, (sourceText) => {
         let rewritten = sourceText.replaceAll(/if \(([^)]+)\)\s*\n\{/g, "if ($1) {");
         const lines = rewritten.split(/\r?\n/u);
-        for (const [index, line] of lines.entries()) {
+
+        // SAFETY: Use a while loop with an explicit index counter instead of
+        // for...of + splice. After splice shifts elements left, the iterator index
+        // becomes stale (off-by-one for every element after the splice point).
+        // With a managed counter, index stays accurate even after splice.
+        let index = 0;
+        while (index < lines.length) {
+            const line = lines[index];
             if (!/^\s*_file2\s*=\s*file_find_first\(/u.test(line)) {
+                index += 1;
                 continue;
             }
 
@@ -1865,12 +1854,17 @@ function createGm2031Rule(entry: FeatherManifestEntry): Rule.RuleModule {
             }
 
             if (previousNonEmptyLineIndex >= 0 && lines[previousNonEmptyLineIndex].trim() === "file_find_close();") {
-                break;
+                // A close already precedes this open — skip past it so we keep scanning
+                // for subsequent un-guarded opens rather than stopping immediately.
+                index += 1;
+                continue;
             }
 
             const indentation = /^(\s*)/u.exec(line)?.[1] ?? "";
             lines.splice(index, 0, `${indentation}file_find_close();`);
-            break;
+            // After splice, index now points to the injected close line; advance so
+            // the next iteration examines the original line at its new offset +1.
+            index += 2;
         }
 
         rewritten = lines.join("\n");

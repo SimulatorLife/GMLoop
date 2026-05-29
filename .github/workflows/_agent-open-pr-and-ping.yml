@@ -24,7 +24,7 @@ on:
       agent:
         required: false
         type: string
-        default: "" # Optional override; blank => weighted random selection
+        default: "" # Optional override; blank => deterministic scheduled-agent selection
     outputs:
       pr_number:
         value: ${{ jobs.open_and_ping.outputs.pr_number }}
@@ -43,6 +43,7 @@ jobs:
       pr_number: ${{ fromJSON(steps.pr.outputs.result).number }}
       branch: ${{ env.BRANCH_NAME }}
     env:
+      NODE_OPTIONS: --disable-warning=ExperimentalWarning
       BASE_BRANCH: ${{ inputs.base_branch }}
       REQUESTED_AGENT: ${{ inputs.agent }}
       BRANCH_SUFFIX: ${{ format('task-{0}-{1}', github.run_id, github.run_attempt) }}
@@ -63,13 +64,13 @@ jobs:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
 
       - name: Checkout (with your token so pushes are yours)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.base_branch }}
           fetch-depth: 0
           token: ${{ secrets.GH_USER_TOKEN }}
 
-      - name: Select agent (weighted random)
+      - name: Select agent (deterministic weighted)
         id: select_agent
         uses: actions/github-script@v8
         env:
@@ -80,10 +81,8 @@ jobs:
           script: |
             const fs = require('fs');
             const path = require('path');
-            const crypto = require('crypto');
 
-            const ACTION_AGENT_POOL = 'actions';
-            const DEFAULT_AGENT = 'copilot';
+            const WEIGHT_SCALE = 1000;
 
             const normalize = (value) => {
               const trimmed = (value || '').trim();
@@ -101,38 +100,39 @@ jobs:
               return `task-${Date.now()}`;
             };
 
-            const chooseWeighted = (items) => {
-              const total = items.reduce((sum, item) => sum + item.weight, 0);
-              if (!Number.isFinite(total) || total <= 0) return null;
-
-              const random = parseInt(crypto.randomBytes(6).toString('hex'), 16) / 0xFFFFFFFFFFFF;
-              let threshold = random * total;
-              for (const item of items) {
-                threshold -= item.weight;
-                if (threshold <= 0) {
-                  return { ...item, random, total };
-                }
-              }
-              return { ...items[items.length - 1], random, total };
+            const getRunNumber = () => {
+              const raw = (process.env.GITHUB_RUN_NUMBER || '').trim();
+              const parsed = Number.parseInt(raw, 10);
+              return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
             };
 
-            const parseAgentCandidates = (pool) => {
-              if (!pool || !Array.isArray(pool.agents)) {
-                return [];
-              }
+            const toSlots = (weight) => Math.max(1, Math.round(weight * WEIGHT_SCALE));
 
-              return pool.agents
-                .map((agent) => ({
-                  name: typeof agent?.name === 'string' ? agent.name : '',
-                  weight: Number(agent?.weight),
-                }))
-                .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
-                .map((agent) => ({
-                  name: agent.name,
-                  weight: agent.weight,
-                  slug: normalize(agent.name),
-                }))
-                .filter((agent) => agent.slug);
+            const buildInterleavedCycle = (items) => {
+              const maxSlots = Math.max(...items.map((item) => item.slots));
+              const cycle = [];
+              for (let slot = 1; slot <= maxSlots; slot += 1) {
+                for (const item of items) {
+                  if (item.slots >= slot) {
+                    cycle.push(item);
+                  }
+                }
+              }
+              return cycle;
+            };
+
+            const chooseDeterministicWeighted = (items, runNumber) => {
+              if (items.length === 0) return null;
+              const sortedItems = [...items].sort((left, right) => left.slug.localeCompare(right.slug));
+              const cycle = buildInterleavedCycle(sortedItems);
+              if (cycle.length === 0) return null;
+              const cycleIndex = (runNumber - 1) % cycle.length;
+              return {
+                selected: cycle[cycleIndex],
+                cycleIndex,
+                cycleLength: cycle.length,
+                totalWeight: sortedItems.reduce((sum, item) => sum + item.weight, 0),
+              };
             };
 
             const loadWeightsConfig = () => {
@@ -141,7 +141,58 @@ jobs:
               return JSON.parse(raw);
             };
 
-            const selectAgent = (poolName, requestedAgent) => {
+            const parseScheduledAgentCandidates = (agents) => {
+              if (!Array.isArray(agents)) {
+                throw new Error('weights.json must define a top-level agents array.');
+              }
+
+              const seenNames = new Set();
+              const candidates = [];
+
+              for (const [index, agent] of agents.entries()) {
+                const name = typeof agent?.name === 'string' ? agent.name.trim() : '';
+                const weight = Number(agent?.weight);
+                const rawCadenceTicks = agent?.cadenceTicks;
+                const cadenceTicks = rawCadenceTicks === undefined ? 1 : Number(rawCadenceTicks);
+
+                if (!name) {
+                  throw new Error(`agents[${index}] must define a non-empty name.`);
+                }
+
+                if (seenNames.has(name)) {
+                  throw new Error(`Scheduled agent names must be unique. Duplicate: ${name}`);
+                }
+                seenNames.add(name);
+
+                if (!Number.isFinite(weight)) {
+                  throw new Error(`agents[${index}].weight must be a finite number.`);
+                }
+
+                if (rawCadenceTicks !== undefined && (!Number.isInteger(cadenceTicks) || cadenceTicks <= 0)) {
+                  throw new Error(`agents[${index}].cadenceTicks must be a positive integer.`);
+                }
+
+                if (weight <= 0) {
+                  continue;
+                }
+
+                const slug = normalize(name);
+                if (!slug) {
+                  continue;
+                }
+
+                candidates.push({
+                  name,
+                  weight,
+                  slug,
+                  slots: toSlots(weight),
+                });
+              }
+
+              return candidates;
+            };
+
+            const selectAgent = (requestedAgent) => {
               if (requestedAgent) {
                 return {
                   agent: requestedAgent,
@@ -149,40 +200,29 @@ jobs:
                 };
               }
 
-              let poolDefault = DEFAULT_AGENT;
-              let candidates = [];
-              try {
-                const parsed = loadWeightsConfig();
-                const pool = parsed?.agentPools?.[poolName] ?? null;
-                const configuredDefault = normalize(pool?.default);
-                if (configuredDefault) {
-                  poolDefault = configuredDefault;
-                }
-                candidates = parseAgentCandidates(pool);
-              } catch (error) {
-                core.warning(`Falling back to default agent due to configuration error: ${error.message}`);
+              const parsed = loadWeightsConfig();
+              const candidates = parseScheduledAgentCandidates(parsed?.agents);
+
+              if (candidates.length === 0) {
+                throw new Error('No positive-weight scheduled agents are configured for blank manual dispatch.');
               }
 
-              if (!candidates.length) {
-                return {
-                  agent: poolDefault,
-                  reason: `${poolName} pool default fallback`,
-                };
+              const runNumber = getRunNumber();
+              const chosen = chooseDeterministicWeighted(candidates, runNumber);
+              if (!chosen || !chosen.selected) {
+                throw new Error('Unable to compute deterministic scheduled-agent selection.');
               }
 
-              const chosen = chooseWeighted(candidates);
-              if (!chosen) {
-                return {
-                  agent: poolDefault,
-                  reason: `${poolName} weighted selection fallback`,
-                };
-              }
-
-              const { slug, name, weight, random, total } = chosen;
-              core.info(`Random draw ${random.toFixed(6)} selected agent "${name}" from ${poolName} pool (slug=${slug}, weight=${weight}) from total weight ${total.toFixed(6)}.`);
+              const { slug, name, weight, slots } = chosen.selected;
+              const cyclePosition = chosen.cycleIndex + 1;
+              core.info(
+                `Deterministic weighted selection picked scheduled agent "${name}" ` +
+                `(slug=${slug}, weight=${weight}, slots=${slots}) for run #${runNumber} ` +
+                `at cycle position ${cyclePosition}/${chosen.cycleLength} from total weight ${chosen.totalWeight.toFixed(6)}.`
+              );
               return {
                 agent: slug,
-                reason: `${poolName} weighted selection`,
+                reason: 'scheduled deterministic weighted selection',
               };
             };
 
@@ -201,7 +241,7 @@ jobs:
               core.setOutput('branch', branchName);
             };
 
-            const selection = selectAgent(ACTION_AGENT_POOL, requested);
+            const selection = selectAgent(requested);
             finalize(selection.agent, selection.reason);
 
       - name: Create empty commit on new branch (from latest base)
@@ -286,8 +326,8 @@ jobs:
             const agent = (process.env.AGENT || '').trim() || 'copilot';
             const mention = `@${agent}`;
 
-            const preInstruction = "Start a new task: survey the entire codebase before narrowing to this task.";
-            const postInstruction = "Ensure changes are self-contained, tested, and documented as needed, with no reduction in test coverage or test regressions. For tests, ensure any newly added tests pass and that tests or suites already passing at the start of the task remain passing; unrelated pre-existing failures may remain if your changes do not cause them. Run `pnpm run build:ts` and `pnpm run lint:quiet`, fix any issues properly, and finish with both passing. Do not modify golden `.gml` fixtures or add compatibility shims. All changes must align with and not violate the architectural guidelines defined in `docs/target-state.md`. Ensure the diff is minimal, readable, and well-commented; never sacrifice clarity for cleverness. There is no time constraint or specific allotted time for this task; prioritize quality and correctness over speed and take as much time as needed. You may **NOT** respond with \"no issues found\", \"didn't find any major issues\", or similar—if no obvious implementation exists, choose the most plausible area and apply a singular, safe improvement.";
+            const preInstruction = "Start a new task: briefly survey the codebase before narrowing to this task.";
+            const postInstruction = "Ensure changes are self-contained, tested, and documented as needed, with no reduction in test coverage or test regressions. For tests, ensure any newly added tests pass and that tests or suites already passing at the start of the task remain passing; unrelated pre-existing failures may remain if your changes do not cause them. Run `pnpm run build:ts` and `pnpm run lint:quiet`, fix any issues properly, and finish with both passing. Do not modify golden `.gml` fixtures or add compatibility shims. All changes must align with and not violate the architectural guidelines defined in `docs/target-state.md`. Ensure the diff is well-scoped, readable, and well-commented; never sacrifice clarity for cleverness. There is no time constraint or specific allotted time for this task; prioritize quality and correctness over speed and take as much time as needed. You may **NOT** respond with \"no issues found\", \"didn't find any major issues\", or similar—if no obvious implementation exists, choose the most plausible area and apply a singular, safe improvement.";
             const lines = [
               `${mention} ${preInstruction} ${process.env.PROMPT} ${postInstruction}`,
               ""

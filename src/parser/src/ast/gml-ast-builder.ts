@@ -5,6 +5,7 @@ import GameMakerLanguageParserVisitor from "../runtime/game-maker-language-parse
 import type {
     GlobalIdentifierTracker,
     IdentifierRoleApplicator,
+    IdentifierRoleCloner,
     IdentifierRoleContextController,
     ParserContext,
     ParserContextWithMethods,
@@ -27,7 +28,11 @@ type MutableParserVisitor = ParserVisitorInstance & {
 };
 
 type ParserScopeTracker =
-    | (GlobalIdentifierTracker & IdentifierRoleContextController & IdentifierRoleApplicator & ScopeLifecycle)
+    | (GlobalIdentifierTracker &
+          IdentifierRoleContextController &
+          IdentifierRoleApplicator &
+          IdentifierRoleCloner &
+          ScopeLifecycle)
     | null;
 type DirectiveKeyword = "define" | "macro";
 type DirectiveKeywordRange = {
@@ -148,7 +153,7 @@ export default class GameMakerASTBuilder {
             }
             return results;
         }
-        return this.visitor.visit(node as ParserContextWithMethods);
+        return this.visitor.visit(node);
     }
 
     visitChildren(node: unknown): any {
@@ -244,14 +249,6 @@ export default class GameMakerASTBuilder {
     private getTokenStartIndex(token: number | Token | ParserToken | null | undefined): number | null {
         if (!token && token !== 0) {
             return null;
-        }
-
-        if (typeof token === "number") {
-            return Number.isFinite(token) ? token : null;
-        }
-
-        if (typeof token === "number") {
-            return Number.isFinite(token) ? token : null;
         }
 
         if (typeof token === "number") {
@@ -436,6 +433,20 @@ export default class GameMakerASTBuilder {
         return object;
     }
 
+    /**
+     * Resolve the first numeric property from an object, trying keys in the order
+     * they are given. Returns `undefined` if none match.
+     */
+    private resolveNumericProperty<T>(obj: T, keys: ReadonlyArray<keyof T>): number | undefined {
+        for (const key of keys) {
+            const value = obj[key];
+            if (typeof value === "number") {
+                return value;
+            }
+        }
+        return undefined;
+    }
+
     private buildLocationFromToken(
         token: Token | number | null | undefined,
         { includeLineBreakCount = false, useStopIndex = false } = {}
@@ -447,35 +458,13 @@ export default class GameMakerASTBuilder {
         let index: number | null;
         if (typeof token === "number") {
             index = token;
+        } else if (useStopIndex) {
+            index =
+                this.resolveNumericProperty(token, ["stopIndex", "stop"]) ??
+                this.resolveNumericProperty(token, ["startIndex", "start"]) ??
+                null;
         } else {
-            if (useStopIndex) {
-                index =
-                    typeof token.stopIndex === "number"
-                        ? token.stopIndex
-                        : typeof token.stop === "number"
-                          ? token.stop
-                          : null;
-
-                if (index === null) {
-                    index =
-                        typeof token.startIndex === "number"
-                            ? token.startIndex
-                            : typeof token.start === "number"
-                              ? token.start
-                              : null;
-                }
-            } else {
-                index =
-                    typeof token.startIndex === "number"
-                        ? token.startIndex
-                        : typeof token.start === "number"
-                          ? token.start
-                          : typeof token.stopIndex === "number"
-                            ? token.stopIndex
-                            : typeof token.stop === "number"
-                              ? token.stop
-                              : null;
-            }
+            index = this.resolveNumericProperty(token, ["startIndex", "start", "stopIndex", "stop"]) ?? null;
         }
 
         if (index === null) {
@@ -501,18 +490,8 @@ export default class GameMakerASTBuilder {
             return null;
         }
 
-        const startIndex =
-            typeof token.start === "number"
-                ? token.start
-                : typeof token.startIndex === "number"
-                  ? token.startIndex
-                  : undefined;
-        const stopIndex =
-            typeof token.stop === "number"
-                ? token.stop
-                : typeof token.stopIndex === "number"
-                  ? token.stopIndex
-                  : startIndex;
+        const startIndex = this.resolveNumericProperty(token, ["start", "startIndex"]);
+        const stopIndex = this.resolveNumericProperty(token, ["stop", "stopIndex"]) ?? startIndex;
         const line = typeof token.line === "number" ? token.line : undefined;
         const startColumn = typeof token.column === "number" ? token.column : undefined;
 
@@ -1140,6 +1119,11 @@ export default class GameMakerASTBuilder {
     // Visit a parse tree produced by GameMakerLanguageParser#FunctionExpression.
     visitFunctionExpression(ctx: ParserContext): any {
         return this.visit(ctx.functionDeclaration());
+    }
+
+    // Visit a parse tree produced by GameMakerLanguageParser#StructLiteralLValue.
+    visitStructLiteralLValue(ctx: ParserContext): any {
+        return this.visit(ctx.structLiteral());
     }
 
     // Visit a parse tree produced by GameMakerLanguageParser#ParenthesizedLValue.

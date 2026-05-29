@@ -10,6 +10,74 @@ export type SourceRange = {
     end: SourceLocation;
 };
 
+/**
+ * Clone a source location defensively.
+ *
+ * The implementation mirrors `Core.cloneLocation` but is used in test helpers
+ * where the SourceLocation type is the simpler test-domain shape. This avoids
+ * duplicating the shape-conversion logic that would otherwise be needed at each
+ * call site.
+ */
+export function cloneLocation(location: SourceLocation): SourceLocation {
+    return { line: location.line, index: location.index };
+}
+
+/**
+ * Clone a source range by cloning both boundaries.
+ */
+export function cloneRange(range: SourceRange): SourceRange {
+    return {
+        start: cloneLocation(range.start),
+        end: cloneLocation(range.end)
+    };
+}
+
+/**
+ * Wraps a ScopeTracker instance with a spy on {@link normalizeTrackedPath} that
+ * records how many times each path string is presented for normalization.
+ * Callers use the returned `repeatedPathNormalizations` counter to assert that
+ * the batch API normalizes each distinct input at most once.
+ *
+ * @example
+ * ```ts
+ * const { tracker, repeatedPathNormalizations } = wrapNormalizedPathSpy(tracker);
+ * tracker.getBatchFilePathsDeclaringSymbols(["alpha", "beta"]);
+ * assert.equal(repeatedPathNormalizations, 0, "each source path normalized at most once");
+ * ```
+ */
+export function wrapNormalizedPathSpy(target: ScopeTracker): {
+    tracker: ScopeTracker;
+    repeatedPathNormalizations: number;
+} {
+    const trackerPrototype = Object.getPrototypeOf(target) as {
+        normalizeTrackedPath(path: string): string;
+    };
+    const original = trackerPrototype.normalizeTrackedPath.bind(target);
+    const seenInputs = new Set<string>();
+    let repeatedPathNormalizations = 0;
+
+    Object.defineProperty(target, "normalizeTrackedPath", {
+        value: (path: string): string => {
+            if (seenInputs.has(path)) {
+                repeatedPathNormalizations += 1;
+            } else {
+                seenInputs.add(path);
+            }
+            return original(path);
+        },
+        configurable: true
+    });
+
+    return {
+        get tracker() {
+            return target;
+        },
+        get repeatedPathNormalizations() {
+            return repeatedPathNormalizations;
+        }
+    };
+}
+
 export function createLocation(line: number, index: number = 0): SourceLocation {
     return { line, index };
 }

@@ -12,7 +12,14 @@
 
 import { Core } from "@gmloop/core";
 
-import type { DependentSymbol, FileSymbol, PartialSemanticAnalyzer, SymbolOccurrence } from "./types.js";
+import type {
+    DependentSymbol,
+    FileSymbol,
+    PartialSemanticAnalyzer,
+    SymbolLocation,
+    SymbolLookupResult,
+    SymbolOccurrence
+} from "./types.js";
 
 /**
  * Cache entry with TTL tracking.
@@ -50,11 +57,72 @@ export interface SemanticCacheConfig {
     enabled?: boolean;
 
     /**
-     * Maximum number of occurrences that can be retained in-cache for a single
-     * symbol query result. Results exceeding this size are returned but not cached.
-     * Default: 10_000
+     * Custom policy for deciding whether an occurrence result is cache-worthy.
+     * When omitted, the cache constructs a {@link DefaultOccurrenceCachePolicy}
+     * from the legacy {@link maxOccurrenceCacheEntries} numeric threshold for
+     * backward compatibility.
+     *
+     * Prefer providing a custom policy when you need to test the cache-storage
+     * decision in isolation or want per-symbol thresholds.
+     */
+    occurrenceCachePolicy?: OccurrenceCachePolicy;
+
+    /**
+     * @deprecated Use {@link occurrenceCachePolicy} instead.  When a custom
+     * policy is provided this field is ignored.
      */
     maxOccurrenceCacheEntries?: number;
+}
+
+/**
+ * Policy interface for deciding whether an occurrence array is cache-worthy.
+ *
+ * Separating this from the cache mechanism allows the threshold check to be
+ * unit-tested independently from the cache's storage/eviction logic, and lets
+ * callers inject alternative policies (e.g., always cache, never cache, or
+ * per-symbol thresholds) without changing the cache implementation.
+ */
+export interface OccurrenceCachePolicy {
+    /**
+     * Return `true` when the given array is too large to be retained in-cache.
+     * The cache will still return the value to callers; it simply omits the
+     * store step, causing every subsequent query for the same key to re-fetch
+     * from the semantic analyzer.
+     *
+     * @param occurrences - The result array that would be stored.
+     */
+    shouldCacheOccurrences(occurrences: ReadonlyArray<SymbolOccurrence>): boolean;
+}
+
+/**
+ * Default occurrence cache policy backed by a configurable entry-count threshold.
+ *
+ * Rationale: very large occurrence sets are expensive to deduplicate and merge on
+ * every cache hit, and consume disproportionate memory relative to the benefit of
+ * caching a single result. Skipping the store for oversized results trades a
+ * guaranteed re-fetch on the next lookup for consistent performance and memory
+ * bounds on large codebases.
+ */
+export class DefaultOccurrenceCachePolicy implements OccurrenceCachePolicy {
+    private readonly maxEntries: number;
+
+    constructor(maxEntries: number) {
+        this.maxEntries = maxEntries;
+    }
+
+    shouldCacheOccurrences(occurrences: ReadonlyArray<SymbolOccurrence>): boolean {
+        return occurrences.length > this.maxEntries;
+    }
+}
+
+/**
+ * Policy that never skips caching — useful in tests or when the caller already
+ * controls result size upstream.
+ */
+export class PermissiveOccurrenceCachePolicy implements OccurrenceCachePolicy {
+    shouldCacheOccurrences(_occurrences: ReadonlyArray<SymbolOccurrence>): boolean {
+        return false;
+    }
 }
 
 /**
@@ -65,6 +133,18 @@ export interface CacheStats {
     misses: number;
     evictions: number;
     size: number;
+}
+
+/**
+ * Internal config type with all fields resolved to non-optional defaults.
+ * Separated from `SemanticCacheConfig` to avoid making `occurrenceCachePolicy`
+ * a mandatory field on the public API surface.
+ */
+interface ResolvedSemanticCacheConfig {
+    maxSize: number;
+    ttlMs: number;
+    enabled: boolean;
+    maxOccurrenceCacheEntries: number;
 }
 
 /**
@@ -90,12 +170,15 @@ export interface CacheStats {
  */
 export class SemanticQueryCache {
     private readonly semantic: PartialSemanticAnalyzer | null;
-    private readonly config: Required<SemanticCacheConfig>;
+    private readonly config: ResolvedSemanticCacheConfig;
 
     private occurrenceCache = new Map<string, CacheEntry<Array<SymbolOccurrence>>>();
     private fileSymbolsCache = new Map<string, CacheEntry<Array<FileSymbol>>>();
     private dependentsCache = new Map<string, CacheEntry<Array<DependentSymbol>>>();
     private existenceCache = new Map<string, CacheEntry<boolean>>();
+    private symbolLookupCache = new Map<string, CacheEntry<SymbolLookupResult | null>>();
+    private symbolLocationCache = new Map<string, CacheEntry<SymbolLocation | null>>();
+    private symbolIdCache = new Map<string, CacheEntry<string | null>>();
 
     /**
      * Tracks occurrence cache keys whose stored array has already been deduplicated
@@ -122,13 +205,25 @@ export class SemanticQueryCache {
         evictions: 0
     };
 
+    /**
+     * Extracted policy for occurrence cache-worthiness decisions.
+     * Replaces the inline `shouldSkipOccurrenceCacheStore` heuristic.
+     */
+    private readonly occurrenceCachePolicy: OccurrenceCachePolicy;
+
     constructor(semantic: PartialSemanticAnalyzer | null, config: SemanticCacheConfig = {}) {
         this.semantic = semantic;
+
+        const maxOccurrenceCacheEntries = config.maxOccurrenceCacheEntries ?? 10_000;
+        this.occurrenceCachePolicy =
+            config.occurrenceCachePolicy ?? new DefaultOccurrenceCachePolicy(maxOccurrenceCacheEntries);
+
         this.config = {
             maxSize: config.maxSize ?? 100,
             ttlMs: config.ttlMs ?? 60_000,
             enabled: config.enabled ?? true,
-            maxOccurrenceCacheEntries: config.maxOccurrenceCacheEntries ?? 10_000
+            // Retained for backward compat; actual policy lives on the separate field.
+            maxOccurrenceCacheEntries
         };
     }
 
@@ -148,7 +243,7 @@ export class SemanticQueryCache {
      * Call this once after the first `getSymbolOccurrences` fetch has been deduplicated
      * so that all future lookups in the same session return the clean array directly.
      *
-     * Entries exceeding `maxOccurrenceCacheEntries` are silently skipped, matching the
+     * Entries the policy considers non-cache-worthy are silently skipped, matching the
      * same skip-cache policy that `getOrFetch` applies on the initial miss.
      */
     primeOccurrenceCache(symbolName: string, symbolId: string | null, deduplicated: Array<SymbolOccurrence>): void {
@@ -156,7 +251,7 @@ export class SemanticQueryCache {
             return;
         }
 
-        if (this.shouldSkipOccurrenceCacheStore(deduplicated)) {
+        if (this.occurrenceCachePolicy.shouldCacheOccurrences(deduplicated)) {
             return;
         }
 
@@ -254,6 +349,32 @@ export class SemanticQueryCache {
     }
 
     /**
+     * Look up a symbol in the semantic analyzer.
+     * Uses cached results if available.
+     */
+    lookup(name: string, scopeId?: string): Promise<SymbolLookupResult | null> {
+        const cacheKey = scopeId ? `${scopeId}::${name}` : name;
+        return this.getOrFetch(this.symbolLookupCache, cacheKey, () => this.fetchLookup(name, scopeId));
+    }
+
+    /**
+     * Find the symbol at a specific location in a file.
+     * Uses cached results if available.
+     */
+    getSymbolAtPosition(filePath: string, offset: number): Promise<SymbolLocation | null> {
+        const cacheKey = `${filePath}:${offset}`;
+        return this.getOrFetch(this.symbolLocationCache, cacheKey, () => this.fetchSymbolAtPosition(filePath, offset));
+    }
+
+    /**
+     * Resolve a symbol ID from an identifier name.
+     * Uses cached results if available.
+     */
+    resolveSymbolId(identifierName: string): Promise<string | null> {
+        return this.getOrFetch(this.symbolIdCache, identifierName, () => this.fetchResolveSymbolId(identifierName));
+    }
+
+    /**
      * Invalidate all cached entries.
      * Should be called when source files change during a refactoring session.
      */
@@ -262,6 +383,9 @@ export class SemanticQueryCache {
         this.fileSymbolsCache.clear();
         this.dependentsCache.clear();
         this.existenceCache.clear();
+        this.symbolLookupCache.clear();
+        this.symbolLocationCache.clear();
+        this.symbolIdCache.clear();
         this.primedOccurrenceKeys.clear();
         this.occurrenceFileIndex.clear();
     }
@@ -314,7 +438,10 @@ export class SemanticQueryCache {
                 this.occurrenceCache.size +
                 this.fileSymbolsCache.size +
                 this.dependentsCache.size +
-                this.existenceCache.size
+                this.existenceCache.size +
+                this.symbolLookupCache.size +
+                this.symbolLocationCache.size +
+                this.symbolIdCache.size
         };
     }
 
@@ -347,19 +474,21 @@ export class SemanticQueryCache {
 
         this.stats.misses++;
         const result = await fetcher();
-        if (cache === this.occurrenceCache && this.shouldSkipOccurrenceCacheStore(result)) {
+        if (
+            cache === this.occurrenceCache &&
+            this.occurrenceCachePolicy.shouldCacheOccurrences(result as Array<SymbolOccurrence>)
+        ) {
             return result;
         }
         this.setCached(cache, key, result);
         return result;
     }
 
-    private shouldSkipOccurrenceCacheStore(value: unknown): boolean {
-        if (!Array.isArray(value)) {
-            return false;
-        }
-
-        return value.length > this.config.maxOccurrenceCacheEntries;
+    private getOrFetchOccurrence(
+        key: string,
+        fetcher: () => Promise<Array<SymbolOccurrence>>
+    ): Promise<Array<SymbolOccurrence>> {
+        return this.getOrFetch(this.occurrenceCache, key, fetcher);
     }
 
     /**
@@ -533,5 +662,38 @@ export class SemanticQueryCache {
             return Promise.resolve(true);
         }
         return Promise.resolve(this.semantic.hasSymbol(symbolId));
+    }
+
+    /**
+     * Fetch symbol lookup result from the semantic analyzer.
+     * @private
+     */
+    private fetchLookup(name: string, scopeId?: string): Promise<SymbolLookupResult | null> {
+        if (!this.semantic || !Core.hasMethods(this.semantic, "lookup")) {
+            return Promise.resolve<SymbolLookupResult | null>(null);
+        }
+        return Promise.resolve(this.semantic.lookup(name, scopeId) ?? null);
+    }
+
+    /**
+     * Fetch symbol location from the semantic analyzer.
+     * @private
+     */
+    private async fetchSymbolAtPosition(filePath: string, offset: number): Promise<SymbolLocation | null> {
+        if (!this.semantic || !Core.hasMethods(this.semantic, "getSymbolAtPosition")) {
+            return null;
+        }
+        return (await this.semantic.getSymbolAtPosition(filePath, offset)) ?? null;
+    }
+
+    /**
+     * Fetch resolved symbol ID from the semantic analyzer.
+     * @private
+     */
+    private fetchResolveSymbolId(identifierName: string): Promise<string | null> {
+        if (!this.semantic || !Core.hasMethods(this.semantic, "resolveSymbolId")) {
+            return Promise.resolve<string | null>(null);
+        }
+        return Promise.resolve(this.semantic.resolveSymbolId(identifierName) ?? null);
     }
 }

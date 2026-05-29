@@ -29,6 +29,18 @@ async function writeScriptResource(projectRoot: string, scriptName: string, sour
     await writeProjectFile(projectRoot, `scripts/${scriptName}/${scriptName}.gml`, sourceText);
 }
 
+function assertWorkflowStageOrder(output: string): void {
+    const stageLabels = ["[1/3 Refactor Codemods]", "[2/3 Lint Fixes]", "[3/3 Format]"];
+    let previousIndex = -1;
+
+    for (const stageLabel of stageLabels) {
+        const stageIndex = output.indexOf(stageLabel);
+        assert.notEqual(stageIndex, -1, `Expected workflow output to include ${stageLabel}`);
+        assert.ok(stageIndex > previousIndex, `Expected ${stageLabel} to appear after earlier workflow stages`);
+        previousIndex = stageIndex;
+    }
+}
+
 async function createSyntheticProject(): Promise<string> {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-fix-cli-"));
     await writeProjectFile(
@@ -89,10 +101,9 @@ void test("fix --help documents the combined workflow", async () => {
         argv: ["fix", "--help"]
     });
 
-    if (result.exitCode !== 0) console.log("STDERR DUMP:", result.stderr);
     assert.equal(result.exitCode, 0);
     assert.match(result.stdout, /Run project codemods, lint fixes, and formatting in sequence/);
-    assert.match(result.stdout, /pnpm dlx prettier-plugin-gml fix --path path\/to\/project/);
+    assert.match(result.stdout, /pnpm dlx gmloop fix --path path\/to\/project/);
 });
 
 void test("fix --list prints command settings and exits", async () => {
@@ -104,7 +115,6 @@ void test("fix --list prints command settings and exits", async () => {
             cwd: projectRoot
         });
 
-        if (result.exitCode !== 0) console.log("STDERR DUMP:", result.stderr);
         assert.equal(result.exitCode, 0);
         assert.match(result.stdout, /Project root:/);
         assert.match(result.stdout, /Config path:/);
@@ -134,11 +144,8 @@ void test("fix runs codemods, lint fixes, and formatting in sequence for a proje
             cwd: projectRoot
         });
 
-        if (result.exitCode !== 0) console.log("STDERR DUMP:", result.stderr);
         assert.equal(result.exitCode, 0);
-        assert.match(result.stdout, /\[1\/3 Refactor Codemods\]/);
-        assert.match(result.stdout, /\[2\/3 Lint Fixes\]/);
-        assert.match(result.stdout, /\[3\/3 Format\]/);
+        assertWorkflowStageOrder(result.stdout);
         assert.match(result.stdout, /Success! Project codemods, lint fixes, and formatting completed/);
 
         // The naming convention (scriptResourceName: camel) renames demo_script → demoScript.
@@ -192,17 +199,13 @@ void test("fix --path accepts a single .gml target and scopes workflow stages to
     }
 });
 
-void test("fix surfaces missing gmloop config errors as actionable usage guidance", async () => {
+void test("fix reports non-existent path as an actionable error", async () => {
     const result = await runCliTestCommand({
         argv: ["fix", "--path", "/tmp/does-not-exist"]
     });
 
     assert.equal(result.exitCode, 1);
-    assert.match(result.stderr, /Could not find gmloop config file/);
-    assert.match(
-        result.stderr,
-        /Run this command from a project directory containing gmloop\.json or pass --config <path-to-gmloop\.json>\./
-    );
-    assert.match(result.stderr, /Usage: prettier-plugin-gml fix \[options\]/);
+    assert.match(result.stderr, /Target path does not exist or cannot be accessed: \/tmp\/does-not-exist/);
+    assert.match(result.stderr, /Usage: gmloop fix \[options\]/);
     assert.doesNotMatch(result.stderr, /\bat .*\/fix\.js/);
 });

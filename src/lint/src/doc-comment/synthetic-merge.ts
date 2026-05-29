@@ -51,7 +51,7 @@ function hasMultiLineDocCommentSummary(docLines: DocCommentLines | string[]): bo
         return false;
     }
 
-    let summaryCount = 0;
+    let summaryLineCount = 0;
 
     for (const line of docLines) {
         if (typeof line !== STRING_TYPE) {
@@ -63,24 +63,14 @@ function hasMultiLineDocCommentSummary(docLines: DocCommentLines | string[]): bo
             continue;
         }
 
-        const isDocLikeSummary = trimmed.startsWith("///") || /^\s*\/\/\s*\/\s*/.test(trimmed);
-        if (!isDocLikeSummary) {
-            break;
-        }
-
-        const isTaggedLine = /^\/\/\/\s*@/i.test(trimmed) || /^\/\/\s*\/\s*@/i.test(trimmed);
-        if (isTaggedLine) {
-            break;
-        }
-
         const suffix = getDocCommentSuffix(trimmed);
-        if (!suffix) {
-            continue;
+        if (!suffix || /^\s*@/i.test(suffix)) {
+            break;
         }
 
         if (isNonEmptyTrimmedString(suffix)) {
-            summaryCount += 1;
-            if (summaryCount >= 2) {
+            summaryLineCount += 1;
+            if (summaryLineCount >= 2) {
                 return true;
             }
         }
@@ -134,7 +124,7 @@ function filterEmptyDescriptionLines(
         const descriptionText = typeof metadata?.name === STRING_TYPE ? metadata.name.trim() : "";
 
         return descriptionText.length > 0;
-    }) as MutableDocCommentLines;
+    });
 }
 
 function filterEmptyDescriptionTags(docs: DocCommentLines): MutableDocCommentLines {
@@ -153,7 +143,68 @@ function filterEmptyDescriptionTags(docs: DocCommentLines): MutableDocCommentLin
 
             return descriptionText.length > 0;
         })
-    ) as MutableDocCommentLines;
+    );
+}
+
+function normalizeParamDocTypeAnnotations(
+    docs: MutableDocCommentLines,
+    docTagHelpers: DocTagHelpers
+): MutableDocCommentLines {
+    return docs.map((line) => {
+        if (!docTagHelpers.isParamLine(line)) {
+            return line;
+        }
+
+        const match = line.match(/^(\/\/\/\s*@param\s*)((?:\{[^}]*\}|<[^>]*>)\s*)?(.*)$/i);
+        if (!match) {
+            return normalizeDocCommentTypeAnnotations(line);
+        }
+
+        const [, prefix, rawTypeSection = "", rawNameSection = ""] = match;
+        const nameSplit = splitParamNameAndRemainder(rawNameSection);
+        if (!nameSplit) {
+            return normalizeDocCommentTypeAnnotations(line);
+        }
+
+        const { name: rawName, remainder } = nameSplit;
+        const normalizedPrefix = `${prefix.replace(/\s*$/, "")} `;
+        let normalizedTypeSection = rawTypeSection.trim();
+        if (normalizedTypeSection.startsWith("{") && normalizedTypeSection.endsWith("}")) {
+            const innerType = normalizedTypeSection.slice(1, -1);
+            const normalizedInner = normalizeGameMakerType(innerType.replaceAll("|", ","));
+            normalizedTypeSection = `{${normalizedInner}}`;
+        } else if (normalizedTypeSection.startsWith("<") && normalizedTypeSection.endsWith(">")) {
+            const innerType = normalizedTypeSection.slice(1, -1);
+            const normalizedInner = normalizeGameMakerType(innerType.replaceAll("|", ","));
+            normalizedTypeSection = `{${normalizedInner}}`;
+        }
+        const typePart = normalizedTypeSection.length > 0 ? `${normalizedTypeSection} ` : "";
+        const normalizedName = rawName.trim();
+        const remainingRemainder = remainder;
+
+        const remainderText = remainingRemainder.trim();
+        const hasDescription = remainderText.length > 0;
+        let descriptionPart = "";
+
+        if (hasDescription) {
+            const hyphenMatch = remainingRemainder.match(/^(\s*-\s*)(.*)$/);
+            let normalizedDescription: string;
+
+            if (hyphenMatch) {
+                const rawDescription = hyphenMatch[2] ?? "";
+                normalizedDescription = rawDescription.trim();
+            } else {
+                normalizedDescription = remainderText.replace(/^[-\s]+/, "");
+            }
+
+            if (normalizedDescription.length > 0) {
+                descriptionPart = ` ${normalizedDescription}`;
+            }
+        }
+
+        const updatedLine = `${normalizedPrefix}${typePart}${normalizedName}${descriptionPart}`;
+        return normalizeDocCommentTypeAnnotations(updatedLine);
+    });
 }
 
 export function mergeSyntheticDocComments(
@@ -175,15 +226,13 @@ export function mergeSyntheticDocComments(
     // comment text should be promoted into `@description` metadata.
     let preserveDescriptionBreaks = (existingDocLines as DocCommentLines)._preserveDescriptionBreaks === true;
 
-    normalizedExistingLines = toMutableArray(
-        reorderDescriptionLinesToTop(normalizedExistingLines)
-    ) as MutableDocCommentLines;
+    normalizedExistingLines = toMutableArray(reorderDescriptionLinesToTop(normalizedExistingLines));
 
     if (preserveDescriptionBreaks) {
         normalizedExistingLines._preserveDescriptionBreaks = true;
     }
     const dedupedResult = dedupeReturnDocLines(normalizedExistingLines);
-    normalizedExistingLines = toMutableArray(dedupedResult.lines) as MutableDocCommentLines;
+    normalizedExistingLines = toMutableArray(dedupedResult.lines);
     const removedExistingReturnDuplicates = dedupedResult.removed;
 
     if (preserveDescriptionBreaks) {
@@ -200,7 +249,7 @@ export function mergeSyntheticDocComments(
         convertLegacyReturnsDescriptionLinesToMetadata(normalizedExistingLines, {
             normalizeDocCommentTypeAnnotations: normalizeGameMakerType
         })
-    ) as MutableDocCommentLines;
+    );
 
     const _computedSynthetic = computeSyntheticFunctionDocLines(node, normalizedExistingLines, options, overrides);
 
@@ -302,7 +351,7 @@ export function mergeSyntheticDocComments(
         syntheticFunctionName
     });
 
-    reorderedDocs = toMutableArray(reorderDescriptionLinesToTop(reorderedDocs)) as MutableDocCommentLines;
+    reorderedDocs = toMutableArray(reorderDescriptionLinesToTop(reorderedDocs));
 
     reorderedDocs = filterEmptyDescriptionLines(reorderedDocs, docTagHelpers.isDescriptionLine);
 
@@ -317,61 +366,7 @@ export function mergeSyntheticDocComments(
         });
     }
 
-    reorderedDocs = reorderedDocs.map((line) => {
-        if (!docTagHelpers.isParamLine(line)) {
-            return line;
-        }
-
-        const match = line.match(/^(\/\/\/\s*@param\s*)((?:\{[^}]*\}|<[^>]*>)\s*)?(.*)$/i);
-        if (!match) {
-            return normalizeDocCommentTypeAnnotations(line);
-        }
-
-        const [, prefix, rawTypeSection = "", rawNameSection = ""] = match;
-        const nameSplit = splitParamNameAndRemainder(rawNameSection);
-        if (!nameSplit) {
-            return normalizeDocCommentTypeAnnotations(line);
-        }
-
-        const { name: rawName, remainder } = nameSplit;
-        const normalizedPrefix = `${prefix.replace(/\s*$/, "")} `;
-        let normalizedTypeSection = rawTypeSection.trim();
-        if (normalizedTypeSection.startsWith("{") && normalizedTypeSection.endsWith("}")) {
-            const innerType = normalizedTypeSection.slice(1, -1);
-            const normalizedInner = normalizeGameMakerType(innerType.replaceAll("|", ","));
-            normalizedTypeSection = `{${normalizedInner}}`;
-        } else if (normalizedTypeSection.startsWith("<") && normalizedTypeSection.endsWith(">")) {
-            const innerType = normalizedTypeSection.slice(1, -1);
-            const normalizedInner = normalizeGameMakerType(innerType.replaceAll("|", ","));
-            normalizedTypeSection = `{${normalizedInner}}`;
-        }
-        const typePart = normalizedTypeSection.length > 0 ? `${normalizedTypeSection} ` : "";
-        const normalizedName = rawName.trim();
-        const remainingRemainder = remainder;
-
-        const remainderText = remainingRemainder.trim();
-        const hasDescription = remainderText.length > 0;
-        let descriptionPart = "";
-
-        if (hasDescription) {
-            const hyphenMatch = remainingRemainder.match(/^(\s*-\s*)(.*)$/);
-            let normalizedDescription: string;
-
-            if (hyphenMatch) {
-                const rawDescription = hyphenMatch[2] ?? "";
-                normalizedDescription = rawDescription.trim();
-            } else {
-                normalizedDescription = remainderText.replace(/^[-\s]+/, "");
-            }
-
-            if (normalizedDescription.length > 0) {
-                descriptionPart = ` ${normalizedDescription}`;
-            }
-        }
-
-        const updatedLine = `${normalizedPrefix}${typePart}${normalizedName}${descriptionPart}`;
-        return normalizeDocCommentTypeAnnotations(updatedLine);
-    });
+    reorderedDocs = normalizeParamDocTypeAnnotations(reorderedDocs, docTagHelpers);
 
     if ((result as any)?._preserveDescriptionBreaks === true) {
         preserveDescriptionBreaks = true;
@@ -415,9 +410,7 @@ export function mergeSyntheticDocComments(
         );
 
         if ((originalExistingHasTags || originalExistingHasDocLikePrefixes) && !hasDescriptionTag) {
-            filteredResult = toMutableArray(
-                promoteLeadingDocCommentTextToDescription(filteredResult)
-            ) as MutableDocCommentLines;
+            filteredResult = toMutableArray(promoteLeadingDocCommentTextToDescription(filteredResult));
         }
     } catch {
         // Tolerate missing Core service during test scenarios or when the doc
@@ -523,7 +516,7 @@ function integrateReturnAndFunctionLines({
     ({ result, removedAnyLine } = mergeReturnLinesIntoResult({ result, returnsLines, removedAnyLine }));
 
     const finalDedupedResult = dedupeReturnDocLines(result);
-    result = toMutableArray(finalDedupedResult.lines) as MutableDocCommentLines;
+    result = toMutableArray(finalDedupedResult.lines);
     if (finalDedupedResult.removed) {
         removedAnyLine = true;
     }
@@ -1610,7 +1603,7 @@ function applyDocCommentPromotionIfNeeded(params: ApplyDocCommentPromotionParams
             syntheticLines,
             originalExistingHasDocLikePrefixes || hasMultiLineSummary
         );
-        normalizedExistingLines = toMutableArray(promoted) as MutableDocCommentLines;
+        normalizedExistingLines = toMutableArray(promoted);
 
         if (
             (promoted as any)._preserveDescriptionBreaks === true ||

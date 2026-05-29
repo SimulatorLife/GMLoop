@@ -17,11 +17,13 @@ async function withTemporaryDirectory<T>(callback: (directory: string) => Promis
     }
 }
 
-void test("createParseCommand exposes shared parse options without positional targets", () => {
+void test("createParseCommand exposes shared parse options and optional positional path", () => {
     const command = createParseCommand();
 
     assert.equal(command.name(), "parse");
-    assert.equal(command.registeredArguments.length, 0);
+    assert.equal(command.registeredArguments.length, 1);
+    assert.equal(command.registeredArguments[0]?.required, false);
+    assert.equal(command.registeredArguments[0]?.name(), "path");
     assert.ok(command.options.some((option) => option.long === "--path"));
     assert.ok(command.options.some((option) => option.long === "--write"));
     assert.ok(command.options.some((option) => option.long === "--list"));
@@ -34,8 +36,8 @@ void test("parse --help output documents command examples and shared options", a
     assert.equal(exitCode, 0);
     assert.equal(stderr, "");
     assert.match(stdout, /Examples:/);
-    assert.match(stdout, /prettier-plugin-gml parse --path path\/to\/script\.gml/);
-    assert.match(stdout, /prettier-plugin-gml parse --write --path path\/to\/project/);
+    assert.match(stdout, /gmloop parse --path path\/to\/script\.gml/);
+    assert.match(stdout, /gmloop parse --write --path path\/to\/project/);
     assert.match(stdout, /--path <path>/);
     assert.match(stdout, /--write/);
     assert.match(stdout, /--list/);

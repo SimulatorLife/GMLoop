@@ -1,10 +1,10 @@
 {
-  "$version": 3,
+  "$version": 4,
   "model": {
     "name": "qwen3:1.7b",
     "skipLoopDetection": true,
     "skipStartupContext": true,
-    "maxSessionTurns": 12,
+    "maxSessionTurns": 300,
     "generationConfig": {
       "timeout": 900000,
       "maxRetries": 2,
@@ -39,6 +39,20 @@
             "max_tokens": 1536
           }
         }
+      },
+      {
+        "id": "MiniMax-M2.7",
+        "envKey": "OPENAI_API_KEY",
+        "baseUrl": "https://api.minimax.io/v1",
+        "generationConfig": {
+          "timeout": 900000,
+          "enableCacheControl": true,
+          "contextWindowSize": 196608,
+          "maxRetries": 3,
+          "samplingParams": {
+            "max_tokens": 8192
+          }
+        }
       }
     ]
   },
@@ -51,9 +65,10 @@
       "ListFiles",
       "Agent",
       "Glob",
-
       "Bash(pwd)",
       "Bash(ls *)",
+      "Bash(mv *)",
+      "Bash(cp *)",
       "Bash(rg *)",
       "Bash(cat *)",
       "Bash(head *)",
@@ -70,20 +85,13 @@
       "Bash(git ls-files *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(pnpm run *)"
+      "Bash(git push *)",
+      "Bash(pnpm *)"
     ],
     "deny": [
       "web_search",
       "WebFetch",
-
-      "Bash(git add*)",
-      "Bash(git commit*)",
-      "Bash(git fetch*)",
-      "Bash(git merge*)",
-      "Bash(git rebase*)",
-      "Bash(git cherry-pick*)",
-      "Bash(git am*)",
-      "Bash(git apply*)",
+      "ask_user_question",
       "Bash(git checkout*)",
       "Bash(git switch*)",
       "Bash(git restore*)",
@@ -91,8 +99,6 @@
       "Bash(git clean*)",
       "Bash(git branch*)",
       "Bash(git tag*)",
-
-      "Bash(rm *)",
       "Bash(chmod *)",
       "Bash(chown *)",
       "Bash(curl *)",
@@ -108,8 +114,9 @@
     ]
   },
   "general": {
+    "enableAutoUpdate": true,
     "checkpointing": {
-      "enabled": true
+      "enabled": false
     }
   },
   "privacy": {

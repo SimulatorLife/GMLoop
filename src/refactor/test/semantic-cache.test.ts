@@ -1,8 +1,49 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import * as Refactor from "../src/index.js";
 import { SemanticQueryCache } from "../src/semantic-cache.js";
 import type { DependentSymbol, FileSymbol, PartialSemanticAnalyzer, SymbolOccurrence } from "../src/types.js";
+
+/**
+ * Replaces wall-clock with a controlled, deterministic clock so that
+ * TTL-expiry tests are timing-independent and never flake under CI load.
+ *
+ * Usage:
+ * ```
+ * await withFakeTime(async (advance) => {
+ *     const cache = new SemanticQueryCache(semantic, { ttlMs: 50 });
+ *     await cache.getSymbolOccurrences("test");   // t=0
+ *     advance(60);                                // t=60 — TTL expired
+ *     await cache.getSymbolOccurrences("test");   // re-fetches
+ * });
+ * ```
+ */
+async function withFakeTime(callback: (advance: (ms: number) => void) => void | Promise<void>): Promise<void> {
+    // Declare all mutable state before making any assignments to Date.now so that
+    // the ESLint require-atomic-updates rule's control-flow analysis is satisfied.
+    const original = Date.now.bind(Date);
+    let currentMs = 0;
+
+    // Assigning an arrow that closes over `currentMs` — rule falsely flags it as
+    // a write-after-mutation; there is no actual race since `currentMs` is already
+    // declared in this function scope.
+    Date.now = () => currentMs;
+
+    const advance = (ms: number): void => {
+        currentMs += ms;
+    };
+
+    try {
+        const result = callback(advance);
+        if (result && typeof result.then === "function") {
+            await result;
+        }
+    } finally {
+        // eslint-disable-next-line require-atomic-updates -- restore to captured original
+        Date.now = original;
+    }
+}
 
 void describe("SemanticQueryCache", () => {
     void describe("getSymbolOccurrences", () => {
@@ -92,23 +133,24 @@ void describe("SemanticQueryCache", () => {
         });
 
         void it("respects TTL expiration", async () => {
-            let callCount = 0;
-            const semantic: PartialSemanticAnalyzer = {
-                getSymbolOccurrences: async () => {
-                    callCount++;
-                    return [{ path: "test.gml", start: 0, end: 10 }] as Array<SymbolOccurrence>;
-                }
-            };
+            await withFakeTime(async (advance) => {
+                let callCount = 0;
+                const semantic: PartialSemanticAnalyzer = {
+                    getSymbolOccurrences: async () => {
+                        callCount++;
+                        return [{ path: "test.gml", start: 0, end: 10 }] as Array<SymbolOccurrence>;
+                    }
+                };
 
-            const cache = new SemanticQueryCache(semantic, { ttlMs: 100 });
-            await cache.getSymbolOccurrences("test");
+                const cache = new SemanticQueryCache(semantic, { ttlMs: 100 });
+                await cache.getSymbolOccurrences("test");
+                assert.equal(callCount, 1, "First query is a cache miss");
 
-            // Wait for TTL to expire
-            await new Promise((resolve) => setTimeout(resolve, 150));
+                advance(101);
+                await cache.getSymbolOccurrences("test");
 
-            await cache.getSymbolOccurrences("test");
-
-            assert.equal(callCount, 2, "Expired entry should trigger new query");
+                assert.equal(callCount, 2, "Expired entry should trigger new query");
+            });
         });
 
         void it("does not retain oversized occurrence arrays in cache", async () => {
@@ -121,7 +163,7 @@ void describe("SemanticQueryCache", () => {
                         start: index,
                         end: index + 1,
                         kind: "reference"
-                    })) as Array<SymbolOccurrence>;
+                    }));
                 }
             };
 
@@ -156,7 +198,7 @@ void describe("SemanticQueryCache", () => {
 
         void it("handles null results from semantic analyzer", async () => {
             const semantic: PartialSemanticAnalyzer = {
-                getFileSymbols: async () => null as unknown as Array<FileSymbol>
+                getFileSymbols: async () => null
             };
 
             const cache = new SemanticQueryCache(semantic);
@@ -223,7 +265,7 @@ void describe("SemanticQueryCache", () => {
 
         void it("handles null results from semantic analyzer", async () => {
             const semantic: PartialSemanticAnalyzer = {
-                getDependents: async () => null as unknown as Array<DependentSymbol>
+                getDependents: async () => null
             };
 
             const cache = new SemanticQueryCache(semantic);
@@ -617,25 +659,26 @@ void describe("SemanticQueryCache", () => {
         });
 
         void it("respects TTL for cached entries", async () => {
-            let callCount = 0;
-            const semantic: PartialSemanticAnalyzer = {
-                getFileSymbols: async () => {
-                    callCount++;
-                    return [];
-                }
-            };
+            await withFakeTime(async (advance) => {
+                let callCount = 0;
+                const semantic: PartialSemanticAnalyzer = {
+                    getFileSymbols: async () => {
+                        callCount++;
+                        return [];
+                    }
+                };
 
-            const cache = new SemanticQueryCache(semantic, { ttlMs: 50 });
+                const cache = new SemanticQueryCache(semantic, { ttlMs: 50 });
 
-            await cache.getFileSymbols("file1.gml");
-            assert.equal(callCount, 1);
+                await cache.getFileSymbols("file1.gml");
+                assert.equal(callCount, 1);
 
-            await new Promise((resolve) => setTimeout(resolve, 60));
+                advance(51);
+                const results = await cache.getFileSymbolsBatch(["file1.gml"]);
 
-            const results = await cache.getFileSymbolsBatch(["file1.gml"]);
-
-            assert.equal(callCount, 2, "Expired entry should be re-fetched");
-            assert.equal(results.size, 1);
+                assert.equal(callCount, 2, "Expired entry should be re-fetched");
+                assert.equal(results.size, 1);
+            });
         });
 
         void it("works with null semantic analyzer", async () => {
@@ -645,6 +688,101 @@ void describe("SemanticQueryCache", () => {
             assert.equal(results.size, 2);
             assert.deepEqual(results.get("file1.gml"), []);
             assert.deepEqual(results.get("file2.gml"), []);
+        });
+    });
+});
+
+void describe("OccurrenceCachePolicy", () => {
+    void describe("DefaultOccurrenceCachePolicy", () => {
+        void it("shouldCacheOccurrences returns false when entry count is at or below threshold", () => {
+            const policy = new Refactor.DefaultOccurrenceCachePolicy(3);
+            const occurrences = [
+                { path: "a.gml", start: 0, end: 1 },
+                { path: "b.gml", start: 0, end: 1 },
+                { path: "c.gml", start: 0, end: 1 }
+            ] as Array<import("../src/types.js").SymbolOccurrence>;
+
+            assert.equal(policy.shouldCacheOccurrences(occurrences), false);
+        });
+
+        void it("shouldCacheOccurrences returns true when entry count exceeds threshold", () => {
+            const policy = new Refactor.DefaultOccurrenceCachePolicy(3);
+            const occurrences = [
+                { path: "a.gml", start: 0, end: 1 },
+                { path: "b.gml", start: 0, end: 1 },
+                { path: "c.gml", start: 0, end: 1 },
+                { path: "d.gml", start: 0, end: 1 }
+            ] as Array<import("../src/types.js").SymbolOccurrence>;
+
+            assert.equal(policy.shouldCacheOccurrences(occurrences), true);
+        });
+
+        void it("shouldCacheOccurrences returns false for empty arrays", () => {
+            const policy = new Refactor.DefaultOccurrenceCachePolicy(3);
+            assert.equal(policy.shouldCacheOccurrences([]), false);
+        });
+
+        void it("uses threshold of 0 to skip all caches", () => {
+            const policy = new Refactor.DefaultOccurrenceCachePolicy(0);
+            const occurrences = [{ path: "a.gml", start: 0, end: 1 }] as Array<
+                import("../src/types.js").SymbolOccurrence
+            >;
+
+            assert.equal(policy.shouldCacheOccurrences(occurrences), true);
+        });
+
+        void it("cache bypasses storage when default policy threshold exceeded", async () => {
+            let callCount = 0;
+            const semantic: PartialSemanticAnalyzer = {
+                getSymbolOccurrences: async () => {
+                    callCount++;
+                    return Array.from({ length: 4 }, (_, i) => ({
+                        path: `file-${i}.gml`,
+                        start: i,
+                        end: i + 1
+                    }));
+                }
+            };
+
+            const cache = new Refactor.SemanticQueryCache(semantic, {
+                occurrenceCachePolicy: new Refactor.DefaultOccurrenceCachePolicy(3)
+            });
+
+            await cache.getSymbolOccurrences("big_symbol");
+            await cache.getSymbolOccurrences("big_symbol");
+
+            assert.equal(callCount, 2, "Oversized results should be fetched every time");
+        });
+    });
+
+    void describe("PermissiveOccurrenceCachePolicy", () => {
+        void it("shouldCacheOccurrences always returns false", () => {
+            const policy = new Refactor.PermissiveOccurrenceCachePolicy();
+            const occurrences = Array.from({ length: 1_000_000 }, (_, i) => ({
+                path: `file-${i}.gml`,
+                start: i,
+                end: i + 1
+            })) as Array<import("../src/types.js").SymbolOccurrence>;
+
+            assert.equal(policy.shouldCacheOccurrences(occurrences), false);
+        });
+
+        void it("allows custom policy via config option", async () => {
+            let callCount = 0;
+            const semantic: PartialSemanticAnalyzer = {
+                getSymbolOccurrences: async () => {
+                    callCount++;
+                    return [{ path: "a.gml", start: 0, end: 1 }];
+                }
+            };
+
+            const policy = new Refactor.PermissiveOccurrenceCachePolicy();
+            const cache = new Refactor.SemanticQueryCache(semantic, { occurrenceCachePolicy: policy });
+
+            await cache.getSymbolOccurrences("any_symbol");
+            await cache.getSymbolOccurrences("any_symbol");
+
+            assert.equal(callCount, 1, "Permissive policy should cache all results");
         });
     });
 });

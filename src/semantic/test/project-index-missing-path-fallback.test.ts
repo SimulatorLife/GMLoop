@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { runWithMissingPathFallback } from "../src/project-index/missing-path-fallback.js";
+import { runWithMissingPathFallback } from "../src/project-index/fs-facade.js";
 
 void test("runWithMissingPathFallback returns operation result when no error occurs", async () => {
     const value = await runWithMissingPathFallback(

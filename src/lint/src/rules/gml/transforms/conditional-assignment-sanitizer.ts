@@ -17,9 +17,13 @@ function toSortedUniqueInsertPositions(
         return [];
     }
 
-    return [...new Set(insertPositions)]
-        .filter((position): position is number => typeof position === "number" && Number.isFinite(position))
-        .toSorted((left, right) => left - right);
+    // Normalize each position (filters nullish/non-finite values), deduplicate
+    // via Core.uniqueArray, then sort with the standard comparator.
+    const normalized = Core.uniqueArray(
+        insertPositions.map((position) => Core.toNormalizedInteger(position)),
+        { freeze: true }
+    );
+    return normalized.toSorted((left, right) => left - right);
 }
 
 function readInsertionsBeforeIndex(sortedInsertPositions: ReadonlyArray<number>, index: number): number {
@@ -264,9 +268,3 @@ export const conditionalAssignmentSanitizerTransform = Object.freeze({
     sanitizeConditionalAssignments,
     applySanitizedIndexAdjustments
 });
-
-export default {
-    conditionalAssignmentSanitizerTransform,
-    sanitizeConditionalAssignments,
-    applySanitizedIndexAdjustments
-};

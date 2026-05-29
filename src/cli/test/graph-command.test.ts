@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
-import { promises as fs } from "node:fs";
+import { spawn } from "node:child_process";
+import { type FSWatcher, type PathLike, promises as fs, type WatchListener, type WatchOptions } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
 
 const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
 const SKIP_CLI_ENV_VALUE = "1";
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 let cliModulePromise: Promise<typeof import("../src/cli.js")> | undefined;
 
@@ -79,8 +84,26 @@ void test("CLI command catalog includes graph leaf commands", async () => {
 
     assert.ok(catalog.some((entry) => entry.displayName === "graph index"));
     assert.ok(catalog.some((entry) => entry.displayName === "graph search"));
-    assert.ok(catalog.some((entry) => entry.displayName === "graph context"));
+    assert.ok(catalog.some((entry) => entry.displayName === "graph doctor"));
+    assert.ok(catalog.some((entry) => entry.displayName === "graph visualize"));
+    assert.ok(!catalog.some((entry) => entry.displayName === "graph symbol"));
+    assert.ok(!catalog.some((entry) => entry.displayName === "graph context"));
+    assert.ok(!catalog.some((entry) => entry.displayName === "graph neighbors"));
+    assert.ok(!catalog.some((entry) => entry.displayName === "graph usages"));
+    assert.ok(catalog.some((entry) => entry.displayName === "symbol inspect"));
+    assert.ok(catalog.some((entry) => entry.displayName === "symbol context"));
+    assert.ok(catalog.some((entry) => entry.displayName === "symbol neighbors"));
+    assert.ok(catalog.some((entry) => entry.displayName === "symbol usages"));
     assert.ok(!catalog.some((entry) => entry.displayName === "performance"));
+});
+
+void test("graph command rejects removed symbol-centric subcommands", async () => {
+    const cliModule = await loadCliModule();
+    const result = await cliModule.runCliTestCommand({
+        argv: ["graph", "symbol", "shared_toolset_fn", "--json"]
+    });
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, /unknown command 'symbol'/iu);
 });
 
 void test("graph index and graph search return stable JSON envelopes", async () => {
@@ -112,7 +135,14 @@ void test("graph index and graph search return stable JSON envelopes", async () 
         const searchPayload = JSON.parse(searchResult.stdout);
         assert.equal(searchPayload.command, "graph search");
         assert.equal(searchPayload.payload.query, "shared_toolset_fn");
-        assert.equal(searchPayload.payload.results[0].id, "toolset::gml/script/shared_toolset_fn");
+        assert.ok(
+            searchPayload.payload.results.some(
+                (result: { id: string; name: string }) =>
+                    result.name === "shared_toolset_fn" &&
+                    (result.id === "toolset::gml/script/shared_toolset_fn" ||
+                        result.id === "toolset::resource::scripts/shared_toolset_fn/shared_toolset_fn.yy")
+            )
+        );
     } finally {
         await fixture.cleanup();
     }
@@ -140,19 +170,80 @@ void test("graph search builds a missing database before querying", async () => 
 
         assert.equal(searchResult.exitCode, 0);
         const payload = JSON.parse(searchResult.stdout);
-        assert.equal(payload.payload.results[0].id, "toolset::gml/script/shared_toolset_fn");
+        assert.ok(
+            payload.payload.results.some(
+                (result: { id: string; name: string }) =>
+                    result.name === "shared_toolset_fn" &&
+                    (result.id === "toolset::gml/script/shared_toolset_fn" ||
+                        result.id === "toolset::resource::scripts/shared_toolset_fn/shared_toolset_fn.yy")
+            )
+        );
         await fs.access(databasePath);
     } finally {
         await fixture.cleanup();
     }
 });
 
-void test("graph visualize builds a missing database before exporting HTML", async () => {
+void test("graph search --force regenerates an existing database before querying", async () => {
     const cliModule = await loadCliModule();
     const fixture = await createDualRootFixture();
 
     try {
-        const outputPath = path.join(fixture.projectRoot, ".gmloop", "graph-test.html");
+        const databasePath = path.join(fixture.projectRoot, ".gmloop", "graph-index.sqlite");
+
+        const initialIndexResult = await cliModule.runCliTestCommand({
+            argv: ["graph", "index", "--path", fixture.projectRoot, "--toolset-root", fixture.toolsetRoot, "--json"]
+        });
+        assert.equal(initialIndexResult.exitCode, 0);
+
+        await fs.mkdir(path.join(fixture.toolsetRoot, "scripts/added_after_index"), { recursive: true });
+        await fs.writeFile(
+            path.join(fixture.toolsetRoot, "scripts/added_after_index/added_after_index.yy"),
+            JSON.stringify({ name: "added_after_index", resourceType: "GMScript" }),
+            "utf8"
+        );
+        await fs.writeFile(
+            path.join(fixture.toolsetRoot, "scripts/added_after_index/added_after_index.gml"),
+            ["function added_after_index() {", "    return 99;", "}", ""].join("\n"),
+            "utf8"
+        );
+
+        const forcedSearchResult = await cliModule.runCliTestCommand({
+            argv: [
+                "graph",
+                "search",
+                "added_after_index",
+                "--path",
+                fixture.projectRoot,
+                "--toolset-root",
+                fixture.toolsetRoot,
+                "--force",
+                "--json"
+            ]
+        });
+
+        assert.equal(forcedSearchResult.exitCode, 0);
+        const payload = JSON.parse(forcedSearchResult.stdout);
+        assert.ok(
+            payload.payload.results.some(
+                (result: { id: string; name: string }) =>
+                    result.name === "added_after_index" &&
+                    (result.id === "toolset::gml/script/added_after_index" ||
+                        result.id === "toolset::resource::scripts/added_after_index/added_after_index.yy")
+            )
+        );
+        await fs.access(databasePath);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("graph visualize builds a missing database before exporting an HTML+assets bundle", async () => {
+    const cliModule = await loadCliModule();
+    const fixture = await createDualRootFixture();
+
+    try {
+        const outputDirectory = path.join(fixture.projectRoot, ".gmloop", "graph-test");
         const databasePath = path.join(fixture.projectRoot, ".gmloop", "graph-index.sqlite");
 
         const visualizeResult = await cliModule.runCliTestCommand({
@@ -164,7 +255,7 @@ void test("graph visualize builds a missing database before exporting HTML", asy
                 "--toolset-root",
                 fixture.toolsetRoot,
                 "--output",
-                outputPath,
+                outputDirectory,
                 "--no-open",
                 "--json"
             ]
@@ -173,12 +264,304 @@ void test("graph visualize builds a missing database before exporting HTML", asy
         assert.equal(visualizeResult.exitCode, 0);
         const payload = JSON.parse(visualizeResult.stdout);
         assert.equal(payload.command, "graph visualize");
-        assert.equal(payload.payload.outputPath, outputPath);
+        assert.equal(payload.payload.outputDirectory, outputDirectory);
+        assert.equal(payload.payload.entryHtmlPath, "index.html");
         await fs.access(databasePath);
-        const html = await fs.readFile(outputPath, "utf8");
+        const assetNames = await fs.readdir(path.join(outputDirectory, "assets"));
+        const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
+        const styleAsset = assetNames.find((assetName) => assetName.endsWith(".css"));
+        assert.ok(scriptAsset);
+        assert.ok(styleAsset);
+        const html = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
+        const script = await fs.readFile(path.join(outputDirectory, "assets", scriptAsset), "utf8");
+        assert.match(script, /gm-app-shell/u);
         assert.match(html, /shared_toolset_fn/u);
+        assert.match(html, /gmloop_format/u);
+        assert.match(html, /Format GameMaker Language files using the prettier plugin\./u);
+        assert.doesNotMatch(html, /id="regenerate"/u);
+        assert.match(html, /assets\/.+\.js/u);
+        assert.match(html, /assets\/.+\.css/u);
+        assert.doesNotMatch(html, /assets\/vendor\//u);
+        assert.doesNotMatch(html, /cdn\./u);
     } finally {
         await fixture.cleanup();
+    }
+});
+
+void test("graph visualize reuses an existing graph index instead of rebuilding it implicitly", async () => {
+    const cliModule = await loadCliModule();
+    const fixture = await createDualRootFixture();
+
+    try {
+        const outputDirectory = path.join(fixture.projectRoot, ".gmloop", "graph-existing-index");
+
+        const initialIndexResult = await cliModule.runCliTestCommand({
+            argv: ["graph", "index", "--path", fixture.projectRoot, "--toolset-root", fixture.toolsetRoot, "--json"]
+        });
+        assert.equal(initialIndexResult.exitCode, 0);
+
+        await fs.writeFile(
+            path.join(fixture.toolsetRoot, "scripts/shared_toolset_fn/shared_toolset_fn.gml"),
+            ["function shared_toolset_fn() {", "    return 999;", "}", ""].join("\n"),
+            "utf8"
+        );
+
+        const visualizeResult = await cliModule.runCliTestCommand({
+            argv: [
+                "graph",
+                "visualize",
+                "--path",
+                fixture.projectRoot,
+                "--toolset-root",
+                fixture.toolsetRoot,
+                "--output",
+                outputDirectory,
+                "--no-open",
+                "--json"
+            ]
+        });
+
+        assert.equal(visualizeResult.exitCode, 0);
+        const assetNames = await fs.readdir(path.join(outputDirectory, "assets"));
+        const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
+        assert.ok(scriptAsset);
+        const indexHtml = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
+        assert.match(indexHtml, /return 42;/u);
+        assert.doesNotMatch(indexHtml, /return 999;/u);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("graph visualize --serve boots without a project path and waits for UI-driven loading", async () => {
+    const emptyWorkingDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-serve-empty-"));
+    let serveProcess: ReturnType<typeof spawn> | null = null;
+
+    try {
+        serveProcess = spawn(
+            process.execPath,
+            [path.resolve(REPO_ROOT, "src/cli/dist/index.js"), "graph", "visualize", "--serve", "--json", "--no-open"],
+            {
+                cwd: emptyWorkingDirectory,
+                stdio: ["ignore", "pipe", "pipe"]
+            }
+        );
+
+        const stdoutChunks: Array<string> = [];
+        const stderrChunks: Array<string> = [];
+        if (serveProcess.stdout) {
+            serveProcess.stdout.on("data", (chunk: Buffer | string) => {
+                stdoutChunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+            });
+        }
+        if (serveProcess.stderr) {
+            serveProcess.stderr.on("data", (chunk: Buffer | string) => {
+                stderrChunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+            });
+        }
+
+        const outputPayload = await new Promise<
+            { databasePath: string; payload: { url: string }; projectRoot: string } | { skipped: true }
+        >((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(
+                    new Error(
+                        `Timed out waiting for serve startup.\nSTDOUT:\n${stdoutChunks.join("")}\nSTDERR:\n${stderrChunks.join("")}`
+                    )
+                );
+            }, 5000);
+
+            const maybeResolve = (): void => {
+                const stdoutText = stdoutChunks.join("");
+                const startIndex = stdoutText.indexOf("{");
+                if (startIndex === -1) {
+                    return;
+                }
+
+                try {
+                    const parsed = JSON.parse(stdoutText.slice(startIndex)) as {
+                        databasePath: string;
+                        payload: { url: string };
+                        projectRoot: string;
+                    };
+                    clearTimeout(timeout);
+                    resolve(parsed);
+                } catch {
+                    // Wait for more stdout if the JSON is incomplete.
+                }
+            };
+
+            serveProcess.on("error", (error) => {
+                clearTimeout(timeout);
+                reject(error);
+            });
+            serveProcess.on("exit", (code) => {
+                clearTimeout(timeout);
+                const stderrText = stderrChunks.join("");
+                if (stderrText.includes("listen EPERM")) {
+                    resolve({ skipped: true });
+                    return;
+                }
+                reject(
+                    new Error(
+                        `Serve process exited before startup with code ${String(code)}.\nSTDOUT:\n${stdoutChunks.join("")}\nSTDERR:\n${stderrText}`
+                    )
+                );
+            });
+            serveProcess.stdout?.on("data", maybeResolve);
+        });
+
+        if ("skipped" in outputPayload) {
+            return;
+        }
+
+        assert.equal(outputPayload.projectRoot, "");
+        assert.equal(outputPayload.databasePath, "");
+        assert.match(outputPayload.payload.url, /^http:\/\/127\.0\.0\.1:\d+$/u);
+    } finally {
+        serveProcess?.kill("SIGTERM");
+        await fs.rm(emptyWorkingDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("graph visualize UI source reload candidate includes Lit web source assets", () => {
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("gm-graph-panel.ts"), true);
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph.css"), true);
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("index.html"), true);
+    assert.equal(
+        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-bundle.gml"),
+        false
+    );
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate(null), false);
+});
+
+void test("graph visualize UI source watcher resolves the repository source tree independently of cwd", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-ui-watch-root-"));
+    const previousWorkingDirectory = process.cwd();
+
+    try {
+        process.chdir(temporaryDirectory);
+        assert.equal(
+            __graphCommandTest__.resolveGraphVisualizationUiSourceWatchRoot(),
+            path.join(REPO_ROOT, "src", "ui", "src")
+        );
+    } finally {
+        process.chdir(previousWorkingDirectory);
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("graph visualize UI source watcher reports watcher errors without throwing", () => {
+    let closeCount = 0;
+    const receivedErrors: Array<string> = [];
+    let errorListener: ((error: Error) => void) | null = null;
+    const fakeWatcher = {
+        close() {
+            closeCount += 1;
+        },
+        on(eventName: string, listener: (error: Error) => void) {
+            if (eventName === "error") {
+                errorListener = listener;
+            }
+            return fakeWatcher;
+        },
+        ref() {
+            return fakeWatcher;
+        },
+        unref() {
+            return fakeWatcher;
+        }
+    } as unknown as FSWatcher;
+
+    const watchFactory = (
+        _path: PathLike,
+        _options?: WatchOptions | BufferEncoding | "buffer",
+        _listener?: WatchListener<string>
+    ): FSWatcher => {
+        void _path;
+        void _options;
+        void _listener;
+        return fakeWatcher;
+    };
+
+    const watcher = __graphCommandTest__.startGraphVisualizationUiSourceWatcher({
+        onError: (error: unknown) => {
+            receivedErrors.push(error instanceof Error ? error.message : "Unknown watcher error");
+        },
+        onReloadCandidate: () => {},
+        watchFactory,
+        watchRoot: REPO_ROOT
+    });
+
+    assert.equal(watcher, fakeWatcher);
+    errorListener?.(new Error("synthetic watcher failure"));
+
+    assert.deepEqual(receivedErrors, ["synthetic watcher failure"]);
+    assert.equal(closeCount, 1);
+});
+
+void test("graph visualize live-reload startup options default to GameMaker temp-root autodetection", () => {
+    const startupOptions = __graphCommandTest__.resolveGraphVisualizationLiveReloadStartupOptions("/tmp/project", {});
+
+    assert.equal(startupOptions.hasBuildConfiguration, false);
+    assert.equal(startupOptions.html5OutputRoot, null);
+    assert.equal(startupOptions.gmTempRoot, "/private/tmp/GameMakerStudio2/GMS2TEMP");
+});
+
+void test("graph visualize live-reload startup options honor runtime.liveReload config", () => {
+    const startupOptions = __graphCommandTest__.resolveGraphVisualizationLiveReloadStartupOptions("/tmp/project", {
+        runtime: {
+            liveReload: {
+                build: {
+                    backend: "igor"
+                },
+                gmTempRoot: ".gm-temp/html5",
+                html5Output: "dist/html5"
+            }
+        }
+    });
+
+    assert.equal(startupOptions.hasBuildConfiguration, true);
+    assert.equal(startupOptions.html5OutputRoot, path.resolve("/tmp/project", "dist/html5"));
+    assert.equal(startupOptions.gmTempRoot, path.resolve("/tmp/project", ".gm-temp/html5"));
+});
+
+void test("graph visualize live-reload startup timeout allows long build-first startup", () => {
+    assert.equal(__graphCommandTest__.GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS, 600_000);
+});
+
+void test("graph visualize live-reload dev args include configured startup paths", () => {
+    const args = __graphCommandTest__.createGraphVisualizationLiveReloadDevCommandArgs("/tmp/project", {
+        gmTempRoot: "/tmp/project/.gm-temp/html5",
+        hasBuildConfiguration: true,
+        html5OutputRoot: "/tmp/project/dist/html5"
+    });
+
+    assert.deepEqual(args, [
+        "live-reload",
+        "dev",
+        "/tmp/project",
+        "--html5-output",
+        "/tmp/project/dist/html5",
+        "--gm-temp-root",
+        "/tmp/project/.gm-temp/html5",
+        "--quiet"
+    ]);
+});
+
+void test("graph visualize serve defaults to the bundled 3DSpider demo from the repository root", () => {
+    const demoProjectRoot = __graphCommandTest__.resolveDefaultGraphVisualizationServeTargetPath(REPO_ROOT);
+
+    assert.equal(demoProjectRoot, path.join(REPO_ROOT, "vendor", "3DSpider"));
+});
+
+void test("graph visualize serve has no bundled demo fallback outside the repository tree", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-demo-fallback-"));
+
+    try {
+        assert.equal(__graphCommandTest__.resolveDefaultGraphVisualizationServeTargetPath(temporaryDirectory), null);
+    } finally {
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
     }
 });
 
@@ -190,23 +573,38 @@ void test("graph command options validate minimum values for depth and limit", a
         const invalidDepthResult = await cliModule.runCliTestCommand({
             argv: [
                 "graph",
-                "neighbors",
+                "search",
                 "project::gml/script/player_update",
                 "--path",
                 fixture.projectRoot,
-                "--depth",
+                "--limit",
                 "0"
             ]
         });
         assert.equal(invalidDepthResult.exitCode, 1);
-        assert.match(invalidDepthResult.stderr, /Depth must be at least 1/);
-
-        const invalidLimitResult = await cliModule.runCliTestCommand({
-            argv: ["graph", "search", "shared_toolset_fn", "--path", fixture.projectRoot, "--limit", "0"]
-        });
-        assert.equal(invalidLimitResult.exitCode, 1);
-        assert.match(invalidLimitResult.stderr, /Limit must be at least 1/);
+        assert.match(invalidDepthResult.stderr, /Limit must be at least 1/);
     } finally {
         await fixture.cleanup();
     }
+});
+
+void test("graph subcommands expose the force flag consistently", async () => {
+    const command = createGraphCommand();
+    const subcommandNames = ["index", "search", "visualize"] as const;
+
+    for (const subcommandName of subcommandNames) {
+        const subcommand = command.commands.find((entry) => entry.name() === subcommandName);
+        assert.ok(subcommand, `Expected graph ${subcommandName} subcommand to exist.`);
+        const longOptionFlags = new Set(subcommand.options.flatMap((option) => option.long ?? []));
+        assert.ok(longOptionFlags.has("--force"), `Expected graph ${subcommandName} to expose the --force option.`);
+        assert.ok(
+            !longOptionFlags.has("--rebuild"),
+            `Expected graph ${subcommandName} to stop exposing the legacy --rebuild option.`
+        );
+    }
+
+    const doctorCommand = command.commands.find((entry) => entry.name() === "doctor");
+    assert.ok(doctorCommand);
+    const doctorOptionFlags = new Set(doctorCommand.options.flatMap((option) => option.long ?? []));
+    assert.ok(!doctorOptionFlags.has("--force"));
 });

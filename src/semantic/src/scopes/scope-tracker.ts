@@ -2,14 +2,20 @@ import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
 import { ROLE_DEF, ROLE_REF } from "../symbols/scip.js";
 import { IdentifierCacheManager } from "./identifier-cache-manager.js";
+import {
+    DEFAULT_LOOKUP_CACHE_MAX_ENTRIES,
+    evaluateLookupCacheEvictionPolicy,
+    resolveLookupCacheMaxEntries
+} from "./lookup-cache-policy.js";
 import { cloneDeclarationMetadata, cloneOccurrence, createOccurrence } from "./occurrence.js";
+import { buildPathLevelDependencyGraph, collectNormalisedInputPaths, topologicallySortPaths } from "./path-sorting.js";
 import { GlobalIdentifierRegistry } from "./registry.js";
 import { IdentifierRoleTracker } from "./role-tracker.js";
 import { ensureIdentifierOccurrences, Scope } from "./scope.js";
 import {
     formatKnownScopeOverrideKeywords,
     isScopeOverrideKeyword,
-    ScopeOverrideKeyword
+    SCOPE_OVERRIDE_KEYWORD
 } from "./scope-override-keywords.js";
 import {
     collectFilePathsForSymbolSummaries,
@@ -42,38 +48,30 @@ import type {
     SymbolScopeSummary
 } from "./types.js";
 
-/**
- * Resolves a scope override string to a scope object.
- */
-function resolveStringScopeOverride(
-    tracker: ScopeTracker,
-    scopeOverride: string,
-    currentScope: Scope | null
-): Scope | null {
-    if (isScopeOverrideKeyword(scopeOverride)) {
-        return scopeOverride === ScopeOverrideKeyword.GLOBAL ? (tracker.getRootScope() ?? currentScope) : currentScope;
-    }
-
-    const found = tracker.getScopeStack().find((scope) => scope.id === scopeOverride);
-
-    if (found) {
-        return found;
-    }
-
-    const keywords = formatKnownScopeOverrideKeywords();
-    throw new RangeError(
-        `Unknown scope override string '${scopeOverride}'. Expected one of: ${keywords}, or a known scope identifier.`
-    );
-}
-
 const DEFAULT_DECLARATION_ROLE: ScopeRole = Object.freeze({ type: "declaration" });
 const DEFAULT_REFERENCE_ROLE: ScopeRole = Object.freeze({ type: "reference" });
-const DEFAULT_LOOKUP_CACHE_MAX_ENTRIES = 2048;
+const EMPTY_INVALIDATION_SET: Array<{ scopeId: string; scopeKind: string; reason: string }> = [];
 
 /**
  * Manages lexical and structural scopes, symbol declarations, and references.
  */
 export class ScopeTracker {
+    private resolveScopeOverrideFromString(scopeOverride: string, currentScope: Scope | null): Scope | null {
+        if (isScopeOverrideKeyword(scopeOverride)) {
+            return scopeOverride === SCOPE_OVERRIDE_KEYWORD ? (this.getRootScope() ?? currentScope) : currentScope;
+        }
+
+        const found = this.getScopeStack().find((scope) => scope.id === scopeOverride);
+        if (found) {
+            return found;
+        }
+
+        const keywords = formatKnownScopeOverrideKeywords().join(", ");
+        throw new RangeError(
+            `Unknown scope override string '${String(scopeOverride)}'. Expected one of: ${keywords}, or a known scope identifier.`
+        );
+    }
+
     private scopeCounter: number = 0;
     private scopeStack: Scope[];
     private rootScope: Scope | null;
@@ -171,6 +169,24 @@ export class ScopeTracker {
         });
     }
 
+    /**
+     * Creates a scope tracker for a single GML file or compilation unit.
+     *
+     * @param options - Configuration for the scope tracker.
+     * @param options.enabled - Whether to perform scope tracking.  When `false`,
+     *   the tracker builds no index and every query returns empty results.
+     * @param options.lookupCacheMaxEntries - Maximum number of entries retained in the
+     *   lookup cache (LRU eviction).  Values less than `1` are floored to `1`.
+     *   There is no sentinel to disable the lookup cache; use a very large value instead.
+     * @param options.identifierCacheMaxTrackedNames - Passed directly to the internal
+     *   `IdentifierCacheManager` as the `maxTrackedNames` ceiling.  Pass `0` (or any
+     *   non-positive value) to fall back to the default of `4000`; there is no
+     *   "disable entirely" sentinel.
+     * @param options.identifierCacheMaxScopesPerName - Passed directly to the internal
+     *   `IdentifierCacheManager` as the `maxScopesPerName` limit.  Pass `0` (or any
+     *   non-positive value) to fall back to the default of `64`; pass `Infinity`
+     *   to disable per-name eviction entirely.
+     */
     constructor({
         enabled = true,
         lookupCacheMaxEntries = DEFAULT_LOOKUP_CACHE_MAX_ENTRIES,
@@ -193,21 +209,19 @@ export class ScopeTracker {
         });
         this.lookupCache = new Map();
         this.lookupCacheDepth = -1;
-        this.lookupCacheMaxEntries =
-            typeof lookupCacheMaxEntries === "number" && Number.isFinite(lookupCacheMaxEntries)
-                ? Math.max(1, Math.floor(lookupCacheMaxEntries))
-                : DEFAULT_LOOKUP_CACHE_MAX_ENTRIES;
+        this.lookupCacheMaxEntries = resolveLookupCacheMaxEntries(
+            lookupCacheMaxEntries,
+            DEFAULT_LOOKUP_CACHE_MAX_ENTRIES
+        );
     }
 
     private readLookupCache(name: string): ScopeSymbolMetadata | null | undefined {
         const cached = this.lookupCache.get(name);
-        if (cached === undefined) {
-            return undefined;
+        if (cached !== undefined) {
+            // Move cache entry to the end to keep a simple insertion-order LRU.
+            this.lookupCache.delete(name);
+            this.lookupCache.set(name, cached);
         }
-
-        // Move cache entry to the end to keep a simple insertion-order LRU.
-        this.lookupCache.delete(name);
-        this.lookupCache.set(name, cached);
         return cached;
     }
 
@@ -215,7 +229,12 @@ export class ScopeTracker {
         this.lookupCache.delete(name);
         this.lookupCache.set(name, metadata);
 
-        while (this.lookupCache.size > this.lookupCacheMaxEntries) {
+        const evictionDecision = evaluateLookupCacheEvictionPolicy({
+            currentCacheSize: this.lookupCache.size,
+            maxEntries: this.lookupCacheMaxEntries
+        });
+
+        for (let i = 0; i < evictionDecision.entriesToEvict; i++) {
             const oldestName = this.lookupCache.keys().next().value;
             if (!oldestName) {
                 break;
@@ -271,6 +290,17 @@ export class ScopeTracker {
                 this.pathToScopesIndex.set(trackedPath, scopeSet);
             }
             scopeSet.add(scope.id);
+
+            // Pre-populate the pathLastModifiedIndex for paths with scope metadata.
+            // This ensures getChangedFilePaths returns accurate results even for paths
+            // that have scopes but no recorded declarations/references yet.
+            // The index is only updated here; the scope's own lastModifiedTimestamp
+            // is still set lazily via markModified() on the first occurrence.
+            const currentTimestamp = scope.lastModifiedTimestamp >= 0 ? scope.lastModifiedTimestamp : Date.now();
+            const existingTimestamp = this.pathLastModifiedIndex.get(trackedPath);
+            if (existingTimestamp === undefined || currentTimestamp > existingTimestamp) {
+                this.pathLastModifiedIndex.set(trackedPath, currentTimestamp);
+            }
         }
 
         // Invalidate lookup cache on scope depth change
@@ -391,19 +421,14 @@ export class ScopeTracker {
         }
 
         if (typeof scopeOverride === "string") {
-            return resolveStringScopeOverride(this, scopeOverride, currentScope);
+            return this.resolveScopeOverrideFromString(scopeOverride, currentScope);
         }
 
         return currentScope;
     }
 
     private isScopeObject(value: unknown): value is Scope {
-        return (
-            typeof value === "object" &&
-            value !== null &&
-            "id" in value &&
-            typeof (value as { id: unknown }).id === "string"
-        );
+        return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string";
     }
 
     public buildClassifications(role?: ScopeRole | null, isDeclaration: boolean = false): string[] {
@@ -462,8 +487,10 @@ export class ScopeTracker {
         }
 
         let scopeSummary = scopeSummaryMap.get(scope.id);
-        if (!scopeSummary) {
-            scopeSummary = { hasDeclaration: false, hasReference: false };
+        if (scopeSummary) {
+            scopeSummary.lastModified = scope.lastModifiedTimestamp;
+        } else {
+            scopeSummary = { hasDeclaration: false, hasReference: false, lastModified: scope.lastModifiedTimestamp };
             scopeSummaryMap.set(scope.id, scopeSummary);
         }
 
@@ -959,6 +986,15 @@ export class ScopeTracker {
         return null;
     }
 
+    /**
+     * Counts retained identifier-resolution cache entries for diagnostics and memory regression tests.
+     *
+     * @returns Total number of cached name/scope resolution entries currently retained.
+     */
+    public countRetainedIdentifierResolutionCacheEntries(): number {
+        return this.identifierCache.countRetainedEntries();
+    }
+
     public resolveIdentifier(name: string | null | undefined, scopeId?: string | null): ScopeSymbolMetadata | null {
         if (!name) {
             return null;
@@ -1402,15 +1438,17 @@ export class ScopeTracker {
         { includeDescendants = false }: { includeDescendants?: boolean } = {}
     ): Map<string, Array<{ scopeId: string; scopeKind: string; reason: string }>> {
         const results = new Map<string, Array<{ scopeId: string; scopeKind: string; reason: string }>>();
-        const normalizedPathResultsCache = new Map<
-            string,
-            Array<{ scopeId: string; scopeKind: string; reason: string }>
-        >();
         const transitiveDependentsCache = new Map<
             string,
             Array<{ dependentScopeId: string; dependentScopeKind: string; depth: number }>
         >();
-        const descendantScopesCache = new Map<string, Array<{ scopeId: string; scopeKind: string; depth: number }>>();
+        const normalizedPathResultsCache = new Map<
+            string,
+            Array<{ scopeId: string; scopeKind: string; reason: string }>
+        >();
+        const descendantScopesCache = includeDescendants
+            ? new Map<string, Array<{ scopeId: string; scopeKind: string; depth: number }>>()
+            : null;
 
         for (const path of paths) {
             if (!path || typeof path !== "string" || path.length === 0) {
@@ -1430,8 +1468,8 @@ export class ScopeTracker {
 
             const scopeIds = this.pathToScopesIndex.get(trackedPath);
             if (!scopeIds || scopeIds.size === 0) {
-                normalizedPathResultsCache.set(trackedPath, []);
-                results.set(path, []);
+                normalizedPathResultsCache.set(trackedPath, EMPTY_INVALIDATION_SET);
+                results.set(path, EMPTY_INVALIDATION_SET);
                 continue;
             }
 
@@ -1476,10 +1514,10 @@ export class ScopeTracker {
                 }
 
                 if (includeDescendants) {
-                    let descendants = descendantScopesCache.get(scopeId);
+                    let descendants = descendantScopesCache?.get(scopeId);
                     if (!descendants) {
                         descendants = this.getDescendantScopes(scopeId);
-                        descendantScopesCache.set(scopeId, descendants);
+                        descendantScopesCache?.set(scopeId, descendants);
                     }
 
                     for (const desc of descendants) {
@@ -1911,7 +1949,7 @@ export class ScopeTracker {
 
         const paths = new Set<string>();
         for (const [trackedPath, lastModified] of this.pathLastModifiedIndex) {
-            if (lastModified > sinceTimestamp) {
+            if (lastModified >= sinceTimestamp) {
                 paths.add(trackedPath);
             }
         }
@@ -2391,24 +2429,20 @@ export class ScopeTracker {
 
             const modifiedScopes: string[] = [];
 
-            for (const scopeId of scopeSummaryMap.keys()) {
-                const scope = this.scopesById.get(scopeId);
-                if (!scope) {
+            for (const [scopeId, summary] of scopeSummaryMap) {
+                if (summary.lastModified <= sinceTimestamp) {
                     continue;
                 }
 
-                if (scope.lastModifiedTimestamp <= sinceTimestamp) {
+                if (!summary.hasDeclaration && !summary.hasReference) {
                     continue;
                 }
 
-                const entry = scope.occurrences.get(symbol);
-                if (!entry) {
+                if (!this.scopesById.has(scopeId)) {
                     continue;
                 }
 
-                if (entry.declarations.length > 0 || entry.references.length > 0) {
-                    modifiedScopes.push(scopeId);
-                }
+                modifiedScopes.push(scopeId);
             }
 
             if (modifiedScopes.length > 0) {
@@ -2522,6 +2556,10 @@ export class ScopeTracker {
 
             // Unlink from parent's children only when the parent itself is not
             // also being removed (avoids redundant work for intermediate scopes).
+            // The guard handles the case where a scope and its parent are both in
+            // scopeIdsToRemove: deleting the child's pointer from the parent's list
+            // is unnecessary because the parent's entry will be deleted when its
+            // own scope is processed.
             if (scope.parent && !scopeIdsToRemove.has(scope.parent.id)) {
                 const siblings = this.scopeChildrenIndex.get(scope.parent.id);
                 if (siblings) {
@@ -2533,6 +2571,9 @@ export class ScopeTracker {
             }
 
             // Remove own children-index entry.
+            // Ctx: scopeId is the current scope being removed. This entry records
+            // which children belong to this scope. Removing it cleans up the index
+            // regardless of whether the parent is also being removed.
             this.scopeChildrenIndex.delete(scopeId);
 
             // Remove from path index (covers both the requested path and any
@@ -2560,6 +2601,7 @@ export class ScopeTracker {
         for (const name of declaredNamesToInvalidate) {
             this.identifierCache.invalidate(name);
         }
+        this.identifierCache.invalidateScopes(scopeIdsToRemove);
 
         for (const pathToRecompute of pathsToRecompute) {
             recomputePathLastModified(
@@ -2602,6 +2644,7 @@ export class ScopeTracker {
             string,
             Array<{ dependentScopeId: string; dependentScopeKind: string; depth: number }>
         >();
+        const dependentScopePathCache = new Map<string, string | null>();
 
         for (const filePath of changedPaths) {
             if (!filePath || typeof filePath !== "string" || filePath.length === 0) {
@@ -2630,214 +2673,20 @@ export class ScopeTracker {
                 }
 
                 for (const dep of transitiveDeps) {
-                    const depScope = this.scopesById.get(dep.dependentScopeId);
-                    const depPath = depScope?.metadata.path;
-                    if (depPath) {
-                        result.add(this.normalizeTrackedPath(depPath));
+                    let normalizedDependentPath = dependentScopePathCache.get(dep.dependentScopeId);
+                    if (normalizedDependentPath === undefined) {
+                        const depScope = this.scopesById.get(dep.dependentScopeId);
+                        const depPath = depScope?.metadata.path;
+                        normalizedDependentPath = depPath ? this.normalizeTrackedPath(depPath) : null;
+                        dependentScopePathCache.set(dep.dependentScopeId, normalizedDependentPath);
+                    }
+
+                    if (normalizedDependentPath) {
+                        result.add(normalizedDependentPath);
                     }
                 }
             }
         }
-
-        return result;
-    }
-
-    /**
-     * Collects unique, non-empty paths from an iterable and normalises them
-     * to a consistent form for internal path-index lookups.
-     *
-     * @returns Map of normalisedPath → originalPath with duplicates removed.
-     */
-    private collectNormalisedInputPaths(paths: Iterable<string>): Map<string, string> {
-        const inputPaths = new Map<string, string>();
-        for (const p of paths) {
-            if (p && typeof p === "string" && p.length > 0) {
-                const normalised = this.normalizeTrackedPath(p);
-                if (!inputPaths.has(normalised)) {
-                    inputPaths.set(normalised, p);
-                }
-            }
-        }
-        return inputPaths;
-    }
-
-    /**
-     * Inspects a single symbol occurrence within a scope and records a
-     * directed dependency edge when the symbol resolves to a declaration in a
-     * different path that is also present in the input set.
-     *
-     * Called for every `(name, entry)` pair where `entry.references.length > 0`.
-     */
-    private recordCrossPathDependencyEdge(
-        name: string,
-        scopeId: string,
-        scope: Scope,
-        normalisedPath: string,
-        inputPaths: Map<string, string>,
-        edges: Map<string, Set<string>>,
-        inDegree: Map<string, number>
-    ): void {
-        // Skip symbols declared locally — they don't create a cross-file edge.
-        if (scope.symbolMetadata.has(name)) {
-            return;
-        }
-
-        const declaringId = this.resolveDeclaringScopeId(name, scopeId);
-        if (!declaringId || declaringId === scopeId) {
-            return;
-        }
-
-        const declaringPath = this.scopesById.get(declaringId)?.metadata.path;
-        if (!declaringPath) {
-            return;
-        }
-
-        const normDeclaringPath = this.normalizeTrackedPath(declaringPath);
-        if (normDeclaringPath === normalisedPath || !inputPaths.has(normDeclaringPath)) {
-            // Dependency is outside the input set or points back to self — skip.
-            return;
-        }
-
-        // normalisedPath depends on normDeclaringPath; add the directed edge.
-        const outEdges = edges.get(normDeclaringPath);
-        if (outEdges && !outEdges.has(normalisedPath)) {
-            outEdges.add(normalisedPath);
-            inDegree.set(normalisedPath, (inDegree.get(normalisedPath) ?? 0) + 1);
-        }
-    }
-
-    /**
-     * Scans all scopes registered under `normalisedPath` and adds directed
-     * dependency edges for every cross-path symbol reference found.
-     */
-    private populatePathEdgesFromScopes(
-        normalisedPath: string,
-        inputPaths: Map<string, string>,
-        edges: Map<string, Set<string>>,
-        inDegree: Map<string, number>
-    ): void {
-        const scopeIds = this.pathToScopesIndex.get(normalisedPath);
-        if (!scopeIds || scopeIds.size === 0) {
-            return;
-        }
-
-        for (const scopeId of scopeIds) {
-            const scope = this.scopesById.get(scopeId);
-            if (!scope) {
-                continue;
-            }
-
-            for (const [name, entry] of scope.occurrences) {
-                if (entry.references.length === 0) {
-                    continue;
-                }
-                this.recordCrossPathDependencyEdge(name, scopeId, scope, normalisedPath, inputPaths, edges, inDegree);
-            }
-        }
-    }
-
-    /**
-     * Builds a directed path-level dependency graph over the given input paths.
-     *
-     * @returns `edges` (dependency → Set of dependents) and `inDegree`
-     *          (path → number of dependencies within the input set).
-     */
-    private buildPathLevelDependencyGraph(inputPaths: Map<string, string>): {
-        edges: Map<string, Set<string>>;
-        inDegree: Map<string, number>;
-    } {
-        const edges = new Map<string, Set<string>>();
-        const inDegree = new Map<string, number>();
-        for (const normalisedPath of inputPaths.keys()) {
-            inDegree.set(normalisedPath, 0);
-            edges.set(normalisedPath, new Set());
-        }
-
-        if (!this.enabled) {
-            return { edges, inDegree };
-        }
-
-        for (const normalisedPath of inputPaths.keys()) {
-            this.populatePathEdgesFromScopes(normalisedPath, inputPaths, edges, inDegree);
-        }
-        return { edges, inDegree };
-    }
-
-    /**
-     * Decrements in-degrees for all paths that depend on `current`, and
-     * appends any newly zero-in-degree paths to `queue` in lexicographic order.
-     */
-    private advanceTopologicalWave(
-        current: string,
-        edges: Map<string, Set<string>>,
-        inDegree: Map<string, number>,
-        queue: string[]
-    ): void {
-        const dependents = edges.get(current);
-        if (!dependents) {
-            return;
-        }
-
-        const newlyReady: string[] = [];
-        for (const dep of dependents) {
-            const newDegree = (inDegree.get(dep) ?? 1) - 1;
-            inDegree.set(dep, newDegree);
-            if (newDegree === 0) {
-                newlyReady.push(dep);
-            }
-        }
-        // Sort within the new wave for deterministic output.
-        newlyReady.sort();
-        for (const p of newlyReady) {
-            queue.push(p);
-        }
-    }
-
-    /**
-     * Applies Kahn's topological sort to the dependency graph and returns the
-     * ordered array of original (non-normalised) paths.
-     *
-     * Paths that remain in the graph after the sort (i.e. part of a cycle) are
-     * appended in lexicographic order.
-     */
-    private topologicallySortPaths(
-        inputPaths: Map<string, string>,
-        edges: Map<string, Set<string>>,
-        inDegree: Map<string, number>
-    ): string[] {
-        // Seed queue with zero-in-degree nodes in lexicographic order.
-        const queue: string[] = [];
-        for (const [normalisedPath, degree] of inDegree) {
-            if (degree === 0) {
-                queue.push(normalisedPath);
-            }
-        }
-        queue.sort();
-
-        const result: string[] = [];
-        let queueIndex = 0;
-        while (queueIndex < queue.length) {
-            const current = queue[queueIndex];
-            queueIndex += 1;
-            const original = inputPaths.get(current);
-            if (original !== undefined) {
-                result.push(original);
-            }
-            this.advanceTopologicalWave(current, edges, inDegree, queue);
-        }
-
-        // Append any cycle members in lexicographic order.
-        const cycleNodes: string[] = [];
-        for (const [normalisedPath, degree] of inDegree) {
-            if (degree > 0) {
-                const original = inputPaths.get(normalisedPath);
-                if (original !== undefined) {
-                    cycleNodes.push(original);
-                }
-            }
-        }
-        cycleNodes.sort();
-        result.push(...cycleNodes);
 
         return result;
     }
@@ -2867,12 +2716,17 @@ export class ScopeTracker {
      * @returns Array of paths ordered so that dependencies precede dependents.
      */
     public sortPathsForReanalysis(paths: Iterable<string>): string[] {
-        const inputPaths = this.collectNormalisedInputPaths(paths);
+        const inputPaths = collectNormalisedInputPaths(paths);
         if (inputPaths.size === 0) {
             return [];
         }
-        const { edges, inDegree } = this.buildPathLevelDependencyGraph(inputPaths);
-        return this.topologicallySortPaths(inputPaths, edges, inDegree);
+        const { edges, inDegree } = buildPathLevelDependencyGraph(
+            inputPaths,
+            this.pathToScopesIndex,
+            this.scopesById,
+            this.resolveDeclaringScopeId.bind(this)
+        );
+        return topologicallySortPaths(inputPaths, edges, inDegree);
     }
 }
 

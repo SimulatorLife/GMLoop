@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -54,6 +55,25 @@ void test("loadFixtureProjectConfig rejects invalid fixture comparison values", 
         await assert.rejects(
             FixtureRunner.loadFixtureProjectConfig(configPath),
             /gmloop\.json fixture config\.comparison must be one of exact/u
+        );
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
+void test("loadFixtureProjectConfig rejects invalid fixture assertion values", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-config-invalid-assertion-"));
+    const configPath = path.join(rootPath, "gmloop.json");
+    await writeFile(
+        configPath,
+        `${JSON.stringify({ fixture: { kind: "format", assertion: "unsupported" } }, null, 2)}\n`,
+        "utf8"
+    );
+
+    try {
+        await assert.rejects(
+            FixtureRunner.loadFixtureProjectConfig(configPath),
+            /gmloop\.json fixture config\.assertion must be one of transform/u
         );
     } finally {
         await rm(rootPath, { recursive: true, force: true });
@@ -172,6 +192,155 @@ void test("discoverFixtureCases assigns fixture paths by kind", async () => {
     }
 });
 
+void test("discoverFixtureCases supports external project fixture descriptors", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-external-project-discovery-"));
+    const casePath = path.join(rootPath, "real-project");
+    await mkdir(casePath, { recursive: true });
+    await writeFile(
+        path.join(casePath, "gmloop.json"),
+        `${JSON.stringify(
+            {
+                fixture: {
+                    kind: "external-project",
+                    externalProject: {
+                        sourcePath: "../../vendor/3DSpider",
+                        excludes: {
+                            directoryNames: [".gmloop"]
+                        }
+                    }
+                }
+            },
+            null,
+            2
+        )}\n`,
+        "utf8"
+    );
+
+    try {
+        const fixtureCases = await FixtureRunner.discoverFixtureCases(rootPath);
+        const fixtureCase = fixtureCases[0];
+
+        assert.equal(fixtureCases.length, 1);
+        assert.equal(fixtureCase?.kind, "external-project");
+        assert.equal(fixtureCase?.assertion, "project-tree");
+        assert.equal(fixtureCase?.projectDirectoryPath, null);
+        assert.equal(fixtureCase?.config.fixture.externalProject?.sourcePath, "../../vendor/3DSpider");
+        assert.deepEqual(fixtureCase?.config.fixture.externalProject?.excludes?.directoryNames, [".gmloop"]);
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
+void test("copyExternalProjectFixture copies a writable project subset with exclusions", async () => {
+    const sourceRootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-external-source-"));
+    await mkdir(path.join(sourceRootPath, ".git"), { recursive: true });
+    await mkdir(path.join(sourceRootPath, ".gmloop"), { recursive: true });
+    await mkdir(path.join(sourceRootPath, "scripts", "Demo"), { recursive: true });
+    await writeFile(path.join(sourceRootPath, ".git", "config"), "ignored\n", "utf8");
+    await writeFile(path.join(sourceRootPath, ".gmloop", "graph-index.sqlite"), "ignored\n", "utf8");
+    await writeFile(path.join(sourceRootPath, "scripts", "Demo", "Demo.gml"), "var value = 1;\n", "utf8");
+    await writeFile(path.join(sourceRootPath, "notes.tmp"), "ignored\n", "utf8");
+
+    const copiedProject = await FixtureRunner.copyExternalProjectFixture({
+        sourceProjectPath: sourceRootPath
+    });
+
+    try {
+        assert.deepEqual(copiedProject.copiedRelativeFilePaths, ["scripts/Demo/Demo.gml"]);
+        assert.equal(
+            await readFile(path.join(copiedProject.workingProjectDirectoryPath, "scripts", "Demo", "Demo.gml"), "utf8"),
+            "var value = 1;\n"
+        );
+        await assert.rejects(readFile(path.join(copiedProject.workingProjectDirectoryPath, ".git", "config"), "utf8"));
+    } finally {
+        await copiedProject.dispose();
+        await rm(sourceRootPath, { recursive: true, force: true });
+    }
+});
+
+void test("project fingerprints and change summaries are stable", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-project-fingerprint-"));
+    await mkdir(path.join(rootPath, "scripts"), { recursive: true });
+    await writeFile(path.join(rootPath, "scripts", "first.gml"), "var first = 1;\n", "utf8");
+    await writeFile(path.join(rootPath, "scripts", "second.gml"), "var second = 2;\n", "utf8");
+
+    try {
+        const before = await FixtureRunner.createProjectFingerprint(rootPath);
+        await writeFile(path.join(rootPath, "scripts", "first.gml"), "var first = 10;\n", "utf8");
+        await writeFile(path.join(rootPath, "scripts", "third.gml"), "var third = 3;\n", "utf8");
+        await rm(path.join(rootPath, "scripts", "second.gml"));
+        const after = await FixtureRunner.createProjectFingerprint(rootPath);
+        const summary = FixtureRunner.collectProjectChangeSummary(before, after);
+
+        assert.notEqual(before.digest, after.digest);
+        assert.deepEqual(summary.added, ["scripts/third.gml"]);
+        assert.deepEqual(summary.modified, ["scripts/first.gml"]);
+        assert.deepEqual(summary.removed, ["scripts/second.gml"]);
+        assert.equal(
+            FixtureRunner.formatProjectChangeSummary(summary),
+            "added=1 [scripts/third.gml]; modified=1 [scripts/first.gml]; removed=1 [scripts/second.gml]"
+        );
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
+void test("assertJsonCliPayload parses command output prefixes and rejects arrays", () => {
+    const payload = FixtureRunner.assertJsonCliPayload('$ node cli\n{"ok":true,"payload":{"total":1}}\n');
+
+    assert.deepEqual(payload, {
+        ok: true,
+        payload: {
+            total: 1
+        }
+    });
+    assert.throws(() => FixtureRunner.assertJsonCliPayload("[1,2,3]"), /Expected CLI JSON payload/u);
+});
+
+void test("findAvailablePorts returns distinct test ports", async () => {
+    const ports = await FixtureRunner.findAvailablePorts(2);
+
+    assert.equal(ports.length, 2);
+    assert.notEqual(ports[0], ports[1]);
+    assert.ok(ports.every((port) => Number.isInteger(port) && port > 0));
+});
+
+void test("waitForJsonEndpointPayload polls until the endpoint payload matches", async () => {
+    let requestCount = 0;
+    const server = createServer((request, response) => {
+        requestCount += 1;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ ready: requestCount >= 2, requestCount }));
+    });
+    const [port] = await FixtureRunner.findAvailablePorts(1);
+    assert.notEqual(port, undefined);
+
+    await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(port, "127.0.0.1", () => {
+            resolve();
+        });
+    });
+
+    try {
+        const payload = await FixtureRunner.waitForJsonEndpointPayload(
+            `http://127.0.0.1:${port}/status`,
+            (candidate) => candidate.ready === true,
+            1000,
+            10
+        );
+
+        assert.equal(payload.ready, true);
+        assert.equal(typeof payload.requestCount, "number");
+    } finally {
+        await new Promise<void>((resolve) => {
+            server.close(() => {
+                resolve();
+            });
+        });
+    }
+});
+
 void test("runFixtureSuite records profiling metrics and writes reports", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-suite-"));
     const reportPath = path.join(rootPath, "fixture-profile.json");
@@ -250,6 +419,38 @@ void test("runFixtureSuite records profiling metrics and writes reports", async 
         assert.match(FixtureRunner.renderHumanProfileReport(report), /Workspace totals:/u);
         assert.match(FixtureRunner.renderHumanProfileReport(report), /Stage totals:/u);
         assert.match(FixtureRunner.renderHumanProfileReport(report), /Highest CPU user time:/u);
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
+void test("compareDirectoryTrees bounds buffered file content to one file pair", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-directory-compare-"));
+    const actualDirectory = path.join(rootPath, "actual");
+    const expectedDirectory = path.join(rootPath, "expected");
+    await mkdir(actualDirectory, { recursive: true });
+    await mkdir(expectedDirectory, { recursive: true });
+
+    try {
+        const fileCount = 64;
+        const fileContent = "x".repeat(8 * 1024);
+        await Promise.all(
+            Array.from({ length: fileCount }, async (_value, index) => {
+                const relativePath = `nested/file-${String(index).padStart(3, "0")}.txt`;
+                const actualPath = path.join(actualDirectory, relativePath);
+                const expectedPath = path.join(expectedDirectory, relativePath);
+                await mkdir(path.dirname(actualPath), { recursive: true });
+                await mkdir(path.dirname(expectedPath), { recursive: true });
+                await Promise.all([
+                    writeFile(actualPath, fileContent, "utf8"),
+                    writeFile(expectedPath, fileContent, "utf8")
+                ]);
+            })
+        );
+
+        const stats = await FixtureRunner.compareDirectoryTrees(actualDirectory, expectedDirectory);
+        assert.equal(stats.totalComparedFiles, fileCount);
+        assert.equal(stats.peakBufferedFileCount, 2);
     } finally {
         await rm(rootPath, { recursive: true, force: true });
     }
@@ -359,47 +560,6 @@ void test("failed fixture comparisons preserve the adapter changed flag in profi
         assert.equal(report.entries.length, 1);
         assert.equal(report.entries[0]?.status, "failed");
         assert.equal(report.entries[0]?.changed, true);
-    } finally {
-        await rm(rootPath, { recursive: true, force: true });
-    }
-});
-
-void test("runner-owned comparison mode strips doc comment annotations and trims text", async () => {
-    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-comparison-"));
-    await createTextFixtureCase(
-        rootPath,
-        "integration-like",
-        {
-            fixture: {
-                kind: "integration",
-                comparison: "trimmed-strip-doc-comment-annotations"
-            }
-        },
-        "input\n",
-        "/// @desc ignored\nexpected\n"
-    );
-
-    try {
-        const result = await FixtureRunner.runFixtureSuite({
-            fixtureRoot: rootPath,
-            adapter: {
-                workspaceName: "integration",
-                suiteName: "integration fixtures",
-                supports(kind) {
-                    return kind === "integration";
-                },
-                async run({ runProfiledStage }) {
-                    return await runProfiledStage("format", async () => ({
-                        resultKind: "text",
-                        outputText: "expected\n",
-                        changed: true
-                    }));
-                }
-            }
-        });
-
-        assert.equal(result.executionResults.length, 1);
-        assert.deepEqual(result.failures, []);
     } finally {
         await rm(rootPath, { recursive: true, force: true });
     }

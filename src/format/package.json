@@ -17,7 +17,7 @@
   "scripts": {
     "build:types": "tsc -p tsconfig.json",
     "clean:types": "rm -rf dist",
-    "test": "pnpm run clean:types && pnpm run build:types && node --test dist/test/*.test.js",
+    "test": "pnpm run clean:types && pnpm run build:types && node --test-force-exit --test dist/test/*.test.js",
     "prettier:format:raw": "pnpm run build:types && pnpm exec -- prettier $npm_config_path --plugin=$npm_package_config_root_path/dist/src/format-entry.js --ignore-path=$npm_package_config_root_path/../cli/.prettierignore --ignore-unknown --log-level=warn --no-error-on-unmatched-pattern",
     "example": "pnpm run prettier:format:raw --path=test/test14.input.gml",
     "prettier:format": "pnpm run build:types && pnpm --filter @gmloop/cli run build:types && node ../cli/dist/index.js $npm_config_path"
@@ -27,13 +27,14 @@
     "@gmloop/parser": "workspace:*"
   },
   "devDependencies": {
-    "@gmloop/fixture-runner": "workspace:*"
+    "@gmloop/fixture-runner": "workspace:*",
+    "typescript": "catalog:",
+    "@types/node": "catalog:"
   },
   "engines": {
     "node": ">=22.5.0"
   },
   "peerDependencies": {
-    "prettier": "^3.0.0"
-  },
-  "packageManager": "pnpm@10.28.0"
+    "prettier": "catalog:"
+  }
 }

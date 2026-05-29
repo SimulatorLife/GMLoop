@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 import { Core } from "../../../index.js";
 
@@ -43,6 +43,6 @@ void test("Core.copyDocCommentArrayFlags returns target for chaining", () => {
 void test("Core.copyDocCommentArrayFlags handles non-array inputs gracefully", () => {
     const target = ["line"] as any;
 
-    assert.doesNotThrow(() => Core.copyDocCommentArrayFlags(null as any, target));
-    assert.doesNotThrow(() => Core.copyDocCommentArrayFlags(["line"] as any, null as any));
+    assert.doesNotThrow(() => Core.copyDocCommentArrayFlags(null, target));
+    assert.doesNotThrow(() => Core.copyDocCommentArrayFlags(["line"], null));
 });

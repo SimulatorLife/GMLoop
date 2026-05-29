@@ -1,4 +1,4 @@
-import { strict as assert } from "node:assert";
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,9 +18,9 @@ import {
 
 const xmlHeader = '<?xml version="1.0" encoding="utf-8"?>\n';
 
-// These tests intentionally rely on assert.strictEqual-style comparisons because
-// Node.js deprecated the legacy assert.equal API. Behaviour has been
-// revalidated via `pnpm test src/cli/test/detect-test-regressions.test.js`.
+// This file uses assert.strictEqual and assert.deepStrictEqual (from node:assert/strict)
+// so that Node.js' deprecated assert.equal / assert.deepEqual aliases are not exercised.
+// Regression coverage confirmed via `pnpm test src/cli/test/generate-quality-report.test.js`.
 
 function writeXml(dir, name, contents) {
     fs.mkdirSync(dir, { recursive: true });
@@ -215,8 +215,28 @@ void test("ignores checkstyle reports when scanning result directories", () => {
     assert.strictEqual(head.stats.total, 1);
     assert.strictEqual(head.stats.failed, 1);
     assert.strictEqual([...head.results.keys()][0], "sample :: suite :: real failure");
-    assert.equal(
+    assert.strictEqual(
         head.notes.some((note) => note.includes("Ignoring checkstyle report reports/eslint-checkstyle.xml")),
+        true
+    );
+});
+
+void test("ignores malformed checkstyle-like XML without attempting expensive test-case parsing", () => {
+    const resultsDir = path.join(workspace, "reports");
+
+    writeXml(
+        resultsDir,
+        "eslint-checkstyle-broken",
+        `<checkstyle version="1.0">
+      <file name="src/example.js">
+        <error line="1" severity="error" message="nope" source="lint" />`
+    );
+
+    const result = readTestResults(["reports"], { workspace });
+
+    assert.strictEqual(result.stats.total, 0);
+    assert.strictEqual(
+        result.notes.some((note) => note.includes("Ignoring checkstyle report reports/eslint-checkstyle-broken.xml")),
         true
     );
 });
@@ -296,7 +316,7 @@ void test("reportRegressionSummary returns failure details when regressions exis
     );
 
     assert.strictEqual(summary.exitCode, 1);
-    assert.deepEqual(summary.lines, [
+    assert.deepStrictEqual(summary.lines, [
         "New failing tests detected (compared to base using PR head):",
         "- suite :: test (passed -> failed)"
     ]);
@@ -306,7 +326,7 @@ void test("reportRegressionSummary returns success details when no regressions e
     const summary = reportRegressionSummary([], "PR head");
 
     assert.strictEqual(summary.exitCode, 0);
-    assert.deepEqual(summary.lines, ["No new failing tests compared to base using PR head."]);
+    assert.deepStrictEqual(summary.lines, ["No new failing tests compared to base using PR head."]);
 });
 
 void test("reportRegressionSummary clarifies when regressions offset resolved failures", () => {
@@ -333,7 +353,7 @@ void test("reportRegressionSummary clarifies when regressions offset resolved fa
     );
 
     assert.strictEqual(summary.exitCode, 1);
-    assert.deepEqual(summary.lines, [
+    assert.deepStrictEqual(summary.lines, [
         "New failing tests detected (compared to base using PR head):",
         "- suite :: new failure (passed -> failed)",
         "Note: 1 previously failing test is now passing or missing, so totals may appear unchanged."
@@ -425,10 +445,10 @@ void test("detectRegressions accepts heterogeneous result containers", () => {
 
     const regressions = detectRegressions(base, target);
 
-    assert.equal(regressions.length, 1);
-    assert.equal(regressions[0].from, "passed");
-    assert.equal(regressions[0].to, "failed");
-    assert.equal(regressions[0].detail?.displayName, "suite :: test :: scenario");
+    assert.strictEqual(regressions.length, 1);
+    assert.strictEqual(regressions[0].from, "passed");
+    assert.strictEqual(regressions[0].to, "failed");
+    assert.strictEqual(regressions[0].detail?.displayName, "suite :: test :: scenario");
 });
 
 void test("does not treat a JUnit-undefined-wrapper renamed failure as a regression", () => {
@@ -1089,6 +1109,74 @@ void test("quality report separates pre-existing and new failures in target rows
     assert.match(markdown, /\| Merged \| 2 \| 1 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
 });
 
+void test("quality report workspace table shows only PR head workspace totals", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="base">
+        <testcase name="base parser test" classname="suite" file="/repo/src/parser/dist/test/base.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+    writeXml(
+        headDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="head">
+        <testcase name="parser pass" classname="suite" file="/repo/src/parser/dist/test/parser-pass.test.js" />
+        <testcase name="parser fail" classname="suite" file="/repo/src/parser/dist/test/parser-fail.test.js">
+          <failure message="failure" />
+        </testcase>
+        <testcase name="root integration pass" classname="suite" file="/repo/test/dist/root-integration.test.js" />
+        <testcase name="ui pass" classname="suite" file="/repo/src/ui/dist/test/ui-pass.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+    writeXml(
+        headDir,
+        "mcp",
+        `<testsuites>
+      <testsuite name="mcp">
+        <testcase name="mcp pass" classname="suite" file="dist/test/mcp-pass.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+    writeXml(
+        mergeDir,
+        "suite",
+        `<testsuites>
+      <testsuite name="merge">
+        <testcase name="merge ui test" classname="suite" file="/repo/src/ui/dist/test/merge-ui.test.js" />
+      </testsuite>
+    </testsuites>`
+    );
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: mergeDir,
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 0);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /\| mcp \| 1 \| 1 \| 0 \| 0 \|/u);
+    assert.match(markdown, /\| parser \| 2 \| 1 \| 1 \| 0 \|/u);
+    assert.match(markdown, /\| ui \| 1 \| 1 \| 0 \| 0 \|/u);
+    assert.doesNotMatch(markdown, /\| dist \|/u);
+    assert.doesNotMatch(markdown, /\| parser \| 1 \| 1 \| 0 \| 0 \|/u);
+    assert.doesNotMatch(markdown, /\| ui \| 2 \|/u);
+});
+
 void test("quality report detects a target synthetic build failure as a regression", () => {
     const baseDir = path.join(workspace, "base/reports");
     const headDir = path.join(workspace, "head/reports");
@@ -1143,6 +1231,51 @@ void test("quality report detects a target synthetic build failure as a regressi
     assert.match(markdown, /build :: pnpm run build:ts/u);
 });
 
+void test("quality report prioritizes lint errors before test regression status", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "suite",
+        `<testsuites><testsuite name="sample"><testcase name="stable" classname="suite" /></testsuite></testsuites>`
+    );
+    writeXml(
+        headDir,
+        "suite",
+        `<testsuites><testsuite name="sample"><testcase name="stable" classname="suite" /></testsuite></testsuites>`
+    );
+    writeXml(
+        mergeDir,
+        "suite",
+        `<testsuites><testsuite name="sample"><testcase name="stable" classname="suite"><failure message="regression" /></testcase></testsuite></testsuites>`
+    );
+    writeXml(
+        mergeDir,
+        "eslint-checkstyle",
+        `<checkstyle version="1.0"><file name="src/example.ts"><error line="1" severity="error" message="lint error" source="lint" /></file></checkstyle>`
+    );
+
+    assert.throws(
+        () =>
+            runGenerateQualityReport({
+                command: createMockCommand({
+                    base: baseDir,
+                    head: headDir,
+                    merge: mergeDir,
+                    reportFile
+                })
+            }),
+        isCliUsageError
+    );
+    process.exitCode = undefined;
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /❌ Lint errors detected on gate target \(Merged\): 1\./u);
+});
+
 void test("command accepts options without positional arguments", async () => {
     const command = createGenerateQualityReportCommand();
 
@@ -1189,4 +1322,73 @@ void test("command rejects excess positional arguments", async () => {
             return error.code === "commander.excessArguments";
         }
     );
+});
+
+void test("readTestResults extracts workspace name from report file paths", () => {
+    const headDir = path.join(workspace, "reports");
+
+    // Write test XML in a structure that mimics workspace layout
+    fs.mkdirSync(path.join(headDir, "src", "cli", "test"), { recursive: true });
+    writeXml(
+        path.join(headDir, "src", "cli", "test"),
+        "tests",
+        '<testsuites><testsuite name="cli"><testcase name="cli test" classname="test" /></testsuite></testsuites>'
+    );
+
+    const result = readTestResults(["reports"], { workspace });
+
+    assert.strictEqual(result.usedDir !== null, true);
+    const cases = (result as { cases: Array<{ workspace: string }> }).cases;
+    assert.strictEqual(cases.length, 1);
+    assert.strictEqual(cases[0].workspace, "cli");
+});
+
+void test("readTestResults extracts workspace names from nested paths", () => {
+    const headDir = path.join(workspace, "reports");
+
+    // Simulate tests from multiple workspaces
+    fs.mkdirSync(path.join(headDir, "src", "core", "test"), { recursive: true });
+    fs.mkdirSync(path.join(headDir, "src", "parser", "test"), { recursive: true });
+    fs.mkdirSync(path.join(headDir, "src", "lint", "test"), { recursive: true });
+
+    writeXml(
+        path.join(headDir, "src", "core", "test"),
+        "tests",
+        '<testsuites><testsuite name="core"><testcase name="core test" classname="test" /></testsuite></testsuites>'
+    );
+    writeXml(
+        path.join(headDir, "src", "parser", "test"),
+        "tests",
+        '<testsuites><testsuite name="parser"><testcase name="parser test" classname="test" /></testsuite></testsuites>'
+    );
+    writeXml(
+        path.join(headDir, "src", "lint", "test"),
+        "tests",
+        '<testsuites><testsuite name="lint"><testcase name="lint test" classname="test" /></testsuite></testsuites>'
+    );
+
+    const result = readTestResults(["reports"], { workspace });
+    const cases = (result as { cases: Array<{ workspace: string }> }).cases;
+
+    assert.strictEqual(cases.length, 3);
+    const workspaces = cases.map((c) => c.workspace).sort();
+    assert.deepStrictEqual(workspaces, ["core", "lint", "parser"]);
+});
+
+void test("readTestResults handles missing workspace info gracefully", () => {
+    const headDir = path.join(workspace, "reports");
+
+    // Write to root-level reports directory without workspace structure
+    fs.mkdirSync(headDir, { recursive: true });
+    writeXml(
+        headDir,
+        "tests",
+        '<testsuites><testsuite name="root"><testcase name="root test" classname="test" /></testsuite></testsuites>'
+    );
+
+    const result = readTestResults(["reports"], { workspace });
+    const cases = (result as { cases: Array<{ workspace: string }> }).cases;
+
+    assert.strictEqual(cases.length, 1);
+    assert.strictEqual(cases[0].workspace, "");
 });

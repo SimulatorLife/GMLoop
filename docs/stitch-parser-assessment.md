@@ -30,7 +30,7 @@
 
 ## Our parser & workspace architecture
 - Our parser stack (`src/parser/`) is ANTLR-driven: grammars (`GameMakerLanguageLexer.g4` and `GameMakerLanguageParser.g4`) under `src/parser/` generate `./generated/**`, and `src/parser/src/gml-parser.ts` wraps the generated classes with comment extraction, location trimming, escape normalization, and `ParserOptions` (`src/parser/src/types/index.ts`). This parser produces a structured AST optimized for our Prettier plugin and eventual transpiler.
-- The Prettier plugin (`src/format/`) uses that AST plus our `semantic` layer (`src/semantic/`) to format GML, hoist loop lengths, condense structs, enforce global variable rules, and feed our CLI (`src/cli/`). The `README.md` and `docs/semantic-scope-plan.md` describe how the semantic index tracks identifier casing, scopes, and project detection, and we already own the tooling around `feather` metadata, live reloading, and future refactor support in `src/refactor/`.
+- The Prettier plugin (`src/format/`) uses that AST plus our `semantic` layer (`src/semantic/`) to format GML, hoist loop lengths, condense structs, enforce global variable rules, and feed our CLI (`src/cli/`). The `README.md` and `docs/target-state.md` describe how the semantic index tracks identifier casing, scopes, and project detection, and we already own the tooling around `feather` metadata, live reloading, and future refactor support in `src/refactor/`.
 - `resources/` stores parser metadata such as identifier inventories and the Feather dataset, which mirrors what Stitch’s `@bscotch/gamemaker-releases` and native spec files provide but remains under our control and is tailored to formatting concerns.
 - Our CLI wrapper sits in `src/cli/` and exposes commands through `src/cli/src/commands/`, so we expose all tooling through a single, discoverable entry point (per `AGENTS.md`). We do not currently maintain a full `.yyp` project model or asset rename helpers within the formatter workspace; that logic lives externally in Stitch.
 
@@ -40,7 +40,7 @@
 | Parser generator | Chevrotain with hand-written lexer, parser, and visitor layers (`packages/parser/src/lexer.ts`, `parser.ts`, `visitor/`). | ANTLR 4 grammars (`GameMakerLanguage*.g4`) with generated runtime under `src/parser/generated`. |
 | AST/CST | Produces a typed CST (`gml-cst.d.ts`) plus visitors; comments are attached at the project/asset level. | Produces formatted AST nodes for Prettier/Transpiler via `src/parser/src/ast/`; comment/whitespace attachment is built into `gml-parser.ts`. |
 | Project scope | Deep project model: `.yyp` parsing, asset trees, rename/delete helpers, `Code` objects, diagnostics, `.yy` rewrites. | Focused on formatting semantics, AST normalization, and eventually JS transpilation; project-aware logic lives in `semantic` and CLI tooling rather than a generalized `Project` class. |
-| Metadata feeds | Relies on `@bscotch/gamemaker-releases`, release-specific specs, and `@bscotch/yy` topologies for `.yy` XML handling. | Maintains `resources/feather` and semantic metadata plus future plans for identifier casing and live reload (see `docs/semantic-scope-plan.md`). |
+| Metadata feeds | Relies on `@bscotch/gamemaker-releases`, release-specific specs, and `@bscotch/yy` topologies for `.yy` XML handling. | Maintains `resources/feather` and semantic metadata plus future plans for identifier casing and live reload (see `docs/target-state.md`). |
 | Diagnostics | Evented diagnostics carried via `onDiagnostics` payloads from `Project`. | Formatter diagnostics mostly surface through Prettier errors and semantic checks; no project-level event emitter yet. |
 | Runtime/platform | Built/tested mostly on Windows; script logs show fallback to embedded spec data when config is absent. | Node.js 25+ with macOS/Linux support baked into repo instructions; `AGENTS.md` forbids `.js` sources or dynamic imports. |
 | Dependencies | `chevrotain`, `magic-string`, `zod`, `@bscotch/yy`, `@bscotch/stitch-config`, `@bscotch/gamemaker-releases`. | Prettier + ANTLR + our shared `/*` packages; per workspace instructions keep formatting deps localized to `plugin`. |
@@ -339,27 +339,6 @@ The parser also emitted a `SYNTAX ERROR` for `scripts/Recovery/Recovery.gml` whi
 
 ## References
 - `https://github.com/bscotch/stitch/tree/develop/packages/parser`
-- `packages/parser/src/project.ts`
-- `packages/parser/src/project.asset.ts`
-- `packages/parser/src/project.code.ts`
-- `packages/parser/src/lexer.ts`, `packages/parser/src/parser.ts`
-- `packages/parser/gml-cst.d.ts`
-- `src/parser/src/gml-parser.ts`
-- `docs/semantic-scope-plan.md`
-- `src/semantic`
 - `https://github.com/bscotch/stitch/tree/develop/packages/launcher`
-- `packages/launcher/src/lib/GameMakerLauncher.ts`
-- `packages/launcher/src/lib/GameMakerIde.ts`
-- `packages/launcher/src/lib/GameMakerRuntime.ts`
-- `packages/launcher/src/lib/GameMakerRuntime.command.ts`
-- `packages/launcher/src/lib/GameMakerComponent.ts`
-- `packages/launcher/src/lib/utility.ts`
 - `https://github.com/bscotch/stitch/tree/develop/packages/yy`
-- `packages/yy/src/Yy.ts`
-- `packages/yy/src/Yy.parse.ts`
-- `packages/yy/src/Yy.stringify.ts`
-- `src/semantic/src/identifier-case/asset-rename-executor.ts`
-- `src/semantic/src/identifier-case/asset-renames/planner.ts`
-- `src/semantic/src/project-index/resource-analysis.ts`
-- `src/cli/src/modules/refactor/semantic-bridge.ts`
-- `src/refactor/src/refactor-engine.ts`
+- https://github.com/YoYoGames/gm-cli

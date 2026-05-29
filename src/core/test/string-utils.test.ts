@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 // Prefer strict assertion helpers to avoid relying on Node.js' deprecated
 // loose equality variants like assert.equal/assert.deepEqual.
@@ -84,7 +84,10 @@ void test("createListSplitPattern treats null options like omitted options", () 
 });
 
 void test("createListSplitPattern requires a separator when whitespace is disabled", () => {
-    assert.throws(() => createListSplitPattern([]), TypeError);
+    assert.throws(
+        () => createListSplitPattern([]),
+        (error: unknown) => error instanceof TypeError
+    );
 });
 
 void test("toNormalizedLowerCaseString trims and lowercases input values", () => {
@@ -219,10 +222,22 @@ void test("assertNonEmptyString returns the validated value", () => {
 });
 
 void test("assertNonEmptyString throws when value is not a non-empty string", () => {
-    assert.throws(() => assertNonEmptyString(""), TypeError);
-    assert.throws(() => assertNonEmptyString("   ", { trim: true }), TypeError);
-    assert.throws(() => assertNonEmptyString(null), TypeError);
-    assert.throws(() => assertNonEmptyString(42), TypeError);
+    assert.throws(
+        () => assertNonEmptyString(""),
+        (error: unknown) => error instanceof TypeError
+    );
+    assert.throws(
+        () => assertNonEmptyString("   ", { trim: true }),
+        (error: unknown) => error instanceof TypeError
+    );
+    assert.throws(
+        () => assertNonEmptyString(null),
+        (error: unknown) => error instanceof TypeError
+    );
+    assert.throws(
+        () => assertNonEmptyString(42),
+        (error: unknown) => error instanceof TypeError
+    );
 });
 
 void test("assertNoLeadingOrTrailingWhitespace returns the value when valid", () => {
@@ -232,21 +247,48 @@ void test("assertNoLeadingOrTrailingWhitespace returns the value when valid", ()
 });
 
 void test("assertNoLeadingOrTrailingWhitespace throws when value has leading whitespace", () => {
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace(" value"), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("\tvalue"), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("\nvalue"), Error);
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace(" value"),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("\tvalue"),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("\nvalue"),
+        (error: unknown) => error instanceof Error
+    );
 });
 
 void test("assertNoLeadingOrTrailingWhitespace throws when value has trailing whitespace", () => {
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("value "), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("value\t"), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("value\n"), Error);
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("value "),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("value\t"),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("value\n"),
+        (error: unknown) => error instanceof Error
+    );
 });
 
 void test("assertNoLeadingOrTrailingWhitespace throws when value has both leading and trailing whitespace", () => {
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace(" value "), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("\tvalue\t"), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("  value  "), Error);
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace(" value "),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("\tvalue\t"),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("  value  "),
+        (error: unknown) => error instanceof Error
+    );
 });
 
 void test("assertNoLeadingOrTrailingWhitespace preserves internal whitespace", () => {
@@ -291,6 +333,7 @@ void test("describeValueForError formats primitives and structured values", () =
 void test("formatWithIndefiniteArticle selects the correct article", () => {
     assert.strictEqual(formatWithIndefiniteArticle("array"), "an array");
     assert.strictEqual(formatWithIndefiniteArticle("string"), "a string");
+    assert.strictEqual(formatWithIndefiniteArticle("8-bit integer"), "an 8-bit integer");
     assert.strictEqual(formatWithIndefiniteArticle(""), "a");
 });
 

@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeRecord,
     type AstNodeWithType,
@@ -12,10 +13,10 @@ import {
     isAstNodeWithType,
     isIdentifierNode,
     rangeContainsCommentToken,
+    unwrapParenthesizedExpression,
     walkAstNodes,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type LoopNode = AstNodeWithType &
     Readonly<{
@@ -101,15 +102,6 @@ function readIdentifierName(node: unknown): string | null {
     }
 
     return node.name;
-}
-
-function unwrapParenthesizedExpression(node: unknown): unknown {
-    let current = node;
-    while (isAstNodeRecord(current) && current.type === "ParenthesizedExpression") {
-        current = current.expression;
-    }
-
-    return current;
 }
 
 function readRootIdentifierName(node: unknown): string | null {
@@ -258,7 +250,7 @@ function collectLoopMutationSummary(loopNode: LoopNode): LoopMutationSummary {
             return;
         }
 
-        if (node.type === "IncDecExpression" || node.type === "IncDecStatement") {
+        if (Core.isIncDecNode(node)) {
             collectMutatedNamesFromTarget(node.argument, mutatedIdentifierNames, mutatedMemberRoots);
             return;
         }
@@ -302,7 +294,7 @@ function isDisallowedContextForReplacement(parent: AstNodeWithType | null, paren
         return true;
     }
 
-    if ((parent.type === "IncDecExpression" || parent.type === "IncDecStatement") && parentKey === "argument") {
+    if (Core.isIncDecNode(parent) && parentKey === "argument") {
         return true;
     }
 

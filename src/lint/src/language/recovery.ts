@@ -2,6 +2,7 @@ import { Core } from "@gmloop/core";
 
 import { forEachScientificNotationToken } from "../malformed/scientific-notation-scan.js";
 import { recoverParseSourceFromMissingBrace } from "../malformed/source-preprocessing.js";
+import { findNextNonWhitespaceIndex, findPreviousNonWhitespaceIndex } from "../rules/gml/rule-base-helpers.js";
 
 export type RecoveryMode = "none" | "limited";
 
@@ -68,24 +69,31 @@ function isArgumentBoundaryCharacter(character: string): boolean {
     return character === ")" || character === "]" || character === "}" || character === ",";
 }
 
-function findPreviousNonWhitespaceIndex(sourceText: string, fromIndex: number): number {
-    for (let cursor = fromIndex; cursor >= 0; cursor -= 1) {
-        if (!/\s/u.test(sourceText[cursor] ?? "")) {
-            return cursor;
-        }
-    }
-
-    return -1;
+function isLineTerminator(character: string): boolean {
+    return character === "\n" || character === "\r";
 }
 
-function findNextNonWhitespaceIndex(sourceText: string, fromIndex: number): number {
-    for (let cursor = fromIndex; cursor < sourceText.length; cursor += 1) {
-        if (!/\s/u.test(sourceText[cursor] ?? "")) {
-            return cursor;
+function advanceOverLineComment(sourceText: string, startAfter: number): number {
+    let index = startAfter;
+    while (index < sourceText.length) {
+        if (isLineTerminator(sourceText[index] ?? "")) {
+            break;
         }
+        index += 1;
     }
+    return index;
+}
 
-    return -1;
+function maskLineComment(sourceText: string, chars: string[], startAfter: number): number {
+    let index = startAfter;
+    while (index < sourceText.length) {
+        if (isLineTerminator(sourceText[index] ?? "")) {
+            break;
+        }
+        chars[index] = " ";
+        index += 1;
+    }
+    return index;
 }
 
 function maskCommentsAndStringsForRecovery(sourceText: string): string {
@@ -100,14 +108,7 @@ function maskCommentsAndStringsForRecovery(sourceText: string): string {
             chars[index] = " ";
             chars[index + 1] = " ";
             index += 2;
-            while (index < sourceText.length) {
-                const lineCharacter = sourceText[index] ?? "";
-                if (lineCharacter === "\n" || lineCharacter === "\r") {
-                    break;
-                }
-                chars[index] = " ";
-                index += 1;
-            }
+            index = maskLineComment(sourceText, chars, index);
             continue;
         }
 
@@ -207,8 +208,8 @@ function isLikelyCallArgumentGap(sourceText: string, leftIndex: number): boolean
     while (cursor >= 0) {
         const character = sourceText[cursor] ?? "";
         if (character === "(") {
-            const calleeEndIndex = findPreviousNonWhitespaceIndex(sourceText, cursor - 1);
-            if (calleeEndIndex === -1) {
+            const calleeEndIndex = findPreviousNonWhitespaceIndex(sourceText, cursor, false);
+            if (calleeEndIndex === null) {
                 return false;
             }
 
@@ -218,8 +219,8 @@ function isLikelyCallArgumentGap(sourceText: string, leftIndex: number): boolean
                     return false;
                 }
 
-                const beforeCalleeIndex = findPreviousNonWhitespaceIndex(sourceText, calleeToken.start - 1);
-                if (beforeCalleeIndex === -1) {
+                const beforeCalleeIndex = findPreviousNonWhitespaceIndex(sourceText, calleeToken.start, false);
+                if (beforeCalleeIndex === null) {
                     return true;
                 }
 
@@ -461,9 +462,11 @@ function applyRecoveryTextInsertions(
 
     chunks.push(sourceText.slice(copiedThrough));
 
+    // cloneObjectEntries shallow-clones each entry before deep-freezing so
+    // mutations in the returned arrays cannot corrupt the accumulated state.
     return Object.freeze({
         parseSource: chunks.join(""),
-        textInsertions: Object.freeze(textInsertions.map((entry) => Object.freeze({ ...entry })))
+        textInsertions: Object.freeze(Core.cloneObjectEntries(textInsertions))
     });
 }
 
@@ -477,13 +480,7 @@ function collectStringLiteralLengthWrapInsertions(sourceText: string): ReadonlyA
 
         if (character === "/" && nextCharacter === "/") {
             index += 2;
-            while (index < sourceText.length) {
-                const lineCharacter = sourceText[index] ?? "";
-                if (lineCharacter === "\n" || lineCharacter === "\r") {
-                    break;
-                }
-                index += 1;
-            }
+            index = advanceOverLineComment(sourceText, index);
             continue;
         }
 
@@ -574,9 +571,9 @@ function createArgumentSeparatorProjection(sourceText: string): Readonly<{
         }
         const whitespaceRunEnd = index - 1;
 
-        const previousIndex = findPreviousNonWhitespaceIndex(recoveryScanSource, whitespaceRunStart - 1);
-        const nextIndex = findNextNonWhitespaceIndex(recoveryScanSource, whitespaceRunEnd + 1);
-        if (previousIndex === -1 || nextIndex === -1) {
+        const previousIndex = findPreviousNonWhitespaceIndex(recoveryScanSource, whitespaceRunStart, false);
+        const nextIndex = findNextNonWhitespaceIndex(recoveryScanSource, whitespaceRunEnd);
+        if (previousIndex === null || nextIndex === null) {
             continue;
         }
 
@@ -610,7 +607,9 @@ function createArgumentSeparatorProjection(sourceText: string): Readonly<{
 
     chunks.push(sourceText.slice(copiedThrough));
 
-    const frozenInsertions = Object.freeze(insertions.map((entry) => Object.freeze({ ...entry })));
+    // cloneObjectEntries shallow-clones each entry before deep-freezing so
+    // mutations in the returned arrays cannot corrupt the accumulated state.
+    const frozenInsertions = Object.freeze(Core.cloneObjectEntries(insertions));
     return Object.freeze({
         parseSource: chunks.join(""),
         insertions: frozenInsertions,

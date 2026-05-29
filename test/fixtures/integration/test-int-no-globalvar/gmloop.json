@@ -1,8 +1,10 @@
 {
   "printWidth": 120,
   "allowInlineControlFlowBlocks": false,
-  "lintRules": {
-    "gml/no-globalvar": "error"
+  "refactor": {
+    "codemods": {
+      "globalvarToGlobal": {}
+    }
   },
   "fixture": {
     "kind": "integration",

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { trimArrayToMaxSize } from "../src/runtime/undo-stack-policy.js";
+import { trimArrayToMaxSize } from "../browser/runtime/undo-stack-policy.js";
 
 void test("trimArrayToMaxSize leaves the array unchanged when max size is unbounded (zero)", () => {
     const array = [1, 2, 3, 4, 5];

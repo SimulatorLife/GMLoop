@@ -26,13 +26,9 @@
 /**
  * Semantic kind classification for identifiers and call targets.
  *
- * SOURCE OF TRUTH: @gmloop/semantic (src/symbols/sem-oracle.ts)
- * This is a re-declaration maintained for transpiler use. The canonical definition
- * lives in the semantic package. Keep this in sync with that definition.
- *
- * NOTE: This duplication exists because the Semantic package exports a const namespace
- * which cannot be referenced in type position. A future architecture improvement would
- * export both the namespace and a separate type-only export to enable direct imports.
+ * This is the canonical definition owned by the transpiler. The semantic package
+ * (BasicSemanticOracle) uses a structurally compatible but independently declared
+ * version of this type so that it does not create a dependency on the transpiler.
  */
 export type SemKind = "local" | "self_field" | "other_field" | "global_field" | "builtin" | "script";
 

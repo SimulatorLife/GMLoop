@@ -17,6 +17,7 @@ checks.
 ## 2. Install dependencies
 
 ```bash
+git submodule update --init --recursive
 nvm use
 pnpm install
 ```
@@ -26,14 +27,14 @@ Use `pnpm install` only after verifying the lockfile is current.
 
 ## 3. Validate the workspace
 
-Run the aggregated checks before opening a pull request:
+Start with the baseline repository checks used in CI-style local validation:
 
 ```bash
-pnpm run check
+pnpm run build:ts
+pnpm run lint:quiet
 ```
 
-`pnpm run check` runs the formatter audit, CI-mode lint, and the full Node.js test
-suite. Re-run targeted suites when you touch scoped areas:
+Then run targeted suites for the workspace(s) you touched:
 
 ```bash
 pnpm run test:parser
@@ -43,15 +44,15 @@ pnpm run test:cli
 pnpm run test:transpiler
 pnpm run test:runtime-wrapper
 pnpm run test:refactor
-pnpm run lint
-pnpm run format:check
 ```
 
 Cross-module integration fixtures under `test/fixtures/integration/` are root-level
 integration coverage and run only through `pnpm run test`.
 
-Fixtures under `src/format/test/` and `src/parser/test/input/` are golden—do not
-edit them unless you are intentionally changing formatter or parser output.
+Fixtures under `test/fixtures/`, `src/format/test/fixtures/`,
+`src/parser/test/**/*.gml`, and `src/lint/test/**/*.gml` are golden—do not edit
+them unless you are intentionally changing formatter/parser/lint behavior and
+have explicit approval for fixture updates.
 
 Use the fixture profiling commands when performance work touches fixture runners
 or adapters:
@@ -91,6 +92,10 @@ command inventory. The global CLI help also notes that passing just a file or
 directory path runs the `format` command implicitly, which is useful for quick
 one-off formatting checks.
 
+Before large structural changes, review [`docs/target-state.md`](target-state.md)
+to keep parser/core/format ownership boundaries and workspace API rules aligned
+with project expectations.
+
 When you're ready to try the wrapper against a project, provide the target
 directory explicitly so the command has GameMaker sources to process:
 
@@ -102,6 +107,8 @@ pnpm run format:gml -- path/to/project
 
 * Start with the [documentation index](README.md) for deep dives and planning
   notes.
+* Read the [project target state](target-state.md) before making architecture or
+  ownership-boundary changes.
 * Review the [semantic subsystem reference](../src/semantic/README.md) before
   adjusting identifier-case discovery or project-index caching.
 

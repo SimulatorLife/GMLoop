@@ -32,7 +32,7 @@ installRecognitionExceptionLikeGuard();
  */
 function mergeParserOptions(baseOptions: ParserOptions, overrides: Partial<ParserOptions> | undefined): ParserOptions {
     const overrideObject = Core.isObjectLike(overrides) ? overrides : {};
-    const mergedOptions = Object.assign({}, baseOptions, overrideObject) as ParserOptions;
+    const mergedOptions = Object.assign({}, baseOptions, overrideObject);
     mergedOptions.sllPredictionMaxSourceLength = normalizeSllPredictionMaxSourceLength(
         mergedOptions.sllPredictionMaxSourceLength
     );
@@ -464,13 +464,3 @@ export class GMLParser {
         Core.simplifyLocationMetadata(obj);
     }
 }
-
-/**
- * Re-exported utility function for counting line breaks in a string.
- *
- * @remarks
- * This convenience export allows consumers to access Core.getLineBreakCount
- * directly from the parser module without importing @gmloop/core.
- * Useful for calculating line metrics or validating source spans.
- */
-export const getLineBreakCount: typeof Core.getLineBreakCount = Core.getLineBreakCount;

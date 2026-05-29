@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeRecord,
     type AstNodeWithType,
@@ -12,7 +13,6 @@ import {
     isIdentifierNode,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type VariableDeclaratorNode = AstNodeRecord &
     Readonly<{
@@ -137,7 +137,12 @@ function buildDirectReturnCandidate(
     bodyContainerNode: BodyContainerNode,
     declarationIndex: number
 ): DirectReturnCandidate | null {
-    if (Core.toNormalizedLowerCaseString(variableDeclarationNode.kind) !== "var") {
+    const declarationKind = Core.toNormalizedLowerCaseString(variableDeclarationNode.kind);
+    // Accept both `var` and `static` declarations — the same collapsing pattern is
+    // valid for both, and GameMaker allows the `var` keyword to be elided in local
+    // scope while `static` requires its keyword, so both represent legitimate
+    // single-variable declarations that should be candidates for direct return.
+    if (declarationKind !== "var" && declarationKind !== "static") {
         return null;
     }
 

@@ -2,8 +2,8 @@ import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { gmlRuleDeprecatedIdentifierServices } from "../gml-rule-services.js";
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, isAstNodeWithType, walkAstNodesWithParent } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { getDeprecatedIdentifierCatalogEntry } = gmlRuleDeprecatedIdentifierServices;
 
@@ -26,7 +26,7 @@ function canFixCatalogEntry(entry: DeprecatedCatalogEntry): boolean {
 }
 
 function readDeclaredPatternNames(node: unknown): ReadonlyArray<string> {
-    const identifierName = Core.getIdentifierName(node as never);
+    const identifierName = Core.getIdentifierName(node);
     if (identifierName) {
         return [identifierName.toLowerCase()];
     }
@@ -76,13 +76,13 @@ function collectScopedDeclaredIdentifiers(
         }
 
         if (node.type === "EnumDeclaration") {
-            const enumName = Core.getIdentifierName((node as Readonly<{ name?: unknown }>).name as never);
+            const enumName = Core.getIdentifierName((node as Readonly<{ name?: unknown }>).name);
             if (enumName) {
                 activeScope.names.add(enumName.toLowerCase());
             }
         }
 
-        if (node.type === "FunctionDeclaration" || node.type === "ConstructorDeclaration") {
+        if (Core.isFunctionLikeDeclaration(node)) {
             const functionName = (node as Readonly<{ id?: unknown }>).id;
             if (
                 typeof functionName === "string" &&
@@ -120,7 +120,7 @@ function collectScopedDeclaredIdentifiers(
         Object.freeze({
             start: scope.start,
             end: scope.end,
-            names: scope.names as ReadonlySet<string>
+            names: scope.names
         })
     );
 }
@@ -236,7 +236,7 @@ export function createNoLegacyApiRule(definition: GmlRuleDefinition): Rule.RuleM
                         }
 
                         if (node.type === "CallExpression") {
-                            const callee = Core.getCallExpressionIdentifier(node as never);
+                            const callee = Core.getCallExpressionIdentifier(node);
                             const identifierName = callee?.name;
                             if (typeof identifierName !== "string") {
                                 return;
@@ -259,7 +259,7 @@ export function createNoLegacyApiRule(definition: GmlRuleDefinition): Rule.RuleM
 
                         if (node.type === "MemberIndexExpression") {
                             const objectNode = (node as Readonly<{ object?: unknown }>).object;
-                            const identifierName = Core.getIdentifierName(objectNode as never);
+                            const identifierName = Core.getIdentifierName(objectNode);
                             if (typeof identifierName !== "string") {
                                 return;
                             }
@@ -286,7 +286,7 @@ export function createNoLegacyApiRule(definition: GmlRuleDefinition): Rule.RuleM
                             return;
                         }
 
-                        const identifierName = Core.getIdentifierName(node as never);
+                        const identifierName = Core.getIdentifierName(node);
                         if (!identifierName) {
                             return;
                         }

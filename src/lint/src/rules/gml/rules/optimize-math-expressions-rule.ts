@@ -1,7 +1,8 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { printExpression, readNodeText } from "../../../language/autofix-printing.js";
+import { gmlRuleAutofixServices } from "../gml-rule-services.js";
+import type { GmlRuleDefinition } from "../index.js";
 import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,
@@ -13,7 +14,6 @@ import {
     type SourceTextEdit,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 import { applyDivisionToMultiplication } from "../transforms/math-division-to-multiplication.js";
 import { cleanupMultiplicativeIdentityParentheses } from "../transforms/math-parentheses-cleanup.js";
 // manual-transforms provide a comprehensive suite of normalization helpers that
@@ -25,6 +25,7 @@ import {
     applyScalarCondensing,
     simplifyZeroDivisionNumerators
 } from "../transforms/math-traversal-normalization.js";
+import { evaluateSkipDecision } from "./optimize-math-skip-evaluator.js";
 
 const {
     getNodeStartIndex,
@@ -54,6 +55,25 @@ const COMMENT_SEQUENCE_PATTERN = /\/\/|\/\*|\*\//u;
 const MANUAL_MATH_CALL_SIGNAL_PATTERN =
     /\b(?:arccos|arcsin|arctan|arctan2|cos|darccos|darcsin|darctan|darctan2|dcos|degtorad|dsin|dtan|exp|lengthdir_[xy]|ln|log2|mean|point_direction|point_distance(?:_3d)?|power|radtodeg|sin|sqr|sqrt|tan)\s*\(/u;
 const NUMERIC_LITERAL_SIGNAL_PATTERN = /(?<![\w.])(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?(?![\w.])/iu;
+
+/**
+ * Guard threshold for divisor checks in `tryEvaluateExpression`.
+ *
+ * Strict equality (`rightValue === 0`) can fail to guard division when a
+ * divisor is the result of prior floating-point arithmetic.  For example,
+ * `1 / 3 * 3` evaluates to `0.9999999999999999` rather than exactly `1`, so
+ * a subsequent strict-zero guard would incorrectly pass and allow a
+ * division that would trap at runtime in GML.
+ *
+ * Using `Math.abs(value) <= ZERO_CHECK_EPSILON` (≈ 8.9e-15) safely rejects
+ * both genuinely zero operands and the small rounding artefacts that arise
+ * from typical GML numeric literals.
+ */
+const ZERO_CHECK_EPSILON = Number.EPSILON * 4;
+
+function isApproximatelyZero(value: number): boolean {
+    return Math.abs(value) <= ZERO_CHECK_EPSILON;
+}
 
 function tryEvaluateExpression(node: any): any {
     const unwrapped = unwrapParenthesized(node);
@@ -136,14 +156,14 @@ function tryEvaluateExpression(node: any): any {
                 return leftValue * rightValue;
             }
             case "/": {
-                return rightValue === 0 ? undefined : leftValue / rightValue;
+                return isApproximatelyZero(rightValue) ? undefined : leftValue / rightValue;
             }
             case "div": {
-                return rightValue === 0 ? undefined : Math.trunc(leftValue / rightValue);
+                return isApproximatelyZero(rightValue) ? undefined : Math.trunc(leftValue / rightValue);
             }
             case "mod":
             case "%": {
-                return rightValue === 0 ? undefined : leftValue % rightValue;
+                return isApproximatelyZero(rightValue) ? undefined : leftValue % rightValue;
             }
             case "xor": {
                 return Boolean(leftValue) !== Boolean(rightValue);
@@ -205,29 +225,34 @@ function canUseOpaqueMathFactor(node: any): boolean {
 function trimOuterParentheses(value: string): string {
     let text = value.trim();
     while (text.startsWith("(") && text.endsWith(")")) {
-        let depth = 0;
-        let balanced = true;
-        for (let index = 0; index < text.length; index += 1) {
-            const char = text[index];
-            if (char === "(") {
-                depth += 1;
-            } else if (char === ")") {
-                depth -= 1;
-                if (depth === 0 && index !== text.length - 1) {
-                    balanced = false;
-                    break;
-                }
-            }
-        }
+        const inner = text.slice(1, -1);
+        const trimmed = inner.trim();
 
-        if (!balanced || depth !== 0) {
+        // Stripping the outermost pair is only valid if the inner content is
+        // already clean whitespace (no leading/trailing parens that would be lost
+        // by a .trim() alone) and the inner parens are balanced.
+        if (trimmed.length < inner.length || !containsBalancedParentheses(trimmed)) {
             break;
         }
 
-        text = text.slice(1, -1).trim();
+        text = trimmed;
     }
 
     return text;
+}
+function containsBalancedParentheses(text: string): boolean {
+    let depth = 0;
+    for (const ch of text) {
+        if (ch === "(") {
+            depth += 1;
+        } else if (ch === ")") {
+            depth -= 1;
+            if (depth < 0) {
+                return false;
+            }
+        }
+    }
+    return depth === 0;
 }
 
 function collectMultiplicativeComponents(sourceText: string, node: any): MultiplicativeComponents | null {
@@ -242,7 +267,7 @@ function collectMultiplicativeComponents(sourceText: string, node: any): Multipl
     }
 
     if (canUseOpaqueMathFactor(unwrapped)) {
-        const text = readNodeText(sourceText, unwrapped);
+        const text = gmlRuleAutofixServices.readNodeText(sourceText, unwrapped);
         if (!text) {
             return null;
         }
@@ -387,7 +412,7 @@ function simplifyMathExpression(sourceText: string, node: any, _source?: string)
     }
 
     const simplified = normalizeLeadingNumericCoefficientOrder(multiplicativeExpression);
-    const originalText = readNodeText(sourceText, node);
+    const originalText = gmlRuleAutofixServices.readNodeText(sourceText, node);
     if (originalText && trimOuterParentheses(originalText) === trimOuterParentheses(simplified)) {
         return null;
     }
@@ -451,7 +476,7 @@ function extractHalfLengthdirRotationExpression(node: any, variableName: string,
                     unwrapParenthesized(args[0])?.type === "Literal" &&
                     unwrapParenthesized(args[0])?.value === 1
                 ) {
-                    return readNodeText(sourceText, args[1]);
+                    return gmlRuleAutofixServices.readNodeText(sourceText, args[1]);
                 }
             }
         }
@@ -517,7 +542,6 @@ const MATH_OPTIMIZATION_SIGNAL_PATTERN =
 const MATH_STRONG_SIGNAL_PATTERN =
     /[*/%]|\b(?:div|mod|power|sqrt|sqr|sin|cos|tan|dsin|dcos|dtan|degtorad|radtodeg|arctan2|darctan2|ln|exp|log2|point_distance(?:_3d)?|point_direction|lengthdir_[xy]|dot_product(?:_3d)?|mean)\b/u;
 const DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN = /[/%]|\b(?:div|mod)\b/u;
-const NUMERIC_COMPARISON_TOLERANCE = 1e-9;
 const MAX_MATH_OPTIMIZATION_CANDIDATE_TEXT_LENGTH = 2000;
 const MAX_MANUAL_NORMALIZATION_CANDIDATE_TEXT_LENGTH = 600;
 
@@ -565,12 +589,8 @@ function shouldAttemptManualNormalization(sourceTextOfNode: string): boolean {
     );
 }
 
-function areNumbersApproximatelyEqual(left: number, right: number): boolean {
-    return Math.abs(left - right) <= NUMERIC_COMPARISON_TOLERANCE;
-}
-
 function tryReadNumericLiteralValue(node: unknown): number | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression) {
         return null;
     }
@@ -579,7 +599,7 @@ function tryReadNumericLiteralValue(node: unknown): number | null {
 }
 
 function isCanonicalNumericLiteralText(sourceText: string, node: unknown): boolean {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "Literal") {
         return false;
     }
@@ -589,13 +609,13 @@ function isCanonicalNumericLiteralText(sourceText: string, node: unknown): boole
         return false;
     }
 
-    const literalText = readNodeText(sourceText, expression);
+    const literalText = gmlRuleAutofixServices.readNodeText(sourceText, expression);
     const canonicalText = formatCanonicalNumericLiteral(numericValue);
     return literalText !== null && canonicalText !== null && literalText === canonicalText;
 }
 
 function isCanonicalConstantNumericExpression(sourceText: string, node: unknown): boolean {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression) {
         return false;
     }
@@ -642,12 +662,12 @@ function tryBuildConstantNumericReplacement(sourceText: string, node: unknown): 
         return null;
     }
 
-    const originalText = readNodeText(sourceText, node);
+    const originalText = gmlRuleAutofixServices.readNodeText(sourceText, node);
     return originalText && originalText !== replacement ? replacement : null;
 }
 
 function collectAdditiveTerms(node: unknown, terms: unknown[]): boolean {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression) {
         return false;
     }
@@ -661,7 +681,7 @@ function collectAdditiveTerms(node: unknown, terms: unknown[]): boolean {
 }
 
 function tryReadSquaredOperandText(sourceText: string, node: unknown): string | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "*") {
         return null;
     }
@@ -670,7 +690,7 @@ function tryReadSquaredOperandText(sourceText: string, node: unknown): string | 
         return null;
     }
 
-    const operandText = readNodeText(sourceText, expression.left);
+    const operandText = gmlRuleAutofixServices.readNodeText(sourceText, expression.left);
     return operandText ? trimOuterParentheses(operandText) : null;
 }
 
@@ -690,14 +710,14 @@ function tryBuildGroupedSquareSumReplacement(sourceText: string, node: unknown):
 }
 
 function tryReadHalfScaledBase(node: unknown) {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression") {
         return null;
     }
 
     if (expression.operator === "/") {
         const denominatorValue = tryReadNumericLiteralValue(expression.right);
-        if (denominatorValue === null || !areNumbersApproximatelyEqual(denominatorValue, 2)) {
+        if (denominatorValue === null || !Core.areNumbersApproximatelyEqual(denominatorValue, 2)) {
             return null;
         }
 
@@ -709,12 +729,12 @@ function tryReadHalfScaledBase(node: unknown) {
     }
 
     const leftValue = tryReadNumericLiteralValue(expression.left);
-    if (leftValue !== null && areNumbersApproximatelyEqual(leftValue, 0.5)) {
+    if (leftValue !== null && Core.areNumbersApproximatelyEqual(leftValue, 0.5)) {
         return unwrapParenthesized(expression.right);
     }
 
     const rightValue = tryReadNumericLiteralValue(expression.right);
-    if (rightValue !== null && areNumbersApproximatelyEqual(rightValue, 0.5)) {
+    if (rightValue !== null && Core.areNumbersApproximatelyEqual(rightValue, 0.5)) {
         return unwrapParenthesized(expression.left);
     }
 
@@ -722,7 +742,7 @@ function tryReadHalfScaledBase(node: unknown) {
 }
 
 function tryBuildHalfLengthdirDifferenceReplacement(sourceText: string, node: unknown): string | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "-") {
         return null;
     }
@@ -764,8 +784,8 @@ function tryBuildHalfLengthdirDifferenceReplacement(sourceText: string, node: un
         return null;
     }
 
-    const baseText = readNodeText(sourceText, baseExpression);
-    const angleText = readNodeText(sourceText, rawAngleArgument);
+    const baseText = gmlRuleAutofixServices.readNodeText(sourceText, baseExpression);
+    const angleText = gmlRuleAutofixServices.readNodeText(sourceText, rawAngleArgument);
     if (!baseText || !angleText) {
         return null;
     }
@@ -781,7 +801,7 @@ type RatioMultiplierMatch = Readonly<{
 }>;
 
 function tryMatchRatioMultiplier(node: unknown): RatioMultiplierMatch | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "*") {
         return null;
     }
@@ -819,12 +839,12 @@ function formatCanonicalNumericLiteral(value: number): string | null {
         return null;
     }
 
-    if (Math.abs(value) <= NUMERIC_COMPARISON_TOLERANCE) {
+    if (Core.areNumbersApproximatelyEqual(value, 0)) {
         return "0";
     }
 
     const roundedInteger = Math.round(value);
-    if (areNumbersApproximatelyEqual(value, roundedInteger)) {
+    if (Core.areNumbersApproximatelyEqual(value, roundedInteger)) {
         return roundedInteger.toString();
     }
 
@@ -832,13 +852,13 @@ function formatCanonicalNumericLiteral(value: number): string | null {
 }
 
 function tryBuildGroupedRatioProductReplacement(sourceText: string, node: unknown): string | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "/") {
         return null;
     }
 
     const divisorValue = tryReadNumericLiteralValue(expression.right);
-    if (divisorValue === null || Math.abs(divisorValue) <= NUMERIC_COMPARISON_TOLERANCE) {
+    if (divisorValue === null || Core.areNumbersApproximatelyEqual(divisorValue, 0)) {
         return null;
     }
 
@@ -849,7 +869,7 @@ function tryBuildGroupedRatioProductReplacement(sourceText: string, node: unknow
 
     const scaledMultiplier = ratioMultiplierMatch.multiplier / divisorValue;
     const multiplierText = formatCanonicalNumericLiteral(scaledMultiplier);
-    const ratioText = readNodeText(sourceText, ratioMultiplierMatch.ratioExpression);
+    const ratioText = gmlRuleAutofixServices.readNodeText(sourceText, ratioMultiplierMatch.ratioExpression);
     if (!multiplierText || !ratioText) {
         return null;
     }
@@ -898,7 +918,7 @@ function collectAdditiveTermsForDotProduct(node: any, terms: any[]): boolean {
 }
 
 function isFastDotProductOperandCandidate(node: unknown): boolean {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || hasComment(expression)) {
         return false;
     }
@@ -954,8 +974,8 @@ function tryBuildFastDotProductReplacement(sourceText: string, node: any): strin
             return null;
         }
 
-        const leftText = readNodeText(sourceText, leftOperand);
-        const rightText = readNodeText(sourceText, rightOperand);
+        const leftText = gmlRuleAutofixServices.readNodeText(sourceText, leftOperand);
+        const rightText = gmlRuleAutofixServices.readNodeText(sourceText, rightOperand);
         if (!leftText || !rightText) {
             return null;
         }
@@ -1136,7 +1156,12 @@ function performDeadCodeElimination(bodyStatements: any[], sourceText: string, e
                     case "*=":
                     case "/=": {
                         const val = tryEvaluateNumericExpression(expr.right);
-                        if (val === 1) {
+                        // Strict === 1 catches the common exact case without epsilon overhead.
+                        // Epsilon-tolerant check handles the floating-point edge case where
+                        // rounding error produces a value like 0.9999999999999998 instead of 1.
+                        // Without this tolerance, expressions like `x *= 1 - 1e-16` or `x /= 1 + 1e-15`
+                        // would silently bypass the optimization and produce incorrect output.
+                        if (val === 1 || Core.areNumbersApproximatelyEqual(val, 1)) {
                             scheduleNodeRemoval(stmt, sourceText, edits);
                             handled = true;
                         }
@@ -1176,17 +1201,17 @@ function attemptManualNormalization(sourceText: string, node: any): string | nul
 
     const context = { sourceText };
     applyDivisionToMultiplication(clone);
-    applyManualMathNormalization(clone, context as any);
-    applyScalarCondensing(clone, context as any);
+    applyManualMathNormalization(clone, context);
+    applyScalarCondensing(clone, context);
     simplifyZeroDivisionNumerators(clone, context as any);
-    cleanupMultiplicativeIdentityParentheses(clone, context as any);
+    cleanupMultiplicativeIdentityParentheses(clone, context);
 
-    const original = readNodeText(sourceText, node) || "";
+    const original = gmlRuleAutofixServices.readNodeText(sourceText, node) || "";
     if (Core.areExpressionNodesEquivalentIgnoringParentheses(node, clone)) {
         return null;
     }
 
-    const printed = printExpression(clone, sourceText);
+    const printed = gmlRuleAutofixServices.printExpression(clone, sourceText);
     if (!printed) {
         return null;
     }
@@ -1199,34 +1224,7 @@ function attemptManualNormalization(sourceText: string, node: any): string | nul
 }
 
 function shouldSkipBinaryExpressionCandidate(parentNode: unknown, parentKey: string | null): boolean {
-    if (!parentNode || typeof parentNode !== "object") {
-        return false;
-    }
-
-    const parentType = (parentNode as { type?: unknown }).type;
-    if (typeof parentType !== "string") {
-        return false;
-    }
-
-    if (
-        parentType === "BinaryExpression" ||
-        parentType === "UnaryExpression" ||
-        parentType === "LogicalExpression" ||
-        parentType === "ParenthesizedExpression"
-    ) {
-        return true;
-    }
-
-    if (
-        (parentType === "VariableDeclarator" && parentKey === "init") ||
-        (parentType === "AssignmentExpression" && parentKey === "right") ||
-        (parentType === "IfStatement" && parentKey === "test") ||
-        (parentType === "ReturnStatement" && parentKey === "argument")
-    ) {
-        return true;
-    }
-
-    return false;
+    return evaluateSkipDecision(parentNode, parentKey);
 }
 
 function performGeneralExpressionSimplification(node: any, sourceText: string, edits: SourceTextEdit[]) {
@@ -1302,7 +1300,7 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                 return;
             }
 
-            const sourceTextOfNode = readNodeText(sourceText, targetNode);
+            const sourceTextOfNode = gmlRuleAutofixServices.readNodeText(sourceText, targetNode);
             if (sourceTextOfNode) {
                 if (hasComment(targetNode)) {
                     return;

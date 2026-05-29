@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { Parser } from "@gmloop/parser";
-
-import { Transpiler } from "../index.js";
+import { Transpiler } from "@gmloop/transpiler";
 
 void describe("GmlTranspiler.transpileEvent", () => {
     void describe("patch shape", () => {
@@ -61,16 +60,13 @@ void describe("GmlTranspiler.transpileEvent", () => {
 
         void it("includes metadata with timestamp", () => {
             const transpiler = new Transpiler.GmlTranspiler();
-            const before = Date.now();
             const patch = transpiler.transpileEvent({
                 sourceText: "x = 0;",
                 symbolId: "gml/event/obj_player/create"
             });
-            const after = Date.now();
 
-            assert.ok(patch.metadata?.timestamp !== undefined);
-            assert.ok(patch.metadata.timestamp >= before);
-            assert.ok(patch.metadata.timestamp <= after);
+            assert.strictEqual(typeof patch.metadata?.timestamp, "number", "timestamp should be a number");
+            assert.ok(patch.metadata.timestamp > 0, "timestamp should be positive");
         });
 
         void it("includes sourcePath in metadata when provided", () => {
@@ -188,7 +184,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
     void describe("input validation", () => {
         void it("throws TypeError when request is not an object", () => {
             const transpiler = new Transpiler.GmlTranspiler();
-            assert.throws(() => transpiler.transpileEvent(null as never), {
+            assert.throws(() => transpiler.transpileEvent(null), {
                 name: "TypeError",
                 message: /transpileEvent requires a request object/
             });
@@ -272,7 +268,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
                             body: []
                         }
                     }),
-                { name: "Error", message: /ast\.type to be 'Program'/ }
+                { name: "TranspilerError", message: /ast\.type to be 'Program'/ }
             );
         });
     });

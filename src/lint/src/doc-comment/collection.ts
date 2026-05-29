@@ -6,6 +6,7 @@ const {
     getCommentArray,
     getCommentBoundaryIndex,
     getLineCommentRawText,
+    isDocLikeLeadingLine,
     isNonEmptyArray,
     resolveLineCommentOptions,
     toMutableArray,
@@ -167,11 +168,7 @@ function collectNodeDocCommentLines(
         const rawText = getLineCommentRawText(comment);
         const trimmedRaw = typeof rawText === STRING_TYPE ? rawText.trim() : "";
         const isFormattedDocStyle = typeof formatted === STRING_TYPE && formatted.trim().startsWith("///");
-        const trimmedWithoutSlashes = trimmedRaw.replace(/^\/+/, "").trim();
-        const hasDocTagAfterSlash = /^\/+\s*@/.test(trimmedRaw);
-        const isDocStyleSlash = /^\/\/\s+\/\s*/.test(trimmedRaw);
-        const isBlockDocLike = trimmedRaw.startsWith("/*") && trimmedWithoutSlashes.startsWith("@");
-        const isRawDocLike = trimmedRaw.startsWith("///") || hasDocTagAfterSlash || isDocStyleSlash || isBlockDocLike;
+        const isRawDocLike = isDocLikeLeadingLine(rawText);
         if (!isFormattedDocStyle && !isRawDocLike) {
             remainingComments.push(comment);
             continue;
@@ -345,17 +342,7 @@ function tryCollectDocLinesFromSourceText(
 }
 
 export function isLineCommentDocLike(rawText: unknown): boolean {
-    if (typeof rawText !== STRING_TYPE) {
-        return false;
-    }
-
-    const trimmedRaw = (rawText as string).trim();
-    const trimmedWithoutSlashes = trimmedRaw.replace(/^\/+/, "").trim();
-    const hasDocTagAfterSlash = /^\/+\s*@/.test(trimmedRaw);
-    const isDocStyleSlash = /^\/\/\s+\/\s*/.test(trimmedRaw);
-    const isBlockDocLike = trimmedRaw.startsWith("/*") && trimmedWithoutSlashes.startsWith("@");
-
-    return trimmedRaw.startsWith("///") || hasDocTagAfterSlash || isDocStyleSlash || isBlockDocLike;
+    return isDocLikeLeadingLine(rawText);
 }
 
 function hasTooManyBlankLinesBetween(sourceText: string | null, start: number | null, end: number): boolean {
@@ -387,24 +374,6 @@ function appendFlattenedEntry(target: string[], entry: unknown): void {
     }
 
     target.push(entry);
-}
-
-function getCommentIndexValue(comment: unknown, field: "start" | "end"): number | null {
-    if (!comment || typeof comment !== "object") {
-        return null;
-    }
-
-    const fieldValue = (comment as { [key: string]: unknown })[field];
-    if (typeof fieldValue === "number") {
-        return fieldValue;
-    }
-
-    if (!fieldValue || typeof fieldValue !== "object") {
-        return null;
-    }
-
-    const indexValue = (fieldValue as { index?: unknown }).index;
-    return typeof indexValue === "number" ? indexValue : null;
 }
 
 function isUnprintedLineComment(comment: unknown): comment is { [key: string]: unknown; type: "CommentLine" } {
@@ -446,8 +415,8 @@ export function collectLeadingProgramLineComments(
             continue;
         }
 
-        const commentEnd = getCommentIndexValue(comment, "end");
-        const commentStart = getCommentIndexValue(comment, "start");
+        const commentEnd = Core.getCommentBoundaryIndex(comment, "end");
+        const commentStart = Core.getCommentBoundaryIndex(comment, "start");
 
         if (!Number.isInteger(commentEnd) || commentEnd >= anchorIndex) {
             continue;

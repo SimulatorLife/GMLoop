@@ -10,9 +10,14 @@ import {
     type FunctionDeclarationNode,
     GmlToJsEmitter,
     type IdentifierAnalyzer,
-    type ProgramNode
+    isBlockStatementNode,
+    isDefaultParameterNode,
+    isIdentifierNode,
+    type ProgramNode,
+    StringBuilder
 } from "../emitter/index.js";
 import { EventContextOracle } from "../event-context/index.js";
+import { TranspilerError, TranspilerErrorCode } from "./errors.js";
 
 export interface TranspileScriptRequest {
     /**
@@ -88,7 +93,7 @@ export interface EventPatch {
  * unwrapping pattern used by `ScriptPatch`) so that callers can invoke the
  * function by passing positional arguments.
  *
- * The runtime-wrapper's `ClosurePatch` interface is intentionally compatible:
+ * The runtime wrapper `ClosurePatch` interface is intentionally compatible:
  * this type carries additional transpiler metadata (`sourceText`, `version`)
  * but remains structurally assignable to the runtime type.
  */
@@ -144,25 +149,45 @@ export class GmlTranspiler {
         return parser.parse();
     }
 
-    private resolveProgramAst(request: TranspileScriptRequest | TranspileEventRequest): ProgramNode {
-        const astCandidate = request.ast ?? this.parseProgram(request.sourceText);
-        if (!Core.isObjectLike(astCandidate)) {
-            throw new TypeError("transpile request requires ast to be a Program-like object when provided");
+    private resolveProgramAst(
+        request: TranspileScriptRequest | TranspileEventRequest | TranspileClosureRequest
+    ): ProgramNode {
+        if (request.ast === undefined) {
+            return this.parseProgram(request.sourceText);
         }
 
-        const astRecord = astCandidate as Record<string, unknown>;
+        if (!Core.isObjectLike(request.ast)) {
+            throw this.createTranspileError(
+                "request",
+                new TypeError("transpile request requires ast to be a Program-like object when provided"),
+                TranspilerErrorCode.REQUEST_ERROR
+            );
+        }
+
+        const astRecord = request.ast as Record<string, unknown>;
         if (astRecord.type !== "Program") {
-            throw new TypeError("transpile request requires ast.type to be 'Program' when ast is provided");
+            throw this.createTranspileError(
+                "request",
+                new TypeError("transpile request requires ast.type to be 'Program' when ast is provided"),
+                TranspilerErrorCode.REQUEST_ERROR
+            );
         }
         if (!Array.isArray(astRecord.body)) {
-            throw new TypeError("transpile request requires ast.body to be an array when ast is provided");
+            throw this.createTranspileError(
+                "request",
+                new TypeError("transpile request requires ast.body to be an array when ast is provided"),
+                TranspilerErrorCode.REQUEST_ERROR
+            );
         }
 
-        return astCandidate as ProgramNode;
+        return request.ast as ProgramNode;
     }
 
     private emitFunctionParameterUnpacking(func: FunctionDeclarationNode, emitter: GmlToJsEmitter): string {
-        const lines: string[] = [];
+        if (func.params.length === 0) {
+            return "";
+        }
+        const builder = new StringBuilder(func.params.length);
 
         for (let index = 0; index < func.params.length; index += 1) {
             const parameter = func.params[index];
@@ -170,9 +195,9 @@ export class GmlTranspiler {
 
             if (typeof parameter === "string") {
                 line = `var ${parameter} = args[${index}];`;
-            } else if (parameter.type === "Identifier") {
+            } else if (isIdentifierNode(parameter)) {
                 line = `var ${parameter.name} = args[${index}];`;
-            } else if (parameter.type === "DefaultParameter" && parameter.left.type === "Identifier") {
+            } else if (isDefaultParameterNode(parameter) && isIdentifierNode(parameter.left)) {
                 const name = parameter.left.name;
                 if (parameter.right) {
                     const defaultValue = emitter.emit(parameter.right);
@@ -186,38 +211,42 @@ export class GmlTranspiler {
                 continue;
             }
 
-            lines.push(line);
+            builder.append(line);
         }
 
-        return lines.join("\n");
+        return builder.toString("\n");
     }
 
     private emitUnwrappedFunctionBody(body: ProgramNode["body"][number], emitter: GmlToJsEmitter): string {
-        if (body.type !== "BlockStatement") {
+        if (!isBlockStatementNode(body)) {
             return emitter.emit(body).trim();
         }
 
-        const lines: string[] = [];
+        const builder = new StringBuilder(body.body.length);
         for (const statement of body.body) {
             const code = emitter.emit(statement);
             if (!code) {
                 continue;
             }
 
-            lines.push(ensureStatementTerminated(code));
+            builder.append(ensureStatementTerminated(code));
         }
 
-        return lines.join("\n");
+        return builder.toString("\n");
     }
 
-    private createTranspileError(contextLabel: string, error: unknown): Error {
+    private createTranspileError(contextLabel: string, error: unknown, code?: TranspilerErrorCode): TranspilerError {
         const cause = Core.isErrorLike(error) ? error : undefined;
         const causeMessage =
             cause && "message" in cause && typeof cause.message === "string" ? cause.message : undefined;
         const message = causeMessage ?? (Core.isNonEmptyString(error) ? error : "Unknown transpilation error");
-        return new Error(`Failed to transpile ${contextLabel}: ${message}`, {
-            cause
-        });
+        return new TranspilerError(
+            `Failed to transpile ${contextLabel}: ${message}`,
+            code ?? TranspilerErrorCode.INTERNAL_ERROR,
+            {
+                cause
+            }
+        );
     }
 
     /**
@@ -310,7 +339,7 @@ export class GmlTranspiler {
             };
             return patch;
         } catch (error) {
-            throw this.createTranspileError(`script ${symbolId}`, error);
+            throw this.createTranspileError(`script ${symbolId}`, error, TranspilerErrorCode.INTERNAL_ERROR);
         }
     }
 
@@ -325,7 +354,7 @@ export class GmlTranspiler {
             const emitter = new GmlToJsEmitter(this.getSemanticAnalyzers(), this.emitterOptions);
             return emitter.emit(ast);
         } catch (error) {
-            throw this.createTranspileError("expression", error);
+            throw this.createTranspileError("expression", error, TranspilerErrorCode.INTERNAL_ERROR);
         }
     }
 
@@ -392,7 +421,7 @@ export class GmlTranspiler {
             };
             return patch;
         } catch (error) {
-            throw this.createTranspileError(`event ${symbolId}`, error);
+            throw this.createTranspileError(`event ${symbolId}`, error, TranspilerErrorCode.INTERNAL_ERROR);
         }
     }
 
@@ -464,7 +493,7 @@ export class GmlTranspiler {
             };
             return patch;
         } catch (error) {
-            throw this.createTranspileError(`closure ${symbolId}`, error);
+            throw this.createTranspileError(`closure ${symbolId}`, error, TranspilerErrorCode.INTERNAL_ERROR);
         }
     }
 }

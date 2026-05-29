@@ -2,7 +2,11 @@ import * as fs from "node:fs";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { WORKSPACE_EDIT_REVISION_TOKEN } from "@gmloop/refactor";
+import {
+    readExclusiveSemanticLocationIndex,
+    readSemanticLocationIndex,
+    WORKSPACE_EDIT_REVISION_TOKEN
+} from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 
 import { listConstructorRuntimeTypeReferenceRecords } from "./constructor-runtime-type-references.js";
@@ -15,7 +19,6 @@ import {
 } from "./macro-expansion-dependencies.js";
 import { ParsedLocalNamingCategoryResolver } from "./parsed-local-naming-categories.js";
 import { collectResourceSidecarRenames, resolveRenamedSoundFileName } from "./resource-sidecar-renames.js";
-import { readExclusiveSemanticLocationIndex, readSemanticLocationIndex } from "./semantic-index-helpers.js";
 
 type ResourceAssetReferenceRecord = {
     propertyPath: string;
@@ -654,10 +657,7 @@ export class GmlSemanticBridge {
 
         try {
             const absolutePath = path.resolve(this.projectRoot, metadataPath);
-            const parsed = Semantic.parseProjectMetadataDocumentForMutation(
-                stagedMetadataContent,
-                absolutePath
-            ).document;
+            const parsed = Core.parseProjectMetadataDocumentForMutation(stagedMetadataContent, absolutePath).document;
             this.stagedParsedMetadata.set(metadataPath, parsed);
             return parsed;
         } catch {
@@ -774,9 +774,7 @@ export class GmlSemanticBridge {
      * Get the identifiers map, handling structural differences in the project index.
      */
     private get identifiers(): SemanticIdentifierCollections {
-        return (this.projectIndex.identifiers ??
-            this.projectIndex.identifierCollections ??
-            {}) as SemanticIdentifierCollections;
+        return this.projectIndex.identifiers ?? this.projectIndex.identifierCollections ?? {};
     }
 
     private getIndexes(): SemanticBridgeIndexes {
@@ -1412,7 +1410,7 @@ export class GmlSemanticBridge {
 
         try {
             const rawContent = fs.readFileSync(absolutePath, "utf8");
-            const parsed = Semantic.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
+            const parsed = Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
             this.projectMetadataSourceByPath.set(resourcePath, rawContent);
             this.parsedProjectMetadataByPath.set(resourcePath, parsed);
             return parsed;
@@ -1491,7 +1489,7 @@ export class GmlSemanticBridge {
         if (latestBatchMetadataDocument !== undefined) {
             const loadedDocument: MutableProjectMetadataDocument = {
                 parsed: structuredClone(latestBatchMetadataDocument),
-                rawContent: Semantic.stringifyProjectMetadataDocument(latestBatchMetadataDocument, metadataPath)
+                rawContent: Core.stringifyProjectMetadataDocument(latestBatchMetadataDocument, metadataPath)
             };
             mutableDocumentsByPath.set(metadataPath, loadedDocument);
             this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
@@ -1504,7 +1502,7 @@ export class GmlSemanticBridge {
                 parsed: structuredClone(stagedParsedMetadata),
                 rawContent:
                     this.stagedMetadataContents.get(metadataPath) ??
-                    Semantic.stringifyProjectMetadataDocument(stagedParsedMetadata, metadataPath)
+                    Core.stringifyProjectMetadataDocument(stagedParsedMetadata, metadataPath)
             };
             mutableDocumentsByPath.set(metadataPath, loadedDocument);
             this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
@@ -1532,7 +1530,7 @@ export class GmlSemanticBridge {
 
         try {
             const rawContent = fs.readFileSync(absolutePath, "utf8");
-            const parsed = Semantic.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
+            const parsed = Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
             this.projectMetadataSourceByPath.set(metadataPath, rawContent);
             this.parsedProjectMetadataByPath.set(metadataPath, parsed);
             const loadedDocument: MutableProjectMetadataDocument = {
@@ -1690,13 +1688,13 @@ export class GmlSemanticBridge {
                     continue;
                 }
 
-                const existingValue = Semantic.getProjectMetadataValueAtPath(parsed, reference.propertyPath);
+                const existingValue = Core.getProjectMetadataValueAtPath(parsed, reference.propertyPath);
                 const existingReferenceName = Core.isObjectLike(existingValue)
                     ? Core.getNonEmptyString((existingValue as Record<string, unknown>).name)
                     : null;
                 const replacementReferenceName =
                     existingReferenceName && existingReferenceName === oldName ? newName : null;
-                const updated = Semantic.updateProjectMetadataReferenceByPath({
+                const updated = Core.updateProjectMetadataReferenceByPath({
                     document: parsed,
                     propertyPath: reference.propertyPath,
                     newResourcePath,
@@ -1734,9 +1732,9 @@ export class GmlSemanticBridge {
 
             const shouldNormalizeResourcePathOrdering = requiresMetadataResourcePathOrderNormalization(rawContent);
             let canonicalContent = shouldNormalizeResourcePathOrdering
-                ? Semantic.stringifyProjectMetadataDocument(parsed, resourceEntry.path)
-                : (Semantic.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
-                  Semantic.stringifyProjectMetadataDocument(parsed, resourceEntry.path));
+                ? Core.stringifyProjectMetadataDocument(parsed, resourceEntry.path)
+                : (Core.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
+                  Core.stringifyProjectMetadataDocument(parsed, resourceEntry.path));
             if (
                 shouldApplyRawResourcePathFallback &&
                 !shouldNormalizeResourcePathOrdering &&
@@ -1847,8 +1845,8 @@ export class GmlSemanticBridge {
         }
 
         const canonicalContent =
-            Semantic.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
-            Semantic.stringifyProjectMetadataDocument(parsed, resourceOrderPath);
+            Core.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
+            Core.stringifyProjectMetadataDocument(parsed, resourceOrderPath);
 
         if (canonicalContent === rawContent) {
             return;
@@ -2228,8 +2226,15 @@ export class GmlSemanticBridge {
 
         const symbolIdSet = new Set(symbolIds);
 
-        // We check which symbols reference any of the target symbolNames
-        // Note: This is an approximation as ProjectIndex might not have perfect symbolId-to-symbolId mapping yet
+        // We check which symbols reference any of the target symbolNames.
+        // Note: This is an approximation because ProjectIndex maintains two parallel
+        // symbol namespaces — `identifierId` (the legacy "kind:name" form) and the
+        // SCIP `id` field (the modern "gml/kind/name" form) — and cross-namespace
+        // reference resolution is not yet fully consistent in all code paths.
+        // WHAT WOULD BREAK: Removing this dual-check (targetName + targetSymbolId)
+        // would silently miss dependent symbols that appear under the alternate
+        // namespace, causing refactor to produce incomplete rename/update scopes
+        // and leaving stale references in user code.
         for (const collectionName of Object.keys(identifiers)) {
             const collection = identifiers[collectionName];
             for (const key of Object.keys(collection)) {

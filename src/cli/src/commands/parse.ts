@@ -20,8 +20,8 @@ import { resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 
 const GML_FILE_EXTENSION = ".gml";
 const AST_JSON_EXTENSION = ".ast.json";
-const PARSE_COMMAND_CLI_EXAMPLE = "pnpm dlx prettier-plugin-gml parse --path path/to/script.gml";
-const PARSE_COMMAND_FIX_EXAMPLE = "pnpm dlx prettier-plugin-gml parse --write --path path/to/project";
+const PARSE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop parse --path path/to/script.gml";
+const PARSE_COMMAND_FIX_EXAMPLE = "pnpm dlx gmloop parse --write --path path/to/project";
 
 type ParseCommandOptions = {
     write?: boolean;
@@ -57,12 +57,14 @@ type DryRunPayload =
       };
 
 function resolveCommandOptions(command: CommanderCommandLike): ParseCommandOptions {
-    return command.opts() as ParseCommandOptions;
+    return command.opts();
 }
 
 function resolveParseCommandSettings(command: CommanderCommandLike): ParseCommandSettings {
     const options = resolveCommandOptions(command);
-    const explicitTargetPath = resolveExplicitWorkflowTargetPath(options.path);
+    // Positional argument takes precedence over --path option.
+    const positionalPath = Array.isArray(command.args) && command.args.length > 0 ? command.args[0] : null;
+    const explicitTargetPath = resolveExplicitWorkflowTargetPath(positionalPath ?? options.path);
     const targetPath = explicitTargetPath ?? path.resolve(process.cwd(), ".");
 
     return {
@@ -176,32 +178,37 @@ function createDryRunPayload(parsedFiles: ReadonlyArray<ParsedFileAst>): DryRunP
     };
 }
 
+async function mapSequentially<Input, Output>(
+    values: ReadonlyArray<Input>,
+    mapper: (value: Input) => Promise<Output>
+): Promise<Array<Output>> {
+    const mappedValues: Array<Output> = [];
+
+    await Core.runSequentially(values, async (value) => {
+        mappedValues.push(await mapper(value));
+    });
+
+    return mappedValues;
+}
+
 function logVerboseParseSummary(filePath: string): void {
     console.error(`Parsed ${formatPathForDisplay(filePath)}`);
 }
 
-async function parseTargetFiles(filePaths: ReadonlyArray<string>, verbose: boolean): Promise<Array<ParsedFileAst>> {
-    const parsedFiles: Array<ParsedFileAst> = [];
-
-    await Core.runSequentially(filePaths, async (filePath) => {
-        const parsedFile = await parseFileToAst(filePath);
-        parsedFiles.push(parsedFile);
-        if (verbose) {
-            logVerboseParseSummary(filePath);
-        }
-    });
-
-    return parsedFiles;
+async function parseAndLogTargetFile(filePath: string, verbose: boolean): Promise<ParsedFileAst> {
+    const parsedFile = await parseFileToAst(filePath);
+    if (verbose) {
+        logVerboseParseSummary(filePath);
+    }
+    return parsedFile;
 }
 
-async function writeParsedAstJsonFiles(parsedFiles: ReadonlyArray<ParsedFileAst>): Promise<Array<string>> {
-    const outputPaths: Array<string> = [];
+function parseTargetFiles(filePaths: ReadonlyArray<string>, verbose: boolean): Promise<Array<ParsedFileAst>> {
+    return mapSequentially(filePaths, (filePath) => parseAndLogTargetFile(filePath, verbose));
+}
 
-    await Core.runSequentially(parsedFiles, async (parsedFile) => {
-        outputPaths.push(await writeParsedAstJsonFile(parsedFile));
-    });
-
-    return outputPaths;
+function writeParsedAstJsonFiles(parsedFiles: ReadonlyArray<ParsedFileAst>): Promise<Array<string>> {
+    return mapSequentially(parsedFiles, writeParsedAstJsonFile);
 }
 
 function printDryRunAstJson(parsedFiles: ReadonlyArray<ParsedFileAst>): void {
@@ -231,8 +238,9 @@ function printNoMatchingFilesMessage(targetPath: string): void {
 export function createParseCommand(): Command {
     return applyStandardCommandOptions(
         new Command("parse")
-            .usage("[options]")
+            .usage("[path] [options]")
             .description("Parse GameMaker Language files to AST JSON using @gmloop/parser.")
+            .argument("[path]", "Target .gml file, GameMaker project directory, or .yyp path")
             .addOption(createPathOption())
             .addOption(createWriteOption())
             .addOption(createListOption())

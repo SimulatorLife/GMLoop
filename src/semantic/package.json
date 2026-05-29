@@ -12,9 +12,11 @@
     "dist"
   ],
   "dependencies": {
-    "@bscotch/yy": "^2.7.0",
     "@gmloop/core": "workspace:*",
     "@gmloop/parser": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
   },
   "scripts": {
     "build:types": "tsc -p tsconfig.json",
@@ -23,6 +25,5 @@
   },
   "engines": {
     "node": ">=22.5.0"
-  },
-  "packageManager": "pnpm@10.28.0"
+  }
 }

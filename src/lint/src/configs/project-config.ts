@@ -1,13 +1,17 @@
 import type { GmloopProjectConfig } from "@gmloop/core";
 
 import {
+    isLintRuleLevel,
+    type LintRuleLevel as LintRuleLevelAlias,
+    normalizeLintRuleLevel
+} from "./lint-rule-level.js";
+import {
     LINT_RULESET_NAMES,
     LINT_RULESET_RULE_LEVELS,
-    type LintRuleLevel,
+    LintRuleLevel,
     type LintRulesetName
 } from "./rule-level-presets.js";
 
-const VALID_RULE_LEVELS = new Set(["off", "warn", "error"]);
 const LINT_RULESET_NAME_VALUES = new Set(LINT_RULESET_NAMES);
 
 function isLintRulesetName(value: string): value is LintRulesetName {
@@ -52,15 +56,37 @@ export function normalizeLintRulesConfig(
         throw new TypeError("gmloop.json lintRules must be an object.");
     }
 
-    const normalizedRules: Record<string, LintRuleLevel> = {
+    const normalizedRules: Record<string, LintRuleLevelAlias> = {
         ...rulesetRules
     };
     for (const [ruleId, rawLevel] of Object.entries(rawLintRules)) {
-        if (typeof rawLevel !== "string" || !VALID_RULE_LEVELS.has(rawLevel)) {
-            throw new TypeError(`gmloop.json lintRules.${ruleId} must be one of off, warn, or error.`);
+        if (!isLintRuleLevel(rawLevel)) {
+            throw new TypeError(
+                `gmloop.json lintRules.${ruleId} must be one of ${Object.values(LintRuleLevel).join(", ")}.`
+            );
         }
-        normalizedRules[ruleId] = rawLevel as LintRuleLevel;
+        normalizedRules[ruleId] = normalizeLintRuleLevel(rawLevel);
     }
 
     return Object.freeze(normalizedRules);
+}
+
+/**
+ * Normalize `lintRules` from a shared `gmloop.json` object.
+ *
+ * Returns `null` when the config contains invalid `lintRules`, an invalid
+ * `lintRuleset` value, or malformed rule-level entries, making it suitable
+ * for project-open flows where unknown gmloop properties should not crash the UI.
+ *
+ * @param config Shared top-level project config.
+ * @returns Normalized rule-level overrides, or `null` when the config is invalid.
+ */
+export function normalizeLintRulesConfigOrNull(
+    config: GmloopProjectConfig
+): Readonly<Record<string, "off" | "warn" | "error">> | null {
+    try {
+        return normalizeLintRulesConfig(config);
+    } catch {
+        return null;
+    }
 }

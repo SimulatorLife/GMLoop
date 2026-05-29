@@ -1,8 +1,7 @@
 import type { StorageBackend } from "../backends/storage-backend.js";
-import type { GlobalvarToGlobalCodemodOptions } from "../codemods/globalvar-to-global/types.js";
-import type { LoopLengthHoistingCodemodOptions } from "../codemods/loop-length-hoisting/types.js";
 import type {
     ConflictTypeValue,
+    GlobalvarToGlobalCodemodOptions,
     MaybePromise,
     NamingCategory,
     Range,
@@ -71,35 +70,6 @@ export interface ExecuteGlobalvarToGlobalCodemodResult {
     workspace: WorkspaceEdit;
     applied: Map<string, string>;
     changedFiles: Array<GlobalvarToGlobalFileSummary>;
-}
-
-/**
- * Parameters for running the loop-length hoisting codemod across multiple files.
- */
-export interface ExecuteLoopLengthHoistingCodemodRequest {
-    filePaths: Array<string>;
-    readFile: WorkspaceReadFile;
-    writeFile?: WorkspaceWriteFile;
-    options?: LoopLengthHoistingCodemodOptions;
-    dryRun?: boolean;
-}
-
-/**
- * Summary of loop-length hoisting codemod execution for a single file.
- */
-export interface LoopLengthHoistingFileSummary {
-    path: string;
-    appliedEditCount: number;
-    diagnosticOffsets: Array<number>;
-}
-
-/**
- * Result payload returned after executing a loop-length hoisting codemod transaction.
- */
-export interface ExecuteLoopLengthHoistingCodemodResult {
-    workspace: WorkspaceEdit;
-    applied: Map<string, string>;
-    changedFiles: Array<LoopLengthHoistingFileSummary>;
 }
 
 /**
@@ -431,11 +401,30 @@ export interface RefactorProjectAnalysisProvider {
     };
 }
 
+/**
+ * Hot reload coordination entry points consumed by {@link RefactorEngine}.
+ *
+ * This seam allows tests (and advanced embedders) to inject deterministic
+ * collaborators without subclassing the engine to override hot-reload methods.
+ */
+export interface RefactorHotReloadCoordinator {
+    checkHotReloadSafety(
+        request: RenameRequest,
+        semantic: PartialSemanticAnalyzer | null
+    ): Promise<HotReloadSafetySummary>;
+    computeHotReloadCascade(
+        changedSymbolIds: Array<string>,
+        semantic: PartialSemanticAnalyzer | null
+    ): Promise<HotReloadCascadeResult>;
+    computeRenameImpactGraph(symbolId: string, semantic: PartialSemanticAnalyzer | null): Promise<RenameImpactGraph>;
+}
+
 export interface RefactorEngineDependencies {
     parser: ParserBridge | null;
     semantic: PartialSemanticAnalyzer | null;
     formatter: TranspilerBridge | null;
     projectAnalysisProvider: RefactorProjectAnalysisProvider | null;
+    hotReloadCoordinator: RefactorHotReloadCoordinator | null;
 }
 
 /**
@@ -451,16 +440,13 @@ export interface CodemodSemanticProvider {
 /**
  * File-level codemod transform execution.
  *
- * Provides the ability to run file-transforming codemods (globalvar-to-global,
- * loop-length-hoisting) without coupling to rename or workspace edit operations.
+ * Provides the ability to run file-transforming codemods (globalvar-to-global)
+ * without coupling to rename or workspace edit operations.
  */
 export interface CodemodTransformExecutor {
     executeGlobalvarToGlobalCodemod(
         request: ExecuteGlobalvarToGlobalCodemodRequest
     ): Promise<ExecuteGlobalvarToGlobalCodemodResult>;
-    executeLoopLengthHoistingCodemod(
-        request: ExecuteLoopLengthHoistingCodemodRequest
-    ): Promise<ExecuteLoopLengthHoistingCodemodResult>;
 }
 
 /**
@@ -521,7 +507,8 @@ export interface CodemodCacheController {
  * interface when possible.
  */
 export interface CodemodEngine
-    extends CodemodSemanticProvider,
+    extends
+        CodemodSemanticProvider,
         CodemodTransformExecutor,
         CodemodRenameOperations,
         CodemodWorkspaceEditor,

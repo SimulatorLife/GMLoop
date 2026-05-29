@@ -1,20 +1,22 @@
 import {
     createLintConfigsWithPlugins,
     createLintRuleEntriesFromProjectConfig,
-    normalizeLintRulesConfig
+    createLintRuleEntriesFromProjectConfigOrNull,
+    normalizeLintRulesConfig,
+    normalizeLintRulesConfigOrNull
 } from "./configs/index.js";
 import { gmlLanguage } from "./language/index.js";
-import { featherLintRules, gmlLintRules } from "./rules/index.js";
+import { featherLintRuleMap, gmlLintRuleMap } from "./rules/catalog.js";
 
 const gmlPluginObject = Object.freeze({
-    rules: gmlLintRules,
+    rules: gmlLintRuleMap,
     languages: Object.freeze({
         gml: gmlLanguage
     })
 });
 
 const featherPluginObject = Object.freeze({
-    rules: featherLintRules,
+    rules: featherLintRuleMap,
     languages: Object.freeze({
         gml: gmlLanguage
     })
@@ -25,16 +27,22 @@ const lintConfigs = createLintConfigsWithPlugins({
     featherPlugin: featherPluginObject
 });
 
-const lintProjectConfigHelpers = Object.freeze({
-    normalizeLintRulesConfig,
-    createLintRuleEntriesFromProjectConfig
-});
-
-const lintConfigNamespace = Object.freeze({
+/**
+ * Flattened lint config namespace that exposes project configuration helpers
+ * directly alongside the config sets (recommended, feather, performance).
+ *
+ * This flattens the hierarchy by placing helpers like `normalizeLintRulesConfig`
+ * and `createLintRuleEntriesFromProjectConfig` directly on `Lint.configs` rather
+ * than nested under `Lint.configs.projectConfig`, reducing chain depth from
+ * 4 segments to 3 segments and improving discoverability.
+ */
+export const configs = Object.freeze({
     ...lintConfigs,
-    projectConfig: lintProjectConfigHelpers
+    normalizeLintRulesConfig,
+    normalizeLintRulesConfigOrNull,
+    createLintRuleEntriesFromProjectConfig,
+    createLintRuleEntriesFromProjectConfigOrNull
 });
 
 export const plugin = gmlPluginObject;
 export const featherPlugin = featherPluginObject;
-export const configs = lintConfigNamespace;

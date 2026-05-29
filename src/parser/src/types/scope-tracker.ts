@@ -13,6 +13,18 @@ export interface GlobalIdentifierTracker {
 }
 
 /**
+ * Identifier role cloning.
+ *
+ * Provides deep-copy semantics for role objects. This is an internal
+ * capability used by the semantic package for transferring roles between
+ * scope contexts; it is not part of the public role contracts to avoid
+ * coupling consumers to cloning implementation details.
+ */
+export interface IdentifierRoleCloner {
+    cloneRole(role: object | null): object | null;
+}
+
+/**
  * Identifier role context control.
  *
  * Provides role-stack lifecycle operations without coupling to role
@@ -34,25 +46,6 @@ export interface IdentifierRoleContextController {
      * @returns The result of the callback function
      */
     withRole?<T>(role: object | null, callback: () => T): T;
-
-    /**
-     * Create a deep copy of an identifier role object.
-     *
-     * @param role Role object to clone
-     * @returns Cloned role with independent arrays and nested objects
-     */
-    cloneRole(role: object | null): object | null;
-
-    /**
-     * Apply the current active role to an identifier node.
-     *
-     * Annotates the node with metadata from the role stack, including
-     * classification tags and scope information. This enables downstream
-     * semantic analysis and code generation.
-     *
-     * @param name Identifier name being annotated
-     * @param node AST node to receive role metadata
-     */
 }
 
 /**
@@ -81,10 +74,12 @@ export interface IdentifierRoleApplicator {
 /**
  * Complete identifier role manager interface.
  *
- * Combines role context and role application contracts for consumers that
- * require both capabilities.
+ * Combines role context, role application, and role cloning contracts for
+ * consumers that require all three capabilities. Consumers that only need
+ * a subset should depend on the individual interfaces directly.
  */
-export interface IdentifierRoleManager extends IdentifierRoleContextController, IdentifierRoleApplicator {}
+export interface IdentifierRoleManager
+    extends IdentifierRoleContextController, IdentifierRoleApplicator, IdentifierRoleCloner {}
 
 /**
  * Scope lifecycle management.

@@ -7,8 +7,7 @@ import {
     createProjectIndexBuildOptions,
     createProjectIndexCoordinator,
     createProjectIndexDescriptor,
-    findProjectRoot,
-    getProjectIndexParserOverride
+    findProjectRoot
 } from "../project-index/index.js";
 import { IDENTIFIER_CASE_PROJECT_INDEX_CACHE_MAX_BYTES_OPTION_NAME } from "./options.js";
 
@@ -397,12 +396,17 @@ export async function bootstrapProjectIndex(options, storeOption) {
         cacheMaxSizeBytes
     });
 
-    const parserOverride = getProjectIndexParserOverride(options);
+    const parseGml = typeof options?.parseGml === "function" ? options.parseGml : undefined;
     const buildOptions = createProjectIndexBuildOptions({
         logger: options?.logger ?? null,
         logMetrics: options?.logIdentifierCaseMetrics === true,
-        projectIndexConcurrency,
-        parserOverride
+        concurrency: projectIndexConcurrency
+            ? {
+                  gml: projectIndexConcurrency,
+                  gmlParsing: projectIndexConcurrency
+              }
+            : undefined,
+        parseGml
     } as any);
 
     const descriptor = createProjectIndexDescriptor({

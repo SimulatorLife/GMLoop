@@ -7,6 +7,6 @@
   "fixture": {
     "kind": "integration",
     "assertion": "transform",
-    "comparison": "trimmed-strip-doc-comment-annotations"
+    "comparison": "exact"
   }
 }

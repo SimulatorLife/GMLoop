@@ -10,14 +10,12 @@ import type {
     FixtureStageName
 } from "../types.js";
 
-const FIXTURE_KIND_VALUES = new Set<FixtureKind>(["format", "lint", "refactor", "integration"]);
+const FIXTURE_KIND_VALUES = new Set<FixtureKind>(["format", "lint", "refactor", "integration", "external-project"]);
 const FIXTURE_ASSERTION_VALUES = new Set<FixtureAssertion>(["transform", "idempotent", "project-tree", "parse-error"]);
-const FIXTURE_COMPARISON_VALUES = new Set<FixtureComparison>([
-    "exact",
-    "ignore-whitespace-and-line-endings",
-    "trimmed-strip-doc-comment-annotations"
-]);
-const FIXTURE_SECTION_KEYS = new Set(["kind", "assertion", "comparison", "profile"]);
+const FIXTURE_COMPARISON_VALUES = new Set<FixtureComparison>(["exact", "ignore-whitespace-and-line-endings"]);
+const FIXTURE_SECTION_KEYS = new Set(["kind", "assertion", "comparison", "externalProject", "profile"]);
+const EXTERNAL_PROJECT_KEYS = new Set(["sourcePath", "excludes"]);
+const EXTERNAL_PROJECT_EXCLUDE_KEYS = new Set(["directoryNames", "fileNames", "relativePaths", "extensions"]);
 const FIXTURE_PROFILE_KEYS = new Set(["budgets", "deepCpuProfile"]);
 const FIXTURE_PROFILE_BUDGET_KEYS = new Set(["durationMs", "heapUsedDeltaBytes", "cpuUserMicros", "cpuSystemMicros"]);
 
@@ -59,14 +57,15 @@ function validateOptionalEnumValue<ValueType extends string>(
     context: string,
     propertyName: string
 ): ValueType | undefined {
-    if (value !== undefined) {
-        if (typeof value !== "string" || !validValues.has(value as ValueType)) {
-            throw new TypeError(`${context}.${propertyName} must be one of ${[...validValues].join(", ")}.`);
-        }
-
-        return value as ValueType;
+    if (value === undefined) {
+        return undefined;
     }
-    return undefined;
+
+    if (typeof value !== "string" || !validValues.has(value as ValueType)) {
+        throw new TypeError(`${context}.${propertyName} must be one of ${[...validValues].join(", ")}.`);
+    }
+
+    return value as ValueType;
 }
 
 function validateFixtureProfile(value: unknown, context: string): NonNullable<FixtureProjectConfigMetadata["profile"]> {
@@ -107,6 +106,74 @@ function validateFixtureProfile(value: unknown, context: string): NonNullable<Fi
     return profile;
 }
 
+function validateStringArray(value: unknown, context: string): ReadonlyArray<string> {
+    if (!Array.isArray(value)) {
+        throw new TypeError(`${context} must be an array of strings.`);
+    }
+
+    for (const [index, entry] of value.entries()) {
+        if (typeof entry !== "string" || entry.trim().length === 0) {
+            throw new TypeError(`${context}[${index}] must be a non-empty string.`);
+        }
+    }
+
+    return Object.freeze([...value]);
+}
+
+function validateExternalProjectExcludes(
+    value: unknown,
+    context: string
+): NonNullable<NonNullable<FixtureProjectConfigMetadata["externalProject"]>["excludes"]> {
+    const excludesObject = assertPlainObject(value, context);
+    const excludes: NonNullable<NonNullable<FixtureProjectConfigMetadata["externalProject"]>["excludes"]> = {};
+
+    for (const [key, rawValue] of Object.entries(excludesObject)) {
+        if (!EXTERNAL_PROJECT_EXCLUDE_KEYS.has(key)) {
+            throw new TypeError(`${context} contains unknown property ${JSON.stringify(key)}.`);
+        }
+
+        const stringArray = validateStringArray(rawValue, `${context}.${key}`);
+        if (key === "directoryNames") {
+            excludes.directoryNames = stringArray;
+        } else if (key === "fileNames") {
+            excludes.fileNames = stringArray;
+        } else if (key === "relativePaths") {
+            excludes.relativePaths = stringArray;
+        } else {
+            excludes.extensions = stringArray;
+        }
+    }
+
+    return Object.freeze(excludes);
+}
+
+function validateExternalProjectDescriptor(
+    value: unknown,
+    context: string
+): NonNullable<FixtureProjectConfigMetadata["externalProject"]> {
+    const descriptorObject = assertPlainObject(value, context);
+
+    for (const key of Object.keys(descriptorObject)) {
+        if (!EXTERNAL_PROJECT_KEYS.has(key)) {
+            throw new TypeError(`${context} contains unknown property ${JSON.stringify(key)}.`);
+        }
+    }
+
+    if (typeof descriptorObject.sourcePath !== "string" || descriptorObject.sourcePath.trim().length === 0) {
+        throw new TypeError(`${context}.sourcePath must be a non-empty string.`);
+    }
+
+    const descriptor: NonNullable<FixtureProjectConfigMetadata["externalProject"]> = {
+        sourcePath: descriptorObject.sourcePath
+    };
+
+    if (descriptorObject.excludes !== undefined) {
+        descriptor.excludes = validateExternalProjectExcludes(descriptorObject.excludes, `${context}.excludes`);
+    }
+
+    return Object.freeze(descriptor);
+}
+
 function validateFixtureMetadata(value: unknown, context: string): FixtureProjectConfigMetadata {
     const object = assertPlainObject(value, context);
 
@@ -139,6 +206,17 @@ function validateFixtureMetadata(value: unknown, context: string): FixtureProjec
         metadata.profile = validateFixtureProfile(object.profile, context);
     }
 
+    if (object.externalProject !== undefined) {
+        metadata.externalProject = validateExternalProjectDescriptor(
+            object.externalProject,
+            `${context}.externalProject`
+        );
+    }
+
+    if (metadata.kind === "external-project" && metadata.externalProject === undefined) {
+        throw new TypeError(`${context}.externalProject is required for external-project fixtures.`);
+    }
+
     return metadata;
 }
 
@@ -155,5 +233,5 @@ export async function loadFixtureProjectConfig(configPath: string): Promise<Fixt
     return Object.freeze({
         ...baseConfig,
         fixture
-    }) as FixtureProjectConfig;
+    });
 }

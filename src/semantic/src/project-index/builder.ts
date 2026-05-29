@@ -7,12 +7,11 @@ import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from 
 import { getDefaultProjectIndexCacheMaxSize, loadProjectIndexCache, saveProjectIndexCache } from "./cache.js";
 import { clampConcurrency } from "./concurrency.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
+import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { resolveProjectIndexParser } from "./gml-parser-facade.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
 import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metrics.js";
-import { runWithMissingPathFallback } from "./missing-path-fallback.js";
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
@@ -59,7 +58,7 @@ function cloneEntryCollections(entry, ...keys) {
 }
 export function createProjectIndexCoordinator(options: ProjectIndexCoordinatorOptions = {}) {
     const {
-        fsFacade = defaultFsFacade,
+        fsFacade = Core.defaultFsFacade,
         loadCache = loadProjectIndexCache,
         saveCache = saveProjectIndexCache,
         buildIndex = buildProjectIndex,
@@ -1453,6 +1452,17 @@ function resolveCallTargetKind(identifierNode) {
     return null;
 }
 
+/**
+ * Appends a call record to all three aggregation targets (file, scope, and
+ * relationship lists). Extracted from `recordFunctionOrScriptCall` so the
+ * orchestrator stays focused on record construction rather than bookkeeping.
+ */
+function recordScriptCallInTargets(fileRecord, scopeRecord, relationships, callRecord) {
+    fileRecord.scriptCalls.push(callRecord);
+    scopeRecord.scriptCalls.push(callRecord);
+    relationships.scriptCalls.push(callRecord);
+}
+
 function recordFunctionOrScriptCall({
     builtInNames,
     callee,
@@ -1498,9 +1508,7 @@ function recordFunctionOrScriptCall({
         }
     };
 
-    fileRecord.scriptCalls.push(callRecord);
-    scopeRecord.scriptCalls.push(callRecord);
-    relationships.scriptCalls.push(callRecord);
+    recordScriptCallInTargets(fileRecord, scopeRecord, relationships, callRecord);
     metrics?.counters?.increment("scriptCalls.discovered");
 }
 
@@ -2040,7 +2048,8 @@ function createProjectIndexResultSnapshot({
             resourceType: record.resourceType,
             scopes: [...record.scopes],
             gmlFiles: [...record.gmlFiles],
-            assetReferences: record.assetReferences.map((reference) => cloneAssetReference(reference))
+            assetReferences: record.assetReferences.map((reference) => cloneAssetReference(reference)),
+            layers: record.layers
         }),
         { sortEntries: false }
     );
@@ -2435,7 +2444,7 @@ function finalizeProjectIndexResult({ metricsReporting, options, projectIndex })
     }
     return projectIndex;
 }
-export async function buildProjectIndex(projectRoot, fsFacade = defaultFsFacade, options = {} as any) {
+export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFacade, options = {} as any) {
     if (!projectRoot) {
         throw new Error("projectRoot must be provided to buildProjectIndex");
     }

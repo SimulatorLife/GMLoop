@@ -32,7 +32,8 @@ import { Command, Option } from "commander";
 import { createMinimumValueValidator, portValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { formatCliError } from "../cli-core/errors.js";
-import { DEFAULT_GM_TEMP_ROOT, prepareHotReloadInjection } from "../modules/hot-reload/inject-runtime.js";
+import { createStatusUrl, createWebSocketUrl, DEFAULT_GM_TEMP_ROOT } from "../modules/live-reload/config.js";
+import { prepareLiveReload } from "../modules/live-reload/session.js";
 import {
     type RuntimeStaticServerHandle,
     type RuntimeStaticServerInstance,
@@ -57,6 +58,7 @@ import {
     registerScriptNamesFromSymbols,
     type RuntimeTranspilerPatch,
     type TranspilationContext,
+    type TranspilationCounter,
     type TranspilationResult,
     transpileFile,
     type TranspilerProvider
@@ -65,12 +67,13 @@ import {
     getRuntimePathSegments,
     resolveScriptFileNameFromSegments
 } from "../modules/transpilation/runtime-identifiers.js";
-import { extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
+import { extractReferencesFromAst, extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
     DEFAULT_WATCH_DEBOUNCE_DELAY_MS,
+    DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES,
     DEFAULT_WATCH_MAX_CONCURRENT_DIRS,
     DEFAULT_WATCH_MAX_PATCH_HISTORY,
     DEFAULT_WATCH_POLLING_INTERVAL_MS
@@ -89,6 +92,7 @@ import {
 } from "./watch/source-analysis.js";
 
 const { debounce, getErrorMessage, isErrorWithCode } = Core;
+const IGNORED_WATCH_DIRECTORY_NAMES = new Set(DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES);
 
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
 
@@ -105,6 +109,10 @@ const noopAbortListener = () => {};
  * Controls which files to monitor and how to detect changes.
  */
 interface FileWatchingConfig {
+    /**
+     * Legacy programmatic hook retained for internal tests/integration wiring.
+     * CLI input is intentionally fixed to `.gml` to keep watch behavior opinionated.
+     */
     extensions?: Array<string>;
     polling?: boolean;
     pollingInterval?: number;
@@ -184,13 +192,26 @@ interface InfrastructureConfig {
  * Composes all specialized configuration interfaces into a single contract.
  */
 interface WatchCommandOptions
-    extends FileWatchingConfig,
+    extends
+        FileWatchingConfig,
         LoggingConfig,
         WebSocketServerConfig,
         StatusServerConfig,
         RuntimeServerConfig,
         HotReloadConfig,
         InfrastructureConfig {}
+
+export type { WatchCommandOptions };
+
+type InitialScanRunnerOptions = Readonly<{
+    normalizedPath: string;
+    extensionMatcher: ExtensionMatcher;
+    runtimeContext: RuntimeContext;
+    verbose: boolean;
+    quiet: boolean;
+    maxConcurrentDirs: number;
+    fileDataCache: Map<string, InitialFileData>;
+}>;
 
 /**
  * Core transpilation capabilities required for processing file changes.
@@ -256,7 +277,8 @@ interface WatchLifecycle {
  * than this composite when possible.
  */
 interface RuntimeContext
-    extends Omit<
+    extends
+        Omit<
             TranspilationContext,
             | "transpiler"
             | "patches"
@@ -265,11 +287,13 @@ interface RuntimeContext
             | "lastSuccessfulPatches"
             | "maxPatchHistory"
             | "websocketServer"
+            | "totalPatchCount"
         >,
         TranspilationDependencies,
         RuntimePackageInfo,
         PatchHistory,
         ServerControllers,
+        TranspilationCounter,
         WatchLifecycle {
     watchRoot: string;
     extensionMatcher: ExtensionMatcher;
@@ -322,6 +346,19 @@ interface FileChangeOptions extends LoggingConfig {
     fileChangeDetectedAt?: number;
 }
 
+function normalizeWatchedPathSegments(candidatePath: string): Array<string> {
+    return candidatePath
+        .replaceAll("\\", "/")
+        .split("/")
+        .filter((segment) => segment.length > 0);
+}
+
+function shouldIgnoreWatchedPath(candidatePath: string, watchRoot: string | null = null): boolean {
+    const pathToCheck = watchRoot === null ? candidatePath : path.relative(watchRoot, candidatePath);
+
+    return normalizeWatchedPathSegments(pathToCheck).some((segment) => IGNORED_WATCH_DIRECTORY_NAMES.has(segment));
+}
+
 async function runAutoInjectHotReload(
     quiet: boolean,
     verbose: boolean,
@@ -335,11 +372,14 @@ async function runAutoInjectHotReload(
     }
 
     try {
-        const websocketUrl = `ws://${websocketHost}:${websocketPort}`;
-        const injectionResult = await prepareHotReloadInjection({
+        const injectionResult = await prepareLiveReload({
             html5OutputRoot: html5Output,
             gmTempRoot,
-            websocketUrl,
+            bootstrapConfig: {
+                websocketUrl: createWebSocketUrl(websocketHost, websocketPort),
+                statusUrl: createStatusUrl(),
+                logLevel: quiet ? "quiet" : verbose ? "debug" : "normal"
+            },
             force: false
         });
 
@@ -349,10 +389,10 @@ async function runAutoInjectHotReload(
                 : "Hot-reload snippet already present in HTML5 output.";
             console.log(injectedMessage);
             if (verbose) {
-                console.log(`  HTML5 output: ${injectionResult.outputRoot}`);
-                console.log(`  Index file: ${injectionResult.indexPath}`);
-                console.log(`  Runtime wrapper: ${injectionResult.runtimeWrapperTargetRoot}`);
-                console.log(`  WebSocket URL: ${injectionResult.websocketUrl}`);
+                console.log(`  HTML5 output: ${injectionResult.target.outputRoot}`);
+                console.log(`  Index file: ${injectionResult.target.indexHtmlPath}`);
+                console.log(`  Runtime wrapper: ${injectionResult.assets.targetRoot}`);
+                console.log(`  WebSocket URL: ${createWebSocketUrl(websocketHost, websocketPort)}`);
             }
         }
     } catch (error) {
@@ -378,12 +418,6 @@ export function createWatchCommand(): Command {
     command
         .description("Watch GML source files and coordinate hot-reload pipeline actions")
         .argument("[targetPath]", "Directory to watch for changes", process.cwd())
-        .addOption(
-            new Option("--extensions <extensions...>", "File extensions to watch").default(
-                [".gml"],
-                "Defaults to .gml; custom extensions are allowed"
-            )
-        )
         .addOption(new Option("--polling", "Use polling instead of native file watching").default(false))
         .addOption(
             new Option("--polling-interval <ms>", "Polling interval in milliseconds")
@@ -529,10 +563,15 @@ async function performInitialScan(
             ensureScriptNameRegistered(fullPath, runtimeContext.scriptNames);
 
             // Transpile the file (quietly unless verbose mode is on)
+            // Pass cached symbols and references when available to skip a second
+            // full AST traversal in transpileFile (one already happened during
+            // collectScriptNames). This halves AST-walk overhead during startup.
             const result = transpileFile(runtimeContext, fullPath, content, lines, {
                 verbose: false,
                 quiet: true,
-                cachedAst
+                cachedAst,
+                cachedSymbols: cached?.symbols,
+                cachedReferences: cached?.references
             });
 
             // Track symbols and references
@@ -556,7 +595,12 @@ async function performInitialScan(
 
             // Delegate low-level entry partitioning so this orchestration flow
             // stays focused on high-level scan steps.
-            const { files, directories } = partitionScannedDirectoryEntries(currentPath, entries, extensionMatcher);
+            const { files, directories } = partitionScannedDirectoryEntries(
+                currentPath,
+                entries,
+                extensionMatcher,
+                dirPath
+            );
 
             // Process all files in this directory concurrently for maximum throughput
             await Core.runInParallel(files, async (filePath) => {
@@ -589,7 +633,7 @@ async function performInitialScan(
     // Files that failed to read or parse in collectScriptNames are not in the cache;
     // they will be processed on their first watch event instead.
     await (fileDataCache !== undefined && fileDataCache.size > 0
-        ? Core.runInParallel(Array.from(fileDataCache.keys()), processFile)
+        ? Core.runInParallelWithLimit(Array.from(fileDataCache.keys()), processFile, maxConcurrentDirs)
         : scanDirectory(dirPath));
 
     const stats = runtimeContext.dependencyTracker.getStatistics();
@@ -676,7 +720,7 @@ function logWatchStartup(
  *
  * @param {string} targetPath - Directory to watch
  * @param {object} options - Command options
- * @param {string[]} options.extensions - File extensions to watch
+ * Watch mode intentionally targets `.gml` only to mirror GameMaker defaults.
  * @param {boolean} options.polling - Use polling instead of native watching
  * @param {number} options.pollingInterval - Polling interval in milliseconds
  * @param {boolean} options.verbose - Enable verbose logging
@@ -686,7 +730,6 @@ function logWatchStartup(
  */
 export async function runWatchCommand(targetPath: string, options: WatchCommandOptions = {}): Promise<void> {
     const {
-        extensions = [".gml"],
         polling = false,
         pollingInterval = DEFAULT_WATCH_POLLING_INTERVAL_MS,
         verbose = false,
@@ -730,7 +773,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
     const normalizedPath = await validateTargetPath(targetPath);
 
-    const extensionMatcher = createExtensionMatcher(extensions);
+    const extensionMatcher = createExtensionMatcher(options.extensions ?? [".gml"]);
     const extensionSet = extensionMatcher.extensions;
 
     const { scriptNames, fileDataCache } = await collectScriptNames(
@@ -766,7 +809,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         metrics: [],
         errors: [],
         lastSuccessfulPatches: new Map(),
-        maxPatchHistory,
+        bounds: { maxEntries: maxPatchHistory },
         totalPatchCount: 0,
         websocketServer: null,
         statusServer: null,
@@ -878,7 +921,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                         patchCount: runtimeContext.metrics.length,
                         totalPatchCount: runtimeContext.totalPatchCount,
                         patchHistorySize: runtimeContext.patches.length,
-                        maxPatchHistory: runtimeContext.maxPatchHistory,
+                        maxPatchHistory: runtimeContext.bounds.maxEntries,
                         errorCount: runtimeContext.errors.length,
                         recentPatches: runtimeContext.metrics.slice(-10).map((m) => ({
                             id: m.patchId,
@@ -946,6 +989,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         ...(polling && { persistent: true })
     };
     let watcher: FSWatcher | null = null;
+    let pollingIntervalHandle: NodeJS.Timeout | null = null;
     let resolved = false;
 
     // Internal abort controller used to cancel in-flight file reads (including
@@ -976,6 +1020,10 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
             if (watcher) {
                 watcher.close();
+            }
+            if (pollingIntervalHandle) {
+                clearInterval(pollingIntervalHandle);
+                pollingIntervalHandle = null;
             }
 
             process.off("SIGINT", handleErrorSignal);
@@ -1083,7 +1131,40 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
             };
         }
 
+        const initialScanOptions: InitialScanRunnerOptions = {
+            normalizedPath,
+            extensionMatcher,
+            runtimeContext,
+            verbose,
+            quiet,
+            maxConcurrentDirs,
+            fileDataCache
+        };
+
         try {
+            if (polling) {
+                void runInitialWatchScan(initialScanOptions)
+                    .then(() => {
+                        pollingIntervalHandle = setInterval(() => {
+                            scheduleUnknownFileChanges(
+                                runtimeContext,
+                                verbose,
+                                quiet,
+                                internalAbortController.signal
+                            ).catch((error) => {
+                                const message = getErrorMessage(error, {
+                                    fallback: "Unknown polling scan error"
+                                });
+                                console.error(`Error during polling scan: ${message}`);
+                            });
+                        }, pollingInterval);
+                        pollingIntervalHandle.unref();
+                        return null;
+                    })
+                    .catch(handleWatcherError);
+                return;
+            }
+
             watcher = watchFactory(
                 normalizedPath,
                 {
@@ -1112,6 +1193,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                             let debouncedHandler = runtimeContext.debouncedHandlers.get(unknownKey);
                             if (!debouncedHandler) {
                                 debouncedHandler = debounce(() => {
+                                    runtimeContext.debouncedHandlers.delete(unknownKey);
                                     void triggerUnknown();
                                 }, debounceDelay);
                                 runtimeContext.debouncedHandlers.set(unknownKey, debouncedHandler);
@@ -1125,7 +1207,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                         return;
                     }
 
-                    if (!extensionMatcher.matches(filename)) {
+                    if (shouldIgnoreWatchedPath(filename) || !extensionMatcher.matches(filename)) {
                         return;
                     }
 
@@ -1157,6 +1239,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
                         if (!debouncedHandler) {
                             debouncedHandler = debounce((filePath: string, evt: string, opts: FileChangeOptions) => {
+                                runtimeContext.debouncedHandlers.delete(filePath);
                                 handleFileChange(filePath, evt, opts).catch((error) => {
                                     const message = getErrorMessage(error, {
                                         fallback: "Unknown file processing error"
@@ -1182,30 +1265,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
             // Perform initial scan after the watcher is established so test harnesses
             // and callers can trigger events immediately without waiting for the scan.
-            if (!quiet && verbose) {
-                console.log("Scanning existing GML files to build dependency graph...");
-            }
-
-            void performInitialScan(
-                normalizedPath,
-                extensionMatcher,
-                runtimeContext,
-                verbose,
-                quiet,
-                maxConcurrentDirs,
-                fileDataCache
-            )
-                .then(() => {
-                    runtimeContext.scanComplete = true;
-                    return null;
-                })
-                .finally(() => {
-                    // The startup cache is only needed during the initial scan. Clear any
-                    // unconsumed entries (for example from transient read errors) so large
-                    // file contents and AST objects are released promptly.
-                    clearInitialFileDataCache(fileDataCache);
-                })
-                .catch(handleWatcherError);
+            void runInitialWatchScan(initialScanOptions).catch(handleWatcherError);
         } catch (error) {
             handleWatcherError(error);
         }
@@ -1486,6 +1546,40 @@ function scheduleUnknownFileChanges(
     return unknownScanPromise;
 }
 
+function runInitialWatchScan({
+    normalizedPath,
+    extensionMatcher,
+    runtimeContext,
+    verbose,
+    quiet,
+    maxConcurrentDirs,
+    fileDataCache
+}: InitialScanRunnerOptions): Promise<null> {
+    if (!quiet && verbose) {
+        console.log("Scanning existing GML files to build dependency graph...");
+    }
+
+    return performInitialScan(
+        normalizedPath,
+        extensionMatcher,
+        runtimeContext,
+        verbose,
+        quiet,
+        maxConcurrentDirs,
+        fileDataCache
+    )
+        .then(() => {
+            runtimeContext.scanComplete = true;
+            return null;
+        })
+        .finally(() => {
+            // The startup cache is only needed during the initial scan. Clear any
+            // unconsumed entries (for example from transient read errors) so large
+            // file contents and AST objects are released promptly.
+            clearInitialFileDataCache(fileDataCache);
+        });
+}
+
 async function readFileStats(filePath: string): Promise<Stats | null> {
     try {
         return await stat(filePath);
@@ -1667,7 +1761,7 @@ function mergeDependentFiles(
     previousDependents: ReadonlyArray<string>,
     updatedDependents: ReadonlyArray<string>
 ): Array<string> {
-    return Array.from(new Set([...previousDependents, ...updatedDependents]));
+    return [...previousDependents, ...updatedDependents].filter((item, index, arr) => arr.indexOf(item) === index);
 }
 
 async function retranspileDependentFile(
@@ -1829,7 +1923,8 @@ interface ScannedDirectoryEntries {
 function partitionScannedDirectoryEntries(
     currentPath: string,
     entries: Array<Dirent>,
-    extensionMatcher: ExtensionMatcher
+    extensionMatcher: ExtensionMatcher,
+    watchRoot: string
 ): ScannedDirectoryEntries {
     const files: Array<string> = [];
     const directories: Array<string> = [];
@@ -1837,8 +1932,15 @@ function partitionScannedDirectoryEntries(
     for (const entry of entries) {
         const candidatePath = path.join(currentPath, entry.name);
         if (entry.isDirectory()) {
+            if (IGNORED_WATCH_DIRECTORY_NAMES.has(entry.name)) {
+                continue;
+            }
             directories.push(candidatePath);
-        } else if (entry.isFile() && extensionMatcher.matches(entry.name)) {
+        } else if (
+            entry.isFile() &&
+            !shouldIgnoreWatchedPath(candidatePath, watchRoot) &&
+            extensionMatcher.matches(entry.name)
+        ) {
             files.push(candidatePath);
         }
     }
@@ -1856,7 +1958,12 @@ async function collectScriptNames(
 
     async function scan(currentPath: string): Promise<void> {
         const entries = await readdir(currentPath, { withFileTypes: true });
-        const { files, directories } = partitionScannedDirectoryEntries(currentPath, entries, extensionMatcher);
+        const { files, directories } = partitionScannedDirectoryEntries(
+            currentPath,
+            entries,
+            extensionMatcher,
+            rootPath
+        );
 
         // Process all files in this directory concurrently for maximum throughput
         await Core.runInParallel(files, async (filePath) => {
@@ -1891,18 +1998,28 @@ async function collectWatchedFilePaths(
     const discoveredFiles: Array<string> = [];
 
     async function scan(currentPath: string): Promise<void> {
-        const entries = await readdir(currentPath, { withFileTypes: true });
-        const { files, directories } = partitionScannedDirectoryEntries(currentPath, entries, extensionMatcher);
+        try {
+            const entries = await readdir(currentPath, { withFileTypes: true });
+            const { files, directories } = partitionScannedDirectoryEntries(
+                currentPath,
+                entries,
+                extensionMatcher,
+                rootPath
+            );
 
-        discoveredFiles.push(...files);
+            discoveredFiles.push(...files);
 
-        await Core.runInParallelWithLimit(
-            directories,
-            async (subDirPath) => {
-                await scan(subDirPath);
-            },
-            maxConcurrentDirs
-        );
+            await Core.runInParallelWithLimit(
+                directories,
+                async (subDirPath) => {
+                    await scan(subDirPath);
+                },
+                maxConcurrentDirs
+            );
+        } catch {
+            // Ignore per-directory read errors; the unknown scan should never
+            // crash the watcher just because one subdirectory is inaccessible.
+        }
     }
 
     try {
@@ -1925,10 +2042,12 @@ async function addScriptNamesFromFile(
         const content = await readFile(filePath, "utf8");
         const parser = new Parser.GMLParser(content, {});
         const ast = parser.parse();
-        registerScriptNamesFromSymbols(extractSymbolsFromAst(ast, filePath), scriptNames);
-        // Cache the content and AST so performInitialScan can reuse them without
-        // re-reading from disk or re-parsing the GML source.
-        fileDataCache.set(filePath, { content, ast });
+        // Extract both symbols and references from the AST in a single traversal.
+        // This saves a second walk during transpileFile when the cache is reused.
+        const symbols = extractSymbolsFromAst(ast, filePath);
+        const references = extractReferencesFromAst(ast);
+        registerScriptNamesFromSymbols(symbols, scriptNames);
+        fileDataCache.set(filePath, { content, ast, symbols, references });
     } catch {
         // Ignore parse errors; fallback to file-name based script
     }

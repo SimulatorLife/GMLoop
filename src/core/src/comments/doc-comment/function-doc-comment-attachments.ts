@@ -71,7 +71,7 @@ function isFunctionDocTargetNode(node: unknown): node is NodeWithDocComments {
         return true;
     }
 
-    return isFunctionInitializedVariableDeclaration(node as NodeWithDocComments);
+    return isFunctionInitializedVariableDeclaration(node);
 }
 
 function collectFunctionDocTargets(rootNode: unknown): FunctionDocTarget[] {
@@ -194,11 +194,14 @@ function attachFunctionDocCommentToTarget(comment: CommentNodeWithAttachmentFlag
         targetNode.docComments = [];
     }
 
-    const alreadyAttached = targetNode.docComments.includes(comment);
-    if (!alreadyAttached) {
-        targetNode.docComments.push(comment);
+    // Guard against the rare case where the same comment object appears multiple
+    // times in the input array (e.g., via reference duplication). The length
+    // check short-circuits the includes() call for the common empty case.
+    if (targetNode.docComments.length > 0 && targetNode.docComments.includes(comment)) {
+        return;
     }
 
+    targetNode.docComments.push(comment);
     comment._gmlAttachedDocComment = true;
 }
 
@@ -225,7 +228,12 @@ export function normalizeFunctionDocCommentAttachments(
         return;
     }
 
-    const targets = collectFunctionDocTargets(rootNode);
+    // Clone the targets array before iterating so that mutations to targetNode.docComments
+    // inside the loop (via attachFunctionDocCommentToTarget) cannot affect the sorted
+    // traversal order. Without this, push() inside the inner findNearestReachable call
+    // could cause subsequent targets to be reached prematurely when comment ranges
+    // overlap, leading to a comment being attached to the wrong function node.
+    const targets = [...collectFunctionDocTargets(rootNode)];
     if (targets.length === 0) {
         return;
     }

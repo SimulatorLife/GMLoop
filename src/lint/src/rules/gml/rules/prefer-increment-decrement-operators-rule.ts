@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import {
     createMeta,
     isAssignmentExpressionNodeWithOperator,
@@ -9,7 +10,6 @@ import {
     sourceRangeContainsCommentToken,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type IncrementDecrementAssignmentOperator = "+=" | "-=";
 type IncrementDecrementOperator = "++" | "--";
@@ -26,8 +26,6 @@ type PreferIncrementDecrementCandidate = Readonly<{
     operator: IncrementDecrementOperator;
 }>;
 
-type UnwrapParenthesizedExpressionInput = Parameters<typeof Core.unwrapParenthesizedExpression>[0];
-
 const INCREMENT_DECREMENT_OPERATOR_BY_ASSIGNMENT_OPERATOR = Object.freeze({
     "+=": "++",
     "-=": "--"
@@ -42,7 +40,7 @@ function isAssignmentExpressionNode(node: unknown): node is AssignmentExpression
 }
 
 function isNumericLiteralOne(node: unknown, sourceText: string): boolean {
-    const unwrappedNode = Core.unwrapParenthesizedExpression(node as UnwrapParenthesizedExpressionInput);
+    const unwrappedNode = Core.unwrapParenthesizedExpression(node);
     if (!isAstNodeRecord(unwrappedNode) || unwrappedNode.type !== "Literal") {
         return false;
     }
@@ -58,7 +56,12 @@ function isNumericLiteralOne(node: unknown, sourceText: string): boolean {
         return false;
     }
 
-    return Number(literalText) === 1;
+    const parsed = Number(literalText);
+    // Use epsilon-tolerant comparison so that literals like "1.", "1.0", or
+    // "1.0000" that differ only in formatting also match the value 1. This
+    // prevents precision artifacts in the parser from blocking legitimate
+    // rewrites (e.g., source that reads `+= 1.0` should still trigger `++`).
+    return Core.areNumbersApproximatelyEqual(parsed, 1);
 }
 
 function tryGetPreferIncrementDecrementCandidate(

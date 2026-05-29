@@ -1,4 +1,5 @@
 import { featherManifest } from "../rules/feather/manifest.js";
+import type { LintRuleLevel } from "./lint-rule-level.js";
 
 export const PERFORMANCE_OVERRIDE_RULE_IDS = Object.freeze([
     "gml/prefer-hoistable-loop-accessors",
@@ -8,7 +9,6 @@ export const PERFORMANCE_OVERRIDE_RULE_IDS = Object.freeze([
     "gml/prefer-string-interpolation"
 ]);
 
-export type LintRuleLevel = "off" | "warn" | "error";
 export type LintRulesetName = "recommended" | "feather" | "performance";
 
 const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze({
@@ -23,6 +23,7 @@ const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze
     "gml/optimize-logical-flow": "warn",
     "gml/no-globalvar": "warn",
     "gml/no-empty-regions": "warn",
+    "gml/no-empty-comments": "warn",
     "gml/no-legacy-api": "warn",
     "gml/no-scientific-notation": "error",
     "gml/no-unnecessary-string-interpolation": "warn",
@@ -102,3 +103,5 @@ export const RECOMMENDED_GML_RULE_LEVELS = RECOMMENDED_RULES;
 export const RECOMMENDED_SAFE_FEATHER_RULE_LEVELS = RECOMMENDED_SAFE_FEATHER_RULES;
 export const FEATHER_RULE_LEVELS = FEATHER_RULES;
 export const PERFORMANCE_RULE_LEVELS = PERFORMANCE_RULES;
+
+export { LintRuleLevel } from "./lint-rule-level.js";

@@ -2,10 +2,6 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-function isPathInsideSelection(absoluteTargetPath: string, absoluteSelectionPath: string): boolean {
-    return absoluteTargetPath === absoluteSelectionPath || Core.isPathInside(absoluteTargetPath, absoluteSelectionPath);
-}
-
 /**
  * Resolve a user-provided project path to an absolute path.
  * Relative paths are interpreted as being rooted at `projectRoot`.
@@ -15,7 +11,11 @@ function isPathInsideSelection(absoluteTargetPath: string, absoluteSelectionPath
  * @returns Absolute normalized path.
  */
 export function resolveProjectPath(projectRoot: string, inputPath: string): string {
-    return path.isAbsolute(inputPath) ? inputPath : path.resolve(projectRoot, inputPath);
+    if (Core.isPortableAbsolutePath(inputPath)) {
+        return Core.resolvePortableAbsolutePath(inputPath);
+    }
+
+    return Core.resolvePortableAbsolutePath(path.join(projectRoot, inputPath));
 }
 
 /**
@@ -49,7 +49,7 @@ export function createPathSelectionMatcher(
         const isAllowed =
             absoluteAllowedPaths.length === 0 ||
             absoluteAllowedPaths.some((absoluteSelectionPath) =>
-                isPathInsideSelection(absoluteTargetPath, absoluteSelectionPath)
+                Core.isPathWithinBoundary(absoluteTargetPath, absoluteSelectionPath)
             );
         if (!isAllowed) {
             resultCache.set(targetPath, false);
@@ -57,33 +57,10 @@ export function createPathSelectionMatcher(
         }
 
         const isDenied = absoluteDeniedPaths.some((absoluteSelectionPath) =>
-            isPathInsideSelection(absoluteTargetPath, absoluteSelectionPath)
+            Core.isPathWithinBoundary(absoluteTargetPath, absoluteSelectionPath)
         );
         const result = !isDenied;
         resultCache.set(targetPath, result);
         return result;
     };
-}
-
-/**
- * Check whether a target path is selected by allow/deny path lists.
- *
- * Rules:
- * - Empty allow list means "allow everything".
- * - A path is allowed when it exactly matches an allow entry or is inside it.
- * - A denied path always wins over allow matches.
- *
- * @param projectRoot - Root path used to resolve relative entries.
- * @param targetPath - Path being checked.
- * @param allowedPaths - Optional allow list.
- * @param deniedPaths - Optional deny list.
- * @returns True when the path is selected by the allow/deny rules.
- */
-export function isPathSelectedByLists(
-    projectRoot: string,
-    targetPath: string,
-    allowedPaths: ReadonlyArray<string>,
-    deniedPaths: ReadonlyArray<string>
-): boolean {
-    return createPathSelectionMatcher(projectRoot, allowedPaths, deniedPaths)(targetPath);
 }

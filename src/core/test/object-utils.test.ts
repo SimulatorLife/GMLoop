@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 import { Core } from "../src/index.js";
 import {
@@ -11,6 +11,9 @@ import {
     incrementMapValue,
     isObjectLike,
     isPlainObject,
+    readCxcDxStore,
+    readRuntimeObjectPool,
+    sortObjectKeys,
     withDefinedValue,
     withObjectLike
 } from "../src/utils/object.js";
@@ -33,7 +36,10 @@ void test("assertPlainObject returns the validated reference", () => {
 });
 
 void test("assertPlainObject throws with descriptive error messages", () => {
-    assert.throws(() => assertPlainObject(null), TypeError);
+    assert.throws(
+        () => assertPlainObject(null),
+        (error: unknown) => error instanceof TypeError
+    );
     assert.throws(
         () =>
             assertPlainObject([], {
@@ -418,4 +424,101 @@ void test("hasMethods returns false when any property is not a function (array)"
     };
 
     assert.strictEqual(hasMethods(obj, ["get", "set", "has"]), false);
+});
+
+void test("sortObjectKeys recursively sorts object keys", () => {
+    const input = {
+        z: 1,
+        a: {
+            c: 3,
+            b: 2
+        },
+        d: [{ f: 6, e: 5 }, 4]
+    };
+
+    const expected = {
+        a: {
+            b: 2,
+            c: 3
+        },
+        d: [{ e: 5, f: 6 }, 4],
+        z: 1
+    };
+
+    const result = sortObjectKeys(input);
+    assert.deepStrictEqual(result, expected);
+
+    // Verify key order explicitly
+    assert.deepStrictEqual(Object.keys(result as object), ["a", "d", "z"]);
+    assert.deepStrictEqual(Object.keys((result as any).a), ["b", "c"]);
+    assert.deepStrictEqual(Object.keys((result as any).d[0]), ["e", "f"]);
+});
+
+void test("readRuntimeObjectPool returns undefined when globals is nullish", () => {
+    assert.strictEqual(readRuntimeObjectPool(undefined), undefined);
+});
+
+void test("readRuntimeObjectPool returns undefined when g_RunRoom is absent", () => {
+    const globals: Record<string, unknown> = {};
+    assert.strictEqual(readRuntimeObjectPool(globals), undefined);
+});
+
+void test("readRuntimeObjectPool returns undefined when g_RunRoom is a primitive", () => {
+    const globals: Record<string, unknown> = { g_RunRoom: 42 };
+    assert.strictEqual(readRuntimeObjectPool(globals), undefined);
+});
+
+void test("readRuntimeObjectPool returns undefined when m_Active is absent", () => {
+    const globals: Record<string, unknown> = { g_RunRoom: {} };
+    assert.strictEqual(readRuntimeObjectPool(globals), undefined);
+});
+
+void test("readRuntimeObjectPool returns undefined when m_Active is a primitive", () => {
+    const globals: Record<string, unknown> = { g_RunRoom: { m_Active: "not-an-object" } };
+    assert.strictEqual(readRuntimeObjectPool(globals), undefined);
+});
+
+void test("readRuntimeObjectPool returns pool value when the chain is fully populated", () => {
+    const poolValue = [{ id: 1 }, { id: 2 }];
+    const globals: Record<string, unknown> = {
+        g_RunRoom: { m_Active: { pool: poolValue } }
+    };
+    assert.strictEqual(readRuntimeObjectPool(globals), poolValue);
+});
+
+void test("readRuntimeObjectPool returns pool value even when it is not an array", () => {
+    const globals: Record<string, unknown> = {
+        g_RunRoom: { m_Active: { pool: "not-an-array" } }
+    };
+    assert.strictEqual(readRuntimeObjectPool(globals), "not-an-array");
+});
+
+void test("readCxcDxStore returns undefined when globals is nullish", () => {
+    assert.strictEqual(readCxcDxStore(undefined), undefined);
+});
+
+void test("readCxcDxStore returns undefined when _cx is absent", () => {
+    const globals: Record<string, unknown> = {};
+    assert.strictEqual(readCxcDxStore(globals), undefined);
+});
+
+void test("readCxcDxStore returns undefined when _cx is a primitive", () => {
+    const globals: Record<string, unknown> = { _cx: 42 };
+    assert.strictEqual(readCxcDxStore(globals), undefined);
+});
+
+void test("readCxcDxStore returns undefined when _dx is absent", () => {
+    const globals: Record<string, unknown> = { _cx: {} };
+    assert.strictEqual(readCxcDxStore(globals), undefined);
+});
+
+void test("readCxcDxStore returns undefined when _dx is a primitive", () => {
+    const globals: Record<string, unknown> = { _cx: { _dx: "not-an-object" } };
+    assert.strictEqual(readCxcDxStore(globals), undefined);
+});
+
+void test("readCxcDxStore returns the _dx record when fully populated", () => {
+    const dxRecord = { key: "value" };
+    const globals: Record<string, unknown> = { _cx: { _dx: dxRecord } };
+    assert.strictEqual(readCxcDxStore(globals), dxRecord);
 });

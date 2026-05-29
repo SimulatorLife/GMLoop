@@ -16,7 +16,12 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { runWatchCommand } from "../src/commands/watch.js";
 import { findAvailablePort } from "./test-helpers/free-port.js";
-import { fetchStatusPayload, waitForScanComplete, waitForStatus } from "./test-helpers/status-polling.js";
+import {
+    fetchStatusPayload,
+    waitForPatchCount,
+    waitForScanComplete,
+    waitForStatus
+} from "./test-helpers/status-polling.js";
 import {
     connectToHotReloadWebSocket,
     type HotReloadScriptPatch,
@@ -223,6 +228,7 @@ void describe("Hot reload targeted dependent retranspilation on definition chang
         try {
             // Wait for the initial scan to finish – both files are transpiled at this point.
             await waitForScanComplete(statusUrl, 10_000, 50);
+            await waitForPatchCount(statusUrl, 2, 10_000, 50);
 
             const initialStatus = await fetchStatusPayload(statusUrl);
             // The initial scan transpiles all GML files in the directory.
@@ -315,6 +321,7 @@ shared_symbol = function () {
 
         try {
             await waitForScanComplete(statusUrl, 10_000, 50);
+            await waitForPatchCount(statusUrl, 2, 10_000, 50);
 
             const initialStatus = await fetchStatusPayload(statusUrl);
             const initialPatchCount = initialStatus.patchCount ?? 0;
@@ -398,6 +405,7 @@ shared_symbol = function () {
 
         try {
             await waitForScanComplete(statusUrl, 10_000, 50);
+            await waitForPatchCount(statusUrl, 2, 10_000, 50);
 
             const initialStatus = await fetchStatusPayload(statusUrl);
             const initialPatchCount = initialStatus.patchCount ?? 0;

@@ -6,6 +6,7 @@ import { z } from "zod";
 type CliCatalogEntry = ReturnType<typeof CLI.getCliCommandCatalog>[number];
 type CliCatalogArgument = CliCatalogEntry["arguments"][number];
 type CliCatalogOption = CliCatalogEntry["options"][number];
+type McpToolCatalogEntry = ReturnType<typeof CLI.getMcpToolCatalogEntries>[number];
 
 /**
  * Stable identity used by MCP clients when they connect to the GMLoop MCP server.
@@ -19,10 +20,6 @@ export const GMLOOP_MCP_SERVER_METADATA: GmloopMcpServerMetadata = Object.freeze
     name: "gmloop-mcp",
     version: "0.0.1"
 });
-
-function normalizeMcpToolName(commandPath: ReadonlyArray<string>): string {
-    return `gmloop_${commandPath.join("_").replaceAll("-", "_")}`;
-}
 
 function normalizeSchemaFieldName(name: string): string {
     return name.replaceAll(/[^a-zA-Z0-9_]/g, "_");
@@ -62,6 +59,27 @@ type CliJsonInvocationResult<TPayload> = Readonly<{
 type CliGraphEnvelope<TPayload> = Readonly<{
     payload: TPayload;
 }>;
+
+/** Stable graph data returned by `graph doctor --json`. */
+export type GraphOverviewEnvelope = Readonly<{
+    graphs: ReadonlyArray<{
+        graphId: string;
+        [key: string]: unknown;
+    }>;
+}>;
+
+/**
+ * Looks up a named graph inside a `GraphOverviewEnvelope`.
+ *
+ * Collapses `envelope.payload.payload.graphs?.find(...)` into a single call.
+ * Returns `null` when the envelope or the named graph is absent.
+ */
+export function extractGraphById(
+    envelope: CliGraphEnvelope<GraphOverviewEnvelope>,
+    graphId: string
+): (GraphOverviewEnvelope["graphs"][number] & { graphId: string }) | null {
+    return envelope.payload.graphs?.find((entry) => entry.graphId === graphId) ?? null;
+}
 
 function createToolInputSchema(entry: CliCatalogEntry): z.ZodObject<Record<string, z.ZodTypeAny>> {
     const shape: Record<string, z.ZodTypeAny> = {
@@ -212,15 +230,28 @@ function getTemplateVariable(variables: Record<string, string | Array<string>>, 
 }
 
 export function listGmloopMcpToolNames(): Array<string> {
-    return CLI.getCliCommandCatalog().map((entry) => normalizeMcpToolName(entry.commandPath));
+    return listGmloopMcpToolCatalogEntries().map((entry) => entry.toolName);
+}
+
+export function listGmloopMcpToolCatalogEntries(): ReadonlyArray<McpToolCatalogEntry> {
+    return CLI.getMcpToolCatalogEntries();
 }
 
 function registerCliTools(server: McpServer): void {
-    for (const entry of CLI.getCliCommandCatalog()) {
-        const toolName = normalizeMcpToolName(entry.commandPath);
+    const cliCatalogByCommandDisplayName = new Map(
+        CLI.getCliCommandCatalog().map((entry) => [entry.displayName, entry])
+    );
+
+    for (const toolCatalogEntry of listGmloopMcpToolCatalogEntries()) {
+        const entry = cliCatalogByCommandDisplayName.get(toolCatalogEntry.commandDisplayName);
+        if (!entry) {
+            throw new Error(
+                `Missing CLI command catalog entry for MCP command '${toolCatalogEntry.commandDisplayName}'.`
+            );
+        }
 
         server.registerTool(
-            toolName,
+            toolCatalogEntry.toolName,
             {
                 description: entry.description,
                 inputSchema: createToolInputSchema(entry)
@@ -277,15 +308,8 @@ function registerGraphResources(server: McpServer): void {
             description: "Overview of the active project graph."
         },
         async (uri) => {
-            const report = await runCliJsonCommand<
-                CliGraphEnvelope<{
-                    graphs?: Array<{ graphId?: string }>;
-                }>
-            >(["graph", "doctor", "--json"]);
-            return createJsonResourceResult(
-                uri,
-                report.payload.payload.graphs?.find((entry) => entry.graphId === "project") ?? null
-            );
+            const report = await runCliJsonCommand<GraphOverviewEnvelope>(["graph", "doctor", "--json"]);
+            return createJsonResourceResult(uri, extractGraphById(report, "project"));
         }
     );
 
@@ -296,15 +320,8 @@ function registerGraphResources(server: McpServer): void {
             description: "Overview of the optional toolset graph."
         },
         async (uri) => {
-            const report = await runCliJsonCommand<
-                CliGraphEnvelope<{
-                    graphs?: Array<{ graphId?: string }>;
-                }>
-            >(["graph", "doctor", "--json"]);
-            return createJsonResourceResult(
-                uri,
-                report.payload.payload.graphs?.find((entry) => entry.graphId === "toolset") ?? null
-            );
+            const report = await runCliJsonCommand<GraphOverviewEnvelope>(["graph", "doctor", "--json"]);
+            return createJsonResourceResult(uri, extractGraphById(report, "toolset"));
         }
     );
 
