@@ -57,11 +57,72 @@ export interface SemanticCacheConfig {
     enabled?: boolean;
 
     /**
-     * Maximum number of occurrences that can be retained in-cache for a single
-     * symbol query result. Results exceeding this size are returned but not cached.
-     * Default: 10_000
+     * Custom policy for deciding whether an occurrence result is cache-worthy.
+     * When omitted, the cache constructs a {@link DefaultOccurrenceCachePolicy}
+     * from the legacy {@link maxOccurrenceCacheEntries} numeric threshold for
+     * backward compatibility.
+     *
+     * Prefer providing a custom policy when you need to test the cache-storage
+     * decision in isolation or want per-symbol thresholds.
+     */
+    occurrenceCachePolicy?: OccurrenceCachePolicy;
+
+    /**
+     * @deprecated Use {@link occurrenceCachePolicy} instead.  When a custom
+     * policy is provided this field is ignored.
      */
     maxOccurrenceCacheEntries?: number;
+}
+
+/**
+ * Policy interface for deciding whether an occurrence array is cache-worthy.
+ *
+ * Separating this from the cache mechanism allows the threshold check to be
+ * unit-tested independently from the cache's storage/eviction logic, and lets
+ * callers inject alternative policies (e.g., always cache, never cache, or
+ * per-symbol thresholds) without changing the cache implementation.
+ */
+export interface OccurrenceCachePolicy {
+    /**
+     * Return `true` when the given array is too large to be retained in-cache.
+     * The cache will still return the value to callers; it simply omits the
+     * store step, causing every subsequent query for the same key to re-fetch
+     * from the semantic analyzer.
+     *
+     * @param occurrences - The result array that would be stored.
+     */
+    shouldCacheOccurrences(occurrences: ReadonlyArray<SymbolOccurrence>): boolean;
+}
+
+/**
+ * Default occurrence cache policy backed by a configurable entry-count threshold.
+ *
+ * Rationale: very large occurrence sets are expensive to deduplicate and merge on
+ * every cache hit, and consume disproportionate memory relative to the benefit of
+ * caching a single result. Skipping the store for oversized results trades a
+ * guaranteed re-fetch on the next lookup for consistent performance and memory
+ * bounds on large codebases.
+ */
+export class DefaultOccurrenceCachePolicy implements OccurrenceCachePolicy {
+    private readonly maxEntries: number;
+
+    constructor(maxEntries: number) {
+        this.maxEntries = maxEntries;
+    }
+
+    shouldCacheOccurrences(occurrences: ReadonlyArray<SymbolOccurrence>): boolean {
+        return occurrences.length > this.maxEntries;
+    }
+}
+
+/**
+ * Policy that never skips caching — useful in tests or when the caller already
+ * controls result size upstream.
+ */
+export class PermissiveOccurrenceCachePolicy implements OccurrenceCachePolicy {
+    shouldCacheOccurrences(_occurrences: ReadonlyArray<SymbolOccurrence>): boolean {
+        return false;
+    }
 }
 
 /**
@@ -72,6 +133,18 @@ export interface CacheStats {
     misses: number;
     evictions: number;
     size: number;
+}
+
+/**
+ * Internal config type with all fields resolved to non-optional defaults.
+ * Separated from `SemanticCacheConfig` to avoid making `occurrenceCachePolicy`
+ * a mandatory field on the public API surface.
+ */
+interface ResolvedSemanticCacheConfig {
+    maxSize: number;
+    ttlMs: number;
+    enabled: boolean;
+    maxOccurrenceCacheEntries: number;
 }
 
 /**
@@ -97,7 +170,7 @@ export interface CacheStats {
  */
 export class SemanticQueryCache {
     private readonly semantic: PartialSemanticAnalyzer | null;
-    private readonly config: Required<SemanticCacheConfig>;
+    private readonly config: ResolvedSemanticCacheConfig;
 
     private occurrenceCache = new Map<string, CacheEntry<Array<SymbolOccurrence>>>();
     private fileSymbolsCache = new Map<string, CacheEntry<Array<FileSymbol>>>();
@@ -132,13 +205,25 @@ export class SemanticQueryCache {
         evictions: 0
     };
 
+    /**
+     * Extracted policy for occurrence cache-worthiness decisions.
+     * Replaces the inline `shouldSkipOccurrenceCacheStore` heuristic.
+     */
+    private readonly occurrenceCachePolicy: OccurrenceCachePolicy;
+
     constructor(semantic: PartialSemanticAnalyzer | null, config: SemanticCacheConfig = {}) {
         this.semantic = semantic;
+
+        const maxOccurrenceCacheEntries = config.maxOccurrenceCacheEntries ?? 10_000;
+        this.occurrenceCachePolicy =
+            config.occurrenceCachePolicy ?? new DefaultOccurrenceCachePolicy(maxOccurrenceCacheEntries);
+
         this.config = {
             maxSize: config.maxSize ?? 100,
             ttlMs: config.ttlMs ?? 60_000,
             enabled: config.enabled ?? true,
-            maxOccurrenceCacheEntries: config.maxOccurrenceCacheEntries ?? 10_000
+            // Retained for backward compat; actual policy lives on the separate field.
+            maxOccurrenceCacheEntries
         };
     }
 
@@ -158,7 +243,7 @@ export class SemanticQueryCache {
      * Call this once after the first `getSymbolOccurrences` fetch has been deduplicated
      * so that all future lookups in the same session return the clean array directly.
      *
-     * Entries exceeding `maxOccurrenceCacheEntries` are silently skipped, matching the
+     * Entries the policy considers non-cache-worthy are silently skipped, matching the
      * same skip-cache policy that `getOrFetch` applies on the initial miss.
      */
     primeOccurrenceCache(symbolName: string, symbolId: string | null, deduplicated: Array<SymbolOccurrence>): void {
@@ -166,7 +251,7 @@ export class SemanticQueryCache {
             return;
         }
 
-        if (this.shouldSkipOccurrenceCacheStore(deduplicated)) {
+        if (this.occurrenceCachePolicy.shouldCacheOccurrences(deduplicated)) {
             return;
         }
 
@@ -389,19 +474,21 @@ export class SemanticQueryCache {
 
         this.stats.misses++;
         const result = await fetcher();
-        if (cache === this.occurrenceCache && this.shouldSkipOccurrenceCacheStore(result)) {
+        if (
+            cache === this.occurrenceCache &&
+            this.occurrenceCachePolicy.shouldCacheOccurrences(result as Array<SymbolOccurrence>)
+        ) {
             return result;
         }
         this.setCached(cache, key, result);
         return result;
     }
 
-    private shouldSkipOccurrenceCacheStore(value: unknown): boolean {
-        if (!Array.isArray(value)) {
-            return false;
-        }
-
-        return value.length > this.config.maxOccurrenceCacheEntries;
+    private getOrFetchOccurrence(
+        key: string,
+        fetcher: () => Promise<Array<SymbolOccurrence>>
+    ): Promise<Array<SymbolOccurrence>> {
+        return this.getOrFetch(this.occurrenceCache, key, fetcher);
     }
 
     /**
