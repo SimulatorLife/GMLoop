@@ -182,9 +182,11 @@ The canonical current and planned top-level UI surfaces are tracked in code thro
 
 - `graph`: implemented
 - `ast`: planned
+- `config`: implemented
 - `docs`: implemented
 - `fix`: implemented
 - `live-reload`: implemented
+- `mcp`: implemented
 - `playground`: implemented
 - `rules`: planned
 
