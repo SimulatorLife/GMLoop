@@ -1,3 +1,4 @@
+import { toNumber } from "../utils/number.js";
 import { isObjectLike, withObjectLike } from "../utils/object.js";
 import type { GameMakerAstNode } from "./types.js";
 
@@ -42,7 +43,7 @@ function getLocationNumber(node: unknown, key: LocationKey, field: LocationField
                 location,
                 (locationObject) => {
                     const value = locationObject[field];
-                    return typeof value === "number" ? value : null;
+                    return toNumber(value);
                 },
                 () => null
             );
@@ -124,7 +125,7 @@ function getNodeEndIndex(node: unknown): number | null {
 
     const fallbackStart = getNodeStartIndex(node);
 
-    return typeof fallbackStart === "number" ? fallbackStart : null;
+    return toNumber(fallbackStart);
 }
 
 /**
