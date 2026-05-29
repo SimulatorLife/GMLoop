@@ -734,38 +734,38 @@ function createGm1030Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 function splitCodeAndTrailingLineComment(line: string): { codeSegment: string; trailingComment: string } {
-    let inSingleQuotedString = false;
-    let inDoubleQuotedString = false;
-    let escaped = false;
+    // Track position within the line and current parsing mode using a discriminated
+    // union instead of three separate boolean flags. This makes the state transitions
+    // explicit and eliminates the verbose compound boolean checks (e.g. "!inSingleQuotedString
+    // && !inDoubleQuotedString").
+    let state: "outside" | "'" | '"' | "escaped" = "outside";
+
     for (let index = 0; index < line.length - 1; index += 1) {
         const character = line[index];
         const nextCharacter = line[index + 1];
 
-        if (escaped) {
-            escaped = false;
-            continue;
-        }
-
-        if ((inSingleQuotedString || inDoubleQuotedString) && character === "\\") {
-            escaped = true;
-            continue;
-        }
-
-        if (!inDoubleQuotedString && character === "'") {
-            inSingleQuotedString = !inSingleQuotedString;
-            continue;
-        }
-
-        if (!inSingleQuotedString && character === '"') {
-            inDoubleQuotedString = !inDoubleQuotedString;
-            continue;
-        }
-
-        if (!inSingleQuotedString && !inDoubleQuotedString && character === "/" && nextCharacter === "/") {
-            return {
-                codeSegment: line.slice(0, index),
-                trailingComment: line.slice(index)
-            };
+        if (state === "escaped") {
+            state = "outside";
+        } else if (state === "'" || state === '"') {
+            if (character === "\\") {
+                state = "escaped";
+            } else if (character === state) {
+                state = "outside";
+            }
+        } else {
+            // "outside"
+            if (character === "\\") {
+                state = "escaped";
+            } else if (character === "'") {
+                state = "'";
+            } else if (character === '"') {
+                state = '"';
+            } else if (character === "/" && nextCharacter === "//") {
+                return {
+                    codeSegment: line.slice(0, index),
+                    trailingComment: line.slice(index)
+                };
+            }
         }
     }
 
