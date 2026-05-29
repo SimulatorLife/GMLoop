@@ -67,7 +67,7 @@ function collectArgumentSeparatorInsertionOffsets(
         uniqueOffsets.add(recovery.originalOffset);
     }
 
-    return Object.freeze([...uniqueOffsets].sort((left, right) => left - right));
+    return Object.freeze(Array.from(uniqueOffsets).toSorted((left, right) => left - right));
 }
 
 export function createRequireArgumentSeparatorsRule(definition: GmlRuleDefinition): Rule.RuleModule {
