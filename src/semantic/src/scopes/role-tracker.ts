@@ -1,5 +1,3 @@
-import { Core } from "@gmloop/core";
-
 import type { ScopeRole } from "./types.js";
 
 /**
@@ -47,7 +45,8 @@ export class IdentifierRoleTracker {
         const cloned = { ...role };
 
         if (role.tags !== undefined) {
-            cloned.tags = [...Core.toArray(role.tags)];
+            const sourceTags = role.tags;
+            cloned.tags = Array.isArray(sourceTags) ? [...sourceTags] : [sourceTags];
         }
 
         // Ensure type is present on the cloned role for callers that expect
