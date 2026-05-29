@@ -34,6 +34,7 @@ const {
     createStringCommentScanState,
     advanceStringCommentScan,
     hasComment,
+    isApproximatelyZero,
     isIdentifierNode,
     isLogicalAndOperator,
     isLogicalOrOperator,
@@ -55,25 +56,6 @@ const COMMENT_SEQUENCE_PATTERN = /\/\/|\/\*|\*\//u;
 const MANUAL_MATH_CALL_SIGNAL_PATTERN =
     /\b(?:arccos|arcsin|arctan|arctan2|cos|darccos|darcsin|darctan|darctan2|dcos|degtorad|dsin|dtan|exp|lengthdir_[xy]|ln|log2|mean|point_direction|point_distance(?:_3d)?|power|radtodeg|sin|sqr|sqrt|tan)\s*\(/u;
 const NUMERIC_LITERAL_SIGNAL_PATTERN = /(?<![\w.])(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?(?![\w.])/iu;
-
-/**
- * Guard threshold for divisor checks in `tryEvaluateExpression`.
- *
- * Strict equality (`rightValue === 0`) can fail to guard division when a
- * divisor is the result of prior floating-point arithmetic.  For example,
- * `1 / 3 * 3` evaluates to `0.9999999999999999` rather than exactly `1`, so
- * a subsequent strict-zero guard would incorrectly pass and allow a
- * division that would trap at runtime in GML.
- *
- * Using `Math.abs(value) <= ZERO_CHECK_EPSILON` (≈ 8.9e-15) safely rejects
- * both genuinely zero operands and the small rounding artefacts that arise
- * from typical GML numeric literals.
- */
-const ZERO_CHECK_EPSILON = Number.EPSILON * 4;
-
-function isApproximatelyZero(value: number): boolean {
-    return Math.abs(value) <= ZERO_CHECK_EPSILON;
-}
 
 function tryEvaluateExpression(node: any): any {
     const unwrapped = unwrapParenthesized(node);

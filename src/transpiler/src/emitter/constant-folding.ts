@@ -1,11 +1,9 @@
+import { Core } from "@gmloop/core";
+
 import type { BinaryExpressionNode, GmlNode, TernaryExpressionNode, UnaryExpressionNode } from "./ast.js";
 import { normalizeStructKeyText } from "./js-string-utils.js";
 
-const ZERO_COMPARISON_EPSILON = Number.EPSILON * 4;
-
-function isApproximatelyZero(value: number): boolean {
-    return Math.abs(value) <= ZERO_COMPARISON_EPSILON;
-}
+const { isApproximatelyZero } = Core;
 
 /**
  * Relative and absolute epsilon for floating-point equality comparisons.

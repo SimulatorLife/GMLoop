@@ -17,14 +17,8 @@
  * on `unwrapParenthesizedExpression` from Core's own node helpers.
  */
 
+import { ZERO_CHECK_EPSILON } from "../utils/number.js";
 import { unwrapParenthesizedExpression } from "./node-helpers/index.js";
-
-/**
- * Epsilon-scaled tolerance for floating-point numeric comparisons.
- * 4× EPSILON covers accumulated rounding error from operations on literals
- * (e.g., 0.1 + 0.2 vs 0.3 in IEEE 754).
- */
-const NUMERIC_EPSILON_TOLERANCE = Number.EPSILON * 4;
 
 /**
  * Return `true` when two numbers are within floating-point tolerance of each other,
@@ -32,7 +26,7 @@ const NUMERIC_EPSILON_TOLERANCE = Number.EPSILON * 4;
  */
 function areNumericValuesApproximatelyEqual(left: number, right: number): boolean {
     const magnitude = Math.max(1, Math.abs(left), Math.abs(right));
-    return Math.abs(left - right) <= NUMERIC_EPSILON_TOLERANCE * magnitude;
+    return Math.abs(left - right) <= ZERO_CHECK_EPSILON * magnitude;
 }
 
 /**
