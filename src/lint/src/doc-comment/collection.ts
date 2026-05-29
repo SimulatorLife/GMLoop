@@ -6,6 +6,7 @@ const {
     getCommentArray,
     getCommentBoundaryIndex,
     getLineCommentRawText,
+    isDocLikeLeadingLine,
     isNonEmptyArray,
     resolveLineCommentOptions,
     toMutableArray,
@@ -167,11 +168,7 @@ function collectNodeDocCommentLines(
         const rawText = getLineCommentRawText(comment);
         const trimmedRaw = typeof rawText === STRING_TYPE ? rawText.trim() : "";
         const isFormattedDocStyle = typeof formatted === STRING_TYPE && formatted.trim().startsWith("///");
-        const trimmedWithoutSlashes = trimmedRaw.replace(/^\/+/, "").trim();
-        const hasDocTagAfterSlash = /^\/+\s*@/.test(trimmedRaw);
-        const isDocStyleSlash = /^\/\/\s+\/\s*/.test(trimmedRaw);
-        const isBlockDocLike = trimmedRaw.startsWith("/*") && trimmedWithoutSlashes.startsWith("@");
-        const isRawDocLike = trimmedRaw.startsWith("///") || hasDocTagAfterSlash || isDocStyleSlash || isBlockDocLike;
+        const isRawDocLike = isDocLikeLeadingLine(rawText);
         if (!isFormattedDocStyle && !isRawDocLike) {
             remainingComments.push(comment);
             continue;
@@ -345,17 +342,7 @@ function tryCollectDocLinesFromSourceText(
 }
 
 export function isLineCommentDocLike(rawText: unknown): boolean {
-    if (typeof rawText !== STRING_TYPE) {
-        return false;
-    }
-
-    const trimmedRaw = (rawText as string).trim();
-    const trimmedWithoutSlashes = trimmedRaw.replace(/^\/+/, "").trim();
-    const hasDocTagAfterSlash = /^\/+\s*@/.test(trimmedRaw);
-    const isDocStyleSlash = /^\/\/\s+\/\s*/.test(trimmedRaw);
-    const isBlockDocLike = trimmedRaw.startsWith("/*") && trimmedWithoutSlashes.startsWith("@");
-
-    return trimmedRaw.startsWith("///") || hasDocTagAfterSlash || isDocStyleSlash || isBlockDocLike;
+    return isDocLikeLeadingLine(rawText);
 }
 
 function hasTooManyBlankLinesBetween(sourceText: string | null, start: number | null, end: number): boolean {

@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, reportProgramTextRewrite } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 /**
  * Returns `true` when the line is a bare `//` comment — i.e. the line contains
