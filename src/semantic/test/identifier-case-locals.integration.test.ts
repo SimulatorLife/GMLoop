@@ -8,7 +8,7 @@ import { Core } from "@gmloop/core";
 import {
     clearIdentifierCaseDryRunContexts,
     setIdentifierCaseDryRunContext
-} from "../src/identifier-case/identifier-case-context.js";
+} from "../src/identifier-case/identifier-case-helpers.js";
 import { maybeReportIdentifierCaseDryRun } from "../src/identifier-case/identifier-case-report.js";
 import { prepareIdentifierCasePlan } from "../src/identifier-case/plan-service.js";
 import {
