@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { DEFAULT_WRITE_ACCESS_MODE, defaultIdentifierCaseFsFacade } from "../src/identifier-case/fs-facade.js";
+import {
+    DEFAULT_WRITE_ACCESS_MODE,
+    defaultIdentifierCaseFsFacade
+} from "../src/identifier-case/identifier-case-helpers.js";
 
 void describe("defaultIdentifierCaseFsFacade", () => {
     void it("is frozen so callers cannot mutate the shared default", () => {

@@ -4,8 +4,7 @@ import { resolveProjectRelativeFilePath } from "../project-index/path-normalizat
 import { applyAssetRenames, planAssetRenames } from "./asset-renames/index.js";
 import { evaluateIdentifierCaseAssetRenamePolicy } from "./asset-renames/policy.js";
 import { ConflictSeverity } from "./conflict-severity.js";
-import { defaultIdentifierCaseFsFacade } from "./fs-facade.js";
-import { peekIdentifierCaseDryRunContext } from "./identifier-case-context.js";
+import { defaultIdentifierCaseFsFacade, peekIdentifierCaseDryRunContext } from "./identifier-case-helpers.js";
 import { formatIdentifierCase } from "./identifier-case-utils.js";
 import { setIdentifierCaseOption } from "./option-store.js";
 import { IdentifierCaseStyle, normalizeIdentifierCaseAssetStyle, normalizeIdentifierCaseOptions } from "./options.js";
