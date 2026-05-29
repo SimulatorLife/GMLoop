@@ -197,8 +197,9 @@ export function visitChildNodes(node: unknown, callback: (child: unknown) => voi
         return;
     }
 
-    for (const key of Object.keys(node)) {
-        const value = (node as Record<string, unknown>)[key];
+    const keys = Object.keys(node);
+    for (let i = 0, len = keys.length; i < len; i++) {
+        const value = (node as Record<string, unknown>)[keys[i]];
         if (isObjectLike(value)) {
             callback(value);
         }
@@ -224,16 +225,21 @@ export function visitNonTraversalChildValues(node: unknown, callback: (child: un
     }
 
     if (Array.isArray(node)) {
-        for (const entry of node) {
-            visitNonTraversalChildValues(entry, callback);
+        for (let i = 0, len = node.length; i < len; i++) {
+            visitNonTraversalChildValues(node[i], callback);
         }
         return;
     }
 
-    for (const [key, value] of Object.entries(node)) {
+    // Avoid Object.entries() to prevent allocating [key, value] tuple arrays on each
+    // iteration. Direct key iteration with direct property access is measurably faster.
+    const keys = Object.keys(node);
+    for (let i = 0, len = keys.length; i < len; i++) {
+        const key = keys[i];
         if (isTraversalLinkKey(key)) {
             continue;
         }
+        const value = (node as Record<string, unknown>)[key];
         if (isObjectLike(value)) {
             callback(value);
             visitNonTraversalChildValues(value, callback);
