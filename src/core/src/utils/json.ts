@@ -306,35 +306,6 @@ export function parseJsonWithContext(text, options: ParseJsonOptions = {}) {
 }
 
 /**
- * Remove trailing commas from JSON strings to make them parseable by JSON.parse.
- * GameMaker's .yy and .yyp files use a non-standard JSON format that includes
- * trailing commas after the last element in arrays and objects.
- *
- * @param {string} text Raw JSON text that may contain trailing commas.
- * @returns {string} Cleaned JSON text without trailing commas.
- */
-function stripTrailingCommas(text: string): string {
-    // This regex matches:
-    // - A comma followed by optional whitespace/newlines
-    // - Followed by ] (end of array) or } (end of object)
-    return text.replaceAll(/,(\s*[\]}])/g, "$1");
-}
-
-/**
- * Parse a GameMaker JSON file (.yy, .yyp) which uses non-standard JSON with
- * trailing commas. This function strips trailing commas before parsing.
- *
- * @param {string} text Raw JSON text from a GameMaker file.
- * @param {ParseJsonOptions} [options] Parsing options.
- * @returns {any} Parsed JavaScript value.
- * @throws {JsonParseError} When parsing fails.
- */
-export function parseGameMakerJson(text: string, options: ParseJsonOptions = {}) {
-    const cleanedText = stripTrailingCommas(text);
-    return parseJsonWithContext(cleanedText, options);
-}
-
-/**
  * Parse a JSON payload that is expected to yield a plain object.
  *
  * The helper reuses {@link parseJsonWithContext} to surface enriched syntax
