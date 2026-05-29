@@ -151,6 +151,73 @@ void test("prefer-loop-invariant-expressions hoists point_distance calls when al
     expectAutoFix(input, expected);
 });
 
+void test("prefer-loop-invariant-expressions hoists floor calls on invariant inputs", () => {
+    const input = ["repeat (count) {", "    total += floor(score / divisor);", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = floor(score / divisor);",
+        "repeat (count) {",
+        "    total += cached_value;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions hoists dsin calls on invariant inputs", () => {
+    const input = ["repeat (count) {", "    xs[i] = dsin(angle) * amplitude;", "    i += 1;", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = dsin(angle) * amplitude;",
+        "repeat (count) {",
+        "    xs[i] = cached_value;",
+        "    i += 1;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions hoists lerp calls when all inputs are invariant", () => {
+    const input = ["repeat (count) {", "    arr[i] = lerp(a, b, f) * scale;", "    i += 1;", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = lerp(a, b, f) * scale;",
+        "repeat (count) {",
+        "    arr[i] = cached_value;",
+        "    i += 1;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions hoists string_length calls on invariant inputs", () => {
+    const input = ["repeat (count) {", "    total += string_length(name) + suffix;", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = string_length(name) + suffix;",
+        "repeat (count) {",
+        "    total += cached_value;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions hoists ceil calls on invariant inputs", () => {
+    const input = ["repeat (count) {", "    total += ceil(score / divisor);", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = ceil(score / divisor);",
+        "repeat (count) {",
+        "    total += cached_value;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
 void test("prefer-loop-invariant-expressions hoists template strings even when call sites remain in-loop", () => {
     const input = ["repeat (count) {", '    draw_text(x, y, $"hp: {max_hp}");', "}", ""].join("\n");
     const expected = [

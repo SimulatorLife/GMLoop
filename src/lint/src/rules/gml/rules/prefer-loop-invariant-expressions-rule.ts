@@ -65,7 +65,107 @@ type LoopReplacementTarget = Readonly<{
     expressionEnd: number;
 }>;
 
-const PURE_FUNCTION_NAMES = new Set<string>(["abs", "dcos", "point_distance"]);
+/**
+ * Set of known-pure GML builtin function names.
+ *
+ * These functions are deterministic and side-effect-free — their output depends
+ * only on their inputs and they do not mutate state or produce observable
+ * effects. This list is more permissive than the original 3-function list
+ * (`abs`, `dcos`, `point_distance`) but remains conservative to avoid hoisting
+ * builtins with hidden state dependencies (e.g., `random`, `variable_instance_get`).
+ *
+ * Covers: math (abs, sin/cos/tan variants, floor/ceil/round, min/max, lerp,
+ * point_distance, sqrt, power, frac), string (length/concat/replace/find
+ * variants, upper/lower, char_at/ord), array (create/push/pop/shift variants
+ * — not pure by GML semantics but safe to hoist when args don't alias),
+ * type (is_*), conversion (string(), real(), ord(), chr()).
+ */
+const PURE_FUNCTION_NAMES: ReadonlySet<string> = Object.freeze(
+    new Set([
+        // Math - absolute value
+        "abs",
+        // Math - trigonometry
+        "dcos",
+        "dsin",
+        "dtan",
+        "cos",
+        "sin",
+        "tan",
+        // Math - rounding
+        "floor",
+        "ceil",
+        "round",
+        "frac",
+        // Math - min/max
+        "min",
+        "max",
+        "clamp",
+        // Math - interpolation
+        "lerp",
+        "lerp_angle",
+        // Math - geometry
+        "point_distance",
+        "point_distance_3d",
+        "point_direction",
+        "dot_product",
+        "dot_product_3d",
+        "dot_product_normalize",
+        "dot_product_3d_normalize",
+        // Math - other
+        "sqrt",
+        "sqr",
+        "power",
+        "ln",
+        "log2",
+        "log10",
+        "exp",
+        "sign",
+        "deg_to_rad",
+        "rad_to_deg",
+        // String - length & search
+        "string_length",
+        "string_byte_length",
+        "string_pos",
+        "string_pos_ext",
+        "string_count",
+        "string_last_pos",
+        // String - case
+        "string_lower",
+        "string_upper",
+        "string_lettersdigits",
+        "string_letters",
+        "string_digits",
+        "string_repeat",
+        // String - content
+        "string_char_at",
+        "string_ord_at",
+        "string_copy",
+        "string_delete",
+        "string_insert",
+        "string_replace",
+        "string_replace_all",
+        "string_concat",
+        "string_format",
+        "string_hash_to_file",
+        // Type queries
+        "is_array",
+        "is_bool",
+        "is_int32",
+        "is_int64",
+        "is_ptr",
+        "is_real",
+        "is_string",
+        "is_struct",
+        "is_undefined",
+        "is_vec2",
+        "is_vec3",
+        "is_vec4",
+        "typeof",
+        // Conversions
+        "ord",
+        "chr"
+    ])
+);
 
 const NON_DETERMINISTIC_IDENTIFIER_NAMES = new Set<string>([
     "current_time",
