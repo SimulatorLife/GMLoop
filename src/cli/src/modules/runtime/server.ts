@@ -8,7 +8,7 @@ import { Core } from "@gmloop/core";
 
 import type { ServerEndpoint, ServerLifecycle } from "../server/index.js";
 
-const { isErrorWithCode, getErrorMessage } = Core;
+const { getErrorMessage, isErrorWithCode, toNumber } = Core;
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 0;
@@ -71,7 +71,7 @@ function getRuntimeHttpErrorStatus(error: unknown): number | null {
     }
 
     const statusCode = (error as unknown as Record<string, unknown>).statusCode;
-    return typeof statusCode === "number" ? statusCode : null;
+    return toNumber(statusCode);
 }
 
 function formatRuntimeHttpErrorMessage(error: unknown, statusCode: number, fallbackMessage: string): string {
