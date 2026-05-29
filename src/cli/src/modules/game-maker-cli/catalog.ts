@@ -3,7 +3,6 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { safeReaddirOrEmpty } from "../../shared/fs-artifacts.js";
 import {
     type ConfiguredGameMakerCliMcpServer,
     discoverConfiguredGameMakerCliMcpServer
@@ -260,7 +259,7 @@ export async function loadGameMakerCliCompanionCatalog(
             invocation: invocationDisplayName,
             mcpServer: Object.freeze({
                 available: false,
-                error: Core.isErrorLike(error) ? error.message : "Could not inspect ResourceTool MCP tools.",
+                error: Core.getErrorMessage(error),
                 name: null,
                 projectPath: resolvedProjectPath,
                 serverId: configuredExternalMcpServer?.serverId ?? null,
@@ -694,7 +693,7 @@ async function resolveSingleProjectManifestPathOrNull(projectRoot: string | null
         return null;
     }
 
-    const entries = await safeReaddirOrEmpty(projectRoot, { withFileTypes: true });
+    const entries = await Core.safeReaddirWithFileTypes(projectRoot);
     const manifestPaths = entries
         .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".yyp"))
         .map((entry) => path.join(projectRoot, entry.name))
@@ -711,7 +710,7 @@ function createUnavailableGameMakerCliCompanionCatalog(
     return Object.freeze({
         available: false,
         cliCommands: [],
-        error: Core.isErrorLike(error) ? error.message : "Could not load gm-cli metadata.",
+        error: Core.getErrorMessage(error, { fallback: "Could not load gm-cli metadata." }),
         invocation,
         mcpServer: Object.freeze({
             available: false,

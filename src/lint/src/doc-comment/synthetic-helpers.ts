@@ -70,28 +70,22 @@ export function getIdentifierFromParameterNode(param: any) {
  *   extracted.
  */
 export function resolveParameterName(param: any): string | undefined {
-    if (!param || typeof param !== "object") {
+    if (!param?.type) {
         return undefined;
     }
 
-    if (param.type === "Identifier") {
-        return typeof param.name === STRING_TYPE ? param.name : undefined;
-    }
-
-    if (param.type === "DefaultParameter" || param.type === "AssignmentPattern") {
-        const left = param.left;
-        if (left && typeof left === "object") {
-            if (typeof left.name === STRING_TYPE) {
-                return left.name;
-            }
-            if (left.id && typeof left.id === "object" && typeof left.id.name === STRING_TYPE) {
-                return left.id.name;
-            }
+    switch (param.type) {
+        case "Identifier": {
+            return typeof param.name === "string" ? param.name : undefined;
         }
-        return undefined;
+        case "DefaultParameter":
+        case "AssignmentPattern": {
+            return param.left?.name ?? param.left?.id?.name;
+        }
+        default: {
+            return typeof param.name === "string" ? param.name : undefined;
+        }
     }
-
-    return typeof param.name === STRING_TYPE ? param.name : undefined;
 }
 
 export function getArgumentIndexFromIdentifier(name: unknown) {

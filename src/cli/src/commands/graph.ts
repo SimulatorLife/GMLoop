@@ -1483,7 +1483,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         output = transpiler.transpileExpression(output);
                     }
                 } catch (error_) {
-                    error = Core.isErrorLike(error_) ? error_.message : String(error_);
+                    error = Core.getErrorMessage(error_);
                     output = "";
                     ast = "";
                 }

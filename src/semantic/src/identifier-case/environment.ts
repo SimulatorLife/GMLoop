@@ -1,6 +1,6 @@
 import { Core } from "@gmloop/core";
 
-import { warnWithReason } from "./logger.js";
+import { warnWithReason } from "./identifier-case-helpers.js";
 import { deleteIdentifierCaseOption, setIdentifierCaseOption } from "./option-store.js";
 import { captureIdentifierCasePlanSnapshot, prepareIdentifierCasePlan } from "./plan-service.js";
 import { bootstrapIdentifierCaseProjectIndex } from "./project-index-gateway.js";

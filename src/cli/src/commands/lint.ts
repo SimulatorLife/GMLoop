@@ -283,9 +283,9 @@ async function resolveForcedProjectRootFromPathOption(forcedProjectPath: string 
         } catch (error) {
             return {
                 forcedProjectRoot: null,
-                validationError: `Unable to inspect forced project .yyp path ${resolvedPath}: ${
-                    Core.isErrorLike(error) ? error.message : String(error)
-                }`
+                validationError: `Unable to inspect forced project .yyp path ${resolvedPath}: ${Core.getErrorMessage(
+                    error
+                )}`
             };
         }
 
@@ -315,9 +315,7 @@ async function resolveForcedProjectRootFromPathOption(forcedProjectPath: string 
     } catch (error) {
         return {
             forcedProjectRoot: null,
-            validationError: `Unable to inspect forced project path ${resolvedPath}: ${
-                Core.isErrorLike(error) ? error.message : String(error)
-            }`
+            validationError: `Unable to inspect forced project path ${resolvedPath}: ${Core.getErrorMessage(error)}`
         };
     }
 
@@ -1193,9 +1191,7 @@ async function configureLintConfig(parameters: {
                 await validateExplicitConfigPath(fallbackEslintConfigPath);
             } catch (configPathError) {
                 console.error(
-                    `Failed to read config at ${fallbackEslintConfigPath}: ${
-                        Core.isErrorLike(configPathError) ? configPathError.message : String(configPathError)
-                    }`
+                    `Failed to read config at ${fallbackEslintConfigPath}: ${Core.getErrorMessage(configPathError)}`
                 );
                 return 2;
             }
@@ -1227,9 +1223,7 @@ async function configureLintConfig(parameters: {
             return 0;
         } catch (error) {
             console.error(
-                `Failed to load gmloop config at ${resolvedGmloopConfigPath}: ${
-                    Core.isErrorLike(error) ? error.message : String(error)
-                }`
+                `Failed to load gmloop config at ${resolvedGmloopConfigPath}: ${Core.getErrorMessage(error)}`
             );
             return 2;
         }
@@ -1389,7 +1383,7 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
     try {
         eslint = new ESLint(eslintConstructorOptions);
     } catch (error) {
-        console.error(Core.isErrorLike(error) ? error.message : String(error));
+        console.error(Core.getErrorMessage(error));
         setProcessExitCode(2);
         return;
     }
@@ -1434,7 +1428,7 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
             }
         });
     } catch (error) {
-        console.error(Core.isErrorLike(error) ? error.message : String(error));
+        console.error(Core.getErrorMessage(error));
         setProcessExitCode(2);
         return;
     }
@@ -1519,7 +1513,7 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
 
             setProcessExitCode(exitCode);
         } catch (error) {
-            console.error(Core.isErrorLike(error) ? error.message : String(error));
+            console.error(Core.getErrorMessage(error));
             setProcessExitCode(2);
         }
     } finally {
