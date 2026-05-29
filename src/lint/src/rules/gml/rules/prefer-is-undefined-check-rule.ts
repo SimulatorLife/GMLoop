@@ -12,10 +12,14 @@ function isUndefinedIdentifier(expression: unknown): boolean {
     }
 
     if (expression.type === "Identifier") {
-        return expression.name === "undefined";
+        return typeof expression.name === "string" && expression.name.toLowerCase() === "undefined";
     }
 
-    return expression.type === "Literal" && expression.value === "undefined";
+    if (expression.type === "Literal" && typeof expression.value === "string") {
+        return expression.value.toLowerCase() === "undefined";
+    }
+
+    return false;
 }
 
 export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition): Rule.RuleModule {
