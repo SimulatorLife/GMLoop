@@ -5,6 +5,47 @@ import * as Refactor from "../src/index.js";
 import { SemanticQueryCache } from "../src/semantic-cache.js";
 import type { DependentSymbol, FileSymbol, PartialSemanticAnalyzer, SymbolOccurrence } from "../src/types.js";
 
+/**
+ * Replaces wall-clock with a controlled, deterministic clock so that
+ * TTL-expiry tests are timing-independent and never flake under CI load.
+ *
+ * Usage:
+ * ```
+ * await withFakeTime(async (advance) => {
+ *     const cache = new SemanticQueryCache(semantic, { ttlMs: 50 });
+ *     await cache.getSymbolOccurrences("test");   // t=0
+ *     advance(60);                                // t=60 — TTL expired
+ *     await cache.getSymbolOccurrences("test");   // re-fetches
+ * });
+ * ```
+ */
+async function withFakeTime(callback: (advance: (ms: number) => void) => void | Promise<void>): Promise<void> {
+    // Declare all mutable state before making any assignments to Date.now so that
+    // the ESLint require-atomic-updates rule's control-flow analysis is satisfied.
+    const original = Date.now.bind(Date);
+    let currentMs = 0;
+
+    // Assigning an arrow that closes over `currentMs` — rule falsely flags it as
+    // a write-after-mutation; there is no actual race since `currentMs` is already
+    // declared in this function scope.
+    // eslint-disable-next-line require-atomic-updates -- rule cannot track captured-variable pattern
+    Date.now = () => currentMs;
+
+    const advance = (ms: number): void => {
+        currentMs += ms;
+    };
+
+    try {
+        const result = callback(advance);
+        if (result && typeof result.then === "function") {
+            await result;
+        }
+    } finally {
+        // eslint-disable-next-line require-atomic-updates -- restore to captured original
+        Date.now = original;
+    }
+}
+
 void describe("SemanticQueryCache", () => {
     void describe("getSymbolOccurrences", () => {
         void it("caches symbol occurrence queries", async () => {
@@ -93,34 +134,24 @@ void describe("SemanticQueryCache", () => {
         });
 
         void it("respects TTL expiration", async () => {
-            let callCount = 0;
-            const semantic: PartialSemanticAnalyzer = {
-                getSymbolOccurrences: async () => {
-                    callCount++;
-                    return [{ path: "test.gml", start: 0, end: 10 }] as Array<SymbolOccurrence>;
-                }
-            };
+            await withFakeTime(async (advance) => {
+                let callCount = 0;
+                const semantic: PartialSemanticAnalyzer = {
+                    getSymbolOccurrences: async () => {
+                        callCount++;
+                        return [{ path: "test.gml", start: 0, end: 10 }] as Array<SymbolOccurrence>;
+                    }
+                };
 
-            const cache = new SemanticQueryCache(semantic, { ttlMs: 100 });
-            await cache.getSymbolOccurrences("test");
-            assert.equal(callCount, 1, "First query is a cache miss");
-
-            // Wait for the TTL to expire by repeatedly probing with a cached look-up.
-            // Once TTL has passed, the next call will trigger a cache miss and update
-            // callCount to 2. This makes the test deterministic: we observe the actual
-            // TTL expiry signal rather than assuming a fixed wall-clock delay.
-            const expiryDeadline = Date.now() + 100 + 2000;
-            let done = false;
-            while (!done && Date.now() < expiryDeadline) {
+                const cache = new SemanticQueryCache(semantic, { ttlMs: 100 });
                 await cache.getSymbolOccurrences("test");
-                if (callCount >= 2) {
-                    done = true;
-                } else {
-                    await new Promise((resolve) => setTimeout(resolve, 20));
-                }
-            }
+                assert.equal(callCount, 1, "First query is a cache miss");
 
-            assert.equal(callCount, 2, "Expired entry should trigger new query");
+                advance(101);
+                await cache.getSymbolOccurrences("test");
+
+                assert.equal(callCount, 2, "Expired entry should trigger new query");
+            });
         });
 
         void it("does not retain oversized occurrence arrays in cache", async () => {
@@ -629,33 +660,26 @@ void describe("SemanticQueryCache", () => {
         });
 
         void it("respects TTL for cached entries", async () => {
-            let callCount = 0;
-            const semantic: PartialSemanticAnalyzer = {
-                getFileSymbols: async () => {
-                    callCount++;
-                    return [];
-                }
-            };
+            await withFakeTime(async (advance) => {
+                let callCount = 0;
+                const semantic: PartialSemanticAnalyzer = {
+                    getFileSymbols: async () => {
+                        callCount++;
+                        return [];
+                    }
+                };
 
-            const cache = new SemanticQueryCache(semantic, { ttlMs: 50 });
+                const cache = new SemanticQueryCache(semantic, { ttlMs: 50 });
 
-            await cache.getFileSymbols("file1.gml");
-            assert.equal(callCount, 1);
+                await cache.getFileSymbols("file1.gml");
+                assert.equal(callCount, 1);
 
-            // Wait until the TTL is guaranteed to be expired, then probe again.
-            // Use a guaranteed-minimum delay plus a polling loop so the test is
-            // deterministic even when the event loop is active with other work.
-            const requiredDelay = 100;
-            const deadline = Date.now() + requiredDelay + 2000;
-            while (Date.now() < deadline) {
-                await new Promise((resolve) => setTimeout(resolve, 20));
-            }
-            callCount = 0; // Reset so assertion tracks only the re-fetch.
+                advance(51);
+                const results = await cache.getFileSymbolsBatch(["file1.gml"]);
 
-            const results = await cache.getFileSymbolsBatch(["file1.gml"]);
-
-            assert.equal(callCount, 1, "Expired entry should be re-fetched");
-            assert.equal(results.size, 1);
+                assert.equal(callCount, 2, "Expired entry should be re-fetched");
+                assert.equal(results.size, 1);
+            });
         });
 
         void it("works with null semantic analyzer", async () => {
