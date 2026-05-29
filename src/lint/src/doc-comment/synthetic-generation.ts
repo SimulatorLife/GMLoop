@@ -68,12 +68,11 @@ function suppressAliasCanonicalOverrides(
     suppressed: Set<string>
 ): void {
     for (const rawDocName of documentedParamNames) {
-        const normalizedDocName = typeof rawDocName === "string" ? rawDocName.replaceAll(/^\[|\]$/g, "") : rawDocName;
-        const maybeIndex = getArgumentIndexFromIdentifier(normalizedDocName);
+        if (typeof rawDocName !== "string") continue;
 
-        if (maybeIndex === null || !aliasByIndex.has(maybeIndex)) {
-            continue;
-        }
+        const normalizedDocName = rawDocName.replaceAll(/^\[|\]$/g, "");
+        const maybeIndex = getArgumentIndexFromIdentifier(normalizedDocName);
+        if (maybeIndex === null || !aliasByIndex.has(maybeIndex)) continue;
 
         const fallbackCanonical = getCanonicalParamNameFromText(`argument${maybeIndex}`) || `argument${maybeIndex}`;
         suppressed.add(fallbackCanonical);
@@ -94,19 +93,14 @@ function suppressAliasCanonicalOverrides(
  */
 function suppressOrderedCanonicalFallbacks(orderedParamMetadata: readonly DocMeta[], suppressed: Set<string>): void {
     for (const [ordIndex, ordMeta] of orderedParamMetadata.entries()) {
-        if (!ordMeta || typeof ordMeta.name !== STRING_TYPE) {
-            continue;
-        }
+        if (!ordMeta || typeof ordMeta.name !== STRING_TYPE) continue;
 
         const canonicalOrdinal = getCanonicalParamNameFromText(ordMeta.name);
-        if (!canonicalOrdinal) {
-            continue;
-        }
+        if (!canonicalOrdinal) continue;
 
         const fallback = getCanonicalParamNameFromText(`argument${ordIndex}`) || `argument${ordIndex}`;
-        if (canonicalOrdinal === fallback) {
-            continue;
-        }
+        if (canonicalOrdinal === fallback) continue;
+
         suppressed.add(fallback);
     }
 }
@@ -248,28 +242,17 @@ function summarizeReturnStatements(node: any): ReturnSummary {
  * @returns The same lines array (for chaining convenience, though the input is mutated).
  */
 function maybeAppendReturnsDoc(lines: string[], functionNode: any, hasReturnsTag: boolean, overrides: any = {}) {
-    if (!Array.isArray(lines)) {
-        return [];
-    }
+    if (!Array.isArray(lines)) return [];
 
-    if (overrides?.suppressReturns === true) {
-        return lines;
-    }
+    if (overrides?.suppressReturns === true) return lines;
 
-    if (
-        hasReturnsTag ||
-        !functionNode ||
-        (functionNode.type !== "FunctionDeclaration" && functionNode.type !== "StructFunctionDeclaration") ||
-        functionNode._suppressSyntheticReturnsDoc
-    ) {
+    const isFunctionDeclaration =
+        functionNode?.type === "FunctionDeclaration" || functionNode?.type === "StructFunctionDeclaration";
+    if (hasReturnsTag || !functionNode || !isFunctionDeclaration || functionNode._suppressSyntheticReturnsDoc)
         return lines;
-    }
 
     const body = functionNode.body;
-
-    if (!body) {
-        return lines;
-    }
+    if (!body) return lines;
 
     const returnSummary = summarizeReturnStatements(body);
     if (!returnSummary.hasNonUndefinedReturnValue) {
