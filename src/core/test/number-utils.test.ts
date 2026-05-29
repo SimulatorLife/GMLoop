@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { areNumbersApproximatelyEqual, clamp, isFiniteNumber, toNormalizedInteger } from "../src/utils/number.js";
+import {
+    areNumbersApproximatelyEqual,
+    clamp,
+    isFiniteNumber,
+    toNormalizedInteger,
+    toNumber
+} from "../src/utils/number.js";
 
 void describe("number-utils", () => {
     void describe("isFiniteNumber", () => {
@@ -18,6 +24,26 @@ void describe("number-utils", () => {
             assert.equal(isFiniteNumber(Number.NaN), false);
             assert.equal(isFiniteNumber(Infinity), false);
             assert.equal(isFiniteNumber(-Infinity), false);
+        });
+    });
+
+    void describe("toNumber", () => {
+        void it("returns a finite number unchanged", () => {
+            assert.equal(toNumber(0), 0);
+            assert.equal(toNumber(42), 42);
+            assert.equal(toNumber(-13.5), -13.5);
+        });
+
+        void it("returns null for non-number values", () => {
+            assert.equal(toNumber(null), null);
+            assert.equal(toNumber(undefined), null);
+            assert.equal(toNumber("10"), null);
+            // NaN, Infinity, -Infinity: typeof returns "number" per JS semantics,
+            // so toNumber preserves them (consistent with existing call sites
+            // that use `typeof x === "number" ? x : null`).
+            assert.equal(toNumber(Number.NaN), Number.NaN);
+            assert.equal(toNumber(Infinity), Infinity);
+            assert.equal(toNumber(-Infinity), -Infinity);
         });
     });
 
