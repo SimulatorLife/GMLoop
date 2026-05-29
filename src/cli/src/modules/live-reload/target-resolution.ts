@@ -4,7 +4,6 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { safeStatOrNull } from "../../shared/index.js";
 import { DEFAULT_GM_TEMP_ROOT, type LiveReloadTarget } from "./config.js";
 
 export interface ResolveLiveReloadTargetOptions {
@@ -39,7 +38,7 @@ async function collectHtml5OutputCandidate(
 ): Promise<Html5OutputCandidate | null> {
     const outputRoot = path.join(parentRoot, directoryName);
     const indexHtmlPath = path.join(outputRoot, "index.html");
-    const stats = await safeStatOrNull(indexHtmlPath);
+    const stats = await Core.safeStat(indexHtmlPath);
     if (!stats?.isFile()) {
         return null;
     }
