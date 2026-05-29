@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { defaultGmlFormatProvider, type GmlFormatProvider } from "../src/components/index.js";
 import { createGmlFormat, Format } from "../src/format-entry.js";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
 void test("format entry consumes the abstract provider instead of low-level formatter adapters", async () => {
-    const source = await readFile("src/format/src/format-entry.ts", "utf8");
+    const source = await readFile(join(__dirname, "../src/format-entry.ts"), "utf8");
 
     assert.doesNotMatch(source, /from "\.\/?(?:parsers|printer|comments)\//);
     assert.doesNotMatch(source, /from "\.\/components\/default-format-components\.js"/);

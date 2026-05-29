@@ -97,21 +97,39 @@ function shouldInsertBlankLineBeforeTopLevelComment(previousLine: string | undef
     return isNonEmptyTrimmedString(previousLine) && !isTopLevelLineComment(previousLine);
 }
 
+// Detect whether `line` opens a multi-line block comment (`/* ...`), closes
+// an existing multi-line block comment, or is a single-line block comment
+// (`/* ... */` that starts and ends on the same line).
+// Single-line block comments are excluded so that `/* ... */` followed by
+// `/// ...` on the next line does not suppress blank-line insertion between
+// them (the `ensureBlankLineBeforeTopLevelLineComments` caller treats both
+// comment styles uniformly as top-level comment boundaries).
 function updateBlockCommentState(line: string, isInside: boolean): boolean {
     const startIndex = line.indexOf("/*");
-    const endIndex = line.indexOf("*/");
+    if (startIndex === -1) {
+        return isInside;
+    }
 
+    // Look for the nearest `*/` after the opening `/*`. Scanning forward from
+    // `startIndex + 2` is O(n) but stops at the first close tag, which is
+    // correct for all practical GML (nested `/*` inside the comment body are
+    // rare/non-existent and a `*/` always terminates the comment in GML).
+    const afterOpen = startIndex + 2;
+    const closeIndex = line.indexOf("*/", afterOpen);
+
+    // Single-line block comment: `/*` and `*/` appear on the same line.
+    // These do not open a multi-line context, so we return `isInside`.
+    if (closeIndex !== -1) {
+        return isInside;
+    }
+
+    // Multi-line opener with no close on this line.
     if (!isInside) {
-        if (startIndex !== -1 && (endIndex === -1 || endIndex < startIndex)) {
-            return true;
-        }
-        return false;
+        return true;
     }
 
-    if (endIndex !== -1 && (startIndex === -1 || endIndex > startIndex)) {
-        return false;
-    }
-
+    // Already inside a multi-line block; the `/*` we found cannot be an opener
+    // because the previous close was not on this line, so we remain inside.
     return true;
 }
 
