@@ -854,6 +854,30 @@ void test("prefer-is-undefined-check rewrites undefined comparisons in either op
     assertEquals(result.output, expected);
 });
 
+void test("prefer-is-undefined-check rewrites UNDEFINED in any case variant", () => {
+    const input = [
+        "if (score == UNDEFINED) return;",
+        "if (Undefined == lives) return;",
+        "if (score != UNDEFINED) return;",
+        "if (UNdefined != lives) return;",
+        "if (!(score == UNDEFINED)) return;",
+        "if (!(Undefined == lives)) return;",
+        ""
+    ].join("\n");
+    const expected = [
+        "if (is_undefined(score)) return;",
+        "if (is_undefined(lives)) return;",
+        "if (!is_undefined(score)) return;",
+        "if (!is_undefined(lives)) return;",
+        "if (!is_undefined(score)) return;",
+        "if (!is_undefined(lives)) return;",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-is-undefined-check", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("prefer-is-undefined-check preserves grouped multiline conditions", () => {
     const input = [
         "if ((_index == undefined)",

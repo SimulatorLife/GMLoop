@@ -1,6 +1,11 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import { test } from "node:test";
 
+// Node.js deprecated the loose equality helpers (e.g. assert.equal) in the
+// `node:assert` module. This test suite migrates to the /strict subpath and
+// strict helpers (assert.strictEqual, assert.deepStrictEqual) for value- and
+// type-exact comparisons. Behaviour parity with the original calls is
+// validated via: pnpm test src/core/test/async-utils.test.js
 import { runInParallel, runInParallelWithLimit, runSequentially } from "../src/utils/async.js";
 
 // === runSequentially tests ===
@@ -26,7 +31,7 @@ void test("runSequentially handles empty array", async () => {
     await runSequentially([], async () => {
         called = true;
     });
-    assert.equal(called, false);
+    assert.strictEqual(called, false);
 });
 
 void test("runSequentially handles async operations", async () => {
@@ -182,15 +187,15 @@ void test("runInParallel eagerly starts all callbacks unlike runSequentially", a
     });
 
     await Promise.resolve();
-    assert.equal(
+    assert.strictEqual(
         startedInSequence.length,
         1,
         "runSequentially should not invoke the next callback until the current callback settles"
     );
-    assert.equal(startedInSequence[0], 1);
+    assert.strictEqual(startedInSequence[0], 1);
     releaseFirstSequentialCallback();
     await sequentialResultsPromise;
-    assert.deepEqual(startedInSequence, [1, 2, 3]);
+    assert.deepStrictEqual(startedInSequence, [1, 2, 3]);
 });
 
 // === runInParallelWithLimit tests ===
@@ -211,8 +216,8 @@ void test("runInParallelWithLimit executes callbacks with bounded concurrency", 
         2
     );
 
-    assert.equal(maxConcurrent, 2, "Should never exceed concurrency limit of 2");
-    assert.deepEqual(results, [2, 4, 6, 8, 10, 12], "Results should be in order");
+    assert.strictEqual(maxConcurrent, 2, "Should never exceed concurrency limit of 2");
+    assert.deepStrictEqual(results, [2, 4, 6, 8, 10, 12], "Results should be in order");
 });
 
 void test("runInParallelWithLimit maintains result order", async () => {
