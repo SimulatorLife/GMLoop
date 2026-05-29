@@ -71,6 +71,29 @@ export function assertProjectIndexCacheStatus(value) {
     );
 }
 
+/**
+ * Normalize the project index payload extracted from a cache hit.
+ *
+ * After a successful cache hit decision, the parsed payload's `projectIndex`
+ * field has already passed structural validation (via
+ * `validateCachePayloadStructure`) — specifically, it was confirmed to be an
+ * object. However, a valid object is not necessarily a usable project index.
+ * We additionally guard that the value is a plain object (not a proxy, Map, or
+ * other exotic object) and fall back to an empty index when it is not, so that
+ * callers downstream receive a consistent, index-shaped value rather than
+ * `undefined` or a primitive.
+ *
+ * @param rawProjectIndex - The raw value from the cache payload.
+ * @returns A plain-object project index, or a minimal empty index.
+ */
+function normalizeProjectIndexPayload(rawProjectIndex: unknown): Record<string, unknown> {
+    if (Core.isPlainObject(rawProjectIndex)) {
+        return rawProjectIndex as Record<string, unknown>;
+    }
+
+    return Object.create(null);
+}
+
 function createCacheResult(status, details) {
     return {
         status: assertProjectIndexCacheStatus(status),
@@ -188,9 +211,7 @@ export async function loadProjectIndexCache(
         return createCacheMiss(cacheFilePath, hitDecision.missReason);
     }
 
-    const projectIndex = {
-        ...parsed.projectIndex
-    };
+    const projectIndex = normalizeProjectIndexPayload(parsed.projectIndex);
     if (parsed.metricsSummary !== undefined) {
         projectIndex.metrics = parsed.metricsSummary;
     }
