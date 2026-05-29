@@ -30,7 +30,8 @@ tools/
 # TypeScript
 *.tsbuildinfo
 *.d.ts
-!**/types/**/*.d.ts
+!src/parser/src/types/antlr.d.ts
+!src/parser/src/types/generated-grammar.d.ts
 *.js.map
 *.d.ts.map
 
