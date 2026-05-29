@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Transpiler } from "@gmloop/transpiler";
-
-import { TranspilerError, TranspilerErrorCode } from "../src/api/errors.js";
+import { Transpiler, TranspilerError, TranspilerErrorCode } from "@gmloop/transpiler";
 
 type TranspilerInstance = InstanceType<typeof Transpiler.GmlTranspiler>;
 type TranspileScriptArgs = Parameters<TranspilerInstance["transpileScript"]>[0];
