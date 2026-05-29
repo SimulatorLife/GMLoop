@@ -3,7 +3,6 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { safeReaddirOrEmpty } from "../../shared/fs-artifacts.js";
 import {
     type ConfiguredGameMakerCliMcpServer,
     discoverConfiguredGameMakerCliMcpServer
@@ -694,7 +693,7 @@ async function resolveSingleProjectManifestPathOrNull(projectRoot: string | null
         return null;
     }
 
-    const entries = await safeReaddirOrEmpty(projectRoot, { withFileTypes: true });
+    const entries = await Core.safeReaddirWithFileTypes(projectRoot);
     const manifestPaths = entries
         .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".yyp"))
         .map((entry) => path.join(projectRoot, entry.name))

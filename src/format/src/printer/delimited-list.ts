@@ -17,42 +17,13 @@
 import { Core } from "@gmloop/core";
 
 import { TRAILING_COMMA } from "../options/index.js";
+import { docHasTrailingComment } from "./expression-print-utils.js";
 import { breakParent, concat, group, hardline, ifBreak, indent, line, softline } from "./prettier-doc-builders.js";
 import { isCallbackArgument, isComplexArgumentNode, isSimpleCallArgument } from "./type-guards.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Inline check for trailing comment tokens in a doc structure.
- *
- * Returns true when the last item in `doc` contains a trailing comment token
- * (a `//` or `/*` string in the final nested array). Checks inline to avoid
- * circular imports from expression-print-utils.
- *
- * @param doc - The doc structure to inspect.
- * @returns `true` if the doc has a trailing comment token, `false` otherwise.
- */
-function docHasTrailingCommentInline(doc: any): boolean {
-    if (!Core.isNonEmptyArray(doc)) {
-        return false;
-    }
-
-    const lastItem = doc.at(-1);
-    if (!Core.isNonEmptyArray(lastItem)) {
-        return false;
-    }
-
-    const commentArr = lastItem[0];
-    if (!Core.isNonEmptyArray(commentArr)) {
-        return false;
-    }
-
-    return commentArr.some((item: any) => {
-        return typeof item === "string" && (item.startsWith("//") || item.startsWith("/*"));
-    });
-}
 
 /**
  * Checks if trailing commas should be allowed based on the Prettier options.
@@ -201,7 +172,7 @@ export function printElements(
 
         // NOTE: docHasTrailingComment must be imported/called from expression-print-utils
         // We check inline to avoid circular imports
-        if (docHasTrailingCommentInline(printed)) {
+        if (docHasTrailingComment(printed)) {
             printed.splice(-1, 0, separator);
             parts.push(printed);
         } else {
@@ -284,22 +255,16 @@ export function buildCallArgumentsDocs(
         return { inlineDoc, multilineDoc };
     }
 
-    const firstArgumentNode = node.arguments?.[0];
-    const firstArgumentText = firstArgumentNode?.value;
-    const firstArgumentIsStringLiteral =
-        firstArgumentNode != null &&
-        firstArgumentNode.type === Core.LITERAL &&
-        typeof firstArgumentText === "string" &&
-        (firstArgumentText.startsWith('"') || firstArgumentText.startsWith("'") || firstArgumentText.startsWith('@"'));
-
-    // NOTE: intentionally omit logging to keep production output clean.
+    const args = node?.arguments;
+    const trailingArgs = Array.isArray(args) && simplePrefixLength < args.length ? args.slice(simplePrefixLength) : [];
+    const trailingHasCallback = trailingArgs.some(isCallbackArgument);
 
     if (
         simplePrefixLength > 1 &&
         hasTrailingArguments &&
         !hasCallbackArguments &&
-        maxElementsPerLine === Infinity &&
-        firstArgumentIsStringLiteral
+        !trailingHasCallback &&
+        maxElementsPerLine === Infinity
     ) {
         const multilineDoc = buildCallbackArgumentsWithSimplePrefix(path, print, simplePrefixLength);
         return { inlineDoc: null, multilineDoc };

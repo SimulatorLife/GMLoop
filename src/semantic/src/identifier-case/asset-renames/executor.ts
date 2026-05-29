@@ -2,7 +2,10 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { DEFAULT_WRITE_ACCESS_MODE, defaultIdentifierCaseFsFacade as defaultFsFacade } from "../fs-facade.js";
+import {
+    DEFAULT_WRITE_ACCESS_MODE,
+    defaultIdentifierCaseFsFacade as defaultFsFacade
+} from "../identifier-case-helpers.js";
 
 type IdentifierCaseProjectIndex = {
     projectRoot?: string | null;

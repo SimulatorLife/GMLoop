@@ -1,4 +1,3 @@
-import type { Dirent, Stats } from "node:fs";
 import { writeFile as writeFileAsync } from "node:fs/promises";
 import path from "node:path";
 
@@ -7,46 +6,9 @@ import { Core } from "@gmloop/core";
 import { ensureWorkflowPathsAllowed } from "../workflow/path-filter.js";
 import { ensureDir } from "./ensure-dir.js";
 
-const { isNonEmptyString, stringifyJsonForFile, safeStat, safeReaddirWithFileTypes } = Core;
+const { isNonEmptyString, stringifyJsonForFile } = Core;
 
 type WorkflowPathFilter = Parameters<typeof ensureWorkflowPathsAllowed>[0];
-
-/**
- * Safely attempt to retrieve file statistics, returning `null` if the file
- * does not exist or any other error occurs. This pattern appears throughout
- * the CLI when probing for optional paths or checking whether a file exists
- * before attempting to read or process it.
- *
- * @param {string} targetPath Path to the file or directory to stat.
- * @returns {Promise<Stats | null>} File stats when the path exists and is accessible, otherwise `null`.
- * @deprecated Use {@link Core.safeStat} instead.
- */
-export function safeStatOrNull(targetPath: string): Promise<Stats | null> {
-    return safeStat(targetPath);
-}
-
-/**
- * Safely attempt to read directory entries, returning an empty array if the
- * directory does not exist or any other error occurs. This mirrors the
- * safeStat pattern for directory listing operations.
- *
- * @param {string} directoryPath Path to the directory to read.
- * @param {object} options Options to pass to readdir.
- * @returns {Promise<Dirent[]>} Directory entries when accessible, otherwise an empty array.
- * @deprecated Use {@link Core.safeReaddirWithFileTypes} instead.
- */
-export async function safeReaddirOrEmpty(directoryPath: string, options: { withFileTypes: true }): Promise<Dirent[]>;
-export async function safeReaddirOrEmpty(directoryPath: string, options?: { withFileTypes?: false }): Promise<string[]>;
-export async function safeReaddirOrEmpty(
-    directoryPath: string,
-    options?: { withFileTypes?: boolean }
-): Promise<Dirent[] | string[]> {
-    const entries = await safeReaddirWithFileTypes(directoryPath);
-    if (options?.withFileTypes) {
-        return entries;
-    }
-    return entries.map((entry) => entry.name);
-}
 
 export interface FileArtifactWriteDetails {
     outputPath: string;

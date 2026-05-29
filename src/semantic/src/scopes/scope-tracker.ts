@@ -290,6 +290,17 @@ export class ScopeTracker {
                 this.pathToScopesIndex.set(trackedPath, scopeSet);
             }
             scopeSet.add(scope.id);
+
+            // Pre-populate the pathLastModifiedIndex for paths with scope metadata.
+            // This ensures getChangedFilePaths returns accurate results even for paths
+            // that have scopes but no recorded declarations/references yet.
+            // The index is only updated here; the scope's own lastModifiedTimestamp
+            // is still set lazily via markModified() on the first occurrence.
+            const currentTimestamp = scope.lastModifiedTimestamp >= 0 ? scope.lastModifiedTimestamp : Date.now();
+            const existingTimestamp = this.pathLastModifiedIndex.get(trackedPath);
+            if (existingTimestamp === undefined || currentTimestamp > existingTimestamp) {
+                this.pathLastModifiedIndex.set(trackedPath, currentTimestamp);
+            }
         }
 
         // Invalidate lookup cache on scope depth change
