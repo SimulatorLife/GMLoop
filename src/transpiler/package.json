@@ -16,7 +16,8 @@
   ],
   "dependencies": {
     "@gmloop/core": "workspace:*",
-    "@gmloop/parser": "workspace:*"
+    "@gmloop/parser": "workspace:*",
+    "@gmloop/semantic": "workspace:*"
   },
   "devDependencies": {
     "typescript": "catalog:"
