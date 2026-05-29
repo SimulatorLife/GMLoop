@@ -786,73 +786,8 @@ export function isIdentityReplacementSafeExpression(node: any): boolean {
     }
 }
 
-function areNodesEquivalent(a: any, b: any): boolean {
-    if (a === b) {
-        return true;
-    }
-
-    if (!a || !b) {
-        return false;
-    }
-
-    if (typeof a !== "object" || typeof b !== "object") {
-        return false;
-    }
-
-    if (a.type !== b.type) {
-        return false;
-    }
-
-    if (a.type === LITERAL) {
-        const aVal = Core.getLiteralNumberValue(a);
-        const bVal = Core.getLiteralNumberValue(b);
-        if (aVal !== null && bVal !== null) {
-            return Math.abs(aVal - bVal) <= computeNumericTolerance(0);
-        }
-        return String(a.value) === String(b.value);
-    }
-
-    if (a.type === IDENTIFIER) {
-        return Core.getUnwrappedIdentifierName(a) === Core.getUnwrappedIdentifierName(b);
-    }
-
-    if (a.type === MEMBER_DOT_EXPRESSION || a.type === MEMBER_INDEX_EXPRESSION) {
-        return areNodesEquivalent(a.object, b.object) && areNodesEquivalent(a.property, b.property);
-    }
-
-    if (a.type === CALL_EXPRESSION) {
-        const aName = Core.getUnwrappedIdentifierName(a.object);
-        const bName = Core.getUnwrappedIdentifierName(b.object);
-
-        if (aName !== bName) {
-            return false;
-        }
-
-        const aArgs = Core.asArray<any>(a.arguments);
-        const bArgs = Core.asArray<any>(b.arguments);
-
-        if (aArgs.length !== bArgs.length) {
-            return false;
-        }
-
-        for (const [i, aArg] of aArgs.entries()) {
-            if (!areNodesEquivalent(aArg, bArgs[i])) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    if (a.type === BINARY_EXPRESSION) {
-        if (Core.getNormalizedOperator(a) !== Core.getNormalizedOperator(b)) {
-            return false;
-        }
-
-        return areNodesEquivalent(a.left, b.left) && areNodesEquivalent(a.right, b.right);
-    }
-
-    return false;
+function areNodesEquivalent(a: unknown, b: unknown): boolean {
+    return Core.areExpressionNodesEquivalentIgnoringParentheses(a, b);
 }
 
 function findAssignmentExpressionForRight(root: any, target: any): any {
