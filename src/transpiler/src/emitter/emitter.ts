@@ -496,7 +496,8 @@ export class GmlToJsEmitter {
             const code = this.emit(stmts[0]);
             return code ? this.ensureStatementTermination(code) : "";
         }
-        // Multiple statements: use StringBuilder for efficiency
+        // Multiple statements: use StringBuilder for efficiency.
+        // Call `visit` directly to avoid re-entering the `emit` lifecycle for each statement.
         const builder = new StringBuilder(stmts.length);
         this.appendStatementsWithTermination(builder, stmts);
         return builder.toString("\n");
@@ -512,7 +513,7 @@ export class GmlToJsEmitter {
         // all statements produce output.  The result is wrapped with braces directly.
         const codeLines: string[] = [];
         for (const stmt of stmts) {
-            const code = this.emit(stmt);
+            const code = this.visit(stmt);
             if (code) {
                 codeLines.push(this.ensureStatementTermination(code));
             }
