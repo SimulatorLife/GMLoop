@@ -59,19 +59,12 @@ export interface SemanticCacheConfig {
     /**
      * Custom policy for deciding whether an occurrence result is cache-worthy.
      * When omitted, the cache constructs a {@link DefaultOccurrenceCachePolicy}
-     * from the legacy {@link maxOccurrenceCacheEntries} numeric threshold for
-     * backward compatibility.
+     * with a default threshold of `10_000`.
      *
      * Prefer providing a custom policy when you need to test the cache-storage
      * decision in isolation or want per-symbol thresholds.
      */
     occurrenceCachePolicy?: OccurrenceCachePolicy;
-
-    /**
-     * @deprecated Use {@link occurrenceCachePolicy} instead.  When a custom
-     * policy is provided this field is ignored.
-     */
-    maxOccurrenceCacheEntries?: number;
 }
 
 /**
@@ -144,7 +137,6 @@ interface ResolvedSemanticCacheConfig {
     maxSize: number;
     ttlMs: number;
     enabled: boolean;
-    maxOccurrenceCacheEntries: number;
 }
 
 /**
@@ -214,16 +206,12 @@ export class SemanticQueryCache {
     constructor(semantic: PartialSemanticAnalyzer | null, config: SemanticCacheConfig = {}) {
         this.semantic = semantic;
 
-        const maxOccurrenceCacheEntries = config.maxOccurrenceCacheEntries ?? 10_000;
-        this.occurrenceCachePolicy =
-            config.occurrenceCachePolicy ?? new DefaultOccurrenceCachePolicy(maxOccurrenceCacheEntries);
+        this.occurrenceCachePolicy = config.occurrenceCachePolicy ?? new DefaultOccurrenceCachePolicy(10_000);
 
         this.config = {
             maxSize: config.maxSize ?? 100,
             ttlMs: config.ttlMs ?? 60_000,
-            enabled: config.enabled ?? true,
-            // Retained for backward compat; actual policy lives on the separate field.
-            maxOccurrenceCacheEntries
+            enabled: config.enabled ?? true
         };
     }
 
