@@ -383,6 +383,125 @@ void test("loadProjectIndexCache handles corrupted cache payloads", async () => 
     });
 });
 
+void test("loadProjectIndexCache rejects null projectIndex via structural validation", async () => {
+    await withTempDir(async (projectRoot) => {
+        const cacheDir = path.join(projectRoot, PROJECT_INDEX_CACHE_DIRECTORY);
+        await mkdir(cacheDir, { recursive: true });
+        const cacheFilePath = path.join(cacheDir, PROJECT_INDEX_CACHE_FILENAME);
+
+        // A null projectIndex fails the structural validation in
+        // validateCachePayloadStructure (it is not an object), so the cache
+        // is treated as invalid and a miss is returned. This is the correct
+        // behaviour — the cache must contain a structural index object.
+        await writeFile(
+            cacheFilePath,
+            JSON.stringify({
+                schemaVersion: PROJECT_INDEX_CACHE_SCHEMA_VERSION,
+                projectRoot,
+                formatterVersion: "1.0.0",
+                pluginVersion: "0.1.0",
+                manifestMtimes: {},
+                sourceMtimes: {},
+                metricsSummary: null,
+                projectIndex: null
+            }),
+            "utf8"
+        );
+
+        const result = await loadProjectIndexCache({
+            projectRoot,
+            formatterVersion: "1.0.0",
+            pluginVersion: "0.1.0",
+            manifestMtimes: {},
+            sourceMtimes: {}
+        });
+
+        assert.equal(result.status, ProjectIndexCacheStatus.MISS);
+        assert.equal(result.reason.type, ProjectIndexCacheMissReason.INVALID_SCHEMA);
+    });
+});
+
+void test("loadProjectIndexCache normalizes array projectIndex to empty index with metrics", async () => {
+    await withTempDir(async (projectRoot) => {
+        const cacheDir = path.join(projectRoot, PROJECT_INDEX_CACHE_DIRECTORY);
+        await mkdir(cacheDir, { recursive: true });
+        const cacheFilePath = path.join(cacheDir, PROJECT_INDEX_CACHE_FILENAME);
+
+        // An array passes the structural `isObjectLike` guard but is not a
+        // valid project index. Normalization replaces it with an empty
+        // object; metrics are then populated from metricsSummary (null here).
+        await writeFile(
+            cacheFilePath,
+            JSON.stringify({
+                schemaVersion: PROJECT_INDEX_CACHE_SCHEMA_VERSION,
+                projectRoot,
+                formatterVersion: "1.0.0",
+                pluginVersion: "0.1.0",
+                manifestMtimes: {},
+                sourceMtimes: {},
+                metricsSummary: null,
+                projectIndex: ["script", "function"]
+            }),
+            "utf8"
+        );
+
+        const result = await loadProjectIndexCache({
+            projectRoot,
+            formatterVersion: "1.0.0",
+            pluginVersion: "0.1.0",
+            manifestMtimes: {},
+            sourceMtimes: {}
+        });
+
+        assert.equal(result.status, ProjectIndexCacheStatus.HIT);
+        // Normalized to empty index with metrics populated from metricsSummary.
+        // Object.create(null) matches the null-prototype object returned by
+        // normalizeProjectIndexPayload so that deepEqual comparisons pass.
+        const expectedIndex: Record<string, unknown> = Object.assign(Object.create(null), { metrics: null });
+        assert.deepEqual(result.projectIndex, expectedIndex);
+    });
+});
+
+void test("loadProjectIndexCache preserves valid plain-object projectIndex", async () => {
+    await withTempDir(async (projectRoot) => {
+        const cacheDir = path.join(projectRoot, PROJECT_INDEX_CACHE_DIRECTORY);
+        await mkdir(cacheDir, { recursive: true });
+        const cacheFilePath = path.join(cacheDir, PROJECT_INDEX_CACHE_FILENAME);
+
+        const validProjectIndex = {
+            resources: { "scripts/main.gml": { type: "script" } },
+            scopes: {},
+            identifiers: { count: 42 }
+        };
+
+        await writeFile(
+            cacheFilePath,
+            JSON.stringify({
+                schemaVersion: PROJECT_INDEX_CACHE_SCHEMA_VERSION,
+                projectRoot,
+                formatterVersion: "1.0.0",
+                pluginVersion: "0.1.0",
+                manifestMtimes: {},
+                sourceMtimes: {},
+                metricsSummary: { total: 5 },
+                projectIndex: validProjectIndex
+            }),
+            "utf8"
+        );
+
+        const result = await loadProjectIndexCache({
+            projectRoot,
+            formatterVersion: "1.0.0",
+            pluginVersion: "0.1.0",
+            manifestMtimes: {},
+            sourceMtimes: {}
+        });
+
+        assert.equal(result.status, ProjectIndexCacheStatus.HIT);
+        assert.deepEqual(result.projectIndex, { ...validProjectIndex, metrics: { total: 5 } });
+    });
+});
+
 void test("createProjectIndexCoordinator serialises builds for the same project", async () => {
     const storedPayloads = new Map();
     let buildCount = 0;
