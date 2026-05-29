@@ -343,11 +343,13 @@ export function printEmptyBlock(path: any, options: any): any {
 // Private helpers – parenthesis-flattening decision tree
 // ---------------------------------------------------------------------------
 
-function getBinaryOperatorInfo(operator: any): any {
-    if (operator === undefined) {
-        return;
-    }
-    return Core.BINARY_OPERATORS[operator];
+// Inline operator lookup: direct Map access avoids wrapper call overhead.
+// Called on the hot path for every ParenthesizedExpression during formatting.
+// Accepts `unknown` to match all call-site argument types (AST node properties
+// come in as `any`). The undefined guard preserves the original early-exit
+// contract so callers that pass `undefined` still get a clean undefined return.
+function getBinaryOperatorInfo(operator: unknown) {
+    return operator === undefined ? undefined : Core.BINARY_OPERATORS[operator as string];
 }
 
 // For ternary expressions, omit unnecessary parentheses around simple identifiers
