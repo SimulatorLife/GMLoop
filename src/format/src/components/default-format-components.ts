@@ -6,6 +6,7 @@ import { gmlParserAdapter } from "../parsers/index.js";
 import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "../printer/constants.js";
 import { print } from "../printer/index.js";
 import { normalizeFormattedOutput } from "../printer/normalize-formatted-output.js";
+import { countTrailingBlankLines, getNextNonWhitespaceCharacter } from "../shared/index.js";
 import { normalizeGmlFormatComponents } from "./format-component-normalizer.js";
 import type { GmlFormatProvider } from "./format-provider.js";
 import type { GmlFormatComponentBundle, GmlFormatComponentContract } from "./format-types.js";
@@ -20,6 +21,8 @@ export const defaultGmlFormatComponentImplementations: GmlFormatComponentContrac
     print,
     handleComments,
     printComment,
+    countTrailingBlankLines,
+    getNextNonWhitespaceCharacter,
     LogicalOperatorsStyle
 });
 
