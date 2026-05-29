@@ -2545,6 +2545,10 @@ export class ScopeTracker {
 
             // Unlink from parent's children only when the parent itself is not
             // also being removed (avoids redundant work for intermediate scopes).
+            // The guard handles the case where a scope and its parent are both in
+            // scopeIdsToRemove: deleting the child's pointer from the parent's list
+            // is unnecessary because the parent's entry will be deleted when its
+            // own scope is processed.
             if (scope.parent && !scopeIdsToRemove.has(scope.parent.id)) {
                 const siblings = this.scopeChildrenIndex.get(scope.parent.id);
                 if (siblings) {
@@ -2556,6 +2560,9 @@ export class ScopeTracker {
             }
 
             // Remove own children-index entry.
+            // Ctx: scopeId is the current scope being removed. This entry records
+            // which children belong to this scope. Removing it cleans up the index
+            // regardless of whether the parent is also being removed.
             this.scopeChildrenIndex.delete(scopeId);
 
             // Remove from path index (covers both the requested path and any
