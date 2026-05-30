@@ -503,6 +503,16 @@ async function executeIgorHtml5Build(
     try {
         const result = await executeProcess(command, args, cwd);
         if (result.exitCode !== 0) {
+            if (await isRecoverableIgorHtml5IconCopyFailure(buildConfig.outputRoot, result.stdout, result.stderr)) {
+                return Object.freeze({
+                    backend: "igor",
+                    command: formattedCommand,
+                    outputRoot: buildConfig.outputRoot,
+                    stderr: result.stderr,
+                    stdout: result.stdout
+                });
+            }
+
             throw new GameMakerBuildExecutionError({
                 backend: "igor",
                 command: formattedCommand,
@@ -543,6 +553,27 @@ async function executeIgorHtml5Build(
 
         throw error;
     }
+}
+
+async function isRecoverableIgorHtml5IconCopyFailure(
+    outputRoot: string,
+    stdout: string,
+    stderr: string
+): Promise<boolean> {
+    const combinedOutput = `${stdout}\n${stderr}`;
+    if (
+        !/System\.IO\.IOException:/u.test(combinedOutput) ||
+        !/favicon\.ico/u.test(combinedOutput) ||
+        !/Igor\.HTML5Builder\.Package/u.test(combinedOutput)
+    ) {
+        return false;
+    }
+
+    const indexHtmlPath = path.join(outputRoot, "index.html");
+    const faviconPath = path.join(outputRoot, "favicon.ico");
+    const indexStats = await Core.safeStat(indexHtmlPath);
+    const faviconStats = await Core.safeStat(faviconPath);
+    return indexStats?.isFile() === true && faviconStats?.isFile() === true;
 }
 
 async function assertHtml5OutputExists(
