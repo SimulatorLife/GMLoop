@@ -29,7 +29,10 @@
     "refactor",
     "GMLoop",
     "lint",
-    "codemod"
+    "codemod",
+    "mcp",
+    "reload",
+    "html5"
   ],
   "author": "Two Scoop Studio",
   "engines": {
