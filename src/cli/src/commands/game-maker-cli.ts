@@ -89,10 +89,17 @@ export async function resolveGameMakerProjectFilePath(targetPath: string): Promi
     );
 }
 
-function resolveActiveProjectStatePath(statePath: string | undefined, env: NodeJS.ProcessEnv): string {
+/**
+ * Resolve the JSON state file shared by `gmloop gm-cli active-project` and
+ * long-running GMLoop UI hosts.
+ */
+export function resolveGameMakerCliActiveProjectStatePath(parameters: {
+    env: NodeJS.ProcessEnv;
+    statePathOption?: string;
+}): string {
     return path.resolve(
-        normalizeNonEmptyString(statePath) ??
-            normalizeNonEmptyString(env[ACTIVE_PROJECT_STATE_PATH_ENV_VAR]) ??
+        normalizeNonEmptyString(parameters.statePathOption) ??
+            normalizeNonEmptyString(parameters.env[ACTIVE_PROJECT_STATE_PATH_ENV_VAR]) ??
             DEFAULT_ACTIVE_PROJECT_STATE_PATH
     );
 }
@@ -110,16 +117,21 @@ function parseActiveProjectState(contents: string, statePath: string): ActivePro
     return Object.freeze({ projectPath });
 }
 
-async function readActiveProjectStateProjectPath(statePath: string): Promise<string | null> {
-    const stats = await resolveFileStatsOrNull(statePath);
+/**
+ * Read the active GameMaker project path from a gm-cli active-project state file.
+ */
+export async function readGameMakerCliActiveProjectStateProjectPath(parameters: {
+    statePath: string;
+}): Promise<string | null> {
+    const stats = await resolveFileStatsOrNull(parameters.statePath);
     if (stats === null) {
         return null;
     }
     if (!stats.isFile()) {
-        throw new Error(`gm-cli active project state path is not a file: ${statePath}`);
+        throw new Error(`gm-cli active project state path is not a file: ${parameters.statePath}`);
     }
 
-    const state = parseActiveProjectState(await readFile(statePath, "utf8"), statePath);
+    const state = parseActiveProjectState(await readFile(parameters.statePath, "utf8"), parameters.statePath);
     return state.projectPath;
 }
 
@@ -137,11 +149,14 @@ export async function resolveGameMakerCliMcpProjectPath(parameters: {
     pathOption?: string;
     statePathOption?: string;
 }): Promise<string> {
-    const statePath = resolveActiveProjectStatePath(parameters.statePathOption, parameters.env);
+    const statePath = resolveGameMakerCliActiveProjectStatePath({
+        env: parameters.env,
+        statePathOption: parameters.statePathOption
+    });
     const candidatePath =
         normalizeNonEmptyString(parameters.pathOption) ??
         normalizeNonEmptyString(parameters.env[ACTIVE_PROJECT_PATH_ENV_VAR]) ??
-        (await readActiveProjectStateProjectPath(statePath)) ??
+        (await readGameMakerCliActiveProjectStateProjectPath({ statePath })) ??
         process.cwd();
 
     return await resolveGameMakerProjectFilePath(candidatePath);
@@ -155,7 +170,10 @@ export async function writeGameMakerCliActiveProjectState(parameters: {
     projectPath: string;
     statePathOption?: string;
 }): Promise<{ projectPath: string; statePath: string }> {
-    const statePath = resolveActiveProjectStatePath(parameters.statePathOption, parameters.env);
+    const statePath = resolveGameMakerCliActiveProjectStatePath({
+        env: parameters.env,
+        statePathOption: parameters.statePathOption
+    });
     const projectPath = await resolveGameMakerProjectFilePath(parameters.projectPath);
     await mkdir(path.dirname(statePath), { recursive: true });
     await writeFile(statePath, `${JSON.stringify({ projectPath }, null, 2)}\n`, "utf8");

@@ -236,6 +236,9 @@ export class GmAppShell extends LightDomLitElement {
         if (!this.model || !this.model.isServerMode) {
             return;
         }
+        if (this.#state.isLiveReloadStartPending) {
+            return;
+        }
 
         try {
             this.#store.dispatch({ pending: true, type: "set-live-reload-start-pending" });

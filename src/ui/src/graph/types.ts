@@ -172,7 +172,7 @@ export type GraphVisualizationLoadedTarget = Readonly<{
     activePath: string;
     projectRoot: string;
     selectedPaths: ReadonlyArray<string>;
-    source: "cli-path" | "demo-project" | "finder-open" | "working-directory";
+    source: "active-project-state" | "cli-path" | "demo-project" | "finder-open" | "working-directory";
 }>;
 
 /**

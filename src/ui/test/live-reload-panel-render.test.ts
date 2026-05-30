@@ -253,6 +253,37 @@ void test("GmAppShell routes live-reload start events through the host callback"
     assert.equal(startCount, 1);
 });
 
+void test("GmAppShell ignores duplicate live-reload start events while startup is pending", async () => {
+    const shell = new TestableGmAppShell();
+    let startCount = 0;
+    let resolveStart: ((value: GraphVisualizationUiModel["liveReload"]) => void) | null = null;
+    const startPromise = new Promise<GraphVisualizationUiModel["liveReload"]>((resolve) => {
+        resolveStart = resolve;
+    });
+
+    shell.model = createMockModel(null);
+    shell.callbacks = {
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onRunFix: () => ({ logLines: [], status: "success" }),
+        onStartLiveReload: () => {
+            startCount += 1;
+            return startPromise;
+        },
+        onRefreshLiveReloadStatus: () => null
+    };
+
+    shell.connectedCallback();
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, { bubbles: true }));
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, { bubbles: true }));
+    await Promise.resolve();
+    resolveStart?.(createMockModel(createStatusSnapshot()).liveReload);
+    await startPromise;
+    shell.disconnectedCallback();
+
+    assert.equal(startCount, 1);
+});
+
 void test("GmAppShell forwards live fix progress snapshots while a fix run is pending", async () => {
     const shell = new TestableGmAppShell();
     let resolveFixRun: ((result: GraphVisualizationFixRunResult) => void) | null = null;
