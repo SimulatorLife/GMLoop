@@ -163,7 +163,11 @@ export async function startLiveReloadDevSession({
         });
     } catch (error) {
         if (shouldAutoBuild && isMissingAutoDetectedHtml5OutputError(error)) {
-            const defaultBuildConfig = await resolveDefaultLiveReloadHtml5BuildConfig(projectContext.projectRoot);
+            const autoBuildOutputRoot = await createAutoBuildOutputRoot(projectContext.projectRoot);
+            const defaultBuildConfig = await resolveDefaultLiveReloadHtml5BuildConfig(
+                projectContext.projectRoot,
+                autoBuildOutputRoot
+            );
             const buildResult = await buildRunner({
                 buildConfig: defaultBuildConfig,
                 cwd: projectContext.projectRoot
@@ -196,7 +200,16 @@ function resolveRequestedPath(inputPath: string): string {
     return path.resolve(inputPath);
 }
 
-async function resolveDefaultLiveReloadHtml5BuildConfig(projectRoot: string): Promise<{
+async function createAutoBuildOutputRoot(projectRoot: string): Promise<string> {
+    const liveReloadBuildRoot = path.join(projectRoot, ".gmloop", "live-reload");
+    await fs.mkdir(liveReloadBuildRoot, { recursive: true });
+    return await fs.mkdtemp(path.join(liveReloadBuildRoot, "build-"));
+}
+
+async function resolveDefaultLiveReloadHtml5BuildConfig(
+    projectRoot: string,
+    outputRoot: string
+): Promise<{
     backend: "auto";
     cacheDir: null;
     configuration: "Default";
@@ -215,7 +228,7 @@ async function resolveDefaultLiveReloadHtml5BuildConfig(projectRoot: string): Pr
         configuration: "Default",
         extraArgs: Object.freeze([]),
         licenseFile: null,
-        outputRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5"),
+        outputRoot,
         projectPath: await resolveDefaultLiveReloadProjectPath(projectRoot),
         runtimeRoot: null,
         tempDir: null,

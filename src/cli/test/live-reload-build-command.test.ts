@@ -445,6 +445,7 @@ void test("startLiveReloadDevSession auto-builds HTML5 output when autodetection
     const prepareCalls: Array<Readonly<{ html5OutputRoot: string | null }>> = [];
     const buildCalls: Array<GameMakerHtml5BuildConfig> = [];
     const watchCalls: Array<Readonly<{ runtimeRoot?: string; targetPath: string }>> = [];
+    const expectedBuildRootPrefix = path.join(projectRoot, ".gmloop", "live-reload", "build-");
 
     try {
         await startLiveReloadDevSession({
@@ -457,7 +458,7 @@ void test("startLiveReloadDevSession auto-builds HTML5 output when autodetection
                 return Object.freeze({
                     backend: "igor",
                     command: "igor",
-                    outputRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5"),
+                    outputRoot: buildConfig.outputRoot,
                     stderr: "",
                     stdout: ""
                 });
@@ -474,10 +475,7 @@ void test("startLiveReloadDevSession auto-builds HTML5 output when autodetection
                 return Object.freeze({
                     assets: {
                         bootstrapEntryPath: path.join(
-                            projectRoot,
-                            ".gmloop",
-                            "live-reload",
-                            "html5",
+                            options.html5OutputRoot ?? projectRoot,
                             ".gml-hot-reload",
                             "runtime-wrapper",
                             "browser",
@@ -485,19 +483,16 @@ void test("startLiveReloadDevSession auto-builds HTML5 output when autodetection
                         ),
                         copiedAssets: true,
                         manifestPath: path.join(
-                            projectRoot,
-                            ".gmloop",
-                            "live-reload",
-                            "html5",
+                            options.html5OutputRoot ?? projectRoot,
                             ".gml-hot-reload",
                             "runtime-wrapper-assets.manifest.json"
                         ),
-                        targetRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5", ".gml-hot-reload")
+                        targetRoot: path.join(options.html5OutputRoot ?? projectRoot, ".gml-hot-reload")
                     },
                     injected: true,
                     target: {
-                        indexHtmlPath: path.join(projectRoot, ".gmloop", "live-reload", "html5", "index.html"),
-                        outputRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5")
+                        indexHtmlPath: path.join(options.html5OutputRoot ?? projectRoot, "index.html"),
+                        outputRoot: options.html5OutputRoot ?? projectRoot
                     }
                 });
             },
@@ -525,14 +520,11 @@ void test("startLiveReloadDevSession auto-builds HTML5 output when autodetection
 
     assert.equal(buildCalls.length, 1);
     assert.equal(buildCalls[0].backend, "auto");
-    assert.equal(buildCalls[0].outputRoot, path.join(projectRoot, ".gmloop", "live-reload", "html5"));
-    assert.deepEqual(prepareCalls, [
-        { html5OutputRoot: null },
-        { html5OutputRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5") }
-    ]);
+    assert.match(buildCalls[0].outputRoot, new RegExp(`^${expectedBuildRootPrefix.replaceAll("/", String.raw`\/`)}`));
+    assert.deepEqual(prepareCalls, [{ html5OutputRoot: null }, { html5OutputRoot: buildCalls[0].outputRoot }]);
     assert.deepEqual(watchCalls, [
         {
-            runtimeRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5"),
+            runtimeRoot: buildCalls[0].outputRoot,
             targetPath: projectRoot
         }
     ]);
