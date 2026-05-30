@@ -705,12 +705,14 @@ async function resolveIgorExecutablePathFromRuntimeRoot(runtimeRoot: string): Pr
                 const nestedCandidatePaths = nestedEntries
                     .filter((nestedEntry) => nestedEntry.isDirectory())
                     .flatMap((nestedEntry) => [
+                        path.join(platformDirectoryPath, nestedEntry.name, "Igor"),
                         path.join(platformDirectoryPath, nestedEntry.name, "Igor.exe"),
                         path.join(platformDirectoryPath, nestedEntry.name, "igor.exe")
                     ]);
 
                 return [
                     ...nestedCandidatePaths,
+                    path.join(platformDirectoryPath, "Igor"),
                     path.join(platformDirectoryPath, "Igor.exe"),
                     path.join(platformDirectoryPath, "igor.exe")
                 ];
