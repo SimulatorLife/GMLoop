@@ -252,6 +252,11 @@ export interface PatchHistoryStore {
      */
     patches: Array<PatchSummary>;
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>;
+    /**
+     * Secondary index mapping source file paths to their associated patch IDs.
+     * Enables O(k) stale-patch cleanup instead of O(n) iteration over all patches.
+     */
+    sourcePathToPatchIds: Map<string, Set<string>>;
     bounds: BoundedCollectionBounds;
 }
 
@@ -582,20 +587,21 @@ function hasRuntimePatchChanged(
  */
 function clearStalePatchesForSourcePath(
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>,
+    sourcePathToPatchIds: Map<string, Set<string>>,
     sourcePath: string,
     nextPatchId: string
 ): void {
-    for (const [patchId, patch] of lastSuccessfulPatches.entries()) {
-        if (patchId === nextPatchId) {
-            continue;
-        }
+    const stalePatchIds = sourcePathToPatchIds.get(sourcePath);
+    if (!stalePatchIds) {
+        return;
+    }
 
-        const metadata = Core.isObjectLike(patch.metadata) ? patch.metadata : null;
-        const patchSourcePath = Core.isNonEmptyString(metadata?.sourcePath) ? metadata.sourcePath : null;
-        if (patchSourcePath === sourcePath) {
+    for (const patchId of stalePatchIds) {
+        if (patchId !== nextPatchId) {
             lastSuccessfulPatches.delete(patchId);
         }
     }
+    stalePatchIds.clear();
 }
 
 /**
@@ -676,11 +682,23 @@ export function transpileFile(
 
         addToBoundedCollection(context.metrics, metrics, context.bounds.maxEntries);
 
-        clearStalePatchesForSourcePath(context.lastSuccessfulPatches, filePath, patchPayload.id);
+        clearStalePatchesForSourcePath(
+            context.lastSuccessfulPatches,
+            context.sourcePathToPatchIds,
+            filePath,
+            patchPayload.id
+        );
         const previousPatch = context.lastSuccessfulPatches.get(patchPayload.id);
         const runtimePatchChanged = hasRuntimePatchChanged(previousPatch, patchPayload);
 
         context.lastSuccessfulPatches.set(patchPayload.id, patchPayload);
+
+        let patchIdsForSource = context.sourcePathToPatchIds.get(filePath);
+        if (!patchIdsForSource) {
+            patchIdsForSource = new Set();
+            context.sourcePathToPatchIds.set(filePath, patchIdsForSource);
+        }
+        patchIdsForSource.add(patchPayload.id);
 
         if (context.scriptNames && fileKind.kind === "script") {
             registerScriptNamesFromSymbols(parsedSymbols, context.scriptNames);
