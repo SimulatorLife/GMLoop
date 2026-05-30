@@ -470,11 +470,10 @@ async function executeIgorHtml5Build(
     }
 
     // Clean output directory before building to avoid file locking issues
-    await Core.safeStat(buildConfig.outputRoot).then(async (stats) => {
-        if (stats?.isDirectory()) {
-            await rm(buildConfig.outputRoot, { recursive: true, force: true });
-        }
-    });
+    const outputStats = await Core.safeStat(buildConfig.outputRoot);
+    if (outputStats?.isDirectory()) {
+        await rm(buildConfig.outputRoot, { recursive: true, force: true });
+    }
 
     await mkdir(buildConfig.outputRoot, { recursive: true });
 
