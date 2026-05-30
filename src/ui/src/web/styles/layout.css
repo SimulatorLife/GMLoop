@@ -27,7 +27,7 @@ main {
 
 .content-page {
   overflow: visible;
-  background: transparent;
+  background: var(--gm-bg-light);
 }
 
 .hidden {

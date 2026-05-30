@@ -184,7 +184,7 @@ void test("playground panel view selector uses semantic <button> elements", () =
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /button\s+type="button"\s+class="view-option active"\s+aria-pressed=true/u);
+    assert.match(rendered, /button\s+type="button"\s+class="gm-btn--chip active"\s+aria-pressed=true/u);
     assert.match(rendered, /Output Code/u);
     assert.match(rendered, /AST View/u);
 });

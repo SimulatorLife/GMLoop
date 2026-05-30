@@ -444,8 +444,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                                         class="live-reload-btn"
                                         ?disabled=${isStartPending || isRefreshPending}
                                         aria-busy=${isRefreshPending ? "true" : "false"}
-                                        title="Refresh"
-                                        Status
+                                        title="Refresh Status"
                                         @click=${this.#emitRefreshLiveReload}
                                     >
                                         ${isRefreshPending
