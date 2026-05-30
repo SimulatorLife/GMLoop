@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -370,6 +370,13 @@ async function executeGameMakerCliHtml5Build(
         });
     }
 
+    // Clean output directory before building to avoid file locking issues
+    await Core.safeStat(buildConfig.outputRoot).then(async (stats) => {
+        if (stats?.isDirectory()) {
+            await rm(buildConfig.outputRoot, { recursive: true, force: true });
+        }
+    });
+
     await mkdir(buildConfig.outputRoot, { recursive: true });
 
     const command = buildConfig.toolPath ?? "gm-cli";
@@ -463,6 +470,13 @@ async function executeIgorHtml5Build(
             "Could not resolve a GameMaker license or user folder for Igor. Configure runtime.liveReload.build.licenseFile or runtime.liveReload.build.userFolder."
         );
     }
+
+    // Clean output directory before building to avoid file locking issues
+    await Core.safeStat(buildConfig.outputRoot).then(async (stats) => {
+        if (stats?.isDirectory()) {
+            await rm(buildConfig.outputRoot, { recursive: true, force: true });
+        }
+    });
 
     await mkdir(buildConfig.outputRoot, { recursive: true });
 
