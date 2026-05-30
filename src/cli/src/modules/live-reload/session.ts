@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -201,9 +202,8 @@ function resolveRequestedPath(inputPath: string): string {
 }
 
 async function createAutoBuildOutputRoot(projectRoot: string): Promise<string> {
-    const liveReloadBuildRoot = path.join(projectRoot, ".gmloop", "live-reload");
-    await fs.mkdir(liveReloadBuildRoot, { recursive: true });
-    return await fs.mkdtemp(path.join(liveReloadBuildRoot, "build-"));
+    const autoBuildRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-live-reload-"));
+    return path.join(autoBuildRoot, path.basename(projectRoot), "html5");
 }
 
 async function resolveDefaultLiveReloadHtml5BuildConfig(
