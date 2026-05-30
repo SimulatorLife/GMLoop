@@ -1678,9 +1678,18 @@ export class GmlSemanticBridge {
                     continue;
                 }
 
-                // Skip unsafe index-based updates to the .yyp 'resources' array.
-                // We've already safely updated it above using direct path matching,
-                // and array indexes may have shifted due to schema parsing differences.
+                // Skip secondary index-based mutations on the .yyp `resources` array.
+                // The path-matching loop above is the authoritative update path: it finds
+                // each matching entry by scanning for matching `id.path` values and
+                // mutates `id.name` / `id.path` directly on the parsed object. Those
+                // mutations are then recorded as string mutations and applied to the raw
+                // text so the final output stays consistent.  By contrast, the
+                // asset-reference map may contain stale index-based paths such as
+                // `resources.N.name` that point to the same logical entry. Applying
+                // both updates would write the same fields twice and risk the string
+                // mutation list getting out of sync with the already-mutated parsed
+                // object, producing a corrupted .yyp.  Skipping here keeps the two
+                // update mechanisms from colliding.
                 if (
                     Semantic.isProjectManifestPath(resourceEntry.path) &&
                     reference.propertyPath.startsWith("resources.")
