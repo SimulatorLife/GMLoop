@@ -238,7 +238,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     <button
                         id="docs-view-cli"
                         aria-pressed=${this.state.activeDocsView === "cli"}
-                        class=${this.state.activeDocsView === "cli" ? "top-nav-button active" : "top-nav-button"}
+                        class=${this.state.activeDocsView === "cli" ? "gm-btn--nav active" : "gm-btn--nav"}
                         @click=${() => this.#emitDocsView("cli")}
                     >
                         CLI
@@ -246,7 +246,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     <button
                         id="docs-view-mcp"
                         aria-pressed=${this.state.activeDocsView === "mcp"}
-                        class=${this.state.activeDocsView === "mcp" ? "top-nav-button active" : "top-nav-button"}
+                        class=${this.state.activeDocsView === "mcp" ? "gm-btn--nav active" : "gm-btn--nav"}
                         @click=${() => this.#emitDocsView("mcp")}
                     >
                         MCP
@@ -254,7 +254,7 @@ export class GmDocsPanel extends LightDomLitElement {
                     <button
                         id="docs-view-rules"
                         aria-pressed=${this.state.activeDocsView === "rules"}
-                        class=${this.state.activeDocsView === "rules" ? "top-nav-button active" : "top-nav-button"}
+                        class=${this.state.activeDocsView === "rules" ? "gm-btn--nav active" : "gm-btn--nav"}
                         @click=${() => this.#emitDocsView("rules")}
                     >
                         Rules

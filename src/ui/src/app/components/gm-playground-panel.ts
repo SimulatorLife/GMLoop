@@ -622,10 +622,10 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </span>
                         <span>${this.#controlsPanelOpen ? "Hide Controls" : "Show Controls"}</span>
                     </button>
-                    <div class="view-selector">
+                    <div class="gm-view-selector">
                         <button
                             type="button"
-                            class="view-option ${this.#viewMode === "code" ? "active" : ""}"
+                            class="gm-btn--chip ${this.#viewMode === "code" ? "active" : ""}"
                             aria-pressed=${this.#viewMode === "code"}
                             @click=${() => this.#setViewMode("code")}
                         >
@@ -633,7 +633,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </button>
                         <button
                             type="button"
-                            class="view-option ${this.#viewMode === "ast" ? "active" : ""}"
+                            class="gm-btn--chip ${this.#viewMode === "ast" ? "active" : ""}"
                             aria-pressed=${this.#viewMode === "ast"}
                             @click=${() => this.#setViewMode("ast")}
                         >

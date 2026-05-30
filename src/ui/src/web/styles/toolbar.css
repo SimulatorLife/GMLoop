@@ -122,13 +122,6 @@
 
 .toolbar-chip-button {
   padding-inline: 14px;
-  border-radius: 999px;
-}
-
-.toolbar-chip-button[aria-pressed="true"] {
-  background: linear-gradient(135deg, rgba(89, 195, 195, 0.18), rgba(139, 92, 246, 0.18));
-  border-color: rgba(89, 195, 195, 0.38);
-  color: var(--gm-text);
 }
 
 .pending-badge {

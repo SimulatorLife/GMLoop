@@ -1,20 +1,13 @@
 .config-stack {
   display: flex;
   flex-direction: column;
-  gap: var(--gm-space-6);
-}
-
-.config-view-selector {
-  display: flex;
-  width: max-content;
-  max-width: 100%;
-  margin-bottom: var(--gm-space-6);
+  gap: var(--gm-space-xl);
 }
 
 .config-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--gm-space-6);
+  gap: var(--gm-space-xl);
 }
 
 .config-card h3 {
@@ -25,7 +18,7 @@
 
 .config-card p {
   margin: 0 0 12px;
-  font-size: var(--gm-text-base);
+  font-size: var(--gm-text-sm);
   line-height: var(--gm-leading-normal);
   color: var(--gm-text-secondary);
 }
@@ -49,7 +42,7 @@
 .config-item strong {
   display: block;
   margin-bottom: 4px;
-  font-size: var(--gm-text-base);
+  font-size: var(--gm-text-sm);
   color: var(--gm-text);
 }
 
@@ -71,7 +64,7 @@
 
 .config-badge-row {
   display: flex;
-  gap: var(--gm-space-2);
+  gap: var(--gm-space-sm);
   flex-wrap: wrap;
   margin-top: 6px;
 }

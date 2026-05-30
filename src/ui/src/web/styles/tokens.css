@@ -14,21 +14,21 @@
   /* ─── Surfaces ──────────────────────────────────────────── */
   --gm-surface-app-top: #08101b;
   --gm-surface-app-bottom: #0e1726;
-  --gm-surface-elevated: rgba(16, 28, 46, 0.94);
-  --gm-surface-elevated-strong: rgba(11, 20, 34, 0.98);
-  --gm-surface-muted: rgba(255, 255, 255, 0.055);
-  --gm-surface-inset: rgba(5, 12, 22, 0.74);
-  --gm-surface-overlay: rgba(10, 18, 30, 0.96);
-  --gm-surface-highlight: rgba(142, 224, 240, 0.12);
+  --gm-surface-elevated: #101c2ef0;
+  --gm-surface-elevated-strong: #0b1422f9;
+  --gm-surface-muted: #ffffff0e;
+  --gm-surface-inset: #050c1680;
+  --gm-surface-overlay: #0a121ef5;
+  --gm-surface-highlight: #8ee0f01f;
 
-  /* ─── Background surfaces with opacity ────────────────── */
-  --gm-bg-subtle: rgba(255, 255, 255, 0.03);
-  --gm-bg-muted: rgba(255, 255, 255, 0.04);
-  --gm-bg-light: rgba(255, 255, 255, 0.05);
-  --gm-bg-hover: rgba(255, 255, 255, 0.08);
-  --gm-bg-active: rgba(255, 255, 255, 0.09);
-  --gm-bg-overlay: rgba(5, 10, 19, 0.62);
-  --gm-bg-inset: rgba(7, 13, 23, 0.78);
+  /* ─── Background surfaces ─────────────────────────────── */
+  --gm-bg-subtle: #ffffff08;
+  --gm-bg-muted: #ffffff0a;
+  --gm-bg-light: #ffffff0d;
+  --gm-bg-hover: #ffffff14;
+  --gm-bg-active: #ffffff17;
+  --gm-bg-overlay: #050a1382;
+  --gm-bg-inset: #070d17c7;
 
   /* ─── Borders ───────────────────────────────────────────── */
   --gm-border: rgba(143, 181, 255, 0.18);
@@ -36,6 +36,7 @@
   --gm-border-subtle: rgba(143, 181, 255, 0.1);
   --gm-border-muted: rgba(255, 255, 255, 0.08);
   --gm-border-accent: rgba(143, 181, 255, 0.24);
+  --gm-border-interactive: rgba(142, 224, 240, 0.45);
   --gm-focus-ring: rgba(142, 224, 240, 0.65);
 
   /* ─── Semantic status colors ──────────────────────────────── */
@@ -66,8 +67,8 @@
   --gm-action-primary-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 
   /* ─── Glow/ambient colors ────────────────────────────────── */
-  --gm-ambient-teal: rgba(89, 195, 195, 0.18);
-  --gm-ambient-purple: rgba(139, 92, 246, 0.18);
+  --gm-ambient-teal: #59c3c32e;
+  --gm-ambient-purple: #8b5cf62e;
 
   /* ─── Shadows ────────────────────────────────────────────── */
   --gm-shadow: 0 20px 44px rgba(0, 0, 0, 0.32);
@@ -75,27 +76,19 @@
   --gm-shadow-overlay: 0 20px 48px rgba(0, 0, 0, 0.32);
 
   /* ─── Spacing ───────────────────────────────────────────── */
-  --gm-space-0: 0px;
-  --gm-space-1: 4px;
-  --gm-space-2: 8px;
-  --gm-space-3: 12px;
-  --gm-space-4: 14px;
-  --gm-space-5: 16px;
-  --gm-space-6: 18px;
-  --gm-space-7: 20px;
-  --gm-space-8: 22px;
-  --gm-space-9: 24px;
-  --gm-space-10: 28px;
-  --gm-space-12: 32px;
-  --gm-space-14: 36px;
-  --gm-space-16: 40px;
+  --gm-space-xs: 4px;
+  --gm-space-sm: 8px;
+  --gm-space-md: 12px;
+  --gm-space-lg: 16px;
+  --gm-space-xl: 24px;
+  --gm-space-related: var(--gm-space-sm);
+  --gm-space-far: var(--gm-space-lg);
 
   /* ─── Border radius ─────────────────────────────────────── */
   --gm-radius-sm: 8px;
   --gm-radius-md: 12px;
   --gm-radius-lg: 16px;
   --gm-radius-xl: 22px;
-  --gm-radius-2xl: 24px;
   --gm-radius-full: 999px;
 
   /* ─── Typography ─────────────────────────────────────────── */
@@ -104,12 +97,9 @@
 
   --gm-text-xs: 11px;
   --gm-text-sm: 12px;
-  --gm-text-base: 13px;
-  --gm-text-md: 14px;
   --gm-text-lg: 15px;
   --gm-text-xl: 16px;
   --gm-text-2xl: 22px;
-  --gm-text-3xl: 25px;
 
   --gm-leading-tight: 1.2;
   --gm-leading-normal: 1.4;
@@ -117,21 +107,16 @@
   --gm-leading-loose: 1.6;
 
   /* ─── Transitions ────────────────────────────────────────── */
-  --gm-transition-fast: 140ms ease;
-  --gm-transition-normal: 180ms ease;
-  --gm-transition-slow: 280ms ease;
+  --gm-transition: 150ms ease;
 
   /* ─── Component heights ────────────────────────────────── */
   --gm-height-sm: 32px;
   --gm-height-md: 36px;
-  --gm-height-lg: 38px;
   --gm-height-xl: 42px;
-  --gm-height-2xl: 44px;
 
   /* ─── Icon sizes ────────────────────────────────────────── */
   --gm-icon-xs: 12px;
   --gm-icon-sm: 16px;
-  --gm-icon-md: 18px;
   --gm-icon-lg: 20px;
 
   /* ─── Log/output colors ────────────────────────────────── */
@@ -139,7 +124,7 @@
   --gm-log-text: #d9f7e7;
 
   /* ─── Graph canvas colors ──────────────────────────────── */
-  --gm-graph-node-stroke: rgba(5, 12, 20, 0.96);
+  --gm-graph-node-stroke: #050c14f5;
   --gm-graph-toolset-stroke: #aaa;
   --gm-graph-link-opacity: 0.72;
   --gm-graph-text: #f1f6fc;
@@ -174,7 +159,6 @@
 
   /* ─── Blur / overlay effects ─────────────────────────────── */
   --gm-blur-sm: blur(6px);
-  --gm-blur-md: blur(14px);
   --gm-blur-lg: blur(20px);
 }
 
@@ -189,8 +173,8 @@ body {
   font-size: 15px;
   color: var(--gm-text);
   background:
-    radial-gradient(circle at top left, rgba(89, 195, 195, 0.18), transparent 28%),
-    radial-gradient(circle at top right, rgba(139, 92, 246, 0.18), transparent 24%),
+    radial-gradient(circle at top left, #59c3c32e, transparent 28%),
+    radial-gradient(circle at top right, #8b5cf62e, transparent 24%),
     linear-gradient(180deg, var(--gm-surface-app-top) 0%, #0b1220 45%, var(--gm-surface-app-bottom) 100%);
 }
 

@@ -11,7 +11,7 @@ main {
   position: relative;
   flex: 1;
   min-height: calc(100vh - 260px);
-  padding: var(--gm-space-6) var(--gm-space-8) var(--gm-space-9);
+  padding: var(--gm-space-xl) var(--gm-space-xl) var(--gm-space-xl);
 }
 
 .page {
@@ -37,13 +37,13 @@ main {
   border-radius: 0 0 14px 14px;
   background: var(--gm-accent-strong);
   color: #04101d;
-  font-size: var(--gm-text-md);
+  font-size: var(--gm-text-lg);
   font-weight: 800;
   text-decoration: none;
 }
 
 .skip-link:focus {
-  left: var(--gm-space-8);
+  left: var(--gm-space-xl);
   top: 0;
   outline: 3px solid var(--gm-focus-ring);
   outline-offset: 2px;

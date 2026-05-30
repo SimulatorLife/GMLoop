@@ -10,11 +10,11 @@ input,
 textarea,
 a {
   transition:
-    background var(--gm-transition-fast),
-    border-color var(--gm-transition-fast),
-    color var(--gm-transition-fast),
-    box-shadow var(--gm-transition-fast),
-    transform var(--gm-transition-fast);
+    background var(--gm-transition),
+    border-color var(--gm-transition),
+    color var(--gm-transition),
+    box-shadow var(--gm-transition),
+    transform var(--gm-transition);
 }
 
 /* ─── Spinner animation (reused by multiple components) ───── */

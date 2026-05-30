@@ -93,7 +93,7 @@ export class GmFixPanel extends LightDomLitElement {
                         </span>
                         <button
                             id="run-fix"
-                            class="fix-run-button"
+                            class="gm-btn--primary"
                             ?disabled=${this.state.isFixPending || !canRunFix}
                             @click=${() => this.#emitRunFix()}
                         >

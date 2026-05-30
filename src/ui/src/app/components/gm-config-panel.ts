@@ -290,12 +290,12 @@ export class GmConfigPanel extends LightDomLitElement {
                         ? html` • Config Path: <strong>${configCatalog.gmloop.configPath}</strong>`
                         : html` • Config Path: <strong>Not found</strong>`}
                 </p>
-                <div class="config-view-selector view-selector" role="group" aria-label="Configuration view selector">
+                <div class="gm-view-selector" role="group" aria-label="Configuration view selector">
                     <button
                         id="config-view-rendered"
                         type="button"
                         aria-pressed=${this.#configViewMode === "rendered"}
-                        class=${this.#configViewMode === "rendered" ? "view-option active" : "view-option"}
+                        class=${this.#configViewMode === "rendered" ? "gm-btn--chip active" : "gm-btn--chip"}
                         @click=${() => this.#setConfigViewMode("rendered")}
                     >
                         Rendered
@@ -304,7 +304,7 @@ export class GmConfigPanel extends LightDomLitElement {
                         id="config-view-raw"
                         type="button"
                         aria-pressed=${this.#configViewMode === "raw"}
-                        class=${this.#configViewMode === "raw" ? "view-option active" : "view-option"}
+                        class=${this.#configViewMode === "raw" ? "gm-btn--chip active" : "gm-btn--chip"}
                         @click=${() => this.#setConfigViewMode("raw")}
                     >
                         Raw gmloop.json

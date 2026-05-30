@@ -354,7 +354,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                     <div class="toolbar-control-group">
                         <button
                             id="toggle-view"
-                            class="toolbar-chip-button"
+                            class="gm-btn--chip"
                             aria-pressed=${this.state.activeGraphView === "json"}
                             ?disabled=${!hasLoadedIndex}
                             @click=${() => this.#emitToggleGraphView()}
@@ -363,7 +363,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                         </button>
                         <button
                             id="toggle-labels"
-                            class="toolbar-chip-button"
+                            class="gm-btn--chip"
                             ?disabled=${!hasLoadedIndex}
                             @click=${() => this.#emitCycleLabelMode()}
                         >
@@ -378,7 +378,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                     <div class="toolbar-control-group">
                         <button
                             id="reset-default"
-                            class="toolbar-chip-button"
+                            class="gm-btn--chip"
                             ?disabled=${!hasLoadedIndex}
                             @click=${() => this.#emitResetDefaults()}
                         >
@@ -388,7 +388,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                             ? html`
                                   <button
                                       id="regenerate"
-                                      class="toolbar-chip-button"
+                                      class="gm-btn--chip"
                                       ?disabled=${this.state.isRegeneratePending || !hasLoadedProject}
                                       @click=${() => this.#emitRegenerate()}
                                   >
