@@ -158,16 +158,16 @@ export class GmAppShell extends LightDomLitElement {
         void this.#runFixWorkflow();
     };
 
-    #onTriggerRefreshLiveReload = (): void => {
-        void this.#refreshLiveReloadStatus();
-    };
-
     #onTriggerStartLiveReload = (): void => {
         void this.#startLiveReload();
     };
 
     #onTriggerStopLiveReload = (): void => {
         void this.#stopLiveReload();
+    };
+
+    #onTriggerRefreshLiveReload = (): void => {
+        void this.#refreshLiveReloadStatus();
     };
 
     #onDismissErrorBanner = (): void => {
@@ -189,9 +189,9 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, handler: this.#onTriggerOpenProject },
             { event: GRAPH_UI_EVENT_TRIGGER_REGENERATE, handler: this.#onTriggerRegenerate },
             { event: GRAPH_UI_EVENT_TRIGGER_FIX, handler: this.#onTriggerFix },
-            { event: GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, handler: this.#onTriggerRefreshLiveReload },
             { event: GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, handler: this.#onTriggerStartLiveReload },
             { event: GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, handler: this.#onTriggerStopLiveReload },
+            { event: GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, handler: this.#onTriggerRefreshLiveReload },
             { event: "dismiss", handler: this.#onDismissErrorBanner }
         ]);
 
@@ -221,20 +221,6 @@ export class GmAppShell extends LightDomLitElement {
             this.#store.dispatch({ errorMessage: message, type: "set-error" });
         } finally {
             this.#store.dispatch({ pending: false, type: pendingType });
-        }
-    }
-
-    async #refreshLiveReloadStatus(): Promise<void> {
-        try {
-            this.#store.dispatch({ pending: true, type: "set-live-reload-refresh-pending" });
-            this.#store.dispatch({ errorMessage: null, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
-            const status = await this.callbacks.onRefreshLiveReloadStatus();
-            this.#store.dispatch({ status, type: "set-live-reload-status" });
-        } catch (error) {
-            const message = getUiErrorMessage(error, "Unknown live-reload status error");
-            this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
-        } finally {
-            this.#store.dispatch({ pending: false, type: "set-live-reload-refresh-pending" });
         }
     }
 
@@ -279,6 +265,26 @@ export class GmAppShell extends LightDomLitElement {
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown live-reload stop error");
             this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
+        }
+    }
+
+    async #refreshLiveReloadStatus(): Promise<void> {
+        if (!this.model || !this.model.isServerMode) {
+            return;
+        }
+
+        try {
+            this.#store.dispatch({ pending: true, type: "set-live-reload-refresh-pending" });
+            this.#store.dispatch({ errorMessage: null, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
+            const status = await this.callbacks.onRefreshLiveReloadStatus();
+            if (status !== null) {
+                this.#store.dispatch({ status, type: "set-live-reload-status" });
+            }
+        } catch (error) {
+            const message = getUiErrorMessage(error, "Unknown live-reload status refresh error");
+            this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
+        } finally {
+            this.#store.dispatch({ pending: false, type: "set-live-reload-refresh-pending" });
         }
     }
 

@@ -178,14 +178,22 @@ export class GmLiveReloadPanel extends LightDomLitElement {
     public connectedCallback(): void {
         super.connectedCallback();
         this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+        document.addEventListener("visibilitychange", this.#onVisibilityChange);
         this.#restartPollingIfNeeded();
     }
 
     public disconnectedCallback(): void {
         this.#stopPolling();
+        document.removeEventListener("visibilitychange", this.#onVisibilityChange);
         this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
         super.disconnectedCallback();
     }
+
+    #onVisibilityChange = (): void => {
+        if (document.visibilityState === "visible") {
+            void this.#pollStatusUrlIfNeeded();
+        }
+    };
 
     protected updated(): void {
         this.#restartPollingIfNeeded();
@@ -245,13 +253,32 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
-    #emitRefreshStatus(): void {
-        this.dispatchEvent(
-            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, {
-                bubbles: true,
-                composed: true
-            })
-        );
+    async #pollStatusUrlIfNeeded(): Promise<void> {
+        const statusUrl = this.model?.liveReload?.endpoints.statusUrl ?? null;
+        if (statusUrl === null) {
+            return;
+        }
+
+        try {
+            const response = await fetch(statusUrl, {
+                headers: { Accept: "application/json" }
+            });
+            if (!response.ok) {
+                return;
+            }
+
+            const payload: unknown = await response.json();
+            const snapshot = normalizeStatusSnapshot(payload, true);
+            if (snapshot === null) {
+                return;
+            }
+
+            this.#polledStatus = snapshot;
+            this.#pollErrorMessage = null;
+            this.requestUpdate();
+        } catch {
+            // Silently ignore focus-triggered poll errors.
+        }
     }
 
     #emitStartLiveReload(): void {
@@ -271,6 +298,15 @@ export class GmLiveReloadPanel extends LightDomLitElement {
             })
         );
     }
+
+    #emitRefreshLiveReload = (): void => {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    };
 
     #resolveStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot | null {
         return this.state?.liveReloadStatus ?? this.#polledStatus ?? this.model?.liveReload?.statusSnapshot ?? null;
@@ -314,12 +350,14 @@ export class GmLiveReloadPanel extends LightDomLitElement {
 
     #renderActionButtons() {
         const hasActiveSession = this.model?.liveReload !== null;
-        const isPending = this.state?.isLiveReloadStartPending === true;
+        const isStartPending = this.state?.isLiveReloadStartPending === true;
+        const isRefreshPending = this.state?.isLiveReloadRefreshPending === true;
         const hasError = this.state?.liveReloadErrorMessage !== null || this.#pollErrorMessage !== null;
         const isRetry = hasError && !hasActiveSession;
         const isRestart = hasActiveSession;
+        const isPending = isStartPending || isRefreshPending;
 
-        const buttonLabel = isPending
+        const buttonLabel = isStartPending
             ? isRestart
                 ? "Restarting Live Reload"
                 : "Starting Live Reload"
@@ -355,6 +393,20 @@ export class GmLiveReloadPanel extends LightDomLitElement {
             </svg>
         `;
 
+        const refreshIcon = html`
+            <svg
+                class="live-reload-btn-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.25"
+                aria-hidden="true"
+            >
+                <path d="M1 4v6h6" />
+                <path d="M3.51 15a9 9 0 1 0 .49-4.5" />
+            </svg>
+        `;
+
         const startIcon = isRetry ? playIcon : isRestart ? restartIcon : playIcon;
 
         return html`
@@ -366,11 +418,11 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                               type="button"
                               class="live-reload-btn live-reload-btn--primary"
                               ?disabled=${isPending}
-                              aria-busy=${isPending ? "true" : "false"}
+                              aria-busy=${isStartPending ? "true" : "false"}
                               title=${buttonLabel}
                               @click=${() => this.#emitStartLiveReload()}
                           >
-                              ${isPending
+                              ${isStartPending
                                   ? html`<span class="live-reload-btn-spinner" aria-hidden="true"></span>`
                                   : startIcon}
                           </button>
@@ -380,31 +432,30 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                                         id="stop-live-reload"
                                         type="button"
                                         class="live-reload-btn live-reload-btn--destructive"
-                                        ?disabled=${isPending}
+                                        ?disabled=${isStartPending}
                                         title="Stop Live Reload"
                                         @click=${() => this.#emitStopLiveReload()}
                                     >
                                         ${stopIcon}
                                     </button>
+                                    <button
+                                        id="refresh-live-reload"
+                                        type="button"
+                                        class="live-reload-btn"
+                                        ?disabled=${isStartPending || isRefreshPending}
+                                        aria-busy=${isRefreshPending ? "true" : "false"}
+                                        title="Refresh"
+                                        Status
+                                        @click=${this.#emitRefreshLiveReload}
+                                    >
+                                        ${isRefreshPending
+                                            ? html`<span class="live-reload-btn-spinner" aria-hidden="true"></span>`
+                                            : refreshIcon}
+                                    </button>
                                 `
                               : null}
                       `
                     : null}
-                <button
-                    id="refresh-live-reload"
-                    type="button"
-                    class="top-nav-button live-reload-action-button"
-                    ?disabled=${this.state?.isLiveReloadRefreshPending}
-                    aria-busy=${this.state?.isLiveReloadRefreshPending ? "true" : "false"}
-                    @click=${() => this.#emitRefreshStatus()}
-                >
-                    <span class="button-content">
-                        ${this.state?.isLiveReloadRefreshPending
-                            ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                            : null}
-                        <span class="button-label">Refresh Status</span>
-                    </span>
-                </button>
             </div>
         `;
     }

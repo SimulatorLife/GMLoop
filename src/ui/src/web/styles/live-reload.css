@@ -1,12 +1,12 @@
 .live-reload-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
+  gap: var(--gm-space-6);
   align-items: start;
-  margin-bottom: 18px;
-  padding: 18px;
+  margin-bottom: var(--gm-space-6);
+  padding: var(--gm-space-6);
   border: 1px solid var(--gm-border);
-  border-radius: 22px;
+  border-radius: var(--gm-radius-xl);
   background: linear-gradient(180deg, rgba(16, 28, 46, 0.72), rgba(8, 15, 26, 0.82));
   box-shadow: var(--gm-shadow);
 }
@@ -17,7 +17,7 @@
 
 .live-reload-title-row {
   display: flex;
-  gap: 12px;
+  gap: var(--gm-space-3);
   align-items: center;
   flex-wrap: wrap;
 }
@@ -25,8 +25,8 @@
 .live-reload-title-row h2 {
   margin: 0;
   color: var(--gm-text);
-  font-size: 22px;
-  line-height: 1.2;
+  font-size: var(--gm-text-2xl);
+  line-height: var(--gm-leading-tight);
 }
 
 .live-reload-title-block .docs-meta {
@@ -36,7 +36,7 @@
 
 .live-reload-actions {
   display: flex;
-  gap: 10px;
+  gap: var(--gm-space-3);
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
@@ -46,17 +46,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
+  width: var(--gm-height-lg);
+  height: var(--gm-height-lg);
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--gm-radius-md);
   cursor: pointer;
   transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms ease,
-    opacity 140ms ease;
+    background var(--gm-transition-fast),
+    border-color var(--gm-transition-fast),
+    box-shadow var(--gm-transition-fast),
+    transform var(--gm-transition-fast),
+    opacity var(--gm-transition-fast);
 }
 
 .live-reload-btn:disabled {
@@ -73,39 +73,41 @@
 }
 
 .live-reload-btn-icon {
-  width: 16px;
-  height: 16px;
+  width: var(--gm-icon-sm);
+  height: var(--gm-icon-sm);
   flex-shrink: 0;
   pointer-events: none;
 }
 
 .live-reload-btn--primary {
-  background: linear-gradient(135deg, #9ce8c8, #f7d081);
-  color: #101820;
+  background: var(--gm-action-primary-bg);
+  color: var(--gm-action-primary-text);
 }
 
 .live-reload-btn--primary:hover:not(:disabled) {
+  color: var(--gm-action-primary-text-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--gm-action-primary-shadow);
 }
 
 .live-reload-btn--destructive {
-  background: rgba(255, 80, 80, 0.15);
-  border-color: rgba(255, 80, 80, 0.4);
-  color: #ff7070;
+  background: var(--gm-danger-surface);
+  border-color: var(--gm-danger-border);
+  color: var(--gm-danger-text);
 }
 
 .live-reload-btn--destructive:hover:not(:disabled) {
-  background: rgba(255, 80, 80, 0.25);
+  color: var(--gm-action-primary-text-hover);
+  background: var(--gm-danger-surface-hover);
   transform: translateY(-1px);
 }
 
 .live-reload-btn-spinner {
   display: inline-block;
-  width: 16px;
-  height: 16px;
+  width: var(--gm-icon-sm);
+  height: var(--gm-icon-sm);
   border: 2px solid rgba(16, 24, 32, 0.28);
-  border-top-color: #101820;
+  border-top-color: var(--gm-action-primary-text);
   border-radius: 50%;
   animation: live-reload-btn-spin 600ms linear infinite;
 }
@@ -119,22 +121,22 @@
 .live-reload-stack {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--gm-space-6);
 }
 
 .live-reload-grid,
 .live-reload-activity-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: var(--gm-space-6);
 }
 
 .live-reload-panel-card h3,
 .live-reload-overview-card h3,
 .live-reload-setup-card h3 {
-  margin: 0 0 12px;
+  margin: 0 0 var(--gm-space-3);
   color: var(--gm-text);
-  font-size: 16px;
+  font-size: var(--gm-text-xl);
 }
 
 .live-reload-panel-card p,
@@ -142,8 +144,8 @@
 .live-reload-setup-card p {
   margin: 10px 0 0;
   color: var(--gm-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--gm-text-base);
+  line-height: var(--gm-leading-normal);
 }
 
 .live-reload-setup-card {
@@ -156,28 +158,28 @@
   gap: 8px;
   padding: 7px 11px;
   border: 1px solid var(--gm-border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--gm-radius-full);
+  background: var(--gm-bg-muted);
   color: var(--gm-text-secondary);
-  font-size: 12px;
+  font-size: var(--gm-text-sm);
   font-weight: 800;
 }
 
 .live-reload-status-dot {
-  width: 8px;
-  height: 8px;
+  width: var(--gm-icon-sm);
+  height: var(--gm-icon-sm);
   border-radius: 50%;
-  background: #f6c46d;
+  background: var(--gm-warning-dot);
 }
 
 .live-reload-status-chip.running {
-  border-color: rgba(88, 205, 132, 0.45);
-  background: rgba(88, 205, 132, 0.12);
-  color: #d8ffe6;
+  border-color: var(--gm-success-border);
+  background: var(--gm-success-surface);
+  color: var(--gm-success-text);
 }
 
 .live-reload-status-chip.running .live-reload-status-dot {
-  background: #58cd84;
+  background: var(--gm-success-dot);
 }
 
 .live-reload-status-chip.error,
@@ -189,7 +191,7 @@
 
 .live-reload-status-chip.error .live-reload-status-dot,
 .live-reload-status-chip.offline .live-reload-status-dot {
-  background: #ff8989;
+  background: var(--gm-danger-dot);
 }
 
 .live-reload-status-chip.inactive .live-reload-status-dot {
@@ -199,14 +201,14 @@
 .live-reload-metric-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(130px, 1fr));
-  gap: 12px;
+  gap: var(--gm-space-3);
 }
 
 .live-reload-metric-item {
   min-width: 0;
-  padding: 12px;
-  border: 1px solid rgba(143, 181, 255, 0.12);
-  border-radius: 16px;
+  padding: var(--gm-space-3);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-lg);
   background: rgba(255, 255, 255, 0.035);
 }
 
@@ -214,7 +216,7 @@
 .live-reload-metric-item small {
   display: block;
   color: var(--gm-text-subdued);
-  font-size: 12px;
+  font-size: var(--gm-text-sm);
   line-height: 1.35;
 }
 
@@ -222,7 +224,7 @@
   display: block;
   margin: 8px 0 5px;
   color: var(--gm-text);
-  font-size: 25px;
+  font-size: var(--gm-text-3xl);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -254,29 +256,29 @@
 
 .live-reload-pipeline-node {
   display: flex;
-  min-height: 42px;
+  min-height: var(--gm-height-xl);
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid rgba(142, 224, 240, 0.2);
-  border-radius: 14px;
+  border-radius: var(--gm-radius-md);
   background: rgba(142, 224, 240, 0.08);
   color: var(--gm-text);
-  font-size: 12px;
+  font-size: var(--gm-text-sm);
   font-weight: 800;
 }
 
 .live-reload-pipeline-index {
   display: inline-flex;
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: var(--gm-icon-lg);
+  height: var(--gm-icon-lg);
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--gm-radius-full);
   background: rgba(115, 200, 255, 0.18);
   color: var(--gm-accent-strong);
-  font-size: 11px;
+  font-size: var(--gm-text-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -291,9 +293,9 @@
 
 .live-reload-event-list li {
   padding: 12px 13px;
-  border: 1px solid rgba(143, 181, 255, 0.12);
-  border-radius: 15px;
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-lg);
+  background: var(--gm-bg-subtle);
 }
 
 .live-reload-event-list strong,
@@ -304,14 +306,14 @@
 .live-reload-event-list strong {
   margin-bottom: 4px;
   color: var(--gm-text);
-  font-size: 13px;
+  font-size: var(--gm-text-base);
   overflow-wrap: anywhere;
 }
 
 .live-reload-event-list span {
   color: var(--gm-text-secondary);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
   overflow-wrap: anywhere;
 }
 
@@ -331,9 +333,9 @@
 .live-reload-detail-list div {
   display: grid;
   grid-template-columns: minmax(120px, 0.55fr) minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--gm-space-3);
   padding: 10px 0;
-  border-bottom: 1px solid rgba(143, 181, 255, 0.1);
+  border-bottom: 1px solid var(--gm-border-subtle);
 }
 
 .live-reload-health-list div:last-child,
@@ -348,8 +350,8 @@
 .live-reload-detail-list dd {
   min-width: 0;
   margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
 }
 
 .live-reload-health-list dt,
@@ -367,11 +369,11 @@
   display: block;
   max-width: 100%;
   padding: 7px 9px;
-  border: 1px solid rgba(143, 181, 255, 0.12);
-  border-radius: 10px;
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-sm);
   background: var(--gm-surface-inset);
   color: var(--gm-accent-strong);
-  font-size: 12px;
+  font-size: var(--gm-text-sm);
   overflow-wrap: anywhere;
 }
 
@@ -392,10 +394,6 @@
   .live-reload-actions {
     width: 100%;
     justify-content: flex-start;
-  }
-
-  .live-reload-action-button {
-    flex: 1 1 180px;
   }
 
   .live-reload-pipeline li:not(:last-child)::after {

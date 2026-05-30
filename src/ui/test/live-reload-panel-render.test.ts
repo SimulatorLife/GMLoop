@@ -201,8 +201,8 @@ void test("GmLiveReloadPanel preserves action labels while pending", () => {
 
     assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=true/u);
     assert.match(rendered, /id="refresh-live-reload"[\s\S]*aria-busy=true/u);
-    assert.match(rendered, /button-spinner/u);
-    assert.match(rendered, /Restarting Live Reload/u);
+    assert.match(rendered, /live-reload-btn-spinner/u);
+    assert.match(rendered, /title=Restarting Live Reload/u);
     assert.match(rendered, /Refresh Status/u);
     assert.doesNotMatch(rendered, /Building & Starting/u);
     assert.doesNotMatch(rendered, /Refreshing\.\.\./u);
@@ -295,8 +295,8 @@ void test("GmLiveReloadPanel shows Restart Live Reload when session is active", 
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Restart Live Reload/u);
-    assert.doesNotMatch(rendered, /Start Live Reload/u);
+    assert.match(rendered, /title=Restart Live Reload/u);
+    assert.doesNotMatch(rendered, /title=Start Live Reload/u);
     assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=false/u);
 });
 
@@ -313,8 +313,8 @@ void test("GmLiveReloadPanel shows Retry Start when startup failed with no activ
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Retry Start/u);
-    assert.doesNotMatch(rendered, /Start Live Reload/u);
+    assert.match(rendered, /title=Retry Start/u);
+    assert.doesNotMatch(rendered, /title=Start Live Reload/u);
     assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=false/u);
     assert.match(rendered, /Igor failed to build/u);
 });
@@ -329,7 +329,7 @@ void test("GmLiveReloadPanel shows Restarting Live Reload while restart is pendi
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Restarting Live Reload/u);
+    assert.match(rendered, /title=Restarting Live Reload/u);
     assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=true/u);
 });
 

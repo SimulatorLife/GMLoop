@@ -4,7 +4,7 @@
     "name": "qwen3:1.7b",
     "skipLoopDetection": true,
     "skipStartupContext": true,
-    "maxSessionTurns": 300,
+    "maxSessionTurns": 900,
     "generationConfig": {
       "timeout": 900000,
       "maxRetries": 2,
