@@ -25,6 +25,11 @@ main {
   display: block;
 }
 
+.content-page {
+  overflow: visible;
+  background: transparent;
+}
+
 .hidden {
   display: none !important;
 }

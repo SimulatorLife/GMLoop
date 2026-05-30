@@ -210,7 +210,8 @@ export class GmDocsPanel extends LightDomLitElement {
             return html``;
         }
 
-        const docsPageClassName = this.state.activePage === "docs" ? "page docs-page active" : "page docs-page";
+        const docsPageClassName =
+            this.state.activePage === "docs" ? "page content-page docs-page active" : "page content-page docs-page";
         const docsPanelContent = createGraphVisualizationDocsPanelContent(this.model.documentationCatalogs);
         const searchQuery = normalizeCatalogSearchQuery(this.docsSearchQuery);
         const cliSearchResult = searchCliEntries(docsPanelContent.cliEntries, searchQuery);

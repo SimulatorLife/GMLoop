@@ -654,7 +654,8 @@ export class GmLiveReloadPanel extends LightDomLitElement {
             return html``;
         }
 
-        const activeClassName = this.state.activePage === "live-reload" ? "page docs-page active" : "page docs-page";
+        const activeClassName =
+            this.state.activePage === "live-reload" ? "page content-page active" : "page content-page";
         const liveReload = this.model.liveReload;
         const status = this.#resolveStatusSnapshot();
         const errorMessage = this.state.liveReloadErrorMessage ?? this.#pollErrorMessage;

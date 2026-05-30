@@ -134,7 +134,7 @@ void test("GmLiveReloadPanel renders configured live-reload dashboard sections",
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /id="live-reload-page"[\s\S]*class=page docs-page active/u);
+    assert.match(rendered, /id="live-reload-page"[\s\S]*class=page content-page active/u);
     assert.match(rendered, /<h2>Live Reload<\/h2>/u);
     assert.match(rendered, /Overview/u);
     assert.match(rendered, /Clients/u);

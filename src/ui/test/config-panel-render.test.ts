@@ -166,6 +166,7 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
+    assert.match(rendered, /id="config-page"[\s\S]*class=page content-page active/u);
     assert.match(rendered, /id="config-view-rendered"/u);
     assert.match(rendered, /id="config-view-raw"/u);
     assert.match(rendered, /class="config-view-selector view-selector"/u);

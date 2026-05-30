@@ -600,7 +600,8 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             return html``;
         }
 
-        const activeClassName = this.state.activePage === "playground" ? "page active" : "page";
+        const activeClassName =
+            this.state.activePage === "playground" ? "page content-page active" : "page content-page";
         const controlsPanelClassName = this.#controlsPanelOpen
             ? "playground-layout controls-open"
             : "playground-layout controls-collapsed";

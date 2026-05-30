@@ -70,7 +70,7 @@ void test("GmFixPanel renders the fix workflow button, status, target, and log",
     const runLogIndex = rendered.indexOf("Run Log");
     const firstLogLineIndex = rendered.indexOf("[1/3 Refactor Codemods]");
 
-    assert.match(rendered, /id="fix-page"[\s\S]*class=page docs-page active/u);
+    assert.match(rendered, /id="fix-page"[\s\S]*class=page content-page active/u);
     assert.match(rendered, /class="fix-action-bar"/u);
     assert.match(rendered, /id="run-fix"/u);
     assert.match(rendered, /Completed/u);

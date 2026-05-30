@@ -78,7 +78,7 @@ export class GmFixPanel extends LightDomLitElement {
             return html``;
         }
 
-        const activeClassName = this.state.activePage === "fix" ? "page docs-page active" : "page docs-page";
+        const activeClassName = this.state.activePage === "fix" ? "page content-page active" : "page content-page";
         const hasProject = hasLoadedGraphProject(this.model);
         const canRunFix = hasProject && this.model.isServerMode;
         const effectiveFixStatus = getEffectiveFixStatus(this.model, this.state);

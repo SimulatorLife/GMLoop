@@ -93,7 +93,7 @@ void test("GmMcpPanel renders running status and live activity placeholders", ()
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /id="mcp-page"[\s\S]*class=page docs-page active/u);
+    assert.match(rendered, /id="mcp-page"[\s\S]*class=page content-page active/u);
     assert.match(rendered, /Tool Call Feed/u);
     assert.match(rendered, /Connection Updates/u);
     assert.match(rendered, /Live MCP server status, connection health, and future activity updates\./u);

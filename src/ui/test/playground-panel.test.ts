@@ -164,6 +164,7 @@ void test("playground panel renders controls panel toggle with expanded state", 
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
+    assert.match(rendered, /id="playground-page"[\s\S]*class=page content-page active/u);
     assert.match(rendered, /button\s+type="button"\s+class="playground-controls-toggle is-open"/u);
     assert.match(rendered, /aria-controls="playground-controls-panel"/u);
     assert.match(rendered, /aria-expanded=true/u);

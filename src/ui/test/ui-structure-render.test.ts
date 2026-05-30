@@ -223,3 +223,15 @@ void test("toolbar stylesheet keeps graph toolbar controls in a full-width horiz
     assert.match(source, /\.toolbar-control-group\s*\{[\s\S]*flex-wrap:\s*nowrap;/u);
     assert.match(source, /\.toolbar-search-group\s*\{[\s\S]*flex:\s*1 1 220px;[\s\S]*max-width:\s*360px;/u);
 });
+
+void test("page styles keep every top-level page on the shared lighter content background", () => {
+    const layoutSource = readFileSync(new URL("../../src/web/styles/layout.css", import.meta.url), "utf8");
+    const graphSource = readFileSync(new URL("../../src/web/styles/graph.css", import.meta.url), "utf8");
+    const playgroundSource = readFileSync(new URL("../../src/web/styles/playground.css", import.meta.url), "utf8");
+
+    assert.match(layoutSource, /\.content-page\s*\{[\s\S]*background:\s*transparent;/u);
+    assert.match(graphSource, /#graph-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
+    assert.match(playgroundSource, /#playground-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
+    assert.doesNotMatch(graphSource, /background:\s*linear-gradient\(180deg,\s*rgba\(8,\s*14,\s*24/u);
+    assert.doesNotMatch(playgroundSource, /background:\s*linear-gradient\(180deg,\s*rgba\(8,\s*14,\s*24/u);
+});

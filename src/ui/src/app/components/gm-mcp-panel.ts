@@ -22,7 +22,7 @@ export class GmMcpPanel extends LightDomLitElement {
             return html``;
         }
 
-        const mcpPageClassName = this.state.activePage === "mcp" ? "page docs-page active" : "page docs-page";
+        const mcpPageClassName = this.state.activePage === "mcp" ? "page content-page active" : "page content-page";
 
         return html`
             <section id="mcp-page" class=${mcpPageClassName}>

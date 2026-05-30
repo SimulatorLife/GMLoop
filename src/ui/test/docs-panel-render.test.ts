@@ -157,6 +157,7 @@ void test("GmDocsPanel renders the Rules subview and project-facing rule content
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
+    assert.match(rendered, /id="docs-page"[\s\S]*class=page content-page docs-page active/u);
     assert.match(rendered, /docs-view-rules/u);
     assert.match(rendered, createButtonAriaPressedPattern("docs-view-rules", true));
     assert.match(rendered, createButtonAriaPressedPattern("docs-view-cli", false));

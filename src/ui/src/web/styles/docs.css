@@ -1,7 +1,3 @@
-.docs-page {
-    overflow: visible;
-}
-
 .docs-toggle-row {
     display: flex;
     gap: var(--gm-space-md);

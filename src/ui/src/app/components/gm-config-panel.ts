@@ -263,7 +263,8 @@ export class GmConfigPanel extends LightDomLitElement {
             return html``;
         }
 
-        const configPageClassName = this.state.activePage === "config" ? "page docs-page active" : "page docs-page";
+        const configPageClassName =
+            this.state.activePage === "config" ? "page content-page active" : "page content-page";
         const configCatalog = this.model.projectConfigurationCatalog;
 
         if (!configCatalog) {

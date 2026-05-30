@@ -389,7 +389,7 @@ export class GmGraphPanel extends LightDomLitElement {
         }
 
         this.#syncFilterDefaults();
-        const graphPageClassName = this.state.activePage === "graph" ? "page active" : "page";
+        const graphPageClassName = this.state.activePage === "graph" ? "page content-page active" : "page content-page";
         const layout = createGraphLayout(this.model.data.nodes, this.model.data.edges);
         const nodeItems = listGraphNodeKindLegendItems(this.model.data.nodes);
         const edgeTypes = listGraphEdgeTypes(this.model.data.edges);
