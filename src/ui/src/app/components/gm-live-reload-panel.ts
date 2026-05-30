@@ -10,7 +10,11 @@ import type {
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
-import { GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD } from "./events.js";
+import {
+    GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
+    GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
+    GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
+} from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
@@ -259,6 +263,15 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         );
     }
 
+    #emitStopLiveReload(): void {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    }
+
     #resolveStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot | null {
         return this.state?.liveReloadStatus ?? this.#polledStatus ?? this.model?.liveReload?.statusSnapshot ?? null;
     }
@@ -300,6 +313,50 @@ export class GmLiveReloadPanel extends LightDomLitElement {
     }
 
     #renderActionButtons() {
+        const hasActiveSession = this.model?.liveReload !== null;
+        const isPending = this.state?.isLiveReloadStartPending === true;
+        const hasError = this.state?.liveReloadErrorMessage !== null || this.#pollErrorMessage !== null;
+        const isRetry = hasError && !hasActiveSession;
+        const isRestart = hasActiveSession;
+
+        const buttonLabel = isPending
+            ? isRestart
+                ? "Restarting Live Reload"
+                : "Starting Live Reload"
+            : isRetry
+              ? "Retry Start"
+              : isRestart
+                ? "Restart Live Reload"
+                : "Start Live Reload";
+
+        const playIcon = html`
+            <svg class="live-reload-btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <polygon points="5,3 19,12 5,21" />
+            </svg>
+        `;
+
+        const stopIcon = html`
+            <svg class="live-reload-btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <rect x="4" y="4" width="16" height="16" />
+            </svg>
+        `;
+
+        const restartIcon = html`
+            <svg
+                class="live-reload-btn-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.25"
+                aria-hidden="true"
+            >
+                <path d="M1 4v6h6" />
+                <path d="M3.51 15a9 9 0 1 0 .49-4.5" />
+            </svg>
+        `;
+
+        const startIcon = isRetry ? playIcon : isRestart ? restartIcon : playIcon;
+
         return html`
             <div class="live-reload-actions">
                 ${this.model?.isServerMode
@@ -307,18 +364,30 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                           <button
                               id="start-live-reload"
                               type="button"
-                              class="top-nav-button live-reload-action-button"
-                              ?disabled=${this.state?.isLiveReloadStartPending}
-                              aria-busy=${this.state?.isLiveReloadStartPending ? "true" : "false"}
+                              class="live-reload-btn live-reload-btn--primary"
+                              ?disabled=${isPending}
+                              aria-busy=${isPending ? "true" : "false"}
+                              title=${buttonLabel}
                               @click=${() => this.#emitStartLiveReload()}
                           >
-                              <span class="button-content">
-                                  ${this.state?.isLiveReloadStartPending
-                                      ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                      : null}
-                                  <span class="button-label">Start Live Reload</span>
-                              </span>
+                              ${isPending
+                                  ? html`<span class="live-reload-btn-spinner" aria-hidden="true"></span>`
+                                  : startIcon}
                           </button>
+                          ${hasActiveSession
+                              ? html`
+                                    <button
+                                        id="stop-live-reload"
+                                        type="button"
+                                        class="live-reload-btn live-reload-btn--destructive"
+                                        ?disabled=${isPending}
+                                        title="Stop Live Reload"
+                                        @click=${() => this.#emitStopLiveReload()}
+                                    >
+                                        ${stopIcon}
+                                    </button>
+                                `
+                              : null}
                       `
                     : null}
                 <button

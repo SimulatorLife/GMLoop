@@ -6,7 +6,8 @@ import {
     GmLiveReloadPanel,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
-    GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD
+    GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
+    GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
 } from "../src/app/components/index.js";
 import type { GraphVisualizationFixRunResult, GraphVisualizationUiModel } from "../src/app/contracts.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
@@ -201,7 +202,7 @@ void test("GmLiveReloadPanel preserves action labels while pending", () => {
     assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=true/u);
     assert.match(rendered, /id="refresh-live-reload"[\s\S]*aria-busy=true/u);
     assert.match(rendered, /button-spinner/u);
-    assert.match(rendered, /Start Live Reload/u);
+    assert.match(rendered, /Restarting Live Reload/u);
     assert.match(rendered, /Refresh Status/u);
     assert.doesNotMatch(rendered, /Building & Starting/u);
     assert.doesNotMatch(rendered, /Refreshing\.\.\./u);
@@ -216,6 +217,7 @@ void test("GmAppShell routes live-reload refresh events through the host callbac
         onRegenerate: () => {},
         onRunFix: () => ({ logLines: [], status: "success" }),
         onStartLiveReload: () => null,
+        onStopLiveReload: () => {},
         onRefreshLiveReloadStatus: () => {
             refreshCount += 1;
             return createStatusSnapshot();
@@ -242,6 +244,7 @@ void test("GmAppShell routes live-reload start events through the host callback"
             startCount += 1;
             return createMockModel(createStatusSnapshot()).liveReload;
         },
+        onStopLiveReload: () => {},
         onRefreshLiveReloadStatus: () => null
     };
 
@@ -270,6 +273,7 @@ void test("GmAppShell ignores duplicate live-reload start events while startup i
             startCount += 1;
             return startPromise;
         },
+        onStopLiveReload: () => {},
         onRefreshLiveReloadStatus: () => null
     };
 
@@ -282,6 +286,141 @@ void test("GmAppShell ignores duplicate live-reload start events while startup i
     shell.disconnectedCallback();
 
     assert.equal(startCount, 1);
+});
+
+void test("GmLiveReloadPanel shows Restart Live Reload when session is active", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Restart Live Reload/u);
+    assert.doesNotMatch(rendered, /Start Live Reload/u);
+    assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=false/u);
+});
+
+void test("GmLiveReloadPanel shows Retry Start when startup failed with no active session", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = {
+        ...createMockModel(null),
+        liveReload: null
+    };
+    panel.state = {
+        ...createMockState(),
+        liveReloadErrorMessage: "Igor failed to build the project."
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Retry Start/u);
+    assert.doesNotMatch(rendered, /Start Live Reload/u);
+    assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=false/u);
+    assert.match(rendered, /Igor failed to build/u);
+});
+
+void test("GmLiveReloadPanel shows Restarting Live Reload while restart is pending", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = {
+        ...createMockState(),
+        isLiveReloadStartPending: true
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Restarting Live Reload/u);
+    assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=true/u);
+});
+
+void test("GmLiveReloadPanel shows stop button only when session is active", () => {
+    const panelWithSession = new TestableGmLiveReloadPanel();
+    panelWithSession.model = createMockModel(createStatusSnapshot());
+    panelWithSession.state = createMockState();
+
+    const renderedWithSession = renderTemplateValue(panelWithSession.renderForTest());
+    assert.match(renderedWithSession, /id="stop-live-reload"/u);
+
+    const panelWithoutSession = new TestableGmLiveReloadPanel();
+    panelWithoutSession.model = {
+        ...createMockModel(null),
+        liveReload: null
+    };
+    panelWithoutSession.state = createMockState();
+
+    const renderedWithoutSession = renderTemplateValue(panelWithoutSession.renderForTest());
+    assert.doesNotMatch(renderedWithoutSession, /id="stop-live-reload"/u);
+});
+
+void test("GmLiveReloadPanel stop button is disabled while start is pending", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = {
+        ...createMockState(),
+        isLiveReloadStartPending: true
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="stop-live-reload"[\s\S]*disabled/u);
+});
+
+void test("GmAppShell routes live-reload stop events through the host callback", async () => {
+    const shell = new TestableGmAppShell();
+    let stopCount = 0;
+    shell.model = createMockModel(createStatusSnapshot());
+    shell.callbacks = {
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onRunFix: () => ({ logLines: [], status: "success" }),
+        onStartLiveReload: () => null,
+        onStopLiveReload: () => {
+            stopCount += 1;
+        },
+        onRefreshLiveReloadStatus: () => null
+    };
+
+    shell.connectedCallback();
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, { bubbles: true }));
+    await Promise.resolve();
+    shell.disconnectedCallback();
+
+    assert.equal(stopCount, 1);
+});
+
+void test("GmAppShell clears live-reload model after stop callback succeeds", async () => {
+    const shell = new TestableGmAppShell();
+    const modelWithSession = createMockModel(createStatusSnapshot());
+    shell.model = modelWithSession;
+    shell.callbacks = {
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onRunFix: () => ({ logLines: [], status: "success" }),
+        onStartLiveReload: () => null,
+        onStopLiveReload: async () => {},
+        onRefreshLiveReloadStatus: () => null
+    };
+
+    shell.connectedCallback();
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, { bubbles: true }));
+    await Promise.resolve();
+    shell.disconnectedCallback();
+
+    assert.equal(shell.model?.liveReload, null);
+});
+
+void test("GmLiveReloadPanel shows Restarting Live Reload while restart is pending", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = {
+        ...createMockState(),
+        isLiveReloadStartPending: true
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Restarting Live Reload/u);
+    assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=true/u);
 });
 
 void test("GmAppShell forwards live fix progress snapshots while a fix run is pending", async () => {
@@ -308,6 +447,7 @@ void test("GmAppShell forwards live fix progress snapshots while a fix run is pe
             return runFixPromise;
         },
         onStartLiveReload: () => null,
+        onStopLiveReload: () => {},
         onRefreshLiveReloadStatus: () => null
     };
 

@@ -33,6 +33,11 @@ type LiveReloadStartApiResponse = Readonly<{
     ok?: boolean;
 }>;
 
+type LiveReloadStopApiResponse = Readonly<{
+    error?: string;
+    ok?: boolean;
+}>;
+
 type UiRevisionApiResponse = Readonly<{
     revision?: number;
 }>;
@@ -229,6 +234,13 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 }
 
                 return result.liveReload ?? null;
+            },
+            onStopLiveReload: async () => {
+                const response = await fetch("/api/live-reload/stop", { method: "POST" });
+                const result = await readJsonResponse<LiveReloadStopApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Live reload stop failed.");
+                }
             }
         },
         data: payload.data,

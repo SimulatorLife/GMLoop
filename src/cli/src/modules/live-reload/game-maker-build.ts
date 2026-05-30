@@ -571,9 +571,26 @@ async function isRecoverableIgorHtml5IconCopyFailure(
 
     const indexHtmlPath = path.join(outputRoot, "index.html");
     const faviconPath = path.join(outputRoot, "favicon.ico");
-    const indexStats = await Core.safeStat(indexHtmlPath);
-    const faviconStats = await Core.safeStat(faviconPath);
-    return indexStats?.isFile() === true && faviconStats?.isFile() === true;
+    const html5gamePath = path.join(outputRoot, "html5game");
+    const [indexStats, faviconStats, html5gameStats] = await Promise.all([
+        Core.safeStat(indexHtmlPath),
+        Core.safeStat(faviconPath),
+        Core.safeStat(html5gamePath)
+    ]);
+
+    if (indexStats?.isFile() !== true) {
+        return false;
+    }
+
+    if (faviconStats?.isFile() !== true) {
+        return false;
+    }
+
+    if (html5gameStats?.isDirectory() !== true) {
+        return false;
+    }
+
+    return true;
 }
 
 async function assertHtml5OutputExists(

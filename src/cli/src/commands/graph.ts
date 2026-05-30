@@ -1605,6 +1605,10 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 return Object.freeze({ ast, output, error });
             },
             startLiveReload: (input) => ensureLiveReloadSessionStarted(input),
+            stopLiveReload: async () => {
+                await stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession);
+                resetGraphVisualizationLiveReloadSessionForRestart(activeLiveReloadSession);
+            },
             renderBundle: async (isServerMode) => {
                 const renderRevision = activeServeRevision;
                 if (isServerMode && activeServeBundleCache?.revision === renderRevision) {

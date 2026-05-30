@@ -31,7 +31,8 @@ import {
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
     GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
-    GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD
+    GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
+    GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
 } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -165,6 +166,10 @@ export class GmAppShell extends LightDomLitElement {
         void this.#startLiveReload();
     };
 
+    #onTriggerStopLiveReload = (): void => {
+        void this.#stopLiveReload();
+    };
+
     #onDismissErrorBanner = (): void => {
         this.#store.dispatch({ type: "clear-error" });
     };
@@ -186,6 +191,7 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_TRIGGER_FIX, handler: this.#onTriggerFix },
             { event: GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, handler: this.#onTriggerRefreshLiveReload },
             { event: GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, handler: this.#onTriggerStartLiveReload },
+            { event: GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, handler: this.#onTriggerStopLiveReload },
             { event: "dismiss", handler: this.#onDismissErrorBanner }
         ]);
 
@@ -255,6 +261,24 @@ export class GmAppShell extends LightDomLitElement {
             this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
         } finally {
             this.#store.dispatch({ pending: false, type: "set-live-reload-start-pending" });
+        }
+    }
+
+    async #stopLiveReload(): Promise<void> {
+        if (!this.model) {
+            return;
+        }
+
+        try {
+            await this.callbacks.onStopLiveReload();
+            this.model = {
+                ...this.model,
+                liveReload: null
+            };
+            this.#store.dispatch({ errorMessage: null, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
+        } catch (error) {
+            const message = getUiErrorMessage(error, "Unknown live-reload stop error");
+            this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
         }
     }
 

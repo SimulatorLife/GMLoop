@@ -277,6 +277,7 @@ void test("buildGameMakerHtml5Output accepts Igor icon-copy failures after HTML5
             cwd: projectRoot,
             executeProcess: async () => {
                 await fs.mkdir(outputRoot, { recursive: true });
+                await fs.mkdir(path.join(outputRoot, "html5game"), { recursive: true });
                 await fs.writeFile(path.join(outputRoot, "index.html"), "<html></html>", "utf8");
                 await fs.writeFile(path.join(outputRoot, "favicon.ico"), "icon", "utf8");
                 return Object.freeze({
@@ -300,6 +301,57 @@ void test("buildGameMakerHtml5Output accepts Igor icon-copy failures after HTML5
 
         assert.equal(result.backend, "igor");
         assert.equal(result.outputRoot, outputRoot);
+    } finally {
+        await fs.rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("buildGameMakerHtml5Output rejects Igor icon-copy failures when html5game directory is missing", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-build-igor-incomplete-");
+    const outputRoot = path.join(projectRoot, "build", "html5");
+    const runtimeRoot = path.join(projectRoot, "runtime-2026.1");
+    const runtimeIgorPath = path.join(runtimeRoot, "bin", "igor", "osx", "x64", "Igor.exe");
+    const licenseFile = path.join(projectRoot, "license.plist");
+    const projectPath = path.join(projectRoot, "Project.yyp");
+
+    try {
+        await createIgorProjectFixtures(runtimeIgorPath, licenseFile, projectPath);
+
+        await assert.rejects(
+            () =>
+                buildGameMakerHtml5Output({
+                    buildConfig: createGameMakerBuildConfig({
+                        backend: "igor",
+                        licenseFile,
+                        outputRoot,
+                        projectPath,
+                        runtimeRoot
+                    }),
+                    cwd: projectRoot,
+                    executeProcess: async () => {
+                        await fs.mkdir(outputRoot, { recursive: true });
+                        await fs.writeFile(path.join(outputRoot, "index.html"), "<html></html>", "utf8");
+                        await fs.writeFile(path.join(outputRoot, "favicon.ico"), "icon", "utf8");
+                        return Object.freeze({
+                            exitCode: 1,
+                            stderr: "",
+                            stdout: [
+                                "DoIcon",
+                                "Igor complete.",
+                                `System.IO.IOException: The process cannot access the file '${path.join(
+                                    outputRoot,
+                                    "favicon.ico"
+                                )}' because it is being used by another process.`,
+                                "   at Igor.Utils.CopyDirectory(String sourceDir, String targetDir, String ignore)",
+                                "   at Igor.HTML5Builder.Package()",
+                                "   at Igor.HTML5Builder.folder()",
+                                "Igor complete."
+                            ].join("\n")
+                        });
+                    }
+                }),
+            /Igor failed/u
+        );
     } finally {
         await fs.rm(projectRoot, { force: true, recursive: true });
     }

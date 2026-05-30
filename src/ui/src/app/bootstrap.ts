@@ -14,6 +14,7 @@ export type GraphVisualizationAppBootstrapDependencies = Readonly<{
         onRegenerate?: GraphVisualizationUiCallbacks["onRegenerate"];
         onRunFix?: GraphVisualizationUiCallbacks["onRunFix"];
         onStartLiveReload?: GraphVisualizationUiCallbacks["onStartLiveReload"];
+        onStopLiveReload?: GraphVisualizationUiCallbacks["onStopLiveReload"];
         onRefreshLiveReloadStatus?: GraphVisualizationUiCallbacks["onRefreshLiveReloadStatus"];
     }>;
     data: GraphVisualizationData;
@@ -33,6 +34,7 @@ export function bootstrapGraphVisualizationLitApp(dependencies: GraphVisualizati
         onRegenerate: dependencies.callbacks?.onRegenerate ?? defaultCallbacks.onRegenerate,
         onRunFix: dependencies.callbacks?.onRunFix ?? defaultCallbacks.onRunFix,
         onStartLiveReload: dependencies.callbacks?.onStartLiveReload ?? defaultCallbacks.onStartLiveReload,
+        onStopLiveReload: dependencies.callbacks?.onStopLiveReload ?? defaultCallbacks.onStopLiveReload,
         onRefreshLiveReloadStatus:
             dependencies.callbacks?.onRefreshLiveReloadStatus ?? defaultCallbacks.onRefreshLiveReloadStatus
     };

@@ -42,9 +42,78 @@
   flex-wrap: wrap;
 }
 
-.live-reload-action-button {
-  min-height: 38px;
-  white-space: nowrap;
+.live-reload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease,
+    opacity 140ms ease;
+}
+
+.live-reload-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.live-reload-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px rgba(6, 12, 22, 0.96),
+    0 0 0 4px var(--gm-focus-ring);
+}
+
+.live-reload-btn-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.live-reload-btn--primary {
+  background: linear-gradient(135deg, #9ce8c8, #f7d081);
+  color: #101820;
+}
+
+.live-reload-btn--primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.live-reload-btn--destructive {
+  background: rgba(255, 80, 80, 0.15);
+  border-color: rgba(255, 80, 80, 0.4);
+  color: #ff7070;
+}
+
+.live-reload-btn--destructive:hover:not(:disabled) {
+  background: rgba(255, 80, 80, 0.25);
+  transform: translateY(-1px);
+}
+
+.live-reload-btn-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(16, 24, 32, 0.28);
+  border-top-color: #101820;
+  border-radius: 50%;
+  animation: live-reload-btn-spin 600ms linear infinite;
+}
+
+@keyframes live-reload-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .live-reload-stack {

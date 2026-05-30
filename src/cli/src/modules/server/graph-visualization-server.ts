@@ -39,6 +39,8 @@ type GraphVisualizationServerStartLiveReload = (
     }>
 ) => Promise<unknown>;
 
+type GraphVisualizationServerStopLiveReload = () => Promise<unknown>;
+
 type GraphVisualizationServerRunFix = () => Promise<Readonly<{ logLines: ReadonlyArray<string> }>>;
 type GraphVisualizationServerFixProgress = Readonly<{
     isRunning: boolean;
@@ -59,6 +61,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     getFixProgress?: GraphVisualizationServerGetFixProgress;
     clearFixProgress?: GraphVisualizationServerClearFixProgress;
     startLiveReload?: GraphVisualizationServerStartLiveReload;
+    stopLiveReload?: GraphVisualizationServerStopLiveReload;
 }>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
@@ -243,6 +246,18 @@ export async function startGraphVisualizationServer(
                     });
                     response.writeHead(200, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ liveReload: result, ok: true }));
+                } catch (error: unknown) {
+                    response.writeHead(500, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
+                }
+                return;
+            }
+
+            if (request.method === "POST" && request.url === "/api/live-reload/stop" && options.stopLiveReload) {
+                try {
+                    await options.stopLiveReload();
+                    response.writeHead(200, { "Content-Type": "application/json" });
+                    response.end(JSON.stringify({ ok: true }));
                 } catch (error: unknown) {
                     response.writeHead(500, { "Content-Type": "application/json" });
                     response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
