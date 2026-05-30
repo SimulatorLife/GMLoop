@@ -445,7 +445,10 @@ void test("startLiveReloadDevSession auto-builds HTML5 output when autodetection
     const prepareCalls: Array<Readonly<{ html5OutputRoot: string | null }>> = [];
     const buildCalls: Array<GameMakerHtml5BuildConfig> = [];
     const watchCalls: Array<Readonly<{ runtimeRoot?: string; targetPath: string }>> = [];
-    const expectedBuildRootPrefix = path.join(os.tmpdir(), "gmloop-live-reload-");
+    const expectedBuildRootPrefix =
+        process.platform === "darwin"
+            ? "/private/tmp/gmloop-live-reload-"
+            : path.join(os.tmpdir(), "gmloop-live-reload-");
 
     try {
         await startLiveReloadDevSession({

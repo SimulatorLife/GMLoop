@@ -202,7 +202,8 @@ function resolveRequestedPath(inputPath: string): string {
 }
 
 async function createAutoBuildOutputRoot(projectRoot: string): Promise<string> {
-    const autoBuildRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-live-reload-"));
+    const autoBuildRootBase = process.platform === "darwin" ? "/private/tmp" : os.tmpdir();
+    const autoBuildRoot = await fs.mkdtemp(path.join(autoBuildRootBase, "gmloop-live-reload-"));
     return path.join(autoBuildRoot, path.basename(projectRoot), "html5");
 }
 
