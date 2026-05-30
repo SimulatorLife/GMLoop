@@ -24,24 +24,13 @@ default_tools_approval_mode = "approve"
 approval_mode = "approve"
 
 [mcp_servers.gm-cli]
-command = "npx"
+command = "gmloop"
 args = [
-  "--yes",
-  "@gamemaker/gm-cli@latest",
-  "resourcetool",
-  "mcp",
-  "--cache-dir",
-  "/Users/henrykirk/GMLoop/tmp/gm-cli-cache",
-  "/Users/henrykirk/GMLoop/vendor/3DSpider/3D-ish spider thing 2.yyp"
+  "gm-cli",
+  "mcp"
 ]
 enabled = true
 default_tools_approval_mode = "approve"
-
-[mcp_servers.gm-cli.env]
-CI = "true"
-GAMEMAKER_CLI_CACHE_DIR = "/Users/henrykirk/GMLoop/tmp/gm-cli-cache"
-NPM_CONFIG_CACHE = "/Users/henrykirk/GMLoop/tmp/gm-cli-npm-cache"
-npm_config_cache = "/Users/henrykirk/GMLoop/tmp/gm-cli-npm-cache"
 
 [features]
 shell_snapshot = true           # Speed up repeated commands

@@ -84,7 +84,9 @@ export async function resolveGameMakerProjectFilePath(targetPath: string): Promi
         return resolvedPath;
     }
 
-    throw new Error(`GameMaker project path must be a .yyp file or directory containing one .yyp file: ${resolvedPath}`);
+    throw new Error(
+        `GameMaker project path must be a .yyp file or directory containing one .yyp file: ${resolvedPath}`
+    );
 }
 
 function resolveActiveProjectStatePath(statePath: string | undefined, env: NodeJS.ProcessEnv): string {
@@ -211,7 +213,9 @@ async function runGameMakerCliMcpSubprocess(options: {
 /**
  * Create the `gmloop gm-cli` command group for official GameMaker CLI integration.
  */
-export function createGameMakerCliCommand({ env = process.env }: Partial<GameMakerCliCommandEnvironment> = {}): Command {
+export function createGameMakerCliCommand({
+    env = process.env
+}: Partial<GameMakerCliCommandEnvironment> = {}): Command {
     const command = applyStandardCommandOptions(new Command("gm-cli")).description(
         "Manage official GameMaker CLI integration helpers."
     );
