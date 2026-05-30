@@ -92,182 +92,7 @@ export async function startGraphVisualizationServer(
     const activeSockets = new Set<Socket>();
 
     const server = http.createServer((request, response) => {
-        void (async () => {
-            if (request.method === "GET" && request.url === "/api/ui-revision") {
-                response.writeHead(200, { "Content-Type": "application/json" });
-                response.end(JSON.stringify({ revision: options.getUiRevision ? options.getUiRevision() : 0 }));
-                return;
-            }
-
-            if (handleFixProgressRequest(request, response, options)) {
-                return;
-            }
-
-            if (request.method === "GET") {
-                try {
-                    const file = await resolveStaticGraphVisualizationFileForRequest(options, request.url);
-                    if (!file) {
-                        response.writeHead(404, { "Content-Type": "text/plain" });
-                        response.end("Not found");
-                        return;
-                    }
-
-                    response.writeHead(200, { "Content-Type": file.contentType });
-                    response.end(file.bytes);
-                } catch (error: unknown) {
-                    response.writeHead(500, { "Content-Type": "text/plain" });
-                    response.end(resolveErrorMessage(error));
-                }
-                return;
-            }
-
-            if (request.method === "POST" && request.url === "/api/reindex") {
-                try {
-                    const regenerationResult = await options.regenerate();
-                    response.writeHead(200, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ changed: regenerationResult.changed, ok: true }));
-                } catch (error: unknown) {
-                    response.writeHead(500, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
-                }
-                return;
-            }
-
-            if (request.method === "POST" && request.url === "/api/fix" && options.runFix) {
-                try {
-                    const fixResult = await options.runFix();
-                    response.writeHead(200, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ logLines: fixResult.logLines, ok: true }));
-                    options.clearFixProgress?.();
-                } catch (error: unknown) {
-                    response.writeHead(500, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
-                    options.clearFixProgress?.();
-                }
-                return;
-            }
-
-            if (request.method === "POST" && request.url === "/api/open" && options.openProjectTargets) {
-                try {
-                    const requestBody = await readRequestBody(request);
-                    const parsedBody = requestBody.trim().length === 0 ? {} : tryParseJsonPayload(requestBody);
-                    if (parsedBody === null) {
-                        response.writeHead(400, { "Content-Type": "application/json" });
-                        response.end(JSON.stringify({ error: "Invalid JSON or non-object payload" }));
-                        return;
-                    }
-                    const selectedPath = typeof parsedBody.path === "string" ? String(parsedBody.path).trim() : "";
-                    const selectionResult = await options.openProjectTargets({
-                        path: selectedPath.length > 0 ? selectedPath : null
-                    });
-                    response.writeHead(200, { "Content-Type": "application/json" });
-                    response.end(
-                        JSON.stringify({
-                            changed: selectionResult.changed,
-                            ok: true,
-                            ...(selectionResult.projectChanged === undefined
-                                ? {}
-                                : { projectChanged: selectionResult.projectChanged })
-                        })
-                    );
-                } catch (error: unknown) {
-                    response.writeHead(500, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
-                }
-                return;
-            }
-
-            if (request.method === "POST" && request.url === "/api/playground/process" && options.processPlayground) {
-                try {
-                    const requestBody = await readRequestBody(request);
-                    const parsedBody = tryParseJsonPayload(requestBody);
-                    if (parsedBody === null) {
-                        response.writeHead(400, { "Content-Type": "application/json" });
-                        response.end(JSON.stringify({ error: "Invalid JSON or non-object payload" }));
-                        return;
-                    }
-                    const gml = typeof parsedBody.gml === "string" ? parsedBody.gml : "";
-                    const formatOptionNames = Array.isArray(parsedBody.formatOptionNames)
-                        ? parsedBody.formatOptionNames
-                              .filter((optionName): optionName is string => typeof optionName === "string")
-                              .map((optionName) => optionName.trim())
-                              .filter((optionName) => optionName.length > 0)
-                        : [];
-                    const format = parsedBody.format === true;
-                    const lint = parsedBody.lint === true;
-                    const lintRuleIds = Array.isArray(parsedBody.lintRuleIds)
-                        ? parsedBody.lintRuleIds
-                              .filter((ruleId): ruleId is string => typeof ruleId === "string")
-                              .map((ruleId) => ruleId.trim())
-                              .filter((ruleId) => ruleId.length > 0)
-                        : [];
-                    const refactor = parsedBody.refactor === true;
-                    const codemodIds = Array.isArray(parsedBody.codemodIds)
-                        ? parsedBody.codemodIds
-                              .filter((codemodId): codemodId is string => typeof codemodId === "string")
-                              .map((codemodId) => codemodId.trim())
-                              .filter((codemodId) => codemodId.length > 0)
-                        : [];
-                    const transpileMode =
-                        parsedBody.transpileMode === "patch" || parsedBody.transpileMode === "expression"
-                            ? parsedBody.transpileMode
-                            : "none";
-
-                    const result = await options.processPlayground({
-                        gml,
-                        formatOptionNames,
-                        format,
-                        lint,
-                        lintRuleIds,
-                        refactor,
-                        codemodIds,
-                        transpileMode
-                    });
-                    response.writeHead(200, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ ok: true, payload: result }));
-                } catch (error: unknown) {
-                    response.writeHead(500, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
-                }
-                return;
-            }
-
-            if (request.method === "POST" && request.url === "/api/live-reload/start" && options.startLiveReload) {
-                try {
-                    const requestBody = await readRequestBody(request);
-                    const parsedBody = requestBody.trim().length === 0 ? {} : tryParseJsonPayload(requestBody);
-                    if (parsedBody === null) {
-                        response.writeHead(400, { "Content-Type": "application/json" });
-                        response.end(JSON.stringify({ error: "Invalid JSON or non-object payload" }));
-                        return;
-                    }
-                    const result = await options.startLiveReload({
-                        restart: parsedBody.restart === true
-                    });
-                    response.writeHead(200, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ liveReload: result, ok: true }));
-                } catch (error: unknown) {
-                    response.writeHead(500, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
-                }
-                return;
-            }
-
-            if (request.method === "POST" && request.url === "/api/live-reload/stop" && options.stopLiveReload) {
-                try {
-                    await options.stopLiveReload();
-                    response.writeHead(200, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ ok: true }));
-                } catch (error: unknown) {
-                    response.writeHead(500, { "Content-Type": "application/json" });
-                    response.end(JSON.stringify({ error: resolveErrorMessage(error) }));
-                }
-                return;
-            }
-
-            response.writeHead(404, { "Content-Type": "text/plain" });
-            response.end("Not found");
-        })();
+        void routeGraphVisualizationServerRequest(options, request, response);
     });
 
     server.on("connection", (socket) => {
@@ -313,6 +138,262 @@ export async function startGraphVisualizationServer(
         },
         url: resolvedUrl
     });
+}
+
+async function routeGraphVisualizationServerRequest(
+    options: GraphVisualizationServerOptions,
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    if (handleUiRevisionRequest(request, response, options)) {
+        return;
+    }
+
+    if (handleFixProgressRequest(request, response, options)) {
+        return;
+    }
+
+    if (request.method === "GET") {
+        await handleStaticGraphVisualizationFileRequest(options, request, response);
+        return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/reindex") {
+        await handleRegenerateRequest(options, response);
+        return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/fix" && options.runFix) {
+        await handleRunFixRequest(options.runFix, options.clearFixProgress, response);
+        return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/open" && options.openProjectTargets) {
+        await handleOpenProjectTargetsRequest(options.openProjectTargets, request, response);
+        return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/playground/process" && options.processPlayground) {
+        await handleProcessPlaygroundRequest(options.processPlayground, request, response);
+        return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/live-reload/start" && options.startLiveReload) {
+        await handleStartLiveReloadRequest(options.startLiveReload, request, response);
+        return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/live-reload/stop" && options.stopLiveReload) {
+        await handleStopLiveReloadRequest(options.stopLiveReload, response);
+        return;
+    }
+
+    writeTextResponse(response, 404, "Not found");
+}
+
+function handleUiRevisionRequest(
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>,
+    options: GraphVisualizationServerOptions
+): boolean {
+    if (request.method !== "GET" || request.url !== "/api/ui-revision") {
+        return false;
+    }
+
+    writeJsonResponse(response, 200, { revision: options.getUiRevision ? options.getUiRevision() : 0 });
+    return true;
+}
+
+async function handleStaticGraphVisualizationFileRequest(
+    options: GraphVisualizationServerOptions,
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const file = await resolveStaticGraphVisualizationFileForRequest(options, request.url);
+        if (!file) {
+            writeTextResponse(response, 404, "Not found");
+            return;
+        }
+
+        response.writeHead(200, { "Content-Type": file.contentType });
+        response.end(file.bytes);
+    } catch (error: unknown) {
+        writeTextResponse(response, 500, resolveErrorMessage(error));
+    }
+}
+
+async function handleRegenerateRequest(
+    options: GraphVisualizationServerOptions,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const regenerationResult = await options.regenerate();
+        writeJsonResponse(response, 200, { changed: regenerationResult.changed, ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+async function handleRunFixRequest(
+    runFix: GraphVisualizationServerRunFix,
+    clearFixProgress: GraphVisualizationServerClearFixProgress | undefined,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const fixResult = await runFix();
+        writeJsonResponse(response, 200, { logLines: fixResult.logLines, ok: true });
+        clearFixProgress?.();
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+        clearFixProgress?.();
+    }
+}
+
+async function handleOpenProjectTargetsRequest(
+    openProjectTargets: GraphVisualizationServerOpenProjectTargets,
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const parsedBody = await readOptionalJsonObjectRequestBody(request);
+        if (parsedBody === null) {
+            writeInvalidJsonPayloadResponse(response);
+            return;
+        }
+
+        const selectedPath = typeof parsedBody.path === "string" ? parsedBody.path.trim() : "";
+        const selectionResult = await openProjectTargets({
+            path: selectedPath.length > 0 ? selectedPath : null
+        });
+        writeJsonResponse(response, 200, createOpenProjectTargetsResponse(selectionResult));
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+async function handleProcessPlaygroundRequest(
+    processPlayground: GraphVisualizationServerProcessPlayground,
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const requestBody = await readRequestBody(request);
+        const parsedBody = tryParseJsonPayload(requestBody);
+        if (parsedBody === null) {
+            writeInvalidJsonPayloadResponse(response);
+            return;
+        }
+
+        const playgroundInput = createProcessPlaygroundInput(parsedBody);
+        const result = await processPlayground(playgroundInput);
+        writeJsonResponse(response, 200, { ok: true, payload: result });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+async function handleStartLiveReloadRequest(
+    startLiveReload: GraphVisualizationServerStartLiveReload,
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const parsedBody = await readOptionalJsonObjectRequestBody(request);
+        if (parsedBody === null) {
+            writeInvalidJsonPayloadResponse(response);
+            return;
+        }
+
+        const result = await startLiveReload({
+            restart: parsedBody.restart === true
+        });
+        writeJsonResponse(response, 200, { liveReload: result, ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+async function handleStopLiveReloadRequest(
+    stopLiveReload: GraphVisualizationServerStopLiveReload,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        await stopLiveReload();
+        writeJsonResponse(response, 200, { ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+function createOpenProjectTargetsResponse(
+    selectionResult: GraphVisualizationServerRegenerationResult
+): Readonly<Record<string, unknown>> {
+    return {
+        changed: selectionResult.changed,
+        ok: true,
+        ...(selectionResult.projectChanged === undefined ? {} : { projectChanged: selectionResult.projectChanged })
+    };
+}
+
+function createProcessPlaygroundInput(
+    parsedBody: Record<string, unknown>
+): Parameters<GraphVisualizationServerProcessPlayground>[0] {
+    return {
+        codemodIds: readStringListPayloadField(parsedBody, "codemodIds"),
+        format: parsedBody.format === true,
+        formatOptionNames: readStringListPayloadField(parsedBody, "formatOptionNames"),
+        gml: typeof parsedBody.gml === "string" ? parsedBody.gml : "",
+        lint: parsedBody.lint === true,
+        lintRuleIds: readStringListPayloadField(parsedBody, "lintRuleIds"),
+        refactor: parsedBody.refactor === true,
+        transpileMode: readPlaygroundTranspileMode(parsedBody.transpileMode)
+    };
+}
+
+function readStringListPayloadField(parsedBody: Record<string, unknown>, fieldName: string): ReadonlyArray<string> {
+    const fieldValue = parsedBody[fieldName];
+    if (!Array.isArray(fieldValue)) {
+        return [];
+    }
+
+    return fieldValue
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+}
+
+function readPlaygroundTranspileMode(value: unknown): "none" | "patch" | "expression" {
+    return value === "patch" || value === "expression" ? value : "none";
+}
+
+async function readOptionalJsonObjectRequestBody(
+    request: http.IncomingMessage
+): Promise<Record<string, unknown> | null> {
+    const requestBody = await readRequestBody(request);
+    return requestBody.trim().length === 0 ? {} : tryParseJsonPayload(requestBody);
+}
+
+function writeInvalidJsonPayloadResponse(response: http.ServerResponse<http.IncomingMessage>): void {
+    writeJsonResponse(response, 400, { error: "Invalid JSON or non-object payload" });
+}
+
+function writeJsonResponse(
+    response: http.ServerResponse<http.IncomingMessage>,
+    statusCode: number,
+    payload: unknown
+): void {
+    response.writeHead(statusCode, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(payload));
+}
+
+function writeTextResponse(
+    response: http.ServerResponse<http.IncomingMessage>,
+    statusCode: number,
+    body: string
+): void {
+    response.writeHead(statusCode, { "Content-Type": "text/plain" });
+    response.end(body);
 }
 
 function handleFixProgressRequest(

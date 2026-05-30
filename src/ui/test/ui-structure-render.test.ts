@@ -228,10 +228,23 @@ void test("page styles keep every top-level page on the shared lighter content b
     const layoutSource = readFileSync(new URL("../../src/web/styles/layout.css", import.meta.url), "utf8");
     const graphSource = readFileSync(new URL("../../src/web/styles/graph.css", import.meta.url), "utf8");
     const playgroundSource = readFileSync(new URL("../../src/web/styles/playground.css", import.meta.url), "utf8");
+    const panelSources = [
+        "../../src/app/components/gm-config-panel.ts",
+        "../../src/app/components/gm-docs-panel.ts",
+        "../../src/app/components/gm-fix-panel.ts",
+        "../../src/app/components/gm-graph-panel.ts",
+        "../../src/app/components/gm-live-reload-panel.ts",
+        "../../src/app/components/gm-mcp-panel.ts",
+        "../../src/app/components/gm-playground-panel.ts"
+    ].map((sourcePath) => readFileSync(new URL(sourcePath, import.meta.url), "utf8"));
 
     assert.match(layoutSource, /\.content-page\s*\{[\s\S]*background:\s*transparent;/u);
     assert.match(graphSource, /#graph-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
     assert.match(playgroundSource, /#playground-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
     assert.doesNotMatch(graphSource, /background:\s*linear-gradient\(180deg,\s*rgba\(8,\s*14,\s*24/u);
     assert.doesNotMatch(playgroundSource, /background:\s*linear-gradient\(180deg,\s*rgba\(8,\s*14,\s*24/u);
+    assert.equal(
+        panelSources.every((source) => source.includes("page content-page")),
+        true
+    );
 });

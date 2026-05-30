@@ -73,6 +73,7 @@ void test("GmFixPanel renders the fix workflow button, status, target, and log",
     assert.match(rendered, /id="fix-page"[\s\S]*class=page content-page active/u);
     assert.match(rendered, /class="fix-action-bar"/u);
     assert.match(rendered, /id="run-fix"/u);
+    assert.match(rendered, /id="run-fix"[\s\S]*type="button"[\s\S]*class="gm-btn gm-btn--primary"/u);
     assert.match(rendered, /Completed/u);
     assert.match(rendered, /Run Log/u);
     assert.notEqual(runLogIndex, -1);
