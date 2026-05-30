@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -128,6 +130,7 @@ export async function startLiveReloadDevSession({
     const configuredHtml5OutputRoot = projectSettings.html5OutputRoot;
     const requestedHtml5OutputRoot = html5OutputRoot ? resolveRequestedPath(html5OutputRoot) : null;
     const effectiveGmTempRoot = gmTempRoot === DEFAULT_GM_TEMP_ROOT ? projectSettings.gmTempRoot : gmTempRoot;
+    const shouldAutoBuild = requestedHtml5OutputRoot === null && configuredHtml5OutputRoot === null;
 
     let effectiveHtml5OutputRoot = requestedHtml5OutputRoot ?? configuredHtml5OutputRoot;
     if (projectSettings.buildConfig !== null) {
@@ -160,11 +163,32 @@ export async function startLiveReloadDevSession({
             force: false
         });
     } catch (error) {
-        throw createLiveReloadPreparationError({
-            configuredHtml5OutputRoot,
-            error,
-            requestedHtml5OutputRoot
-        });
+        if (shouldAutoBuild && isMissingAutoDetectedHtml5OutputError(error)) {
+            const autoBuildOutputRoot = await createAutoBuildOutputRoot(projectContext.projectRoot);
+            const defaultBuildConfig = await resolveDefaultLiveReloadHtml5BuildConfig(
+                projectContext.projectRoot,
+                autoBuildOutputRoot
+            );
+            const buildResult = await buildRunner({
+                buildConfig: defaultBuildConfig,
+                cwd: projectContext.projectRoot
+            });
+            effectiveHtml5OutputRoot = buildResult.outputRoot;
+
+            preparation = await prepareRunner({
+                html5OutputRoot: effectiveHtml5OutputRoot,
+                gmTempRoot: effectiveGmTempRoot,
+                bootstrapConfig,
+                runtimeWrapperDistRoot,
+                force: false
+            });
+        } else {
+            throw createLiveReloadPreparationError({
+                configuredHtml5OutputRoot,
+                error,
+                requestedHtml5OutputRoot
+            });
+        }
     }
 
     await watchRunner(targetPath, {
@@ -175,6 +199,65 @@ export async function startLiveReloadDevSession({
 
 function resolveRequestedPath(inputPath: string): string {
     return path.resolve(inputPath);
+}
+
+async function createAutoBuildOutputRoot(projectRoot: string): Promise<string> {
+    const autoBuildRootBase = process.platform === "darwin" ? "/private/tmp" : os.tmpdir();
+    const autoBuildRoot = await fs.mkdtemp(path.join(autoBuildRootBase, "gmloop-live-reload-"));
+    return path.join(autoBuildRoot, path.basename(projectRoot), "html5");
+}
+
+async function resolveDefaultLiveReloadHtml5BuildConfig(
+    projectRoot: string,
+    outputRoot: string
+): Promise<{
+    backend: "auto";
+    cacheDir: null;
+    configuration: "Default";
+    extraArgs: ReadonlyArray<string>;
+    licenseFile: null;
+    outputRoot: string;
+    projectPath: string;
+    runtimeRoot: string | null;
+    tempDir: null;
+    toolPath: null;
+    userFolder: null;
+}> {
+    return Object.freeze({
+        backend: "auto",
+        cacheDir: null,
+        configuration: "Default",
+        extraArgs: Object.freeze([]),
+        licenseFile: null,
+        outputRoot,
+        projectPath: await resolveDefaultLiveReloadProjectPath(projectRoot),
+        runtimeRoot: null,
+        tempDir: null,
+        toolPath: null,
+        userFolder: null
+    });
+}
+
+async function resolveDefaultLiveReloadProjectPath(projectRoot: string): Promise<string> {
+    const entries = await fs.readdir(projectRoot, { withFileTypes: true });
+    const manifestCandidates = entries
+        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".yyp"))
+        .map((entry) => path.join(projectRoot, entry.name))
+        .sort((left, right) => left.localeCompare(right));
+
+    if (manifestCandidates.length === 1) {
+        return manifestCandidates[0];
+    }
+
+    if (manifestCandidates.length === 0) {
+        throw new Error(
+            `Could not find a .yyp project file in '${projectRoot}'. Set runtime.liveReload.build.project explicitly.`
+        );
+    }
+
+    throw new Error(
+        `Found multiple .yyp project files in '${projectRoot}'. Set runtime.liveReload.build.project explicitly.`
+    );
 }
 
 function createLiveReloadPreparationError({

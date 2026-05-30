@@ -61,8 +61,12 @@ export interface SemanticCacheConfig {
      * When omitted, the cache constructs a {@link DefaultOccurrenceCachePolicy}
      * with a default threshold of `10_000`.
      *
-     * Prefer providing a custom policy when you need to test the cache-storage
-     * decision in isolation or want per-symbol thresholds.
+     * @example
+     * ```typescript
+     * const cache = new SemanticQueryCache(semantic, {
+     *     occurrenceCachePolicy: new DefaultOccurrenceCachePolicy(4000)
+     * });
+     * ```
      */
     occurrenceCachePolicy?: OccurrenceCachePolicy;
 }
@@ -481,7 +485,6 @@ export class SemanticQueryCache {
 
     /**
      * Get a cached value if it exists and hasn't expired.
-     * @private
      */
     private getCached<T>(cache: Map<string, CacheEntry<T>>, key: string, promoteOnHit = true): T | null {
         const entry = cache.get(key);

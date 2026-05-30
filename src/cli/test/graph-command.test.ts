@@ -78,6 +78,18 @@ async function createDualRootFixture(): Promise<{
     };
 }
 
+async function waitForCondition(predicate: () => boolean, failureMessage: string): Promise<void> {
+    const deadline = Date.now() + 1000;
+    while (Date.now() < deadline) {
+        if (predicate()) {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    assert.fail(failureMessage);
+}
+
 void test("CLI command catalog includes graph leaf commands", async () => {
     const cliModule = await loadCliModule();
     const catalog = cliModule.getCliCommandCatalog();
@@ -498,6 +510,45 @@ void test("graph visualize UI source watcher reports watcher errors without thro
 
     assert.deepEqual(receivedErrors, ["synthetic watcher failure"]);
     assert.equal(closeCount, 1);
+});
+
+void test("graph visualize active-project watcher opens current and changed gm-cli state paths", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-active-project-watch-"));
+    const statePath = path.join(temporaryDirectory, "gm-cli-active-project.json");
+    const initialProjectPath = path.join(temporaryDirectory, "Initial.yyp");
+    const nextProjectPath = path.join(temporaryDirectory, "Next.yyp");
+    const openedProjectPaths = new Array<string>();
+    const observedErrors = new Array<string>();
+
+    await fs.writeFile(statePath, `${JSON.stringify({ projectPath: initialProjectPath })}\n`, "utf8");
+
+    const watcher = __graphCommandTest__.startGraphVisualizationActiveProjectStateWatcher({
+        env: { GMLOOP_GM_CLI_PROJECT_STATE_PATH: statePath },
+        intervalMs: 10,
+        onError: (error) => {
+            observedErrors.push(error instanceof Error ? error.message : "Unknown active-project watcher error");
+        },
+        onProjectPathChanged: (projectPath) => {
+            openedProjectPaths.push(projectPath);
+        }
+    });
+
+    try {
+        await waitForCondition(
+            () => openedProjectPaths.includes(initialProjectPath),
+            "Expected active-project watcher to emit the current project path."
+        );
+
+        await fs.writeFile(statePath, `${JSON.stringify({ projectPath: nextProjectPath })}\n`, "utf8");
+        await waitForCondition(
+            () => openedProjectPaths.includes(nextProjectPath),
+            "Expected active-project watcher to emit the changed project path."
+        );
+        assert.deepEqual(observedErrors, []);
+    } finally {
+        watcher.stop();
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
 });
 
 void test("graph visualize live-reload startup options default to GameMaker temp-root autodetection", () => {

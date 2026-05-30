@@ -35,6 +35,10 @@ import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
 import { createGraphVisualizationProjectConfigurationCatalog } from "../modules/ui/index.js";
 import { findRepoRootSync } from "../shared/repo-root.js";
 import { discoverProjectRoot, resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
+import {
+    readGameMakerCliActiveProjectStateProjectPath,
+    resolveGameMakerCliActiveProjectStatePath
+} from "./game-maker-cli.js";
 
 type GraphCommandSharedOptions = {
     config?: string;
@@ -172,7 +176,7 @@ type GraphVisualizationBundleArtifact = Readonly<{
     files: ReadonlyArray<GraphVisualizationBundleFile>;
 }>;
 
-type GraphServeSource = "cli-path" | "demo-project" | "finder-open" | "working-directory";
+type GraphServeSource = "active-project-state" | "cli-path" | "demo-project" | "finder-open" | "working-directory";
 
 type GraphVisualizedLoadedTarget = Readonly<{
     activePath: string;
@@ -199,6 +203,10 @@ type GraphVisualizationServeBundleCache = Readonly<{
 }>;
 
 type GraphVisualizationServePayload = ReturnType<(typeof Semantic)["exportGraphVisualizationData"]>;
+
+type GraphVisualizationActiveProjectStateWatcher = Readonly<{
+    stop: () => void;
+}>;
 
 type GraphVisualizationLiveReloadStatusSnapshot = Readonly<{
     avgHotReloadLatencyMs: number | null;
@@ -485,6 +493,67 @@ function startGraphVisualizationUiSourceWatcher({
     return watcher;
 }
 
+function startGraphVisualizationActiveProjectStateWatcher({
+    env,
+    intervalMs = 500,
+    onError,
+    onProjectPathChanged
+}: Readonly<{
+    env: NodeJS.ProcessEnv;
+    intervalMs?: number;
+    onError: (error: unknown) => void;
+    onProjectPathChanged: (projectPath: string) => Promise<void> | void;
+}>): GraphVisualizationActiveProjectStateWatcher {
+    const statePath = resolveGameMakerCliActiveProjectStatePath({ env });
+    let stopped = false;
+    let observedProjectPath: string | null = null;
+    let pollTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+    const scheduleNextPoll = (): void => {
+        if (stopped) {
+            return;
+        }
+
+        pollTimer = globalThis.setTimeout(() => {
+            pollTimer = null;
+            void pollActiveProjectState();
+        }, intervalMs);
+    };
+
+    const pollActiveProjectState = async (): Promise<void> => {
+        if (stopped) {
+            return;
+        }
+
+        try {
+            const projectPath = await readGameMakerCliActiveProjectStateProjectPath({ statePath });
+            if (projectPath === null || projectPath === observedProjectPath) {
+                observedProjectPath = projectPath;
+                return;
+            }
+
+            observedProjectPath = projectPath;
+            await onProjectPathChanged(projectPath);
+        } catch (error) {
+            onError(error);
+        } finally {
+            scheduleNextPoll();
+        }
+    };
+
+    void pollActiveProjectState();
+
+    return Object.freeze({
+        stop: () => {
+            stopped = true;
+            if (pollTimer !== null) {
+                globalThis.clearTimeout(pollTimer);
+                pollTimer = null;
+            }
+        }
+    });
+}
+
 function setActiveGraphVisualizationLiveReloadStartupPromise(
     sessionState: GraphVisualizationLiveReloadSessionState,
     startupPromise: Promise<GraphVisualizationLiveReloadModel>
@@ -494,8 +563,13 @@ function setActiveGraphVisualizationLiveReloadStartupPromise(
 }
 
 function clearActiveGraphVisualizationLiveReloadStartupPromise(
-    sessionState: GraphVisualizationLiveReloadSessionState
+    sessionState: GraphVisualizationLiveReloadSessionState,
+    startupPromise: Promise<GraphVisualizationLiveReloadModel>
 ): void {
+    if (sessionState.startupPromise !== startupPromise) {
+        return;
+    }
+
     sessionState.startupPromise = null;
 }
 
@@ -504,6 +578,14 @@ function resetGraphVisualizationLiveReloadSessionForRestart(
 ): void {
     sessionState.childStderrBuffer = [];
     sessionState.model = null;
+}
+
+function registerGraphVisualizationLiveReloadChildProcess(
+    sessionState: GraphVisualizationLiveReloadSessionState,
+    childProcess: ChildProcessWithoutNullStreams
+): void {
+    sessionState.childProcess = childProcess;
+    sessionState.childStderrBuffer = [];
 }
 
 async function stopGraphVisualizationLiveReloadChildProcess(
@@ -1054,7 +1136,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     function resetActiveProjectScopedServeState(): void {
         activeLastFixRun = null;
         resetGraphVisualizationLiveReloadSessionForRestart(activeLiveReloadSession);
-        clearActiveGraphVisualizationLiveReloadStartupPromise(activeLiveReloadSession);
+        activeLiveReloadSession.startupPromise = null;
     }
 
     function updateLiveReloadRuntimeUrlFromProcessOutput(outputChunk: string): void {
@@ -1077,40 +1159,34 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     async function ensureLiveReloadSessionStarted(
         input: Readonly<{ restart: boolean }>
     ): Promise<GraphVisualizationLiveReloadModel> {
-        if (activeContext === null) {
+        const startupContext = activeContext;
+        if (startupContext === null) {
             throw new Error("Open a project before starting live reload.");
         }
 
         if (activeLiveReloadSession.startupPromise !== null) {
-            if (input.restart === false) {
-                return activeLiveReloadSession.startupPromise;
-            }
-            try {
-                await activeLiveReloadSession.startupPromise;
-            } catch {
-                // Ignore startup failures when a restart is explicitly requested.
-            }
-        }
-
-        if (input.restart) {
-            resetGraphVisualizationLiveReloadSessionForRestart(activeLiveReloadSession);
-            await stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession);
-        }
-
-        if (input.restart === false) {
-            const existingStatusSnapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot();
-            if (existingStatusSnapshot !== null) {
-                return setActiveGraphVisualizationLiveReloadModel(
-                    activeLiveReloadSession,
-                    createGraphVisualizationLiveReloadModel(null, existingStatusSnapshot)
-                );
-            }
+            return activeLiveReloadSession.startupPromise;
         }
 
         const startupPromise = (async () => {
+            if (input.restart) {
+                resetGraphVisualizationLiveReloadSessionForRestart(activeLiveReloadSession);
+                await stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession);
+            }
+
+            if (input.restart === false) {
+                const existingStatusSnapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot();
+                if (existingStatusSnapshot !== null) {
+                    return setActiveGraphVisualizationLiveReloadModel(
+                        activeLiveReloadSession,
+                        createGraphVisualizationLiveReloadModel(null, existingStatusSnapshot)
+                    );
+                }
+            }
+
             const startupOptions = resolveGraphVisualizationLiveReloadStartupOptions(
-                activeContext.projectRoot,
-                activeContext.projectConfig
+                startupContext.projectRoot,
+                startupContext.projectConfig
             );
 
             const cliEntrypointPath = resolveGraphVisualizationCliEntrypointPath();
@@ -1118,7 +1194,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 process.execPath,
                 [
                     cliEntrypointPath,
-                    ...createGraphVisualizationLiveReloadDevCommandArgs(activeContext.projectRoot, startupOptions)
+                    ...createGraphVisualizationLiveReloadDevCommandArgs(startupContext.projectRoot, startupOptions)
                 ],
                 {
                     cwd: process.cwd(),
@@ -1126,8 +1202,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 }
             );
 
-            activeLiveReloadSession.childProcess = childProcess;
-            activeLiveReloadSession.childStderrBuffer = [];
+            registerGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession, childProcess);
             setActiveGraphVisualizationLiveReloadModel(
                 activeLiveReloadSession,
                 createGraphVisualizationLiveReloadModel(null)
@@ -1214,7 +1289,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         try {
             return await activeStartupPromise;
         } finally {
-            clearActiveGraphVisualizationLiveReloadStartupPromise(activeLiveReloadSession);
+            clearActiveGraphVisualizationLiveReloadStartupPromise(activeLiveReloadSession, activeStartupPromise);
         }
     }
 
@@ -1339,6 +1414,70 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             })();
         };
 
+        const openProjectTargetPath = async (
+            selectedPath: string,
+            source: GraphServeSource
+        ): Promise<Readonly<{ changed: boolean; projectChanged: boolean }>> => {
+            activeServeStartupGeneration += 1;
+            const previousPayloadString = safeStringifyVisualizationPayload();
+            const resolvedSelectedPath = resolveExplicitWorkflowTargetPath(selectedPath) ?? selectedPath;
+            const nextOptions = {
+                ...options,
+                path: resolvedSelectedPath
+            };
+            const nextContext = await resolveGraphContext(nextOptions);
+            await ensureGraphIndexForQuery(nextOptions, nextContext);
+            const projectChanged = activeContext?.projectRoot !== nextContext.projectRoot;
+            const stopPreviousLiveReloadProcess = projectChanged
+                ? stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession)
+                : Promise.resolve();
+            if (projectChanged) {
+                resetActiveProjectScopedServeState();
+            }
+            activeContext = nextContext;
+            activeSelectedPaths = [resolvedSelectedPath];
+            activeSource = source;
+            await stopPreviousLiveReloadProcess;
+            await refreshActiveVisualizationArtifacts(nextContext);
+            activeStartupState = null;
+            const nextPayloadString = safeStringifyVisualizationPayload();
+            markServeRevisionChanged();
+            return Object.freeze({ changed: previousPayloadString !== nextPayloadString, projectChanged });
+        };
+
+        let activeProjectStateOpenInProgress = false;
+        let pendingActiveProjectStateProjectPath: string | null = null;
+        const openNextPendingActiveProjectStatePath = async (): Promise<void> => {
+            const nextProjectPath = pendingActiveProjectStateProjectPath;
+            pendingActiveProjectStateProjectPath = null;
+            if (nextProjectPath === null) {
+                activeProjectStateOpenInProgress = false;
+                return;
+            }
+
+            try {
+                await openProjectTargetPath(nextProjectPath, "active-project-state");
+            } catch (error) {
+                console.error(
+                    `[graph visualize] Failed to open gm-cli active project: ${Core.getErrorMessage(error, {
+                        fallback: "Unknown active-project state failure"
+                    })}`
+                );
+            }
+
+            void openNextPendingActiveProjectStatePath();
+        };
+
+        const requestActiveProjectStateOpen = (projectPath: string): void => {
+            pendingActiveProjectStateProjectPath = projectPath;
+            if (activeProjectStateOpenInProgress) {
+                return;
+            }
+
+            activeProjectStateOpenInProgress = true;
+            void openNextPendingActiveProjectStatePath();
+        };
+
         const server = await startGraphVisualizationServer({
             getUiRevision: () => activeServeRevision,
             regenerate: async () => {
@@ -1353,37 +1492,12 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
             openProjectTargets: async ({ path: selectedPath }) => {
-                activeServeStartupGeneration += 1;
-                const previousPayloadString = safeStringifyVisualizationPayload();
                 const nextPathFromPicker =
                     selectedPath === null ? await pickProjectPathUsingNativeDialog() : selectedPath;
                 if (!nextPathFromPicker) {
                     return Object.freeze({ changed: false, projectChanged: false });
                 }
-                const resolvedPathFromPicker =
-                    resolveExplicitWorkflowTargetPath(nextPathFromPicker) ?? nextPathFromPicker;
-                const nextOptions = {
-                    ...options,
-                    path: resolvedPathFromPicker
-                };
-                const nextContext = await resolveGraphContext(nextOptions);
-                await ensureGraphIndexForQuery(nextOptions, nextContext);
-                const projectChanged = activeContext?.projectRoot !== nextContext.projectRoot;
-                const stopPreviousLiveReloadProcess = projectChanged
-                    ? stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession)
-                    : Promise.resolve();
-                if (projectChanged) {
-                    resetActiveProjectScopedServeState();
-                }
-                activeContext = nextContext;
-                activeSelectedPaths = [resolvedPathFromPicker];
-                activeSource = "finder-open";
-                await stopPreviousLiveReloadProcess;
-                await refreshActiveVisualizationArtifacts(nextContext);
-                activeStartupState = null;
-                const nextPayloadString = safeStringifyVisualizationPayload();
-                markServeRevisionChanged();
-                return Object.freeze({ changed: previousPayloadString !== nextPayloadString, projectChanged });
+                return await openProjectTargetPath(nextPathFromPicker, "finder-open");
             },
             runFix: async () => {
                 if (!activeContext) {
@@ -1518,6 +1632,19 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         });
 
         initializeServeStateInBackground();
+        let activeProjectStateWatcher: GraphVisualizationActiveProjectStateWatcher | null =
+            startGraphVisualizationActiveProjectStateWatcher({
+                env: process.env,
+                onError: (error) => {
+                    console.error(
+                        `[graph visualize] gm-cli active-project watcher ignored state update: ${Core.getErrorMessage(
+                            error,
+                            { fallback: "Unknown active-project state failure" }
+                        )}`
+                    );
+                },
+                onProjectPathChanged: requestActiveProjectStateOpen
+            });
 
         printGraphOutput(
             {
@@ -1550,6 +1677,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             }
             uiSourceWatcher?.close();
             uiSourceWatcher = null;
+            activeProjectStateWatcher?.stop();
+            activeProjectStateWatcher = null;
 
             void (async () => {
                 try {
@@ -1568,6 +1697,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             }
             uiSourceWatcher?.close();
             uiSourceWatcher = null;
+            activeProjectStateWatcher?.stop();
+            activeProjectStateWatcher = null;
             void stopLiveReloadChildProcess();
         });
     }
@@ -1734,6 +1865,7 @@ export const __graphCommandTest__ = Object.freeze({
     resolveGraphVisualizationLiveReloadStartupOptions,
     resolveDefaultGraphVisualizationServeTargetPath,
     resolveGraphVisualizationUiSourceWatchRoot,
+    startGraphVisualizationActiveProjectStateWatcher,
     startGraphVisualizationUiSourceWatcher
 });
 function createDocumentationCatalogs() {

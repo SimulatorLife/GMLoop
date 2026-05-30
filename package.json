@@ -29,7 +29,10 @@
     "refactor",
     "GMLoop",
     "lint",
-    "codemod"
+    "codemod",
+    "mcp",
+    "reload",
+    "html5"
   ],
   "author": "Two Scoop Studio",
   "engines": {
@@ -179,5 +182,5 @@
     "typescript-eslint": "^8",
     "yaml-eslint-parser": "^1"
   },
-  "packageManager": "pnpm@11.0.8"
+  "packageManager": "pnpm@11.5.0"
 }

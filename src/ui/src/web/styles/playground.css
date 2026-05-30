@@ -187,6 +187,14 @@
   color: var(--gm-text-subdued);
 }
 
+.playground-input-surface {
+  position: relative;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.playground-input-highlight,
 .playground-input,
 .playground-output {
   flex: 1;
@@ -206,6 +214,20 @@
   white-space: pre;
   overflow-wrap: break-word;
   word-break: break-word;
+}
+
+.playground-input-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.playground-input {
+  color: transparent;
+  caret-color: var(--gm-text);
+  z-index: 1;
 }
 
 .playground-input::placeholder {

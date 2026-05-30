@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -370,6 +370,11 @@ async function executeGameMakerCliHtml5Build(
         });
     }
 
+    // Clean output directory before building to avoid file locking issues
+    const outputStats = await Core.safeStat(buildConfig.outputRoot);
+    if (outputStats?.isDirectory()) {
+        await rm(buildConfig.outputRoot, { recursive: true, force: true });
+    }
     await mkdir(buildConfig.outputRoot, { recursive: true });
 
     const command = buildConfig.toolPath ?? "gm-cli";
@@ -464,6 +469,12 @@ async function executeIgorHtml5Build(
         );
     }
 
+    // Clean output directory before building to avoid file locking issues
+    const outputStats = await Core.safeStat(buildConfig.outputRoot);
+    if (outputStats?.isDirectory()) {
+        await rm(buildConfig.outputRoot, { recursive: true, force: true });
+    }
+
     await mkdir(buildConfig.outputRoot, { recursive: true });
 
     const outputFileBasePath = path.join(buildConfig.outputRoot, "gmloop-html5-build");
@@ -492,6 +503,16 @@ async function executeIgorHtml5Build(
     try {
         const result = await executeProcess(command, args, cwd);
         if (result.exitCode !== 0) {
+            if (await isRecoverableIgorHtml5IconCopyFailure(buildConfig.outputRoot, result.stdout, result.stderr)) {
+                return Object.freeze({
+                    backend: "igor",
+                    command: formattedCommand,
+                    outputRoot: buildConfig.outputRoot,
+                    stderr: result.stderr,
+                    stdout: result.stdout
+                });
+            }
+
             throw new GameMakerBuildExecutionError({
                 backend: "igor",
                 command: formattedCommand,
@@ -532,6 +553,27 @@ async function executeIgorHtml5Build(
 
         throw error;
     }
+}
+
+async function isRecoverableIgorHtml5IconCopyFailure(
+    outputRoot: string,
+    stdout: string,
+    stderr: string
+): Promise<boolean> {
+    const combinedOutput = `${stdout}\n${stderr}`;
+    if (
+        !/System\.IO\.IOException:/u.test(combinedOutput) ||
+        !/favicon\.ico/u.test(combinedOutput) ||
+        !/Igor\.HTML5Builder\.Package/u.test(combinedOutput)
+    ) {
+        return false;
+    }
+
+    const indexHtmlPath = path.join(outputRoot, "index.html");
+    const faviconPath = path.join(outputRoot, "favicon.ico");
+    const indexStats = await Core.safeStat(indexHtmlPath);
+    const faviconStats = await Core.safeStat(faviconPath);
+    return indexStats?.isFile() === true && faviconStats?.isFile() === true;
 }
 
 async function assertHtml5OutputExists(
@@ -705,12 +747,14 @@ async function resolveIgorExecutablePathFromRuntimeRoot(runtimeRoot: string): Pr
                 const nestedCandidatePaths = nestedEntries
                     .filter((nestedEntry) => nestedEntry.isDirectory())
                     .flatMap((nestedEntry) => [
+                        path.join(platformDirectoryPath, nestedEntry.name, "Igor"),
                         path.join(platformDirectoryPath, nestedEntry.name, "Igor.exe"),
                         path.join(platformDirectoryPath, nestedEntry.name, "igor.exe")
                     ]);
 
                 return [
                     ...nestedCandidatePaths,
+                    path.join(platformDirectoryPath, "Igor"),
                     path.join(platformDirectoryPath, "Igor.exe"),
                     path.join(platformDirectoryPath, "igor.exe")
                 ];

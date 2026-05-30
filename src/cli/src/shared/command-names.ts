@@ -15,6 +15,7 @@ export const CLI_COMMAND_NAMES = Object.freeze(
     new Set([
         "format",
         "fix",
+        "gm-cli",
         "graph",
         "lint",
         "live-reload",

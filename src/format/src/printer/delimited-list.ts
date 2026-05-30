@@ -14,8 +14,6 @@
  * - countLeadingSimpleCallArguments – counts simple arguments at the start
  * - buildCallbackArgumentsWithSimplePrefix – handles mixed simple/callback arguments
  */
-import { Core } from "@gmloop/core";
-
 import { TRAILING_COMMA } from "../options/index.js";
 import { docHasTrailingComment } from "./expression-print-utils.js";
 import { breakParent, concat, group, hardline, ifBreak, indent, line, softline } from "./prettier-doc-builders.js";

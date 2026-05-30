@@ -1,4 +1,5 @@
 import { Core } from "@gmloop/core";
+import { Semantic } from "@gmloop/semantic";
 
 import type {
     CallExpressionNode,
@@ -81,25 +82,8 @@ class DefaultSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyzer {
 
     qualifiedSymbol(node: IdentifierNode | IdentifierMetadata | null | undefined): string | null {
         if (!node?.name) return null;
-        switch (this.kindOfIdent(node)) {
-            case "script": {
-                return `gml/script/${node.name}`;
-            }
-            case "global_field": {
-                return `gml/var/global::${node.name}`;
-            }
-            case "builtin": {
-                return `gml/macro/${node.name}`;
-            }
-            case "local":
-            case "self_field":
-            case "other_field": {
-                return null;
-            }
-            default: {
-                return null;
-            }
-        }
+        const kind = this.kindOfIdent(node);
+        return Semantic.buildQualifiedSymbol(kind, node.name);
     }
 
     callTargetKind(node: CallExpressionNode): "script" | "builtin" | "unknown" {
@@ -111,17 +95,7 @@ class DefaultSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyzer {
         if (!hasIdentifierMetadata(node.object)) return null;
         const kind = this.classifyName(node.object.name);
         if (!kind) return null;
-        switch (kind) {
-            case "script": {
-                return `gml/script/${node.object.name}`;
-            }
-            case "builtin": {
-                return `gml/macro/${node.object.name}`;
-            }
-            default: {
-                return null;
-            }
-        }
+        return Semantic.buildCallTargetSymbol(kind, node.object.name);
     }
 }
 
