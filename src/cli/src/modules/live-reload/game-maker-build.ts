@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -370,6 +370,11 @@ async function executeGameMakerCliHtml5Build(
         });
     }
 
+    // Clean output directory before building to avoid file locking issues
+    const outputStats = await Core.safeStat(buildConfig.outputRoot);
+    if (outputStats?.isDirectory()) {
+        await rm(buildConfig.outputRoot, { recursive: true, force: true });
+    }
     await mkdir(buildConfig.outputRoot, { recursive: true });
 
     const command = buildConfig.toolPath ?? "gm-cli";
@@ -462,6 +467,12 @@ async function executeIgorHtml5Build(
         throw new Error(
             "Could not resolve a GameMaker license or user folder for Igor. Configure runtime.liveReload.build.licenseFile or runtime.liveReload.build.userFolder."
         );
+    }
+
+    // Clean output directory before building to avoid file locking issues
+    const outputStats = await Core.safeStat(buildConfig.outputRoot);
+    if (outputStats?.isDirectory()) {
+        await rm(buildConfig.outputRoot, { recursive: true, force: true });
     }
 
     await mkdir(buildConfig.outputRoot, { recursive: true });
@@ -705,12 +716,14 @@ async function resolveIgorExecutablePathFromRuntimeRoot(runtimeRoot: string): Pr
                 const nestedCandidatePaths = nestedEntries
                     .filter((nestedEntry) => nestedEntry.isDirectory())
                     .flatMap((nestedEntry) => [
+                        path.join(platformDirectoryPath, nestedEntry.name, "Igor"),
                         path.join(platformDirectoryPath, nestedEntry.name, "Igor.exe"),
                         path.join(platformDirectoryPath, nestedEntry.name, "igor.exe")
                     ]);
 
                 return [
                     ...nestedCandidatePaths,
+                    path.join(platformDirectoryPath, "Igor"),
                     path.join(platformDirectoryPath, "Igor.exe"),
                     path.join(platformDirectoryPath, "igor.exe")
                 ];
