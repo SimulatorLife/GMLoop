@@ -201,6 +201,15 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     };
 
+    readonly #onInputScroll = (e: Event): void => {
+        const target = e.target as HTMLTextAreaElement;
+        const pre = this.renderRoot.querySelector(".playground-input-highlight");
+        if (pre) {
+            pre.scrollTop = target.scrollTop;
+            pre.scrollLeft = target.scrollLeft;
+        }
+    };
+
     async #processInput(): Promise<void> {
         this.#error = null;
         if (!this.#gmlInput.trim()) {
@@ -598,14 +607,20 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                                 <span>Input GML</span>
                                 <span class="pane-header-status">Writable</span>
                             </div>
-                            <textarea
-                                class="playground-input"
-                                aria-label="Playground input GML"
-                                placeholder="Paste or write GML code here..."
-                                .value=${this.#gmlInput}
-                                @input=${this.#onInputChange}
-                                spellcheck="false"
-                            ></textarea>
+                            <div class="playground-input-surface">
+                                <pre class="playground-input-highlight" aria-hidden="true">
+${unsafeHTML(highlightGml(this.#gmlInput))}</pre
+                                >
+                                <textarea
+                                    class="playground-input"
+                                    aria-label="Playground input GML"
+                                    placeholder="Paste or write GML code here..."
+                                    .value=${this.#gmlInput}
+                                    @input=${this.#onInputChange}
+                                    @scroll=${this.#onInputScroll}
+                                    spellcheck="false"
+                                ></textarea>
+                            </div>
                         </div>
                         <div class="editor-pane">
                             <div class="pane-header">

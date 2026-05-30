@@ -430,3 +430,32 @@ void test("playground panel syncs format options from project configuration cata
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /0\/2 enabled/u);
 });
+
+void test("playground panel output does not have leading whitespace nodes", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // Make sure the markup does not introduce text nodes (whitespace) inside the pre-formatted element
+    assert.match(rendered, /<div class="playground-output" aria-live="polite">[^<]*<\/div>/u);
+    // There shouldn't be newlines or spaces right after the opening tag
+    assert.doesNotMatch(rendered, /<div class="playground-output" aria-live="polite">\s+\S/u);
+});
+
+void test("playground panel input uses a highlighted overlay with synchronized textarea", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // Verify the highlighted overlay wrapper structure exists
+    assert.match(rendered, /class="playground-input-surface"/u);
+
+    // Verify the highlight layer exists
+    assert.match(rendered, /<pre class="playground-input-highlight" aria-hidden="true">/u);
+
+    // Verify the transparent textarea exists
+    assert.match(rendered, /<textarea\s+class="playground-input"/u);
+    assert.match(rendered, /@scroll=/u);
+});

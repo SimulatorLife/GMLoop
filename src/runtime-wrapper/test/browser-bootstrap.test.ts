@@ -5,7 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { liveReloadBootstrapConfig } from "../browser/config.js";
-import { initializeLiveReload } from "../browser/index.js";
+import { applyMathSafetyPatches, initializeLiveReload } from "../browser/index.js";
 import { createRuntimeWrapper } from "../browser/runtime/index.js";
 import { createWebSocketClient } from "../browser/websocket/index.js";
 
@@ -60,3 +60,34 @@ async function listJavaScriptFiles(directoryPath: string): Promise<Array<string>
 
     return nestedFiles.flat();
 }
+
+void test("applyMathSafetyPatches installs safety patches for GameMaker HTML5 math functions", () => {
+    const globalScope = {} as Record<string, unknown>;
+
+    // Mock GameMaker's yyGetReal and a buggy math function (e.g., sqrt)
+    globalScope.yyGetReal = Number;
+
+    let originalCalled = false;
+    globalScope.sqrt = function (x: unknown) {
+        originalCalled = true;
+        const val = Number(x);
+        if (val < 0) throw new Error("Cannot apply sqrt to negative number.");
+        return Math.sqrt(val);
+    };
+
+    // Install patches
+    applyMathSafetyPatches(globalScope);
+
+    // Passing NaN should safely return NaN and bypass the original function
+    const patchedSqrt = globalScope.sqrt as (v: unknown) => unknown;
+    originalCalled = false;
+    const result = patchedSqrt(Number.NaN);
+
+    assert.ok(Number.isNaN(result), "Expected patched sqrt(NaN) to return NaN");
+    assert.strictEqual(originalCalled, false, "Expected original sqrt to be bypassed for NaN");
+
+    // Passing a valid number should call original function
+    const validResult = patchedSqrt(4);
+    assert.strictEqual(validResult, 2, "Expected patched sqrt(4) to return 2");
+    assert.strictEqual(originalCalled, true, "Expected original sqrt to be called for valid number");
+});
