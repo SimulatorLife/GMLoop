@@ -438,42 +438,104 @@ void test("startLiveReloadDevSession uses configured temp-root fallback when no 
     ]);
 });
 
-void test("startLiveReloadDevSession explains how to enable automatic HTML5 builds when autodetection has no export", async () => {
-    await assert.rejects(
-        () =>
-            startLiveReloadDevSession({
-                targetPath: "/tmp/project",
-                bootstrapConfig: {
-                    websocketUrl: "ws://127.0.0.1:17890"
-                },
-                prepareRunner: async () => {
+void test("startLiveReloadDevSession auto-builds HTML5 output when autodetection has no export", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-dev-auto-build-");
+    await fs.writeFile(path.join(projectRoot, "Project.yyp"), JSON.stringify({ name: "Project" }), "utf8");
+
+    const prepareCalls: Array<Readonly<{ html5OutputRoot: string | null }>> = [];
+    const buildCalls: Array<GameMakerHtml5BuildConfig> = [];
+    const watchCalls: Array<Readonly<{ runtimeRoot?: string; targetPath: string }>> = [];
+
+    try {
+        await startLiveReloadDevSession({
+            targetPath: projectRoot,
+            bootstrapConfig: {
+                websocketUrl: "ws://127.0.0.1:17890"
+            },
+            buildRunner: async ({ buildConfig }) => {
+                buildCalls.push(buildConfig);
+                return Object.freeze({
+                    backend: "igor",
+                    command: "igor",
+                    outputRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5"),
+                    stderr: "",
+                    stdout: ""
+                });
+            },
+            prepareRunner: async (options) => {
+                prepareCalls.push({ html5OutputRoot: options.html5OutputRoot });
+
+                if (prepareCalls.length === 1) {
                     throw new Error(
                         "GameMaker HTML5 temporary output root '/private/tmp/GameMakerStudio2/GMS2TEMP' was not found. Run the HTML5 build once or pass --html5-output explicitly."
                     );
-                },
-                projectContextResolver: async () =>
-                    Object.freeze({
-                        projectConfig: {},
-                        projectRoot: "/tmp/project"
-                    }),
-                settingsResolver: async () =>
-                    Object.freeze({
-                        buildConfig: null,
-                        gmTempRoot: "/private/tmp/GameMakerStudio2/GMS2TEMP",
-                        html5OutputRoot: null
-                    }),
-                watchRunner: async () => {
-                    throw new Error("watchRunner should not be reached when preparation fails.");
                 }
-            }),
-        (error) => {
-            assert.ok(error instanceof Error);
-            assert.match(error.message, /runtime\.liveReload\.build/u);
-            assert.match(error.message, /runtime\.liveReload\.html5Output/u);
-            assert.match(error.message, /Igor\/gm-cli automatically/u);
-            return true;
+
+                return Object.freeze({
+                    assets: {
+                        bootstrapEntryPath: path.join(
+                            projectRoot,
+                            ".gmloop",
+                            "live-reload",
+                            "html5",
+                            ".gml-hot-reload",
+                            "runtime-wrapper",
+                            "browser",
+                            "index.js"
+                        ),
+                        copiedAssets: true,
+                        manifestPath: path.join(
+                            projectRoot,
+                            ".gmloop",
+                            "live-reload",
+                            "html5",
+                            ".gml-hot-reload",
+                            "runtime-wrapper-assets.manifest.json"
+                        ),
+                        targetRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5", ".gml-hot-reload")
+                    },
+                    injected: true,
+                    target: {
+                        indexHtmlPath: path.join(projectRoot, ".gmloop", "live-reload", "html5", "index.html"),
+                        outputRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5")
+                    }
+                });
+            },
+            projectContextResolver: async () =>
+                Object.freeze({
+                    projectConfig: {},
+                    projectRoot
+                }),
+            settingsResolver: async () =>
+                Object.freeze({
+                    buildConfig: null,
+                    gmTempRoot: "/private/tmp/GameMakerStudio2/GMS2TEMP",
+                    html5OutputRoot: null
+                }),
+            watchRunner: async (watchTarget, watchOptions) => {
+                watchCalls.push({
+                    runtimeRoot: watchOptions.runtimeRoot,
+                    targetPath: watchTarget
+                });
+            }
+        });
+    } finally {
+        await fs.rm(projectRoot, { force: true, recursive: true });
+    }
+
+    assert.equal(buildCalls.length, 1);
+    assert.equal(buildCalls[0].backend, "auto");
+    assert.equal(buildCalls[0].outputRoot, path.join(projectRoot, ".gmloop", "live-reload", "html5"));
+    assert.deepEqual(prepareCalls, [
+        { html5OutputRoot: null },
+        { html5OutputRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5") }
+    ]);
+    assert.deepEqual(watchCalls, [
+        {
+            runtimeRoot: path.join(projectRoot, ".gmloop", "live-reload", "html5"),
+            targetPath: projectRoot
         }
-    );
+    ]);
 });
 
 /**
@@ -487,29 +549,19 @@ void test("startLiveReloadDevSession explains how to enable automatic HTML5 buil
  * The session layer must extract their message and propagate them correctly.
  */
 void test("startLiveReloadDevSession accepts cross-realm error-like objects that are not instanceof Error", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-dev-error-");
+    await fs.writeFile(path.join(projectRoot, "Project.yyp"), JSON.stringify({ name: "Project" }), "utf8");
+
     await assert.rejects(
         () =>
             startLiveReloadDevSession({
-                targetPath: "/tmp/project",
+                targetPath: projectRoot,
                 bootstrapConfig: {
                     websocketUrl: "ws://127.0.0.1:17890"
                 },
                 prepareRunner: async () => {
-                    // Simulate a cross-realm error: a plain object with the Error
-                    // shape but NOT instanceof Error.  This is the exact kind of
-                    // object that arrives when errors cross sandboxed-module or
-                    // worker-thread boundaries.  The `Core.isErrorLike` capability
-                    // probe allows the session layer to handle it correctly; the
-                    // `only-throw-error` suppression is intentional — it documents
-                    // that this throw is a test fixture, not a production pattern.
-                    // Intentional throw of a cross-realm error-like object — not instanceof Error.
-                    // Suppress: `only-throw-error` requires thrown values to be Error subclasses,
-                    // which defeats the purpose of this test (verifying Core.isErrorLike handles
-                    // plain error-like objects). The object satisfies the Error shape contract.
-                    // eslint-disable-next-line @typescript-eslint/only-throw-error -- see above
                     throw Object.freeze({
-                        message:
-                            "GameMaker HTML5 temporary output root '/private/tmp/GameMakerStudio2/GMS2TEMP' was not found. Run the HTML5 build once or pass --html5-output explicitly.",
+                        message: "Cross-realm preparation failed.",
                         name: "Error",
                         stack: "Error: ...\n    at <anonymous>:1:15"
                     });
@@ -517,27 +569,26 @@ void test("startLiveReloadDevSession accepts cross-realm error-like objects that
                 projectContextResolver: async () =>
                     Object.freeze({
                         projectConfig: {},
-                        projectRoot: "/tmp/project"
+                        projectRoot
                     }),
                 settingsResolver: async () =>
                     Object.freeze({
                         buildConfig: null,
                         gmTempRoot: "/private/tmp/GameMakerStudio2/GMS2TEMP",
-                        html5OutputRoot: null
+                        html5OutputRoot: path.join(projectRoot, "output")
                     }),
                 watchRunner: async () => {
                     throw new Error("watchRunner should not be reached when preparation fails.");
                 }
             }),
         (error) => {
-            // The error is now accepted as Error-like and its message is
-            // propagated; the session layer enriches it with usage guidance.
             assert.equal(Core.isErrorLike(error), true);
             if (Core.isErrorLike(error)) {
-                assert.match(error.message, /runtime\.liveReload\.build/u);
-                assert.match(error.message, /runtime\.liveReload\.html5Output/u);
+                assert.equal(error.message, "Cross-realm preparation failed.");
             }
             return true;
         }
     );
+
+    await fs.rm(projectRoot, { force: true, recursive: true });
 });
