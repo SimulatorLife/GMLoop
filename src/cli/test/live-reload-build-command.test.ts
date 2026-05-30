@@ -560,11 +560,12 @@ void test("startLiveReloadDevSession accepts cross-realm error-like objects that
                     websocketUrl: "ws://127.0.0.1:17890"
                 },
                 prepareRunner: async () => {
-                    throw Object.freeze({
-                        message: "Cross-realm preparation failed.",
-                        name: "Error",
-                        stack: "Error: ...\n    at <anonymous>:1:15"
-                    });
+                    const crossRealmError = new Error("Cross-realm preparation failed.");
+                    Object.setPrototypeOf(crossRealmError, Object.prototype);
+                    crossRealmError.name = "Error";
+                    crossRealmError.stack = "Error: ...\n    at <anonymous>:1:15";
+
+                    throw crossRealmError;
                 },
                 projectContextResolver: async () =>
                     Object.freeze({

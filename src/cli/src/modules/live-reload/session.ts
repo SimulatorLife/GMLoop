@@ -204,7 +204,7 @@ async function resolveDefaultLiveReloadHtml5BuildConfig(projectRoot: string): Pr
     licenseFile: null;
     outputRoot: string;
     projectPath: string;
-    runtimeRoot: null;
+    runtimeRoot: string | null;
     tempDir: null;
     toolPath: null;
     userFolder: null;

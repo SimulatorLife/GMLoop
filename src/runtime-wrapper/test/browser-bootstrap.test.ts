@@ -67,7 +67,7 @@ void test("applyMathSafetyPatches installs safety patches for GameMaker HTML5 ma
     // Mock GameMaker's yyGetReal and a buggy math function (e.g., sqrt)
     globalScope.yyGetReal = Number;
 
-    let originalCalled = false;
+    let originalCalled: boolean;
     globalScope.sqrt = function (x: unknown) {
         originalCalled = true;
         const val = Number(x);
