@@ -1,5 +1,6 @@
 import {
     convertLegacyReturnsDescriptionLinesToMetadata,
+    normalizeDocParamName,
     promoteLeadingDocCommentTextToDescription,
     resolveParameterName
 } from "../../doc-comment/index.js";
@@ -25,6 +26,7 @@ import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-i
  */
 export const gmlRuleDocCommentServices = Object.freeze({
     convertLegacyReturnsDescriptionLinesToMetadata,
+    normalizeDocParamName,
     promoteLeadingDocCommentTextToDescription,
     resolveParameterName
 });
