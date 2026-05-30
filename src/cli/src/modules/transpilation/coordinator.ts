@@ -415,9 +415,45 @@ function addToBoundedCollection<T>(collection: Array<T>, item: T, maxSize: numbe
 }
 
 /**
- * Parses GML content and extracts symbols/references when parsing succeeds.
- * Accepts pre-parsed AST and pre-extracted symbols/references to skip redundant
- * work when the caller has already produced them (e.g., during the initial
+ * Extracts symbol declarations and reference identifiers from a parsed GML AST.
+ *
+ * This function performs a single AST traversal to collect both symbols and
+ * references, which is more efficient than calling extraction separately.
+ *
+ * When pre-extracted values are provided, they are reused to skip redundant
+ * work during incremental updates (e.g., when only part of the AST changed).
+ */
+function extractMetadataFromAst(
+    ast: unknown,
+    filePath: string,
+    preExtractedSymbols?: ReadonlyArray<string>,
+    preExtractedReferences?: ReadonlyArray<string>
+): { parsedSymbols: Array<string>; parsedReferences: Array<string> } {
+    if (preExtractedSymbols !== undefined && preExtractedReferences !== undefined) {
+        return {
+            parsedSymbols: Array.from(preExtractedSymbols),
+            parsedReferences: Array.from(preExtractedReferences)
+        };
+    }
+
+    const parsedSymbols =
+        preExtractedSymbols === undefined ? extractSymbolsFromAst(ast, filePath) : Array.from(preExtractedSymbols);
+    const parsedReferences =
+        preExtractedReferences === undefined ? extractReferencesFromAst(ast) : Array.from(preExtractedReferences);
+
+    return { parsedSymbols, parsedReferences };
+}
+
+/**
+ * Parses GML content into an AST, then extracts symbol declarations and
+ * reference identifiers from it.
+ *
+ * This function orchestrates two distinct responsibilities:
+ * 1. Parse: Convert GML source text into an Abstract Syntax Tree
+ * 2. Extract: Walk the AST to collect symbols and references
+ *
+ * Accepts pre-parsed AST and pre-extracted values to skip redundant work
+ * when the caller has already produced them (e.g., during the initial
  * startup scan).
  */
 function parseAstAndExtractMetadata(
@@ -428,19 +464,13 @@ function parseAstAndExtractMetadata(
     preExtractedReferences?: ReadonlyArray<string>
 ): ParsedAstExtractionResult {
     try {
-        let ast: unknown;
-        if (preParseAst === undefined) {
-            const parser = new Parser.GMLParser(content, {});
-            ast = parser.parse();
-        } else {
-            ast = preParseAst;
-        }
-
-        // Reuse pre-extracted values when available to avoid a second full AST walk.
-        const parsedSymbols =
-            preExtractedSymbols === undefined ? extractSymbolsFromAst(ast, filePath) : Array.from(preExtractedSymbols);
-        const parsedReferences =
-            preExtractedReferences === undefined ? extractReferencesFromAst(ast) : Array.from(preExtractedReferences);
+        const ast = preParseAst ?? new Parser.GMLParser(content, {}).parse();
+        const { parsedSymbols, parsedReferences } = extractMetadataFromAst(
+            ast,
+            filePath,
+            preExtractedSymbols,
+            preExtractedReferences
+        );
 
         return {
             ast,
