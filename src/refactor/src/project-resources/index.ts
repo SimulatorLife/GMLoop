@@ -1,9 +1,10 @@
 export type {
+    AddObjectEventRequest,
     ObjectEventDescriptor,
     ObjectEventMutationResult,
     UpdateObjectEventRequest
 } from "./object-event-operations.js";
-export { updateObjectEvent } from "./object-event-operations.js";
+export { addObjectEvent, updateObjectEvent } from "./object-event-operations.js";
 export type { ProjectResourceKindValue } from "./project-resource-kinds.js";
 export {
     isProjectResourceKind,

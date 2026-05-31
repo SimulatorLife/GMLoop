@@ -61,6 +61,17 @@ export interface ObjectEventDescriptor {
 }
 
 /**
+ * Parameters for adding a new GameMaker object event and GML source file.
+ */
+export interface AddObjectEventRequest {
+    descriptor: ObjectEventDescriptor;
+    dryRun?: boolean;
+    handlerSource: string;
+    objectName: string;
+    projectRoot: string;
+}
+
+/**
  * Parameters for replacing the GML source for an existing GameMaker object event.
  */
 export interface UpdateObjectEventRequest {
@@ -75,7 +86,7 @@ export interface UpdateObjectEventRequest {
  * Summary returned after an object event source mutation.
  */
 export interface ObjectEventMutationResult {
-    action: "update";
+    action: "add" | "update";
     dryRun: boolean;
     eventFilePath: string;
     eventNumber: number;
@@ -217,12 +228,11 @@ function readNumericEventField(event: Record<string, unknown>, fieldNames: Reado
     return null;
 }
 
-function locateObjectEvent(
+function findObjectEvent(
     objectDocument: Record<string, unknown>,
-    objectName: string,
     eventType: number,
     eventNumber: number
-): Record<string, unknown> {
+): Record<string, unknown> | null {
     for (const eventEntry of Core.asArray(objectDocument.eventList)) {
         if (!Core.isObjectLike(eventEntry)) {
             continue;
@@ -236,7 +246,20 @@ function locateObjectEvent(
         }
     }
 
-    throw new Error(`Could not find object event ${eventType}:${eventNumber} on object '${objectName}'.`);
+    return null;
+}
+
+function locateObjectEvent(
+    objectDocument: Record<string, unknown>,
+    objectName: string,
+    eventType: number,
+    eventNumber: number
+): Record<string, unknown> {
+    const event = findObjectEvent(objectDocument, eventType, eventNumber);
+    if (event === null) {
+        throw new Error(`Could not find object event ${eventType}:${eventNumber} on object '${objectName}'.`);
+    }
+    return event;
 }
 
 function resolveEventFilePath(
@@ -262,6 +285,53 @@ function resolveEventFilePath(
 
 function normalizeHandlerSource(handlerSource: string): string {
     return handlerSource.endsWith("\n") ? handlerSource : `${handlerSource}\n`;
+}
+
+function getObjectEventListForMutation(objectDocument: Record<string, unknown>, objectName: string): Array<unknown> {
+    if (objectDocument.eventList === undefined) {
+        objectDocument.eventList = [];
+    }
+
+    if (!Array.isArray(objectDocument.eventList)) {
+        throw new TypeError(`Object '${objectName}' metadata has a non-array eventList and cannot be safely mutated.`);
+    }
+
+    return objectDocument.eventList;
+}
+
+function createObjectEventMetadata(
+    eventType: number,
+    eventNumber: number,
+    eventFilePath: string
+): Record<string, unknown> {
+    return {
+        $GMEvent: "",
+        "%Name": "",
+        collisionObjectId: null,
+        eventContents: eventFilePath,
+        eventNum: eventNumber,
+        eventType,
+        isDnD: false,
+        name: "",
+        resourceType: "GMEvent",
+        resourceVersion: "2.0"
+    };
+}
+
+async function writeObjectMetadataIfApplying(
+    dryRun: boolean,
+    objectAbsolutePath: string,
+    objectDocument: Record<string, unknown>
+): Promise<void> {
+    if (dryRun) {
+        return;
+    }
+
+    await writeFile(
+        objectAbsolutePath,
+        `${Core.stringifyProjectMetadataDocument(objectDocument, objectAbsolutePath)}\n`,
+        "utf8"
+    );
 }
 
 async function resolveObjectEventMutationContext(
@@ -302,6 +372,49 @@ async function writeObjectEventSourceIfApplying(
     }
 
     await writeFile(path.join(projectRoot, Core.fromPosixPath(eventFilePath)), handlerSource, "utf8");
+}
+
+/**
+ * Add a new GameMaker object event and associated GML source file.
+ *
+ * @param request - Object event creation request.
+ * @returns Summary of the planned or applied object event metadata and source mutation.
+ */
+export async function addObjectEvent(request: AddObjectEventRequest): Promise<ObjectEventMutationResult> {
+    const normalizedHandlerSource = normalizeHandlerSource(request.handlerSource);
+    Parser.GMLParser.parse(normalizedHandlerSource);
+
+    const manifestPath = await resolveProjectManifestPath(request.projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifestPath);
+    const objectReference = locateObjectReference(getManifestResources(manifestDocument), request.objectName);
+    const objectAbsolutePath = path.join(request.projectRoot, Core.fromPosixPath(objectReference.path));
+    const objectDocument = await readProjectMetadataDocument(objectAbsolutePath);
+    const eventType = resolveObjectEventType(request.descriptor.category);
+    const eventNumber = resolveObjectEventNumber(request.descriptor.category, request.descriptor.descriptor);
+    if (findObjectEvent(objectDocument, eventType, eventNumber) !== null) {
+        throw new Error(`Object '${objectReference.name}' already has event ${eventType}:${eventNumber}.`);
+    }
+
+    const eventFilePath = path.posix.join(path.posix.dirname(objectReference.path), `${eventType}_${eventNumber}.gml`);
+    getObjectEventListForMutation(objectDocument, objectReference.name).push(
+        createObjectEventMetadata(eventType, eventNumber, eventFilePath)
+    );
+
+    const dryRun = request.dryRun !== false;
+    await writeObjectMetadataIfApplying(dryRun, objectAbsolutePath, objectDocument);
+    await writeObjectEventSourceIfApplying(dryRun, request.projectRoot, eventFilePath, normalizedHandlerSource);
+
+    return {
+        action: "add",
+        dryRun,
+        eventFilePath,
+        eventNumber,
+        eventType,
+        objectName: objectReference.name,
+        objectPath: objectReference.path,
+        warnings: [],
+        writtenPaths: [objectReference.path, eventFilePath]
+    };
 }
 
 /**
