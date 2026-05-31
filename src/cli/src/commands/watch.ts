@@ -991,6 +991,8 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     let watcher: FSWatcher | null = null;
     let pollingIntervalHandle: NodeJS.Timeout | null = null;
     let resolved = false;
+    let nativeWatcherFellBackToPolling = false;
+    let initialScanPromise: Promise<void> | null = null;
 
     // Internal abort controller used to cancel in-flight file reads (including
     // transient-empty retry timers) when the watcher shuts down. This is separate
@@ -1085,7 +1087,57 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
             process.exit(exitCode);
         };
 
+        const startPollingLoop = (initialScanOptions: InitialScanRunnerOptions): void => {
+            initialScanPromise ??= runInitialWatchScan(initialScanOptions);
+            void initialScanPromise
+                .then(() => {
+                    if (resolved || pollingIntervalHandle !== null) {
+                        return null;
+                    }
+
+                    pollingIntervalHandle = setInterval(() => {
+                        scheduleUnknownFileChanges(
+                            runtimeContext,
+                            verbose,
+                            quiet,
+                            internalAbortController.signal
+                        ).catch((error) => {
+                            const message = getErrorMessage(error, {
+                                fallback: "Unknown polling scan error"
+                            });
+                            console.error(`Error during polling scan: ${message}`);
+                        });
+                    }, pollingInterval);
+                    pollingIntervalHandle.unref();
+                    return null;
+                })
+                .catch(handleWatcherError);
+        };
+
+        const initialScanOptions: InitialScanRunnerOptions = {
+            normalizedPath,
+            extensionMatcher,
+            runtimeContext,
+            verbose,
+            quiet,
+            maxConcurrentDirs,
+            fileDataCache
+        };
+
         const handleWatcherError = (error: unknown) => {
+            if (!polling && !nativeWatcherFellBackToPolling && isErrorWithCode(error, "EMFILE")) {
+                nativeWatcherFellBackToPolling = true;
+                if (watcher) {
+                    watcher.close();
+                    watcher = null;
+                }
+                if (verbose && !quiet) {
+                    console.error("Native recursive watching exhausted file handles; falling back to polling.");
+                }
+                startPollingLoop(initialScanOptions);
+                return;
+            }
+
             const message = getErrorMessage(error, {
                 fallback: "Unknown watch error"
             });
@@ -1131,37 +1183,9 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
             };
         }
 
-        const initialScanOptions: InitialScanRunnerOptions = {
-            normalizedPath,
-            extensionMatcher,
-            runtimeContext,
-            verbose,
-            quiet,
-            maxConcurrentDirs,
-            fileDataCache
-        };
-
         try {
             if (polling) {
-                void runInitialWatchScan(initialScanOptions)
-                    .then(() => {
-                        pollingIntervalHandle = setInterval(() => {
-                            scheduleUnknownFileChanges(
-                                runtimeContext,
-                                verbose,
-                                quiet,
-                                internalAbortController.signal
-                            ).catch((error) => {
-                                const message = getErrorMessage(error, {
-                                    fallback: "Unknown polling scan error"
-                                });
-                                console.error(`Error during polling scan: ${message}`);
-                            });
-                        }, pollingInterval);
-                        pollingIntervalHandle.unref();
-                        return null;
-                    })
-                    .catch(handleWatcherError);
+                startPollingLoop(initialScanOptions);
                 return;
             }
 
@@ -1265,7 +1289,8 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
             // Perform initial scan after the watcher is established so test harnesses
             // and callers can trigger events immediately without waiting for the scan.
-            void runInitialWatchScan(initialScanOptions).catch(handleWatcherError);
+            initialScanPromise = runInitialWatchScan(initialScanOptions);
+            void initialScanPromise.catch(handleWatcherError);
         } catch (error) {
             handleWatcherError(error);
         }

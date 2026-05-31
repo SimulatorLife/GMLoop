@@ -606,6 +606,10 @@ pnpm run cli -- live-reload dev /path/to/project --html5-output /path/to/html5/o
 
 When `runtime.liveReload.build` exists, `live-reload dev` treats `runtime.liveReload.html5Output` as the canonical output directory, rebuilds it before injection, and serves that same prepared output as the runtime URL shown by the UI.
 
+Igor builds materialize project prefab packages from `.gmcache/prefabs` into the project-local `prefabs` path while the build runs, then remove the temporary materialization after the build. This keeps one-click Live Reload startup aligned with GameMaker projects whose package cache already contains the referenced prefab libraries.
+
+If Node's native recursive watcher exhausts file handles after startup, Live Reload closes that watcher and continues with polling instead of shutting down the already-started runtime, WebSocket, and status servers.
+
 ✅ **Configurable patch history limit** ✨
 ✅ **Error recovery and graceful degradation** ✨
 ✅ **Patch validation before broadcast** ✨
