@@ -458,6 +458,54 @@ function setActiveGraphVisualizationLiveReloadModel(
     return model;
 }
 
+function createReadyGraphVisualizationLiveReloadModel(
+    sessionState: Readonly<{ model: GraphVisualizationLiveReloadModel | null }>,
+    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot
+): GraphVisualizationLiveReloadModel | null {
+    const runtimeUrl = sessionState.model?.endpoints.runtimeUrl ?? null;
+    if (runtimeUrl === null) {
+        return null;
+    }
+
+    return createGraphVisualizationLiveReloadModel(runtimeUrl, statusSnapshot);
+}
+
+async function isGraphVisualizationLiveReloadRuntimeUrlReachable(
+    runtimeUrl: string,
+    fetchRuntimeUrl: typeof globalThis.fetch = globalThis.fetch
+): Promise<boolean> {
+    try {
+        const response = await fetchRuntimeUrl(runtimeUrl, {
+            cache: "no-store",
+            method: "HEAD"
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+async function createReachableGraphVisualizationLiveReloadModel(
+    sessionState: Readonly<{ model: GraphVisualizationLiveReloadModel | null }>,
+    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot
+): Promise<GraphVisualizationLiveReloadModel | null> {
+    const readyModel = createReadyGraphVisualizationLiveReloadModel(sessionState, statusSnapshot);
+    if (readyModel === null) {
+        return null;
+    }
+
+    const runtimeUrl = readyModel.endpoints.runtimeUrl;
+    if (runtimeUrl === null) {
+        return null;
+    }
+
+    if (!(await isGraphVisualizationLiveReloadRuntimeUrlReachable(runtimeUrl))) {
+        return null;
+    }
+
+    return readyModel;
+}
+
 function createGraphVisualizationLiveReloadStartupTimeoutError(stderrMessages: ReadonlyArray<string>): Error {
     const stderrMessage = stderrMessages.join("\n").trim();
     if (stderrMessage.length > 0) {
@@ -1176,11 +1224,15 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
             if (input.restart === false) {
                 const existingStatusSnapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot();
-                if (existingStatusSnapshot !== null) {
-                    return setActiveGraphVisualizationLiveReloadModel(
-                        activeLiveReloadSession,
-                        createGraphVisualizationLiveReloadModel(null, existingStatusSnapshot)
-                    );
+                const existingModel =
+                    existingStatusSnapshot === null
+                        ? null
+                        : await createReachableGraphVisualizationLiveReloadModel(
+                              activeLiveReloadSession,
+                              existingStatusSnapshot
+                          );
+                if (existingModel !== null) {
+                    return setActiveGraphVisualizationLiveReloadModel(activeLiveReloadSession, existingModel);
                 }
             }
 
@@ -1255,15 +1307,13 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
                 const pollStatus = async (): Promise<void> => {
                     const snapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot();
-                    if (snapshot !== null) {
+                    const readyModel =
+                        snapshot === null
+                            ? null
+                            : await createReachableGraphVisualizationLiveReloadModel(activeLiveReloadSession, snapshot);
+                    if (readyModel !== null) {
                         cleanup();
-                        const runtimeUrl = activeLiveReloadSession.model?.endpoints.runtimeUrl ?? null;
-                        resolve(
-                            setActiveGraphVisualizationLiveReloadModel(
-                                activeLiveReloadSession,
-                                createGraphVisualizationLiveReloadModel(runtimeUrl, snapshot)
-                            )
-                        );
+                        resolve(setActiveGraphVisualizationLiveReloadModel(activeLiveReloadSession, readyModel));
                         return;
                     }
 
@@ -1864,6 +1914,10 @@ export function createGraphCommand(): Command {
 export const __graphCommandTest__ = Object.freeze({
     GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS,
     createGraphVisualizationLiveReloadDevCommandArgs,
+    createGraphVisualizationLiveReloadModel,
+    createReachableGraphVisualizationLiveReloadModel,
+    createReadyGraphVisualizationLiveReloadModel,
+    isGraphVisualizationLiveReloadRuntimeUrlReachable,
     isGraphVisualizationUiSourceReloadCandidate,
     normalizeGraphVisualizationUiSourceWatchFileName,
     resolveGraphVisualizationLiveReloadStartupOptions,

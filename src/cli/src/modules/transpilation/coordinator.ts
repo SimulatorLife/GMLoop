@@ -385,6 +385,14 @@ export interface TranspilationOptions {
      * Omit for the initial scan pass, where there is no preceding watch event.
      */
     fileChangeDetectedAt?: number;
+    /**
+     * Controls whether the generated patch should be added to runtime history and
+     * broadcast to connected clients. Initial dependency scans generate patches
+     * only to validate transpilation and collect metadata; those patches mirror
+     * code already present in a freshly built runtime and must not be replayed as
+     * live edits.
+     */
+    deliverRuntimePatch?: boolean;
 }
 
 export interface TranspilationResult {
@@ -613,7 +621,15 @@ export function transpileFile(
     lines: number,
     options: TranspilationOptions
 ): TranspilationResult {
-    const { verbose, quiet, cachedAst, cachedSymbols, cachedReferences, fileChangeDetectedAt } = options;
+    const {
+        verbose,
+        quiet,
+        cachedAst,
+        cachedSymbols,
+        cachedReferences,
+        fileChangeDetectedAt,
+        deliverRuntimePatch = true
+    } = options;
     const startTime = performance.now();
 
     try {
@@ -676,15 +692,25 @@ export function transpileFile(
 
         addToBoundedCollection(context.metrics, metrics, context.bounds.maxEntries);
 
+        if (context.scriptNames && fileKind.kind === "script") {
+            registerScriptNamesFromSymbols(parsedSymbols, context.scriptNames);
+        }
+
+        if (!deliverRuntimePatch) {
+            return {
+                success: true,
+                patch: patchPayload,
+                metrics,
+                symbols: parsedSymbols,
+                references: parsedReferences
+            };
+        }
+
         clearStalePatchesForSourcePath(context.lastSuccessfulPatches, filePath, patchPayload.id);
         const previousPatch = context.lastSuccessfulPatches.get(patchPayload.id);
         const runtimePatchChanged = hasRuntimePatchChanged(previousPatch, patchPayload);
 
         context.lastSuccessfulPatches.set(patchPayload.id, patchPayload);
-
-        if (context.scriptNames && fileKind.kind === "script") {
-            registerScriptNamesFromSymbols(parsedSymbols, context.scriptNames);
-        }
 
         if (runtimePatchChanged) {
             addToBoundedCollection(context.patches, createPatchSummary(patchPayload), context.bounds.maxEntries);

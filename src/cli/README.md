@@ -388,6 +388,8 @@ curl http://127.0.0.1:17891/status
 {
   "uptime": 125430,
   "patchCount": 42,
+  "totalPatchCount": 12,
+  "patchHistorySize": 12,
   "errorCount": 2,
   "recentPatches": [
     {
@@ -472,9 +474,11 @@ curl http://127.0.0.1:17891/ready
 **Status Endpoint Fields:**
 
 - `uptime`: Milliseconds since the watch command started
-- `patchCount`: Total number of patches generated successfully
+- `patchCount`: Number of successful transpilations in the bounded metrics window, including the startup dependency scan
+- `totalPatchCount`: Cumulative number of live-edit patches delivered to the runtime since startup
+- `patchHistorySize`: Number of live-edit patches retained for late WebSocket client replay
 - `errorCount`: Total number of transpilation errors encountered
-- `recentPatches`: Array of the last 10 successful patches with metadata
+- `recentPatches`: Array of the last 10 successful transpilations with metadata
 - `recentErrors`: Array of the last 10 errors with details
 - `websocketClients`: Number of currently connected WebSocket clients
 
@@ -536,7 +540,7 @@ The watch command includes robust error handling to maintain stability:
 - **Graceful Degradation**: Transpilation errors don't stop the watcher. When a file fails to transpile, the error is logged and the watcher continues monitoring other files.
 - **Error Notifications**: Failed transpilations send error notifications to connected WebSocket clients with the format `{ kind: "error", filePath, error, timestamp }`.
 - **Patch Validation**: All patches are validated before broadcast to ensure they contain valid data (non-empty JavaScript body, proper structure).
-- **Last Successful Patch Tracking**: The system stores the last successful patch for each script, enabling potential rollback scenarios.
+- **Last Successful Patch Tracking**: The system stores the last successful live-edit patch for each script so late WebSocket clients can catch up without replaying the startup dependency scan over code already present in the HTML5 build.
 - **Error Metrics**: Errors are tracked alongside successful transpilations, with statistics displayed when the watcher stops.
 - **Statistics Summary**: On exit, the watch command displays both success metrics (patches generated, transpilation time) and error metrics (total errors, recent error details in verbose mode).
 

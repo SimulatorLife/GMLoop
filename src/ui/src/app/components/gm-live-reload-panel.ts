@@ -9,6 +9,7 @@ import type {
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
+import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
@@ -353,6 +354,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         const isStartPending = this.state?.isLiveReloadStartPending === true;
         const isRefreshPending = this.state?.isLiveReloadRefreshPending === true;
         const hasError = this.state?.liveReloadErrorMessage !== null || this.#pollErrorMessage !== null;
+        const runtimeUrl = resolveLiveReloadRuntimeUrl(this.model?.liveReload ?? null);
         const isRetry = hasError && !hasActiveSession;
         const isRestart = hasActiveSession;
         const isPending = isStartPending || isRefreshPending;
@@ -388,8 +390,8 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                 stroke-width="2.25"
                 aria-hidden="true"
             >
-                <path d="M1 4v6h6" />
-                <path d="M3.51 15a9 9 0 1 0 .49-4.5" />
+                <path d="M4 4v16" />
+                <polygon points="9,5 20,12 9,19" fill="currentColor" stroke="none" />
             </svg>
         `;
 
@@ -404,6 +406,21 @@ export class GmLiveReloadPanel extends LightDomLitElement {
             >
                 <path d="M1 4v6h6" />
                 <path d="M3.51 15a9 9 0 1 0 .49-4.5" />
+            </svg>
+        `;
+
+        const openRuntimeIcon = html`
+            <svg
+                class="live-reload-btn-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.25"
+                aria-hidden="true"
+            >
+                <path d="M7 7h10v10" />
+                <path d="M7 17 17 7" />
+                <path d="M5 5v14h14" />
             </svg>
         `;
 
@@ -428,6 +445,20 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                           </button>
                           ${hasActiveSession
                               ? html`
+                                    ${runtimeUrl === null
+                                        ? null
+                                        : html`
+                                              <a
+                                                  id="open-live-reload-runtime"
+                                                  class="live-reload-btn live-reload-btn--runtime"
+                                                  href=${runtimeUrl}
+                                                  target=${LIVE_RELOAD_RUNTIME_TAB_TARGET}
+                                                  rel="noreferrer"
+                                                  title="Open Runtime"
+                                              >
+                                                  ${openRuntimeIcon}
+                                              </a>
+                                          `}
                                     <button
                                         id="stop-live-reload"
                                         type="button"
@@ -676,7 +707,7 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                 ${errorMessage ? html`<gm-error-banner .message=${errorMessage}></gm-error-banner>` : null}
                 <div class="live-reload-stack" aria-live="polite">
                     ${liveReload === null
-                        ? html`${this.#renderSetupState()} ${this.#renderConnectionDetails()}`
+                        ? this.#renderSetupState()
                         : html`
                               ${this.#renderOverview(status)} ${this.#renderPipeline()}
                               <div class="live-reload-activity-grid">

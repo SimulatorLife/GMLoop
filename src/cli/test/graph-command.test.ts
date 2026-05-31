@@ -90,6 +90,24 @@ async function waitForCondition(predicate: () => boolean, failureMessage: string
     assert.fail(failureMessage);
 }
 
+function createLiveReloadStatusSnapshot() {
+    return {
+        avgHotReloadLatencyMs: null,
+        errorCount: 0,
+        maxPatchHistory: 50,
+        patchCount: 0,
+        patchHistorySize: 0,
+        p95HotReloadLatencyMs: null,
+        recentErrors: [],
+        recentPatches: [],
+        scanComplete: true,
+        totalPatchCount: 0,
+        uptimeMs: 10,
+        watcherStatus: "running" as const,
+        websocketClients: 0
+    };
+}
+
 void test("CLI command catalog includes graph leaf commands", async () => {
     const cliModule = await loadCliModule();
     const catalog = cliModule.getCliCommandCatalog();
@@ -107,6 +125,63 @@ void test("CLI command catalog includes graph leaf commands", async () => {
     assert.ok(catalog.some((entry) => entry.displayName === "symbol neighbors"));
     assert.ok(catalog.some((entry) => entry.displayName === "symbol usages"));
     assert.ok(!catalog.some((entry) => entry.displayName === "performance"));
+});
+
+void test("graph live-reload ready model requires a runtime URL", () => {
+    const snapshot = createLiveReloadStatusSnapshot();
+    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
+        {
+            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel(null)
+        },
+        snapshot
+    );
+
+    assert.equal(model, null);
+});
+
+void test("graph live-reload ready model preserves runtime URL and status snapshot", () => {
+    const snapshot = createLiveReloadStatusSnapshot();
+    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
+        {
+            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/")
+        },
+        snapshot
+    );
+
+    assert.equal(model?.endpoints.runtimeUrl, "http://127.0.0.1:51264/");
+    assert.equal(model?.statusSnapshot, snapshot);
+});
+
+void test("graph live-reload startup readiness requires a reachable runtime URL", async () => {
+    const snapshot = createLiveReloadStatusSnapshot();
+    const model = await __graphCommandTest__.createReachableGraphVisualizationLiveReloadModel(
+        {
+            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/")
+        },
+        snapshot
+    );
+
+    assert.equal(model, null);
+});
+
+void test("graph live-reload runtime URL reachability accepts successful HEAD responses", async () => {
+    const isReachable = await __graphCommandTest__.isGraphVisualizationLiveReloadRuntimeUrlReachable(
+        "http://127.0.0.1:51264/",
+        async () => new Response(null, { status: 200 })
+    );
+
+    assert.equal(isReachable, true);
+});
+
+void test("graph live-reload runtime URL reachability rejects failed probes", async () => {
+    const isReachable = await __graphCommandTest__.isGraphVisualizationLiveReloadRuntimeUrlReachable(
+        "http://127.0.0.1:51264/",
+        async () => {
+            throw new Error("Connection refused");
+        }
+    );
+
+    assert.equal(isReachable, false);
 });
 
 void test("graph command rejects removed symbol-centric subcommands", async () => {

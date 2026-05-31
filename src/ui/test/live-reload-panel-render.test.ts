@@ -166,8 +166,8 @@ void test("GmLiveReloadPanel renders single inactive setup state when host does 
     assert.match(rendered, /Live Reload Not Connected/u);
     assert.match(rendered, /Start Live Reload/u);
     assert.match(rendered, /Start live reload to watch project files/u);
-    assert.match(rendered, /Connection Details/u);
-    assert.match(rendered, /Not configured/u);
+    assert.doesNotMatch(rendered, /Connection Details/u);
+    assert.doesNotMatch(rendered, /Not configured/u);
     assert.doesNotMatch(rendered, /No patches yet\./u);
     assert.doesNotMatch(rendered, /Runtime details unavailable\./u);
 });
@@ -298,6 +298,44 @@ void test("GmLiveReloadPanel shows Restart Live Reload when session is active", 
     assert.match(rendered, /title=Restart Live Reload/u);
     assert.doesNotMatch(rendered, /title=Start Live Reload/u);
     assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=false/u);
+    assert.match(rendered, /id="start-live-reload"[\s\S]*<path d="M4 4v16"/u);
+    assert.match(rendered, /id="refresh-live-reload"[\s\S]*<path d="M1 4v6h6"/u);
+});
+
+void test("GmLiveReloadPanel shows runtime opener when active session has a runtime URL", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="open-live-reload-runtime"/u);
+    assert.match(rendered, /href=http:\/\/127\.0\.0\.1:51264/u);
+    assert.match(rendered, /target=gmloop-live-reload-runtime/u);
+    assert.match(rendered, /title="Open Runtime"/u);
+});
+
+void test("GmLiveReloadPanel hides runtime opener until active session has a runtime URL", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    const modelWithMissingRuntimeUrl = createMockModel(createStatusSnapshot());
+    panel.model = {
+        ...modelWithMissingRuntimeUrl,
+        liveReload:
+            modelWithMissingRuntimeUrl.liveReload === null
+                ? null
+                : {
+                      ...modelWithMissingRuntimeUrl.liveReload,
+                      endpoints: {
+                          ...modelWithMissingRuntimeUrl.liveReload.endpoints,
+                          runtimeUrl: null
+                      }
+                  }
+    };
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.doesNotMatch(rendered, /id="open-live-reload-runtime"/u);
 });
 
 void test("GmLiveReloadPanel shows Retry Start when startup failed with no active session", () => {

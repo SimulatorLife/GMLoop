@@ -571,7 +571,8 @@ async function performInitialScan(
                 quiet: true,
                 cachedAst,
                 cachedSymbols: cached?.symbols,
-                cachedReferences: cached?.references
+                cachedReferences: cached?.references,
+                deliverRuntimePatch: false
             });
 
             // Track symbols and references
@@ -845,15 +846,6 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         if (verbose && !quiet) {
             console.log(`Using HTML5 runtime from ${runtimeDescriptor(runtimeSource)}`);
         }
-
-        runtimeServerController = await runtimeServerStarter({
-            runtimeRoot: runtimeSource.root,
-            verbose
-        });
-
-        runtimeContext.server = runtimeServerController;
-
-        console.log(`Runtime static server ready at ${runtimeServerController.url}`);
     } else if (verbose && !quiet) {
         console.log("Runtime static server disabled.");
     }
@@ -980,6 +972,49 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         }
     } else if (verbose && !quiet) {
         console.log("Status server disabled.");
+    }
+
+    if (shouldServeRuntime && runtimeContext.root !== null) {
+        try {
+            runtimeServerController = await runtimeServerStarter({
+                runtimeRoot: runtimeContext.root,
+                verbose
+            });
+
+            runtimeContext.server = runtimeServerController;
+
+            console.log(`Runtime static server ready at ${runtimeServerController.url}`);
+        } catch (error) {
+            const message = getErrorMessage(error, {
+                fallback: "Unknown runtime server error"
+            });
+            const formattedError = formatCliError(new Error(`Failed to start runtime static server: ${message}`));
+            console.error(formattedError);
+
+            if (websocketServerController) {
+                try {
+                    await websocketServerController.stop();
+                } catch (stopError) {
+                    const stopMessage = getErrorMessage(stopError, {
+                        fallback: unknownServerStopErrorMessage
+                    });
+                    console.error(`Failed to stop WebSocket server during cleanup: ${stopMessage}`);
+                }
+            }
+
+            if (statusServerController) {
+                try {
+                    await statusServerController.stop();
+                } catch (stopError) {
+                    const stopMessage = getErrorMessage(stopError, {
+                        fallback: unknownServerStopErrorMessage
+                    });
+                    console.error(`Failed to stop status server during cleanup: ${stopMessage}`);
+                }
+            }
+
+            process.exit(1);
+        }
     }
 
     logWatchStartup(normalizedPath, extensionSet, polling, pollingInterval, verbose, quiet);

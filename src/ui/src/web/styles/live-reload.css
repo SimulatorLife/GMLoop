@@ -50,7 +50,9 @@
   height: var(--gm-height-xl);
   border: 1px solid transparent;
   border-radius: var(--gm-radius-md);
+  color: var(--gm-text-secondary);
   cursor: pointer;
+  text-decoration: none;
   transition:
     background var(--gm-transition),
     border-color var(--gm-transition),
@@ -99,6 +101,18 @@
 .live-reload-btn--destructive:hover:not(:disabled) {
   color: var(--gm-action-primary-text-hover);
   background: var(--gm-danger-surface-hover);
+  transform: translateY(-1px);
+}
+
+.live-reload-btn--runtime {
+  background: var(--gm-bg-muted);
+  border-color: var(--gm-border);
+  color: var(--gm-text);
+}
+
+.live-reload-btn--runtime:hover {
+  background: var(--gm-surface-muted);
+  border-color: var(--gm-border-strong);
   transform: translateY(-1px);
 }
 
