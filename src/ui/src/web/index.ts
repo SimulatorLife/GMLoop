@@ -1,6 +1,11 @@
 import { bootstrapGraphVisualizationLitApp } from "../app/bootstrap.js";
 import type { GraphVisualizationFixRunOptions } from "../app/contracts.js";
-import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../app/live-reload-runtime-tab.js";
+import {
+    LIVE_RELOAD_RUNTIME_TAB_TARGET,
+    navigateLiveReloadRuntimeTab,
+    openLiveReloadRuntimeTab,
+    reserveLiveReloadRuntimeTab
+} from "../app/live-reload-runtime-tab.js";
 import { resetProjectScopedGraphVisualizationUiStateInCurrentUrl } from "../app/state/url-state.js";
 import type {
     GraphVisualizationData,
@@ -39,16 +44,6 @@ type LiveReloadStopApiResponse = Readonly<{
     ok?: boolean;
 }>;
 
-type LiveReloadRuntimeTab = Readonly<{
-    close: () => void;
-    focus: () => void;
-    location: {
-        href: string;
-    };
-}>;
-
-type LiveReloadRuntimeTabOpener = (url: string, target: string) => LiveReloadRuntimeTab | null;
-
 type UiRevisionApiResponse = Readonly<{
     revision?: number;
 }>;
@@ -63,55 +58,6 @@ async function readJsonResponse<TResponse>(response: Response): Promise<TRespons
 function reloadWhenChanged(result: MutationApiResponse): void {
     if (result.changed === true) {
         globalThis.location.reload();
-    }
-}
-
-function reserveLiveReloadRuntimeTab(
-    openRuntimeTab: LiveReloadRuntimeTabOpener | null = typeof globalThis.open === "function"
-        ? globalThis.open.bind(globalThis)
-        : null
-): LiveReloadRuntimeTab | null {
-    if (openRuntimeTab === null) {
-        return null;
-    }
-
-    try {
-        const runtimeTab = openRuntimeTab("", LIVE_RELOAD_RUNTIME_TAB_TARGET);
-        runtimeTab?.focus();
-        return runtimeTab;
-    } catch {
-        return null;
-    }
-}
-
-function navigateLiveReloadRuntimeTab(runtimeTab: LiveReloadRuntimeTab, runtimeUrl: string): void {
-    runtimeTab.location.href = runtimeUrl;
-    runtimeTab.focus();
-}
-
-function openLiveReloadRuntimeTab(
-    liveReload: GraphVisualizationLiveReloadModel | null,
-    reservedRuntimeTab: LiveReloadRuntimeTab | null = null,
-    openRuntimeTab: LiveReloadRuntimeTabOpener | null = typeof globalThis.open === "function"
-        ? globalThis.open.bind(globalThis)
-        : null
-): void {
-    const runtimeUrl = resolveLiveReloadRuntimeUrl(liveReload);
-    if (runtimeUrl === null) {
-        return;
-    }
-
-    try {
-        if (reservedRuntimeTab !== null) {
-            navigateLiveReloadRuntimeTab(reservedRuntimeTab, runtimeUrl);
-            return;
-        }
-
-        if (openRuntimeTab !== null) {
-            openRuntimeTab(runtimeUrl, LIVE_RELOAD_RUNTIME_TAB_TARGET)?.focus();
-        }
-    } catch {
-        // Popup blockers should not turn a successful live-reload start into a UI failure.
     }
 }
 
@@ -295,7 +241,11 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 }
 
                 const liveReload = result.liveReload ?? null;
-                openLiveReloadRuntimeTab(liveReload, runtimeTab);
+                if (runtimeTab === null) {
+                    openLiveReloadRuntimeTab(liveReload?.endpoints.runtimeUrl ?? null);
+                } else {
+                    navigateLiveReloadRuntimeTab(runtimeTab, liveReload?.endpoints.runtimeUrl ?? "");
+                }
                 return liveReload;
             },
             onStopLiveReload: async () => {
@@ -317,5 +267,5 @@ export const __test__ = Object.freeze({
     LIVE_RELOAD_START_REQUEST_BODY,
     reserveLiveReloadRuntimeTab,
     openLiveReloadRuntimeTab,
-    resolveLiveReloadRuntimeUrl
+    navigateLiveReloadRuntimeTab
 });
