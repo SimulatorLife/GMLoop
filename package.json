@@ -161,7 +161,7 @@
     "c8": "^9",
     "eslint-config-prettier": "^10",
     "eslint-import-resolver-typescript": "^4",
-    "eslint-plugin-boundaries": "^5",
+    "eslint-plugin-boundaries": "catalog:",
     "eslint-plugin-de-morgan": "^2",
     "eslint-plugin-eslint-comments": "^3",
     "eslint-plugin-import-x": "^4",
