@@ -30,7 +30,16 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         mapKey: "GmlPreferLoopInvariantExpressions",
         shortName: "prefer-loop-invariant-expressions",
         fullId: "gml/prefer-loop-invariant-expressions",
-        messageId: "preferLoopInvariantExpressions"
+        messageId: "preferLoopInvariantExpressions",
+        schema: Object.freeze([
+            {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                    minComplexity: { type: "integer", minimum: 2, default: 3 }
+                }
+            }
+        ])
     },
     {
         mapKey: "GmlPreferRepeatLoops",
