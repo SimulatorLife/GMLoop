@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { Core } from "@gmloop/core";
 
 import {
+    addObjectEvent,
     addProjectResource,
     addRoomInstance,
     deleteRoomInstance,
@@ -245,6 +246,66 @@ void test("duplicateProjectResource and moveProjectResource support dry-run sema
         });
         assert.equal(moveWrite.resourcePath, "scripts/moved/scr_copy.yy");
         await assert.doesNotReject(access(path.join(projectRoot, "scripts/moved/scr_copy.gml")));
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("addObjectEvent appends event metadata and source with dry-run safety", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.OBJECT,
+            resourceName: "obj_player"
+        });
+
+        const dryRun = await addObjectEvent({
+            descriptor: { category: "Create", descriptor: "0" },
+            dryRun: true,
+            handlerSource: "x = 1;",
+            objectName: "obj_player",
+            projectRoot
+        });
+        assert.equal(dryRun.action, "add");
+        assert.equal(dryRun.dryRun, true);
+        assert.equal(dryRun.eventFilePath, "objects/obj_player/0_0.gml");
+        assert.deepEqual(dryRun.writtenPaths, ["objects/obj_player/obj_player.yy", "objects/obj_player/0_0.gml"]);
+        await assert.rejects(access(path.join(projectRoot, "objects/obj_player/0_0.gml")));
+
+        const writeResult = await addObjectEvent({
+            descriptor: { category: "Create", descriptor: "0" },
+            dryRun: false,
+            handlerSource: "x = 2;",
+            objectName: "obj_player",
+            projectRoot
+        });
+        assert.equal(writeResult.dryRun, false);
+        assert.equal(writeResult.eventType, 0);
+        assert.equal(writeResult.eventNumber, 0);
+
+        const objectMetadataPath = path.join(projectRoot, "objects/obj_player/obj_player.yy");
+        const objectMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(objectMetadataPath, "utf8"),
+            objectMetadataPath
+        ).document;
+        assert.equal(objectMetadata.eventList[0].eventType, 0);
+        assert.equal(objectMetadata.eventList[0].eventNum, 0);
+        assert.equal(objectMetadata.eventList[0].eventContents, "objects/obj_player/0_0.gml");
+        assert.equal(await readFile(path.join(projectRoot, "objects/obj_player/0_0.gml"), "utf8"), "x = 2;\n");
+
+        await assert.rejects(
+            addObjectEvent({
+                descriptor: { category: "Create", descriptor: "0" },
+                dryRun: true,
+                handlerSource: "x = 3;",
+                objectName: "obj_player",
+                projectRoot
+            }),
+            /already has event 0:0/u
+        );
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

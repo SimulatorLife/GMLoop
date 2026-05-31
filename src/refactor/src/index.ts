@@ -106,6 +106,7 @@ export {
 export { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
 export { normalizeRefactorProjectConfig, normalizeRefactorProjectConfigOrNull } from "./project-config.js";
 export type {
+    AddObjectEventRequest,
     AddProjectResourceRequest,
     AddRoomInstanceRequest,
     DeleteRoomInstanceRequest,
@@ -123,6 +124,7 @@ export type {
 } from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
 export {
+    addObjectEvent,
     addProjectResource,
     addRoomInstance,
     deleteRoomInstance,
