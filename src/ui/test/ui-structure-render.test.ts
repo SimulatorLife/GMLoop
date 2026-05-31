@@ -160,10 +160,10 @@ void test("graph toolbar renders grouped controls for search, view state, and ac
     const rendered = renderTemplateValue(toolbar.renderForTest());
 
     assert.match(rendered, /class="toolbar-control-group toolbar-search-group"/u);
-    assert.match(rendered, /id="toggle-view"[\s\S]*class="toolbar-chip-button"/u);
-    assert.match(rendered, /id="toggle-labels"[\s\S]*class="toolbar-chip-button"/u);
-    assert.match(rendered, /id="reset-default"[\s\S]*class="toolbar-chip-button"/u);
-    assert.match(rendered, /id="regenerate"[\s\S]*class="toolbar-chip-button"/u);
+    assert.match(rendered, /id="toggle-view"[\s\S]*class="gm-btn--chip"/u);
+    assert.match(rendered, /id="toggle-labels"[\s\S]*class="gm-btn--chip"/u);
+    assert.match(rendered, /id="reset-default"[\s\S]*class="gm-btn--chip"/u);
+    assert.match(rendered, /id="regenerate"[\s\S]*class="gm-btn--chip"/u);
 });
 
 void test("graph index header tab is disabled when no graph index is loaded", () => {
@@ -238,7 +238,7 @@ void test("page styles keep every top-level page on the shared lighter content b
         "../../src/app/components/gm-playground-panel.ts"
     ].map((sourcePath) => readFileSync(new URL(sourcePath, import.meta.url), "utf8"));
 
-    assert.match(layoutSource, /\.content-page\s*\{[\s\S]*background:\s*transparent;/u);
+    assert.match(layoutSource, /\.content-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
     assert.match(graphSource, /#graph-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
     assert.match(playgroundSource, /#playground-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
     assert.doesNotMatch(graphSource, /background:\s*linear-gradient\(180deg,\s*rgba\(8,\s*14,\s*24/u);
