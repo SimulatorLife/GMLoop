@@ -101,6 +101,26 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - Keep UI feature code organized by surface or domain, for example `graph/`, `ast/`, `cli-docs/`, `mcp/`, `rules/`.
 - Maintain a canonical top-level surface catalog in code so future UI tabs are discoverable and consistently named.
 
+## Template Whitespace Rules
+
+Lit templates are whitespace-sensitive for inline elements (elements that receive their content through `html` interpolation without child nodes). Any indentation or newlines between an opening tag and its closing tag become text nodes in the rendered DOM. This produces unwanted visual padding and can break assumptions in styling.
+
+Symptoms include visible extra padding in output panes, mismatch with `white-space: pre` layouts, and broken test assertions like `doesNotMatch(rendered, /<element>\s+\S/u)`.
+
+The rule: for inline elements where content is provided via interpolation, keep the `html` template on a single line with no leading or trailing whitespace:
+
+```ts
+// ✅ Correct — no whitespace between opening and closing tags
+return html`<div class="output">${content}</div>`;
+
+// ❌ Incorrect — indentation becomes a text node, visible in the rendered output
+return html`<div class="output">
+    ${content}
+</div>`;
+```
+
+When a template must be broken across multiple lines (e.g., for readability), extract the element into a private class method or module-level helper that returns the complete `TemplateResult` on a single line. See `GmPlaygroundPanel.#renderOutput` and its test "playground panel output does not have leading whitespace nodes" for a reference implementation.
+
 ## Workspace Structure
 
 The current workspace structure is:

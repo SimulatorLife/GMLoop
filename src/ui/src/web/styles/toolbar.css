@@ -120,10 +120,6 @@
   color: rgba(173, 187, 208, 0.68);
 }
 
-.toolbar-chip-button {
-  padding-inline: 14px;
-}
-
 .pending-badge {
   display: inline-flex;
   align-items: center;
