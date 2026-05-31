@@ -9,6 +9,7 @@ import {
     getOrCreateMapEntry,
     hasMethods,
     incrementMapValue,
+    isEmptyRecord,
     isObjectLike,
     isPlainObject,
     readCxcDxStore,
@@ -17,6 +18,25 @@ import {
     withDefinedValue,
     withObjectLike
 } from "../src/utils/object.js";
+
+void test("isEmptyRecord returns true for empty object literals", () => {
+    assert.strictEqual(isEmptyRecord({}), true);
+    assert.strictEqual(isEmptyRecord(Object.create(null)), true);
+});
+
+void test("isEmptyRecord returns false for populated objects", () => {
+    assert.strictEqual(isEmptyRecord({ a: 1 }), false);
+    assert.strictEqual(isEmptyRecord({ length: 0 }), false);
+});
+
+void test("isEmptyRecord returns false for non-objects", () => {
+    assert.strictEqual(isEmptyRecord(null), false);
+    assert.strictEqual(isEmptyRecord(undefined), false);
+    assert.strictEqual(isEmptyRecord([]), false);
+    assert.strictEqual(isEmptyRecord("value"), false);
+    assert.strictEqual(isEmptyRecord(42), false);
+    assert.strictEqual(isEmptyRecord(Symbol("x")), false);
+});
 
 void test("isPlainObject accepts non-null object literals", () => {
     assert.strictEqual(isPlainObject({}), true);
