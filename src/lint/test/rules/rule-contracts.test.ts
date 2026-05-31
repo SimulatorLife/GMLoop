@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import * as LintWorkspace from "@gmloop/lint";
+import { ruleIds } from "@gmloop/lint";
 
 import { assertEquals } from "../assertions.js";
 
@@ -241,7 +242,7 @@ void test("recommended baseline rules expose stable messageIds and exact schemas
 });
 
 void test("feather rules declare fixable metadata for autofix reports", () => {
-    const allRuleIds = Object.values(LintWorkspace.Lint.ruleIds as Record<string, string>);
+    const allRuleIds = Object.values(ruleIds as Record<string, string>);
     for (const ruleId of allRuleIds) {
         if (!ruleId.startsWith("feather/")) {
             continue;
@@ -298,10 +299,7 @@ void test("all registered lint rules return non-empty listeners (no silent place
 });
 
 void test("only gml/require-argument-separators may consume inserted separator recovery metadata", () => {
-    assert.ok(
-        LintWorkspace.Lint.ruleIds.GmlRequireArgumentSeparators,
-        "Expected require-argument-separators rule id to exist."
-    );
+    assert.ok(ruleIds.GmlRequireArgumentSeparators, "Expected require-argument-separators rule id to exist.");
 
     const testDirectory = path.dirname(fileURLToPath(import.meta.url));
     const sourceRoot = resolveSourceRoot(testDirectory);

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
 import { Format } from "@gmloop/format";
-import { Lint } from "@gmloop/lint";
+import { Lint, listLintRuleCatalogEntries } from "@gmloop/lint";
 import { Parser } from "@gmloop/parser";
 import { Refactor, type RefactorCodemodId } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
@@ -1874,9 +1874,7 @@ export const __graphCommandTest__ = Object.freeze({
 });
 function createDocumentationCatalogs() {
     const cliCommands = getCliCommandCatalog();
-    const lintCatalogEntryById = new Map(
-        Lint.listLintRuleCatalogEntries().map((entry) => [entry.ruleId, entry] as const)
-    );
+    const lintCatalogEntryById = new Map(listLintRuleCatalogEntries().map((entry) => [entry.ruleId, entry] as const));
     const semanticIndexCodemodIdSet = new Set(Refactor.listSemanticProjectIndexDependentCodemodIds());
 
     return Object.freeze({
@@ -1894,7 +1892,7 @@ function createDocumentationCatalogs() {
                     name: entry.name
                 })
             ),
-            lintRules: Lint.listLintRuleCatalogEntries().map((entry) =>
+            lintRules: listLintRuleCatalogEntries().map((entry) =>
                 Object.freeze({
                     description: lintCatalogEntryById.get(entry.ruleId)?.description ?? entry.description,
                     fixable: entry.fixable,
