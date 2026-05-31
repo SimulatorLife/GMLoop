@@ -14,6 +14,7 @@
  * re-exports the combined surface so existing call sites are unaffected.
  */
 
+import { getNodeEndIndex, getNodeStartIndex } from "../ast/locations.js";
 import { isNonEmptyString } from "../utils/string.js";
 
 // ---------------------------------------------------------------------------
@@ -451,4 +452,30 @@ export function advanceStringCommentScan(
     }
 
     return tryStartStringOrComment(text, length, currentIndex, state);
+}
+
+// ---------------------------------------------------------------------------
+// Node source text extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Safely extract the source text covered by an AST node.
+ *
+ * Consolidates the repeated guard pattern:
+ *   const start = getNodeStartIndex(node);
+ *   const end = getNodeEndIndex(node);
+ *   if (typeof start !== "number" || typeof end !== "number") { return null; }
+ *   return sourceText.slice(start, end);
+ *
+ * @param sourceText Full source text of the file.
+ * @param node       AST node whose bounds should be used.
+ * @returns The source text slice for `node`, or `null` when either boundary is not a valid offset.
+ */
+export function getNodeSourceText(sourceText: string, node: unknown): string | null {
+    const start = getNodeStartIndex(node);
+    const end = getNodeEndIndex(node);
+    if (typeof start !== "number" || typeof end !== "number") {
+        return null;
+    }
+    return sourceText.slice(start, end);
 }

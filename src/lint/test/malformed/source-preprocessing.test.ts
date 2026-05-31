@@ -123,6 +123,13 @@ void describe("recoverParseSourceFromMissingBrace", () => {
         assert.strictEqual(result, null);
     });
 
+    void it("resumes brace scanning after CR-only single-line comments", () => {
+        const source = "// generated header\rif (ready) {";
+        const error = new Error("missing associated closing brace");
+        const result = recoverParseSourceFromMissingBrace(source, error);
+        assert.strictEqual(result, "// generated header\rif (ready) {\n}");
+    });
+
     void it("ignores braces inside block comments", () => {
         const source = "/* { brace in block comment */\nvar x = 1;";
         const error = new Error("missing associated closing brace");
