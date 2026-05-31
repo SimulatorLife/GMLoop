@@ -1,3 +1,4 @@
+import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
@@ -6,6 +7,7 @@ import { createConfigOption, createPathOption, createWriteOption } from "../cli-
 import {
     ensureProjectGraphIndex,
     printProjectPayload,
+    resolveCommandProjectContext,
     type SharedProjectContextOptions
 } from "../workflow/project-root.js";
 
@@ -36,6 +38,42 @@ type ObjectMutationOptions = SharedProjectContextOptions &
     Readonly<{
         write?: boolean;
     }>;
+
+function toObjectEventMutationPayload(result: Awaited<ReturnType<typeof Refactor.updateObjectEvent>>) {
+    return {
+        action: result.action,
+        dryRun: result.dryRun,
+        eventFilePath: result.eventFilePath,
+        eventNumber: result.eventNumber,
+        eventType: result.eventType,
+        objectName: result.objectName,
+        objectPath: result.objectPath,
+        warnings: result.warnings,
+        writtenPaths: result.writtenPaths
+    };
+}
+
+async function runObjectEventUpdateAction(
+    objectName: string,
+    eventDescriptor: ObjectEventDescriptor,
+    handler: string,
+    options: ObjectMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.updateObjectEvent({
+        descriptor: eventDescriptor,
+        dryRun: options.write !== true,
+        handlerSource: handler,
+        objectName,
+        projectRoot: context.projectRoot
+    });
+
+    printObjectPayload({
+        command: "object event update",
+        ok: true,
+        payload: toObjectEventMutationPayload(result)
+    });
+}
 
 function emitObjectUnavailableLeaf(
     commandName: string,
@@ -209,11 +247,7 @@ export function createObjectCommand(): Command {
     eventUpdate.action(function objectEventUpdateAction(objectName: string, eventDescriptor: string, handler: string) {
         const options = this.opts<ObjectMutationOptions>();
         const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
-        emitObjectUnavailableLeaf("object event update", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
-            event: parsedDescriptor,
-            handler,
-            object: objectName
-        });
+        return runObjectEventUpdateAction(objectName, parsedDescriptor, handler, options);
     });
 
     const eventDelete = addObjectSharedOptions(
