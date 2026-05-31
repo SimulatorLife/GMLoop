@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import { Format } from "@gmloop/format";
-import { Lint } from "@gmloop/lint";
+import { Lint, listLintRuleCatalogEntries } from "@gmloop/lint";
 import { Refactor } from "@gmloop/refactor";
 
 import { type GameMakerCliCompanionCatalog, loadGameMakerCliCompanionCatalog } from "../game-maker-cli/index.js";
@@ -195,7 +195,7 @@ function createLintConfigurationEntries(projectConfig: Readonly<Record<string, u
         });
     }
     const lintRuleEntries = createLintRuleEntriesFromProjectConfigOrNull(projectConfig) ?? {};
-    const rules = Lint.listLintRuleCatalogEntries()
+    const rules = listLintRuleCatalogEntries()
         .map((catalogEntry) => {
             const ruleEntry = lintRuleEntries[catalogEntry.ruleId];
             return Object.freeze({
