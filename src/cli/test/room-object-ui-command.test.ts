@@ -128,39 +128,78 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
     };
     assert.equal(eventListPayload.command, "object event list");
     assert.equal(eventListPayload.payload.state, "not_available");
-
-    const eventAddResult = await runCliTestCommand({
-        argv: ["object", "event", "add", "obj_player", "Step:Begin", "x += 1;", "--json", "--write"]
-    });
-    assert.equal(eventAddResult.exitCode, 0);
-    const eventAddPayload = JSON.parse(eventAddResult.stdout) as {
-        command: string;
-        payload: {
-            details: {
-                event: {
-                    category: string;
-                    descriptor: string;
-                };
-                handler: string;
-                object: string;
-            };
-            mode: string;
-            state: string;
-        };
-    };
-    assert.equal(eventAddPayload.command, "object event add");
-    assert.equal(eventAddPayload.payload.mode, "apply");
-    assert.equal(eventAddPayload.payload.state, "not_available");
-    assert.equal(eventAddPayload.payload.details.object, "obj_player");
-    assert.equal(eventAddPayload.payload.details.event.category, "Step");
-    assert.equal(eventAddPayload.payload.details.event.descriptor, "Begin");
 });
 
-void test("object event update supports dry-run and write modes for existing event sources", async () => {
+void test("object event add and update support dry-run and write modes", async () => {
     const projectRoot = await createTemporaryObjectEventCliProject();
     const eventSourcePath = path.join(projectRoot, "objects/obj_player/0_0.gml");
+    const addedEventSourcePath = path.join(projectRoot, "objects/obj_player/3_1.gml");
+    const objectMetadataPath = path.join(projectRoot, "objects/obj_player/obj_player.yy");
 
     try {
+        const addDryRunResult = await runCliTestCommand({
+            argv: ["object", "event", "add", "obj_player", "Step:Begin", "x += 1;", "--path", projectRoot, "--json"]
+        });
+
+        assert.equal(addDryRunResult.exitCode, 0);
+        const addDryRunPayload = JSON.parse(addDryRunResult.stdout) as {
+            command: string;
+            payload: {
+                action: string;
+                dryRun: boolean;
+                eventFilePath: string;
+                eventNumber: number;
+                eventType: number;
+                writtenPaths: Array<string>;
+            };
+        };
+        assert.equal(addDryRunPayload.command, "object event add");
+        assert.equal(addDryRunPayload.payload.action, "add");
+        assert.equal(addDryRunPayload.payload.dryRun, true);
+        assert.equal(addDryRunPayload.payload.eventType, 3);
+        assert.equal(addDryRunPayload.payload.eventNumber, 1);
+        assert.equal(addDryRunPayload.payload.eventFilePath, "objects/obj_player/3_1.gml");
+        assert.deepEqual(addDryRunPayload.payload.writtenPaths, [
+            "objects/obj_player/obj_player.yy",
+            "objects/obj_player/3_1.gml"
+        ]);
+        await assert.rejects(readFile(addedEventSourcePath, "utf8"));
+
+        const addWriteResult = await runCliTestCommand({
+            argv: [
+                "object",
+                "event",
+                "add",
+                "obj_player",
+                "Step:Begin",
+                "x += 2;",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+
+        assert.equal(addWriteResult.exitCode, 0);
+        const addWritePayload = JSON.parse(addWriteResult.stdout) as {
+            payload: { dryRun: boolean; objectName: string; objectPath: string };
+        };
+        assert.equal(addWritePayload.payload.dryRun, false);
+        assert.equal(addWritePayload.payload.objectName, "obj_player");
+        assert.equal(addWritePayload.payload.objectPath, "objects/obj_player/obj_player.yy");
+        assert.equal(await readFile(addedEventSourcePath, "utf8"), "x += 2;\n");
+
+        const objectMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(objectMetadataPath, "utf8"),
+            objectMetadataPath
+        ).document;
+        const eventList = Core.asArray(objectMetadata.eventList);
+        const addedEvent = eventList[1] as Record<string, unknown>;
+        assert.equal(eventList.length, 2);
+        assert.equal(addedEvent.eventType, 3);
+        assert.equal(addedEvent.eventNum, 1);
+        assert.equal(addedEvent.eventContents, "objects/obj_player/3_1.gml");
+
         const dryRunResult = await runCliTestCommand({
             argv: ["object", "event", "update", "obj_player", "Create:0", "x = 2;", "--path", projectRoot, "--json"]
         });

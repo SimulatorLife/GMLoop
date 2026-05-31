@@ -76,6 +76,27 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-context"));
 });
 
+void test("MCP tool catalog exposes object event add from the CLI command catalog", () => {
+    const catalog = listGmloopMcpToolCatalogEntries();
+    const addTool = catalog.find((entry) => entry.toolName === "gmloop_object_event_add");
+    assert.ok(addTool, "gmloop_object_event_add must appear in the MCP tool catalog");
+    assert.equal(addTool.commandDisplayName, "object event add");
+
+    const fieldNames = new Set(addTool.fields.map((field) => field.name));
+    assert.ok(fieldNames.has("cwd"), "object event add must include cwd field");
+    assert.ok(fieldNames.has("object"), "object event add must include object argument");
+    assert.ok(fieldNames.has("event"), "object event add must include event argument");
+    assert.ok(fieldNames.has("handler"), "object event add must include handler argument");
+    assert.ok(fieldNames.has("--write"), "object event add must include --write option");
+    assert.ok(fieldNames.has("--path"), "object event add must include --path option");
+    assert.ok(fieldNames.has("--json"), "object event add must include --json option");
+
+    const writeField = addTool.fields.find((field) => field.name === "--write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+});
+
 void test("MCP tool catalog exposes object event update from the CLI command catalog", () => {
     const catalog = listGmloopMcpToolCatalogEntries();
     const updateTool = catalog.find((entry) => entry.toolName === "gmloop_object_event_update");

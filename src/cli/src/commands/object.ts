@@ -3,6 +3,7 @@ import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
+import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
     ensureProjectGraphIndex,
@@ -39,7 +40,7 @@ type ObjectMutationOptions = SharedProjectContextOptions &
         write?: boolean;
     }>;
 
-function toObjectEventMutationPayload(result: Awaited<ReturnType<typeof Refactor.updateObjectEvent>>) {
+function toObjectEventMutationPayload(result: Awaited<ReturnType<typeof Refactor.addObjectEvent>>) {
     return {
         action: result.action,
         dryRun: result.dryRun,
@@ -51,6 +52,28 @@ function toObjectEventMutationPayload(result: Awaited<ReturnType<typeof Refactor
         warnings: result.warnings,
         writtenPaths: result.writtenPaths
     };
+}
+
+async function runObjectEventAddAction(
+    objectName: string,
+    eventDescriptor: ObjectEventDescriptor,
+    handler: string,
+    options: ObjectMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.addObjectEvent({
+        descriptor: eventDescriptor,
+        dryRun: options.write !== true,
+        handlerSource: handler,
+        objectName,
+        projectRoot: context.projectRoot
+    });
+
+    printObjectPayload({
+        command: "object event add",
+        ok: true,
+        payload: toObjectEventMutationPayload(result)
+    });
 }
 
 async function runObjectEventUpdateAction(
@@ -227,14 +250,14 @@ export function createObjectCommand(): Command {
             .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
             .argument("<handler>", "Handler source snippet or statement block")
     ).addOption(createWriteOption());
-    eventAdd.action(function objectEventAddAction(objectName: string, eventDescriptor: string, handler: string) {
-        const options = this.opts<ObjectMutationOptions>();
-        const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
-        emitObjectUnavailableLeaf("object event add", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
-            event: parsedDescriptor,
-            handler,
-            object: objectName
-        });
+    eventAdd.action(async function objectEventAddAction(objectName: string, eventDescriptor: string, handler: string) {
+        try {
+            const options = this.opts<ObjectMutationOptions>();
+            const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
+            await runObjectEventAddAction(objectName, parsedDescriptor, handler, options);
+        } catch (error) {
+            handleCliError(error);
+        }
     });
 
     const eventUpdate = addObjectSharedOptions(
@@ -244,10 +267,18 @@ export function createObjectCommand(): Command {
             .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
             .argument("<handler>", "Updated handler source snippet or statement block")
     ).addOption(createWriteOption());
-    eventUpdate.action(function objectEventUpdateAction(objectName: string, eventDescriptor: string, handler: string) {
-        const options = this.opts<ObjectMutationOptions>();
-        const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
-        return runObjectEventUpdateAction(objectName, parsedDescriptor, handler, options);
+    eventUpdate.action(async function objectEventUpdateAction(
+        objectName: string,
+        eventDescriptor: string,
+        handler: string
+    ) {
+        try {
+            const options = this.opts<ObjectMutationOptions>();
+            const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
+            await runObjectEventUpdateAction(objectName, parsedDescriptor, handler, options);
+        } catch (error) {
+            handleCliError(error);
+        }
     });
 
     const eventDelete = addObjectSharedOptions(
