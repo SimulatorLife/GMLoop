@@ -11,6 +11,7 @@ import { test } from "node:test";
 
 import {
     evaluateTruthTablePolicy,
+    SIMPLIFICATION_POLICY_BASELINE,
     TRUTH_TABLE_POLICY_BASELINE
 } from "../../src/rules/gml/transforms/logical-expression-condensation-policy.js";
 
@@ -102,4 +103,56 @@ void test("evaluateTruthTablePolicy decision objects are frozen", () => {
 
 void test("TRUTH_TABLE_POLICY_BASELINE value is 10", () => {
     assert.strictEqual(TRUTH_TABLE_POLICY_BASELINE.maxVariablesForTruthTable, 10);
+});
+
+// ============================================================================
+// SimplificationPolicy tests
+// ============================================================================
+
+void test("SIMPLIFICATION_POLICY_BASELINE contains expected fields", () => {
+    assert.ok(Object.isFrozen(SIMPLIFICATION_POLICY_BASELINE));
+    assert.ok(Object.hasOwn(SIMPLIFICATION_POLICY_BASELINE, "maxSimplificationIterations"));
+    assert.ok(Object.hasOwn(SIMPLIFICATION_POLICY_BASELINE, "maxPostProcessingIterations"));
+    assert.strictEqual(typeof SIMPLIFICATION_POLICY_BASELINE.maxSimplificationIterations, "number");
+    assert.strictEqual(typeof SIMPLIFICATION_POLICY_BASELINE.maxPostProcessingIterations, "number");
+});
+
+void test("SIMPLIFICATION_POLICY_BASELINE maxSimplificationIterations is a positive integer", () => {
+    assert.ok(
+        Number.isInteger(SIMPLIFICATION_POLICY_BASELINE.maxSimplificationIterations),
+        "maxSimplificationIterations must be an integer"
+    );
+    assert.ok(
+        SIMPLIFICATION_POLICY_BASELINE.maxSimplificationIterations > 0,
+        "maxSimplificationIterations must be positive"
+    );
+});
+
+void test("SIMPLIFICATION_POLICY_BASELINE maxPostProcessingIterations is a positive integer", () => {
+    assert.ok(
+        Number.isInteger(SIMPLIFICATION_POLICY_BASELINE.maxPostProcessingIterations),
+        "maxPostProcessingIterations must be an integer"
+    );
+    assert.ok(
+        SIMPLIFICATION_POLICY_BASELINE.maxPostProcessingIterations > 0,
+        "maxPostProcessingIterations must be positive"
+    );
+});
+
+void test("SIMPLIFICATION_POLICY_BASELINE maxSimplificationIterations is at least maxPostProcessingIterations", () => {
+    // The main simplification pass needs more iterations than post-processing because
+    // it handles the full scope of boolean transformations.
+    assert.ok(
+        SIMPLIFICATION_POLICY_BASELINE.maxSimplificationIterations >=
+            SIMPLIFICATION_POLICY_BASELINE.maxPostProcessingIterations,
+        "maxSimplificationIterations should be >= maxPostProcessingIterations"
+    );
+});
+
+void test("SIMPLIFICATION_POLICY_BASELINE values are calibrated defaults", () => {
+    // These assertions document the current calibrated defaults.
+    // If these values need to change, update this test and the corresponding
+    // documentation in the policy file.
+    assert.strictEqual(SIMPLIFICATION_POLICY_BASELINE.maxSimplificationIterations, 50);
+    assert.strictEqual(SIMPLIFICATION_POLICY_BASELINE.maxPostProcessingIterations, 5);
 });
