@@ -297,6 +297,10 @@ function collectMultiplicativeComponents(sourceText: string, node: any): Multipl
             combinedFactors.set(factor, current + delta);
         }
 
+        if (unwrapped.operator === "/" && isApproximatelyZero(right.coefficient)) {
+            return null;
+        }
+
         return {
             coefficient:
                 unwrapped.operator === "*"
@@ -840,7 +844,7 @@ function formatCanonicalNumericLiteral(value: number): string | null {
         return null;
     }
 
-    if (Core.areNumbersApproximatelyEqual(value, 0)) {
+    if (Object.is(value, -0) || value === 0) {
         return "0";
     }
 
