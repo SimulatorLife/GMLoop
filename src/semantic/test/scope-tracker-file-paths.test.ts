@@ -2,34 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { ScopeTracker } from "../src/scopes/scope-tracker.js";
-import { wrapNormalizedPathSpy } from "./scope-tracker-helpers.js";
-
-/**
- * Replaces wall-clock sleeps with a deterministic timestamp sequence so the
- * modification-cutoff assertions do not depend on scheduler delays or clock
- * granularity.  Scopes created while the clock is controlled receive stable,
- * monotonically-increasing timestamps, making assertions about "modified after
- * X" fully deterministic across all platforms and load conditions.
- */
-function withDeterministicDateNow(
-    callback: (advanceTimestamp: () => number) => void | Promise<void>
-): Promise<void> | void {
-    const originalDateNow = Date.now;
-    let currentTimestamp = 1000;
-
-    Date.now = () => currentTimestamp;
-
-    const advanceTimestamp = (): number => {
-        currentTimestamp += 1;
-        return currentTimestamp;
-    };
-
-    try {
-        return callback(advanceTimestamp);
-    } finally {
-        Date.now = originalDateNow;
-    }
-}
+import { withDeterministicDateNow, wrapNormalizedPathSpy } from "./scope-tracker-helpers.js";
 
 void describe("ScopeTracker: getFilePathsReferencingSymbol", () => {
     void it("returns empty set for null, undefined, or unknown symbol names", () => {
