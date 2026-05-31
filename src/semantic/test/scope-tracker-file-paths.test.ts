@@ -32,34 +32,20 @@ function withDeterministicDateNow(
 }
 
 void describe("ScopeTracker: getFilePathsReferencingSymbol", () => {
-    void it("returns empty set for null symbol name", () => {
+    void it("returns empty set for null, undefined, or unknown symbol names", () => {
         const tracker = new ScopeTracker({ enabled: true });
         tracker.enterScope("program", { path: "/project/a.gml" });
         tracker.declare("x", { name: "x" });
 
         assert.equal(tracker.getFilePathsReferencingSymbol(null).size, 0);
-    });
-
-    void it("returns empty set for undefined symbol name", () => {
-        const tracker = new ScopeTracker({ enabled: true });
-        tracker.enterScope("program", { path: "/project/a.gml" });
-        tracker.declare("x", { name: "x" });
-
         assert.equal(tracker.getFilePathsReferencingSymbol(undefined).size, 0);
+        assert.equal(tracker.getFilePathsReferencingSymbol("unknown").size, 0);
     });
 
     void it("returns empty set when tracker is disabled", () => {
         const tracker = new ScopeTracker({ enabled: false });
 
         assert.equal(tracker.getFilePathsReferencingSymbol("x").size, 0);
-    });
-
-    void it("returns empty set for unknown symbol", () => {
-        const tracker = new ScopeTracker({ enabled: true });
-        tracker.enterScope("program", { path: "/project/a.gml" });
-        tracker.declare("x", { name: "x" });
-
-        assert.equal(tracker.getFilePathsReferencingSymbol("unknown").size, 0);
     });
 
     void it("excludes scopes that only declare the symbol without referencing it", () => {
