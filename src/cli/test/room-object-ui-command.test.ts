@@ -10,6 +10,48 @@ import { Refactor } from "@gmloop/refactor";
 import { runCliTestCommand } from "../src/cli.js";
 import { createRoomCommand } from "../src/commands/room.js";
 
+async function createTemporaryObjectEventCliProject(): Promise<string> {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-object-cli-"));
+    await writeFile(
+        path.join(projectRoot, "MyGame.yyp"),
+        `${JSON.stringify({ name: "MyGame", resourceType: "GMProject", resources: [] }, null, 4)}\n`,
+        "utf8"
+    );
+    await writeFile(path.join(projectRoot, "gmloop.json"), "{}\n", "utf8");
+    await Refactor.addProjectResource({
+        dryRun: false,
+        projectRoot,
+        resourceKind: "object",
+        resourceName: "obj_player"
+    });
+
+    const objectMetadataPath = path.join(projectRoot, "objects/obj_player/obj_player.yy");
+    const objectMetadata = Core.parseProjectMetadataDocumentForMutation(
+        await readFile(objectMetadataPath, "utf8"),
+        objectMetadataPath
+    ).document;
+    objectMetadata.eventList = [
+        {
+            $GMEvent: "",
+            "%Name": "",
+            collisionObjectId: null,
+            eventNum: 0,
+            eventType: 0,
+            isDnD: false,
+            name: "",
+            resourceType: "GMEvent",
+            resourceVersion: "2.0"
+        }
+    ];
+    await writeFile(
+        objectMetadataPath,
+        `${Core.stringifyProjectMetadataDocument(objectMetadata, objectMetadataPath)}\n`,
+        "utf8"
+    );
+    await writeFile(path.join(projectRoot, "objects/obj_player/0_0.gml"), "x = 1;\n", "utf8");
+    return projectRoot;
+}
+
 async function createTemporaryRoomInstanceCliProject(): Promise<string> {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-room-cli-"));
     await writeFile(
@@ -87,11 +129,11 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
     assert.equal(eventListPayload.command, "object event list");
     assert.equal(eventListPayload.payload.state, "not_available");
 
-    const eventUpdateResult = await runCliTestCommand({
-        argv: ["object", "event", "update", "obj_player", "Step:Begin", "x += 1;", "--json", "--write"]
+    const eventAddResult = await runCliTestCommand({
+        argv: ["object", "event", "add", "obj_player", "Step:Begin", "x += 1;", "--json", "--write"]
     });
-    assert.equal(eventUpdateResult.exitCode, 0);
-    const eventUpdatePayload = JSON.parse(eventUpdateResult.stdout) as {
+    assert.equal(eventAddResult.exitCode, 0);
+    const eventAddPayload = JSON.parse(eventAddResult.stdout) as {
         command: string;
         payload: {
             details: {
@@ -106,12 +148,68 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
             state: string;
         };
     };
-    assert.equal(eventUpdatePayload.command, "object event update");
-    assert.equal(eventUpdatePayload.payload.mode, "apply");
-    assert.equal(eventUpdatePayload.payload.state, "not_available");
-    assert.equal(eventUpdatePayload.payload.details.object, "obj_player");
-    assert.equal(eventUpdatePayload.payload.details.event.category, "Step");
-    assert.equal(eventUpdatePayload.payload.details.event.descriptor, "Begin");
+    assert.equal(eventAddPayload.command, "object event add");
+    assert.equal(eventAddPayload.payload.mode, "apply");
+    assert.equal(eventAddPayload.payload.state, "not_available");
+    assert.equal(eventAddPayload.payload.details.object, "obj_player");
+    assert.equal(eventAddPayload.payload.details.event.category, "Step");
+    assert.equal(eventAddPayload.payload.details.event.descriptor, "Begin");
+});
+
+void test("object event update supports dry-run and write modes for existing event sources", async () => {
+    const projectRoot = await createTemporaryObjectEventCliProject();
+    const eventSourcePath = path.join(projectRoot, "objects/obj_player/0_0.gml");
+
+    try {
+        const dryRunResult = await runCliTestCommand({
+            argv: ["object", "event", "update", "obj_player", "Create:0", "x = 2;", "--path", projectRoot, "--json"]
+        });
+
+        assert.equal(dryRunResult.exitCode, 0);
+        const dryRunPayload = JSON.parse(dryRunResult.stdout) as {
+            command: string;
+            payload: {
+                dryRun: boolean;
+                eventFilePath: string;
+                eventNumber: number;
+                eventType: number;
+                writtenPaths: Array<string>;
+            };
+        };
+        assert.equal(dryRunPayload.command, "object event update");
+        assert.equal(dryRunPayload.payload.dryRun, true);
+        assert.equal(dryRunPayload.payload.eventType, 0);
+        assert.equal(dryRunPayload.payload.eventNumber, 0);
+        assert.equal(dryRunPayload.payload.eventFilePath, "objects/obj_player/0_0.gml");
+        assert.deepEqual(dryRunPayload.payload.writtenPaths, ["objects/obj_player/0_0.gml"]);
+        assert.equal(await readFile(eventSourcePath, "utf8"), "x = 1;\n");
+
+        const writeResult = await runCliTestCommand({
+            argv: [
+                "object",
+                "event",
+                "update",
+                "obj_player",
+                "Create:0",
+                "x = 3;",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+
+        assert.equal(writeResult.exitCode, 0);
+        const writePayload = JSON.parse(writeResult.stdout) as {
+            payload: { dryRun: boolean; objectName: string; objectPath: string };
+        };
+        assert.equal(writePayload.payload.dryRun, false);
+        assert.equal(writePayload.payload.objectName, "obj_player");
+        assert.equal(writePayload.payload.objectPath, "objects/obj_player/obj_player.yy");
+        assert.equal(await readFile(eventSourcePath, "utf8"), "x = 3;\n");
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
 });
 
 void test("object event mutations reject invalid event descriptor format", async () => {

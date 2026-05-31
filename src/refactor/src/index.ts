@@ -111,11 +111,14 @@ export type {
     DeleteRoomInstanceRequest,
     DuplicateProjectResourceRequest,
     MoveProjectResourceRequest,
+    ObjectEventDescriptor,
+    ObjectEventMutationResult,
     ProjectResourceKindValue,
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
     RenameProjectResourceRequest,
     RoomInstanceMutationResult,
+    UpdateObjectEventRequest,
     UpdateRoomInstanceRequest
 } from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
@@ -127,6 +130,7 @@ export {
     moveProjectResource,
     removeProjectResource,
     renameProjectResource,
+    updateObjectEvent,
     updateRoomInstance
 } from "./project-resources/index.js";
 export {
