@@ -126,12 +126,14 @@ export function createGameMakerCliInvocationPlan(
     toolPath: string | null,
     forwardedArguments: ReadonlyArray<string>
 ): ReadonlyArray<GameMakerCliInvocation> {
-    if (toolPath !== null) {
+    const normalizedToolPath = normalizeConfiguredToolPath(toolPath);
+
+    if (normalizedToolPath !== null) {
         return [
             Object.freeze({
                 args: [...forwardedArguments],
-                command: toolPath,
-                displayName: toolPath
+                command: normalizedToolPath,
+                displayName: normalizedToolPath
             })
         ];
     }
@@ -148,6 +150,15 @@ export function createGameMakerCliInvocationPlan(
             displayName: "npx @gamemaker/gm-cli@latest"
         })
     ];
+}
+
+function normalizeConfiguredToolPath(toolPath: string | null): string | null {
+    if (toolPath === null) {
+        return null;
+    }
+
+    const trimmedToolPath = toolPath.trim();
+    return trimmedToolPath.length > 0 ? trimmedToolPath : null;
 }
 
 /**
