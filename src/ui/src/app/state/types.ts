@@ -1,5 +1,3 @@
-import type { GraphVisualizationLiveReloadStatusSnapshot } from "../../graph/types.js";
-
 /**
  * Top-level page surfaces in the graph visualization UI.
  */
@@ -36,14 +34,12 @@ export type GraphVisualizationUiState = Readonly<{
     fixErrorMessage: string | null;
     fixLogLines: ReadonlyArray<string>;
     fixStatus: "idle" | "running" | "success" | "error";
-    isLiveReloadRefreshPending: boolean;
     isLiveReloadStartPending: boolean;
     isFixPending: boolean;
     isOpenProjectPending: boolean;
     isRegeneratePending: boolean;
     labelMode: GraphVisualizationUiLabelMode;
     liveReloadErrorMessage: string | null;
-    liveReloadStatus: GraphVisualizationLiveReloadStatusSnapshot | null;
     mcpServerStatus: GraphVisualizationUiMcpServerStatus;
     pendingActionCount: number;
     searchQuery: string;
@@ -65,10 +61,8 @@ export type GraphVisualizationUiAction =
     | Readonly<{ logLines: ReadonlyArray<string>; type: "set-fix-log-lines" }>
     | Readonly<{ status: GraphVisualizationUiState["fixStatus"]; type: "set-fix-status" }>
     | Readonly<{ pending: boolean; type: "set-open-project-pending" }>
-    | Readonly<{ pending: boolean; type: "set-live-reload-refresh-pending" }>
     | Readonly<{ pending: boolean; type: "set-live-reload-start-pending" }>
     | Readonly<{ errorMessage: string | null; type: "set-live-reload-error" }>
-    | Readonly<{ status: GraphVisualizationLiveReloadStatusSnapshot | null; type: "set-live-reload-status" }>
     | Readonly<{ errorMessage: string | null; type: "set-error" }>
     | Readonly<{ type: "clear-error" }>
     | Readonly<{ type: "reset-project-scoped-state" }>

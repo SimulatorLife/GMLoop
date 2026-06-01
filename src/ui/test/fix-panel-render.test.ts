@@ -48,13 +48,11 @@ function createMockState(): GraphVisualizationUiState {
         fixLogLines: ["[1/3 Refactor Codemods]", "[2/3 Lint Fixes]", "[3/3 Format]"],
         fixStatus: "success",
         isFixPending: false,
-        isLiveReloadRefreshPending: false,
         isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
         liveReloadErrorMessage: null,
-        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         pendingActionCount: 0,
         searchQuery: ""

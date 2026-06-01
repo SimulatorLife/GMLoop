@@ -1274,7 +1274,15 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 }
             });
             childProcess.once("exit", () => {
+                if (activeLiveReloadSession.childProcess !== childProcess) {
+                    return;
+                }
+
                 activeLiveReloadSession.childProcess = null;
+                resetGraphVisualizationLiveReloadSessionForRestart(activeLiveReloadSession);
+                if (options.serve === true) {
+                    markServeRevisionChanged();
+                }
             });
 
             return await new Promise<GraphVisualizationLiveReloadModel>((resolve, reject) => {
@@ -1654,10 +1662,15 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
                 return Object.freeze({ ast, output, error });
             },
-            startLiveReload: (input) => ensureLiveReloadSessionStarted(input),
+            startLiveReload: async (input) => {
+                const liveReload = await ensureLiveReloadSessionStarted(input);
+                markServeRevisionChanged();
+                return liveReload;
+            },
             stopLiveReload: async () => {
                 await stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession);
                 resetGraphVisualizationLiveReloadSessionForRestart(activeLiveReloadSession);
+                markServeRevisionChanged();
             },
             renderBundle: async (isServerMode) => {
                 const renderRevision = activeServeRevision;

@@ -64,8 +64,8 @@
 }
 
 .gm-chip__dot {
-  width: var(--gm-icon-sm);
-  height: var(--gm-icon-sm);
+  width: var(--gm-icon-xs);
+  height: var(--gm-icon-xs);
   border-radius: 50%;
   background: var(--gm-warning-dot);
 }
@@ -100,23 +100,29 @@
   background: var(--gm-warning-dot);
 }
 
-/* ─── Status chips (variant with uppercase label) ─────────── */
+/* ─── Shared status chips ─────────────────────────────────── */
+gm-status-chip {
+  display: inline-flex;
+}
+
 .gm-status-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--gm-space-sm);
-  padding: 6px 10px;
+  padding: 7px 11px;
   border-radius: var(--gm-radius-full);
   border: 1px solid var(--gm-border);
-  font-size: var(--gm-text-xs);
+  background: var(--gm-bg-muted);
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
   font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .gm-status-chip__dot {
-  width: var(--gm-icon-sm);
-  height: var(--gm-icon-sm);
+  width: var(--gm-icon-xs);
+  height: var(--gm-icon-xs);
   border-radius: 50%;
   background: var(--gm-warning-dot);
   flex-shrink: 0;
@@ -132,30 +138,47 @@
   background: var(--gm-success-dot);
 }
 
+.gm-status-chip--scanning,
+.gm-status-chip--starting,
 .gm-status-chip--warning {
   border-color: var(--gm-warning-border);
   background: var(--gm-warning-surface);
   color: var(--gm-warning-text);
 }
 
-.gm-status-chip--error,
+.gm-status-chip--scanning .gm-status-chip__dot,
+.gm-status-chip--starting .gm-status-chip__dot,
+.gm-status-chip--warning .gm-status-chip__dot {
+  background: var(--gm-warning-dot);
+}
+
 .gm-status-chip--offline {
   border-color: var(--gm-error-border);
   background: var(--gm-error-surface);
   color: var(--gm-error-text);
 }
 
-.gm-status-chip--error .gm-status-chip__dot,
-.gm-status-chip--offline .gm-status-chip__dot {
-  background: var(--gm-danger-dot);
-}
-
+.gm-status-chip--not-running,
 .gm-status-chip--inactive {
   color: var(--gm-text-subdued);
 }
 
+.gm-status-chip--not-running .gm-status-chip__dot,
 .gm-status-chip--inactive .gm-status-chip__dot {
   background: var(--gm-text-subdued);
+}
+
+.gm-status-chip--error,
+.gm-status-chip--stopped {
+  border-color: var(--gm-error-border);
+  background: var(--gm-error-surface);
+  color: var(--gm-error-text);
+}
+
+.gm-status-chip--error .gm-status-chip__dot,
+.gm-status-chip--offline .gm-status-chip__dot,
+.gm-status-chip--stopped .gm-status-chip__dot {
+  background: var(--gm-danger-dot);
 }
 
 /* ─── Buttons ─────────────────────────────────────────────── */

@@ -170,15 +170,21 @@ The graph visualization surface is split as:
 
 That separation is intentional and should be preserved as more UI surfaces are added.
 
+## Shared Status Badges
+
+`gm-status-chip` is the shared status badge for feature-page health and lifecycle state. Feature pages must select one of the component's supported statuses instead of passing arbitrary label text, so copy and styling remain consistent across surfaces.
+
+Each tab has one top-level page toolbar. That toolbar owns the page title, subtitle, page-level status badge, and any main controls for the current tab. Do not add a second hero/header toolbar inside a page body for the same title or controls. MCP and Live Reload status badges belong in the shared page toolbar title row, and Live Reload start/open/stop controls belong in that same toolbar.
+
 ## Live Reload Surface
 
 The Live Reload surface is observability-only. It displays data from the CLI status server and host-provided runtime-wrapper summaries without owning the hot-reload pipeline itself.
 
 - `@gmloop/cli` owns file watching, transpilation orchestration, WebSocket patch streaming, and `/status`.
 - `@gmloop/runtime-wrapper` owns browser-side patch application, queueing, rollback, registry state, and runtime diagnostics.
-- `@gmloop/ui` owns the presentation model, polling display, refresh event, cards, recent patch/error lists, and optional runtime health rendering.
+- `@gmloop/ui` owns the presentation model, automatic polling display, cards, recent patch/error lists, and optional runtime health rendering.
 
-Hosts can provide live-reload data through `GraphVisualizationRenderOptions.liveReload` or the `onRefreshLiveReloadStatus` callback.
+Hosts provide live-reload startup data through `GraphVisualizationRenderOptions.liveReload` and server-mode start/stop callbacks. Once a live-reload model includes a status URL, the Live Reload page updates status automatically by polling on a timer and by polling when the document becomes visible again. The Live Reload page must not expose a manual status-refresh button or host refresh callback; status freshness is owned by the timer/focus polling loop so the UI cannot drift into a separate manual-refresh state. In server mode, the Stop control is always rendered in the shared page toolbar and uses disabled state to communicate availability; it is enabled only while an active live-reload session exists.
 
 ## Serve Host Contract
 

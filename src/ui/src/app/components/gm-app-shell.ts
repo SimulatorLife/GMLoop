@@ -29,7 +29,6 @@ import {
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
-    GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
@@ -166,10 +165,6 @@ export class GmAppShell extends LightDomLitElement {
         void this.#stopLiveReload();
     };
 
-    #onTriggerRefreshLiveReload = (): void => {
-        void this.#refreshLiveReloadStatus();
-    };
-
     #onDismissErrorBanner = (): void => {
         this.#store.dispatch({ type: "clear-error" });
     };
@@ -191,7 +186,6 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_TRIGGER_FIX, handler: this.#onTriggerFix },
             { event: GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, handler: this.#onTriggerStartLiveReload },
             { event: GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, handler: this.#onTriggerStopLiveReload },
-            { event: GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, handler: this.#onTriggerRefreshLiveReload },
             { event: "dismiss", handler: this.#onDismissErrorBanner }
         ]);
 
@@ -251,7 +245,7 @@ export class GmAppShell extends LightDomLitElement {
     }
 
     async #stopLiveReload(): Promise<void> {
-        if (!this.model) {
+        if (!this.model || this.model.liveReload === null) {
             return;
         }
 
@@ -265,26 +259,6 @@ export class GmAppShell extends LightDomLitElement {
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown live-reload stop error");
             this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
-        }
-    }
-
-    async #refreshLiveReloadStatus(): Promise<void> {
-        if (!this.model || !this.model.isServerMode) {
-            return;
-        }
-
-        try {
-            this.#store.dispatch({ pending: true, type: "set-live-reload-refresh-pending" });
-            this.#store.dispatch({ errorMessage: null, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
-            const status = await this.callbacks.onRefreshLiveReloadStatus();
-            if (status !== null) {
-                this.#store.dispatch({ status, type: "set-live-reload-status" });
-            }
-        } catch (error) {
-            const message = getUiErrorMessage(error, "Unknown live-reload status refresh error");
-            this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
-        } finally {
-            this.#store.dispatch({ pending: false, type: "set-live-reload-refresh-pending" });
         }
     }
 
@@ -338,7 +312,7 @@ export class GmAppShell extends LightDomLitElement {
             <a class="skip-link" href=${`#${PAGE_MAIN_SECTION_ID[this.#state.activePage]}`}>Skip to content</a>
             <div id="app-shell">
                 <gm-app-header .model=${this.model} .state=${this.#state}></gm-app-header>
-                <gm-graph-toolbar .model=${this.model} .state=${this.#state}></gm-graph-toolbar>
+                <gm-page-toolbar .model=${this.model} .state=${this.#state}></gm-page-toolbar>
                 ${this.#state.errorMessage
                     ? html`<gm-error-banner
                           .message=${this.#state.errorMessage}

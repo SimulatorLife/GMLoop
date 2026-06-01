@@ -2,11 +2,8 @@ import { html } from "lit";
 import { ref } from "lit/directives/ref.js";
 
 import { type GraphVisualizationUiModel, hasLoadedGraphIndex, hasLoadedGraphProject } from "../contracts.js";
-import type {
-    GraphVisualizationUiMcpServerStatus,
-    GraphVisualizationUiPage,
-    GraphVisualizationUiState
-} from "../state/types.js";
+import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
+import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
@@ -14,10 +11,61 @@ import {
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
+    GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
+    GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
     type GraphUiNavigatePageDetail,
     type GraphUiSetSearchQueryDetail
 } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+import type { GmStatusChipStatus } from "./primitives/gm-status-chip.js";
+
+function formatLiveReloadUptime(uptimeMs: number): string {
+    const totalSeconds = Math.max(0, Math.floor(uptimeMs / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes)}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function resolveMcpStatusChipStatus(status: GraphVisualizationUiModel["mcpServerStatus"]): GmStatusChipStatus {
+    if (status === "running") {
+        return "running";
+    }
+    if (status === "stopped") {
+        return "stopped";
+    }
+    return "not-running";
+}
+
+function resolveMcpStatusSummary(status: GraphVisualizationUiModel["mcpServerStatus"]): string {
+    if (status === "running") {
+        return "The MCP bridge is available for connected clients.";
+    }
+    if (status === "stopped") {
+        return "The MCP bridge stopped. Restart it to continue.";
+    }
+    return "The MCP bridge has not started in this session yet.";
+}
+
+function resolveLiveReloadStatusChipStatus(model: GraphVisualizationUiModel): GmStatusChipStatus {
+    const watcherStatus =
+        model.liveReload?.statusSnapshot?.watcherStatus ??
+        (model.liveReload?.endpoints.statusUrl ? "offline" : "inactive");
+    return watcherStatus === "inactive" ? "not-running" : watcherStatus;
+}
+
+function resolveLiveReloadStatusSummary(model: GraphVisualizationUiModel): string {
+    if (model.liveReload === null) {
+        return "Start live reload to launch the watcher, patch stream, and runtime bridge.";
+    }
+
+    const status = model.liveReload.statusSnapshot;
+    if (status === null) {
+        return "Waiting for the watcher to report its current status.";
+    }
+
+    const scanState = status.scanComplete ? "scan complete" : "scan in progress";
+    return `Uptime ${formatLiveReloadUptime(status.uptimeMs)} with ${scanState}.`;
+}
 
 /**
  * Graph surface toolbar controls and contextual page headings.
@@ -227,6 +275,24 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
+    #emitStartLiveReload(): void {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    }
+
+    #emitStopLiveReload(): void {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    }
+
     #renderPendingBadge() {
         if (!this.state || this.state.pendingActionCount === 0) {
             return null;
@@ -245,45 +311,125 @@ export class GmGraphToolbar extends LightDomLitElement {
         `;
     }
 
-    #getMcpStatusLabel(status: GraphVisualizationUiMcpServerStatus): string {
-        if (status === "running") {
-            return "Running";
-        }
-        if (status === "stopped") {
-            return "Stopped";
-        }
-        return "Not Started";
-    }
-
-    #getMcpStatusDescription(status: GraphVisualizationUiMcpServerStatus): string {
-        if (status === "running") {
-            return "The MCP bridge is available for connected clients.";
-        }
-        if (status === "stopped") {
-            return "The MCP bridge stopped. Restart it to continue.";
-        }
-        return "The MCP bridge has not started in this session yet.";
-    }
-
-    #renderMcpStatus() {
-        if (!this.model || this.state?.activePage !== "mcp") {
+    #renderPageStatus() {
+        if (!this.model || !this.state) {
             return null;
         }
 
-        const status = this.model.mcpServerStatus;
-        const statusClassName =
-            status === "running"
-                ? "mcp-runtime-status-chip running"
-                : status === "stopped"
-                  ? "mcp-runtime-status-chip stopped"
-                  : "mcp-runtime-status-chip";
+        if (this.state.activePage === "mcp") {
+            return html`<gm-status-chip
+                .status=${resolveMcpStatusChipStatus(this.model.mcpServerStatus)}
+            ></gm-status-chip>`;
+        }
+
+        if (this.state.activePage === "live-reload") {
+            return html`<gm-status-chip .status=${resolveLiveReloadStatusChipStatus(this.model)}></gm-status-chip>`;
+        }
+
+        return null;
+    }
+
+    #renderLiveReloadControls() {
+        if (!this.model?.isServerMode) {
+            return null;
+        }
+
+        const hasActiveSession = this.model.liveReload !== null;
+        const isStartPending = this.state?.isLiveReloadStartPending === true;
+        const runtimeUrl = resolveLiveReloadRuntimeUrl(this.model.liveReload);
+        const isRetry = this.state?.liveReloadErrorMessage !== null && !hasActiveSession;
+        // The page toolbar is the single top-level control surface for each tab.
+        const isStopDisabled = !hasActiveSession || isStartPending;
+        const startButtonTitle = isStartPending
+            ? "Starting Live Reload"
+            : isRetry
+              ? "Retry Start"
+              : hasActiveSession
+                ? "Live Reload Running"
+                : "Start Live Reload";
+        const stopButtonTitle = hasActiveSession ? "Stop Live Reload" : "Live Reload Not Running";
+
+        const playIcon = html`
+            <svg class="live-reload-btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <polygon points="5,3 19,12 5,21" />
+            </svg>
+        `;
+        const restartIcon = html`
+            <svg
+                class="live-reload-btn-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.25"
+                aria-hidden="true"
+            >
+                <path d="M4 4v16" />
+                <polygon points="9,5 20,12 9,19" fill="currentColor" stroke="none" />
+            </svg>
+        `;
+        const openRuntimeIcon = html`
+            <svg
+                class="live-reload-btn-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.25"
+                aria-hidden="true"
+            >
+                <path d="M7 7h10v10" />
+                <path d="M7 17 17 7" />
+                <path d="M5 5v14h14" />
+            </svg>
+        `;
+        const stopIcon = html`
+            <svg class="live-reload-btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <rect x="4" y="4" width="16" height="16" />
+            </svg>
+        `;
 
         return html`
-            <div class="toolbar-status">
-                <div class=${statusClassName} role="status" aria-label=${this.#getMcpStatusDescription(status)}>
-                    <span class="mcp-runtime-status-dot" aria-hidden="true"></span>
-                    <strong>${this.#getMcpStatusLabel(status)}</strong>
-                </div>
+            <div class="toolbar-control-group live-reload-actions">
+                <button
+                    id="start-live-reload"
+                    type="button"
+                    class="live-reload-btn live-reload-btn--primary"
+                    ?disabled=${isStartPending || hasActiveSession}
+                    aria-busy=${isStartPending ? "true" : "false"}
+                    title=${startButtonTitle}
+                    @click=${() => this.#emitStartLiveReload()}
+                >
+                    ${isStartPending
+                        ? html`<span class="live-reload-btn-spinner" aria-hidden="true"></span>`
+                        : isRetry
+                          ? playIcon
+                          : hasActiveSession
+                            ? restartIcon
+                            : playIcon}
+                </button>
+                ${runtimeUrl === null
+                    ? null
+                    : html`
+                          <a
+                              id="open-live-reload-runtime"
+                              class="live-reload-btn live-reload-btn--runtime"
+                              href=${runtimeUrl}
+                              target=${LIVE_RELOAD_RUNTIME_TAB_TARGET}
+                              rel="noreferrer"
+                              title="Open Runtime"
+                          >
+                              ${openRuntimeIcon}
+                          </a>
+                      `}
+                <button
+                    id="stop-live-reload"
+                    type="button"
+                    class="live-reload-btn live-reload-btn--destructive"
+                    ?disabled=${isStopDisabled}
+                    title=${stopButtonTitle}
+                    @click=${() => this.#emitStopLiveReload()}
+                >
+                    ${stopIcon}
+                </button>
             </div>
         `;
     }
@@ -319,22 +465,26 @@ export class GmGraphToolbar extends LightDomLitElement {
                       : this.state.activePage === "playground"
                         ? "Interactive GML playground for parsing, formatting, and rule experiments."
                         : this.state.activePage === "mcp"
-                          ? "Check tool access and connection status for integrations."
-                          : "Track live-update activity and recent reload problems.";
+                          ? resolveMcpStatusSummary(this.model.mcpServerStatus)
+                          : resolveLiveReloadStatusSummary(this.model);
         const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const hasLoadedProject = hasLoadedGraphProject(this.model);
 
         const graphControlsClassName =
             this.state.activePage === "graph" ? "toolbar-controls" : "toolbar-controls hidden";
+        const liveReloadControlsClassName =
+            this.state.activePage === "live-reload" ? "toolbar-controls" : "toolbar-controls hidden";
 
         return html`
             <div id="page-toolbar" class="page-toolbar">
                 <div class="toolbar-heading-row">
                     <div class="toolbar-title">
-                        <strong id="toolbar-heading">${heading}</strong>
+                        <div class="toolbar-title-row">
+                            <strong id="toolbar-heading">${heading}</strong>
+                            ${this.#renderPageStatus()}
+                        </div>
                         <span id="toolbar-subheading">${subheading}</span>
                     </div>
-                    ${this.#renderMcpStatus()}
                 </div>
                 <div id="graph-controls" class=${graphControlsClassName}>
                     <div class="toolbar-control-group toolbar-search-group">
@@ -405,6 +555,9 @@ export class GmGraphToolbar extends LightDomLitElement {
                             : null}
                         ${this.#renderPendingBadge()}
                     </div>
+                </div>
+                <div id="live-reload-controls" class=${liveReloadControlsClassName}>
+                    ${this.#renderLiveReloadControls()}
                 </div>
             </div>
         `;

@@ -15,13 +15,11 @@ void test("reset-defaults restores visual view, auto labels, and clears search q
             fixLogLines: [],
             fixStatus: "idle",
             isFixPending: false,
-            isLiveReloadRefreshPending: false,
             isLiveReloadStartPending: false,
             isOpenProjectPending: false,
             isRegeneratePending: false,
             labelMode: "always",
             liveReloadErrorMessage: null,
-            liveReloadStatus: null,
             mcpServerStatus: "not-started",
             pendingActionCount: 0,
             searchQuery: "player object"
@@ -77,13 +75,11 @@ void test("clear-error sets errorMessage to null regardless of prior value", () 
             fixLogLines: [],
             fixStatus: "idle",
             isFixPending: false,
-            isLiveReloadRefreshPending: false,
             isLiveReloadStartPending: false,
             isOpenProjectPending: false,
             isRegeneratePending: false,
             labelMode: "auto",
             liveReloadErrorMessage: null,
-            liveReloadStatus: null,
             mcpServerStatus: "not-started",
             pendingActionCount: 0,
             searchQuery: ""
@@ -113,21 +109,6 @@ void test("reset-project-scoped-state clears project-specific workflow and filte
         fixStatus: "success" as const,
         labelMode: "always" as const,
         liveReloadErrorMessage: "Previous project live-reload error.",
-        liveReloadStatus: {
-            avgHotReloadLatencyMs: 12,
-            errorCount: 1,
-            maxPatchHistory: 20,
-            patchCount: 2,
-            patchHistorySize: 2,
-            p95HotReloadLatencyMs: 14,
-            recentErrors: [],
-            recentPatches: [],
-            scanComplete: true,
-            totalPatchCount: 2,
-            uptimeMs: 500,
-            watcherStatus: "running" as const,
-            websocketClients: 1
-        },
         searchQuery: "previous project"
     };
 
@@ -141,6 +122,5 @@ void test("reset-project-scoped-state clears project-specific workflow and filte
     assert.deepEqual(reset.fixLogLines, []);
     assert.equal(reset.fixStatus, "idle");
     assert.equal(reset.liveReloadErrorMessage, null);
-    assert.equal(reset.liveReloadStatus, null);
     assert.equal(reset.searchQuery, "");
 });

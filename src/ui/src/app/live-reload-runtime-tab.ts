@@ -62,7 +62,7 @@ export function reserveLiveReloadRuntimeTab(
  * Open the runtime URL in a tab named `LIVE_RELOAD_RUNTIME_TAB_TARGET`.
  */
 export function openLiveReloadRuntimeTab(
-    runtimeUrl: string,
+    runtimeUrl: string | null,
     openRuntimeTab: ((url: string, target: string) => LiveReloadRuntimeTab | null) | null = typeof globalThis.open ===
     "function"
         ? globalThis.open.bind(globalThis)

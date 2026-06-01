@@ -100,13 +100,11 @@ function createMockState(activePage: GraphVisualizationUiState["activePage"]): G
         fixLogLines: [],
         fixStatus: "idle",
         isFixPending: false,
-        isLiveReloadRefreshPending: false,
         isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
         liveReloadErrorMessage: null,
-        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         pendingActionCount: 0,
         searchQuery: "enemy"
@@ -138,7 +136,7 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.match(rendered, /id="tab-mcp"/u);
 });
 
-void test("MCP toolbar renders server status beside the page title", () => {
+void test("MCP toolbar renders page status in the single shared page toolbar", () => {
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();
     toolbar.state = createMockState("mcp");
@@ -147,9 +145,26 @@ void test("MCP toolbar renders server status beside the page title", () => {
 
     assert.match(rendered, /class="toolbar-heading-row"/u);
     assert.match(rendered, /id="toolbar-heading"[\s\S]*MCP/u);
-    assert.match(rendered, /class="toolbar-status"[\s\S]*class=mcp-runtime-status-chip/u);
-    assert.match(rendered, /Not Started/u);
-    assert.match(rendered, /The MCP bridge has not started in this session yet\./u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*The MCP bridge has not started in this session yet\./u);
+    assert.match(rendered, /<gm-status-chip \.status=not-running><\/gm-status-chip>/u);
+    assert.doesNotMatch(rendered, /mcp-runtime-status-chip/u);
+});
+
+void test("Live Reload toolbar owns page title, status, subtitle, and controls", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = {
+        ...createMockModel(),
+        liveReload: null
+    };
+    toolbar.state = createMockState("live-reload");
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id="toolbar-heading"[\s\S]*Live Reload/u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*Start live reload to launch the watcher/u);
+    assert.match(rendered, /<gm-status-chip \.status=not-running><\/gm-status-chip>/u);
+    assert.match(rendered, /id="live-reload-controls"[\s\S]*id="start-live-reload"/u);
+    assert.match(rendered, /id="live-reload-controls"[\s\S]*id="stop-live-reload"/u);
 });
 
 void test("graph toolbar renders grouped controls for search, view state, and actions", () => {

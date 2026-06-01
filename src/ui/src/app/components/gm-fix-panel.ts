@@ -123,9 +123,7 @@ export class GmFixPanel extends LightDomLitElement {
 
                 <section class="fix-log-section" aria-labelledby="fix-log-heading">
                     <h2 id="fix-log-heading">Run Log</h2>
-                    <gm-card class="fix-log-card">
-                        <pre class="fix-log" aria-live="polite">${logLines.join("\n")}</pre>
-                    </gm-card>
+                    <pre class="fix-log" aria-live="polite">${logLines.join("\n")}</pre>
                 </section>
             </section>
         `;

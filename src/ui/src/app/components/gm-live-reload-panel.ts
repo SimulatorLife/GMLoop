@@ -9,13 +9,7 @@ import type {
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
-import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
-import {
-    GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD,
-    GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
-    GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
-} from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
@@ -118,7 +112,7 @@ function normalizeStatusSnapshot(
 
 function formatDurationMs(value: number | null): string {
     if (value === null) {
-        return "n/a";
+        return "-";
     }
 
     if (value < 1) {
@@ -129,7 +123,7 @@ function formatDurationMs(value: number | null): string {
 }
 
 function formatInteger(value: number | null): string {
-    return value === null ? "n/a" : new Intl.NumberFormat().format(value);
+    return value === null ? "-" : new Intl.NumberFormat().format(value);
 }
 
 function formatTimestamp(timestamp: number): string {
@@ -138,13 +132,6 @@ function formatTimestamp(timestamp: number): string {
     }
 
     return new Date(timestamp).toLocaleTimeString();
-}
-
-function formatUptime(uptimeMs: number): string {
-    const totalSeconds = Math.max(0, Math.floor(uptimeMs / 1000));
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${String(minutes)}m ${String(seconds).padStart(2, "0")}s`;
 }
 
 function resolveEndpointLabel(value: string | null | undefined): string {
@@ -282,212 +269,12 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         }
     }
 
-    #emitStartLiveReload(): void {
-        this.dispatchEvent(
-            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, {
-                bubbles: true,
-                composed: true
-            })
-        );
-    }
-
-    #emitStopLiveReload(): void {
-        this.dispatchEvent(
-            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, {
-                bubbles: true,
-                composed: true
-            })
-        );
-    }
-
-    #emitRefreshLiveReload = (): void => {
-        this.dispatchEvent(
-            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_REFRESH_LIVE_RELOAD, {
-                bubbles: true,
-                composed: true
-            })
-        );
-    };
-
     #resolveStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot | null {
-        return this.state?.liveReloadStatus ?? this.#polledStatus ?? this.model?.liveReload?.statusSnapshot ?? null;
-    }
-
-    #renderStatusChip(status: GraphVisualizationLiveReloadWatcherStatus) {
-        const label =
-            status === "running"
-                ? "Running"
-                : status === "scanning"
-                  ? "Scanning"
-                  : status === "offline"
-                    ? "Offline"
-                    : status === "error"
-                      ? "Error"
-                      : "Inactive";
-
-        return html`
-            <span class="live-reload-status-chip ${status}">
-                <span class="live-reload-status-dot" aria-hidden="true"></span>
-                ${label}
-            </span>
-        `;
-    }
-
-    #renderStatusSummary(
-        status: GraphVisualizationLiveReloadStatusSnapshot | null,
-        hasLiveReloadConfiguration: boolean
-    ): string {
-        if (!hasLiveReloadConfiguration) {
-            return "Start live reload to launch the watcher, patch stream, and runtime bridge.";
+        if (this.model?.liveReload === null) {
+            return null;
         }
 
-        if (status === null) {
-            return "Waiting for the watcher to report its current status.";
-        }
-
-        const scanState = status.scanComplete ? "scan complete" : "scan in progress";
-        return `Uptime ${formatUptime(status.uptimeMs)} with ${scanState}.`;
-    }
-
-    #renderActionButtons() {
-        const hasActiveSession = this.model?.liveReload !== null;
-        const isStartPending = this.state?.isLiveReloadStartPending === true;
-        const isRefreshPending = this.state?.isLiveReloadRefreshPending === true;
-        const hasError = this.state?.liveReloadErrorMessage !== null || this.#pollErrorMessage !== null;
-        const runtimeUrl = resolveLiveReloadRuntimeUrl(this.model?.liveReload ?? null);
-        const isRetry = hasError && !hasActiveSession;
-        const isRestart = hasActiveSession;
-        const isPending = isStartPending || isRefreshPending;
-
-        const buttonLabel = isStartPending
-            ? isRestart
-                ? "Restarting Live Reload"
-                : "Starting Live Reload"
-            : isRetry
-              ? "Retry Start"
-              : isRestart
-                ? "Restart Live Reload"
-                : "Start Live Reload";
-
-        const playIcon = html`
-            <svg class="live-reload-btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <polygon points="5,3 19,12 5,21" />
-            </svg>
-        `;
-
-        const stopIcon = html`
-            <svg class="live-reload-btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <rect x="4" y="4" width="16" height="16" />
-            </svg>
-        `;
-
-        const restartIcon = html`
-            <svg
-                class="live-reload-btn-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.25"
-                aria-hidden="true"
-            >
-                <path d="M4 4v16" />
-                <polygon points="9,5 20,12 9,19" fill="currentColor" stroke="none" />
-            </svg>
-        `;
-
-        const refreshIcon = html`
-            <svg
-                class="live-reload-btn-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.25"
-                aria-hidden="true"
-            >
-                <path d="M1 4v6h6" />
-                <path d="M3.51 15a9 9 0 1 0 .49-4.5" />
-            </svg>
-        `;
-
-        const openRuntimeIcon = html`
-            <svg
-                class="live-reload-btn-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.25"
-                aria-hidden="true"
-            >
-                <path d="M7 7h10v10" />
-                <path d="M7 17 17 7" />
-                <path d="M5 5v14h14" />
-            </svg>
-        `;
-
-        const startIcon = isRetry ? playIcon : isRestart ? restartIcon : playIcon;
-
-        return html`
-            <div class="live-reload-actions">
-                ${this.model?.isServerMode
-                    ? html`
-                          <button
-                              id="start-live-reload"
-                              type="button"
-                              class="live-reload-btn live-reload-btn--primary"
-                              ?disabled=${isPending}
-                              aria-busy=${isStartPending ? "true" : "false"}
-                              title=${buttonLabel}
-                              @click=${() => this.#emitStartLiveReload()}
-                          >
-                              ${isStartPending
-                                  ? html`<span class="live-reload-btn-spinner" aria-hidden="true"></span>`
-                                  : startIcon}
-                          </button>
-                          ${hasActiveSession
-                              ? html`
-                                    ${runtimeUrl === null
-                                        ? null
-                                        : html`
-                                              <a
-                                                  id="open-live-reload-runtime"
-                                                  class="live-reload-btn live-reload-btn--runtime"
-                                                  href=${runtimeUrl}
-                                                  target=${LIVE_RELOAD_RUNTIME_TAB_TARGET}
-                                                  rel="noreferrer"
-                                                  title="Open Runtime"
-                                              >
-                                                  ${openRuntimeIcon}
-                                              </a>
-                                          `}
-                                    <button
-                                        id="stop-live-reload"
-                                        type="button"
-                                        class="live-reload-btn live-reload-btn--destructive"
-                                        ?disabled=${isStartPending}
-                                        title="Stop Live Reload"
-                                        @click=${() => this.#emitStopLiveReload()}
-                                    >
-                                        ${stopIcon}
-                                    </button>
-                                    <button
-                                        id="refresh-live-reload"
-                                        type="button"
-                                        class="live-reload-btn"
-                                        ?disabled=${isStartPending || isRefreshPending}
-                                        aria-busy=${isRefreshPending ? "true" : "false"}
-                                        title="Refresh Status"
-                                        @click=${this.#emitRefreshLiveReload}
-                                    >
-                                        ${isRefreshPending
-                                            ? html`<span class="live-reload-btn-spinner" aria-hidden="true"></span>`
-                                            : refreshIcon}
-                                    </button>
-                                `
-                              : null}
-                      `
-                    : null}
-            </div>
-        `;
+        return this.#polledStatus ?? this.model?.liveReload?.statusSnapshot ?? null;
     }
 
     #renderPipeline() {
@@ -689,21 +476,9 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         const liveReload = this.model.liveReload;
         const status = this.#resolveStatusSnapshot();
         const errorMessage = this.state.liveReloadErrorMessage ?? this.#pollErrorMessage;
-        const watcherStatus = status?.watcherStatus ?? (liveReload?.endpoints.statusUrl ? "offline" : "inactive");
-        const statusSummary = this.#renderStatusSummary(status, liveReload !== null);
 
         return html`
             <section id="live-reload-page" class=${activeClassName}>
-                <div class="live-reload-hero">
-                    <div class="live-reload-title-block">
-                        <div class="live-reload-title-row">
-                            <h2>Live Reload</h2>
-                            ${this.#renderStatusChip(watcherStatus)}
-                        </div>
-                        <p id="live-reload-meta" class="docs-meta">${statusSummary}</p>
-                    </div>
-                    ${this.#renderActionButtons()}
-                </div>
                 ${errorMessage ? html`<gm-error-banner .message=${errorMessage}></gm-error-banner>` : null}
                 <div class="live-reload-stack" aria-live="polite">
                     ${liveReload === null
