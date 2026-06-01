@@ -4,10 +4,12 @@ import { createProjectIndexAbortGuard } from "../project-index/abort-guard.js";
 import type { ProjectIndexFsFacade } from "../project-index/fs-facade.js";
 
 export interface MetricsCacheTools {
-    recordHit: (cacheName: string) => void;
-    recordMiss: (cacheName: string) => void;
-    recordStale: (cacheName: string) => void;
-    recordMetric: (cacheName: string, key: string, amount?: number) => void;
+    caches?: {
+        recordHit: (cacheName: string) => void;
+        recordMiss: (cacheName: string) => void;
+        recordStale: (cacheName: string) => void;
+        recordMetric: (cacheName: string, key: string, amount?: number) => void;
+    };
 }
 
 const GML_IDENTIFIER_FILE_PATH = Core.GML_IDENTIFIER_METADATA_PATH;
@@ -85,14 +87,14 @@ export function loadBuiltInIdentifiers(
             const cachedMtime = cached?.metadata?.mtimeMs ?? null;
 
             if (cached && areMtimesEquivalent(cachedMtime, currentMtime)) {
-                metrics?.recordHit("builtInIdentifiers");
+                metrics?.caches?.recordHit("builtInIdentifiers");
                 return cached;
             }
 
             if (cached) {
-                metrics?.recordStale("builtInIdentifiers");
+                metrics?.caches?.recordStale("builtInIdentifiers");
             } else {
-                metrics?.recordMiss("builtInIdentifiers");
+                metrics?.caches?.recordMiss("builtInIdentifiers");
             }
 
             return fsFacade
