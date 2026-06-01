@@ -10,6 +10,7 @@ import {
     GRAPH_UI_EVENT_RESET_DEFAULTS,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
+    GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
@@ -65,6 +66,44 @@ function resolveLiveReloadStatusSummary(model: GraphVisualizationUiModel): strin
 
     const scanState = status.scanComplete ? "scan complete" : "scan in progress";
     return `Uptime ${formatLiveReloadUptime(status.uptimeMs)} with ${scanState}.`;
+}
+
+function resolveFixStatusChipStatus(
+    model: GraphVisualizationUiModel,
+    state: GraphVisualizationUiState
+): GmStatusChipStatus {
+    if (state.isFixPending) {
+        return "running";
+    }
+
+    const effectiveStatus =
+        state.fixStatus === "idle" && state.fixLogLines.length === 0 && model.lastFixRun !== null
+            ? model.lastFixRun.status
+            : state.fixStatus;
+
+    if (effectiveStatus === "success") {
+        return "running";
+    }
+    if (effectiveStatus === "error") {
+        return "error";
+    }
+    return "not-running";
+}
+
+function resolveFixStatusSummary(state: GraphVisualizationUiState): string {
+    if (state.isFixPending) {
+        return "Applying fixes to your project.";
+    }
+
+    if (state.fixStatus === "success") {
+        return "All fixes have been applied successfully.";
+    }
+
+    if (state.fixStatus === "error") {
+        return "Fixes encountered errors. Review the run log for details.";
+    }
+
+    return "Run the opened project's gmloop-configured repair workflow.";
 }
 
 /**
@@ -293,6 +332,19 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
+    #emitFix(): void {
+        if (!this.model || !hasLoadedGraphProject(this.model)) {
+            return;
+        }
+
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_FIX, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    }
+
     #renderPendingBadge() {
         if (!this.state || this.state.pendingActionCount === 0) {
             return null;
@@ -326,7 +378,38 @@ export class GmGraphToolbar extends LightDomLitElement {
             return html`<gm-status-chip .status=${resolveLiveReloadStatusChipStatus(this.model)}></gm-status-chip>`;
         }
 
+        if (this.state.activePage === "fix") {
+            return html`<gm-status-chip
+                .status=${resolveFixStatusChipStatus(this.model, this.state)}
+            ></gm-status-chip>`;
+        }
+
         return null;
+    }
+
+    #renderFixControls() {
+        if (!this.model?.isServerMode || !hasLoadedGraphProject(this.model)) {
+            return null;
+        }
+
+        const isPending = this.state?.isFixPending === true;
+
+        return html`
+            <div class="toolbar-control-group toolbar-fix-controls">
+                <button
+                    id="run-fix"
+                    type="button"
+                    class="gm-btn gm-btn--primary"
+                    ?disabled=${isPending}
+                    @click=${() => this.#emitFix()}
+                >
+                    <span class="button-content">
+                        ${isPending ? html`<span class="button-spinner" aria-hidden="true"></span>` : null}
+                        <span class="button-label">${isPending ? "Applying Fixes..." : "Apply Fixes"}</span>
+                    </span>
+                </button>
+            </div>
+        `;
     }
 
     #renderLiveReloadControls() {
@@ -461,7 +544,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                   : this.state.activePage === "config"
                     ? "Review the project settings and tool options currently in use."
                     : this.state.activePage === "fix"
-                      ? "Run the opened project's gmloop-configured repair workflow."
+                      ? resolveFixStatusSummary(this.state)
                       : this.state.activePage === "playground"
                         ? "Interactive GML playground for parsing, formatting, and rule experiments."
                         : this.state.activePage === "mcp"
@@ -473,7 +556,8 @@ export class GmGraphToolbar extends LightDomLitElement {
         const graphControlsClassName =
             this.state.activePage === "graph" ? "toolbar-controls" : "toolbar-controls hidden";
         const liveReloadControlsClassName =
-            this.state.activePage === "live-reload" ? "toolbar-controls" : "toolbar-controls hidden";
+            this.state.activePage === "live-reload" ? "toolbar-live-reload-controls" : "";
+        const fixControlsClassName = this.state.activePage === "fix" ? "toolbar-fix-controls" : "";
 
         return html`
             <div id="page-toolbar" class="page-toolbar">
@@ -485,6 +569,12 @@ export class GmGraphToolbar extends LightDomLitElement {
                         </div>
                         <span id="toolbar-subheading">${subheading}</span>
                     </div>
+                    ${this.state.activePage === "fix"
+                        ? html`<div class=${fixControlsClassName}>${this.#renderFixControls()}</div>`
+                        : null}
+                    ${this.state.activePage === "live-reload"
+                        ? html`<div class=${liveReloadControlsClassName}>${this.#renderLiveReloadControls()}</div>`
+                        : null}
                 </div>
                 <div id="graph-controls" class=${graphControlsClassName}>
                     <div class="toolbar-control-group toolbar-search-group">
@@ -555,9 +645,6 @@ export class GmGraphToolbar extends LightDomLitElement {
                             : null}
                         ${this.#renderPendingBadge()}
                     </div>
-                </div>
-                <div id="live-reload-controls" class=${liveReloadControlsClassName}>
-                    ${this.#renderLiveReloadControls()}
                 </div>
             </div>
         `;
