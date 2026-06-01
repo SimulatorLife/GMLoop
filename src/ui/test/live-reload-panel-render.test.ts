@@ -63,6 +63,7 @@ function createStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot {
                 timestamp: 1_766_000_000_000
             }
         ],
+        runtimeUrl: "http://127.0.0.1:51264/",
         scanComplete: true,
         totalPatchCount: 12,
         uptimeMs: 65_000,

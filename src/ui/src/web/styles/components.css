@@ -694,6 +694,28 @@ select:focus-visible {
   border-radius: var(--gm-radius-md);
 }
 
+.gm-view-selector > .gm-btn--chip {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.gm-view-selector > .gm-btn--chip:hover:not(.active):not([aria-pressed="true"]) {
+  border-color: transparent;
+  background: var(--gm-bg-muted);
+  transform: none;
+}
+
+.gm-view-selector > .gm-btn--chip.active,
+.gm-view-selector > .gm-btn--chip[aria-pressed="true"] {
+  background: rgba(143, 181, 255, 0.15);
+  border-color: transparent;
+  color: var(--gm-text);
+  box-shadow: none;
+  transform: none;
+}
+
 .gm-view-option {
   padding: 6px 12px;
   border-radius: 9px;

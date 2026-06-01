@@ -2,9 +2,9 @@ import { bootstrapGraphVisualizationLitApp } from "../app/bootstrap.js";
 import type { GraphVisualizationFixRunOptions } from "../app/contracts.js";
 import {
     LIVE_RELOAD_RUNTIME_TAB_TARGET,
-    navigateLiveReloadRuntimeTab,
+    type LiveReloadRuntimeTab,
     openLiveReloadRuntimeTab,
-    reserveLiveReloadRuntimeTab
+    resolveLiveReloadRuntimeUrl
 } from "../app/live-reload-runtime-tab.js";
 import { resetProjectScopedGraphVisualizationUiStateInCurrentUrl } from "../app/state/url-state.js";
 import type {
@@ -49,7 +49,9 @@ type UiRevisionApiResponse = Readonly<{
 }>;
 
 const SERVER_UI_REVISION_POLL_INTERVAL_MS = 1000;
-const LIVE_RELOAD_START_REQUEST_BODY = JSON.stringify({ restart: true });
+const LIVE_RELOAD_START_REQUEST_BODY = JSON.stringify({ restart: false });
+const LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR =
+    "Live reload startup completed without a runtime URL. The host must finish the build, watcher, status server, and runtime static server setup before reporting startup success.";
 
 async function readJsonResponse<TResponse>(response: Response): Promise<TResponse> {
     return (await response.json()) as TResponse;
@@ -59,6 +61,22 @@ function reloadWhenChanged(result: MutationApiResponse): void {
     if (result.changed === true) {
         globalThis.location.reload();
     }
+}
+
+function synchronizeLiveReloadBootstrapState(liveReload: GraphVisualizationLiveReloadModel | null): void {
+    const currentOptions = globalThis.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__;
+    if (currentOptions === undefined) {
+        return;
+    }
+
+    // Vite can remount/re-execute the UI without asking the CLI host for a
+    // freshly rendered bootstrap document. Keep the host-owned Live Reload
+    // session mirrored into the bootstrap payload so UI HMR cannot resurrect a
+    // stale "not running" client state while the watcher process is active.
+    globalThis.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__ = {
+        ...currentOptions,
+        liveReload: liveReload ?? undefined
+    };
 }
 
 export function startServerUiRevisionPolling(isServerMode: boolean): void {
@@ -129,6 +147,49 @@ export function stopServerUiRevisionPolling(): void {
         globalThis.clearInterval(descriptor.value as Parameters<typeof globalThis.clearInterval>[0]);
         delete (globalThis as unknown as Record<symbol, unknown>)[timerKey];
     }
+}
+
+async function startLiveReloadFromServer(
+    fetchLiveReload: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
+    openRuntimeTab: ((url: string, target: string) => LiveReloadRuntimeTab | null) | null = typeof globalThis.open ===
+    "function"
+        ? globalThis.open.bind(globalThis)
+        : null
+): Promise<GraphVisualizationLiveReloadModel> {
+    const response = await fetchLiveReload("/api/live-reload/start", {
+        body: LIVE_RELOAD_START_REQUEST_BODY,
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+    });
+    const result = await readJsonResponse<LiveReloadStartApiResponse>(response);
+    if (!response.ok || result.ok !== true) {
+        throw new Error(result.error ?? "Live reload startup failed.");
+    }
+
+    const liveReload = result.liveReload ?? null;
+    const runtimeUrl = resolveLiveReloadRuntimeUrl(liveReload);
+    if (liveReload === null || runtimeUrl === null) {
+        throw new Error(LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR);
+    }
+
+    synchronizeLiveReloadBootstrapState(liveReload);
+    // Open only after the host reports a fully reachable runtime URL. The
+    // toolbar also exposes this URL after state updates, so popup blockers do
+    // not require a pre-opened about:blank fallback.
+    openLiveReloadRuntimeTab(runtimeUrl, openRuntimeTab);
+    return liveReload;
+}
+
+async function stopLiveReloadFromServer(
+    fetchLiveReload: typeof globalThis.fetch = globalThis.fetch.bind(globalThis)
+): Promise<void> {
+    const response = await fetchLiveReload("/api/live-reload/stop", { method: "POST" });
+    const result = await readJsonResponse<LiveReloadStopApiResponse>(response);
+    if (!response.ok || result.ok !== true) {
+        throw new Error(result.error ?? "Live reload stop failed.");
+    }
+
+    synchronizeLiveReloadBootstrapState(null);
 }
 
 /**
@@ -228,33 +289,8 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                     await pollFixProgress();
                 }
             },
-            onStartLiveReload: async () => {
-                const runtimeTab = reserveLiveReloadRuntimeTab();
-                const response = await fetch("/api/live-reload/start", {
-                    body: LIVE_RELOAD_START_REQUEST_BODY,
-                    headers: { "Content-Type": "application/json" },
-                    method: "POST"
-                });
-                const result = await readJsonResponse<LiveReloadStartApiResponse>(response);
-                if (!response.ok || result.ok !== true) {
-                    throw new Error(result.error ?? "Live reload startup failed.");
-                }
-
-                const liveReload = result.liveReload ?? null;
-                if (runtimeTab === null) {
-                    openLiveReloadRuntimeTab(liveReload?.endpoints.runtimeUrl ?? null);
-                } else {
-                    navigateLiveReloadRuntimeTab(runtimeTab, liveReload?.endpoints.runtimeUrl ?? "");
-                }
-                return liveReload;
-            },
-            onStopLiveReload: async () => {
-                const response = await fetch("/api/live-reload/stop", { method: "POST" });
-                const result = await readJsonResponse<LiveReloadStopApiResponse>(response);
-                if (!response.ok || result.ok !== true) {
-                    throw new Error(result.error ?? "Live reload stop failed.");
-                }
-            }
+            onStartLiveReload: () => startLiveReloadFromServer(),
+            onStopLiveReload: () => stopLiveReloadFromServer()
         },
         data: payload.data,
         options: payload.options,
@@ -263,9 +299,11 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
 }
 
 export const __test__ = Object.freeze({
+    LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR,
     LIVE_RELOAD_RUNTIME_TAB_TARGET,
     LIVE_RELOAD_START_REQUEST_BODY,
-    reserveLiveReloadRuntimeTab,
     openLiveReloadRuntimeTab,
-    navigateLiveReloadRuntimeTab
+    startLiveReloadFromServer,
+    stopLiveReloadFromServer,
+    synchronizeLiveReloadBootstrapState
 });

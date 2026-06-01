@@ -103,7 +103,11 @@ export class GmAppShell extends LightDomLitElement {
     };
 
     #onSetSearchQuery = (eventValue: Event): void => {
-        if (!this.model || !hasLoadedGraphIndex(this.model)) {
+        if (!this.model) {
+            return;
+        }
+
+        if (this.#state.activePage === "graph" && !hasLoadedGraphIndex(this.model)) {
             return;
         }
 

@@ -102,6 +102,7 @@ function normalizeStatusSnapshot(
         p95HotReloadLatencyMs: readNumber(value, "p95HotReloadLatencyMs"),
         recentErrors: readRecentErrors(value.recentErrors),
         recentPatches: readRecentPatches(value.recentPatches),
+        runtimeUrl: readString(value, "runtimeUrl"),
         scanComplete,
         totalPatchCount: readNumber(value, "totalPatchCount"),
         uptimeMs: readNumber(value, "uptime") ?? 0,

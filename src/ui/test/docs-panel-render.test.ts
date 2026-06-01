@@ -4,15 +4,11 @@ import test from "node:test";
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationDocumentationCatalogs } from "../src/graph/types.js";
-import { createButtonAriaPressedPattern, renderTemplateValue } from "./render-template-helpers.js";
+import { renderTemplateValue } from "./render-template-helpers.js";
 
 class TestableGmDocsPanel extends GmDocsPanel {
     public renderForTest(): unknown {
         return this.render();
-    }
-
-    public setDocsSearchQueryForTest(query: string): void {
-        this.docsSearchQuery = query;
     }
 }
 
@@ -156,9 +152,8 @@ void test("GmDocsPanel renders the Rules subview and project-facing rule content
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="docs-page"[\s\S]*class=page content-page docs-page active/u);
-    assert.match(rendered, /docs-view-rules/u);
-    assert.match(rendered, createButtonAriaPressedPattern("docs-view-rules", true));
-    assert.match(rendered, createButtonAriaPressedPattern("docs-view-cli", false));
+    assert.doesNotMatch(rendered, /docs-view-rules/u);
+    assert.doesNotMatch(rendered, /docs-search-input/u);
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /Lint Rules/u);
     assert.match(rendered, /Refactor Codemods/u);
@@ -193,12 +188,11 @@ void test("GmDocsPanel renders an empty rules state when rule data is unavailabl
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /docs-view-rules/u);
-    assert.match(rendered, createButtonAriaPressedPattern("docs-view-rules", true));
+    assert.doesNotMatch(rendered, /docs-view-rules/u);
     assert.match(rendered, /Rules and code actions are not available right now\./u);
 });
 
-void test("GmDocsPanel renders an accessible search control for catalog browsing", () => {
+void test("GmDocsPanel leaves docs controls to the shared page toolbar", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
         data: {
@@ -222,15 +216,9 @@ void test("GmDocsPanel renders an accessible search control for catalog browsing
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /role="search" aria-label="Filter documentation catalog"/u);
-    assert.match(
-        rendered,
-        /<label class="docs-search-label" for="docs-search-input">Search current docs view<\/label>/u
-    );
-    assert.match(rendered, /id="docs-search-input"/u);
-    assert.match(rendered, /type="search"/u);
-    assert.match(rendered, /aria-describedby="docs-meta docs-search-summary"/u);
-    assert.match(rendered, /id="docs-search-summary"[^>]*aria-live="polite"/u);
+    assert.doesNotMatch(rendered, /role="search" aria-label="Filter documentation catalog"/u);
+    assert.doesNotMatch(rendered, /id="docs-search-input"/u);
+    assert.doesNotMatch(rendered, /Documentation view selector/u);
 });
 
 void test("GmDocsPanel filters rules catalog entries by the current search query", () => {
@@ -253,12 +241,10 @@ void test("GmDocsPanel filters rules catalog entries by the current search query
         startupState: null,
         title: "Rules Search"
     };
-    panel.state = createDocsPanelState();
-    panel.setDocsSearchQueryForTest("normalize");
+    panel.state = { ...createDocsPanelState(), searchQuery: "normalize" };
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Showing 1 rule or option matching “normalize”\./u);
     assert.match(rendered, /gml\/normalize-operators/u);
     assert.doesNotMatch(rendered, /printWidth/u);
     assert.doesNotMatch(rendered, /refactor\/globalvar-to-global/u);
@@ -284,12 +270,10 @@ void test("GmDocsPanel shows an active-view empty state when search has no match
         startupState: null,
         title: "CLI Search"
     };
-    panel.state = { ...createDocsPanelState(), activeDocsView: "cli" };
-    panel.setDocsSearchQueryForTest("does-not-exist");
+    panel.state = { ...createDocsPanelState(), activeDocsView: "cli", searchQuery: "does-not-exist" };
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Showing 0 commands matching “does-not-exist”\./u);
     assert.match(rendered, /No commands match “does-not-exist”\./u);
     assert.doesNotMatch(rendered, /graph visualize/u);
 });

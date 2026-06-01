@@ -81,6 +81,9 @@ type GraphVisualizationBundleArtifact = Readonly<{
     files: ReadonlyArray<GraphVisualizationBundleFile>;
 }>;
 
+const LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR =
+    "Live reload startup completed without a runtime URL. The start callback must finish the build, watcher, status server, and runtime static server setup before returning.";
+
 /**
  * Start the HTTP server that hosts the graph visualization document and regeneration endpoint.
  */
@@ -308,6 +311,9 @@ async function handleStartLiveReloadRequest(
         const result = await startLiveReload({
             restart: parsedBody.restart === true
         });
+        if (!hasLiveReloadRuntimeUrl(result)) {
+            throw new Error(LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR);
+        }
         writeJsonResponse(response, 200, { liveReload: result, ok: true });
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
@@ -334,6 +340,19 @@ function createOpenProjectTargetsResponse(
         ok: true,
         ...(selectionResult.projectChanged === undefined ? {} : { projectChanged: selectionResult.projectChanged })
     };
+}
+
+function hasLiveReloadRuntimeUrl(result: unknown): boolean {
+    if (typeof result !== "object" || result === null || !("endpoints" in result)) {
+        return false;
+    }
+
+    const endpoints = result.endpoints;
+    if (typeof endpoints !== "object" || endpoints === null || !("runtimeUrl" in endpoints)) {
+        return false;
+    }
+
+    return typeof endpoints.runtimeUrl === "string" && endpoints.runtimeUrl.trim().length > 0;
 }
 
 function createProcessPlaygroundInput(

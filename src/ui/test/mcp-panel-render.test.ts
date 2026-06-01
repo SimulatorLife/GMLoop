@@ -92,6 +92,9 @@ void test("GmMcpPanel renders running status and live activity placeholders", ()
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="mcp-page"[\s\S]*class=page content-page active/u);
+    assert.doesNotMatch(rendered, /<h2>MCP<\/h2>/u);
+    assert.doesNotMatch(rendered, /id="mcp-meta"/u);
+    assert.doesNotMatch(rendered, /<gm-status-chip/u);
     assert.match(rendered, /Tool Call Feed/u);
     assert.match(rendered, /Connection Updates/u);
     assert.match(rendered, /No live MCP tool calls have been observed in this UI session yet\./u);
