@@ -201,6 +201,14 @@ function resolveObjectName(record: Record<string, unknown>, expectedName: string
         return record._j3;
     }
 
+    if (typeof record._J3 === "string") {
+        return record._J3;
+    }
+
+    if (typeof record._Gy === "string") {
+        return record._Gy;
+    }
+
     if (expectedName && Object.values(record).includes(expectedName)) {
         return expectedName;
     }
