@@ -143,6 +143,21 @@ void describe("GmlTranspiler.transpileEvent", () => {
             assert.match(patch.js_body, /self\.direction/);
         });
 
+        void it("recognizes runtime values and constants as bare identifiers", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: "x = mouse_x; spiderColour = c_green; z = pi;",
+                symbolId: "gml/event/obj_player/step"
+            });
+
+            assert.match(patch.js_body, /self\.x = mouse_x/);
+            assert.match(patch.js_body, /self\.spiderColour = c_green/);
+            assert.match(patch.js_body, /self\.z = pi/);
+            assert.ok(!patch.js_body.includes("self.mouse_x"), "mouse_x should resolve through the runtime proxy");
+            assert.ok(!patch.js_body.includes("self.c_green"), "c_green should resolve through the runtime proxy");
+            assert.ok(!patch.js_body.includes("self.pi"), "pi should resolve through the runtime proxy");
+        });
+
         void it("routes script calls through the hot-reload wrapper", () => {
             const oracle = Transpiler.createSemanticOracle({
                 scriptNames: new Set(["scr_die"])
