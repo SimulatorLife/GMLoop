@@ -246,6 +246,109 @@ void test("object patches enable instance event flags with standard event indice
     }
 });
 
+void test("object event patches use the first runtime argument as self when called as an object method", () => {
+    const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
+
+    try {
+        function gml_Object_oSpider_Step_0() {
+            return "original";
+        }
+
+        const objectEntry = {
+            pName: "oSpider",
+            StepNormalEvent: gml_Object_oSpider_Step_0
+        };
+        const instanceEntry: Record<string, unknown> = {
+            _kx: objectEntry,
+            Event: [],
+            spiderColour: 255,
+            x: 0
+        };
+
+        const globals = globalThis as GlobalSnapshot;
+        globals.JSON_game = {
+            ScriptNames: [],
+            Scripts: [],
+            GMObjects: [objectEntry]
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._cx = {
+            _dx: {
+                "100000": instanceEntry
+            }
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.spiderColour = c_green; self.x = mouse_x;"
+        });
+
+        const updatedFn = objectEntry.StepNormalEvent as (...args: Array<unknown>) => unknown;
+        updatedFn.call(objectEntry, instanceEntry, null, []);
+
+        assert.equal(instanceEntry.spiderColour, 32_768, "Patched event should write color to the live instance");
+        assert.equal(instanceEntry.x, 0, "Patched event should keep mouse fallback reads on the live instance");
+        assert.equal(
+            (objectEntry as Record<string, unknown>).spiderColour,
+            undefined,
+            "Patched event must not write instance fields onto the object definition"
+        );
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("named object event patches preserve this when the runtime dispatches without arguments", () => {
+    const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
+
+    try {
+        function gml_Object_oSpider_Step_0() {
+            return "original";
+        }
+
+        const objectEntry = {
+            pName: "oSpider",
+            StepNormalEvent: gml_Object_oSpider_Step_0
+        };
+        const instanceEntry: Record<string, unknown> = {
+            _kx: objectEntry,
+            Event: [],
+            spiderColour: 255
+        };
+
+        const globals = globalThis as GlobalSnapshot;
+        globals.JSON_game = {
+            ScriptNames: [],
+            Scripts: [],
+            GMObjects: [objectEntry]
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._cx = {
+            _dx: {
+                "100000": instanceEntry
+            }
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.spiderColour = c_green;"
+        });
+
+        const updatedFn = objectEntry.StepNormalEvent as (...args: Array<unknown>) => unknown;
+        updatedFn.call(instanceEntry);
+
+        assert.equal(instanceEntry.spiderColour, 32_768, "Patched event should preserve method-call self context");
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
 void test("script patches resolve builtin constants and getters", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
 

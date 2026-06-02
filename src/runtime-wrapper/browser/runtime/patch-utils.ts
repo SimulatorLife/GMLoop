@@ -427,7 +427,7 @@ function createNamedRuntimeFunction(runtimeId: string, rawFn: RuntimeFunction): 
 
     const wrapperFactory = new Function(
         "rawFn",
-        `return function ${name}(self, other, args) { return rawFn(self, other, args); }`
+        `return function ${name}(self, other, args) { return rawFn.call(this, self, other, args); }`
     ) as (rawFn: RuntimeFunction) => RuntimeFunction;
 
     return wrapperFactory(rawFn);
@@ -1092,9 +1092,11 @@ ${patchBody}
 }`
     ) as RuntimeFunction;
 
-    const eventWrapper = function (...incomingArgs: Array<unknown>) {
+    const eventWrapper = function (this: unknown, ...incomingArgs: Array<unknown>) {
+        const firstArg = incomingArgs[0];
+        const hasInstanceArgument = !hasCustomArgs && firstArg !== null && typeof firstArg === "object";
         const hasInstanceContext = this !== undefined && this !== globalThis;
-        const self = hasInstanceContext ? this : (incomingArgs[0] ?? this);
+        const self = hasInstanceArgument ? firstArg : hasInstanceContext ? this : (firstArg ?? this);
         const other = incomingArgs[1] ?? self;
         const forwardedArgs = hasCustomArgs ? incomingArgs : [other];
         const globals = globalThis as RuntimeBindingGlobals & Record<string, unknown>;
