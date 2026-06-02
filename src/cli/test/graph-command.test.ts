@@ -771,3 +771,109 @@ void test("graph subcommands expose the force flag consistently", async () => {
     const doctorOptionFlags = new Set(doctorCommand.options.flatMap((option) => option.long ?? []));
     assert.ok(!doctorOptionFlags.has("--force"));
 });
+
+void test("streamProcessOutputByLine removes all listeners from stream after settling", async () => {
+    const emittedLines = new Array<string>();
+
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+
+    const mockStream = {
+        setEncoding(_encoding: BufferEncoding): void {},
+        on(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            bucket.push(handler);
+            listeners.set(event, bucket);
+            return mockStream;
+        },
+        removeListener(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            listeners.set(
+                event,
+                bucket.filter((h) => h !== handler)
+            );
+            return mockStream;
+        },
+        emit(event: string, ...args: unknown[]): void {
+            const bucket = listeners.get(event) ?? [];
+            for (const h of bucket) {
+                h(...args);
+            }
+        },
+        listenerCount(event: string): number {
+            return (listeners.get(event) ?? []).length;
+        }
+    } as unknown as NodeJS.ReadableStream;
+
+    void __graphCommandTest__.streamProcessOutputByLine(mockStream, (line) => {
+        emittedLines.push(line);
+    });
+
+    assert.equal(mockStream.listenerCount("data"), 1, "Expected exactly one 'data' listener before completion.");
+
+    mockStream.emit("data", "line one\n");
+    mockStream.emit("end");
+
+    assert.equal(
+        mockStream.listenerCount("data"),
+        0,
+        "Expected zero 'data' listeners after stream ends (listener leak — removeListener not called)."
+    );
+    assert.equal(mockStream.listenerCount("error"), 0, "Expected zero 'error' listeners after stream ends.");
+    assert.equal(mockStream.listenerCount("end"), 0, "Expected zero 'end' listeners after stream ends.");
+    assert.deepEqual(emittedLines, ["line one"]);
+});
+
+void test("streamProcessOutputByLine removes all listeners on error", async () => {
+    const error = new Error("stream error");
+
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+
+    const mockStream = {
+        setEncoding(_encoding: BufferEncoding): void {},
+        on(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            bucket.push(handler);
+            listeners.set(event, bucket);
+            return mockStream;
+        },
+        removeListener(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            listeners.set(
+                event,
+                bucket.filter((h) => h !== handler)
+            );
+            return mockStream;
+        },
+        emit(event: string, ...args: unknown[]): void {
+            const bucket = listeners.get(event) ?? [];
+            for (const h of bucket) {
+                h(...args);
+            }
+        },
+        listenerCount(event: string): number {
+            return (listeners.get(event) ?? []).length;
+        }
+    } as unknown as NodeJS.ReadableStream;
+
+    const promise = __graphCommandTest__.streamProcessOutputByLine(mockStream, () => {});
+
+    assert.equal(mockStream.listenerCount("data"), 1, "Expected exactly one 'data' listener before error.");
+
+    mockStream.emit("error", error);
+
+    let caughtError: unknown;
+    try {
+        await promise;
+    } catch (error_) {
+        caughtError = error_;
+    }
+
+    assert.ok(caughtError instanceof Error);
+    assert.equal(
+        mockStream.listenerCount("data"),
+        0,
+        "Expected zero 'data' listeners after error (listener leak — removeListener not called)."
+    );
+    assert.equal(mockStream.listenerCount("error"), 0, "Expected zero 'error' listeners after error.");
+    assert.equal(mockStream.listenerCount("end"), 0, "Expected zero 'end' listeners after error.");
+});

@@ -121,6 +121,8 @@ async function runGraphVisualizationFixWorkflow(
 
 /**
  * Stream child-process output incrementally and invoke a callback for each completed line.
+ * Removes all registered listeners on the stream before resolving so the stream
+ * is fully dissociated from this promise chain regardless of how it settles.
  *
  * @param stream - Child-process stdout/stderr stream.
  * @param onLogLine - Callback invoked with each parsed line.
@@ -129,7 +131,8 @@ function streamProcessOutputByLine(stream: NodeJS.ReadableStream, onLogLine: (lo
     return new Promise((resolve, reject) => {
         let bufferedText = "";
         stream.setEncoding("utf8");
-        stream.on("data", (chunk: string) => {
+
+        const handleData = (chunk: string): void => {
             bufferedText += chunk;
             let nextLineBreakIndex = bufferedText.search(/\r?\n/u);
             while (nextLineBreakIndex >= 0) {
@@ -141,14 +144,29 @@ function streamProcessOutputByLine(stream: NodeJS.ReadableStream, onLogLine: (lo
                 bufferedText = bufferedText.slice(nextLineBreakIndex + lineBreakLength);
                 nextLineBreakIndex = bufferedText.search(/\r?\n/u);
             }
-        });
-        stream.on("error", reject);
-        stream.on("end", () => {
+        };
+
+        const handleError = (error: unknown): void => {
+            stream.removeListener("data", handleData);
+            stream.removeListener("error", handleError);
+            stream.removeListener("end", handleEnd);
+            const message = Core.getErrorMessage(error, { fallback: "Unknown stream error" });
+            reject(new Error(message));
+        };
+
+        const handleEnd = (): void => {
+            stream.removeListener("data", handleData);
+            stream.removeListener("error", handleError);
+            stream.removeListener("end", handleEnd);
             if (bufferedText.length > 0) {
                 onLogLine(bufferedText);
             }
             resolve();
-        });
+        };
+
+        stream.on("data", handleData);
+        stream.on("error", handleError);
+        stream.on("end", handleEnd);
     });
 }
 
@@ -2046,7 +2064,8 @@ export const __graphCommandTest__ = Object.freeze({
     resolveDefaultGraphVisualizationServeTargetPath,
     resolveGraphVisualizationUiSourceWatchRoot,
     startGraphVisualizationActiveProjectStateWatcher,
-    startGraphVisualizationUiSourceWatcher
+    startGraphVisualizationUiSourceWatcher,
+    streamProcessOutputByLine
 });
 function createDocumentationCatalogs() {
     const cliCommands = getCliCommandCatalog();
