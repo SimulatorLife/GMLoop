@@ -78,7 +78,7 @@ function setupNamedObjectPatchFixture(
     };
 }
 
-await test("applies script patches to GameMaker script registry", () => {
+void test("applies script patches to GameMaker script registry", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
 
     try {
@@ -112,7 +112,7 @@ await test("applies script patches to GameMaker script registry", () => {
     }
 });
 
-await test("applies object event patches to GameMaker object tables", () => {
+void test("applies object event patches to GameMaker object tables", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
 
     try {
@@ -162,7 +162,7 @@ await test("applies object event patches to GameMaker object tables", () => {
     }
 });
 
-await test("object patches update entries when previous handler is anonymous", () => {
+void test("object patches update entries when previous handler is anonymous", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
 
     try {
@@ -211,7 +211,7 @@ await test("object patches update entries when previous handler is anonymous", (
     }
 });
 
-await test("object patches enable instance event flags with standard event indices", () => {
+void test("object patches enable instance event flags with standard event indices", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
 
     try {
@@ -246,7 +246,7 @@ await test("object patches enable instance event flags with standard event indic
     }
 });
 
-await test("script patches resolve builtin constants and getters", () => {
+void test("script patches resolve builtin constants and getters", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
 
     try {
@@ -275,7 +275,7 @@ await test("script patches resolve builtin constants and getters", () => {
     }
 });
 
-await test("script patches map GML variables to instance storage", () => {
+void test("script patches map GML variables to instance storage", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
 
     try {
@@ -301,7 +301,7 @@ await test("script patches map GML variables to instance storage", () => {
     }
 });
 
-await test("updates pObject definition on active instances", () => {
+void test("updates pObject definition on active instances", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
 
     try {
@@ -410,7 +410,7 @@ function applyEventPatchAndGetEntries(
     return { objectEntry, instanceEntry };
 }
 
-await test("object event patches correctly resolve PreCreateEvent key", () => {
+void test("object event patches correctly resolve PreCreateEvent key", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
     const globals = globalThis as Record<string, unknown>;
     const savedGlobal = globals.gml_Object_oEnemy_PreCreate_0;
@@ -443,7 +443,7 @@ await test("object event patches correctly resolve PreCreateEvent key", () => {
     }
 });
 
-await test("object event patches correctly resolve CleanUpEvent key", () => {
+void test("object event patches correctly resolve CleanUpEvent key", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
     const globals = globalThis as Record<string, unknown>;
     const savedGlobal = globals.gml_Object_oEnemy_CleanUp_0;
@@ -475,7 +475,7 @@ await test("object event patches correctly resolve CleanUpEvent key", () => {
     }
 });
 
-await test("object event patches correctly resolve StepBeginEvent key (not StepNormalEvent)", () => {
+void test("object event patches correctly resolve StepBeginEvent key (not StepNormalEvent)", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
     const globals = globalThis as Record<string, unknown>;
     const savedGlobal = globals.gml_Object_oEnemy_StepBegin_0;
@@ -508,7 +508,7 @@ await test("object event patches correctly resolve StepBeginEvent key (not StepN
     }
 });
 
-await test("object event patches correctly resolve StepEndEvent key (not StepNormalEvent)", () => {
+void test("object event patches correctly resolve StepEndEvent key (not StepNormalEvent)", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
     const globals = globalThis as Record<string, unknown>;
     const savedGlobal = globals.gml_Object_oEnemy_StepEnd_0;
@@ -540,7 +540,7 @@ await test("object event patches correctly resolve StepEndEvent key (not StepNor
     }
 });
 
-await test("object event patches correctly resolve DrawGUI key (not DrawEvent)", () => {
+void test("object event patches correctly resolve DrawGUI key (not DrawEvent)", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
     const globals = globalThis as Record<string, unknown>;
     const savedGlobal = globals.gml_Object_oEnemy_DrawGUI_0;
@@ -573,7 +573,7 @@ await test("object event patches correctly resolve DrawGUI key (not DrawEvent)",
     }
 });
 
-await test("object event patches correctly resolve DrawEventBegin aliases before DrawEvent", () => {
+void test("object event patches correctly resolve DrawEventBegin aliases before DrawEvent", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
     const globals = globalThis as Record<string, unknown>;
     const savedGlobal = globals.gml_Object_oEnemy_DrawEventBegin_0;
@@ -605,7 +605,7 @@ await test("object event patches correctly resolve DrawEventBegin aliases before
     }
 });
 
-await test("object event patches correctly resolve DrawEventBegin key", () => {
+void test("object event patches correctly resolve DrawEventBegin key", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
     const globals = globalThis as Record<string, unknown>;
     const savedGlobal = globals.gml_Object_oEnemy_DrawBegin_0;
@@ -637,7 +637,7 @@ await test("object event patches correctly resolve DrawEventBegin key", () => {
     }
 });
 
-await test("object event patches correctly resolve DrawEventEnd key", () => {
+void test("object event patches correctly resolve DrawEventEnd key", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
     const globals = globalThis as Record<string, unknown>;
     const savedGlobal = globals.gml_Object_oEnemy_DrawEnd_0;
@@ -669,7 +669,7 @@ await test("object event patches correctly resolve DrawEventEnd key", () => {
     }
 });
 
-await test("object event patches correctly resolve DrawGUIBegin key", () => {
+void test("object event patches correctly resolve DrawGUIBegin key", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
     const globals = globalThis as Record<string, unknown>;
     const savedGlobal = globals.gml_Object_oEnemy_DrawGUIBegin_0;
@@ -702,7 +702,7 @@ await test("object event patches correctly resolve DrawGUIBegin key", () => {
     }
 });
 
-await test("object event patches correctly resolve DrawGUIEnd key", () => {
+void test("object event patches correctly resolve DrawGUIEnd key", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
     const globals = globalThis as Record<string, unknown>;
     const savedGlobal = globals.gml_Object_oEnemy_DrawGUIEnd_0;
@@ -735,7 +735,7 @@ await test("object event patches correctly resolve DrawGUIEnd key", () => {
     }
 });
 
-await test("script patch updates the correct index in a large script table", () => {
+void test("script patch updates the correct index in a large script table", () => {
     // Exercises the scriptName→index cache path with a realistically-sized
     // ScriptNames array so that any regression (e.g., off-by-one, stale cache)
     // would be caught by an incorrect index being updated.
@@ -789,7 +789,7 @@ await test("script patch updates the correct index in a large script table", () 
     }
 });
 
-await test("script patch binding reindexes when scriptNames array reference changes", () => {
+void test("script patch binding reindexes when scriptNames array reference changes", () => {
     // Validates that the script-name index cache is correctly invalidated and
     // rebuilt when JSON_game.ScriptNames is replaced with a new array instance.
     // This simulates a full game reload scenario where the runtime reinitialises
