@@ -908,28 +908,79 @@ const __resolveScriptFunction = (prop) => {
 
     return undefined;
 };
-const __computeGmlPropertyNames = (prop) => [\`gml\${prop}\`, \`__\${prop}\`];
-const __resolveExistingGmlPropertyKey = (target, prop) => {
-    const [gmlProp, underscoreProp] = __computeGmlPropertyNames(prop);
-    if (prop in target) {
-        return prop;
+let __gml_minified_property_map = null;
+let __gml_minified_property_map_resolved = false;
+const __isMinifiedGmlPropertyMap = (value) =>
+    value &&
+    typeof value === "object" &&
+    typeof value.mouse_x === "string" &&
+    typeof value.current_time === "string" &&
+    typeof value.variable_instance_get === "string";
+const __resolveMinifiedGmlPropertyMap = () => {
+    if (__gml_minified_property_map_resolved) {
+        return __gml_minified_property_map;
     }
-    if (gmlProp in target) {
-        return gmlProp;
+    __gml_minified_property_map_resolved = true;
+    if (!__global_scope) {
+        return null;
     }
-    if (underscoreProp in target) {
-        return underscoreProp;
+    if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
+        __gml_minified_property_map = __global_scope._bw;
+        return __gml_minified_property_map;
+    }
+    for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
+        const value = __global_scope[globalPropertyName];
+        if (__isMinifiedGmlPropertyMap(value)) {
+            __gml_minified_property_map = value;
+            return __gml_minified_property_map;
+        }
     }
     return null;
 };
-const __gml_proxy = new Proxy(__gml_scope, {
-    has(target, prop) {
-        if (typeof prop !== "string") {
-            return prop in target;
+const __resolveMinifiedGmlPropertyKey = (prop) => {
+    const minifiedPropertyMap = __resolveMinifiedGmlPropertyMap();
+    if (minifiedPropertyMap !== null) {
+        const mapped = minifiedPropertyMap[prop];
+        if (typeof mapped === "string" && mapped.length > 0) {
+            return mapped;
         }
-        const key = __resolveExistingGmlPropertyKey(target, prop);
-        if (key !== null) {
-            return true;
+    }
+    return null;
+};
+const __computeGmlPropertyNames = (prop) => {
+    const mappedProp = __resolveMinifiedGmlPropertyKey(prop);
+    const names = [prop, \`gml\${prop}\`, \`__\${prop}\`];
+    if (mappedProp !== null) {
+        names.unshift(mappedProp);
+    }
+    return names;
+};
+const __resolveExistingGmlPropertyKey = (target, prop) => {
+    for (const propertyName of __computeGmlPropertyNames(prop)) {
+        if (propertyName in target) {
+            return propertyName;
+        }
+    }
+    return null;
+};
+const __resolveWritableGmlPropertyKey = (target, prop) => {
+    const existingKey = __resolveExistingGmlPropertyKey(target, prop);
+    if (existingKey !== null) {
+        return existingKey;
+    }
+    return __resolveMinifiedGmlPropertyKey(prop) ?? prop;
+};
+	const __gml_proxy = new Proxy(__gml_scope, {
+	    has(target, prop) {
+	        if (typeof prop !== "string") {
+	            return prop in target;
+	        }
+	        if (prop === "self") {
+	            return true;
+	        }
+	        const key = __resolveExistingGmlPropertyKey(target, prop);
+	        if (key !== null) {
+	            return true;
         }
         const __has_global_value = __global_scope && prop in __global_scope;
         if (Object.prototype.hasOwnProperty.call(__gml_constants, prop)) {
@@ -956,13 +1007,16 @@ const __gml_proxy = new Proxy(__gml_scope, {
         }
         return false;
     },
-    get(target, prop, receiver) {
-        if (typeof prop !== "string") {
-            return Reflect.get(target, prop, receiver);
-        }
-        const key = __resolveExistingGmlPropertyKey(target, prop);
-        if (key !== null) {
-            return Reflect.get(target, key, receiver);
+	    get(target, prop, receiver) {
+	        if (typeof prop !== "string") {
+	            return Reflect.get(target, prop, receiver);
+	        }
+	        if (prop === "self") {
+	            return __gml_proxy;
+	        }
+	        const key = __resolveExistingGmlPropertyKey(target, prop);
+	        if (key !== null) {
+	            return Reflect.get(target, key, receiver);
         }
         const __has_global_value = __global_scope && prop in __global_scope;
         const __global_value = __has_global_value ? __global_scope[prop] : undefined;
@@ -1000,9 +1054,9 @@ const __gml_proxy = new Proxy(__gml_scope, {
         }
         const key = __resolveExistingGmlPropertyKey(target, prop);
         if (key !== null) {
-            return Reflect.set(target, key, value, receiver);
+            return Reflect.set(target, key, value);
         }
-        return Reflect.set(target, prop, value, receiver);
+        return Reflect.set(target, __resolveWritableGmlPropertyKey(target, prop), value);
     }
 });
 with (__gml_proxy) {
@@ -1037,6 +1091,68 @@ function applyEventPatch(registry: RuntimeRegistry, patch: EventPatch): RuntimeR
         "__gml_builtins",
         `const __gml_scope = ${thisName} && typeof ${thisName} === "object" ? ${thisName} : Object.create(null);
 const __global_scope = typeof globalThis === "object" && globalThis !== null ? globalThis : null;
+let __gml_minified_property_map = null;
+let __gml_minified_property_map_resolved = false;
+const __isMinifiedGmlPropertyMap = (value) =>
+    value &&
+    typeof value === "object" &&
+    typeof value.mouse_x === "string" &&
+    typeof value.current_time === "string" &&
+    typeof value.variable_instance_get === "string";
+const __resolveMinifiedGmlPropertyMap = () => {
+    if (__gml_minified_property_map_resolved) {
+        return __gml_minified_property_map;
+    }
+    __gml_minified_property_map_resolved = true;
+    if (!__global_scope) {
+        return null;
+    }
+    if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
+        __gml_minified_property_map = __global_scope._bw;
+        return __gml_minified_property_map;
+    }
+    for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
+        const value = __global_scope[globalPropertyName];
+        if (__isMinifiedGmlPropertyMap(value)) {
+            __gml_minified_property_map = value;
+            return __gml_minified_property_map;
+        }
+    }
+    return null;
+};
+const __resolveMinifiedGmlPropertyKey = (prop) => {
+    const minifiedPropertyMap = __resolveMinifiedGmlPropertyMap();
+    if (minifiedPropertyMap !== null) {
+        const mapped = minifiedPropertyMap[prop];
+        if (typeof mapped === "string" && mapped.length > 0) {
+            return mapped;
+        }
+    }
+    return null;
+};
+const __computeGmlPropertyNames = (prop) => {
+    const mappedProp = __resolveMinifiedGmlPropertyKey(prop);
+    const names = [prop, \`gml\${prop}\`, \`__\${prop}\`];
+    if (mappedProp !== null) {
+        names.unshift(mappedProp);
+    }
+    return names;
+};
+const __resolveExistingGmlPropertyKey = (target, prop) => {
+    for (const propertyName of __computeGmlPropertyNames(prop)) {
+        if (propertyName in target) {
+            return propertyName;
+        }
+    }
+    return null;
+};
+const __resolveWritableGmlPropertyKey = (target, prop) => {
+    const existingKey = __resolveExistingGmlPropertyKey(target, prop);
+    if (existingKey !== null) {
+        return existingKey;
+    }
+    return __resolveMinifiedGmlPropertyKey(prop) ?? prop;
+};
 const __resolveRuntimeValue = (prop) => {
     if (prop === "mouse_x") {
         return __global_scope && typeof __global_scope.mouse_x !== "undefined" ? __global_scope.mouse_x : __gml_scope.x;
@@ -1051,25 +1167,35 @@ const __resolveRuntimeValue = (prop) => {
     }
     return undefined;
 };
-const __gml_proxy = new Proxy(__gml_scope, {
-    has(target, prop) {
-        if (typeof prop !== "string") {
-            return prop in target;
+	const __gml_proxy = new Proxy(__gml_scope, {
+	    has(target, prop) {
+	        if (typeof prop !== "string") {
+	            return prop in target;
+	        }
+	        if (prop === "self") {
+	            return true;
+	        }
+	        const key = __resolveExistingGmlPropertyKey(target, prop);
+	        if (key !== null) {
+	            return true;
         }
         return (
-            prop in target ||
             Object.prototype.hasOwnProperty.call(__gml_constants, prop) ||
             Object.prototype.hasOwnProperty.call(__gml_builtins, prop) ||
             __resolveRuntimeValue(prop) !== undefined ||
             (__global_scope !== null && prop in __global_scope)
         );
     },
-    get(target, prop, receiver) {
-        if (typeof prop !== "string") {
-            return Reflect.get(target, prop, receiver);
-        }
-        if (prop in target) {
-            return Reflect.get(target, prop, receiver);
+	    get(target, prop, receiver) {
+	        if (typeof prop !== "string") {
+	            return Reflect.get(target, prop, receiver);
+	        }
+	        if (prop === "self") {
+	            return __gml_proxy;
+	        }
+	        const key = __resolveExistingGmlPropertyKey(target, prop);
+	        if (key !== null) {
+	            return Reflect.get(target, key, receiver);
         }
         if (Object.prototype.hasOwnProperty.call(__gml_constants, prop)) {
             return __gml_constants[prop];
@@ -1084,9 +1210,13 @@ const __gml_proxy = new Proxy(__gml_scope, {
         return __global_scope !== null ? __global_scope[prop] : undefined;
     },
     set(target, prop, value, receiver) {
-        return Reflect.set(target, prop, value, receiver);
+        if (typeof prop !== "string") {
+            return Reflect.set(target, prop, value, receiver);
+        }
+        return Reflect.set(target, __resolveWritableGmlPropertyKey(target, prop), value);
     }
 });
+${thisName} = __gml_proxy;
 with (__gml_proxy) {
 ${patchBody}
 }`

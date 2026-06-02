@@ -19,7 +19,9 @@ const runtimeIntegrationPropertyNames = [
     "vk_anykey",
     "_uB2",
     "EVENT_STEP_NORMAL",
-    "_cx"
+    "_cx",
+    "_bw",
+    "_ix"
 ] as const;
 
 type GlobalSnapshot = {
@@ -32,7 +34,18 @@ type GlobalSnapshot = {
     _uB2?: number;
     EVENT_STEP_NORMAL?: number;
     _cx?: { _dx?: Record<string, unknown> };
+    _bw?: Record<string, string>;
+    _ix?: Record<string, string>;
 };
+
+function createMinifiedPropertyMap(entries: Record<string, string>): Record<string, string> {
+    return {
+        mouse_x: "_mouseX",
+        current_time: "_currentTime",
+        variable_instance_get: "_variableInstanceGet",
+        ...entries
+    };
+}
 
 type ObjectPatchFixture = {
     globals: GlobalSnapshot;
@@ -346,6 +359,220 @@ void test("named object event patches preserve this when the runtime dispatches 
         assert.equal(instanceEntry.spiderColour, 32_768, "Patched event should preserve method-call self context");
     } finally {
         restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("object event patches map explicit self properties through the runtime minified field table", () => {
+    const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
+
+    try {
+        function gml_Object_oSpider_Step_0() {
+            return "original";
+        }
+
+        const objectEntry = {
+            pName: "oSpider",
+            StepNormalEvent: gml_Object_oSpider_Step_0
+        };
+        const instanceEntry: Record<string, unknown> = {
+            _kx: objectEntry,
+            Event: [],
+            _O3: 255
+        };
+
+        const globals = globalThis as GlobalSnapshot;
+        globals.JSON_game = {
+            ScriptNames: [],
+            Scripts: [],
+            GMObjects: [objectEntry]
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._bw = createMinifiedPropertyMap({
+            spiderColour: "_O3"
+        });
+        globals._cx = {
+            _dx: {
+                "100000": instanceEntry
+            }
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.spiderColour = c_green;"
+        });
+
+        const updatedFn = objectEntry.StepNormalEvent as (...args: Array<unknown>) => unknown;
+        updatedFn.call(objectEntry, instanceEntry, null, []);
+
+        assert.equal(instanceEntry._O3, 32_768, "Patched event should write the active minified instance field");
+        assert.equal(instanceEntry.spiderColour, undefined, "Patched event must not create stale unminified fields");
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("object event patches read minified self fields before unminified shadow fields", () => {
+    const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
+
+    try {
+        function gml_Object_oSpider_Step_0() {
+            return "original";
+        }
+
+        const objectEntry = {
+            pName: "oSpider",
+            StepNormalEvent: gml_Object_oSpider_Step_0
+        };
+        const instanceEntry: Record<string, unknown> = {
+            _kx: objectEntry,
+            Event: [],
+            _P3: 8,
+            armNum: 4,
+            _seenArmNum: 0
+        };
+
+        const globals = globalThis as GlobalSnapshot;
+        globals.JSON_game = {
+            ScriptNames: [],
+            Scripts: [],
+            GMObjects: [objectEntry]
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._bw = createMinifiedPropertyMap({
+            armNum: "_P3",
+            seenArmNum: "_seenArmNum"
+        });
+        globals._cx = {
+            _dx: {
+                "100000": instanceEntry
+            }
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.seenArmNum = self.armNum;"
+        });
+
+        const updatedFn = objectEntry.StepNormalEvent as (...args: Array<unknown>) => unknown;
+        updatedFn.call(objectEntry, instanceEntry, null, []);
+
+        assert.equal(instanceEntry._seenArmNum, 8, "Patched event should read from the active minified field");
+        assert.equal(instanceEntry.seenArmNum, undefined, "Patched event must not write an unminified shadow field");
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("object event patches discover renamed runtime minified field tables", () => {
+    const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
+
+    try {
+        function gml_Object_oSpider_Step_0() {
+            return "original";
+        }
+
+        const objectEntry = {
+            pName: "oSpider",
+            StepNormalEvent: gml_Object_oSpider_Step_0
+        };
+        const instanceEntry: Record<string, unknown> = {
+            _kx: objectEntry,
+            Event: [],
+            _V4: 255
+        };
+
+        const globals = globalThis as GlobalSnapshot;
+        globals.JSON_game = {
+            ScriptNames: [],
+            Scripts: [],
+            GMObjects: [objectEntry]
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._ix = createMinifiedPropertyMap({
+            spiderColour: "_V4"
+        });
+        globals._cx = {
+            _dx: {
+                "100000": instanceEntry
+            }
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.spiderColour = c_red;"
+        });
+
+        const updatedFn = objectEntry.StepNormalEvent as (...args: Array<unknown>) => unknown;
+        updatedFn.call(objectEntry, instanceEntry, null, []);
+
+        assert.equal(instanceEntry._V4, 255, "Patched event should write through a renamed minifier table");
+        assert.equal(instanceEntry.spiderColour, undefined, "Patched event must not create unminified shadow fields");
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("object event patches alias self when this_name is minified", () => {
+    const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
+
+    try {
+        function gml_Object_oSpider_Step_0() {
+            return "original";
+        }
+
+        const objectEntry = {
+            pName: "oSpider",
+            StepNormalEvent: gml_Object_oSpider_Step_0
+        };
+        const instanceEntry: Record<string, unknown> = {
+            _kx: objectEntry,
+            Event: [],
+            _V4: 32_768
+        };
+
+        const globals = globalThis as GlobalSnapshot & { spiderColour?: number };
+        globals.JSON_game = {
+            ScriptNames: [],
+            Scripts: [],
+            GMObjects: [objectEntry]
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._ix = createMinifiedPropertyMap({
+            spiderColour: "_V4"
+        });
+        globals._cx = {
+            _dx: {
+                "100000": instanceEntry
+            }
+        };
+        delete globals.spiderColour;
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            this_name: "_e4",
+            js_body: "self.spiderColour = c_red;"
+        });
+
+        const updatedFn = objectEntry.StepNormalEvent as (...args: Array<unknown>) => unknown;
+        updatedFn.call(objectEntry, instanceEntry, null, []);
+
+        assert.equal(instanceEntry._V4, 255, "Patched event should alias self to the event instance proxy");
+        assert.equal(globals.spiderColour, undefined, "Patched event must not resolve self to window.self");
+    } finally {
+        restoreGlobalProperties(snapshot);
+        delete (globalThis as { spiderColour?: number }).spiderColour;
     }
 });
 
