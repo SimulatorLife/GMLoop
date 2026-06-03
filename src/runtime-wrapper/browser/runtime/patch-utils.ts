@@ -592,16 +592,16 @@ function resolveRuntimeBuiltins(globalScope: RuntimeBindingGlobals): Record<stri
         return globalScope.g_pBuiltIn;
     }
 
-    if (globalScope._g8 && typeof globalScope._g8 === "object") {
-        return globalScope._g8;
-    }
-
     const scope = globalScope as Record<string, unknown>;
     for (const key of Object.getOwnPropertyNames(scope)) {
         const candidate = readGlobalProperty(scope, key);
         if (isRecord(candidate) && candidate.__type === "[BuiltIn]") {
             return candidate;
         }
+    }
+
+    if (globalScope._g8 && typeof globalScope._g8 === "object") {
+        return globalScope._g8;
     }
 
     return undefined;
