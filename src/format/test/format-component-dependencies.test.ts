@@ -17,6 +17,7 @@ void test("dependency bundle is frozen and exposes expected contract keys", () =
         Object.keys(dependencyBundle).toSorted(),
         [
             "LogicalOperatorsStyle",
+            "buildPrintableDocCommentLines",
             "countTrailingBlankLines",
             "getNextNonWhitespaceCharacter",
             "gmlParserAdapter",
