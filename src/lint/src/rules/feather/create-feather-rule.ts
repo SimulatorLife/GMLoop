@@ -754,17 +754,30 @@ function splitCodeAndTrailingLineComment(line: string): { codeSegment: string; t
             }
         } else {
             // "outside"
-            if (character === "\\") {
-                state = "escaped";
-            } else if (character === "'") {
-                state = "'";
-            } else if (character === '"') {
-                state = '"';
-            } else if (character === "/" && nextCharacter === "//") {
-                return {
-                    codeSegment: line.slice(0, index),
-                    trailingComment: line.slice(index)
-                };
+            switch (character) {
+                case "\\": {
+                    state = "escaped";
+
+                    break;
+                }
+                case "'": {
+                    state = "'";
+
+                    break;
+                }
+                case '"': {
+                    state = '"';
+
+                    break;
+                }
+                default: {
+                    if (character === "/" && nextCharacter === "//") {
+                        return {
+                            codeSegment: line.slice(0, index),
+                            trailingComment: line.slice(index)
+                        };
+                    }
+                }
             }
         }
     }
