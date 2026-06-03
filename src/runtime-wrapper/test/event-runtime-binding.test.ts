@@ -39,6 +39,7 @@ type RuntimeBindingGlobals = {
     _W2?: (...args: Array<unknown>) => unknown;
     _X1?: { _S2?: Array<Record<string, unknown>> };
     _A8?: { _9X2?: Record<string, Record<string, unknown>> };
+    _0z?: Record<string, string>;
 };
 
 const runtimeBindingPropertyNames = [
@@ -58,7 +59,8 @@ const runtimeBindingPropertyNames = [
     "_Yw",
     "_W2",
     "_X1",
-    "_A8"
+    "_A8",
+    "_0z"
 ] as const;
 
 void test("event patches replace GameMaker object, instance, and pObject handlers", () => {
@@ -538,7 +540,7 @@ void test("event patches replace global aliases for current HTML5 minified objec
 
     try {
         function originalCreateEvent(this: Record<string, unknown>) {
-            this.spiderColour = 255;
+            this._k6 = 255;
         }
 
         function originalStepEvent(this: Record<string, unknown>) {
@@ -567,7 +569,9 @@ void test("event patches replace global aliases for current HTML5 minified objec
                 _Hm: [
                     {
                         id: 100_000,
-                        spiderColour: 32_768
+                        spiderColour: 32_768,
+                        _k6: 32_768,
+                        StepNormalEvent: originalStepEvent
                     }
                 ]
             }
@@ -587,6 +591,9 @@ void test("event patches replace global aliases for current HTML5 minified objec
                 oSpider: mappedObjectEntry
             }
         };
+        globals._0z = {
+            spiderColour: "_k6"
+        };
 
         const wrapper = RuntimeWrapper.createRuntimeWrapper();
         wrapper.applyPatch({
@@ -600,9 +607,14 @@ void test("event patches replace global aliases for current HTML5 minified objec
         assert.equal(objectEntry._V2, globals._W2);
         assert.equal(mappedObjectEntry._V2, globals._W2);
         assert.equal(
+            (mappedObjectEntry._Ic2 as { _Hm: Array<Record<string, unknown>> })._Hm[0]._k6,
+            255,
+            "Object-owned minified runtime color records should reconcile Create-initialized scalar state"
+        );
+        assert.equal(
             (mappedObjectEntry._Ic2 as { _Hm: Array<Record<string, unknown>> })._Hm[0].spiderColour,
             32_768,
-            "Object-owned runtime variable records should not refresh after replacing a non-Create global minified alias"
+            "Unmapped non-runtime color shadow fields should remain untouched"
         );
     } finally {
         restoreGlobalProperties(snapshot);
@@ -637,7 +649,7 @@ void test("event patches resolve wrapper-owned GameMaker builtins and constants"
     assert.deepEqual(instanceEntry.destination, [0, 7, 8]);
 });
 
-void test("non-Create event patches do not reset instance variables through Create event re-run", () => {
+void test("non-Create event patches reconcile color state without resetting arrays", () => {
     const snapshot = snapshotGlobalProperties(runtimeBindingPropertyNames);
 
     try {
@@ -677,7 +689,7 @@ void test("non-Create event patches do not reset instance variables through Crea
 
         const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
-        // Patching Step_0 should NOT reset spiderColour or armPos
+        // Patching Step_0 should reconcile scalar color state without resetting arrays.
         wrapper.applyPatch({
             kind: "event",
             id: "gml/event/oSpider/Step_0",
@@ -685,7 +697,11 @@ void test("non-Create event patches do not reset instance variables through Crea
             js_body: "self.x = mouse_x;"
         });
 
-        assert.equal(instanceEntry.spiderColour, 32_768, "spiderColour should remain untouched when Step_0 is patched");
+        assert.equal(
+            instanceEntry.spiderColour,
+            255,
+            "spiderColour should reconcile to Create-initialized color state"
+        );
         assert.deepEqual(instanceEntry.armPos, [4, 5, 6], "armPos should remain untouched when Step_0 is patched");
 
         // Patching Create_0 SHOULD reset spiderColour and armPos
@@ -706,6 +722,59 @@ void test("non-Create event patches do not reset instance variables through Crea
             [1, 2, 3],
             "armPos should be reset by Create handler when Create event is patched"
         );
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("shadow validation does not run live runtime binding reconciliation", () => {
+    const snapshot = snapshotGlobalProperties(runtimeBindingPropertyNames);
+
+    try {
+        let createCallCount = 0;
+        function gml_Object_oSpider_Create_0(this: Record<string, unknown>) {
+            createCallCount += 1;
+            this.spiderColour = 255;
+        }
+
+        function gml_Object_oSpider_Step_0() {
+            return "original";
+        }
+
+        const objectEntry = {
+            Event: [] as Array<boolean>,
+            pName: "oSpider",
+            CreateEvent: gml_Object_oSpider_Create_0,
+            StepNormalEvent: gml_Object_oSpider_Step_0
+        };
+        const instanceEntry: Record<string, unknown> = {
+            Event: [],
+            _kx: objectEntry,
+            spiderColour: 32_768
+        };
+        const globals = globalThis as RuntimeBindingGlobals;
+        globals.JSON_game = {
+            GMObjects: [objectEntry],
+            ScriptNames: [],
+            Scripts: []
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._cx = {
+            _dx: {
+                "100000": instanceEntry
+            }
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper({ validateBeforeApply: true });
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.x = mouse_x;"
+        });
+
+        assert.equal(createCallCount, 0, "Non-Create patch reconciliation should not execute Create");
+        assert.equal(instanceEntry.spiderColour, 255);
     } finally {
         restoreGlobalProperties(snapshot);
     }
