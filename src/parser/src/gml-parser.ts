@@ -91,7 +91,7 @@ function parseProgramWithLlPredictionMode(sourceText: string): unknown {
 }
 
 function normalizeSllPredictionMaxSourceLength(value: unknown): number {
-    return Core.coercePositiveIntegerOption(value, DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH, { zeroReplacement: 0 });
+    return Core.coercePositiveIntegerOption(value, DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH);
 }
 
 function shouldUseSllPredictionMode(sourceText: string, maxSourceLength: number): boolean {
