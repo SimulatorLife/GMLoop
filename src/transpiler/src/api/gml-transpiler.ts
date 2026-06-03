@@ -145,7 +145,12 @@ export class GmlTranspiler {
     }
 
     private parseProgram(sourceText: string) {
-        const parser = new Parser.GMLParser(sourceText, {});
+        const parser = new Parser.GMLParser(sourceText, {
+            getComments: false,
+            getLocations: true,
+            simplifyLocations: true,
+            attachFunctionDocComments: false
+        });
         return parser.parse();
     }
 
@@ -349,7 +354,12 @@ export class GmlTranspiler {
         }
 
         try {
-            const parser = new Parser.GMLParser(sourceText);
+            const parser = new Parser.GMLParser(sourceText, {
+                getComments: false,
+                getLocations: true,
+                simplifyLocations: true,
+                attachFunctionDocComments: false
+            });
             const ast = parser.parse();
             const emitter = new GmlToJsEmitter(this.getSemanticAnalyzers(), this.emitterOptions);
             return emitter.emit(ast);

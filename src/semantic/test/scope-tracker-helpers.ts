@@ -166,3 +166,35 @@ export function referenceAt(tracker: ScopeTracker, name: string, line: number = 
         end: { line, column: name.length, index: name.length }
     });
 }
+
+/**
+ * Replaces wall-clock time with a deterministic timestamp sequence so the
+ * modification-cutoff assertions do not depend on scheduler delays or clock
+ * granularity.  Scopes created while the clock is controlled receive stable,
+ * monotonically-increasing timestamps, making assertions about "modified after
+ * X" fully deterministic across all platforms and load conditions.
+ *
+ * The `advanceTimestamp` function returned by the callback returns the
+ * current clock value BEFORE incrementing, so callers can obtain a checkpoint
+ * that is strictly less than any subsequently-created scope's timestamp by
+ * writing: `const checkpoint = advanceTimestamp() - 1; advanceTimestamp();`.
+ */
+export function withDeterministicDateNow(
+    callback: (advanceTimestamp: () => number) => void | Promise<void>
+): Promise<void> | void {
+    const originalDateNow = Date.now;
+    let currentTimestamp = 1000;
+
+    Date.now = () => currentTimestamp;
+
+    const advanceTimestamp = (): number => {
+        currentTimestamp += 1;
+        return currentTimestamp;
+    };
+
+    try {
+        return callback(advanceTimestamp);
+    } finally {
+        Date.now = originalDateNow;
+    }
+}

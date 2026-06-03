@@ -217,6 +217,7 @@ export type GraphVisualizationLiveReloadStatusSnapshot = Readonly<{
     p95HotReloadLatencyMs: number | null;
     recentErrors: ReadonlyArray<GraphVisualizationLiveReloadRecentError>;
     recentPatches: ReadonlyArray<GraphVisualizationLiveReloadRecentPatch>;
+    runtimeUrl: string | null;
     scanComplete: boolean;
     totalPatchCount: number | null;
     uptimeMs: number;

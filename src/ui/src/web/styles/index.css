@@ -9,5 +9,6 @@
 @import "./fix.css";
 @import "./playground.css";
 @import "./live-reload.css";
+@import "./mcp.css";
 @import "./primitives.css";
 @import "./responsive.css";

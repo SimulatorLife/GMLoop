@@ -19,3 +19,20 @@ void test("createGameMakerCliInvocationPlan falls back to npx latest when no exp
         }
     ]);
 });
+
+void test("createGameMakerCliInvocationPlan treats blank tool path values as unconfigured", () => {
+    const plan = createGameMakerCliInvocationPlan("   ", ["--help"]);
+
+    assert.deepEqual(plan, [
+        {
+            args: ["--help"],
+            command: "gm-cli",
+            displayName: "gm-cli"
+        },
+        {
+            args: ["--yes", "@gamemaker/gm-cli@latest", "--help"],
+            command: "npx",
+            displayName: "npx @gamemaker/gm-cli@latest"
+        }
+    ]);
+});

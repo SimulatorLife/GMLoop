@@ -308,27 +308,17 @@ function computeOptionalDocState({
         (param?.type === "DefaultParameter" &&
             isUndefinedSentinel(param.right) &&
             (explicitOptionalMarker || node?.type === "ConstructorDeclaration"));
+
+    const hasExplicitDefault = (candidate: any): boolean =>
+        candidate?.type === "DefaultParameter" && candidate.right != null && !isUndefinedSentinel(candidate.right);
+
     const hasSiblingExplicitDefault = Array.isArray(node?.params)
-        ? node.params.some((candidate: any, candidateIndex: number) => {
-              if (candidateIndex === paramIndex || !candidate) {
-                  return false;
-              }
-
-              if (candidate.type !== "DefaultParameter") {
-                  return false;
-              }
-
-              return candidate.right != null && !isUndefinedSentinel(candidate.right);
-          })
+        ? node.params.some(
+              (candidate: any, candidateIndex: number) => candidateIndex !== paramIndex && hasExplicitDefault(candidate)
+          )
         : false;
     const hasPriorExplicitDefault = Array.isArray(node?.params)
-        ? node.params.slice(0, paramIndex).some((candidate: any) => {
-              if (!candidate || candidate.type !== "DefaultParameter") {
-                  return false;
-              }
-
-              return candidate.right != null && !isUndefinedSentinel(candidate.right);
-          })
+        ? node.params.slice(0, paramIndex).some(hasExplicitDefault)
         : false;
     const shouldApplyOptionalSuppression = hasExistingMetadata || !hasSiblingExplicitDefault;
 
@@ -343,27 +333,30 @@ function computeOptionalDocState({
     ) {
         shouldMarkOptional = true;
     }
+
     if (shouldApplyOptionalSuppression) {
-        if (
+        const suppressionCondition1 =
             shouldMarkOptional &&
             defaultIsUndefined &&
             shouldOmitUndefinedDefault &&
             paramInfo?.explicitUndefinedDefault === true &&
             !optionalOverrideFlag &&
-            !hasOptionalDocName
-        ) {
-            shouldMarkOptional = false;
+            !hasOptionalDocName;
+        if (suppressionCondition1) {
+            return false;
         }
-        if (
+
+        const suppressionCondition2 =
             shouldMarkOptional &&
             shouldOmitUndefinedDefault &&
             paramInfo.optional &&
             defaultCameFromSource &&
-            !hasOptionalDocName
-        ) {
-            shouldMarkOptional = false;
+            !hasOptionalDocName;
+        if (suppressionCondition2) {
+            return false;
         }
     }
+
     if (shouldMarkOptional && param?.type === "Identifier" && !synthesizedUndefinedDefaultParameters.has(param)) {
         synthesizedUndefinedDefaultParameters.add(param);
     }

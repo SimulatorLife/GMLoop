@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, rmdir, symlink } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -72,6 +72,21 @@ type BuildGameMakerHtml5OutputOptions = Readonly<{
     buildConfig: GameMakerHtml5BuildConfig;
     cwd?: string;
     executeProcess?: ProcessExecutor;
+}>;
+
+type GameMakerPrefabProjectReference = Readonly<{
+    link: string;
+    name: string;
+    path: string;
+}>;
+
+type MaterializedPrefabProjectReferences = Readonly<{
+    cleanup: () => Promise<void>;
+}>;
+
+type CachedPrefabMaterializationCandidate = Readonly<{
+    destinationPath: string;
+    sourcePath: string;
 }>;
 
 /**
@@ -499,6 +514,7 @@ async function executeIgorHtml5Build(
     const command = igorResolution.useMono ? "mono" : igorResolution.command;
     const args = igorResolution.useMono ? [igorResolution.command, ...igorArgs] : igorArgs;
     const formattedCommand = formatCommandForDisplay(command, args);
+    const materializedPrefabReferences = await materializeCachedPrefabProjectReferences(buildConfig.projectPath);
 
     try {
         const result = await executeProcess(command, args, cwd);
@@ -552,6 +568,158 @@ async function executeIgorHtml5Build(
         }
 
         throw error;
+    } finally {
+        await materializedPrefabReferences.cleanup();
+    }
+}
+
+async function materializeCachedPrefabProjectReferences(
+    projectPath: string
+): Promise<MaterializedPrefabProjectReferences> {
+    const prefabReferences = await readForcedPrefabProjectReferences(projectPath);
+    if (prefabReferences.length === 0) {
+        return Object.freeze({
+            cleanup: () => Promise.resolve()
+        });
+    }
+
+    const projectRoot = path.dirname(projectPath);
+    const cachedPrefabsRoot = path.join(projectRoot, ".gmcache", "prefabs");
+    const projectPrefabsRoot = path.join(projectRoot, "prefabs");
+    const projectPrefabsRootStats = await Core.safeStat(projectPrefabsRoot);
+    const prefabDirectoryNames = new Set(
+        prefabReferences.map((prefabReference) => resolvePrefabProjectReferenceDirectoryName(prefabReference))
+    );
+    const nullableCandidates = await Promise.all(
+        Array.from(prefabDirectoryNames).map(
+            async (prefabDirectoryName): Promise<CachedPrefabMaterializationCandidate | null> => {
+                if (prefabDirectoryName === null) {
+                    return null;
+                }
+
+                const destinationPath = path.join(projectPrefabsRoot, prefabDirectoryName);
+                const destinationStats = await Core.safeStat(destinationPath);
+                if (destinationStats !== null) {
+                    return null;
+                }
+
+                const sourcePath = path.join(cachedPrefabsRoot, prefabDirectoryName);
+                const sourceStats = await Core.safeStat(sourcePath);
+                if (sourceStats?.isDirectory() !== true) {
+                    return null;
+                }
+
+                return Object.freeze({
+                    destinationPath,
+                    sourcePath
+                });
+            }
+        )
+    );
+    const candidates = nullableCandidates.filter(
+        (candidate): candidate is CachedPrefabMaterializationCandidate => candidate !== null
+    );
+
+    if (candidates.length === 0) {
+        return Object.freeze({
+            cleanup: () => Promise.resolve()
+        });
+    }
+
+    const createdProjectPrefabsRoot = projectPrefabsRootStats === null;
+    if (createdProjectPrefabsRoot) {
+        await mkdir(projectPrefabsRoot, { recursive: true });
+    }
+    const nullableCreatedPaths = await Promise.all(
+        candidates.map((candidate) =>
+            materializeCachedPrefabProjectReference(candidate.sourcePath, candidate.destinationPath)
+        )
+    );
+    const createdPaths = nullableCreatedPaths.filter((createdPath): createdPath is string => createdPath !== null);
+
+    return Object.freeze({
+        cleanup: async () => {
+            await Promise.all(
+                [...createdPaths].reverse().map((createdPath) => rm(createdPath, { force: true, recursive: true }))
+            );
+
+            if (createdProjectPrefabsRoot) {
+                try {
+                    await rmdir(projectPrefabsRoot);
+                } catch {
+                    // The project may have gained other prefab entries while the build ran.
+                }
+            }
+        }
+    });
+}
+
+async function readForcedPrefabProjectReferences(
+    projectPath: string
+): Promise<ReadonlyArray<GameMakerPrefabProjectReference>> {
+    const projectDocument = Core.parseProjectMetadataDocument(await readFile(projectPath, "utf8"), projectPath);
+    const rawReferences = projectDocument.ForcedPrefabProjectReferences;
+    if (!Array.isArray(rawReferences)) {
+        return Object.freeze([]);
+    }
+
+    return Object.freeze(
+        rawReferences.flatMap((rawReference): Array<GameMakerPrefabProjectReference> => {
+            if (!Core.isObjectLike(rawReference)) {
+                return [];
+            }
+
+            const link = typeof rawReference.link === "string" ? rawReference.link.trim() : "";
+            const name = typeof rawReference.name === "string" ? rawReference.name.trim() : "";
+            const prefabPath = typeof rawReference.path === "string" ? rawReference.path.trim() : "";
+            if (link.length === 0 && name.length === 0 && prefabPath.length === 0) {
+                return [];
+            }
+
+            return [
+                Object.freeze({
+                    link,
+                    name,
+                    path: prefabPath
+                })
+            ];
+        })
+    );
+}
+
+function resolvePrefabProjectReferenceDirectoryName(prefabReference: GameMakerPrefabProjectReference): string | null {
+    const candidates = [
+        prefabReference.link,
+        prefabReference.name,
+        prefabReference.path.toLowerCase().endsWith(".yyp")
+            ? prefabReference.path.slice(0, -".yyp".length)
+            : prefabReference.path
+    ];
+
+    for (const candidate of candidates) {
+        const normalizedCandidate = path.basename(candidate.trim());
+        if (normalizedCandidate.length > 0) {
+            return normalizedCandidate;
+        }
+    }
+
+    return null;
+}
+
+async function materializeCachedPrefabProjectReference(
+    sourcePath: string,
+    destinationPath: string
+): Promise<string | null> {
+    try {
+        await symlink(sourcePath, destinationPath, process.platform === "win32" ? "junction" : "dir");
+        return destinationPath;
+    } catch (error) {
+        if (Core.isErrorWithCode(error, "EEXIST")) {
+            return null;
+        }
+
+        await cp(sourcePath, destinationPath, { recursive: true });
+        return destinationPath;
     }
 }
 

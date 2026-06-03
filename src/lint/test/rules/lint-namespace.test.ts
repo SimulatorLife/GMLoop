@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import * as LintWorkspace from "@gmloop/lint";
+import { listLintRuleCatalogEntries, ruleIds } from "@gmloop/lint";
 
 import { assertEquals, assertNotEquals } from "../assertions.js";
 
@@ -13,17 +14,16 @@ function assertIsFrozenObject(value: unknown, message: string) {
     assertEquals(Object.isFrozen(value), true, `${message} should be frozen`);
 }
 
-void test("Lint namespace exports plugin/configs/ruleIds/services and is deeply frozen at top level", () => {
+void test("Lint namespace exports plugin/configs/services and is deeply frozen at top level", () => {
     assertIsFrozenObject(Lint, "Lint");
     assertIsFrozenObject(Lint.plugin, "Lint.plugin");
     assertIsFrozenObject(Lint.featherPlugin, "Lint.featherPlugin");
     assertIsFrozenObject(Lint.configs, "Lint.configs");
-    assertIsFrozenObject(Lint.ruleIds, "Lint.ruleIds");
     assertIsFrozenObject(Lint.services, "Lint.services");
 });
 
 void test("ruleIds contract keeps canonical ids with PascalCase keys", () => {
-    const ruleIdEntries = Object.entries(Lint.ruleIds as Record<string, string>);
+    const ruleIdEntries = Object.entries(ruleIds as Record<string, string>);
     assert.ok(ruleIdEntries.length > 0);
 
     for (const [mapKey, fullRuleId] of ruleIdEntries) {
@@ -31,20 +31,30 @@ void test("ruleIds contract keeps canonical ids with PascalCase keys", () => {
         assert.match(fullRuleId, /^(?:gml|feather)\/.+$/, `Unexpected canonical full rule id: ${fullRuleId}`);
     }
 
-    assertEquals((Lint.ruleIds as Record<string, string>).GmlNoGlobalvar, "gml/no-globalvar");
-    assertEquals((Lint.ruleIds as Record<string, string>).GmlNoLegacyApi, "gml/no-legacy-api");
-    assertEquals((Lint.ruleIds as Record<string, string>).GmlPreferArrayPush, "gml/prefer-array-push");
+    assertEquals((ruleIds as Record<string, string>).GmlNoGlobalvar, "gml/no-globalvar");
+    assertEquals((ruleIds as Record<string, string>).GmlNoLegacyApi, "gml/no-legacy-api");
+    assertEquals((ruleIds as Record<string, string>).GmlPreferArrayPush, "gml/prefer-array-push");
+    assertEquals((ruleIds as Record<string, string>).GmlPreferCompoundAssignments, "gml/prefer-compound-assignments");
     assertEquals(
-        (Lint.ruleIds as Record<string, string>).GmlPreferCompoundAssignments,
-        "gml/prefer-compound-assignments"
-    );
-    assertEquals(
-        (Lint.ruleIds as Record<string, string>).GmlPreferIncrementDecrementOperators,
+        (ruleIds as Record<string, string>).GmlPreferIncrementDecrementOperators,
         "gml/prefer-increment-decrement-operators"
     );
-    assertEquals((Lint.ruleIds as Record<string, string>).GmlPreferDirectReturn, "gml/prefer-direct-return");
-    assertEquals((Lint.ruleIds as Record<string, string>).GmlRemoveDefaultComments, "gml/remove-default-comments");
-    assertEquals((Lint.ruleIds as Record<string, string>).FeatherGM1000, "feather/gm1000");
+    assertEquals((ruleIds as Record<string, string>).GmlPreferDirectReturn, "gml/prefer-direct-return");
+    assertEquals((ruleIds as Record<string, string>).GmlRemoveDefaultComments, "gml/remove-default-comments");
+    assertEquals((ruleIds as Record<string, string>).FeatherGM1000, "feather/gm1000");
+});
+
+void test("listLintRuleCatalogEntries is directly exported and returns rule catalog entries", () => {
+    assertEquals(typeof listLintRuleCatalogEntries, "function");
+    const entries = listLintRuleCatalogEntries();
+    assert.ok(Array.isArray(entries));
+    assert.ok(entries.length > 0);
+
+    for (const entry of entries) {
+        assertEquals(typeof entry.ruleId, "string");
+        assertEquals(typeof entry.description, "string");
+        assert.ok(entry.ruleId.startsWith("gml/") || entry.ruleId.startsWith("feather/"));
+    }
 });
 
 void test("config arrays are readonly FlatConfig[] values and share the pinned file glob", () => {
@@ -188,8 +198,8 @@ void test("Lint namespace does not expose internal doc-comment implementation he
     // Internal doc-comment helpers must be imported directly from the
     // doc-comment module (src/lint/src/doc-comment/*.ts) rather than leaked
     // through the public Lint namespace. The public surface is intentionally
-    // limited to: plugin, featherPlugin, configs, ruleIds, services,
-    // listLintRuleCatalogEntries.
+    // limited to: plugin, featherPlugin, configs, services, plus direct exports
+    // for ruleIds and listLintRuleCatalogEntries.
     assert.equal("normalizeLintRulesConfig" in Lint, false);
     assert.equal("createLintRuleEntriesFromProjectConfig" in Lint, false);
     assert.equal("projectConfig" in Lint.services, false);
