@@ -1179,3 +1179,43 @@ void test("script patch binding reindexes when scriptNames array reference chang
         restoreGlobalProperties(snapshot);
     }
 });
+
+void test("RuntimeWrapper safely ignores cross-origin window objects during patch application", () => {
+    const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
+    const globals = globalThis as unknown as GlobalSnapshot & Record<string, unknown>;
+
+    try {
+        globals.JSON_game = {
+            ScriptNames: ["gml_Script_test"],
+            Scripts: [() => 42],
+            GMObjects: []
+        };
+        globals.gml_Script_test = globals.JSON_game.Scripts[0];
+
+        const originalFn = globals.JSON_game.Scripts[0];
+
+        // Simulate a cross-origin window object on global scope
+        const mockCrossOriginWindow = {} as any;
+        Object.defineProperty(mockCrossOriginWindow, "self", {
+            get() {
+                throw new Error("Blocked a frame with origin from accessing a cross-origin frame.");
+            },
+            configurable: true
+        });
+        globals.__mock_cross_origin_window = mockCrossOriginWindow;
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        const applyResult = wrapper.applyPatch({
+            kind: "script",
+            id: "gml/script/test",
+            runtimeId: "gml_Script_test",
+            js_body: "return 99;"
+        });
+
+        assert.equal(applyResult.success, true);
+        assert.notEqual(globals.gml_Script_test, originalFn);
+    } finally {
+        delete globals.__mock_cross_origin_window;
+        restoreGlobalProperties(snapshot);
+    }
+});

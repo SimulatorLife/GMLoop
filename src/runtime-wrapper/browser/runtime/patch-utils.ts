@@ -206,7 +206,18 @@ function resolveInstanceStore(globalScope: RuntimeBindingGlobals & Record<string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object";
+    if (value === null || typeof value !== "object") {
+        return false;
+    }
+    try {
+        const self = (value as any).self;
+        if (self === value) {
+            return false;
+        }
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function isRuntimeInstanceForObjectContext(candidate: unknown, objectContext: unknown): boolean {
@@ -1449,12 +1460,20 @@ const __resolveScriptFunction = (prop) => {
 };
 let __gml_minified_property_map = null;
 let __gml_minified_property_map_resolved = false;
-const __isMinifiedGmlPropertyMap = (value) =>
-    value &&
-    typeof value === "object" &&
-    typeof value.mouse_x === "string" &&
-    typeof value.current_time === "string" &&
-    typeof value.variable_instance_get === "string";
+const __isMinifiedGmlPropertyMap = (value) => {
+    try {
+        return (
+            value &&
+            typeof value === "object" &&
+            value.self !== value &&
+            typeof value.mouse_x === "string" &&
+            typeof value.current_time === "string" &&
+            typeof value.variable_instance_get === "string"
+        );
+    } catch {
+        return false;
+    }
+};
 const __resolveMinifiedGmlPropertyMap = () => {
     if (__gml_minified_property_map_resolved) {
         return __gml_minified_property_map;
@@ -1462,18 +1481,22 @@ const __resolveMinifiedGmlPropertyMap = () => {
     if (!__global_scope) {
         return null;
     }
-    if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
-        __gml_minified_property_map = __global_scope._bw;
-        __gml_minified_property_map_resolved = true;
-        return __gml_minified_property_map;
-    }
-    for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
-        const value = __global_scope[globalPropertyName];
-        if (__isMinifiedGmlPropertyMap(value)) {
-            __gml_minified_property_map = value;
+    try {
+        if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
+            __gml_minified_property_map = __global_scope._bw;
             __gml_minified_property_map_resolved = true;
             return __gml_minified_property_map;
         }
+    } catch {}
+    for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
+        try {
+            const value = __global_scope[globalPropertyName];
+            if (__isMinifiedGmlPropertyMap(value)) {
+                __gml_minified_property_map = value;
+                __gml_minified_property_map_resolved = true;
+                return __gml_minified_property_map;
+            }
+        } catch {}
     }
     return null;
 };
@@ -1635,12 +1658,20 @@ function applyEventPatch(registry: RuntimeRegistry, patch: EventPatch): RuntimeR
 const __global_scope = typeof globalThis === "object" && globalThis !== null ? globalThis : null;
 let __gml_minified_property_map = null;
 let __gml_minified_property_map_resolved = false;
-const __isMinifiedGmlPropertyMap = (value) =>
-    value &&
-    typeof value === "object" &&
-    typeof value.mouse_x === "string" &&
-    typeof value.current_time === "string" &&
-    typeof value.variable_instance_get === "string";
+const __isMinifiedGmlPropertyMap = (value) => {
+    try {
+        return (
+            value &&
+            typeof value === "object" &&
+            value.self !== value &&
+            typeof value.mouse_x === "string" &&
+            typeof value.current_time === "string" &&
+            typeof value.variable_instance_get === "string"
+        );
+    } catch {
+        return false;
+    }
+};
 const __resolveMinifiedGmlPropertyMap = () => {
     if (__gml_minified_property_map_resolved) {
         return __gml_minified_property_map;
@@ -1648,18 +1679,22 @@ const __resolveMinifiedGmlPropertyMap = () => {
     if (!__global_scope) {
         return null;
     }
-    if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
-        __gml_minified_property_map = __global_scope._bw;
-        __gml_minified_property_map_resolved = true;
-        return __gml_minified_property_map;
-    }
-    for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
-        const value = __global_scope[globalPropertyName];
-        if (__isMinifiedGmlPropertyMap(value)) {
-            __gml_minified_property_map = value;
+    try {
+        if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
+            __gml_minified_property_map = __global_scope._bw;
             __gml_minified_property_map_resolved = true;
             return __gml_minified_property_map;
         }
+    } catch {}
+    for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
+        try {
+            const value = __global_scope[globalPropertyName];
+            if (__isMinifiedGmlPropertyMap(value)) {
+                __gml_minified_property_map = value;
+                __gml_minified_property_map_resolved = true;
+                return __gml_minified_property_map;
+            }
+        } catch {}
     }
     return null;
 };
