@@ -1,5 +1,0 @@
-{
-  "dimensions": 64,
-  "provider": "local-mini-lm",
-  "type": "local-token-hash"
-}
