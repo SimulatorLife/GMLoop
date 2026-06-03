@@ -2109,7 +2109,12 @@ async function addScriptNamesFromFile(
 
     try {
         const content = await readFile(filePath, "utf8");
-        const parser = new Parser.GMLParser(content, {});
+        const parser = new Parser.GMLParser(content, {
+            getComments: false,
+            getLocations: true,
+            simplifyLocations: true,
+            attachFunctionDocComments: false
+        });
         const ast = parser.parse();
         // Extract both symbols and references from the AST in a single traversal.
         // This saves a second walk during transpileFile when the cache is reused.

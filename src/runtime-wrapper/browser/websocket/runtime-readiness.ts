@@ -12,7 +12,18 @@ type RuntimeReadyGlobals = Record<string, unknown> & {
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object";
+    if (value === null || typeof value !== "object") {
+        return false;
+    }
+    try {
+        const self = (value as any).self;
+        if (self === value) {
+            return false;
+        }
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function isRuntimeScriptName(value: unknown): value is string {

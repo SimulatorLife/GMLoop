@@ -605,6 +605,82 @@ void test("script patches resolve builtin constants and getters", () => {
     }
 });
 
+void test("event patches resolve minified builtins using __type = '[BuiltIn]' prioritize check", () => {
+    const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
+
+    try {
+        const globals = globalThis as any;
+
+        // Mock the event function
+        const gml_Object_oSpider_Step_0 = function (..._args: Array<unknown>) {
+            return "original";
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._uB2 = 5; // StepNormalEvent index
+
+        // Mock object entry and instance entry
+        const objectEntry = {
+            pName: "oSpider",
+            StepNormalEvent: gml_Object_oSpider_Step_0
+        };
+        const instanceEntry = {
+            _kx: objectEntry,
+            Event: []
+        };
+
+        globals.JSON_game = {
+            ScriptNames: [],
+            Scripts: [],
+            GMObjects: [objectEntry]
+        };
+
+        // Mock the minified property map to point to minified getters
+        globals._bw = {
+            self: "not-self",
+            mouse_x: "_5W",
+            get_mouse_x: "_V4",
+            mouse_y: "_9W",
+            get_mouse_y: "_W4",
+            current_time: "_Yy2",
+            get_current_time: "_35",
+            variable_instance_get: "inst_get" // needed for __isMinifiedGmlPropertyMap validation
+        };
+
+        // Mock _U4 with __type === "[BuiltIn]" and the getter functions
+        globals._U4 = {
+            __type: "[BuiltIn]",
+            _V4: () => 456, // returns mouse_x
+            _W4: () => 789 // returns mouse_y
+        };
+
+        // Mock _g8 as a plain object (which previously blocked resolution of _U4 because of early return)
+        globals._g8 = {
+            some_other_key: "value"
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            this_name: "_e4",
+            js_body: "this._testResult = mouse_x + mouse_y;"
+        });
+
+        const updatedFn = objectEntry.StepNormalEvent as (...args: Array<unknown>) => unknown;
+        assert.ok(updatedFn);
+        updatedFn.call(objectEntry, instanceEntry, null, []);
+
+        assert.equal((instanceEntry as any)._testResult, 456 + 789);
+    } finally {
+        restoreGlobalProperties(snapshot);
+        delete (globalThis as any)._bw;
+        delete (globalThis as any)._U4;
+        delete (globalThis as any)._g8;
+        delete (globalThis as any).gml_Object_oSpider_Step_0;
+    }
+});
+
 void test("script patches map GML variables to instance storage", () => {
     const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
 
@@ -1176,6 +1252,46 @@ void test("script patch binding reindexes when scriptNames array reference chang
         // The first table must not have been modified in round 2
         assert.equal(firstScripts[42], afterFirstPatch, "Round 1 table must not be altered by round 2 patch");
     } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("RuntimeWrapper safely ignores cross-origin window objects during patch application", () => {
+    const snapshot = snapshotGlobalProperties(runtimeIntegrationPropertyNames);
+    const globals = globalThis as unknown as GlobalSnapshot & Record<string, unknown>;
+
+    try {
+        globals.JSON_game = {
+            ScriptNames: ["gml_Script_test"],
+            Scripts: [() => 42],
+            GMObjects: []
+        };
+        globals.gml_Script_test = globals.JSON_game.Scripts[0];
+
+        const originalFn = globals.JSON_game.Scripts[0];
+
+        // Simulate a cross-origin window object on global scope
+        const mockCrossOriginWindow = {} as any;
+        Object.defineProperty(mockCrossOriginWindow, "self", {
+            get() {
+                throw new Error("Blocked a frame with origin from accessing a cross-origin frame.");
+            },
+            configurable: true
+        });
+        globals.__mock_cross_origin_window = mockCrossOriginWindow;
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        const applyResult = wrapper.applyPatch({
+            kind: "script",
+            id: "gml/script/test",
+            runtimeId: "gml_Script_test",
+            js_body: "return 99;"
+        });
+
+        assert.equal(applyResult.success, true);
+        assert.notEqual(globals.gml_Script_test, originalFn);
+    } finally {
+        delete globals.__mock_cross_origin_window;
         restoreGlobalProperties(snapshot);
     }
 });
