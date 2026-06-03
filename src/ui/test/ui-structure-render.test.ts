@@ -100,13 +100,11 @@ function createMockState(activePage: GraphVisualizationUiState["activePage"]): G
         fixLogLines: [],
         fixStatus: "idle",
         isFixPending: false,
-        isLiveReloadRefreshPending: false,
         isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
         liveReloadErrorMessage: null,
-        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         pendingActionCount: 0,
         searchQuery: "enemy"
@@ -138,7 +136,7 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.match(rendered, /id="tab-mcp"/u);
 });
 
-void test("MCP toolbar renders server status beside the page title", () => {
+void test("MCP toolbar renders page status in the single shared page toolbar", () => {
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();
     toolbar.state = createMockState("mcp");
@@ -147,9 +145,44 @@ void test("MCP toolbar renders server status beside the page title", () => {
 
     assert.match(rendered, /class="toolbar-heading-row"/u);
     assert.match(rendered, /id="toolbar-heading"[\s\S]*MCP/u);
-    assert.match(rendered, /class="toolbar-status"[\s\S]*class=mcp-runtime-status-chip/u);
-    assert.match(rendered, /Not Started/u);
-    assert.match(rendered, /The MCP bridge has not started in this session yet\./u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*The MCP bridge has not started in this session yet\./u);
+    assert.match(rendered, /<gm-status-chip[\s\S]*\.status=not-running[\s\S]*><\/gm-status-chip>/u);
+    assert.doesNotMatch(rendered, /mcp-runtime-status-chip/u);
+});
+
+void test("Live Reload toolbar owns page title, status, subtitle, and controls", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = {
+        ...createMockModel(),
+        liveReload: null
+    };
+    toolbar.state = createMockState("live-reload");
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id="toolbar-heading"[\s\S]*Live Reload/u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*Start live reload to launch the watcher/u);
+    assert.match(rendered, /<gm-status-chip[\s\S]*\.status=not-running[\s\S]*><\/gm-status-chip>/u);
+    assert.match(rendered, /id="live-reload-controls"[\s\S]*id="start-live-reload"/u);
+    assert.match(rendered, /id="live-reload-controls"[\s\S]*id="stop-live-reload"/u);
+});
+
+void test("Docs toolbar owns subcategory controls and catalog search", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = createMockState("docs");
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id="toolbar-heading"[\s\S]*Docs/u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*Command help is not available right now\./u);
+    assert.match(rendered, /id="docs-controls"[\s\S]*class="gm-view-selector"/u);
+    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-cli"/u);
+    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-mcp"/u);
+    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-rules"/u);
+    assert.match(rendered, /id="docs-view-cli"[\s\S]*class=gm-btn--chip active/u);
+    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-search-input"/u);
+    assert.match(rendered, /id="docs-search-input"[\s\S]*aria-describedby="toolbar-subheading docs-search-summary"/u);
 });
 
 void test("graph toolbar renders grouped controls for search, view state, and actions", () => {
@@ -222,6 +255,17 @@ void test("toolbar stylesheet keeps graph toolbar controls in a full-width horiz
     );
     assert.match(source, /\.toolbar-control-group\s*\{[\s\S]*flex-wrap:\s*nowrap;/u);
     assert.match(source, /\.toolbar-search-group\s*\{[\s\S]*flex:\s*1 1 220px;[\s\S]*max-width:\s*360px;/u);
+});
+
+void test("shared view selector keeps inactive tabs visually unoutlined", () => {
+    const source = readFileSync(new URL("../../src/web/styles/components.css", import.meta.url), "utf8");
+
+    assert.match(source, /\.gm-view-selector\s*>\s*\.gm-btn--chip\s*\{[\s\S]*border-color:\s*transparent;/u);
+    assert.match(source, /\.gm-view-selector\s*>\s*\.gm-btn--chip\s*\{[\s\S]*background:\s*transparent;/u);
+    assert.match(
+        source,
+        /\.gm-view-selector\s*>\s*\.gm-btn--chip\.active,[\s\S]*\.gm-view-selector\s*>\s*\.gm-btn--chip\[aria-pressed="true"\]\s*\{[\s\S]*border-color:\s*transparent;/u
+    );
 });
 
 void test("page styles keep every top-level page on the shared lighter content background", () => {

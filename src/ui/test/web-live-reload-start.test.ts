@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { GraphVisualizationLiveReloadModel } from "../src/graph/types.js";
+import type { GraphVisualizationLiveReloadModel, GraphVisualizationRenderOptions } from "../src/graph/types.js";
 import { __test__ as webTestExports } from "../src/web/index.js";
 
 type TestLiveReloadRuntimeTab = Readonly<{
@@ -12,7 +12,17 @@ type TestLiveReloadRuntimeTab = Readonly<{
     };
 }>;
 
-function createLiveReloadModel(runtimeUrl: string | null): GraphVisualizationLiveReloadModel {
+function createTestRuntimeTab(onFocus: () => void): TestLiveReloadRuntimeTab {
+    return {
+        close: () => {},
+        focus: onFocus,
+        location: {
+            href: ""
+        }
+    };
+}
+
+function createLiveReloadModel(runtimeUrl: string): GraphVisualizationLiveReloadModel {
     return {
         endpoints: {
             runtimeUrl,
@@ -25,46 +35,23 @@ function createLiveReloadModel(runtimeUrl: string | null): GraphVisualizationLiv
     };
 }
 
-function createTestRuntimeTab(onFocus: () => void): TestLiveReloadRuntimeTab {
-    return {
-        close: () => {},
-        focus: onFocus,
-        location: {
-            href: ""
-        }
-    };
+function setBootstrapOptionsForTest(options: GraphVisualizationRenderOptions | undefined): void {
+    globalThis.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__ = options;
 }
 
-void test("web live-reload start action requests a fresh session restart", () => {
-    assert.deepEqual(JSON.parse(webTestExports.LIVE_RELOAD_START_REQUEST_BODY), { restart: true });
+test.afterEach(() => {
+    delete globalThis.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__;
 });
 
-void test("web live-reload runtime tab reservation reuses the dedicated runtime target synchronously", () => {
+void test("web live-reload start action requests start-or-reuse instead of forced restart", () => {
+    assert.deepEqual(JSON.parse(webTestExports.LIVE_RELOAD_START_REQUEST_BODY), { restart: false });
+});
+
+void test("web live-reload open function opens the tab at the correct runtime URL", () => {
     const openedTabs: Array<Readonly<{ target: string; url: string }>> = [];
     let focused = false;
 
-    const runtimeTab = webTestExports.reserveLiveReloadRuntimeTab((url, target) => {
-        openedTabs.push({ target, url });
-        return createTestRuntimeTab(() => {
-            focused = true;
-        });
-    });
-
-    assert.notEqual(runtimeTab, null);
-    assert.deepEqual(openedTabs, [
-        {
-            target: webTestExports.LIVE_RELOAD_RUNTIME_TAB_TARGET,
-            url: ""
-        }
-    ]);
-    assert.equal(focused, true);
-});
-
-void test("web live-reload runtime tab opener reuses the dedicated runtime target", () => {
-    const openedTabs: Array<Readonly<{ target: string; url: string }>> = [];
-    let focused = false;
-
-    webTestExports.openLiveReloadRuntimeTab(createLiveReloadModel("http://127.0.0.1:51264/"), null, (url, target) => {
+    webTestExports.openLiveReloadRuntimeTab("http://127.0.0.1:51264/", (url, target) => {
         openedTabs.push({ target, url });
         return createTestRuntimeTab(() => {
             focused = true;
@@ -80,32 +67,135 @@ void test("web live-reload runtime tab opener reuses the dedicated runtime targe
     assert.equal(focused, true);
 });
 
-void test("web live-reload runtime tab opener navigates the reserved runtime tab after startup", () => {
+void test("web live-reload start opens runtime tab only after startup returns a runtime URL", async () => {
+    const openedTabs: Array<Readonly<{ target: string; url: string }>> = [];
     let focused = false;
-    const runtimeTab = createTestRuntimeTab(() => {
-        focused = true;
+    let resolveStartResponse: ((response: Response) => void) | null = null;
+    const startResponse = new Promise<Response>((resolve) => {
+        resolveStartResponse = resolve;
     });
 
-    webTestExports.openLiveReloadRuntimeTab(createLiveReloadModel("http://127.0.0.1:51264/"), runtimeTab);
+    const startPromise = webTestExports.startLiveReloadFromServer(
+        async () => await startResponse,
+        (url, target) => {
+            openedTabs.push({ target, url });
+            return createTestRuntimeTab(() => {
+                focused = true;
+            });
+        }
+    );
 
-    assert.equal(runtimeTab.location.href, "http://127.0.0.1:51264/");
+    await Promise.resolve();
+
+    assert.deepEqual(openedTabs, []);
+
+    resolveStartResponse?.(
+        Response.json(
+            {
+                liveReload: createLiveReloadModel("http://127.0.0.1:51264/"),
+                ok: true
+            },
+            { status: 200 }
+        )
+    );
+
+    const liveReload = await startPromise;
+
+    assert.equal(liveReload.endpoints.runtimeUrl, "http://127.0.0.1:51264/");
+    assert.deepEqual(openedTabs, [
+        {
+            target: webTestExports.LIVE_RELOAD_RUNTIME_TAB_TARGET,
+            url: "http://127.0.0.1:51264/"
+        }
+    ]);
     assert.equal(focused, true);
 });
 
-void test("web live-reload runtime tab opener ignores missing runtime URLs", () => {
+void test("web live-reload start mirrors active session into bootstrap options for Vite UI HMR remounts", async () => {
+    setBootstrapOptionsForTest({
+        isServerMode: true,
+        title: "HMR"
+    });
+
+    await webTestExports.startLiveReloadFromServer(
+        async () =>
+            Response.json(
+                {
+                    liveReload: createLiveReloadModel("http://127.0.0.1:51264/"),
+                    ok: true
+                },
+                { status: 200 }
+            ),
+        () => null
+    );
+
+    assert.equal(
+        globalThis.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__?.liveReload?.endpoints.runtimeUrl,
+        "http://127.0.0.1:51264/"
+    );
+});
+
+void test("web live-reload start rejects missing runtime URLs without opening a tab", async () => {
     const openedTabs: Array<Readonly<{ target: string; url: string }>> = [];
 
-    webTestExports.openLiveReloadRuntimeTab(createLiveReloadModel(null), null, (url, target) => {
-        openedTabs.push({ target, url });
-        return null;
-    });
+    await assert.rejects(
+        async () =>
+            await webTestExports.startLiveReloadFromServer(
+                async () =>
+                    Response.json(
+                        {
+                            liveReload: {
+                                endpoints: {
+                                    runtimeUrl: null,
+                                    statusUrl: "http://127.0.0.1:17891/status",
+                                    websocketUrl: "ws://127.0.0.1:17890"
+                                },
+                                pollIntervalMs: 2000,
+                                runtimeHealth: null,
+                                statusSnapshot: null
+                            },
+                            ok: true
+                        },
+                        { status: 200 }
+                    ),
+                (url, target) => {
+                    openedTabs.push({ target, url });
+                    return null;
+                }
+            ),
+        new RegExp(webTestExports.LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR, "u")
+    );
 
     assert.deepEqual(openedTabs, []);
 });
 
-void test("web live-reload runtime tab opener does not fail the start flow when opening is blocked", () => {
+void test("web live-reload stop clears bootstrap live-reload state only after host stop succeeds", async () => {
+    setBootstrapOptionsForTest({
+        isServerMode: true,
+        liveReload: createLiveReloadModel("http://127.0.0.1:51264/"),
+        title: "HMR"
+    });
+
+    await assert.rejects(
+        async () =>
+            await webTestExports.stopLiveReloadFromServer(async () =>
+                Response.json({ error: "stop failed", ok: false }, { status: 500 })
+            ),
+        /stop failed/u
+    );
+    assert.equal(
+        globalThis.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__?.liveReload?.endpoints.runtimeUrl,
+        "http://127.0.0.1:51264/"
+    );
+
+    await webTestExports.stopLiveReloadFromServer(async () => Response.json({ ok: true }, { status: 200 }));
+
+    assert.equal(globalThis.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__?.liveReload, undefined);
+});
+
+void test("web live-reload open function does not fail when opening is blocked", () => {
     assert.doesNotThrow(() => {
-        webTestExports.openLiveReloadRuntimeTab(createLiveReloadModel("http://127.0.0.1:51264/"), null, () => {
+        webTestExports.openLiveReloadRuntimeTab("http://127.0.0.1:51264/", () => {
             throw new Error("Popup blocked");
         });
     });

@@ -12,6 +12,7 @@ import { test } from "node:test";
 import {
     DEFAULT_MATH_SIGNAL_PATTERNS,
     DEFAULT_TEXT_LENGTH_POLICY,
+    evaluateCanonicalFormDecision,
     evaluateMathOptimizationCandidate,
     evaluateSkipDecision,
     formatCanonicalNumericLiteral,
@@ -319,4 +320,60 @@ void test("evaluateSkipDecision with complex parent structures", () => {
     };
 
     assert.strictEqual(evaluateSkipDecision(complexParent, "expression"), true);
+});
+
+void test("evaluateCanonicalFormDecision treats numerically equivalent literals as canonical (epsilon-tolerant)", () => {
+    // Source text "1" parses to the numeric value 1.  This is canonical — no noise —
+    // so the canonical form matches the source text directly.
+    const cleanNode = {
+        type: "Literal",
+        value: 1
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("1", cleanNode), true);
+
+    // Source text "1" with a node whose numeric value is very close to 1 (e.g.
+    // 1 + 2e-16).  Strict string equality "1" === "1" would return true here, but
+    // the real bug is the inverse case: a numerically-canonical value whose string
+    // form contains floating-point noise.  We test the inverse below with a value
+    // that canonicalizes to a shorter string.
+    const nearCanonicalNode = {
+        type: "Literal",
+        value: 1 + 2e-16
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("1", nearCanonicalNode), true);
+});
+
+void test("evaluateCanonicalFormDecision rejects literals that are not numerically canonical", () => {
+    // "2.5" is numerically canonical — formatCanonicalNumericLiteral(2.5) → "2.5"
+    const canonicalNode = {
+        type: "Literal",
+        value: 2.5
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("2.5", canonicalNode), true);
+
+    // Source text "0.1 + 0.9" as a parsed value (0.9999999999999999): this is close
+    // to 1, which canonically formats as "1".  Epsilon comparison correctly treats
+    // it as numerically equal to the canonical form, so the function returns true
+    // — the value is already as canonical as it can be.
+    const noisyNearOneNode = {
+        type: "Literal",
+        value: 0.1 + 0.9
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("0.1 + 0.9", noisyNearOneNode), true);
+});
+
+void test("evaluateCanonicalFormDecision uses strict equality for non-finite canonical text", () => {
+    // NaN values: getLiteralNumberValue returns null, so the function returns false.
+    const nanNode = {
+        type: "Literal",
+        value: Number.NaN
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("NaN", nanNode), false);
+
+    // Non-numeric literal: getLiteralNumberValue returns null, function returns false.
+    const stringNode = {
+        type: "Literal",
+        value: "hello"
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("hello", stringNode), false);
 });

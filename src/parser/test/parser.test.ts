@@ -288,10 +288,10 @@ void describe("GameMaker parser fixtures", () => {
         assert.equal(GMLParser.optionDefaults.getComments, true);
     });
 
-    void it("allows tuning SLL prediction threshold via parser options", () => {
+    void it("treats an SLL prediction threshold of 0 as unset and uses the default", () => {
         const parser = new GMLParser("x = 1;", { sllPredictionMaxSourceLength: 0 });
 
-        assert.equal(parser.options.sllPredictionMaxSourceLength, 0);
+        assert.equal(parser.options.sllPredictionMaxSourceLength, defaultParserOptions.sllPredictionMaxSourceLength);
     });
 
     void it("falls back to defaults when SLL prediction threshold override is invalid", () => {

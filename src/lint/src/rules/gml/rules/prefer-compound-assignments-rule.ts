@@ -8,6 +8,7 @@ import {
     type IdentifierNode,
     isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
+    isBinaryExpressionNodeWithOperator,
     isIdentifierNode,
     walkAstNodes
 } from "../rule-base-helpers.js";
@@ -17,14 +18,6 @@ type SupportedBitwiseOperator = "|" | "&" | "^";
 type SupportedNullishOperator = "??";
 type SupportedBinaryOperator = SupportedArithmeticOperator | SupportedBitwiseOperator | SupportedNullishOperator;
 type CompoundAssignmentOperator = "+=" | "-=" | "*=" | "/=" | "%=" | "|=" | "&=" | "^=" | "??=";
-
-type BinaryExpressionNode = AstNodeRecord &
-    Readonly<{
-        type: "BinaryExpression";
-        operator: SupportedBinaryOperator;
-        left: unknown;
-        right: unknown;
-    }>;
 
 type AssignmentExpressionNode = AstNodeRecord &
     Readonly<{
@@ -37,7 +30,13 @@ type AssignmentExpressionNode = AstNodeRecord &
 type CompoundAssignmentCandidate = Readonly<{
     assignmentExpression: AssignmentExpressionNode;
     leftIdentifier: IdentifierNode;
-    rightBinaryExpression: BinaryExpressionNode;
+    rightBinaryExpression: AstNodeRecord &
+        Readonly<{
+            type: "BinaryExpression";
+            operator: SupportedBinaryOperator;
+            left: unknown;
+            right: unknown;
+        }>;
     rightOperand: AstNodeRecord;
     compoundOperator: CompoundAssignmentOperator;
 }>;
@@ -68,16 +67,6 @@ function isSupportedBinaryOperator(operator: unknown): operator is SupportedBina
     );
 }
 
-function isBinaryExpressionNode(node: unknown): node is BinaryExpressionNode {
-    return (
-        isAstNodeRecord(node) &&
-        node.type === "BinaryExpression" &&
-        isSupportedBinaryOperator(node.operator) &&
-        Object.hasOwn(node, "left") &&
-        Object.hasOwn(node, "right")
-    );
-}
-
 function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
     return isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=");
 }
@@ -96,7 +85,7 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
     }
 
     const rightExpressionNode = Core.unwrapParenthesizedExpression(node.right);
-    if (!isBinaryExpressionNode(rightExpressionNode)) {
+    if (!isBinaryExpressionNodeWithOperator(rightExpressionNode, isSupportedBinaryOperator)) {
         return null;
     }
 
@@ -107,6 +96,7 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
         if (!isAstNodeRecord(rightExpressionNode.right)) {
             return null;
         }
+
         return Object.freeze({
             assignmentExpression: node,
             leftIdentifier: node.left,
@@ -141,7 +131,6 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
         assignmentExpression: node,
         leftIdentifier: node.left,
         rightBinaryExpression: rightExpressionNode,
-        // The variable appears on the right; use the left operand as the compound right-hand side.
         rightOperand: rightExpressionNode.left,
         compoundOperator: COMPOUND_OPERATOR_BY_BINARY_OPERATOR[rightExpressionNode.operator]
     });

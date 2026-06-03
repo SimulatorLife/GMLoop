@@ -1,10 +1,10 @@
+import { printExpression, printNodeForAutofix, readNodeText } from "../../contracts/autofix-printing.js";
 import {
     convertLegacyReturnsDescriptionLinesToMetadata,
     normalizeDocParamName,
     promoteLeadingDocCommentTextToDescription,
     resolveParameterName
 } from "../../doc-comment/index.js";
-import { printExpression, printNodeForAutofix, readNodeText } from "../../language/autofix-printing.js";
 import { createLimitedRecoveryProjection } from "../../language/index.js";
 import {
     forEachScientificNotationToken,
@@ -75,7 +75,7 @@ export const gmlRuleMalformedServices = Object.freeze({
  *
  * Rules that need to print AST nodes back to source text for lint autofixes
  * should import from this object rather than reaching three directory levels
- * into `src/lint/src/language/autofix-printing.js`. When the printing logic
+ * into `src/lint/src/contracts/autofix-printing.js`. When the printing logic
  * is refactored, only this file needs updating — rule consumers stay stable.
  */
 export const gmlRuleAutofixServices = Object.freeze({

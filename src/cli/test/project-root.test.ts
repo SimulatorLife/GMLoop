@@ -6,6 +6,7 @@ import { afterEach, describe, it } from "node:test";
 
 import {
     discoverProjectRoot,
+    filterGraphIndexResultsByKind,
     resolveCommandProjectContext,
     resolveExistingGmloopConfigPath,
     resolveExplicitWorkflowTargetPath
@@ -51,6 +52,51 @@ void describe("resolveExplicitWorkflowTargetPath", () => {
     void it("returns .gml file paths as file targets", () => {
         const normalizedPath = resolveExplicitWorkflowTargetPath("/tmp/MyGame/scripts/demo/demo.gml");
         assert.equal(normalizedPath, path.resolve("/tmp/MyGame/scripts/demo/demo.gml"));
+    });
+});
+
+void describe("filterGraphIndexResultsByKind", () => {
+    void it("returns an empty array for empty input", () => {
+        const results: Array<{ kind: string }> = [];
+        const filtered = filterGraphIndexResultsByKind(results, "room");
+        assert.equal(filtered.length, 0);
+    });
+
+    void it("returns only entries matching the specified kind", () => {
+        const results = [
+            { kind: "room", id: "room-1", name: "Main" },
+            { kind: "object", id: "obj-1", name: "Player" },
+            { kind: "room", id: "room-2", name: "Hub" },
+            { kind: "script", id: "scr-1", name: "init" }
+        ] as const;
+        const filtered = filterGraphIndexResultsByKind(results, "room");
+        assert.equal(filtered.length, 2);
+        assert.equal(filtered[0].id, "room-1");
+        assert.equal(filtered[1].id, "room-2");
+    });
+
+    void it("returns an empty array when no entries match the kind", () => {
+        const results = [
+            { kind: "script", id: "scr-1" },
+            { kind: "function", id: "fn-1" }
+        ] as const;
+        const filtered = filterGraphIndexResultsByKind(results, "object");
+        assert.equal(filtered.length, 0);
+    });
+
+    void it("preserves readonly input array when filtering", () => {
+        const results: readonly { kind: string }[] = [{ kind: "room" }, { kind: "room" }];
+        const filtered = filterGraphIndexResultsByKind(results, "room");
+        assert.equal(filtered.length, 2);
+    });
+
+    void it("returns the first matching entry via index access", () => {
+        const results = [
+            { kind: "room", id: "room-first" },
+            { kind: "room", id: "room-second" }
+        ] as const;
+        const first = filterGraphIndexResultsByKind(results, "room")[0];
+        assert.equal(first?.id, "room-first");
     });
 });
 
