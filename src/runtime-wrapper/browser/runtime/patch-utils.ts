@@ -143,6 +143,34 @@ function resolveScriptNameIndex(scriptNames: Array<string>): ReadonlyMap<string,
     return _scriptNameIndex;
 }
 
+function discoverMinifiedInstancePool(globalScope: Record<string, unknown>): InstanceStore | undefined {
+    for (const propertyName of Object.getOwnPropertyNames(globalScope)) {
+        try {
+            const candidate = globalScope[propertyName];
+            if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+                for (const value of Object.values(candidate)) {
+                    if (value && typeof value === "object") {
+                        const keys = Object.keys(value);
+                        if (keys.length > 0 && keys.every((k) => /^\d+$/.test(k))) {
+                            const firstVal = value[keys[0]];
+                            if (
+                                firstVal &&
+                                typeof firstVal === "object" &&
+                                !("nodeType" in firstVal) &&
+                                (firstVal.__type === "[instance]" ||
+                                    ("id" in firstVal && "x" in firstVal && "y" in firstVal))
+                             && keys.some((k) => Number(k) >= 100_000)) {
+                                    return value as InstanceStore;
+                                }
+                        }
+                    }
+                }
+            }
+        } catch {}
+    }
+    return undefined;
+}
+
 function resolveInstanceStore(globalScope: RuntimeBindingGlobals & Record<string, unknown>): InstanceStore | undefined {
     // Prefer the _cx._dx store when available.
     const cxcDx = readCxcDxStore(globalScope);
@@ -154,6 +182,11 @@ function resolveInstanceStore(globalScope: RuntimeBindingGlobals & Record<string
     const pool = readRuntimeObjectPool(globalScope);
     if (pool !== undefined) {
         return pool;
+    }
+
+    const minifiedPool = discoverMinifiedInstancePool(globalScope);
+    if (minifiedPool !== undefined) {
+        return minifiedPool;
     }
 
     for (const propertyName of Object.keys(globalScope)) {
@@ -194,7 +227,17 @@ function isRuntimeInstanceForObjectContext(candidate: unknown, objectContext: un
         return false;
     }
 
-    return candidate.pObject === objectContext || candidate._kx === objectContext;
+    if (candidate.pObject === objectContext || candidate._kx === objectContext) {
+        return true;
+    }
+
+    for (const value of Object.values(candidate)) {
+        if (value === objectContext) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function isRuntimeScriptName(value: unknown): value is string {
@@ -230,7 +273,7 @@ function isRuntimeFunctionArray(value: unknown): value is Array<RuntimeFunction>
 }
 
 function isLikelyGameObjectRecord(value: unknown): value is Record<string, unknown> {
-    if (!isRecord(value)) {
+    if (!isRecord(value) || "nodeType" in value) {
         return false;
     }
 
@@ -359,7 +402,11 @@ function resolveRuntimeGameData(globalScope: RuntimeBindingGlobals & Record<stri
     const jsonGame = globalScope.JSON_game;
     if (jsonGame !== null && typeof jsonGame === "object") {
         return {
-            gmObjects: Array.isArray(jsonGame.GMObjects) ? jsonGame.GMObjects : undefined,
+            gmObjects: Array.isArray(jsonGame.GMObjects)
+                ? jsonGame.GMObjects.filter(
+                      (entry): entry is Record<string, unknown> => entry !== null && entry !== undefined
+                  )
+                : undefined,
             scriptNames: Array.isArray(jsonGame.ScriptNames) ? jsonGame.ScriptNames : undefined,
             scripts: Array.isArray(jsonGame.Scripts) ? jsonGame.Scripts : undefined
         };
@@ -368,7 +415,11 @@ function resolveRuntimeGameData(globalScope: RuntimeBindingGlobals & Record<stri
     const minifiedGameData = globalScope._a1;
     if (minifiedGameData !== null && typeof minifiedGameData === "object") {
         return {
-            gmObjects: Array.isArray(minifiedGameData._52) ? minifiedGameData._52 : undefined,
+            gmObjects: Array.isArray(minifiedGameData._52)
+                ? minifiedGameData._52.filter(
+                      (entry): entry is Record<string, unknown> => entry !== null && entry !== undefined
+                  )
+                : undefined,
             scriptNames: Array.isArray(minifiedGameData._98) ? minifiedGameData._98 : undefined,
             scripts: Array.isArray(minifiedGameData._a8) ? minifiedGameData._a8 : undefined
         };
@@ -388,7 +439,11 @@ function resolveRuntimeGameData(globalScope: RuntimeBindingGlobals & Record<stri
 
         for (const propertyValue of Object.values(candidate)) {
             if (isLikelyGameObjectArray(propertyValue)) {
-                discoveredGmObjects.push(...propertyValue);
+                discoveredGmObjects.push(
+                    ...propertyValue.filter(
+                        (entry): entry is Record<string, unknown> => entry !== null && entry !== undefined
+                    )
+                );
                 continue;
             }
 
@@ -440,6 +495,20 @@ function resolveRuntimeBuiltins(globalScope: RuntimeBindingGlobals): Record<stri
         return globalScope._g8;
     }
 
+    const scope = globalScope as Record<string, unknown>;
+    for (const key of Object.getOwnPropertyNames(scope)) {
+        try {
+            const candidate = scope[key];
+            if (
+                candidate &&
+                typeof candidate === "object" &&
+                (candidate as Record<string, unknown>).__type === "[BuiltIn]"
+            ) {
+                return candidate as Record<string, unknown>;
+            }
+        } catch {}
+    }
+
     return undefined;
 }
 
@@ -447,14 +516,14 @@ function resolveRuntimeBuiltinScope(
     globalScope: RuntimeBindingGlobals & Record<string, unknown>
 ): Record<string, unknown> {
     const runtimeBuiltins = resolveRuntimeBuiltins(globalScope);
+    const functions = resolveRuntimeBuiltinFunctions(globalScope);
     if (runtimeBuiltins === undefined) {
-        return resolveRuntimeBuiltinFunctions(globalScope);
+        return functions;
     }
 
-    return {
-        ...resolveRuntimeBuiltinFunctions(globalScope),
-        ...runtimeBuiltins
-    };
+    const scope = Object.create(runtimeBuiltins);
+    Object.assign(scope, functions);
+    return scope;
 }
 
 function resolveRuntimeBindingNames(runtimeId: string): Array<string> {
@@ -664,6 +733,31 @@ function updateGlobalRuntimeFunctionAliases(
     }
 }
 
+function discoverInstanceObjectDefinition(instance: Record<string, unknown>): Record<string, unknown> | null {
+    const rawPObject = instance.pObject ?? instance._kx;
+    if (isRecord(rawPObject)) {
+        return rawPObject;
+    }
+    for (const value of Object.values(instance)) {
+        if (isRecord(value)) {
+            let hasString = false;
+            let hasFunction = false;
+            for (const subVal of Object.values(value)) {
+                if (typeof subVal === "string") {
+                    hasString = true;
+                }
+                if (typeof subVal === "function") {
+                    hasFunction = true;
+                }
+                if (hasString && hasFunction) {
+                    return value;
+                }
+            }
+        }
+    }
+    return null;
+}
+
 function updateInstance(
     instance: Record<string, unknown>,
     instanceKeysToUpdate: Set<string>,
@@ -675,8 +769,7 @@ function updateInstance(
         instance[key] = fn;
 
         // Also update the object definition (pObject) which the event loop uses
-        const rawPObject = instance.pObject ?? instance._kx;
-        const pObject = rawPObject && typeof rawPObject === "object" ? (rawPObject as Record<string, unknown>) : null;
+        const pObject = discoverInstanceObjectDefinition(instance);
         if (pObject !== null && pObject[key] !== fn) {
             pObject[key] = fn;
         }
@@ -709,9 +802,7 @@ function updateInstances(
         }
 
         if (objectName) {
-            const instanceObject = (instance as Record<string, unknown>)._kx as
-                | { pName?: unknown; _h1?: unknown; _j3?: unknown; _lx?: unknown }
-                | undefined;
+            const instanceObject = discoverInstanceObjectDefinition(instance as Record<string, unknown>);
             const instanceObjectName = instanceObject ? resolveObjectName(instanceObject, objectName) : null;
             if (instanceObjectName && instanceObjectName !== objectName) {
                 continue;
@@ -723,7 +814,7 @@ function updateInstances(
 }
 
 function resolveInstanceObjectName(instance: Record<string, unknown>, expectedName: string | null): string | null {
-    const rawObject = instance.pObject ?? instance._kx;
+    const rawObject = discoverInstanceObjectDefinition(instance);
     if (isRecord(rawObject)) {
         const objectName = resolveObjectName(rawObject, expectedName);
         if (objectName !== null) {
@@ -820,6 +911,10 @@ function resolveObjectCreateBindings(
 
 function refreshObjectInstancesAfterEventPatch(binding: RuntimeBindingApplication): void {
     if (binding.objectRuntime === null || binding.gmObjects === undefined) {
+        return;
+    }
+
+    if (binding.objectRuntime.eventName !== "Create_0") {
         return;
     }
 
@@ -1238,18 +1333,19 @@ const __resolveMinifiedGmlPropertyMap = () => {
     if (__gml_minified_property_map_resolved) {
         return __gml_minified_property_map;
     }
-    __gml_minified_property_map_resolved = true;
     if (!__global_scope) {
         return null;
     }
     if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
         __gml_minified_property_map = __global_scope._bw;
+        __gml_minified_property_map_resolved = true;
         return __gml_minified_property_map;
     }
     for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
         const value = __global_scope[globalPropertyName];
         if (__isMinifiedGmlPropertyMap(value)) {
             __gml_minified_property_map = value;
+            __gml_minified_property_map_resolved = true;
             return __gml_minified_property_map;
         }
     }
@@ -1421,18 +1517,19 @@ const __resolveMinifiedGmlPropertyMap = () => {
     if (__gml_minified_property_map_resolved) {
         return __gml_minified_property_map;
     }
-    __gml_minified_property_map_resolved = true;
     if (!__global_scope) {
         return null;
     }
     if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
         __gml_minified_property_map = __global_scope._bw;
+        __gml_minified_property_map_resolved = true;
         return __gml_minified_property_map;
     }
     for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
         const value = __global_scope[globalPropertyName];
         if (__isMinifiedGmlPropertyMap(value)) {
             __gml_minified_property_map = value;
+            __gml_minified_property_map_resolved = true;
             return __gml_minified_property_map;
         }
     }
@@ -1484,6 +1581,10 @@ const __resolveRuntimeGetter = (prop) => {
         if (typeof minifiedGetter === "function") {
             return minifiedGetter;
         }
+        const builtinMinifiedGetter = __gml_builtins?.[minifiedGetterName];
+        if (typeof builtinMinifiedGetter === "function") {
+            return builtinMinifiedGetter;
+        }
     }
     const builtinGetter = __gml_builtins?.[getterName];
     if (typeof builtinGetter === "function") {
@@ -1500,7 +1601,7 @@ const __resolveRuntimeValue = (prop) => {
     }
     const getter = __resolveRuntimeGetter(prop);
     if (getter !== null) {
-        return getter.call(__global_scope);
+        return getter.call(__gml_builtins ?? __global_scope);
     }
     if (prop === "mouse_x") {
         return __gml_scope.x;
