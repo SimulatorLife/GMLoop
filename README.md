@@ -75,11 +75,12 @@ If you're planning architecture or boundary changes, read [`docs/target-state.md
 Use the repo CLI wrapper to format any GameMaker project path:
 
 ```bash
-# format writes changes
-pnpm run format:gml -- /absolute/path/to/MyGame
+# format writes changes (positional path or --path option)
+pnpm run cli -- format /absolute/path/to/MyGame
+pnpm run cli -- format --path /absolute/path/to/MyGame
 
 # check mode (no writes)
-pnpm run format:gml -- /absolute/path/to/MyGame --check
+pnpm run cli -- format /absolute/path/to/MyGame --check
 ```
 
 `format:gml` now targets `.gml` files only. The old `--extensions` option and

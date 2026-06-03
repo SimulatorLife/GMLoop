@@ -71,10 +71,13 @@ function resolvePrettierConfiguration(
 }
 
 function resolveTargetPathInput(options: CommandOptionsRecord, args?: unknown): TargetPathResolution {
-    // Positional path arguments are no longer supported for this command.
-    const positionalPath = Array.isArray(args) && args.length > 0;
+    // Check for positional path argument first (format command now accepts [path] positional)
+    // Use the first positional arg if present, otherwise fall back to --path option
+    const positionalArgs = Array.isArray(args) && args.length > 0 ? args : null;
     const optionPath = options.path ?? null;
-    const rawTarget = positionalPath ? null : optionPath;
+
+    // Prefer positional argument over --path option for cleaner CLI experience
+    const rawTarget = positionalArgs === null ? optionPath : positionalArgs[0];
 
     if (rawTarget === null) {
         return {
