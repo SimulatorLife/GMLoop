@@ -13,13 +13,11 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         fixLogLines: [],
         fixStatus: "idle",
         isFixPending: false,
-        isLiveReloadRefreshPending: false,
         isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
         liveReloadErrorMessage: null,
-        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         pendingActionCount: 0,
         searchQuery: ""
@@ -32,7 +30,6 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
 function computePendingActionCount(state: GraphVisualizationUiState): number {
     let count = 0;
     if (state.isFixPending) count++;
-    if (state.isLiveReloadRefreshPending) count++;
     if (state.isLiveReloadStartPending) count++;
     if (state.isOpenProjectPending) count++;
     if (state.isRegeneratePending) count++;
@@ -135,13 +132,6 @@ export function reduceGraphVisualizationUiState(
                 pendingActionCount: computePendingActionCount({ ...state, isOpenProjectPending: action.pending })
             };
         }
-        case "set-live-reload-refresh-pending": {
-            return {
-                ...state,
-                isLiveReloadRefreshPending: action.pending,
-                pendingActionCount: computePendingActionCount({ ...state, isLiveReloadRefreshPending: action.pending })
-            };
-        }
         case "set-live-reload-start-pending": {
             return {
                 ...state,
@@ -153,13 +143,6 @@ export function reduceGraphVisualizationUiState(
             return {
                 ...state,
                 liveReloadErrorMessage: action.errorMessage
-            };
-        }
-        case "set-live-reload-status": {
-            return {
-                ...state,
-                liveReloadErrorMessage: null,
-                liveReloadStatus: action.status
             };
         }
         case "set-error": {
@@ -181,7 +164,6 @@ export function reduceGraphVisualizationUiState(
                 fixLogLines: [],
                 fixStatus: "idle",
                 liveReloadErrorMessage: null,
-                liveReloadStatus: null,
                 searchQuery: ""
             };
         }

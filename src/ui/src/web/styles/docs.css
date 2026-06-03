@@ -5,6 +5,18 @@
     flex-wrap: wrap;
 }
 
+.toolbar-docs-controls {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(280px, 720px);
+    gap: var(--gm-space-lg);
+    align-items: start;
+}
+
+.toolbar-docs-controls .gm-view-selector,
+.toolbar-docs-controls .docs-search-panel {
+    margin-bottom: 0;
+}
+
 .docs-search-panel {
     display: grid;
     gap: var(--gm-space-sm);

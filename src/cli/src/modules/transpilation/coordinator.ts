@@ -472,7 +472,14 @@ function parseAstAndExtractMetadata(
     preExtractedReferences?: ReadonlyArray<string>
 ): ParsedAstExtractionResult {
     try {
-        const ast = preParseAst ?? new Parser.GMLParser(content, {}).parse();
+        const ast =
+            preParseAst ??
+            new Parser.GMLParser(content, {
+                getComments: false,
+                getLocations: true,
+                simplifyLocations: true,
+                attachFunctionDocComments: false
+            }).parse();
         const { parsedSymbols, parsedReferences } = extractMetadataFromAst(
             ast,
             filePath,

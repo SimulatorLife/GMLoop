@@ -486,7 +486,7 @@ function formatCodemodSelectionSummary(
     return listConfiguredCodemods(config.refactor ?? {}, selectedCodemods).map((codemod) => {
         const stateLabel = codemod.configured ? "configured" : "not configured";
         const selectionLabel = codemod.selected ? "selected" : "filtered out";
-        const configLabel = codemod.effectiveConfig === null ? "n/a" : JSON.stringify(codemod.effectiveConfig, null, 2);
+        const configLabel = codemod.effectiveConfig === null ? "-" : JSON.stringify(codemod.effectiveConfig, null, 2);
 
         return [
             `${codemod.id}: ${stateLabel}, ${selectionLabel}`,

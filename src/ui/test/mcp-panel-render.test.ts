@@ -73,13 +73,11 @@ function createMockState(): GraphVisualizationUiState {
         fixLogLines: [],
         fixStatus: "idle",
         isFixPending: false,
-        isLiveReloadRefreshPending: false,
         isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
         liveReloadErrorMessage: null,
-        liveReloadStatus: null,
         mcpServerStatus: "running",
         pendingActionCount: 0,
         searchQuery: ""
@@ -94,9 +92,11 @@ void test("GmMcpPanel renders running status and live activity placeholders", ()
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="mcp-page"[\s\S]*class=page content-page active/u);
+    assert.doesNotMatch(rendered, /<h2>MCP<\/h2>/u);
+    assert.doesNotMatch(rendered, /id="mcp-meta"/u);
+    assert.doesNotMatch(rendered, /<gm-status-chip/u);
     assert.match(rendered, /Tool Call Feed/u);
     assert.match(rendered, /Connection Updates/u);
-    assert.match(rendered, /Live MCP server status, connection health, and future activity updates\./u);
     assert.match(rendered, /No live MCP tool calls have been observed in this UI session yet\./u);
     assert.doesNotMatch(rendered, /Runtime Status/u);
     assert.doesNotMatch(rendered, /Available Tools/u);
@@ -119,6 +119,7 @@ void test("GmMcpPanel renders not-started server status without tool catalog fal
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
+    assert.doesNotMatch(rendered, /<gm-status-chip/u);
     assert.doesNotMatch(rendered, /The MCP bridge has not started in this session yet\./u);
     assert.doesNotMatch(rendered, /Not Started/u);
     assert.doesNotMatch(rendered, /Connected tool details are not available right now\./u);

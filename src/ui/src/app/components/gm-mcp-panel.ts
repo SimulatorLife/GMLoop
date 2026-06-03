@@ -26,9 +26,6 @@ export class GmMcpPanel extends LightDomLitElement {
 
         return html`
             <section id="mcp-page" class=${mcpPageClassName}>
-                <p id="mcp-meta" class="docs-meta">
-                    Live MCP server status, connection health, and future activity updates.
-                </p>
                 <div id="mcp-content" class="docs-grid">
                     <gm-card class="catalog-card" .heading=${"Tool Call Feed"}>
                         <p>No live MCP tool calls have been observed in this UI session yet.</p>

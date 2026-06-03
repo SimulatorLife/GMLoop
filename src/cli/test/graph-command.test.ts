@@ -100,6 +100,7 @@ function createLiveReloadStatusSnapshot() {
         p95HotReloadLatencyMs: null,
         recentErrors: [],
         recentPatches: [],
+        runtimeUrl: null,
         scanComplete: true,
         totalPatchCount: 0,
         uptimeMs: 10,
@@ -144,6 +145,22 @@ void test("graph live-reload ready model preserves runtime URL and status snapsh
     const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
         {
             model: __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/")
+        },
+        snapshot
+    );
+
+    assert.equal(model?.endpoints.runtimeUrl, "http://127.0.0.1:51264/");
+    assert.equal(model?.statusSnapshot, snapshot);
+});
+
+void test("graph live-reload ready model can adopt runtime URL from status snapshot", () => {
+    const snapshot = {
+        ...createLiveReloadStatusSnapshot(),
+        runtimeUrl: "http://127.0.0.1:51264/"
+    };
+    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
+        {
+            model: null
         },
         snapshot
     );
@@ -632,6 +649,10 @@ void test("graph visualize live-reload startup options default to GameMaker temp
     assert.equal(startupOptions.hasBuildConfiguration, false);
     assert.equal(startupOptions.html5OutputRoot, null);
     assert.equal(startupOptions.gmTempRoot, "/private/tmp/GameMakerStudio2/GMS2TEMP");
+    assert.equal(startupOptions.statusHost, "127.0.0.1");
+    assert.equal(startupOptions.statusPort, 17_891);
+    assert.equal(startupOptions.websocketHost, "127.0.0.1");
+    assert.equal(startupOptions.websocketPort, 17_890);
 });
 
 void test("graph visualize live-reload startup options honor runtime.liveReload config", () => {
@@ -650,6 +671,10 @@ void test("graph visualize live-reload startup options honor runtime.liveReload 
     assert.equal(startupOptions.hasBuildConfiguration, true);
     assert.equal(startupOptions.html5OutputRoot, path.resolve("/tmp/project", "dist/html5"));
     assert.equal(startupOptions.gmTempRoot, path.resolve("/tmp/project", ".gm-temp/html5"));
+    assert.equal(startupOptions.statusHost, "127.0.0.1");
+    assert.equal(startupOptions.statusPort, 17_891);
+    assert.equal(startupOptions.websocketHost, "127.0.0.1");
+    assert.equal(startupOptions.websocketPort, 17_890);
 });
 
 void test("graph visualize live-reload startup timeout allows long build-first startup", () => {
@@ -660,7 +685,11 @@ void test("graph visualize live-reload dev args include configured startup paths
     const args = __graphCommandTest__.createGraphVisualizationLiveReloadDevCommandArgs("/tmp/project", {
         gmTempRoot: "/tmp/project/.gm-temp/html5",
         hasBuildConfiguration: true,
-        html5OutputRoot: "/tmp/project/dist/html5"
+        html5OutputRoot: "/tmp/project/dist/html5",
+        statusHost: "127.0.0.1",
+        statusPort: 47_911,
+        websocketHost: "127.0.0.1",
+        websocketPort: 47_910
     });
 
     assert.deepEqual(args, [
@@ -671,6 +700,14 @@ void test("graph visualize live-reload dev args include configured startup paths
         "/tmp/project/dist/html5",
         "--gm-temp-root",
         "/tmp/project/.gm-temp/html5",
+        "--websocket-port",
+        "47910",
+        "--websocket-host",
+        "127.0.0.1",
+        "--status-port",
+        "47911",
+        "--status-host",
+        "127.0.0.1",
         "--quiet"
     ]);
 });
@@ -733,4 +770,110 @@ void test("graph subcommands expose the force flag consistently", async () => {
     assert.ok(doctorCommand);
     const doctorOptionFlags = new Set(doctorCommand.options.flatMap((option) => option.long ?? []));
     assert.ok(!doctorOptionFlags.has("--force"));
+});
+
+void test("streamProcessOutputByLine removes all listeners from stream after settling", async () => {
+    const emittedLines = new Array<string>();
+
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+
+    const mockStream = {
+        setEncoding(_encoding: BufferEncoding): void {},
+        on(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            bucket.push(handler);
+            listeners.set(event, bucket);
+            return mockStream;
+        },
+        removeListener(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            listeners.set(
+                event,
+                bucket.filter((h) => h !== handler)
+            );
+            return mockStream;
+        },
+        emit(event: string, ...args: unknown[]): void {
+            const bucket = listeners.get(event) ?? [];
+            for (const h of bucket) {
+                h(...args);
+            }
+        },
+        listenerCount(event: string): number {
+            return (listeners.get(event) ?? []).length;
+        }
+    } as unknown as NodeJS.ReadableStream;
+
+    void __graphCommandTest__.streamProcessOutputByLine(mockStream, (line) => {
+        emittedLines.push(line);
+    });
+
+    assert.equal(mockStream.listenerCount("data"), 1, "Expected exactly one 'data' listener before completion.");
+
+    mockStream.emit("data", "line one\n");
+    mockStream.emit("end");
+
+    assert.equal(
+        mockStream.listenerCount("data"),
+        0,
+        "Expected zero 'data' listeners after stream ends (listener leak — removeListener not called)."
+    );
+    assert.equal(mockStream.listenerCount("error"), 0, "Expected zero 'error' listeners after stream ends.");
+    assert.equal(mockStream.listenerCount("end"), 0, "Expected zero 'end' listeners after stream ends.");
+    assert.deepEqual(emittedLines, ["line one"]);
+});
+
+void test("streamProcessOutputByLine removes all listeners on error", async () => {
+    const error = new Error("stream error");
+
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+
+    const mockStream = {
+        setEncoding(_encoding: BufferEncoding): void {},
+        on(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            bucket.push(handler);
+            listeners.set(event, bucket);
+            return mockStream;
+        },
+        removeListener(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            listeners.set(
+                event,
+                bucket.filter((h) => h !== handler)
+            );
+            return mockStream;
+        },
+        emit(event: string, ...args: unknown[]): void {
+            const bucket = listeners.get(event) ?? [];
+            for (const h of bucket) {
+                h(...args);
+            }
+        },
+        listenerCount(event: string): number {
+            return (listeners.get(event) ?? []).length;
+        }
+    } as unknown as NodeJS.ReadableStream;
+
+    const promise = __graphCommandTest__.streamProcessOutputByLine(mockStream, () => {});
+
+    assert.equal(mockStream.listenerCount("data"), 1, "Expected exactly one 'data' listener before error.");
+
+    mockStream.emit("error", error);
+
+    let caughtError: unknown;
+    try {
+        await promise;
+    } catch (error_) {
+        caughtError = error_;
+    }
+
+    assert.ok(caughtError instanceof Error);
+    assert.equal(
+        mockStream.listenerCount("data"),
+        0,
+        "Expected zero 'data' listeners after error (listener leak — removeListener not called)."
+    );
+    assert.equal(mockStream.listenerCount("error"), 0, "Expected zero 'error' listeners after error.");
+    assert.equal(mockStream.listenerCount("end"), 0, "Expected zero 'end' listeners after error.");
 });

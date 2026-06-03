@@ -895,6 +895,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
     let websocketServerController: PatchWebSocketServer | null = null;
     let statusServerController: StatusServerHandle | null = null;
+    let runtimeServerController: RuntimeStaticServerInstance | null = null;
 
     if (shouldServeRuntime) {
         const runtimeSource = await runtimeResolver({
@@ -979,6 +980,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                             filePath: path.relative(normalizedPath, e.filePath),
                             error: e.error
                         })),
+                        runtimeUrl: runtimeServerController?.url ?? null,
                         websocketClients: runtimeContext.websocketServer?.getClientCount() ?? 0,
                         scanComplete: runtimeContext.scanComplete,
                         avgHotReloadLatencyMs: latencyStats?.avg,
@@ -1015,7 +1017,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         console.log("Status server disabled.");
     }
 
-    const runtimeServerController = await startWatchRuntimeServerAfterPatchServers({
+    runtimeServerController = await startWatchRuntimeServerAfterPatchServers({
         runtimeRoot: shouldServeRuntime ? runtimeContext.root : null,
         runtimeServerStarter,
         statusServerController,
@@ -2107,7 +2109,12 @@ async function addScriptNamesFromFile(
 
     try {
         const content = await readFile(filePath, "utf8");
-        const parser = new Parser.GMLParser(content, {});
+        const parser = new Parser.GMLParser(content, {
+            getComments: false,
+            getLocations: true,
+            simplifyLocations: true,
+            attachFunctionDocComments: false
+        });
         const ast = parser.parse();
         // Extract both symbols and references from the AST in a single traversal.
         // This saves a second walk during transpileFile when the cache is reused.
