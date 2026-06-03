@@ -43,6 +43,8 @@ export interface StatusSnapshot {
     websocketClients: number;
     /** Whether the initial file scan has completed. */
     scanComplete?: boolean;
+    /** Runtime static server URL for clients that need to reconnect after UI reloads. */
+    runtimeUrl?: string | null;
     /** Average end-to-end hot-reload latency (ms) across all patches in the current metrics window. */
     avgHotReloadLatencyMs?: number;
     /** 95th-percentile end-to-end hot-reload latency (ms) across all patches in the current metrics window. */

@@ -851,15 +851,12 @@ if (!plan.batchValidation.valid) {
 }
 
 // Review hot reload dependency cascade
+// Use top-level aliases to avoid four-segment property chains
 if (plan.cascadeResult) {
-    console.log(
-        `Total symbols to reload: ${plan.cascadeResult.metadata.totalSymbols}`
-    );
-    console.log(
-        `Max dependency distance: ${plan.cascadeResult.metadata.maxDistance}`
-    );
+    console.log(`Total symbols to reload: ${plan.cascadeResult.totalSymbols}`);
+    console.log(`Max dependency distance: ${plan.cascadeResult.maxDistance}`);
 
-    if (plan.cascadeResult.metadata.hasCircular) {
+    if (plan.cascadeResult.hasCircular) {
         console.warn("Circular dependencies detected:");
         for (const cycle of plan.cascadeResult.circular) {
             console.warn("  Cycle:", cycle.join(" → "));

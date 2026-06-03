@@ -318,9 +318,27 @@ export function evaluateCanonicalFormDecision(
         return false;
     }
 
-    const literalText = sourceText;
+    // Compute the canonical representation of the numeric value.  Since the
+    // source text may contain floating-point noise (e.g. "1.0000000000000002"
+    // parses to a value numerically equal to 1), compare using an epsilon-
+    // tolerant helper rather than strict string equality.
     const canonicalText = formatCanonicalNumericLiteralWithConfig(numericValue, config);
-    return literalText !== null && canonicalText !== null && literalText === canonicalText;
+    if (canonicalText === null) {
+        return false;
+    }
+
+    // When the canonical text is a finite number, use epsilon comparison so
+    // that noisy literals match their canonical form (e.g. "1.0000000000000002"
+    // → canonical "1" → numerically equal).  This guards against floating-point
+    // rounding artefacts from the parser that would otherwise prevent a
+    // legitimate rewrite even when the source and target are the same value.
+    const parsedCanonical = Number(canonicalText);
+    if (Number.isFinite(parsedCanonical)) {
+        return Core.areNumbersApproximatelyEqual(numericValue, parsedCanonical);
+    }
+
+    // Non-finite (NaN / ±Infinity) canonical text: fall back to strict equality.
+    return sourceText === canonicalText;
 }
 
 /**

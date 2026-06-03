@@ -10,6 +10,33 @@ import type {
     SemKind
 } from "./ast.js";
 
+const GML_RUNTIME_VALUE_NAMES: ReadonlySet<string> = new Set([
+    "c_aqua",
+    "c_black",
+    "c_blue",
+    "c_dkgray",
+    "c_fuchsia",
+    "c_gray",
+    "c_green",
+    "c_lime",
+    "c_ltgray",
+    "c_maroon",
+    "c_navy",
+    "c_olive",
+    "c_orange",
+    "c_purple",
+    "c_red",
+    "c_silver",
+    "c_teal",
+    "c_white",
+    "c_yellow",
+    "current_time",
+    "mouse_x",
+    "mouse_y",
+    "pi",
+    "pi2"
+]);
+
 /**
  * Configuration options for creating a semantic oracle for the transpiler.
  */
@@ -65,8 +92,12 @@ class DefaultSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyzer {
     }
 
     private classifyName(name: string): "builtin" | "script" | null {
-        if (this.builtinNames.has(name)) return "builtin";
-        if (this.scriptNames.has(name)) return "script";
+        if (this.builtinNames.has(name) || GML_RUNTIME_VALUE_NAMES.has(name)) {
+            return "builtin";
+        }
+        if (this.scriptNames.has(name)) {
+            return "script";
+        }
         return null;
     }
 

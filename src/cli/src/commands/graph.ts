@@ -1,6 +1,7 @@
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { existsSync, type FSWatcher, watch, type WatchListener, type WatchOptions } from "node:fs";
 import { access, constants, mkdir, writeFile } from "node:fs/promises";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -120,6 +121,8 @@ async function runGraphVisualizationFixWorkflow(
 
 /**
  * Stream child-process output incrementally and invoke a callback for each completed line.
+ * Removes all registered listeners on the stream before resolving so the stream
+ * is fully dissociated from this promise chain regardless of how it settles.
  *
  * @param stream - Child-process stdout/stderr stream.
  * @param onLogLine - Callback invoked with each parsed line.
@@ -128,7 +131,8 @@ function streamProcessOutputByLine(stream: NodeJS.ReadableStream, onLogLine: (lo
     return new Promise((resolve, reject) => {
         let bufferedText = "";
         stream.setEncoding("utf8");
-        stream.on("data", (chunk: string) => {
+
+        const handleData = (chunk: string): void => {
             bufferedText += chunk;
             let nextLineBreakIndex = bufferedText.search(/\r?\n/u);
             while (nextLineBreakIndex >= 0) {
@@ -140,14 +144,29 @@ function streamProcessOutputByLine(stream: NodeJS.ReadableStream, onLogLine: (lo
                 bufferedText = bufferedText.slice(nextLineBreakIndex + lineBreakLength);
                 nextLineBreakIndex = bufferedText.search(/\r?\n/u);
             }
-        });
-        stream.on("error", reject);
-        stream.on("end", () => {
+        };
+
+        const handleError = (error: unknown): void => {
+            stream.removeListener("data", handleData);
+            stream.removeListener("error", handleError);
+            stream.removeListener("end", handleEnd);
+            const message = Core.getErrorMessage(error, { fallback: "Unknown stream error" });
+            reject(new Error(message));
+        };
+
+        const handleEnd = (): void => {
+            stream.removeListener("data", handleData);
+            stream.removeListener("error", handleError);
+            stream.removeListener("end", handleEnd);
             if (bufferedText.length > 0) {
                 onLogLine(bufferedText);
             }
             resolve();
-        });
+        };
+
+        stream.on("data", handleData);
+        stream.on("error", handleError);
+        stream.on("end", handleEnd);
     });
 }
 
@@ -232,6 +251,7 @@ type GraphVisualizationLiveReloadStatusSnapshot = Readonly<{
             timestamp: number;
         }>
     >;
+    runtimeUrl: string | null;
     scanComplete: boolean;
     totalPatchCount: number | null;
     uptimeMs: number;
@@ -253,6 +273,7 @@ type GraphVisualizationLiveReloadModel = Readonly<{
 type GraphVisualizationLiveReloadSessionState = {
     childProcess: ChildProcessWithoutNullStreams | null;
     childStderrBuffer: Array<string>;
+    endpointOptions: GraphVisualizationLiveReloadEndpointOptions;
     model: GraphVisualizationLiveReloadModel | null;
     startupPromise: Promise<GraphVisualizationLiveReloadModel> | null;
 };
@@ -261,6 +282,17 @@ type GraphVisualizationLiveReloadStartupOptions = Readonly<{
     gmTempRoot: string;
     hasBuildConfiguration: boolean;
     html5OutputRoot: string | null;
+    statusHost: string;
+    statusPort: number;
+    websocketHost: string;
+    websocketPort: number;
+}>;
+
+type GraphVisualizationLiveReloadEndpointOptions = Readonly<{
+    statusHost: string;
+    statusPort: number;
+    websocketHost: string;
+    websocketPort: number;
 }>;
 
 type GraphVisualizationUiSourceWatchFactory = (
@@ -278,6 +310,12 @@ const DEMO_PROJECT_DIRECTORY = path.join("vendor", "3DSpider");
 const DEMO_PROJECT_MANIFEST = "3D-ish spider thing 2.yyp";
 const GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS = 10 * 60 * 1000;
 const GRAPH_VISUALIZATION_LIVE_RELOAD_POLL_INTERVAL_MS = 2000;
+const DEFAULT_GRAPH_VISUALIZATION_LIVE_RELOAD_ENDPOINT_OPTIONS = Object.freeze({
+    statusHost: DEFAULT_LIVE_RELOAD_STATUS_HOST,
+    statusPort: DEFAULT_LIVE_RELOAD_STATUS_PORT,
+    websocketHost: DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
+    websocketPort: DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT
+});
 
 function createEmptyGraphVisualizationData(): GraphVisualizationServePayload {
     return Object.freeze({
@@ -313,13 +351,14 @@ function createGraphVisualizationServeErrorState(
 
 function createGraphVisualizationLiveReloadModel(
     runtimeUrl: string | null,
-    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot | null = null
+    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot | null = null,
+    endpoints: GraphVisualizationLiveReloadEndpointOptions = DEFAULT_GRAPH_VISUALIZATION_LIVE_RELOAD_ENDPOINT_OPTIONS
 ): GraphVisualizationLiveReloadModel {
     return Object.freeze({
         endpoints: Object.freeze({
             runtimeUrl,
-            statusUrl: createStatusUrl(DEFAULT_LIVE_RELOAD_STATUS_HOST, DEFAULT_LIVE_RELOAD_STATUS_PORT),
-            websocketUrl: createWebSocketUrl(DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST, DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT)
+            statusUrl: createStatusUrl(endpoints.statusHost, endpoints.statusPort),
+            websocketUrl: createWebSocketUrl(endpoints.websocketHost, endpoints.websocketPort)
         }),
         pollIntervalMs: GRAPH_VISUALIZATION_LIVE_RELOAD_POLL_INTERVAL_MS,
         runtimeHealth: null,
@@ -348,7 +387,11 @@ function resolveGraphVisualizationLiveReloadStartupOptions(
             configuredGmTempRoot.length > 0 ? path.resolve(projectRoot, configuredGmTempRoot) : DEFAULT_GM_TEMP_ROOT,
         hasBuildConfiguration,
         html5OutputRoot:
-            configuredHtml5OutputRoot.length > 0 ? path.resolve(projectRoot, configuredHtml5OutputRoot) : null
+            configuredHtml5OutputRoot.length > 0 ? path.resolve(projectRoot, configuredHtml5OutputRoot) : null,
+        statusHost: DEFAULT_LIVE_RELOAD_STATUS_HOST,
+        statusPort: DEFAULT_LIVE_RELOAD_STATUS_PORT,
+        websocketHost: DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
+        websocketPort: DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT
     });
 }
 
@@ -363,8 +406,62 @@ function createGraphVisualizationLiveReloadDevCommandArgs(
         ...(startupOptions.html5OutputRoot === null ? [] : ["--html5-output", startupOptions.html5OutputRoot]),
         "--gm-temp-root",
         startupOptions.gmTempRoot,
+        "--websocket-port",
+        String(startupOptions.websocketPort),
+        "--websocket-host",
+        startupOptions.websocketHost,
+        "--status-port",
+        String(startupOptions.statusPort),
+        "--status-host",
+        startupOptions.statusHost,
         "--quiet"
     ];
+}
+
+async function allocateGraphVisualizationLiveReloadPort(host: string): Promise<number> {
+    const server = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, host, () => {
+            server.off("error", reject);
+            resolve();
+        });
+    });
+
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+        await new Promise<void>((resolve, reject) => {
+            server.close((error) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
+                resolve();
+            });
+        });
+        throw new Error("Could not allocate a live-reload port.");
+    }
+
+    const port = address.port;
+    await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+            if (error) {
+                reject(error);
+                return;
+            }
+            resolve();
+        });
+    });
+    return port;
+}
+
+async function allocateGraphVisualizationLiveReloadEndpointOptions(): Promise<GraphVisualizationLiveReloadEndpointOptions> {
+    return Object.freeze({
+        statusHost: DEFAULT_LIVE_RELOAD_STATUS_HOST,
+        statusPort: await allocateGraphVisualizationLiveReloadPort(DEFAULT_LIVE_RELOAD_STATUS_HOST),
+        websocketHost: DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
+        websocketPort: await allocateGraphVisualizationLiveReloadPort(DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST)
+    });
 }
 
 function resolveGraphVisualizationCliEntrypointPath(): string {
@@ -383,9 +480,9 @@ function resolveGraphVisualizationCliEntrypointPath(): string {
     throw new Error("Could not locate the CLI entrypoint required to start live reload.");
 }
 
-async function tryFetchGraphVisualizationLiveReloadStatusSnapshot(): Promise<GraphVisualizationLiveReloadStatusSnapshot | null> {
-    const statusUrl = createStatusUrl(DEFAULT_LIVE_RELOAD_STATUS_HOST, DEFAULT_LIVE_RELOAD_STATUS_PORT);
-
+async function tryFetchGraphVisualizationLiveReloadStatusSnapshot(
+    statusUrl: string = createStatusUrl(DEFAULT_LIVE_RELOAD_STATUS_HOST, DEFAULT_LIVE_RELOAD_STATUS_PORT)
+): Promise<GraphVisualizationLiveReloadStatusSnapshot | null> {
     try {
         const response = await fetch(statusUrl, {
             headers: { Accept: "application/json" }
@@ -403,6 +500,8 @@ async function tryFetchGraphVisualizationLiveReloadStatusSnapshot(): Promise<Gra
         const scanComplete = payload.scanComplete === true;
         const websocketClients = typeof payload.websocketClients === "number" ? payload.websocketClients : 0;
         const uptimeMs = typeof payload.uptime === "number" ? payload.uptime : 0;
+        const runtimeUrl =
+            typeof payload.runtimeUrl === "string" && payload.runtimeUrl.trim().length > 0 ? payload.runtimeUrl : null;
 
         return Object.freeze({
             avgHotReloadLatencyMs:
@@ -439,6 +538,7 @@ async function tryFetchGraphVisualizationLiveReloadStatusSnapshot(): Promise<Gra
                           })
                       )
                 : [],
+            runtimeUrl,
             scanComplete,
             totalPatchCount,
             uptimeMs,
@@ -460,14 +560,15 @@ function setActiveGraphVisualizationLiveReloadModel(
 
 function createReadyGraphVisualizationLiveReloadModel(
     sessionState: Readonly<{ model: GraphVisualizationLiveReloadModel | null }>,
-    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot
+    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot,
+    endpointOptions: GraphVisualizationLiveReloadEndpointOptions = DEFAULT_GRAPH_VISUALIZATION_LIVE_RELOAD_ENDPOINT_OPTIONS
 ): GraphVisualizationLiveReloadModel | null {
-    const runtimeUrl = sessionState.model?.endpoints.runtimeUrl ?? null;
+    const runtimeUrl = sessionState.model?.endpoints.runtimeUrl ?? statusSnapshot.runtimeUrl;
     if (runtimeUrl === null) {
         return null;
     }
 
-    return createGraphVisualizationLiveReloadModel(runtimeUrl, statusSnapshot);
+    return createGraphVisualizationLiveReloadModel(runtimeUrl, statusSnapshot, endpointOptions);
 }
 
 async function isGraphVisualizationLiveReloadRuntimeUrlReachable(
@@ -487,9 +588,10 @@ async function isGraphVisualizationLiveReloadRuntimeUrlReachable(
 
 async function createReachableGraphVisualizationLiveReloadModel(
     sessionState: Readonly<{ model: GraphVisualizationLiveReloadModel | null }>,
-    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot
+    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot,
+    endpointOptions: GraphVisualizationLiveReloadEndpointOptions = DEFAULT_GRAPH_VISUALIZATION_LIVE_RELOAD_ENDPOINT_OPTIONS
 ): Promise<GraphVisualizationLiveReloadModel | null> {
-    const readyModel = createReadyGraphVisualizationLiveReloadModel(sessionState, statusSnapshot);
+    const readyModel = createReadyGraphVisualizationLiveReloadModel(sessionState, statusSnapshot, endpointOptions);
     if (readyModel === null) {
         return null;
     }
@@ -625,6 +727,7 @@ function resetGraphVisualizationLiveReloadSessionForRestart(
     sessionState: GraphVisualizationLiveReloadSessionState
 ): void {
     sessionState.childStderrBuffer = [];
+    sessionState.endpointOptions = DEFAULT_GRAPH_VISUALIZATION_LIVE_RELOAD_ENDPOINT_OPTIONS;
     sessionState.model = null;
 }
 
@@ -634,6 +737,13 @@ function registerGraphVisualizationLiveReloadChildProcess(
 ): void {
     sessionState.childProcess = childProcess;
     sessionState.childStderrBuffer = [];
+}
+
+function setActiveGraphVisualizationLiveReloadEndpointOptions(
+    sessionState: GraphVisualizationLiveReloadSessionState,
+    endpointOptions: GraphVisualizationLiveReloadEndpointOptions
+): void {
+    sessionState.endpointOptions = endpointOptions;
 }
 
 async function stopGraphVisualizationLiveReloadChildProcess(
@@ -1078,6 +1188,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     const activeLiveReloadSession: GraphVisualizationLiveReloadSessionState = {
         childProcess: null,
         childStderrBuffer: [],
+        endpointOptions: DEFAULT_GRAPH_VISUALIZATION_LIVE_RELOAD_ENDPOINT_OPTIONS,
         model: null,
         startupPromise: null
     };
@@ -1197,7 +1308,11 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         const previousSnapshot = activeLiveReloadSession.model?.statusSnapshot ?? null;
         setActiveGraphVisualizationLiveReloadModel(
             activeLiveReloadSession,
-            createGraphVisualizationLiveReloadModel(runtimeUrl, previousSnapshot)
+            createGraphVisualizationLiveReloadModel(
+                runtimeUrl,
+                previousSnapshot,
+                activeLiveReloadSession.endpointOptions
+            )
         );
         if (options.serve === true) {
             markServeRevisionChanged();
@@ -1236,10 +1351,15 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 }
             }
 
-            const startupOptions = resolveGraphVisualizationLiveReloadStartupOptions(
+            const configuredStartupOptions = resolveGraphVisualizationLiveReloadStartupOptions(
                 startupContext.projectRoot,
                 startupContext.projectConfig
             );
+            const endpointOptions = await allocateGraphVisualizationLiveReloadEndpointOptions();
+            const startupOptions = Object.freeze({
+                ...configuredStartupOptions,
+                ...endpointOptions
+            });
 
             const cliEntrypointPath = resolveGraphVisualizationCliEntrypointPath();
             const childProcess = spawn(
@@ -1254,10 +1374,11 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 }
             );
 
+            setActiveGraphVisualizationLiveReloadEndpointOptions(activeLiveReloadSession, endpointOptions);
             registerGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession, childProcess);
             setActiveGraphVisualizationLiveReloadModel(
                 activeLiveReloadSession,
-                createGraphVisualizationLiveReloadModel(null)
+                createGraphVisualizationLiveReloadModel(null, null, endpointOptions)
             );
 
             childProcess.stdout.on("data", (chunk: Buffer | string) => {
@@ -1274,7 +1395,15 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 }
             });
             childProcess.once("exit", () => {
+                if (activeLiveReloadSession.childProcess !== childProcess) {
+                    return;
+                }
+
                 activeLiveReloadSession.childProcess = null;
+                resetGraphVisualizationLiveReloadSessionForRestart(activeLiveReloadSession);
+                if (options.serve === true) {
+                    markServeRevisionChanged();
+                }
             });
 
             return await new Promise<GraphVisualizationLiveReloadModel>((resolve, reject) => {
@@ -1306,11 +1435,17 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 childProcess.once("exit", handleExit);
 
                 const pollStatus = async (): Promise<void> => {
-                    const snapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot();
+                    const snapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot(
+                        activeLiveReloadSession.model?.endpoints.statusUrl ?? undefined
+                    );
                     const readyModel =
                         snapshot === null
                             ? null
-                            : await createReachableGraphVisualizationLiveReloadModel(activeLiveReloadSession, snapshot);
+                            : await createReachableGraphVisualizationLiveReloadModel(
+                                  activeLiveReloadSession,
+                                  snapshot,
+                                  endpointOptions
+                              );
                     if (readyModel !== null) {
                         cleanup();
                         resolve(setActiveGraphVisualizationLiveReloadModel(activeLiveReloadSession, readyModel));
@@ -1654,10 +1789,15 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
                 return Object.freeze({ ast, output, error });
             },
-            startLiveReload: (input) => ensureLiveReloadSessionStarted(input),
+            startLiveReload: async (input) => {
+                const liveReload = await ensureLiveReloadSessionStarted(input);
+                markServeRevisionChanged();
+                return liveReload;
+            },
             stopLiveReload: async () => {
                 await stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession);
                 resetGraphVisualizationLiveReloadSessionForRestart(activeLiveReloadSession);
+                markServeRevisionChanged();
             },
             renderBundle: async (isServerMode) => {
                 const renderRevision = activeServeRevision;
@@ -1924,7 +2064,8 @@ export const __graphCommandTest__ = Object.freeze({
     resolveDefaultGraphVisualizationServeTargetPath,
     resolveGraphVisualizationUiSourceWatchRoot,
     startGraphVisualizationActiveProjectStateWatcher,
-    startGraphVisualizationUiSourceWatcher
+    startGraphVisualizationUiSourceWatcher,
+    streamProcessOutputByLine
 });
 function createDocumentationCatalogs() {
     const cliCommands = getCliCommandCatalog();
