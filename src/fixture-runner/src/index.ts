@@ -23,7 +23,6 @@ export type {
 } from "./project/index.js";
 export type {
     FixtureAdapter,
-    FixtureAssertion,
     FixtureCase,
     FixtureCaseExecutionResult,
     FixtureCaseResult,
@@ -43,3 +42,4 @@ export type {
     FixtureStageName,
     FixtureSuiteDefinition
 } from "./types.js";
+export { FixtureAssertion } from "./types.js";

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { FixtureRunner } from "../src/index.js";
+import { FixtureAssertion, FixtureRunner } from "../src/index.js";
 
 async function createTextFixtureCase(
     rootPath: string,
@@ -842,4 +842,38 @@ void test("fixture stage timing rejects out-of-order stage execution", async () 
     } finally {
         await rm(rootPath, { recursive: true, force: true });
     }
+});
+
+void test("FixtureAssertion.is returns true for valid values and false for invalid strings", () => {
+    assert.equal(FixtureAssertion.is("transform"), true);
+    assert.equal(FixtureAssertion.is("idempotent"), true);
+    assert.equal(FixtureAssertion.is("project-tree"), true);
+    assert.equal(FixtureAssertion.is("parse-error"), true);
+    assert.equal(FixtureAssertion.is("invalid"), false);
+    assert.equal(FixtureAssertion.is(""), false);
+    assert.equal(FixtureAssertion.is(123), false);
+    assert.equal(FixtureAssertion.is(null), false);
+    assert.equal(FixtureAssertion.is(undefined), false);
+});
+
+void test("FixtureAssertion.assert throws TypeError for invalid values", () => {
+    assert.throws(
+        () => FixtureAssertion.assert("unknown", "config.fixture.assertion"),
+        /config\.fixture\.assertion must be one of: transform, idempotent, project-tree, parse-error/u
+    );
+    assert.throws(
+        () => FixtureAssertion.assert(""),
+        /value must be one of: transform, idempotent, project-tree, parse-error/u
+    );
+    assert.throws(
+        () => FixtureAssertion.assert(42),
+        /value must be one of: transform, idempotent, project-tree, parse-error/u
+    );
+});
+
+void test("FixtureAssertion.assert accepts valid assertion values without throwing", () => {
+    assert.doesNotThrow(() => FixtureAssertion.assert("transform"));
+    assert.doesNotThrow(() => FixtureAssertion.assert("idempotent"));
+    assert.doesNotThrow(() => FixtureAssertion.assert("project-tree"));
+    assert.doesNotThrow(() => FixtureAssertion.assert("parse-error"));
 });
