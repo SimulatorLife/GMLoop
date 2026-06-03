@@ -266,9 +266,9 @@ void test("getScopeExternalReferences performance is efficient for many referenc
     tracker.exitScope();
     tracker.exitScope();
 
-    const startTime = Date.now();
+    const start = performance.now();
     const externalRefs = tracker.getScopeExternalReferences(funcScope.id);
-    const endTime = Date.now();
+    const elapsed = performance.now() - start;
 
     assert.strictEqual(externalRefs.length, 50);
 
@@ -284,6 +284,6 @@ void test("getScopeExternalReferences performance is efficient for many referenc
         });
     });
 
-    const lookupTime = endTime - startTime;
-    assert.ok(lookupTime < 50, `Lookup took ${lookupTime}ms, expected < 50ms for efficient performance`);
+    const lookupTime = elapsed;
+    assert.ok(lookupTime < 50, `Lookup took ${lookupTime.toFixed(3)}ms, expected < 50ms for efficient performance`);
 });
