@@ -75,6 +75,7 @@ type RuntimeBindingApplication = Readonly<{
     instanceStore: InstanceStore | undefined;
     objectName: string | null;
     objectRuntime: { objectName: string; eventName: string } | null;
+    patchBody: string;
 }>;
 
 const EVENT_MAPPINGS: ReadonlyMap<string, EventMapping> = new Map([
@@ -126,6 +127,20 @@ const OBJECT_EVENT_PREFIX_MAPPINGS: ReadonlyArray<ObjectEventPrefixMapping> = Ob
 // hot-reload cycle, which can be significant for games with hundreds of scripts.
 let _scriptNamesRef: Array<string> | null = null;
 let _scriptNameIndex: Map<string, number> | null = null;
+let _runtimeBindingSuppressionDepth = 0;
+
+function areRuntimeBindingsSuppressed(): boolean {
+    return _runtimeBindingSuppressionDepth > 0;
+}
+
+function runWithoutRuntimeBindings<T>(callback: () => T): T {
+    _runtimeBindingSuppressionDepth += 1;
+    try {
+        return callback();
+    } finally {
+        _runtimeBindingSuppressionDepth -= 1;
+    }
+}
 
 /**
  * Returns (or builds) a name→index Map for the given scriptNames array.
@@ -154,6 +169,11 @@ function resolveInstanceStore(globalScope: RuntimeBindingGlobals & Record<string
     const pool = readRuntimeObjectPool(globalScope);
     if (pool !== undefined) {
         return pool;
+    }
+
+    const minifiedPool = discoverMinifiedInstancePool(globalScope);
+    if (minifiedPool !== undefined) {
+        return minifiedPool;
     }
 
     for (const propertyName of Object.keys(globalScope)) {
@@ -186,7 +206,18 @@ function resolveInstanceStore(globalScope: RuntimeBindingGlobals & Record<string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object";
+    if (value === null || typeof value !== "object") {
+        return false;
+    }
+    try {
+        const self = (value as any).self;
+        if (self === value) {
+            return false;
+        }
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function isRuntimeInstanceForObjectContext(candidate: unknown, objectContext: unknown): boolean {
@@ -194,7 +225,17 @@ function isRuntimeInstanceForObjectContext(candidate: unknown, objectContext: un
         return false;
     }
 
-    return candidate.pObject === objectContext || candidate._kx === objectContext;
+    if (candidate.pObject === objectContext || candidate._kx === objectContext) {
+        return true;
+    }
+
+    for (const value of Object.values(candidate)) {
+        if (value === objectContext) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function isRuntimeScriptName(value: unknown): value is string {
@@ -230,7 +271,7 @@ function isRuntimeFunctionArray(value: unknown): value is Array<RuntimeFunction>
 }
 
 function isLikelyGameObjectRecord(value: unknown): value is Record<string, unknown> {
-    if (!isRecord(value)) {
+    if (!isRecord(value) || "nodeType" in value) {
         return false;
     }
 
@@ -319,6 +360,109 @@ function readGlobalProperty(globalScope: Record<string, unknown>, propertyName: 
     }
 }
 
+function isMinifiedInstanceStore(value: unknown): value is InstanceStore {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    const keys = Object.keys(value);
+    if (keys.length === 0 || !keys.every((key) => /^\d+$/.test(key)) || !keys.some((key) => Number(key) >= 100_000)) {
+        return false;
+    }
+
+    const firstValue = value[keys[0]];
+    return (
+        isRecord(firstValue) &&
+        !("nodeType" in firstValue) &&
+        (firstValue.__type === "[instance]" || ("id" in firstValue && "x" in firstValue && "y" in firstValue))
+    );
+}
+
+function discoverMinifiedInstancePool(globalScope: Record<string, unknown>): InstanceStore | undefined {
+    for (const propertyName of Object.getOwnPropertyNames(globalScope)) {
+        const candidate = readGlobalProperty(globalScope, propertyName);
+        if (!isRecord(candidate)) {
+            continue;
+        }
+
+        for (const value of Object.values(candidate)) {
+            if (isMinifiedInstanceStore(value)) {
+                return value;
+            }
+        }
+    }
+
+    return undefined;
+}
+
+function resolveCanonicalRuntimePropertyName(runtimeKey: string, globalScope: Record<string, unknown>): string | null {
+    if (isColorRuntimePropertyName(runtimeKey)) {
+        return runtimeKey;
+    }
+
+    for (const value of Object.values(globalScope)) {
+        if (!isRecord(value)) {
+            continue;
+        }
+
+        for (const [propertyName, propertyValue] of Object.entries(value)) {
+            if (propertyValue === runtimeKey) {
+                return propertyName;
+            }
+        }
+    }
+
+    return null;
+}
+
+function resolveRuntimePropertyKeys(propertyName: string, globalScope: Record<string, unknown>): Set<string> {
+    const propertyKeys = new Set([propertyName, `gml${propertyName}`, `__${propertyName}`]);
+
+    for (const value of Object.values(globalScope)) {
+        if (!isRecord(value)) {
+            continue;
+        }
+
+        const mappedProperty = value[propertyName];
+        if (typeof mappedProperty === "string" && mappedProperty.length > 0) {
+            propertyKeys.add(mappedProperty);
+        }
+    }
+
+    return propertyKeys;
+}
+
+function extractAssignedSelfProperties(patchBody: string): Set<string> {
+    const assignedProperties = new Set<string>();
+    const assignmentPattern = /\bself\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=/gu;
+    for (const match of patchBody.matchAll(assignmentPattern)) {
+        assignedProperties.add(match[1]);
+    }
+
+    return assignedProperties;
+}
+
+function resolveRuntimeBindingPatchBody(patch: BasePatch): string {
+    const patchBody = (patch as { js_body?: unknown }).js_body;
+    return typeof patchBody === "string" ? patchBody : "";
+}
+
+function isColorRuntimePropertyName(propertyName: string | null): boolean {
+    return propertyName !== null && /colou?r/iu.test(propertyName);
+}
+
+function extractCreateScalarAssignments(createHandler: RuntimeFunction): Map<string, unknown> {
+    const assignments = new Map<string, unknown>();
+    const source = String(createHandler);
+    const numericAssignmentPattern =
+        /\b(?:this|[A-Za-z_$][A-Za-z0-9_$]*)\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(-?\d+(?:\.\d+)?)/gu;
+    for (const match of source.matchAll(numericAssignmentPattern)) {
+        assignments.set(match[1], Number(match[2]));
+    }
+
+    return assignments;
+}
+
 function resolveObjectName(record: Record<string, unknown>, expectedName: string | null): string | null {
     if (typeof record.pName === "string") {
         return record.pName;
@@ -359,7 +503,11 @@ function resolveRuntimeGameData(globalScope: RuntimeBindingGlobals & Record<stri
     const jsonGame = globalScope.JSON_game;
     if (jsonGame !== null && typeof jsonGame === "object") {
         return {
-            gmObjects: Array.isArray(jsonGame.GMObjects) ? jsonGame.GMObjects : undefined,
+            gmObjects: Array.isArray(jsonGame.GMObjects)
+                ? jsonGame.GMObjects.filter(
+                      (entry): entry is Record<string, unknown> => entry !== null && entry !== undefined
+                  )
+                : undefined,
             scriptNames: Array.isArray(jsonGame.ScriptNames) ? jsonGame.ScriptNames : undefined,
             scripts: Array.isArray(jsonGame.Scripts) ? jsonGame.Scripts : undefined
         };
@@ -368,7 +516,11 @@ function resolveRuntimeGameData(globalScope: RuntimeBindingGlobals & Record<stri
     const minifiedGameData = globalScope._a1;
     if (minifiedGameData !== null && typeof minifiedGameData === "object") {
         return {
-            gmObjects: Array.isArray(minifiedGameData._52) ? minifiedGameData._52 : undefined,
+            gmObjects: Array.isArray(minifiedGameData._52)
+                ? minifiedGameData._52.filter(
+                      (entry): entry is Record<string, unknown> => entry !== null && entry !== undefined
+                  )
+                : undefined,
             scriptNames: Array.isArray(minifiedGameData._98) ? minifiedGameData._98 : undefined,
             scripts: Array.isArray(minifiedGameData._a8) ? minifiedGameData._a8 : undefined
         };
@@ -388,7 +540,11 @@ function resolveRuntimeGameData(globalScope: RuntimeBindingGlobals & Record<stri
 
         for (const propertyValue of Object.values(candidate)) {
             if (isLikelyGameObjectArray(propertyValue)) {
-                discoveredGmObjects.push(...propertyValue);
+                discoveredGmObjects.push(
+                    ...propertyValue.filter(
+                        (entry): entry is Record<string, unknown> => entry !== null && entry !== undefined
+                    )
+                );
                 continue;
             }
 
@@ -436,6 +592,14 @@ function resolveRuntimeBuiltins(globalScope: RuntimeBindingGlobals): Record<stri
         return globalScope.g_pBuiltIn;
     }
 
+    const scope = globalScope as Record<string, unknown>;
+    for (const key of Object.getOwnPropertyNames(scope)) {
+        const candidate = readGlobalProperty(scope, key);
+        if (isRecord(candidate) && candidate.__type === "[BuiltIn]") {
+            return candidate;
+        }
+    }
+
     if (globalScope._g8 && typeof globalScope._g8 === "object") {
         return globalScope._g8;
     }
@@ -447,14 +611,14 @@ function resolveRuntimeBuiltinScope(
     globalScope: RuntimeBindingGlobals & Record<string, unknown>
 ): Record<string, unknown> {
     const runtimeBuiltins = resolveRuntimeBuiltins(globalScope);
+    const functions = resolveRuntimeBuiltinFunctions(globalScope);
     if (runtimeBuiltins === undefined) {
-        return resolveRuntimeBuiltinFunctions(globalScope);
+        return functions;
     }
 
-    return {
-        ...resolveRuntimeBuiltinFunctions(globalScope),
-        ...runtimeBuiltins
-    };
+    const scope = Object.create(runtimeBuiltins);
+    Object.assign(scope, functions);
+    return scope;
 }
 
 function resolveRuntimeBindingNames(runtimeId: string): Array<string> {
@@ -664,6 +828,31 @@ function updateGlobalRuntimeFunctionAliases(
     }
 }
 
+function discoverInstanceObjectDefinition(instance: Record<string, unknown>): Record<string, unknown> | null {
+    const rawPObject = instance.pObject ?? instance._kx;
+    if (isRecord(rawPObject)) {
+        return rawPObject;
+    }
+    for (const value of Object.values(instance)) {
+        if (isRecord(value)) {
+            let hasString = false;
+            let hasFunction = false;
+            for (const subVal of Object.values(value)) {
+                if (typeof subVal === "string") {
+                    hasString = true;
+                }
+                if (typeof subVal === "function") {
+                    hasFunction = true;
+                }
+                if (hasString && hasFunction) {
+                    return value;
+                }
+            }
+        }
+    }
+    return null;
+}
+
 function updateInstance(
     instance: Record<string, unknown>,
     instanceKeysToUpdate: Set<string>,
@@ -675,8 +864,7 @@ function updateInstance(
         instance[key] = fn;
 
         // Also update the object definition (pObject) which the event loop uses
-        const rawPObject = instance.pObject ?? instance._kx;
-        const pObject = rawPObject && typeof rawPObject === "object" ? (rawPObject as Record<string, unknown>) : null;
+        const pObject = discoverInstanceObjectDefinition(instance);
         if (pObject !== null && pObject[key] !== fn) {
             pObject[key] = fn;
         }
@@ -709,9 +897,7 @@ function updateInstances(
         }
 
         if (objectName) {
-            const instanceObject = (instance as Record<string, unknown>)._kx as
-                | { pName?: unknown; _h1?: unknown; _j3?: unknown; _lx?: unknown }
-                | undefined;
+            const instanceObject = discoverInstanceObjectDefinition(instance as Record<string, unknown>);
             const instanceObjectName = instanceObject ? resolveObjectName(instanceObject, objectName) : null;
             if (instanceObjectName && instanceObjectName !== objectName) {
                 continue;
@@ -723,7 +909,7 @@ function updateInstances(
 }
 
 function resolveInstanceObjectName(instance: Record<string, unknown>, expectedName: string | null): string | null {
-    const rawObject = instance.pObject ?? instance._kx;
+    const rawObject = discoverInstanceObjectDefinition(instance);
     if (isRecord(rawObject)) {
         const objectName = resolveObjectName(rawObject, expectedName);
         if (objectName !== null) {
@@ -732,6 +918,24 @@ function resolveInstanceObjectName(instance: Record<string, unknown>, expectedNa
     }
 
     return resolveObjectName(instance, expectedName);
+}
+
+function hasRuntimeEventFunction(record: Record<string, unknown>): boolean {
+    for (const value of Object.values(record)) {
+        if (typeof value === "function" && value.name.startsWith("gml_Object_")) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function isObjectOwnedRuntimeInstanceRecord(value: unknown): value is Record<string, unknown> {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    return "id" in value || hasRuntimeEventFunction(value);
 }
 
 function appendNestedVariableInstances(
@@ -747,7 +951,7 @@ function appendNestedVariableInstances(
     for (const value of Object.values(instance)) {
         if (Array.isArray(value)) {
             for (const entry of value) {
-                if (!isRecord(entry) || !("id" in entry) || seenInstances.has(entry)) {
+                if (!isObjectOwnedRuntimeInstanceRecord(entry) || seenInstances.has(entry)) {
                     continue;
                 }
 
@@ -828,6 +1032,15 @@ function refreshObjectInstancesAfterEventPatch(binding: RuntimeBindingApplicatio
         return;
     }
 
+    const globalScope = globalThis as Record<string, unknown>;
+    const assignedProperties = extractAssignedSelfProperties(binding.patchBody);
+    const assignedRuntimeKeys = new Set<string>();
+    for (const assignedProperty of assignedProperties) {
+        for (const assignedRuntimeKey of resolveRuntimePropertyKeys(assignedProperty, globalScope)) {
+            assignedRuntimeKeys.add(assignedRuntimeKey);
+        }
+    }
+
     for (const createBinding of createBindings) {
         const instances =
             binding.instanceStore === undefined
@@ -836,7 +1049,24 @@ function refreshObjectInstancesAfterEventPatch(binding: RuntimeBindingApplicatio
         const seenInstances = new Set(instances);
         collectObjectOwnedInstances(createBinding.objectEntry, instances, seenInstances);
         for (const instance of instances) {
-            createBinding.createHandler.call(instance, instance, instance, []);
+            if (binding.objectRuntime.eventName === "Create_0") {
+                createBinding.createHandler.call(instance, instance, instance, []);
+                continue;
+            }
+
+            for (const [propertyName, createValue] of extractCreateScalarAssignments(createBinding.createHandler)) {
+                if (
+                    !(propertyName in instance) ||
+                    assignedRuntimeKeys.has(propertyName) ||
+                    !isColorRuntimePropertyName(resolveCanonicalRuntimePropertyName(propertyName, globalScope))
+                ) {
+                    continue;
+                }
+
+                if (instance[propertyName] !== createValue) {
+                    instance[propertyName] = createValue;
+                }
+            }
         }
     }
 }
@@ -849,7 +1079,8 @@ function applyRuntimeBindings(patch: BasePatch, fn: RuntimeFunction): RuntimeBin
             gmObjects: undefined,
             instanceStore: undefined,
             objectName: null,
-            objectRuntime: null
+            objectRuntime: null,
+            patchBody: resolveRuntimeBindingPatchBody(patch)
         };
     }
 
@@ -920,7 +1151,8 @@ function applyRuntimeBindings(patch: BasePatch, fn: RuntimeFunction): RuntimeBin
         gmObjects,
         instanceStore,
         objectName,
-        objectRuntime
+        objectRuntime,
+        patchBody: resolveRuntimeBindingPatchBody(patch)
     };
 }
 
@@ -1135,7 +1367,7 @@ export function testPatchInShadow(patch: Patch): ShadowTestResult {
     const shadowRegistry = createRegistry();
 
     try {
-        applyPatchToRegistry(shadowRegistry, patch);
+        runWithoutRuntimeBindings(() => applyPatchToRegistry(shadowRegistry, patch));
         return { valid: true };
     } catch (error) {
         return {
@@ -1228,30 +1460,43 @@ const __resolveScriptFunction = (prop) => {
 };
 let __gml_minified_property_map = null;
 let __gml_minified_property_map_resolved = false;
-const __isMinifiedGmlPropertyMap = (value) =>
-    value &&
-    typeof value === "object" &&
-    typeof value.mouse_x === "string" &&
-    typeof value.current_time === "string" &&
-    typeof value.variable_instance_get === "string";
+const __isMinifiedGmlPropertyMap = (value) => {
+    try {
+        return (
+            value &&
+            typeof value === "object" &&
+            value.self !== value &&
+            typeof value.mouse_x === "string" &&
+            typeof value.current_time === "string" &&
+            typeof value.variable_instance_get === "string"
+        );
+    } catch {
+        return false;
+    }
+};
 const __resolveMinifiedGmlPropertyMap = () => {
     if (__gml_minified_property_map_resolved) {
         return __gml_minified_property_map;
     }
-    __gml_minified_property_map_resolved = true;
     if (!__global_scope) {
         return null;
     }
-    if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
-        __gml_minified_property_map = __global_scope._bw;
-        return __gml_minified_property_map;
-    }
-    for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
-        const value = __global_scope[globalPropertyName];
-        if (__isMinifiedGmlPropertyMap(value)) {
-            __gml_minified_property_map = value;
+    try {
+        if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
+            __gml_minified_property_map = __global_scope._bw;
+            __gml_minified_property_map_resolved = true;
             return __gml_minified_property_map;
         }
+    } catch {}
+    for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
+        try {
+            const value = __global_scope[globalPropertyName];
+            if (__isMinifiedGmlPropertyMap(value)) {
+                __gml_minified_property_map = value;
+                __gml_minified_property_map_resolved = true;
+                return __gml_minified_property_map;
+            }
+        } catch {}
     }
     return null;
 };
@@ -1390,7 +1635,9 @@ ${patchBody}
     }) as RuntimeFunction;
     const namedFn = createNamedRuntimeFunction(resolveRuntimeId(patch), fn);
 
-    applyRuntimeBindings(patch, namedFn);
+    if (!areRuntimeBindingsSuppressed()) {
+        applyRuntimeBindings(patch, namedFn);
+    }
 
     return updateRegistryCollection(registry, "scripts", patch.id, namedFn);
 }
@@ -1411,30 +1658,43 @@ function applyEventPatch(registry: RuntimeRegistry, patch: EventPatch): RuntimeR
 const __global_scope = typeof globalThis === "object" && globalThis !== null ? globalThis : null;
 let __gml_minified_property_map = null;
 let __gml_minified_property_map_resolved = false;
-const __isMinifiedGmlPropertyMap = (value) =>
-    value &&
-    typeof value === "object" &&
-    typeof value.mouse_x === "string" &&
-    typeof value.current_time === "string" &&
-    typeof value.variable_instance_get === "string";
+const __isMinifiedGmlPropertyMap = (value) => {
+    try {
+        return (
+            value &&
+            typeof value === "object" &&
+            value.self !== value &&
+            typeof value.mouse_x === "string" &&
+            typeof value.current_time === "string" &&
+            typeof value.variable_instance_get === "string"
+        );
+    } catch {
+        return false;
+    }
+};
 const __resolveMinifiedGmlPropertyMap = () => {
     if (__gml_minified_property_map_resolved) {
         return __gml_minified_property_map;
     }
-    __gml_minified_property_map_resolved = true;
     if (!__global_scope) {
         return null;
     }
-    if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
-        __gml_minified_property_map = __global_scope._bw;
-        return __gml_minified_property_map;
-    }
-    for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
-        const value = __global_scope[globalPropertyName];
-        if (__isMinifiedGmlPropertyMap(value)) {
-            __gml_minified_property_map = value;
+    try {
+        if (__isMinifiedGmlPropertyMap(__global_scope._bw)) {
+            __gml_minified_property_map = __global_scope._bw;
+            __gml_minified_property_map_resolved = true;
             return __gml_minified_property_map;
         }
+    } catch {}
+    for (const globalPropertyName of Object.getOwnPropertyNames(__global_scope)) {
+        try {
+            const value = __global_scope[globalPropertyName];
+            if (__isMinifiedGmlPropertyMap(value)) {
+                __gml_minified_property_map = value;
+                __gml_minified_property_map_resolved = true;
+                return __gml_minified_property_map;
+            }
+        } catch {}
     }
     return null;
 };
@@ -1484,6 +1744,10 @@ const __resolveRuntimeGetter = (prop) => {
         if (typeof minifiedGetter === "function") {
             return minifiedGetter;
         }
+        const builtinMinifiedGetter = __gml_builtins?.[minifiedGetterName];
+        if (typeof builtinMinifiedGetter === "function") {
+            return builtinMinifiedGetter;
+        }
     }
     const builtinGetter = __gml_builtins?.[getterName];
     if (typeof builtinGetter === "function") {
@@ -1500,7 +1764,7 @@ const __resolveRuntimeValue = (prop) => {
     }
     const getter = __resolveRuntimeGetter(prop);
     if (getter !== null) {
-        return getter.call(__global_scope);
+        return getter.call(__gml_builtins ?? __global_scope);
     }
     if (prop === "mouse_x") {
         return __gml_scope.x;
@@ -1590,8 +1854,10 @@ ${patchBody}
     };
 
     const namedFn = createNamedRuntimeFunction(resolveRuntimeId(patch), eventWrapper);
-    const binding = applyRuntimeBindings(patch, namedFn);
-    refreshObjectInstancesAfterEventPatch(binding);
+    if (!areRuntimeBindingsSuppressed()) {
+        const binding = applyRuntimeBindings(patch, namedFn);
+        refreshObjectInstancesAfterEventPatch(binding);
+    }
 
     return updateRegistryCollection(registry, "events", patch.id, namedFn);
 }

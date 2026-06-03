@@ -273,3 +273,34 @@ void test("resolveRuntimeReadiness returns true when script tables are ready and
         globals.JSON_game = savedJsonGame;
     }
 });
+
+void test("resolveRuntimeReadiness safely ignores cross-origin window objects without throwing", () => {
+    const globals = globalThis as unknown as RuntimeGlobals;
+    const savedBuiltins = globals.g_pBuiltIn;
+    const savedJsonGame = globals.JSON_game;
+
+    try {
+        delete globals.g_pBuiltIn;
+        delete globals.JSON_game;
+
+        // Simulate a cross-origin window object property on global scope.
+        // Reading it shouldn't throw, but checking properties on it should throw SecurityError.
+        const mockCrossOriginWindow = {} as any;
+        Object.defineProperty(mockCrossOriginWindow, "self", {
+            get() {
+                throw new Error("Blocked a frame with origin from accessing a cross-origin frame.");
+            },
+            configurable: true
+        });
+
+        // Inject the simulated cross-origin window as a property on globals
+        (globals as any).__mock_cross_origin_window = mockCrossOriginWindow;
+
+        // Try to resolve readiness — it should not throw and return false safely
+        assert.strictEqual(resolveRuntimeReadiness(false), false);
+    } finally {
+        globals.g_pBuiltIn = savedBuiltins;
+        globals.JSON_game = savedJsonGame;
+        delete (globals as any).__mock_cross_origin_window;
+    }
+});
