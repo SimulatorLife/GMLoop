@@ -277,14 +277,14 @@ void describe("ScopeTracker batch query operations", () => {
                 tracker.reference(name, { name });
             }
 
-            const startTime = Date.now();
+            const start = performance.now();
             const results = tracker.getBatchSymbolOccurrences(symbolNames);
-            const elapsedMs = Date.now() - startTime;
+            const elapsed = performance.now() - start;
 
             assert.equal(results.size, 100);
 
             // Batch query should complete quickly even with many symbols
-            assert.ok(elapsedMs < 100, `Batch query took ${elapsedMs}ms, expected < 100ms`);
+            assert.ok(elapsed < 100, `Batch query took ${elapsed.toFixed(3)}ms, expected < 100ms`);
         });
 
         void it("returns correct scope metadata for each occurrence", () => {
