@@ -30,6 +30,15 @@ type RuntimeBindingGlobals = {
     };
     gml_Object_oSpider_Step_0?: (...args: Array<unknown>) => unknown;
     _cx?: { _dx?: Record<string, unknown> };
+    _xw?: Record<string, string>;
+    _w4?: () => number;
+    _x4?: () => number;
+    _F4?: () => number;
+    _S8?: { _AM1?: Array<Record<string, unknown>> };
+    _Yw?: { _Zw?: Array<Record<string, unknown>> };
+    _W2?: (...args: Array<unknown>) => unknown;
+    _X1?: { _S2?: Array<Record<string, unknown>> };
+    _A8?: { _9X2?: Record<string, Record<string, unknown>> };
 };
 
 const runtimeBindingPropertyNames = [
@@ -40,7 +49,16 @@ const runtimeBindingPropertyNames = [
     "_C3",
     "_eb",
     "gml_Object_oSpider_Step_0",
-    "_cx"
+    "_cx",
+    "_xw",
+    "_w4",
+    "_x4",
+    "_F4",
+    "_S8",
+    "_Yw",
+    "_W2",
+    "_X1",
+    "_A8"
 ] as const;
 
 void test("event patches replace GameMaker object, instance, and pObject handlers", () => {
@@ -94,6 +112,263 @@ void test("event patches replace GameMaker object, instance, and pObject handler
         assert.equal(typeof updatedFn, "function", "Updated event handler should be callable");
         updatedFn(instanceEntry, instanceEntry);
         assert.equal(instanceEntry.hotReloadEventValue, 42, "Updated event handler should execute patched body");
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("event patches prefer GameMaker instance context over object arguments", () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+    wrapper.applyPatch({
+        kind: "event",
+        id: "gml/event/oSpider/Step_0",
+        runtimeId: "gml_Object_oSpider_Step_0",
+        js_body: "self.x = mouse_x; self.spiderColour = c_green;"
+    });
+
+    const fn = wrapper.getEvent("gml/event/oSpider/Step_0");
+    assert.ok(fn);
+
+    const snapshot = snapshotGlobalProperties(["mouse_x", "c_green"] as const);
+    try {
+        const globals = globalThis as { mouse_x?: number; c_green?: number };
+        globals.mouse_x = 384;
+        globals.c_green = 32_768;
+
+        const instanceEntry: Record<string, unknown> = {
+            x: 0,
+            spiderColour: 255
+        };
+        const otherEntry: Record<string, unknown> = {
+            x: 12,
+            spiderColour: 64
+        };
+
+        fn.call(instanceEntry, otherEntry);
+
+        assert.equal(instanceEntry.x, 384, "Patched Step event should update the live GameMaker instance");
+        assert.equal(instanceEntry.spiderColour, 32_768, "Patched Step event should update instance fields");
+        assert.equal(otherEntry.x, 12, "Auxiliary object arguments should not become self");
+        assert.equal(otherEntry.spiderColour, 64, "Auxiliary object arguments should not receive instance writes");
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("event patches resolve minified GameMaker runtime value getters", () => {
+    const snapshot = snapshotGlobalProperties(runtimeBindingPropertyNames);
+
+    try {
+        const globals = globalThis as RuntimeBindingGlobals;
+        globals._xw = {
+            mouse_x: "_HV",
+            get_mouse_x: "_w4",
+            mouse_y: "_LV",
+            get_mouse_y: "_x4",
+            current_time: "_zy2",
+            get_current_time: "_F4",
+            variable_instance_get: "_Al3"
+        };
+        globals._w4 = () => 640;
+        globals._x4 = () => 420;
+        globals._F4 = () => 123_456;
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.x = mouse_x; self.y = mouse_y; self.sampleTime = current_time;"
+        });
+
+        const fn = wrapper.getEvent("gml/event/oSpider/Step_0");
+        assert.ok(fn);
+        const instanceEntry: Record<string, unknown> = {};
+
+        fn.call(instanceEntry);
+
+        assert.equal(instanceEntry.x, 640, "mouse_x should resolve through the minified getter");
+        assert.equal(instanceEntry.y, 420, "mouse_y should resolve through the minified getter");
+        assert.equal(instanceEntry.sampleTime, 123_456, "current_time should resolve through the minified getter");
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("object event patches refresh active instances through Create after handler replacement", () => {
+    const snapshot = snapshotGlobalProperties(runtimeBindingPropertyNames);
+
+    try {
+        function gml_Object_oSpider_Create_0(this: Record<string, unknown>) {
+            this.spiderColour = 255;
+        }
+
+        function gml_Object_oSpider_Step_0() {
+            return "original";
+        }
+
+        const objectEntry = {
+            Event: [] as Array<boolean>,
+            pName: "oSpider",
+            CreateEvent: gml_Object_oSpider_Create_0,
+            StepNormalEvent: gml_Object_oSpider_Step_0
+        };
+        const instanceEntry: Record<string, unknown> = {
+            Event: [],
+            _kx: objectEntry,
+            spiderColour: 32_768
+        };
+        const globals = globalThis as RuntimeBindingGlobals;
+        globals.JSON_game = {
+            GMObjects: [objectEntry],
+            ScriptNames: [],
+            Scripts: []
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._cx = {
+            _dx: {
+                "100000": instanceEntry
+            }
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.x = mouse_x;"
+        });
+
+        assert.equal(instanceEntry.spiderColour, 255, "Active instances should be refreshed from Create state");
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("object event patches refresh shape-discovered active instance pools", () => {
+    const snapshot = snapshotGlobalProperties(runtimeBindingPropertyNames);
+
+    try {
+        function gml_Object_oSpider_Create_0(this: Record<string, unknown>) {
+            this.spiderColour = 255;
+        }
+
+        function gml_Object_oSpider_Step_0() {
+            return "original";
+        }
+
+        const objectEntry = {
+            pName: "oSpider",
+            CreateEvent: gml_Object_oSpider_Create_0,
+            StepNormalEvent: gml_Object_oSpider_Step_0,
+            _Hd2: {
+                _Gn: [
+                    {
+                        id: 100_000,
+                        spiderColour: 32_768
+                    }
+                ]
+            }
+        };
+        const instanceEntry: Record<string, unknown> = {
+            _jw: "oSpider",
+            x: 384,
+            y: 256,
+            spiderColour: 32_768,
+            StepNormalEvent: gml_Object_oSpider_Step_0,
+            _Le2: {
+                _Ko: [
+                    {
+                        id: 100_000,
+                        spiderColour: 32_768
+                    }
+                ]
+            }
+        };
+        const globals = globalThis as RuntimeBindingGlobals;
+        globals.JSON_game = {
+            GMObjects: [objectEntry],
+            ScriptNames: [],
+            Scripts: []
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._S8 = {
+            _AM1: [instanceEntry]
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.x = mouse_x;"
+        });
+
+        assert.equal(instanceEntry.spiderColour, 255, "Shape-discovered active instances should refresh Create state");
+        assert.equal(
+            (objectEntry._Hd2 as { _Gn: Array<Record<string, unknown>> })._Gn[0].spiderColour,
+            255,
+            "Object-owned variable records should refresh Create state"
+        );
+        assert.equal(
+            (instanceEntry._Le2 as { _Ko: Array<Record<string, unknown>> })._Ko[0].spiderColour,
+            255,
+            "Nested variable records owned by active instances should refresh Create state"
+        );
+        assert.equal(instanceEntry.StepNormalEvent, wrapper.getEvent("gml/event/oSpider/Step_0"));
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("object event patches refresh shape-discovered variable instance pools", () => {
+    const snapshot = snapshotGlobalProperties(runtimeBindingPropertyNames);
+
+    try {
+        function gml_Object_oSpider_Create_0(this: Record<string, unknown>) {
+            this.spiderColour = 255;
+        }
+
+        function gml_Object_oSpider_Step_0() {
+            return "original";
+        }
+
+        const objectEntry = {
+            pName: "oSpider",
+            CreateEvent: gml_Object_oSpider_Create_0,
+            StepNormalEvent: gml_Object_oSpider_Step_0
+        };
+        const variableInstanceEntry: Record<string, unknown> = {
+            id: 100_000,
+            _kx: objectEntry,
+            x: 384,
+            y: 256,
+            spiderColour: 32_768
+        };
+        const globals = globalThis as RuntimeBindingGlobals;
+        globals.JSON_game = {
+            GMObjects: [objectEntry],
+            ScriptNames: [],
+            Scripts: []
+        };
+        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+        globals._Yw = {
+            _Zw: [variableInstanceEntry]
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.x = mouse_x;"
+        });
+
+        assert.equal(
+            variableInstanceEntry.spiderColour,
+            255,
+            "Shape-discovered variable instances should refresh Create state"
+        );
     } finally {
         restoreGlobalProperties(snapshot);
     }
@@ -252,6 +527,82 @@ void test("event patches replace current HTML5 minified object and active instan
             activeInstanceEntry.hotReloadEventValue,
             126,
             "Updated current minified Step handler should run patched body"
+        );
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
+void test("event patches replace global aliases for current HTML5 minified object handlers", () => {
+    const snapshot = snapshotGlobalProperties(runtimeBindingPropertyNames);
+
+    try {
+        function originalCreateEvent(this: Record<string, unknown>) {
+            this.spiderColour = 255;
+        }
+
+        function originalStepEvent(this: Record<string, unknown>) {
+            this.spiderColour = 32_768;
+        }
+
+        function originalDrawEvent() {
+            return "draw";
+        }
+
+        const objectEntry: Record<string, unknown> = {
+            _32: "oSpider",
+            spriteIndex: 2,
+            visible: true,
+            parent: -100,
+            _T2: originalCreateEvent,
+            _V2: originalStepEvent,
+            _X2: originalDrawEvent
+        };
+        const mappedObjectEntry: Record<string, unknown> = {
+            _32: "oSpider",
+            _T2: originalCreateEvent,
+            _V2: originalStepEvent,
+            _X2: originalDrawEvent,
+            _Ic2: {
+                _Hm: [
+                    {
+                        id: 100_000,
+                        spiderColour: 32_768
+                    }
+                ]
+            }
+        };
+        const globals = globalThis as RuntimeBindingGlobals;
+        delete globals.JSON_game;
+        delete globals._a1;
+        delete globals._c3;
+        delete globals._C3;
+        delete globals._eb;
+        globals._W2 = originalStepEvent;
+        globals._X1 = {
+            _S2: [objectEntry]
+        };
+        globals._A8 = {
+            _9X2: {
+                oSpider: mappedObjectEntry
+            }
+        };
+
+        const wrapper = RuntimeWrapper.createRuntimeWrapper();
+        wrapper.applyPatch({
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            runtimeId: "gml_Object_oSpider_Step_0",
+            js_body: "self.x = mouse_x;"
+        });
+
+        assert.equal(globals._W2, wrapper.getEvent("gml/event/oSpider/Step_0"));
+        assert.equal(objectEntry._V2, globals._W2);
+        assert.equal(mappedObjectEntry._V2, globals._W2);
+        assert.equal(
+            (mappedObjectEntry._Ic2 as { _Hm: Array<Record<string, unknown>> })._Hm[0].spiderColour,
+            255,
+            "Object-owned runtime variable records should refresh after replacing a global minified alias"
         );
     } finally {
         restoreGlobalProperties(snapshot);
