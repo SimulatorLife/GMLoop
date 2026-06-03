@@ -451,7 +451,11 @@ void describe("formatBatchRenamePlanReport", () => {
                     totalSymbols: 2,
                     maxDistance: 1,
                     hasCircular: true
-                }
+                },
+                // Top-level convenience aliases (promoted from metadata)
+                totalSymbols: 2,
+                maxDistance: 1,
+                hasCircular: true
             }
         };
 
