@@ -2,7 +2,7 @@ import { Core } from "@gmloop/core";
 import * as Parser from "@gmloop/parser";
 
 import { SemanticScopeCoordinator } from "../scopes/identifier-scope.js";
-import { formatProjectIndexSyntaxError } from "./parsing/syntax-error-formatter.js";
+import { formatProjectIndexSyntaxError } from "./syntax-error-formatter.js";
 
 /**
  * Parser facade adapter for the project-index subsystem.

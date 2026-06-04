@@ -1,6 +1,6 @@
 import { Core } from "@gmloop/core";
 
-import { resolveProjectDisplayPath } from "../path-normalization.js";
+import { resolveProjectDisplayPath } from "./path-normalization.js";
 
 /**
  * Normalize thrown values into an error-like object the formatter can mutate
