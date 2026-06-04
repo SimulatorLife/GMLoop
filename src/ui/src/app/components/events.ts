@@ -17,8 +17,10 @@ export const GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD = "gmloop-trigger-stop-live
 export const GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG = "gmloop-trigger-create-config";
 export const GRAPH_UI_EVENT_SET_CONFIG_VIEW = "gmloop-set-config-view";
 export const GRAPH_UI_EVENT_RESET_DEFAULTS = "gmloop-reset-defaults";
+export const GRAPH_UI_EVENT_CLEAR_PAGE_ERROR = "gmloop-clear-page-error";
 
 export type GraphUiNavigatePageDetail = Readonly<{ page: GraphVisualizationUiPage }>;
 export type GraphUiSetDocsViewDetail = Readonly<{ docsView: GraphVisualizationUiDocsView }>;
 export type GraphUiSetConfigViewDetail = Readonly<{ configView: GraphVisualizationUiConfigView }>;
 export type GraphUiSetSearchQueryDetail = Readonly<{ searchQuery: string }>;
+export type GraphUiClearPageErrorDetail = Readonly<{ page: GraphVisualizationUiPage }>;

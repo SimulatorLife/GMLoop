@@ -8,6 +8,7 @@ import type {
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { LiveReloadPollingController } from "./live-reload-polling-controller.js";
 
@@ -58,6 +59,13 @@ export class GmLiveReloadPanel extends LightDomLitElement {
 
     #onDismissErrorBanner = (): void => {
         this.#pollErrorMessage = null;
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
+                bubbles: true,
+                composed: true,
+                detail: { page: "live-reload" }
+            })
+        );
     };
 
     #pollingController = new LiveReloadPollingController(this, {

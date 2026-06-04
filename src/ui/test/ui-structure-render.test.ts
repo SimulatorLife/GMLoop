@@ -6,6 +6,7 @@ import { GmAppHeader } from "../src/app/components/gm-app-header.js";
 import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
 import { GmPlaygroundPanel } from "../src/app/components/gm-playground-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
 
@@ -92,22 +93,12 @@ function createEmptyGraphModel(): GraphVisualizationUiModel {
 
 function createMockState(activePage: GraphVisualizationUiState["activePage"]): GraphVisualizationUiState {
     return {
+        ...createInitialGraphVisualizationUiState(),
         activeConfigView: "rendered",
         activeDocsView: "cli",
         activeGraphView: "visual",
         activePage,
-        errorMessage: null,
-        fixErrorMessage: null,
-        fixLogLines: [],
-        fixStatus: "idle",
-        isFixPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
         labelMode: "auto",
-        liveReloadErrorMessage: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
         searchQuery: "enemy"
     };
 }

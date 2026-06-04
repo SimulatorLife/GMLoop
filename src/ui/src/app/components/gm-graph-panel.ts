@@ -16,7 +16,7 @@ import {
 } from "../graph-layout.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
-import { GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const NODE_STYLE_BY_KIND = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
@@ -122,12 +122,24 @@ export class GmGraphPanel extends LightDomLitElement {
 
     #eventBus = new EventBusManager(this, [{ event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults }]);
 
+    #onDismissErrorBanner = (): void => {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
+                bubbles: true,
+                composed: true,
+                detail: { page: "graph" }
+            })
+        );
+    };
+
     public connectedCallback(): void {
         super.connectedCallback();
         this.#eventBus.connect();
+        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
     }
 
     public disconnectedCallback(): void {
+        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
         this.#eventBus.disconnect();
         super.disconnectedCallback();
     }
@@ -405,6 +417,11 @@ export class GmGraphPanel extends LightDomLitElement {
 
         return html`
             <section id="graph-page" class=${graphPageClassName}>
+                ${this.state.graphErrorMessage || this.state.errorMessage
+                    ? html`<gm-error-banner
+                          .message=${this.state.graphErrorMessage || this.state.errorMessage}
+                      ></gm-error-banner>`
+                    : null}
                 ${this.state.isRegeneratePending
                     ? html`
                           <div class="loading-overlay" role="status" aria-live="polite">

@@ -385,6 +385,25 @@ button:not([class]):disabled {
   pointer-events: none;
 }
 
+.button-content {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gm-space-sm);
+  justify-content: center;
+}
+
+.button-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ffffff4d;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: gm-spin 600ms linear infinite;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
 @keyframes gm-spin {
   to {
     transform: rotate(360deg);

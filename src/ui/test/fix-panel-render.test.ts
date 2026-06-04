@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { GmFixPanel } from "../src/app/components/gm-fix-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
 
@@ -40,23 +41,14 @@ function createMockModel(): GraphVisualizationUiModel {
 
 function createMockState(): GraphVisualizationUiState {
     return {
+        ...createInitialGraphVisualizationUiState(),
         activeConfigView: "rendered",
         activeDocsView: "cli",
         activeGraphView: "visual",
         activePage: "fix",
-        errorMessage: null,
-        fixErrorMessage: null,
         fixLogLines: ["[1/3 Refactor Codemods]", "[2/3 Lint Fixes]", "[3/3 Format]"],
         fixStatus: "success",
-        isFixPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
-        labelMode: "auto",
-        liveReloadErrorMessage: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
-        searchQuery: ""
+        labelMode: "auto"
     };
 }
 

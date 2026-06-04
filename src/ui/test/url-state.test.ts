@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import {
     parseGraphVisualizationUiStateFromUrlSearch,
     resetProjectScopedGraphVisualizationUiState,
@@ -33,22 +34,12 @@ void test("parseGraphVisualizationUiStateFromUrlSearch rejects invalid values an
 
 void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported navigation state", () => {
     const search = serializeGraphVisualizationUiStateToUrlSearch({
+        ...createInitialGraphVisualizationUiState(),
         activeConfigView: "rendered",
         activeDocsView: "rules",
         activeGraphView: "json",
         activePage: "config",
-        errorMessage: null,
-        fixErrorMessage: null,
-        fixLogLines: [],
-        fixStatus: "idle",
-        isFixPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
         labelMode: "always",
-        liveReloadErrorMessage: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
         searchQuery: "enemy ship"
     });
 

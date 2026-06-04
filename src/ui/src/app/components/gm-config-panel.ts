@@ -11,7 +11,7 @@ import type {
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
-import { GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG } from "./events.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
 
@@ -148,6 +148,26 @@ export class GmConfigPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
+    #onDismissErrorBanner = (): void => {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
+                bubbles: true,
+                composed: true,
+                detail: { page: "config" }
+            })
+        );
+    };
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+    }
+
+    public disconnectedCallback(): void {
+        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+        super.disconnectedCallback();
+    }
+
     #lintLevelFilter: LintLevelFilter = "all";
     #lintRulesetFilter = "all";
 
@@ -273,6 +293,9 @@ export class GmConfigPanel extends LightDomLitElement {
         if (!configCatalog) {
             return html`
                 <section id="config-page" class=${configPageClassName}>
+                    ${this.state.configErrorMessage
+                        ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
+                        : null}
                     <p id="config-meta" class="docs-meta">Project settings are not available right now.</p>
                     <div id="config-content" class="config-stack"></div>
                 </section>
@@ -290,6 +313,9 @@ export class GmConfigPanel extends LightDomLitElement {
 
         return html`
             <section id="config-page" class=${configPageClassName}>
+                ${this.state.configErrorMessage
+                    ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
+                    : null}
                 <p id="config-meta" class="docs-meta">
                     Project Root: <strong>${configCatalog.gmloop.projectRoot}</strong>
                     ${configCatalog.gmloop.configPath

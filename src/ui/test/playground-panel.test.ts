@@ -5,6 +5,7 @@ import test from "node:test";
 import { GmPlaygroundPanel } from "../src/app/components/gm-playground-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../src/app/playground-default-gml.js";
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationProjectConfigurationCatalog } from "../src/graph/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -38,23 +39,12 @@ function createMockModel(): GraphVisualizationUiModel {
 
 function createMockState(): GraphVisualizationUiState {
     return {
+        ...createInitialGraphVisualizationUiState(),
         activeConfigView: "rendered",
         activePage: "playground",
         activeGraphView: "visual",
         activeDocsView: "cli",
-        errorMessage: null,
-        fixErrorMessage: null,
-        fixLogLines: [],
-        fixStatus: "idle",
-        isFixPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
-        labelMode: "auto",
-        liveReloadErrorMessage: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
-        searchQuery: ""
+        labelMode: "auto"
     };
 }
 

@@ -21,7 +21,12 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         liveReloadErrorMessage: null,
         mcpServerStatus: "not-started",
         pendingActionCount: 0,
-        searchQuery: ""
+        searchQuery: "",
+        graphErrorMessage: null,
+        docsErrorMessage: null,
+        configErrorMessage: null,
+        playgroundErrorMessage: null,
+        mcpErrorMessage: null
     };
 }
 
@@ -158,10 +163,67 @@ export function reduceGraphVisualizationUiState(
                 errorMessage: action.errorMessage
             };
         }
+        case "set-page-error": {
+            switch (action.page) {
+                case "graph": {
+                    return { ...state, graphErrorMessage: action.errorMessage };
+                }
+                case "docs": {
+                    return { ...state, docsErrorMessage: action.errorMessage };
+                }
+                case "config": {
+                    return { ...state, configErrorMessage: action.errorMessage };
+                }
+                case "playground": {
+                    return { ...state, playgroundErrorMessage: action.errorMessage };
+                }
+                case "mcp": {
+                    return { ...state, mcpErrorMessage: action.errorMessage };
+                }
+                case "fix": {
+                    return { ...state, fixErrorMessage: action.errorMessage };
+                }
+                case "live-reload": {
+                    return { ...state, liveReloadErrorMessage: action.errorMessage };
+                }
+                default: {
+                    return state;
+                }
+            }
+        }
+        case "clear-page-error": {
+            switch (action.page) {
+                case "graph": {
+                    return { ...state, errorMessage: null, graphErrorMessage: null };
+                }
+                case "docs": {
+                    return { ...state, docsErrorMessage: null };
+                }
+                case "config": {
+                    return { ...state, configErrorMessage: null };
+                }
+                case "playground": {
+                    return { ...state, playgroundErrorMessage: null };
+                }
+                case "mcp": {
+                    return { ...state, mcpErrorMessage: null };
+                }
+                case "fix": {
+                    return { ...state, fixErrorMessage: null };
+                }
+                case "live-reload": {
+                    return { ...state, liveReloadErrorMessage: null };
+                }
+                default: {
+                    return state;
+                }
+            }
+        }
         case "clear-error": {
             return {
                 ...state,
-                errorMessage: null
+                errorMessage: null,
+                graphErrorMessage: null
             };
         }
         case "reset-project-scoped-state": {
@@ -171,9 +233,15 @@ export function reduceGraphVisualizationUiState(
                 fixLogLines: [],
                 fixStatus: "idle",
                 liveReloadErrorMessage: null,
-                searchQuery: ""
+                searchQuery: "",
+                graphErrorMessage: null,
+                docsErrorMessage: null,
+                configErrorMessage: null,
+                playgroundErrorMessage: null,
+                mcpErrorMessage: null
             };
         }
+
         case "reset-defaults": {
             return {
                 ...state,

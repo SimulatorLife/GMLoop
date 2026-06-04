@@ -6,6 +6,7 @@ import { getUiErrorMessage } from "../error-message.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE, resolveInitialPlaygroundGmlSource } from "../playground-default-gml.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { highlightGml } from "../syntax-highlight-gml.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
@@ -20,6 +21,21 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
+
+    #onDismissErrorBanner = (): void => {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
+                bubbles: true,
+                composed: true,
+                detail: { page: "playground" }
+            })
+        );
+    };
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+    }
 
     public constructor() {
         super();
@@ -121,6 +137,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             this.#debounceTimer = null;
         }
 
+        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
         super.disconnectedCallback();
     }
 
@@ -628,6 +645,9 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
         return html`
             <section id="playground-page" class=${activeClassName}>
+                ${this.state.playgroundErrorMessage
+                    ? html`<gm-error-banner .message=${this.state.playgroundErrorMessage}></gm-error-banner>`
+                    : null}
                 <div class="playground-toolbar">
                     <button
                         type="button"

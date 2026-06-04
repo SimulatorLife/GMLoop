@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationDocumentationCatalogs } from "../src/graph/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -108,23 +109,12 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
 
 function createDocsPanelState(): GraphVisualizationUiState {
     return {
+        ...createInitialGraphVisualizationUiState(),
         activeConfigView: "rendered",
         activeDocsView: "rules",
         activeGraphView: "visual",
         activePage: "docs",
-        errorMessage: null,
-        fixErrorMessage: null,
-        fixLogLines: [],
-        fixStatus: "idle",
-        isFixPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
-        labelMode: "auto",
-        liveReloadErrorMessage: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
-        searchQuery: ""
+        labelMode: "auto"
     };
 }
 

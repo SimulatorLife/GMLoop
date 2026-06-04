@@ -49,6 +49,11 @@ export type GraphVisualizationUiState = Readonly<{
     mcpServerStatus: GraphVisualizationUiMcpServerStatus;
     pendingActionCount: number;
     searchQuery: string;
+    graphErrorMessage: string | null;
+    docsErrorMessage: string | null;
+    configErrorMessage: string | null;
+    playgroundErrorMessage: string | null;
+    mcpErrorMessage: string | null;
 }>;
 
 /**
@@ -71,6 +76,8 @@ export type GraphVisualizationUiAction =
     | Readonly<{ pending: boolean; type: "set-live-reload-start-pending" }>
     | Readonly<{ errorMessage: string | null; type: "set-live-reload-error" }>
     | Readonly<{ errorMessage: string | null; type: "set-error" }>
+    | Readonly<{ errorMessage: string | null; page: GraphVisualizationUiPage; type: "set-page-error" }>
+    | Readonly<{ page: GraphVisualizationUiPage; type: "clear-page-error" }>
     | Readonly<{ type: "clear-error" }>
     | Readonly<{ type: "reset-project-scoped-state" }>
     | Readonly<{ type: "reset-defaults" }>;

@@ -5,6 +5,7 @@ import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { createGraphVisualizationDocsPanelContent } from "./docs-panel-content.js";
 import { normalizeCatalogSearchQuery, searchCliEntries, searchMcpEntries, searchRulesSections } from "./docs-search.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
@@ -19,6 +20,26 @@ export class GmDocsPanel extends LightDomLitElement {
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
+
+    #onDismissErrorBanner = (): void => {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
+                bubbles: true,
+                composed: true,
+                detail: { page: "docs" }
+            })
+        );
+    };
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+    }
+
+    public disconnectedCallback(): void {
+        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+        super.disconnectedCallback();
+    }
 
     #renderCliCard(entry: GraphVisualizationCliCatalogEntry) {
         return html`
@@ -79,6 +100,9 @@ export class GmDocsPanel extends LightDomLitElement {
 
         return html`
             <section id="docs-page" class=${docsPageClassName}>
+                ${this.state.docsErrorMessage
+                    ? html`<gm-error-banner .message=${this.state.docsErrorMessage}></gm-error-banner>`
+                    : null}
                 <div id="docs-content">
                     <div
                         id="cli-page"

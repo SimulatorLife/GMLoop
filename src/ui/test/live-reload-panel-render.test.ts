@@ -10,6 +10,7 @@ import {
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
 } from "../src/app/components/index.js";
 import type { GraphVisualizationFixRunResult, GraphVisualizationUiModel } from "../src/app/contracts.js";
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationLiveReloadStatusSnapshot } from "../src/graph/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -113,23 +114,12 @@ function createMockModel(statusSnapshot: GraphVisualizationLiveReloadStatusSnaps
 
 function createMockState(): GraphVisualizationUiState {
     return {
+        ...createInitialGraphVisualizationUiState(),
         activeConfigView: "rendered",
         activeDocsView: "cli",
         activeGraphView: "visual",
         activePage: "live-reload",
-        errorMessage: null,
-        fixErrorMessage: null,
-        fixLogLines: [],
-        fixStatus: "idle",
-        isFixPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
-        labelMode: "auto",
-        liveReloadErrorMessage: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
-        searchQuery: ""
+        labelMode: "auto"
     };
 }
 

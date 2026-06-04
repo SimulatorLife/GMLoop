@@ -2,6 +2,7 @@ import { html } from "lit";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
@@ -16,6 +17,26 @@ export class GmMcpPanel extends LightDomLitElement {
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
+
+    #onDismissErrorBanner = (): void => {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
+                bubbles: true,
+                composed: true,
+                detail: { page: "mcp" }
+            })
+        );
+    };
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+    }
+
+    public disconnectedCallback(): void {
+        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+        super.disconnectedCallback();
+    }
 
     #renderServerMetadata() {
         const docsCatalogs = this.model?.documentationCatalogs;
@@ -58,6 +79,9 @@ export class GmMcpPanel extends LightDomLitElement {
 
         return html`
             <section id="mcp-page" class=${mcpPageClassName}>
+                ${this.state.mcpErrorMessage
+                    ? html`<gm-error-banner .message=${this.state.mcpErrorMessage}></gm-error-banner>`
+                    : null}
                 <p id="mcp-meta" class="docs-meta">MCP bridge status and connection activity.</p>
                 <div id="mcp-content" class="docs-grid">
                     ${this.#renderServerMetadata()} ${this.#renderActivityFeed()}
