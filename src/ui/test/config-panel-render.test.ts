@@ -178,7 +178,7 @@ void test("config panel defaults to rendered view and exposes configuration deta
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="config-page"[\s\S]*class=page content-page active/u);
-    assert.match(rendered, /Project Root:?/iu);
+    assert.doesNotMatch(rendered, /Project Root:?/iu);
     assert.match(rendered, /Config Path:?/iu);
     assert.match(rendered, /Format \(1\)/u);
     assert.match(rendered, /Lint \(2\)/u);

@@ -309,18 +309,15 @@ export class GmConfigPanel extends LightDomLitElement {
         const filteredLintRules = this.#filterLintRules(lintRules, lintRulesets);
         const codemods = configCatalog.refactor.codemods;
 
-        const configViewMode = this.state.activeConfigView;
-
         return html`
             <section id="config-page" class=${configPageClassName}>
                 ${this.state.configErrorMessage
                     ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
                     : null}
                 <p id="config-meta" class="docs-meta">
-                    Project Root: <strong>${configCatalog.gmloop.projectRoot}</strong>
                     ${configCatalog.gmloop.configPath
-                        ? html` • Config Path: <strong>${configCatalog.gmloop.configPath}</strong>`
-                        : html` • Config Path: <strong>Not found</strong>`}
+                        ? html`Config Path: <strong>${configCatalog.gmloop.configPath}</strong>`
+                        : html`Config Path: <strong>Not found</strong>`}
                 </p>
                 <div id="config-content" class="config-stack">
                     ${configCatalog.gmloop.exists
@@ -348,90 +345,73 @@ export class GmConfigPanel extends LightDomLitElement {
                                   </button>
                               </div>
                           `}
-                    ${configViewMode === "raw"
-                        ? html`
-                              <gm-card class="config-card" heading="gmloop.json">
-                                  <p>
-                                      ${configCatalog.gmloop.configPath ?? "No gmloop.json file is currently loaded."}
-                                  </p>
-                                  <pre class="config-raw">
-${serializeConfigurationValue(configCatalog.gmloop.rawConfig)}</pre
-                                  >
-                              </gm-card>
-                          `
-                        : html`
-                              <gm-card class="config-card" .heading=${`Format (${String(formatEntries.length)})`}>
+                    <gm-card class="config-card" .heading=${`Format (${String(formatEntries.length)})`}>
+                        <ul class="config-list">
+                            ${formatEntries.map((entry) => renderConfigEntry(entry))}
+                        </ul>
+                    </gm-card>
+                    <gm-card class="config-card" .heading=${`Lint (${String(filteredLintRules.length)})`}>
+                        <p>Active ruleset: ${configCatalog.lint.ruleset ?? "none"}. Filters affect this view only.</p>
+                        ${this.#renderLintFilters(lintRulesets)}
+                        <ul class="config-list">
+                            ${filteredLintRules.length === 0
+                                ? html`<li class="config-empty">No lint rules match these filters.</li>`
+                                : filteredLintRules.map((entry) => renderLintRuleEntry(entry))}
+                        </ul>
+                    </gm-card>
+                    <gm-card class="config-card" .heading=${`Refactor (${String(codemods.length)})`}>
+                        <ul class="config-list">
+                            ${codemods.map((entry) => renderCodemodEntry(entry))}
+                        </ul>
+                    </gm-card>
+                    <gm-card
+                        class="config-card"
+                        .heading=${`GameMaker CLI (${String(gameMakerCliCatalog.cliCommands.length)})`}
+                    >
+                        <p>
+                            ${gameMakerCliCatalog.available
+                                ? `Live gm-cli metadata sourced directly from ${gameMakerCliCatalog.invocation ?? "the detected gm-cli executable"}${gameMakerCliCatalog.version ? ` (v${gameMakerCliCatalog.version})` : ""}.`
+                                : (gameMakerCliCatalog.error ?? "gm-cli metadata is unavailable.")}
+                        </p>
+                        ${gameMakerCliCatalog.available
+                            ? html`
                                   <ul class="config-list">
-                                      ${formatEntries.map((entry) => renderConfigEntry(entry))}
+                                      <li class="config-item">
+                                          <strong>Invocation</strong>
+                                          <span>${gameMakerCliCatalog.invocation ?? "Unavailable"}</span>
+                                      </li>
+                                      <li class="config-item">
+                                          <strong>Version</strong>
+                                          <span>${gameMakerCliCatalog.version ?? "Unknown"}</span>
+                                      </li>
                                   </ul>
-                              </gm-card>
-                              <gm-card class="config-card" .heading=${`Lint (${String(filteredLintRules.length)})`}>
-                                  <p>
-                                      Active ruleset: ${configCatalog.lint.ruleset ?? "none"}. Filters affect this view
-                                      only.
-                                  </p>
-                                  ${this.#renderLintFilters(lintRulesets)}
                                   <ul class="config-list">
-                                      ${filteredLintRules.length === 0
-                                          ? html`<li class="config-empty">No lint rules match these filters.</li>`
-                                          : filteredLintRules.map((entry) => renderLintRuleEntry(entry))}
+                                      ${gameMakerCliCatalog.cliCommands.map((entry) =>
+                                          renderGameMakerCliCommandEntry(entry)
+                                      )}
                                   </ul>
-                              </gm-card>
-                              <gm-card class="config-card" .heading=${`Refactor (${String(codemods.length)})`}>
+                              `
+                            : null}
+                    </gm-card>
+                    <gm-card
+                        class="config-card"
+                        .heading=${`GameMaker MCP (${String(gameMakerCliCatalog.mcpTools.length)})`}
+                    >
+                        <p>
+                            ${gameMakerCliCatalog.mcpServer.available
+                                ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} tool metadata sourced directly from ${gameMakerCliCatalog.mcpServer.serverId ? `the configured MCP server "${gameMakerCliCatalog.mcpServer.serverId}"` : "gm-cli resourcetool mcp"}${gameMakerCliCatalog.mcpServer.sourcePath ? ` in ${gameMakerCliCatalog.mcpServer.sourcePath}` : ""}${gameMakerCliCatalog.mcpServer.projectPath ? ` for ${gameMakerCliCatalog.mcpServer.projectPath}` : ""}.`
+                                : (gameMakerCliCatalog.mcpServer.error ?? "ResourceTool MCP metadata is unavailable.")}
+                        </p>
+                        ${gameMakerCliCatalog.mcpServer.available
+                            ? html`
                                   <ul class="config-list">
-                                      ${codemods.map((entry) => renderCodemodEntry(entry))}
+                                      ${gameMakerCliCatalog.mcpTools.map((entry) =>
+                                          renderGameMakerCliMcpToolEntry(entry)
+                                      )}
                                   </ul>
-                              </gm-card>
-                              <gm-card
-                                  class="config-card"
-                                  .heading=${`GameMaker CLI (${String(gameMakerCliCatalog.cliCommands.length)})`}
-                              >
-                                  <p>
-                                      ${gameMakerCliCatalog.available
-                                          ? `Live gm-cli metadata sourced directly from ${gameMakerCliCatalog.invocation ?? "the detected gm-cli executable"}${gameMakerCliCatalog.version ? ` (v${gameMakerCliCatalog.version})` : ""}.`
-                                          : (gameMakerCliCatalog.error ?? "gm-cli metadata is unavailable.")}
-                                  </p>
-                                  ${gameMakerCliCatalog.available
-                                      ? html`
-                                            <ul class="config-list">
-                                                <li class="config-item">
-                                                    <strong>Invocation</strong>
-                                                    <span>${gameMakerCliCatalog.invocation ?? "Unavailable"}</span>
-                                                </li>
-                                                <li class="config-item">
-                                                    <strong>Version</strong>
-                                                    <span>${gameMakerCliCatalog.version ?? "Unknown"}</span>
-                                                </li>
-                                            </ul>
-                                            <ul class="config-list">
-                                                ${gameMakerCliCatalog.cliCommands.map((entry) =>
-                                                    renderGameMakerCliCommandEntry(entry)
-                                                )}
-                                            </ul>
-                                        `
-                                      : null}
-                              </gm-card>
-                              <gm-card
-                                  class="config-card"
-                                  .heading=${`GameMaker MCP (${String(gameMakerCliCatalog.mcpTools.length)})`}
-                              >
-                                  <p>
-                                      ${gameMakerCliCatalog.mcpServer.available
-                                          ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} tool metadata sourced directly from ${gameMakerCliCatalog.mcpServer.serverId ? `the configured MCP server "${gameMakerCliCatalog.mcpServer.serverId}"` : "gm-cli resourcetool mcp"}${gameMakerCliCatalog.mcpServer.sourcePath ? ` in ${gameMakerCliCatalog.mcpServer.sourcePath}` : ""}${gameMakerCliCatalog.mcpServer.projectPath ? ` for ${gameMakerCliCatalog.mcpServer.projectPath}` : ""}.`
-                                          : (gameMakerCliCatalog.mcpServer.error ??
-                                            "ResourceTool MCP metadata is unavailable.")}
-                                  </p>
-                                  ${gameMakerCliCatalog.mcpServer.available
-                                      ? html`
-                                            <ul class="config-list">
-                                                ${gameMakerCliCatalog.mcpTools.map((entry) =>
-                                                    renderGameMakerCliMcpToolEntry(entry)
-                                                )}
-                                            </ul>
-                                        `
-                                      : null}
-                              </gm-card>
-                          `}
+                              `
+                            : null}
+                    </gm-card>
                 </div>
             </section>
         `;

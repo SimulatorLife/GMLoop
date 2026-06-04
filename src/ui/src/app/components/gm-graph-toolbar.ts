@@ -4,7 +4,6 @@ import { ref } from "lit/directives/ref.js";
 import { type GraphVisualizationUiModel, hasLoadedGraphIndex, hasLoadedGraphProject } from "../contracts.js";
 import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
 import type {
-    GraphVisualizationUiConfigView,
     GraphVisualizationUiPage,
     GraphVisualizationUiState
 } from "../state/types.js";
@@ -20,7 +19,6 @@ import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
-    GRAPH_UI_EVENT_SET_CONFIG_VIEW,
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
@@ -29,7 +27,6 @@ import {
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
     type GraphUiNavigatePageDetail,
-    type GraphUiSetConfigViewDetail,
     type GraphUiSetDocsViewDetail,
     type GraphUiSetSearchQueryDetail
 } from "./events.js";
@@ -288,16 +285,6 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
-    #emitConfigView(configView: GraphVisualizationUiConfigView): void {
-        this.dispatchEvent(
-            new CustomEvent<GraphUiSetConfigViewDetail>(GRAPH_UI_EVENT_SET_CONFIG_VIEW, {
-                bubbles: true,
-                composed: true,
-                detail: { configView }
-            })
-        );
-    }
-
     #emitToggleGraphView(): void {
         if (!this.#canUseGraphControls()) {
             return;
@@ -511,32 +498,7 @@ export class GmGraphToolbar extends LightDomLitElement {
     }
 
     #renderConfigControls() {
-        if (!this.state) {
-            return null;
-        }
-
-        return html`
-            <div class="gm-view-selector" role="group" aria-label="Configuration view selector">
-                <button
-                    id="config-view-rendered"
-                    type="button"
-                    aria-pressed=${this.state.activeConfigView === "rendered"}
-                    class=${this.state.activeConfigView === "rendered" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitConfigView("rendered")}
-                >
-                    Rendered
-                </button>
-                <button
-                    id="config-view-raw"
-                    type="button"
-                    aria-pressed=${this.state.activeConfigView === "raw"}
-                    class=${this.state.activeConfigView === "raw" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitConfigView("raw")}
-                >
-                    Raw gmloop.json
-                </button>
-            </div>
-        `;
+        return null;
     }
 
     #renderFixControls() {

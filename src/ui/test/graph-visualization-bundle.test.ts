@@ -181,8 +181,6 @@ void test("graph visualization module script embeds workspace rule catalogs when
     assert.match(html, /refactor\/test-codemod/u);
     assert.match(script, /activePage/u);
     assert.match(script, /history\.replaceState/u);
-    assert.match(script, /Rendered/u);
-    assert.match(script, /Raw gmloop\.json/u);
 });
 
 void test("graph visualization bundle preserves relationship edge kinds in exported payload", async () => {

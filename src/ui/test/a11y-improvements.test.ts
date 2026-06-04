@@ -156,16 +156,6 @@ void test("GmGraphToolbar renders Docs subview tabs with shared view selector se
     assert.match(rendered, /id="docs-view-mcp"[\s\S]*class=gm-btn--chip/u);
 });
 
-void test("GmGraphToolbar renders configuration view-selector with aria-label group context", () => {
-    const toolbar = new TestableGmGraphToolbar();
-    toolbar.model = createMockModel();
-    toolbar.state = { ...createMockState(), activePage: "config" };
-
-    const rendered = renderTemplateValue(toolbar.renderForTest());
-
-    assert.match(rendered, /<div class="gm-view-selector" role="group" aria-label="Configuration view selector">/u);
-});
-
 void test("GmDocsPanel uses a dedicated id for MCP docs subview to avoid id collisions", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = createMockModel();
