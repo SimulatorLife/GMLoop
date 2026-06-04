@@ -21,7 +21,7 @@ type ProjectResourceArtifact = Readonly<{
     path: string;
 }>;
 
-type ProjectManifestEntry = Readonly<{
+export type ProjectManifestEntry = Readonly<{
     id: Readonly<{
         name: string;
         path: string;
@@ -224,7 +224,7 @@ function createProjectResourceContext(
     });
 }
 
-function getManifestResources(document: Record<string, unknown>): Array<ProjectManifestEntry> {
+export function getManifestResources(document: Record<string, unknown>): Array<ProjectManifestEntry> {
     const resourceEntries = Core.asArray(document.resources);
     const normalizedEntries: Array<ProjectManifestEntry> = [];
 

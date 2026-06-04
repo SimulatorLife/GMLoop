@@ -142,12 +142,6 @@ The semantic oracle provides:
 
 ### Planned Features
 
-- [x] `with` statement lowering
-- [x] Built-in function mapping (expanded to 60+ functions including comprehensive string, math, and random number support)
-- [x] Semantic oracle integration for identifier classification
-- [x] Script call indirection through runtime wrapper
-- [x] Compound assignment operators (+=, -=, \*=, /=, %=, &=, |=, ^=, <<=, >>=)
-- [x] Event transpilation with `transpileEvent()` and `EventContextOracle`
 - [ ] Additional built-in function mapping (array functions, data structure functions, drawing functions)
 
 ## Operator Mapping

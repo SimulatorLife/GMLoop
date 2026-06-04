@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { GRAPH_UI_EVENT_NAVIGATE_PAGE } from "../src/app/components/events.js";
 import { GmAppHeader } from "../src/app/components/gm-app-header.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmConfigPanel } from "../src/app/components/gm-config-panel.js";
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
+import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -31,6 +31,39 @@ class TestableGmAppHeader extends GmAppHeader {
 class TestableGmDocsPanel extends GmDocsPanel {
     public renderForTest(): unknown {
         return this.render();
+    }
+}
+
+class TestableGmGraphToolbar extends GmGraphToolbar {
+    public renderForTest(): unknown {
+        return this.render();
+    }
+}
+
+function renderShellSkipLinkForPage(page: GraphVisualizationUiState["activePage"]): string {
+    const previousLocation = globalThis.location;
+    Object.defineProperty(globalThis, "location", {
+        configurable: true,
+        value: {
+            hash: "",
+            pathname: "/",
+            search: `?page=${page}`
+        }
+    });
+
+    try {
+        const shell = new TestableGmAppShell();
+        shell.model = createMockModel();
+        return renderTemplateValue(shell.renderForTest());
+    } finally {
+        if (previousLocation === undefined) {
+            Reflect.deleteProperty(globalThis, "location");
+        } else {
+            Object.defineProperty(globalThis, "location", {
+                configurable: true,
+                value: previousLocation
+            });
+        }
     }
 }
 
@@ -93,13 +126,11 @@ function createMockState(): GraphVisualizationUiState {
         fixLogLines: [],
         fixStatus: "idle",
         isFixPending: false,
-        isLiveReloadRefreshPending: false,
         isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
         liveReloadErrorMessage: null,
-        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         pendingActionCount: 0,
         searchQuery: ""
@@ -116,19 +147,11 @@ void test("GmAppShell targets graph content in skip-link by default", () => {
 });
 
 void test("GmAppShell skip-link follows the active page target", () => {
-    const shell = new TestableGmAppShell();
-    shell.model = createMockModel();
-    shell.connectedCallback();
-
-    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_NAVIGATE_PAGE, { detail: { page: "docs" } }));
-    let rendered = renderTemplateValue(shell.renderForTest());
+    let rendered = renderShellSkipLinkForPage("docs");
     assert.match(rendered, /<a class="skip-link" href=#docs-page>Skip to content<\/a>/u);
 
-    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_NAVIGATE_PAGE, { detail: { page: "fix" } }));
-    rendered = renderTemplateValue(shell.renderForTest());
+    rendered = renderShellSkipLinkForPage("fix");
     assert.match(rendered, /<a class="skip-link" href=#fix-page>Skip to content<\/a>/u);
-
-    shell.disconnectedCallback();
 });
 
 void test("GmAppShell error banner has role=alert and tabindex=-1 for keyboard focus", () => {
@@ -137,14 +160,16 @@ void test("GmAppShell error banner has role=alert and tabindex=-1 for keyboard f
     assert.equal(shell.model !== null, true);
 });
 
-void test("GmDocsPanel renders docs-toggle-row with aria-label group context", () => {
-    const panel = new TestableGmDocsPanel();
-    panel.model = createMockModel();
-    panel.state = createMockState();
+void test("GmGraphToolbar renders Docs subview tabs with shared view selector semantics", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = createMockState();
 
-    const rendered = renderTemplateValue(panel.renderForTest());
+    const rendered = renderTemplateValue(toolbar.renderForTest());
 
-    assert.match(rendered, /<div class="docs-toggle-row" role="group" aria-label="Documentation view selector">/u);
+    assert.match(rendered, /<div class="gm-view-selector" role="group" aria-label="Documentation view selector">/u);
+    assert.match(rendered, /id="docs-view-cli"[\s\S]*class=gm-btn--chip active/u);
+    assert.match(rendered, /id="docs-view-mcp"[\s\S]*class=gm-btn--chip/u);
 });
 
 void test("GmConfigPanel renders shared view-selector with aria-label group context", () => {
@@ -154,10 +179,7 @@ void test("GmConfigPanel renders shared view-selector with aria-label group cont
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(
-        rendered,
-        /<div class="config-view-selector view-selector" role="group" aria-label="Configuration view selector">/u
-    );
+    assert.match(rendered, /<div class="gm-view-selector" role="group" aria-label="Configuration view selector">/u);
 });
 
 void test("GmDocsPanel uses a dedicated id for MCP docs subview to avoid id collisions", () => {

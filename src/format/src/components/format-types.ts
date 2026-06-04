@@ -1,5 +1,5 @@
-import type { MutableGameMakerAstNode } from "@gmloop/core";
-import type { Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
+import type { MutableDocCommentLines, MutableGameMakerAstNode } from "@gmloop/core";
+import type { Doc, Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
 
 export type GmlAst = MutableGameMakerAstNode;
 
@@ -20,6 +20,7 @@ export type GmlFormatComponentContract = Readonly<{
     print: GmlPrintFunction;
     handleComments: GmlHandleComments;
     printComment: GmlPrintCommentFunction;
+    buildPrintableDocCommentLines: (docCommentDocs: MutableDocCommentLines, originalText: string | null) => Doc[];
     countTrailingBlankLines: (text: string | null | undefined, startIndex: number) => number;
     getNextNonWhitespaceCharacter: (text: string | null | undefined, startIndex: number) => string | null;
     LogicalOperatorsStyle: LogicalOperatorsStyleMap;

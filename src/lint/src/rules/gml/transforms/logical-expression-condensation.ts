@@ -3,7 +3,11 @@
  */
 import { Core } from "@gmloop/core";
 
-import { evaluateTruthTablePolicy, TRUTH_TABLE_POLICY_BASELINE } from "./logical-expression-condensation-policy.js";
+import {
+    evaluateTruthTablePolicy,
+    SIMPLIFICATION_POLICY_BASELINE,
+    TRUTH_TABLE_POLICY_BASELINE
+} from "./logical-expression-condensation-policy.js";
 
 const {
     cloneAstNode,
@@ -1062,7 +1066,7 @@ function simplifyBooleanExpression(expression) {
     let current = normalizeBooleanExpression(expression);
     let iterations = 0;
 
-    while (iterations < 50) {
+    while (iterations < SIMPLIFICATION_POLICY_BASELINE.maxSimplificationIterations) {
         const simplified = simplifyBooleanStep(current);
         const normalized = normalizeBooleanExpression(simplified);
         if (booleanExpressionKey(normalized) === booleanExpressionKey(current)) {
@@ -1695,7 +1699,7 @@ function postProcessBooleanExpression(expression) {
     let current = expression;
     let iterations = 0;
 
-    while (iterations < 5) {
+    while (iterations < SIMPLIFICATION_POLICY_BASELINE.maxPostProcessingIterations) {
         const transformed = transformMixedReductionPattern(transformXorPattern(current));
         if (booleanExpressionKey(transformed) === booleanExpressionKey(current)) {
             return transformed;

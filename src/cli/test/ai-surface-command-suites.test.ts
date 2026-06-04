@@ -21,6 +21,7 @@ void test("AI surface command catalog includes planned leaf commands", () => {
         "object inspect",
         "object update",
         "object event list",
+        "object event add",
         "project cache clean",
         "ui inspect",
         "ui validate",

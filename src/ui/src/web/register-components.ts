@@ -12,7 +12,8 @@ import {
     GmGraphToolbar,
     GmLiveReloadPanel,
     GmMcpPanel,
-    GmPlaygroundPanel
+    GmPlaygroundPanel,
+    GmStatusChip
 } from "../app/components/index.js";
 
 function defineCustomElementOnce(name: string, constructorValue: CustomElementConstructor): void {
@@ -29,8 +30,9 @@ export function registerGraphVisualizationCustomElements(): void {
     defineCustomElementOnce("gm-card", GmCard);
     defineCustomElementOnce("gm-badge", GmBadge);
     defineCustomElementOnce("gm-error-banner", GmErrorBanner);
+    defineCustomElementOnce("gm-status-chip", GmStatusChip);
     defineCustomElementOnce("gm-app-header", GmAppHeader);
-    defineCustomElementOnce("gm-graph-toolbar", GmGraphToolbar);
+    defineCustomElementOnce("gm-page-toolbar", GmGraphToolbar);
     defineCustomElementOnce("gm-graph-panel", GmGraphPanel);
     defineCustomElementOnce("gm-live-reload-panel", GmLiveReloadPanel);
     defineCustomElementOnce("gm-playground-panel", GmPlaygroundPanel);

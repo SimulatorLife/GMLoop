@@ -43,11 +43,7 @@ function createSafeMathFunction(
         let realValue: number;
         const yyGetReal = globalScope.yyGetReal;
 
-        if (typeof yyGetReal === "function") {
-            realValue = (yyGetReal as (v: unknown) => number)(value);
-        } else {
-            realValue = Number(value);
-        }
+        realValue = typeof yyGetReal === "function" ? (yyGetReal as (v: unknown) => number)(value) : Number(value);
 
         if (Number.isNaN(realValue)) {
             return Number.NaN;

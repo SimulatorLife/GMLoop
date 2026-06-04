@@ -13,6 +13,7 @@ import {
     isAstNodeWithType,
     isIdentifierNode,
     rangeContainsCommentToken,
+    readObjectOption,
     unwrapParenthesizedExpression,
     walkAstNodes,
     walkAstNodesWithParent
@@ -670,6 +671,7 @@ function collectLoopCandidateAnalysis(parameters: {
     loopContext: LoopContainerContext;
     mutationSummary: LoopMutationSummary;
     assessmentCache: WeakMap<AstNodeRecord, ExpressionAssessment | null>;
+    minComplexity: number;
 }): LoopCandidateAnalysis {
     let bestCandidate: LoopCandidate | null = null;
     const replacementCandidates: LoopCandidate[] = [];
@@ -677,7 +679,8 @@ function collectLoopCandidateAnalysis(parameters: {
     if (!isAstNodeWithType(rootNode)) {
         return Object.freeze({
             bestCandidate,
-            replacementCandidates: Object.freeze(replacementCandidates)
+            replacementCandidates: Object.freeze(replacementCandidates),
+            minComplexity: parameters.minComplexity
         });
     }
 
@@ -730,8 +733,9 @@ function collectLoopCandidateAnalysis(parameters: {
             continue;
         }
 
-        const minimumComplexity = node.type === "TemplateStringExpression" ? 2 : 3;
-        if (assessment.complexity < minimumComplexity) {
+        const effectiveMinComplexity =
+            node.type === "TemplateStringExpression" ? Math.min(parameters.minComplexity, 2) : parameters.minComplexity;
+        if (assessment.complexity < effectiveMinComplexity) {
             pushChildNodesForLoopCandidateTraversal(stack, node);
             continue;
         }
@@ -769,7 +773,8 @@ function collectLoopCandidateAnalysis(parameters: {
 
     return Object.freeze({
         bestCandidate,
-        replacementCandidates: Object.freeze(replacementCandidates)
+        replacementCandidates: Object.freeze(replacementCandidates),
+        minComplexity: parameters.minComplexity
     });
 }
 
@@ -869,6 +874,13 @@ export function createPreferLoopInvariantExpressionsRule(definition: GmlRuleDefi
                     const loopContexts = collectLoopContainerContexts(programNode);
                     const commentTokenRangeIndex = createCommentTokenRangeIndex(sourceText);
 
+                    const options = readObjectOption(context);
+                    const minComplexityRaw = options.minComplexity;
+                    const minComplexity =
+                        typeof minComplexityRaw === "number" && Number.isFinite(minComplexityRaw)
+                            ? Math.max(2, Math.floor(minComplexityRaw))
+                            : 3;
+
                     for (const loopContext of loopContexts) {
                         const mutationSummary = collectLoopMutationSummary(loopContext.loopNode);
                         const assessmentCache = new WeakMap<AstNodeRecord, ExpressionAssessment | null>();
@@ -876,7 +888,8 @@ export function createPreferLoopInvariantExpressionsRule(definition: GmlRuleDefi
                             commentTokenRangeIndex,
                             loopContext,
                             mutationSummary,
-                            assessmentCache
+                            assessmentCache,
+                            minComplexity
                         });
                         const { bestCandidate } = candidateAnalysis;
                         if (!bestCandidate) {

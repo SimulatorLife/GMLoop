@@ -6,30 +6,45 @@ import { afterEach, describe, it } from "node:test";
 
 import {
     discoverProjectRoot,
+    filterGraphIndexResultsByKind,
     resolveCommandProjectContext,
     resolveExistingGmloopConfigPath,
     resolveExplicitWorkflowTargetPath
 } from "../src/workflow/project-root.js";
 
-const temporaryDirectories: Array<string> = [];
+/**
+ * Per-test-instance state to avoid cross-test contamination when tests
+ * run in parallel (e.g., multiple Node.js workers, or future worker_threads
+ * test execution). Keeping cleanup tracking local to each test ensures
+ * that one test's temporary directory is never accidentally removed by
+ * another test's teardown, and that one test's teardown never blocks a
+ * concurrent test's resource usage.
+ */
+class TestState {
+    public readonly tempDirs: Array<string> = [];
 
-async function createTemporaryDirectory(): Promise<string> {
-    const directoryPath = await mkdtemp(path.join(os.tmpdir(), "cli-project-root-"));
-    temporaryDirectories.push(directoryPath);
-    return directoryPath;
-}
+    public async createTempDirectory(): Promise<string> {
+        const directoryPath = await mkdtemp(path.join(os.tmpdir(), "cli-project-root-"));
+        this.tempDirs.push(directoryPath);
+        return directoryPath;
+    }
 
-void describe("resolveExistingGmloopConfigPath", () => {
-    afterEach(async () => {
+    public async cleanup(): Promise<void> {
         await Promise.all(
-            temporaryDirectories.splice(0).map(async (directoryPath) => {
+            this.tempDirs.splice(0).map(async (directoryPath) => {
                 await rm(directoryPath, { recursive: true, force: true });
             })
         );
-    });
+    }
+}
+
+void describe("resolveExistingGmloopConfigPath", () => {
+    const state = new TestState();
+
+    afterEach(() => state.cleanup());
 
     void it("accepts gmloop.json symlinks that point at files", async () => {
-        const projectRoot = await createTemporaryDirectory();
+        const projectRoot = await state.createTempDirectory();
         const actualConfigPath = path.join(projectRoot, "shared-gmloop.json");
         const symlinkConfigPath = path.join(projectRoot, "gmloop.json");
 
@@ -54,17 +69,58 @@ void describe("resolveExplicitWorkflowTargetPath", () => {
     });
 });
 
-void describe("discoverProjectRoot", () => {
-    afterEach(async () => {
-        await Promise.all(
-            temporaryDirectories.splice(0).map(async (directoryPath) => {
-                await rm(directoryPath, { recursive: true, force: true });
-            })
-        );
+void describe("filterGraphIndexResultsByKind", () => {
+    void it("returns an empty array for empty input", () => {
+        const results: Array<{ kind: string }> = [];
+        const filtered = filterGraphIndexResultsByKind(results, "room");
+        assert.equal(filtered.length, 0);
     });
 
+    void it("returns only entries matching the specified kind", () => {
+        const results = [
+            { kind: "room", id: "room-1", name: "Main" },
+            { kind: "object", id: "obj-1", name: "Player" },
+            { kind: "room", id: "room-2", name: "Hub" },
+            { kind: "script", id: "scr-1", name: "init" }
+        ] as const;
+        const filtered = filterGraphIndexResultsByKind(results, "room");
+        assert.equal(filtered.length, 2);
+        assert.equal(filtered[0].id, "room-1");
+        assert.equal(filtered[1].id, "room-2");
+    });
+
+    void it("returns an empty array when no entries match the kind", () => {
+        const results = [
+            { kind: "script", id: "scr-1" },
+            { kind: "function", id: "fn-1" }
+        ] as const;
+        const filtered = filterGraphIndexResultsByKind(results, "object");
+        assert.equal(filtered.length, 0);
+    });
+
+    void it("preserves readonly input array when filtering", () => {
+        const results: readonly { kind: string }[] = [{ kind: "room" }, { kind: "room" }];
+        const filtered = filterGraphIndexResultsByKind(results, "room");
+        assert.equal(filtered.length, 2);
+    });
+
+    void it("returns the first matching entry via index access", () => {
+        const results = [
+            { kind: "room", id: "room-first" },
+            { kind: "room", id: "room-second" }
+        ] as const;
+        const first = filterGraphIndexResultsByKind(results, "room")[0];
+        assert.equal(first?.id, "room-first");
+    });
+});
+
+void describe("discoverProjectRoot", () => {
+    const state = new TestState();
+
+    afterEach(() => state.cleanup());
+
     void it("discovers the enclosing project root when --path points to a single .gml file", async () => {
-        const projectRoot = await createTemporaryDirectory();
+        const projectRoot = await state.createTempDirectory();
         const scriptPath = path.join(projectRoot, "scripts", "demo", "demo.gml");
         await mkdir(path.dirname(scriptPath), { recursive: true });
         await writeFile(path.join(projectRoot, "MyGame.yyp"), JSON.stringify({ name: "MyGame" }), "utf8");
@@ -79,16 +135,12 @@ void describe("discoverProjectRoot", () => {
 });
 
 void describe("resolveCommandProjectContext", () => {
-    afterEach(async () => {
-        await Promise.all(
-            temporaryDirectories.splice(0).map(async (directoryPath) => {
-                await rm(directoryPath, { recursive: true, force: true });
-            })
-        );
-    });
+    const state = new TestState();
+
+    afterEach(() => state.cleanup());
 
     void it("returns the resolved projectRoot and an empty projectConfig when no gmloop.json exists", async () => {
-        const projectRoot = await createTemporaryDirectory();
+        const projectRoot = await state.createTempDirectory();
         // Write a .yyp so discoverProjectRoot can locate the project root from the path option.
         await writeFile(path.join(projectRoot, "MyGame.yyp"), JSON.stringify({ name: "MyGame" }), "utf8");
 
@@ -99,7 +151,7 @@ void describe("resolveCommandProjectContext", () => {
     });
 
     void it("loads projectConfig from gmloop.json in the project root", async () => {
-        const projectRoot = await createTemporaryDirectory();
+        const projectRoot = await state.createTempDirectory();
         await writeFile(path.join(projectRoot, "MyGame.yyp"), JSON.stringify({ name: "MyGame" }), "utf8");
         const configData = { lint: { enabled: true }, outputDir: "build" };
         await writeFile(path.join(projectRoot, "gmloop.json"), JSON.stringify(configData), "utf8");
@@ -111,7 +163,7 @@ void describe("resolveCommandProjectContext", () => {
     });
 
     void it("uses an explicit --config path instead of the default gmloop.json location", async () => {
-        const projectRoot = await createTemporaryDirectory();
+        const projectRoot = await state.createTempDirectory();
         await writeFile(path.join(projectRoot, "MyGame.yyp"), JSON.stringify({ name: "MyGame" }), "utf8");
         const customConfigPath = path.join(projectRoot, "custom-config.json");
         const customConfigData = { custom: true };
@@ -125,7 +177,7 @@ void describe("resolveCommandProjectContext", () => {
     });
 
     void it("returns an empty projectConfig when gmloop.json exists but is not a plain object", async () => {
-        const projectRoot = await createTemporaryDirectory();
+        const projectRoot = await state.createTempDirectory();
         await writeFile(path.join(projectRoot, "MyGame.yyp"), JSON.stringify({ name: "MyGame" }), "utf8");
         // Write a JSON array at the config path — not a plain object.
         await writeFile(path.join(projectRoot, "gmloop.json"), JSON.stringify([1, 2, 3]), "utf8");

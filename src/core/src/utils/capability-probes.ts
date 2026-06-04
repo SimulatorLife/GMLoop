@@ -375,3 +375,30 @@ export function isUint8ArrayLike(value: unknown): value is Uint8Array {
     const candidate = value as Record<string, unknown>;
     return candidate.BYTES_PER_ELEMENT === 1;
 }
+
+// ---------------------------------------------------------------------------
+// Date utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Format a timestamp so only the date portion (YYYY-MM-DD) is returned.
+ *
+ * This helper was previously kept in a separate `date.ts` file to mirror the
+ * capability-probe pattern of a small, focused file per concern. The two
+ * files share a domain (capability probing of built-in types) and neither has
+ * significant dependencies, making co-location the clearer choice. Merging
+ * eliminates the redundant directory slot and keeps `isDateLike` and
+ * `formatGeneratedDate` discoverable alongside each other.
+ *
+ * @param value Optional numeric timestamp or Date instance to format.
+ */
+export function formatGeneratedDate(value?: number | Date | null): string {
+    const date = value == null ? new Date() : isDateLike(value) ? value : new Date(value);
+    const iso = date.toISOString();
+    const t = iso.indexOf("T");
+    if (t === -1) {
+        return iso;
+    }
+
+    return iso.slice(0, t);
+}

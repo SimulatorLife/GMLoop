@@ -193,7 +193,7 @@ function consumeBraceScannerCharacter(state: BraceScannerState, char: string, ne
     }
 
     if (state.inSingleLineComment) {
-        if (char === "\n") {
+        if (char === "\n" || char === "\r") {
             state.inSingleLineComment = false;
         }
 

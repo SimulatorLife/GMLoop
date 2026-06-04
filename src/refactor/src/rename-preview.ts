@@ -409,13 +409,13 @@ export function formatBatchRenamePlanReport(plan: BatchRenamePlanSummary): strin
     );
 
     if (plan.cascadeResult) {
-        // Extract metadata to avoid repeated deep-navigation through plan.cascadeResult.metadata.*
-        const cascadeMetadata = plan.cascadeResult.metadata;
+        // Use top-level aliases on HotReloadCascadeResult to avoid the
+        // `plan.cascadeResult.metadata.totalSymbols` four-segment chain.
         lines.push(
             "Hot Reload Dependency Cascade:",
-            `  Total Symbols to Reload: ${cascadeMetadata.totalSymbols}`,
-            `  Max Dependency Distance: ${cascadeMetadata.maxDistance}`,
-            `  Has Circular Dependencies: ${cascadeMetadata.hasCircular ? "Yes" : "No"}`
+            `  Total Symbols to Reload: ${plan.cascadeResult.totalSymbols}`,
+            `  Max Dependency Distance: ${plan.cascadeResult.maxDistance}`,
+            `  Has Circular Dependencies: ${plan.cascadeResult.hasCircular ? "Yes" : "No"}`
         );
 
         if (plan.cascadeResult.circular.length > 0) {

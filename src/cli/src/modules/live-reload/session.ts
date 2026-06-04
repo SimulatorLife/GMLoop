@@ -193,7 +193,8 @@ export async function startLiveReloadDevSession({
 
     await watchRunner(targetPath, {
         ...watchOptions,
-        runtimeRoot: preparation.target.outputRoot
+        runtimeRoot: preparation.target.outputRoot,
+        runtimeServer: true
     });
 }
 

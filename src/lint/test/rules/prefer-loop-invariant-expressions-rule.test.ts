@@ -592,3 +592,41 @@ void test("prefer-loop-invariant-expressions skips comment-spanning candidates w
 
     expectAutoFix(input, expected);
 });
+
+void test("prefer-loop-invariant-expressions respects minComplexity option (higher threshold)", () => {
+    const input = ["repeat (count) {", "    total += a + b;", "}", ""].join("\n");
+
+    const result = lintWithRule("prefer-loop-invariant-expressions", input, { minComplexity: 4 });
+
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("prefer-loop-invariant-expressions respects minComplexity option (lower threshold)", () => {
+    const input = ["repeat (count) {", "    total += a + b;", "}", ""].join("\n");
+    const expected = ["var cached_value = a + b;", "repeat (count) {", "    total += cached_value;", "}", ""].join(
+        "\n"
+    );
+
+    const result = lintWithRule("prefer-loop-invariant-expressions", input, { minComplexity: 2 });
+    assertEquals(result.messages.length > 0, true);
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-loop-invariant-expressions minComplexity clamps to minimum of 2", () => {
+    const input = ["repeat (count) {", "    total += a + b;", "}", ""].join("\n");
+    const expected = ["var cached_value = a + b;", "repeat (count) {", "    total += cached_value;", "}", ""].join(
+        "\n"
+    );
+
+    const result = lintWithRule("prefer-loop-invariant-expressions", input, { minComplexity: 1 });
+    assertEquals(result.messages.length > 0, true);
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-loop-invariant-expressions minComplexity option can be set to a valid value", () => {
+    const input = ["repeat (count) {", "    total += a + b;", "}", ""].join("\n");
+    const result = lintWithRule("prefer-loop-invariant-expressions", input, { minComplexity: 4 });
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
