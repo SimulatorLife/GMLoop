@@ -505,6 +505,87 @@ function selectConfiguredCodemodIds(
         .map((codemod) => codemod.id);
 }
 
+/**
+ * Determines whether the selected codemods require a semantic project index and,
+ * if so, whether the initial build can be deferred past the first non-dependent
+ * codemod.
+ *
+ * @param selectedCodemodIds Codemod ids selected for the current run.
+ * @param semanticIndexDependentCodemodIds Set of codemod ids that require a
+ *   semantic project index (pre-built before codemod execution begins).
+ * @returns An object describing the initial index build strategy.
+ */
+function resolveCodemodIndexStrategy(
+    selectedCodemodIds: ReadonlyArray<RegisteredCodemodId>,
+    semanticIndexDependentCodemodIds: ReadonlySet<RegisteredCodemodId>
+): {
+    requiresSemanticProjectIndex: boolean;
+    shouldDeferInitialSemanticIndexBuild: boolean;
+} {
+    const requiresSemanticProjectIndex = selectedCodemodIds.some((id) => semanticIndexDependentCodemodIds.has(id));
+    const firstSemanticCodemodIndex = selectedCodemodIds.findIndex((id) => semanticIndexDependentCodemodIds.has(id));
+    const shouldDeferInitialSemanticIndexBuild =
+        firstSemanticCodemodIndex > 0 &&
+        selectedCodemodIds.slice(0, firstSemanticCodemodIndex).some((id) => !semanticIndexDependentCodemodIds.has(id));
+
+    return { requiresSemanticProjectIndex, shouldDeferInitialSemanticIndexBuild };
+}
+
+/**
+ * Evaluates whether a semantic project index rebuild is needed before the next
+ * codemod in the pipeline, based on the current codemod's output and the
+ * remaining codemod queue.
+ *
+ * Does NOT mutate any state; callers are responsible for applying the result.
+ *
+ * @param completedCodemodId Id of the codemod that just finished.
+ * @param remainingCodemodIds Ids of codemods still pending in the pipeline.
+ * @param semanticIndexDependentCodemodIds Set of codemod ids that require the
+ *   semantic project index.
+ * @param pendingRefresh Whether a codemod has marked a refresh as needed.
+ * @returns `true` when an index rebuild is required before continuing; `false`
+ *   when no rebuild should occur at this time.
+ */
+function shouldRebuildSemanticIndexBeforeNextCodemod(
+    completedCodemodId: RegisteredCodemodId,
+    remainingCodemodIds: ReadonlyArray<RegisteredCodemodId>,
+    semanticIndexDependentCodemodIds: ReadonlySet<RegisteredCodemodId>,
+    pendingRefresh: boolean
+): boolean {
+    const nextCodemodId = remainingCodemodIds[0];
+    return pendingRefresh && nextCodemodId !== undefined && semanticIndexDependentCodemodIds.has(nextCodemodId);
+}
+
+/**
+ * Reports the outcome of each codemod execution to the console and throws
+ * if any codemod produced an error.
+ *
+ * @param summaries Results from `engine.executeConfiguredCodemods()`.
+ * @throws Error when one or more codemods reported errors.
+ */
+function reportCodemodResults(
+    summaries: Array<{ id: string; changed: boolean; changedFiles: unknown[]; warnings: string[]; errors: string[] }>
+): void {
+    let encounteredErrors = false;
+    for (const summary of summaries) {
+        console.log(`\n[${summary.id}] ${summary.changed ? "changed" : "no changes"}`);
+        if (summary.changedFiles.length > 0) {
+            console.log(`Changed files: ${summary.changedFiles.length}`);
+        }
+        for (const warning of summary.warnings) {
+            console.log(`Warning: ${warning}`);
+        }
+        for (const error of summary.errors) {
+            encounteredErrors = true;
+            console.log(`Error: ${error}`);
+        }
+    }
+
+    if (encounteredErrors) {
+        throw new Error("Configured codemod execution reported one or more errors.");
+    }
+}
+
 async function performConfiguredCodemods(options: ValidatedCodemodOptions): Promise<void> {
     const { projectRoot, verbose, configPath, targetPaths, dryRun, onlyCodemods, list } = options;
 
@@ -535,17 +616,10 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
 
     const selectedCodemodIds = selectConfiguredCodemodIds(config, onlyCodemods);
     const semanticIndexDependentCodemodIds = new Set(listSemanticProjectIndexDependentCodemodIds());
-    const requiresSemanticProjectIndex = selectedCodemodIds.some((codemodId) =>
-        semanticIndexDependentCodemodIds.has(codemodId)
+    const { requiresSemanticProjectIndex, shouldDeferInitialSemanticIndexBuild } = resolveCodemodIndexStrategy(
+        selectedCodemodIds,
+        semanticIndexDependentCodemodIds
     );
-    const firstSemanticCodemodIndex = selectedCodemodIds.findIndex((codemodId) =>
-        semanticIndexDependentCodemodIds.has(codemodId)
-    );
-    const shouldDeferInitialSemanticIndexBuild =
-        firstSemanticCodemodIndex > 0 &&
-        selectedCodemodIds
-            .slice(0, firstSemanticCodemodIndex)
-            .some((codemodId) => !semanticIndexDependentCodemodIds.has(codemodId));
 
     const projectIndex =
         requiresSemanticProjectIndex && !shouldDeferInitialSemanticIndexBuild
@@ -589,14 +663,15 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
             if (summary.changed && !semanticIndexDependentCodemodIds.has(summary.id)) {
                 hasPendingSemanticIndexRefresh = true;
             }
-            const nextCodemodId = remainingSelectedCodemodIds[0];
 
-            const shouldRefreshBeforeRemainingSemanticCodemods =
-                hasPendingSemanticIndexRefresh &&
-                nextCodemodId !== undefined &&
-                semanticIndexDependentCodemodIds.has(nextCodemodId);
+            const shouldRefresh = shouldRebuildSemanticIndexBeforeNextCodemod(
+                summary.id,
+                remainingSelectedCodemodIds,
+                semanticIndexDependentCodemodIds,
+                hasPendingSemanticIndexRefresh
+            );
 
-            if (shouldRefreshBeforeRemainingSemanticCodemods) {
+            if (shouldRefresh) {
                 hasPendingSemanticIndexRefresh = false;
                 if (verbose) {
                     console.log(`Rebuilding project index after codemod ${summary.id}...`);
@@ -622,24 +697,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         }
     });
 
-    let encounteredErrors = false;
-    for (const summary of result.summaries) {
-        console.log(`\n[${summary.id}] ${summary.changed ? "changed" : "no changes"}`);
-        if (summary.changedFiles.length > 0) {
-            console.log(`Changed files: ${summary.changedFiles.length}`);
-        }
-        for (const warning of summary.warnings) {
-            console.log(`Warning: ${warning}`);
-        }
-        for (const error of summary.errors) {
-            encounteredErrors = true;
-            console.log(`Error: ${error}`);
-        }
-    }
-
-    if (encounteredErrors) {
-        throw new Error("Configured codemod execution reported one or more errors.");
-    }
+    reportCodemodResults(result.summaries);
 
     if (dryRun) {
         console.log("\n[DRY RUN] No files were modified.");
