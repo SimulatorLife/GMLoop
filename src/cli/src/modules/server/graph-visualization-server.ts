@@ -48,6 +48,7 @@ type GraphVisualizationServerFixProgress = Readonly<{
 }>;
 type GraphVisualizationServerGetFixProgress = () => GraphVisualizationServerFixProgress;
 type GraphVisualizationServerClearFixProgress = () => void;
+type GraphVisualizationServerCreateConfig = () => Promise<GraphVisualizationServerRegenerationResult>;
 
 export type GraphVisualizationServerOptions = Readonly<{
     host?: string;
@@ -62,6 +63,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     clearFixProgress?: GraphVisualizationServerClearFixProgress;
     startLiveReload?: GraphVisualizationServerStartLiveReload;
     stopLiveReload?: GraphVisualizationServerStopLiveReload;
+    createConfig?: GraphVisualizationServerCreateConfig;
 }>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
@@ -188,6 +190,11 @@ async function routeGraphVisualizationServerRequest(
 
     if (request.method === "POST" && request.url === "/api/live-reload/stop" && options.stopLiveReload) {
         await handleStopLiveReloadRequest(options.stopLiveReload, response);
+        return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/config/create" && options.createConfig) {
+        await handleCreateConfigRequest(options.createConfig, response);
         return;
     }
 
@@ -327,6 +334,18 @@ async function handleStopLiveReloadRequest(
     try {
         await stopLiveReload();
         writeJsonResponse(response, 200, { ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+async function handleCreateConfigRequest(
+    createConfig: GraphVisualizationServerCreateConfig,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const result = await createConfig();
+        writeJsonResponse(response, 200, { changed: result.changed, ok: true });
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
     }

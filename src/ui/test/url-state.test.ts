@@ -33,6 +33,7 @@ void test("parseGraphVisualizationUiStateFromUrlSearch rejects invalid values an
 
 void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported navigation state", () => {
     const search = serializeGraphVisualizationUiStateToUrlSearch({
+        activeConfigView: "rendered",
         activeDocsView: "rules",
         activeGraphView: "json",
         activePage: "config",
@@ -51,12 +52,13 @@ void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported n
         searchQuery: "enemy ship"
     });
 
-    assert.equal(search, "?page=config&docs=rules&view=json&labels=always&q=enemy+ship");
+    assert.equal(search, "?page=config&docs=rules&view=json&labels=always&config=rendered&q=enemy+ship");
     const parsed = parseGraphVisualizationUiStateFromUrlSearch(search);
     assert.equal(parsed.activePage, "config");
     assert.equal(parsed.activeDocsView, "rules");
     assert.equal(parsed.activeGraphView, "json");
     assert.equal(parsed.labelMode, "always");
+    assert.equal(parsed.activeConfigView, "rendered");
     assert.equal(parsed.searchQuery, "enemy ship");
 });
 
@@ -79,5 +81,8 @@ void test("resetProjectScopedGraphVisualizationUiState removes project search fr
         liveReloadErrorMessage: "Old project live reload error."
     });
 
-    assert.equal(serializeGraphVisualizationUiStateToUrlSearch(reset), "?page=fix&docs=rules&view=json&labels=always");
+    assert.equal(
+        serializeGraphVisualizationUiStateToUrlSearch(reset),
+        "?page=fix&docs=rules&view=json&labels=always&config=rendered"
+    );
 });

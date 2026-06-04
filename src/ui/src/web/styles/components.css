@@ -128,13 +128,15 @@ gm-status-chip {
   flex-shrink: 0;
 }
 
-.gm-status-chip--running {
+.gm-status-chip--running,
+.gm-status-chip--success {
   border-color: var(--gm-success-border);
   background: var(--gm-success-surface);
   color: var(--gm-success-text);
 }
 
-.gm-status-chip--running .gm-status-chip__dot {
+.gm-status-chip--running .gm-status-chip__dot,
+.gm-status-chip--success .gm-status-chip__dot {
   background: var(--gm-success-dot);
 }
 

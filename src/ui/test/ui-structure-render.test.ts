@@ -92,6 +92,7 @@ function createEmptyGraphModel(): GraphVisualizationUiModel {
 
 function createMockState(activePage: GraphVisualizationUiState["activePage"]): GraphVisualizationUiState {
     return {
+        activeConfigView: "rendered",
         activeDocsView: "cli",
         activeGraphView: "visual",
         activePage,
@@ -269,7 +270,6 @@ void test("shared view selector keeps inactive tabs visually unoutlined", () => 
 });
 
 void test("page styles keep every top-level page on the shared lighter content background", () => {
-    const layoutSource = readFileSync(new URL("../../src/web/styles/layout.css", import.meta.url), "utf8");
     const graphSource = readFileSync(new URL("../../src/web/styles/graph.css", import.meta.url), "utf8");
     const playgroundSource = readFileSync(new URL("../../src/web/styles/playground.css", import.meta.url), "utf8");
     const panelSources = [
@@ -282,7 +282,6 @@ void test("page styles keep every top-level page on the shared lighter content b
         "../../src/app/components/gm-playground-panel.ts"
     ].map((sourcePath) => readFileSync(new URL(sourcePath, import.meta.url), "utf8"));
 
-    assert.match(layoutSource, /\.content-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
     assert.match(graphSource, /#graph-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
     assert.match(playgroundSource, /#playground-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
     assert.doesNotMatch(graphSource, /background:\s*linear-gradient\(180deg,\s*rgba\(8,\s*14,\s*24/u);

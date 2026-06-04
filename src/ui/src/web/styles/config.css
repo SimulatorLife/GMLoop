@@ -100,3 +100,30 @@ gm-badge.config-severity-badge.off {
   background: var(--gm-severity-off-bg);
   color: var(--gm-severity-off-text);
 }
+
+.config-setup-banner {
+  padding: var(--gm-space-xl);
+  border-radius: var(--gm-radius-md);
+  background: linear-gradient(135deg, var(--gm-bg-subtle), var(--gm-bg-hover));
+  border: 1px dashed var(--gm-border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-md);
+  align-items: flex-start;
+  margin-bottom: var(--gm-space-lg);
+}
+
+.config-setup-banner h3 {
+  margin: 0;
+  font-size: var(--gm-text-lg);
+  font-weight: 600;
+  color: var(--gm-text);
+}
+
+.config-setup-banner p {
+  margin: 0;
+  font-size: var(--gm-text-sm);
+  color: var(--gm-text-secondary);
+  line-height: var(--gm-leading-normal);
+  max-width: 600px;
+}

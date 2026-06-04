@@ -4,7 +4,7 @@ import test from "node:test";
 import { GmConfigPanel } from "../src/app/components/gm-config-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
-import { createButtonAriaPressedPattern, renderTemplateValue } from "./render-template-helpers.js";
+import { renderTemplateValue } from "./render-template-helpers.js";
 
 class TestableGmConfigPanel extends GmConfigPanel {
     public renderForTest(): unknown {
@@ -141,6 +141,7 @@ function createMockState(): GraphVisualizationUiState {
         activeDocsView: "cli",
         activeGraphView: "visual",
         activePage: "config",
+        activeConfigView: "rendered",
         errorMessage: null,
         fixErrorMessage: null,
         fixLogLines: [],
@@ -157,7 +158,29 @@ function createMockState(): GraphVisualizationUiState {
     };
 }
 
-void test("config panel defaults to rendered view and exposes a rendered/raw toggle", () => {
+void test("config panel renders setup banner when project has no config", () => {
+    const panel = new TestableGmConfigPanel();
+    panel.model = {
+        ...createMockModel(),
+        projectConfigurationCatalog: {
+            ...createMockModel().projectConfigurationCatalog,
+            gmloop: {
+                configPath: null,
+                exists: false,
+                projectRoot: "/tmp/test",
+                rawConfig: {}
+            }
+        }
+    };
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /class="config-setup-banner"/u);
+    assert.match(rendered, /Create Default Config/u);
+});
+
+void test("config panel defaults to rendered view and exposes configuration details", () => {
     const panel = new TestableGmConfigPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
@@ -165,12 +188,6 @@ void test("config panel defaults to rendered view and exposes a rendered/raw tog
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="config-page"[\s\S]*class=page content-page active/u);
-    assert.match(rendered, /id="config-view-rendered"/u);
-    assert.match(rendered, /id="config-view-raw"/u);
-    assert.match(rendered, /class="gm-view-selector"/u);
-    assert.match(rendered, /class="?gm-btn--chip active"?/u);
-    assert.match(rendered, createButtonAriaPressedPattern("config-view-rendered", true));
-    assert.match(rendered, createButtonAriaPressedPattern("config-view-raw", false));
     assert.match(rendered, /Project Root:?/iu);
     assert.match(rendered, /Config Path:?/iu);
     assert.match(rendered, /Format \(1\)/u);

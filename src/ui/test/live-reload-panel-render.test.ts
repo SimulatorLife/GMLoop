@@ -113,6 +113,7 @@ function createMockModel(statusSnapshot: GraphVisualizationLiveReloadStatusSnaps
 
 function createMockState(): GraphVisualizationUiState {
     return {
+        activeConfigView: "rendered",
         activeDocsView: "cli",
         activeGraphView: "visual",
         activePage: "live-reload",

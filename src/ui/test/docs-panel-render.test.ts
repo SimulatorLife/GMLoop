@@ -108,6 +108,7 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
 
 function createDocsPanelState(): GraphVisualizationUiState {
     return {
+        activeConfigView: "rendered",
         activeDocsView: "rules",
         activeGraphView: "visual",
         activePage: "docs",

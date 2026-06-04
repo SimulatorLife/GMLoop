@@ -11,10 +11,10 @@ import type {
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
+import { GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
 
-type ConfigViewMode = "raw" | "rendered";
 type LintLevelFilter = "all" | GraphVisualizationProjectConfigurationLintRuleEntry["level"];
 
 function serializeConfigurationValue(value: unknown): string {
@@ -148,14 +148,17 @@ export class GmConfigPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
-    #configViewMode: ConfigViewMode = "rendered";
     #lintLevelFilter: LintLevelFilter = "all";
     #lintRulesetFilter = "all";
 
-    #setConfigViewMode(nextConfigViewMode: ConfigViewMode): void {
-        this.#configViewMode = nextConfigViewMode;
-        this.requestUpdate();
-    }
+    #emitCreateConfig = (): void => {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    };
 
     #setLintLevelFilter = (event: Event): void => {
         const target = event.target;
@@ -283,6 +286,8 @@ export class GmConfigPanel extends LightDomLitElement {
         const filteredLintRules = this.#filterLintRules(lintRules, lintRulesets);
         const codemods = configCatalog.refactor.codemods;
 
+        const configViewMode = this.state.activeConfigView;
+
         return html`
             <section id="config-page" class=${configPageClassName}>
                 <p id="config-meta" class="docs-meta">
@@ -291,28 +296,33 @@ export class GmConfigPanel extends LightDomLitElement {
                         ? html` • Config Path: <strong>${configCatalog.gmloop.configPath}</strong>`
                         : html` • Config Path: <strong>Not found</strong>`}
                 </p>
-                <div class="gm-view-selector" role="group" aria-label="Configuration view selector">
-                    <button
-                        id="config-view-rendered"
-                        type="button"
-                        aria-pressed=${this.#configViewMode === "rendered"}
-                        class=${this.#configViewMode === "rendered" ? "gm-btn--chip active" : "gm-btn--chip"}
-                        @click=${() => this.#setConfigViewMode("rendered")}
-                    >
-                        Rendered
-                    </button>
-                    <button
-                        id="config-view-raw"
-                        type="button"
-                        aria-pressed=${this.#configViewMode === "raw"}
-                        class=${this.#configViewMode === "raw" ? "gm-btn--chip active" : "gm-btn--chip"}
-                        @click=${() => this.#setConfigViewMode("raw")}
-                    >
-                        Raw gmloop.json
-                    </button>
-                </div>
                 <div id="config-content" class="config-stack">
-                    ${this.#configViewMode === "raw"
+                    ${configCatalog.gmloop.exists
+                        ? null
+                        : html`
+                              <div class="config-setup-banner">
+                                  <h3>Configure GMLoop for your project</h3>
+                                  <p>
+                                      Customize the formatter print width, enable/disable refactor codemods, and
+                                      configure lint rulesets by generating a default <code>gmloop.json</code> file in
+                                      your project's root directory.
+                                  </p>
+                                  <button
+                                      type="button"
+                                      class="gm-btn gm-btn--primary"
+                                      ?disabled=${this.state.isRegeneratePending}
+                                      @click=${this.#emitCreateConfig}
+                                  >
+                                      <span class="button-content">
+                                          ${this.state.isRegeneratePending
+                                              ? html`<span class="button-spinner" aria-hidden="true"></span>`
+                                              : null}
+                                          <span class="button-label">Create Default Config</span>
+                                      </span>
+                                  </button>
+                              </div>
+                          `}
+                    ${configViewMode === "raw"
                         ? html`
                               <gm-card class="config-card" heading="gmloop.json">
                                   <p>

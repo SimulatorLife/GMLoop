@@ -17,7 +17,8 @@ const STATUS_LABELS: ReadonlyArray<Readonly<{ label: string; status: GmStatusChi
     { label: "Stopped", status: "stopped" },
     { label: "Offline", status: "offline" },
     { label: "Error", status: "error" },
-    { label: "Scanning", status: "scanning" }
+    { label: "Scanning", status: "scanning" },
+    { label: "Success", status: "success" }
 ]);
 
 void test("GmStatusChip renders the closed set of supported status labels", () => {

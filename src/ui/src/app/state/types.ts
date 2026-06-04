@@ -19,6 +19,11 @@ export type GraphVisualizationUiLabelMode = "auto" | "always" | "hidden";
 export type GraphVisualizationUiDocsView = "cli" | "mcp" | "rules";
 
 /**
+ * Configuration presentation modes in the config surface.
+ */
+export type GraphVisualizationUiConfigView = "rendered" | "raw";
+
+/**
  * MCP server connection status.
  */
 export type GraphVisualizationUiMcpServerStatus = "not-started" | "running" | "stopped";
@@ -30,6 +35,7 @@ export type GraphVisualizationUiState = Readonly<{
     activeDocsView: GraphVisualizationUiDocsView;
     activeGraphView: GraphVisualizationUiGraphView;
     activePage: GraphVisualizationUiPage;
+    activeConfigView: GraphVisualizationUiConfigView;
     errorMessage: string | null;
     fixErrorMessage: string | null;
     fixLogLines: ReadonlyArray<string>;
@@ -51,6 +57,7 @@ export type GraphVisualizationUiState = Readonly<{
 export type GraphVisualizationUiAction =
     | Readonly<{ page: GraphVisualizationUiPage; type: "navigate-page" }>
     | Readonly<{ docsView: GraphVisualizationUiDocsView; type: "set-docs-view" }>
+    | Readonly<{ configView: GraphVisualizationUiConfigView; type: "set-config-view" }>
     | Readonly<{ mcpServerStatus: GraphVisualizationUiMcpServerStatus; type: "set-mcp-server-status" }>
     | Readonly<{ searchQuery: string; type: "set-search-query" }>
     | Readonly<{ type: "toggle-graph-view" }>

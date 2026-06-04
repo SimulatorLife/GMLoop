@@ -72,6 +72,7 @@ function createMockModel(overrides?: Partial<GraphVisualizationUiModel>): GraphV
 
 function createMockState(overrides?: Partial<GraphVisualizationUiState>): GraphVisualizationUiState {
     return {
+        activeConfigView: "rendered",
         activeDocsView: "cli",
         activeGraphView: "visual",
         activePage: "mcp",
@@ -92,7 +93,7 @@ function createMockState(overrides?: Partial<GraphVisualizationUiState>): GraphV
     };
 }
 
-void test("GmMcpPanel renders server status, metadata, tool catalog, and activity feed", () => {
+void test("GmMcpPanel renders metadata, tool catalog, and activity feed", () => {
     const panel = new TestableGmMcpPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
@@ -100,9 +101,6 @@ void test("GmMcpPanel renders server status, metadata, tool catalog, and activit
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="mcp-page"[\s\S]*class=page content-page active/u);
-    assert.match(rendered, /Server Status/u);
-    assert.match(rendered, /mcp-server-status-chip running/u);
-    assert.match(rendered, /Running/u);
     assert.match(rendered, /Server Information/u);
     assert.match(rendered, /gmloop-mcp/u);
     assert.match(rendered, /0\.2\.0/u);
@@ -113,30 +111,6 @@ void test("GmMcpPanel renders server status, metadata, tool catalog, and activit
     assert.match(rendered, /MCP lifecycle events/u);
 });
 
-void test("GmMcpPanel renders stopped server status", () => {
-    const panel = new TestableGmMcpPanel();
-    panel.model = createMockModel({ mcpServerStatus: "stopped" });
-    panel.state = createMockState({ mcpServerStatus: "stopped" });
-
-    const rendered = renderTemplateValue(panel.renderForTest());
-
-    assert.match(rendered, /mcp-server-status-chip stopped/u);
-    assert.match(rendered, /Stopped/u);
-    assert.match(rendered, /The MCP bridge stopped/u);
-});
-
-void test("GmMcpPanel renders not-started server status", () => {
-    const panel = new TestableGmMcpPanel();
-    panel.model = createMockModel({ mcpServerStatus: "not-started" });
-    panel.state = createMockState({ mcpServerStatus: "not-started" });
-
-    const rendered = renderTemplateValue(panel.renderForTest());
-
-    assert.match(rendered, /mcp-server-status-chip not-started/u);
-    assert.match(rendered, /Not Started/u);
-    assert.match(rendered, /The MCP bridge has not started in this session yet/u);
-});
-
 void test("GmMcpPanel renders without server metadata when documentationCatalogs is null", () => {
     const panel = new TestableGmMcpPanel();
     panel.model = createMockModel({ documentationCatalogs: null });
@@ -145,7 +119,6 @@ void test("GmMcpPanel renders without server metadata when documentationCatalogs
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="mcp-page"[\s\S]*class=page content-page active/u);
-    assert.match(rendered, /Server Status/u);
     assert.doesNotMatch(rendered, /Server Information/u);
     assert.doesNotMatch(rendered, /gmloop-mcp/u);
     assert.match(rendered, /Available Tools \(0\)/u);

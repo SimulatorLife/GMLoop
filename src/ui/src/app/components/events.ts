@@ -1,4 +1,8 @@
-import type { GraphVisualizationUiDocsView, GraphVisualizationUiPage } from "../state/types.js";
+import type {
+    GraphVisualizationUiConfigView,
+    GraphVisualizationUiDocsView,
+    GraphVisualizationUiPage
+} from "../state/types.js";
 
 export const GRAPH_UI_EVENT_NAVIGATE_PAGE = "gmloop-navigate-page";
 export const GRAPH_UI_EVENT_SET_DOCS_VIEW = "gmloop-set-docs-view";
@@ -10,8 +14,11 @@ export const GRAPH_UI_EVENT_TRIGGER_FIX = "gmloop-trigger-fix";
 export const GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT = "gmloop-trigger-open-project";
 export const GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD = "gmloop-trigger-start-live-reload";
 export const GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD = "gmloop-trigger-stop-live-reload";
+export const GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG = "gmloop-trigger-create-config";
+export const GRAPH_UI_EVENT_SET_CONFIG_VIEW = "gmloop-set-config-view";
 export const GRAPH_UI_EVENT_RESET_DEFAULTS = "gmloop-reset-defaults";
 
 export type GraphUiNavigatePageDetail = Readonly<{ page: GraphVisualizationUiPage }>;
 export type GraphUiSetDocsViewDetail = Readonly<{ docsView: GraphVisualizationUiDocsView }>;
+export type GraphUiSetConfigViewDetail = Readonly<{ configView: GraphVisualizationUiConfigView }>;
 export type GraphUiSetSearchQueryDetail = Readonly<{ searchQuery: string }>;

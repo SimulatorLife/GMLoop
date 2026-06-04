@@ -7,6 +7,7 @@ import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 void test("reset-defaults restores visual view, auto labels, and clears search query", () => {
     const state = reduceGraphVisualizationUiState(
         {
+            activeConfigView: "rendered",
             activeDocsView: "cli",
             activeGraphView: "json",
             activePage: "graph",
@@ -67,6 +68,7 @@ void test("reset-defaults on a state already at defaults is a no-op identity", (
 void test("clear-error sets errorMessage to null regardless of prior value", () => {
     const stateWithError = reduceGraphVisualizationUiState(
         {
+            activeConfigView: "rendered",
             activeDocsView: "cli",
             activeGraphView: "visual",
             activePage: "graph",

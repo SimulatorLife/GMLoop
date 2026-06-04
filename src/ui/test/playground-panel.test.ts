@@ -38,6 +38,7 @@ function createMockModel(): GraphVisualizationUiModel {
 
 function createMockState(): GraphVisualizationUiState {
     return {
+        activeConfigView: "rendered",
         activePage: "playground",
         activeGraphView: "visual",
         activeDocsView: "cli",

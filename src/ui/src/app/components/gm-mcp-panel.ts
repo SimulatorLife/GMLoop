@@ -2,7 +2,7 @@ import { html } from "lit";
 
 import type { GraphVisualizationMcpToolCatalogEntry } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
-import type { GraphVisualizationUiMcpServerStatus, GraphVisualizationUiState } from "../state/types.js";
+import type { GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
@@ -17,42 +17,6 @@ export class GmMcpPanel extends LightDomLitElement {
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
-
-    #getServerStatusLabel(status: GraphVisualizationUiMcpServerStatus): string {
-        if (status === "running") {
-            return "Running";
-        }
-        if (status === "stopped") {
-            return "Stopped";
-        }
-        return "Not Started";
-    }
-
-    #getServerStatusDescription(status: GraphVisualizationUiMcpServerStatus): string {
-        if (status === "running") {
-            return "The MCP bridge is available for connected clients.";
-        }
-        if (status === "stopped") {
-            return "The MCP bridge stopped. Restart it to continue.";
-        }
-        return "The MCP bridge has not started in this session yet.";
-    }
-
-    #renderServerStatusChip(status: GraphVisualizationUiMcpServerStatus) {
-        const chipClassName =
-            status === "running"
-                ? "mcp-server-status-chip running"
-                : status === "stopped"
-                  ? "mcp-server-status-chip stopped"
-                  : "mcp-server-status-chip not-started";
-
-        return html`
-            <div class=${chipClassName} role="status" aria-label=${this.#getServerStatusDescription(status)}>
-                <span class="mcp-server-status-dot" aria-hidden="true"></span>
-                <strong>${this.#getServerStatusLabel(status)}</strong>
-            </div>
-        `;
-    }
 
     #renderServerMetadata() {
         const docsCatalogs = this.model?.documentationCatalogs;
@@ -131,7 +95,6 @@ export class GmMcpPanel extends LightDomLitElement {
         }
 
         const mcpPageClassName = this.state.activePage === "mcp" ? "page content-page active" : "page content-page";
-        const serverStatus = this.state.mcpServerStatus;
 
         return html`
             <section id="mcp-page" class=${mcpPageClassName}>

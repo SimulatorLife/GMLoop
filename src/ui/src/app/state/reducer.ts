@@ -8,6 +8,7 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         activeDocsView: "cli",
         activeGraphView: "visual",
         activePage: "graph",
+        activeConfigView: "rendered",
         errorMessage: null,
         fixErrorMessage: null,
         fixLogLines: [],
@@ -66,6 +67,12 @@ export function reduceGraphVisualizationUiState(
             return {
                 ...state,
                 activeDocsView: action.docsView
+            };
+        }
+        case "set-config-view": {
+            return {
+                ...state,
+                activeConfigView: action.configView
             };
         }
         case "set-mcp-server-status": {
@@ -172,7 +179,8 @@ export function reduceGraphVisualizationUiState(
                 ...state,
                 activeGraphView: "visual",
                 labelMode: "auto",
-                searchQuery: ""
+                searchQuery: "",
+                activeConfigView: "rendered"
             };
         }
         default: {

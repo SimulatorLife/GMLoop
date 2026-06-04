@@ -24,14 +24,17 @@ import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
+    GRAPH_UI_EVENT_SET_CONFIG_VIEW,
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
+    GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
-    GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
+    GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
+    type GraphUiSetConfigViewDetail
 } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -102,6 +105,13 @@ export class GmAppShell extends LightDomLitElement {
         });
     };
 
+    #onSetConfigView = (eventValue: Event): void => {
+        this.#store.dispatch({
+            configView: (eventValue as CustomEvent<GraphUiSetConfigViewDetail>).detail.configView,
+            type: "set-config-view"
+        });
+    };
+
     #onSetSearchQuery = (eventValue: Event): void => {
         if (!this.model) {
             return;
@@ -153,6 +163,14 @@ export class GmAppShell extends LightDomLitElement {
         void this.#runHostActionWithPendingState("set-regenerate-pending", this.callbacks.onRegenerate);
     };
 
+    #onTriggerCreateConfig = (): void => {
+        if (!this.model || !hasLoadedGraphProject(this.model) || !this.callbacks.onCreateConfig) {
+            return;
+        }
+
+        void this.#runHostActionWithPendingState("set-regenerate-pending", this.callbacks.onCreateConfig);
+    };
+
     #onTriggerFix = (): void => {
         if (!this.model || !hasLoadedGraphProject(this.model)) {
             return;
@@ -187,6 +205,8 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults },
             { event: GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, handler: this.#onTriggerOpenProject },
             { event: GRAPH_UI_EVENT_TRIGGER_REGENERATE, handler: this.#onTriggerRegenerate },
+            { event: GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG, handler: this.#onTriggerCreateConfig },
+            { event: GRAPH_UI_EVENT_SET_CONFIG_VIEW, handler: this.#onSetConfigView },
             { event: GRAPH_UI_EVENT_TRIGGER_FIX, handler: this.#onTriggerFix },
             { event: GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, handler: this.#onTriggerStartLiveReload },
             { event: GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, handler: this.#onTriggerStopLiveReload },
@@ -208,7 +228,10 @@ export class GmAppShell extends LightDomLitElement {
 
     async #runHostActionWithPendingState(
         pendingType: "set-open-project-pending" | "set-regenerate-pending",
-        hostAction: GraphVisualizationUiCallbacks["onOpenProject"] | GraphVisualizationUiCallbacks["onRegenerate"]
+        hostAction:
+            | GraphVisualizationUiCallbacks["onOpenProject"]
+            | GraphVisualizationUiCallbacks["onRegenerate"]
+            | NonNullable<GraphVisualizationUiCallbacks["onCreateConfig"]>
     ): Promise<void> {
         try {
             this.#store.dispatch({ pending: true, type: pendingType });

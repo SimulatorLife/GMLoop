@@ -1170,6 +1170,9 @@ async function runGraphDoctorAction(options: GraphCommandSharedOptions): Promise
 async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Promise<void> {
     const initialSelectedPath = resolveExplicitWorkflowTargetPath(options.path);
     let activeContext: GraphResolutionContext | null = null;
+    const updateActiveContext = (context: GraphResolutionContext | null): void => {
+        activeContext = context;
+    };
     let activeSelectedPaths = initialSelectedPath ? [initialSelectedPath] : [];
     let activeSource: GraphServeSource = options.path ? "cli-path" : "working-directory";
     let activeVisualizationPayload = createEmptyGraphVisualizationData();
@@ -1663,6 +1666,93 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             void openNextPendingActiveProjectStatePath();
         };
 
+        const DEFAULT_CONFIG = {
+            printWidth: 120,
+            tabWidth: 4,
+            semi: true,
+            allowInlineControlFlowBlocks: true,
+            logicalOperatorsStyle: "keywords",
+            lintRuleset: "recommended",
+            refactor: {
+                codemods: {
+                    loopLengthHoisting: {},
+                    namingConvention: {
+                        rules: {
+                            structDeclaration: {
+                                caseStyle: "pascal"
+                            },
+                            resource: {
+                                caseStyle: "lower_snake"
+                            },
+                            objectResourceName: {
+                                prefix: "obj_"
+                            },
+                            roomResourceName: {
+                                prefix: "rm_"
+                            },
+                            spriteResourceName: {
+                                prefix: "spr_"
+                            },
+                            audioResourceName: {
+                                prefix: "snd_"
+                            },
+                            timelineResourceName: {
+                                prefix: "tl_"
+                            },
+                            shaderResourceName: {
+                                prefix: "shd_"
+                            },
+                            fontResourceName: {
+                                prefix: "fnt_"
+                            },
+                            pathResourceName: {
+                                prefix: "pth_"
+                            },
+                            animationCurveResourceName: {
+                                prefix: "curve_"
+                            },
+                            sequenceResourceName: {
+                                prefix: "seq_"
+                            },
+                            tilesetResourceName: {
+                                prefix: "tile_"
+                            },
+                            particleSystemResourceName: {
+                                prefix: "ps_"
+                            },
+                            enum: {
+                                prefix: "e",
+                                caseStyle: "camel"
+                            },
+                            enumMember: {
+                                caseStyle: "upper_snake"
+                            },
+                            macro: {
+                                caseStyle: "upper_snake"
+                            },
+                            variable: {
+                                caseStyle: "lower_snake"
+                            }
+                        },
+                        exclusivePrefixes: {
+                            obj_: "objectResourceName",
+                            rm_: "roomResourceName",
+                            spr_: "spriteResourceName",
+                            snd_: "audioResourceName",
+                            tl_: "timelineResourceName",
+                            shd_: "shaderResourceName",
+                            fnt_: "fontResourceName",
+                            pth_: "pathResourceName",
+                            curve_: "animationCurveResourceName",
+                            seq_: "sequenceResourceName",
+                            tile_: "tilesetResourceName",
+                            ps_: "particleSystemResourceName"
+                        }
+                    }
+                }
+            }
+        };
+
         const server = await startGraphVisualizationServer({
             getUiRevision: () => activeServeRevision,
             regenerate: async () => {
@@ -1675,6 +1765,22 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const nextPayloadString = safeStringifyVisualizationPayload();
                 markServeRevisionChanged();
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
+            },
+            createConfig: async () => {
+                const currentContext = activeContext;
+                if (!currentContext) {
+                    throw new Error("No active project open.");
+                }
+                const configPath = path.join(currentContext.projectRoot, "gmloop.json");
+                await writeFile(configPath, `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`, "utf8");
+                const nextContext = await resolveGraphContext({
+                    ...options,
+                    path: currentContext.projectRoot
+                });
+                updateActiveContext(nextContext);
+                await refreshActiveVisualizationArtifacts(nextContext);
+                markServeRevisionChanged();
+                return Object.freeze({ changed: true });
             },
             openProjectTargets: async ({ path: selectedPath }) => {
                 const nextPathFromPicker =

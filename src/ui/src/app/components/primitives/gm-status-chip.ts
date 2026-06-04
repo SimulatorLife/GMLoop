@@ -5,7 +5,15 @@ import { LightDomLitElement } from "../light-dom-lit-element.js";
 /**
  * Closed set of status labels supported by the shared UI status badge.
  */
-export type GmStatusChipStatus = "not-running" | "running" | "starting" | "stopped" | "offline" | "error" | "scanning";
+export type GmStatusChipStatus =
+    | "not-running"
+    | "running"
+    | "starting"
+    | "stopped"
+    | "offline"
+    | "error"
+    | "scanning"
+    | "success";
 
 type GmStatusChipConfig = Readonly<{
     label: string;
@@ -18,7 +26,8 @@ const STATUS_CHIP_CONFIG: Readonly<Record<GmStatusChipStatus, GmStatusChipConfig
     running: { label: "Running" },
     scanning: { label: "Scanning" },
     starting: { label: "Starting" },
-    stopped: { label: "Stopped" }
+    stopped: { label: "Stopped" },
+    success: { label: "Success" }
 });
 
 function isGmStatusChipStatus(value: string): value is GmStatusChipStatus {
