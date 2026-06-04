@@ -144,6 +144,20 @@ export async function ensureProjectGraphIndex(options: SharedProjectContextOptio
 }
 
 /**
+ * Filter a graph index search result set to entries of a single resource kind.
+ *
+ * Eliminates the repeated `.results.filter((entry) => entry.kind === "X")`
+ * pattern that appeared across room.ts, object.ts, and validate.ts.
+ *
+ * @param results  Raw search results from Semantic.searchGraphIndex.
+ * @param kind     The resource kind to keep (e.g. "room", "object").
+ * @returns Filtered array containing only entries of the requested kind.
+ */
+export function filterGraphIndexResultsByKind<T extends { kind: string }>(results: readonly T[], kind: string): T[] {
+    return results.filter((entry) => entry.kind === kind);
+}
+
+/**
  * Serialize a command result payload as pretty-printed JSON and write it to
  * stdout. All graph-backed commands use this single consistent format so that
  * machine consumers and MCP clients can rely on a stable output shape.

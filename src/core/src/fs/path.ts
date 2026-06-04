@@ -62,7 +62,7 @@ const WINDOWS_UNC_PATH_PATTERN_ABSOLUTE = /^[\\/]{2}[^/\\]+[\\/][^/\\]+/u;
  * @returns {string} Normalized POSIX path string, or an empty string when the
  *                   input is missing/invalid.
  */
-export function toPosixPath(inputPath) {
+export function toPosixPath(inputPath: unknown): string {
     if (!isNonEmptyString(inputPath)) {
         return "";
     }
@@ -79,7 +79,7 @@ export function toPosixPath(inputPath) {
  * @param {unknown} inputPath Candidate POSIX path string.
  * @returns {string} Path rewritten using the runtime's path separator.
  */
-export function fromPosixPath(inputPath) {
+export function fromPosixPath(inputPath: unknown): string {
     if (!isNonEmptyString(inputPath)) {
         return "";
     }
@@ -141,7 +141,10 @@ export function resolvePortableAbsolutePath(candidate: string): string {
  * @returns {string | null} Relative path when the child is contained within the
  *                          parent, otherwise `null`.
  */
-export function resolveContainedRelativePath(childPath, parentPath) {
+export function resolveContainedRelativePath(
+    childPath: string | null | undefined,
+    parentPath: string | null | undefined
+): string | null {
     if (!isNonEmptyString(childPath) || !isNonEmptyString(parentPath)) {
         return null;
     }
@@ -184,12 +187,15 @@ export function resolveContainedRelativePath(childPath, parentPath) {
  *        itself.
  * @returns {Generator<string, void, void>} Iterator over ancestor directories.
  */
-export function* walkAncestorDirectories(startPath, { includeSelf = true } = {}) {
+export function* walkAncestorDirectories(
+    startPath: string | null | undefined,
+    { includeSelf = true }: { includeSelf?: boolean } = {}
+): Generator<string, void, void> {
     if (!isNonEmptyString(startPath)) {
         return;
     }
 
-    const visited = new Set();
+    const visited = new Set<string>();
     let current = path.resolve(startPath);
 
     if (!includeSelf) {
@@ -209,7 +215,7 @@ export function* walkAncestorDirectories(startPath, { includeSelf = true } = {})
     }
 }
 
-export function isPathInside(childPath, parentPath) {
+export function isPathInside(childPath: string | null | undefined, parentPath: string | null | undefined): boolean {
     const relative = resolveContainedRelativePath(childPath, parentPath);
     return relative !== null;
 }

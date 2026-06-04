@@ -35,6 +35,44 @@ function applyYyGetRealSafetyPatch(globalScope: BrowserGlobalScope): void {
     globalScope.yyGetReal = safeGetReal;
 }
 
+function createSafeMathFunction(
+    originalFn: (...args: Array<unknown>) => unknown,
+    globalScope: BrowserGlobalScope
+): (value: unknown) => unknown {
+    return function safeFn(value: unknown): unknown {
+        const yyGetReal = globalScope.yyGetReal;
+        const realValue: number =
+            typeof yyGetReal === "function" ? (yyGetReal as (v: unknown) => number)(value) : Number(value);
+
+        if (Number.isNaN(realValue)) {
+            return Number.NaN;
+        }
+
+        return Reflect.apply(originalFn, globalScope, [value]);
+    };
+}
+
+export function applyMathSafetyPatches(globalScope: BrowserGlobalScope): void {
+    const mathFunctions = ["sqrt", "arcsin", "arccos", "ln", "log2", "log10"];
+
+    for (const fnName of mathFunctions) {
+        const originalFn = globalScope[fnName];
+        if (typeof originalFn !== "function") {
+            continue;
+        }
+
+        const maybeHotReloadSafe = Reflect.get(originalFn, "__hotReloadSafe");
+        if (maybeHotReloadSafe === true) {
+            continue;
+        }
+
+        const safeFn = createSafeMathFunction(originalFn as (...args: Array<unknown>) => unknown, globalScope);
+
+        Reflect.set(safeFn, "__hotReloadSafe", true);
+        globalScope[fnName] = safeFn;
+    }
+}
+
 function writeBootstrapLog(logLevel: LiveReloadBootstrapConfig["logLevel"], message: string, error?: unknown): void {
     if (logLevel === "quiet") {
         return;
@@ -71,6 +109,7 @@ export function initializeLiveReload(
     const globalScope = resolveBrowserGlobalScope();
     if (globalScope) {
         applyYyGetRealSafetyPatch(globalScope);
+        applyMathSafetyPatches(globalScope);
     }
 
     return wrapper;

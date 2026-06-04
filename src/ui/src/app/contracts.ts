@@ -3,7 +3,6 @@ import type {
     GraphVisualizationDocumentationCatalogs,
     GraphVisualizationLastFixRun,
     GraphVisualizationLiveReloadModel,
-    GraphVisualizationLiveReloadStatusSnapshot,
     GraphVisualizationLoadedTarget,
     GraphVisualizationMcpServerStatus,
     GraphVisualizationProjectConfigurationCatalog,
@@ -60,10 +59,7 @@ export type GraphVisualizationUiCallbacks = Readonly<{
         | GraphVisualizationLiveReloadModel
         | null
         | Promise<GraphVisualizationLiveReloadModel | null>;
-    onRefreshLiveReloadStatus: () =>
-        | GraphVisualizationLiveReloadStatusSnapshot
-        | null
-        | Promise<GraphVisualizationLiveReloadStatusSnapshot | null>;
+    onStopLiveReload: () => void | Promise<void>;
 }>;
 
 /**
@@ -96,7 +92,7 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
         onRegenerate: () => {},
         onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
         onStartLiveReload: () => null,
-        onRefreshLiveReloadStatus: () => null
+        onStopLiveReload: () => {}
     };
 }
 

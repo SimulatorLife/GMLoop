@@ -14,7 +14,7 @@ export type GraphVisualizationAppBootstrapDependencies = Readonly<{
         onRegenerate?: GraphVisualizationUiCallbacks["onRegenerate"];
         onRunFix?: GraphVisualizationUiCallbacks["onRunFix"];
         onStartLiveReload?: GraphVisualizationUiCallbacks["onStartLiveReload"];
-        onRefreshLiveReloadStatus?: GraphVisualizationUiCallbacks["onRefreshLiveReloadStatus"];
+        onStopLiveReload?: GraphVisualizationUiCallbacks["onStopLiveReload"];
     }>;
     data: GraphVisualizationData;
     options: GraphVisualizationRenderOptions;
@@ -33,8 +33,7 @@ export function bootstrapGraphVisualizationLitApp(dependencies: GraphVisualizati
         onRegenerate: dependencies.callbacks?.onRegenerate ?? defaultCallbacks.onRegenerate,
         onRunFix: dependencies.callbacks?.onRunFix ?? defaultCallbacks.onRunFix,
         onStartLiveReload: dependencies.callbacks?.onStartLiveReload ?? defaultCallbacks.onStartLiveReload,
-        onRefreshLiveReloadStatus:
-            dependencies.callbacks?.onRefreshLiveReloadStatus ?? defaultCallbacks.onRefreshLiveReloadStatus
+        onStopLiveReload: dependencies.callbacks?.onStopLiveReload ?? defaultCallbacks.onStopLiveReload
     };
 
     Reflect.set(appElement, "model", model);

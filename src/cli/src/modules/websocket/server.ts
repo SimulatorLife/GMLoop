@@ -16,13 +16,7 @@ const { describeValueForError } = Core;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 17_890;
 
-function describeWebSocketError(error: unknown): string {
-    if (Core.isErrorLike(error)) {
-        return error.message;
-    }
-
-    return describeValueForError(error);
-}
+const describeWebSocketError = Core.getErrorMessage;
 
 export interface PatchWebSocketServerOptions {
     host?: string;

@@ -8,6 +8,7 @@
 import prettier, { type SupportLanguage, type SupportOptions } from "prettier";
 
 import {
+    defaultGmlFormatComponentImplementations,
     defaultGmlFormatProvider,
     type GmlFormat,
     type GmlFormatDefaultOptions,
@@ -56,7 +57,22 @@ function createDefaultOptions(provider: GmlFormatProvider): GmlFormatDefaultOpti
  * a provider to verify the high-level plugin only depends on the abstraction.
  */
 export function createGmlFormat(provider: GmlFormatProvider = defaultGmlFormatProvider): GmlFormat {
-    const defaultOptions = createDefaultOptions(provider);
+    // Inject buildPrintableDocCommentLines into the plugin options so the
+    // printer can retrieve it via options.gml.buildPrintableDocCommentLines
+    // without directly importing from ../comments/description-doc.js.
+    // This keeps the printer decoupled from the comment subsystem boundary.
+    const { buildPrintableDocCommentLines } = defaultGmlFormatComponentImplementations;
+
+    const rawDefaultOptions = createDefaultOptions(provider);
+    const defaultOptions: GmlFormatDefaultOptions = Object.freeze({
+        ...rawDefaultOptions,
+        // Canonical injectable for the printer's doc-comment output module.
+        // This is part of the GmlFormatComponentContract and is retrieved
+        // by src/format/src/printer/doc-comment-output.ts from options.gml,
+        // keeping that module free of direct cross-subsystem imports.
+        gml: Object.freeze({ buildPrintableDocCommentLines })
+    });
+
     const plugin: GmlFormat = {
         languages,
         parsers: provider.components.parsers,

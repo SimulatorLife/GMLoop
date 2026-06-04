@@ -22,7 +22,7 @@ export class GmAppHeader extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
-    static readonly #TOP_NAV_BUTTON_BASE_CLASS = "top-nav-button";
+    static readonly #TOP_NAV_BUTTON_BASE_CLASS = "gm-btn--nav";
     static readonly #ARIA_CURRENT_PAGE = "page";
 
     #getAriaCurrentForPage(page: GraphVisualizationUiPage): string | typeof nothing {

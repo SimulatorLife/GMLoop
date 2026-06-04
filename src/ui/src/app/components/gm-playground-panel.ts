@@ -54,13 +54,33 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         const formatOptions = this.#resolveFormatOptionsForModel(model);
         for (const option of formatOptions) {
             if (!this.#enabledFormatOptions.has(option.name)) {
-                this.#enabledFormatOptions.set(option.name, false);
+                this.#enabledFormatOptions.set(option.name, true);
+            }
+        }
+    }
+
+    #syncEnabledLintRulesFromModel(model: GraphVisualizationUiModel | null): void {
+        const lintRules = this.#resolveLintRulesForModel(model);
+        for (const rule of lintRules) {
+            if (!this.#enabledLintRules.has(rule.ruleId)) {
+                this.#enabledLintRules.set(rule.ruleId, true);
+            }
+        }
+    }
+
+    #syncEnabledCodemodsFromModel(model: GraphVisualizationUiModel | null): void {
+        const codemods = this.#resolveCodemodsForModel(model);
+        for (const codemod of codemods) {
+            if (!this.#enabledCodemods.has(codemod.id)) {
+                this.#enabledCodemods.set(codemod.id, true);
             }
         }
     }
 
     #onModelChange = (): void => {
         this.#syncEnabledFormatOptionsFromModel(this.model);
+        this.#syncEnabledLintRulesFromModel(this.model);
+        this.#syncEnabledCodemodsFromModel(this.model);
     };
 
     #showFormatDetails = false;
@@ -74,6 +94,26 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     #lintSearchQuery = "";
 
     #codemodSearchQuery = "";
+
+    /**
+     * Renders playground output (error, formatted code, or AST JSON).
+     *
+     * Lit templates are whitespace-sensitive: any indentation or newlines
+     * between the opening and closing tags become text nodes in the DOM.
+     * This produces unwanted visual padding in the output pane and violates
+     * the test assertion that no whitespace precedes content. All templates
+     * must keep their content on a single line with no leading/trailing
+     * whitespace.
+     */
+    #renderOutput(message: string | null, viewMode: "code" | "ast", highlighted: string, astJson: string): unknown {
+        if (message !== null) {
+            return html`<div class="playground-output is-error" role="status" aria-live="polite">${message}</div>`;
+        }
+        if (viewMode === "code") {
+            return html`<div class="playground-output" aria-live="polite">${unsafeHTML(highlighted)}</div>`;
+        }
+        return html`<pre class="playground-output" aria-live="polite">${astJson}</pre>`;
+    }
 
     public disconnectedCallback(): void {
         if (this.#debounceTimer !== null) {
@@ -201,6 +241,15 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     };
 
+    readonly #onInputScroll = (e: Event): void => {
+        const target = e.target as HTMLTextAreaElement;
+        const pre = this.renderRoot.querySelector(".playground-input-highlight");
+        if (pre) {
+            pre.scrollTop = target.scrollTop;
+            pre.scrollLeft = target.scrollLeft;
+        }
+    };
+
     async #processInput(): Promise<void> {
         this.#error = null;
         if (!this.#gmlInput.trim()) {
@@ -293,9 +342,31 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         return workspaceRules?.lintRules ?? [];
     }
 
+    #resolveLintRulesForModel(
+        model: GraphVisualizationUiModel | null
+    ): ReadonlyArray<{ description: string; ruleId: string }> {
+        const workspaceRules = model?.documentationCatalogs?.workspaceRules;
+        const configuredRules = model?.projectConfigurationCatalog?.lint.rules;
+        if (configuredRules && configuredRules.length > 0) {
+            return configuredRules;
+        }
+        return workspaceRules?.lintRules ?? [];
+    }
+
     #resolveCodemods(): ReadonlyArray<{ description: string; id: string }> {
         const workspaceRules = this.model?.documentationCatalogs?.workspaceRules;
         const configuredCodemods = this.model?.projectConfigurationCatalog?.refactor.codemods;
+        if (configuredCodemods && configuredCodemods.length > 0) {
+            return configuredCodemods;
+        }
+        return workspaceRules?.refactorCodemods ?? [];
+    }
+
+    #resolveCodemodsForModel(
+        model: GraphVisualizationUiModel | null
+    ): ReadonlyArray<{ description: string; id: string }> {
+        const workspaceRules = model?.documentationCatalogs?.workspaceRules;
+        const configuredCodemods = model?.projectConfigurationCatalog?.refactor.codemods;
         if (configuredCodemods && configuredCodemods.length > 0) {
             return configuredCodemods;
         }
@@ -549,7 +620,8 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             return html``;
         }
 
-        const activeClassName = this.state.activePage === "playground" ? "page active" : "page";
+        const activeClassName =
+            this.state.activePage === "playground" ? "page content-page active" : "page content-page";
         const controlsPanelClassName = this.#controlsPanelOpen
             ? "playground-layout controls-open"
             : "playground-layout controls-collapsed";
@@ -571,10 +643,10 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </span>
                         <span>${this.#controlsPanelOpen ? "Hide Controls" : "Show Controls"}</span>
                     </button>
-                    <div class="view-selector">
+                    <div class="gm-view-selector">
                         <button
                             type="button"
-                            class="view-option ${this.#viewMode === "code" ? "active" : ""}"
+                            class="gm-btn--chip ${this.#viewMode === "code" ? "active" : ""}"
                             aria-pressed=${this.#viewMode === "code"}
                             @click=${() => this.#setViewMode("code")}
                         >
@@ -582,7 +654,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </button>
                         <button
                             type="button"
-                            class="view-option ${this.#viewMode === "ast" ? "active" : ""}"
+                            class="gm-btn--chip ${this.#viewMode === "ast" ? "active" : ""}"
                             aria-pressed=${this.#viewMode === "ast"}
                             @click=${() => this.#setViewMode("ast")}
                         >
@@ -598,14 +670,20 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                                 <span>Input GML</span>
                                 <span class="pane-header-status">Writable</span>
                             </div>
-                            <textarea
-                                class="playground-input"
-                                aria-label="Playground input GML"
-                                placeholder="Paste or write GML code here..."
-                                .value=${this.#gmlInput}
-                                @input=${this.#onInputChange}
-                                spellcheck="false"
-                            ></textarea>
+                            <div class="playground-input-surface">
+                                <pre class="playground-input-highlight" aria-hidden="true">
+${unsafeHTML(highlightGml(this.#gmlInput))}</pre
+                                >
+                                <textarea
+                                    class="playground-input"
+                                    aria-label="Playground input GML"
+                                    placeholder="Paste or write GML code here..."
+                                    .value=${this.#gmlInput}
+                                    @input=${this.#onInputChange}
+                                    @scroll=${this.#onInputScroll}
+                                    spellcheck="false"
+                                ></textarea>
+                            </div>
                         </div>
                         <div class="editor-pane">
                             <div class="pane-header">
@@ -618,15 +696,12 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                                 >
                                 <span class="pane-header-status">Read-only</span>
                             </div>
-                            ${this.#error
-                                ? html`<div class="playground-output is-error" role="status" aria-live="polite">
-                                      ${this.#error}
-                                  </div>`
-                                : this.#viewMode === "code"
-                                  ? html`<div class="playground-output" aria-live="polite">
-                                        ${unsafeHTML(highlightGml(this.#gmlOutput))}
-                                    </div>`
-                                  : html`<pre class="playground-output" aria-live="polite">${this.#astJson}</pre>`}
+                            ${this.#renderOutput(
+                                this.#error,
+                                this.#viewMode,
+                                highlightGml(this.#gmlOutput),
+                                this.#astJson
+                            )}
                         </div>
                     </div>
                 </div>

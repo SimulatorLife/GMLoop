@@ -124,7 +124,7 @@ void test("GmErrorBanner dismiss button is a button element", () => {
 
     const rendered = renderTemplateValue(banner.renderForTest());
 
-    assert.match(rendered, /<button[\s\S]*class="gm-error-banner__dismiss"[\s\S]*>[\s\S]*<\/button>/u);
+    assert.match(rendered, /<button[\s\S]*class="gm-error-banner__dismiss"[^>]*>[^]*<\/button>/u);
 });
 
 void test("GmErrorBanner dismiss click hides the current message and emits the dismiss event", () => {

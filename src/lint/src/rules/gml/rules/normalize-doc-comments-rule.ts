@@ -1,7 +1,6 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { normalizeDocParamName } from "../../../doc-comment/normalize-param-name.js";
 import { gmlRuleDocCommentServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
 import {
@@ -15,6 +14,7 @@ import {
 
 const {
     convertLegacyReturnsDescriptionLinesToMetadata,
+    normalizeDocParamName,
     promoteLeadingDocCommentTextToDescription,
     resolveParameterName
 } = gmlRuleDocCommentServices;

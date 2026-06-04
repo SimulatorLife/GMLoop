@@ -111,6 +111,16 @@ void test("graph panel keeps selected node details visible until another node is
     assert.match(rendered, /global\.score = 0;/u);
 });
 
+void test("graph panel uses the shared light content page surface", () => {
+    const panel = new TestableGmGraphPanel();
+    panel.model = createGraphModel();
+    panel.state = createGraphState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="graph-page"[\s\S]*class=page content-page active/u);
+});
+
 void test("graph panel keeps clicked node details visible when filters hide the node", () => {
     const panel = new TestableGmGraphPanel();
     panel.model = createGraphModel();

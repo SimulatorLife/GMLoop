@@ -9,6 +9,12 @@ import {
 } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 
+import {
+    createSyntheticResourceEntry as makeSyntheticResourceEntry,
+    generateIdentifierEntryScipId,
+    generateResourceScipId,
+    matchesSymbolIdSet
+} from "./bridge-scip-id-generators.js";
 import { listConstructorRuntimeTypeReferenceRecords } from "./constructor-runtime-type-references.js";
 import { GmlIdentifierOccurrenceIndex } from "./gml-identifier-occurrence-index.js";
 import { isRefactorOwnerMetadataPath, isRefactorResourcePath } from "./gml-resource-path.js";
@@ -1678,9 +1684,18 @@ export class GmlSemanticBridge {
                     continue;
                 }
 
-                // Skip unsafe index-based updates to the .yyp 'resources' array.
-                // We've already safely updated it above using direct path matching,
-                // and array indexes may have shifted due to schema parsing differences.
+                // Skip secondary index-based mutations on the .yyp `resources` array.
+                // The path-matching loop above is the authoritative update path: it finds
+                // each matching entry by scanning for matching `id.path` values and
+                // mutates `id.name` / `id.path` directly on the parsed object. Those
+                // mutations are then recorded as string mutations and applied to the raw
+                // text so the final output stays consistent.  By contrast, the
+                // asset-reference map may contain stale index-based paths such as
+                // `resources.N.name` that point to the same logical entry. Applying
+                // both updates would write the same fields twice and risk the string
+                // mutation list getting out of sync with the already-mutated parsed
+                // object, producing a corrupted .yyp.  Skipping here keeps the two
+                // update mechanisms from colliding.
                 if (
                     Semantic.isProjectManifestPath(resourceEntry.path) &&
                     reference.propertyPath.startsWith("resources.")
@@ -3413,125 +3428,18 @@ export class GmlSemanticBridge {
     }
 
     private generateResourceScipId(resource: any): string {
-        // e.g. gml/objects/obj_player
-        let kind = "resource";
-        switch (resource.resourceType) {
-            case "GMObject": {
-                kind = "objects";
-                break;
-            }
-            case "GMSprite": {
-                kind = "sprites";
-                break;
-            }
-            case "GMRoom": {
-                kind = "rooms";
-                break;
-            }
-            case "GMScript": {
-                kind = "scripts";
-                break;
-            }
-            case "GMAudio": {
-                {
-                    kind = "sounds";
-                    // No default
-                }
-                break;
-            }
-            case "GMSound": {
-                kind = "sounds";
-                break;
-            }
-            case "GMPath": {
-                kind = "paths";
-                break;
-            }
-            case "GMAnimCurve":
-            case "GMAnimationCurve": {
-                kind = "curves";
-                break;
-            }
-            case "GMShader": {
-                kind = "shaders";
-                break;
-            }
-            case "GMFont": {
-                kind = "fonts";
-                break;
-            }
-            case "GMTimeline": {
-                kind = "timelines";
-                break;
-            }
-            case "GMTileSet": {
-                kind = "tilesets";
-                break;
-            }
-            case "GMSequence": {
-                kind = "sequences";
-                break;
-            }
-            case "GMParticleSystem": {
-                kind = "particlesystems";
-                break;
-            }
-            case "GMNote":
-            case "GMNotes": {
-                kind = "notes";
-                break;
-            }
-            case "GMExtension": {
-                kind = "extensions";
-                break;
-            }
-        }
-        // fallback mapping
-
-        return `gml/${kind}/${resource.name}`;
+        return generateResourceScipId(resource);
     }
 
     private createSyntheticResourceEntry(resource: any, symbolId: string): any {
-        return {
-            identifierId: symbolId,
-            name: resource.name,
-            kind: resource.resourceType,
-            declarations: [
-                {
-                    filePath: resource.path,
-                    start: { index: 0, line: 0, column: 0 },
-                    end: { index: 0, line: 0, column: 0 },
-                    kind: "definition"
-                }
-            ],
-            references: [], // We'd need to populate this via asset scan if we want references visible here
-            resourcePath: resource.path
-        };
+        return makeSyntheticResourceEntry(resource, symbolId);
     }
 
     private generateScipId(entry: any, nestedName?: string): string {
-        const name = nestedName ?? entry.name;
-        let scipKind = "var";
-
-        // Infer SCIP kind from identifierId or entry metadata
-        const id = entry.identifierId ?? "";
-        if (id.startsWith("script:")) {
-            scipKind = "script";
-        } else if (id.startsWith("macro:")) {
-            scipKind = "macro";
-        } else if (id.startsWith("enum:")) {
-            scipKind = "enum";
-        } else if (id.startsWith("global:") || id.startsWith("instance:")) {
-            scipKind = "var";
-        }
-
-        return `gml/${scipKind}/${name}`;
+        return generateIdentifierEntryScipId(entry, nestedName);
     }
 
     private testNameMatch(symbolIds: Set<string>, name: string): boolean {
-        for (const id of symbolIds) {
-            if (id.endsWith(`/${name}`)) return true;
-        }
-        return false;
+        return matchesSymbolIdSet(symbolIds, name);
     }
 }

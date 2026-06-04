@@ -43,11 +43,11 @@ type ResourceAuditPayload = Readonly<{
 
 type StatusPayload = JsonEndpointPayload &
     Readonly<{
-    totalPatchCount?: number;
-    patchCount?: number;
-    recentPatches?: ReadonlyArray<Readonly<{ filePath?: unknown; id?: unknown }>>;
-    scanComplete?: boolean;
-}>;
+        totalPatchCount?: number;
+        patchCount?: number;
+        recentPatches?: ReadonlyArray<Readonly<{ filePath?: unknown; id?: unknown }>>;
+        scanComplete?: boolean;
+    }>;
 
 type HotReloadPatch = Readonly<{
     kind: "script" | "event";
@@ -154,7 +154,12 @@ async function waitForStatus(
     predicate: (payload: StatusPayload) => boolean,
     timeoutMs = WATCH_TIMEOUT_MS
 ): Promise<StatusPayload> {
-    return await FixtureRunner.waitForJsonEndpointPayload(createStatusEndpointUrl(statusPort), predicate, timeoutMs, 100);
+    return await FixtureRunner.waitForJsonEndpointPayload(
+        createStatusEndpointUrl(statusPort),
+        predicate,
+        timeoutMs,
+        100
+    );
 }
 
 function startWatchProcess(

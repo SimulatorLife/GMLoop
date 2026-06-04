@@ -278,9 +278,9 @@ void test("graph visualization css asset preserves core visual affordances", asy
     assert.match(css, /\.link/u);
     assert.match(css, /@keyframes graph-button-spin/u);
     assert.match(css, /button:disabled\{cursor:not-allowed/u);
-    assert.match(css, /\.top-nav-button\.active:disabled\{/u);
+    assert.match(css, /\.gm-btn--nav\.active:disabled\{/u);
     assert.match(css, /\.live-reload-pipeline/u);
-    assert.match(css, /\.live-reload-status-chip/u);
+    assert.match(css, /\.gm-status-chip/u);
 });
 
 void test("graph visualization server-mode html includes regenerate affordance", async () => {

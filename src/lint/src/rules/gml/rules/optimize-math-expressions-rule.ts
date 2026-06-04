@@ -38,6 +38,7 @@ const {
     isIdentifierNode,
     isLogicalAndOperator,
     isLogicalOrOperator,
+    toNumber,
     unwrapParenthesizedExpression: unwrapParenthesized
 } = Core;
 
@@ -180,7 +181,7 @@ function tryEvaluateExpression(node: any): any {
 
 function tryEvaluateNumericExpression(node: any): number | null {
     const result = tryEvaluateExpression(node);
-    return typeof result === "number" ? result : null;
+    return toNumber(result);
 }
 
 function canUseOpaqueMathFactor(node: any): boolean {
@@ -276,6 +277,10 @@ function collectMultiplicativeComponents(sourceText: string, node: any): Multipl
             const current = combinedFactors.get(factor) ?? 0;
             const delta = unwrapped.operator === "*" ? power : -power;
             combinedFactors.set(factor, current + delta);
+        }
+
+        if (unwrapped.operator === "/" && isApproximatelyZero(right.coefficient)) {
+            return null;
         }
 
         return {
@@ -821,7 +826,7 @@ function formatCanonicalNumericLiteral(value: number): string | null {
         return null;
     }
 
-    if (Core.areNumbersApproximatelyEqual(value, 0)) {
+    if (Object.is(value, -0) || value === 0) {
         return "0";
     }
 

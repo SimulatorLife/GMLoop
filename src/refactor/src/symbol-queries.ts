@@ -6,14 +6,14 @@
 
 import { Core } from "@gmloop/core";
 
-import {
-    type AstNode,
-    type DependentSymbol,
-    type FileSymbol,
-    type ParserBridge,
-    type PartialSemanticAnalyzer,
-    type SymbolLocation,
-    type SymbolOccurrence
+import type {
+    AstNode,
+    DependentSymbol,
+    FileSymbol,
+    ParserBridge,
+    PartialSemanticAnalyzer,
+    SymbolLocation,
+    SymbolOccurrence
 } from "./types.js";
 
 /**
@@ -118,7 +118,18 @@ function findNodeAtOffset(node: AstNode | null, offset: number): SymbolLocation 
 }
 
 /**
- * Validate symbol exists in the semantic index.
+ * Check whether a symbol exists in the semantic index.
+ *
+ * When no semantic analyzer is provided, this function returns `true` to allow
+ * refactorings to proceed in minimal environments where symbol tables may not
+ * be available. This prevents silent failures for users who invoke rename without
+ * a full semantic layer.
+ *
+ * @param symbolId - Unique identifier for the symbol to validate, in the form
+ *                   `gml/{kind}/{name}` (e.g., `gml/function/myFunc`)
+ * @param semantic  - Semantic analyzer instance, or `null` if unavailable
+ * @returns `true` if the symbol exists (or no semantic layer is present);
+ *          `false` if the semantic analyzer confirms the symbol is absent
  */
 export async function validateSymbolExists(
     symbolId: string,
@@ -198,6 +209,11 @@ export async function getFileSymbols(
  * Query the semantic analyzer for symbols that depend on the given symbols.
  * This is essential for hot reload to determine which symbols need recompilation
  * when dependencies change.
+ *
+ * @param symbolIds - Array of symbol IDs whose dependents should be retrieved
+ * @param semantic   - Semantic analyzer instance, or `null` if unavailable
+ * @returns Array of dependent symbols; empty array if no semantic layer is present
+ *          or if the analyzer does not expose dependency information
  */
 export async function getSymbolDependents(
     symbolIds: Array<string>,

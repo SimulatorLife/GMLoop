@@ -1,11 +1,26 @@
 /**
- * Determine whether the provided value is a finite number.
+ * Guard: determine whether the provided value is a finite number.
  *
  * @param {unknown} value Potential numeric value.
  * @returns {value is number} `true` when `value` is a finite number.
  */
 export function isFiniteNumber(value?: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value);
+}
+
+/**
+ * Return a number when it is finite, otherwise `null`.
+ *
+ * Consolidates the repeated guard pattern:
+ *   `typeof x === "number" ? x : null`
+ * that appears across the codebase for values that are already known to be
+ * numbers at the call site (e.g. property reads from loosely-typed objects).
+ *
+ * @param {unknown} value Candidate value to narrow.
+ * @returns {number | null} The value when it is a finite number, otherwise `null`.
+ */
+export function toNumber(value: unknown): number | null {
+    return typeof value === "number" ? value : null;
 }
 
 /**

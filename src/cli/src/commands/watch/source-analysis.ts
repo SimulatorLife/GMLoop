@@ -19,7 +19,7 @@ import { Core } from "@gmloop/core";
 
 import { normalizeExtensions } from "./extension-normalizer.js";
 
-const { clamp, getLineBreakCount } = Core;
+const { clamp, getLineBreakCount, toFiniteNumber } = Core;
 
 // ---------------------------------------------------------------------------
 // Extension matching
@@ -117,7 +117,7 @@ export function hashSourceContent(source: string): string {
  */
 export function resolveUnknownScanConcurrency(configuredMaximum: number): number {
     const detectedParallelism = Math.max(1, availableParallelism());
-    const normalizedMaximum = Number.isFinite(configuredMaximum) ? Math.trunc(configuredMaximum) : detectedParallelism;
+    const normalizedMaximum = toFiniteNumber(configuredMaximum) ?? detectedParallelism;
 
     return clamp(normalizedMaximum, 1, detectedParallelism);
 }

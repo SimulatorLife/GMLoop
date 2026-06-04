@@ -3,6 +3,8 @@
  */
 import { Core } from "@gmloop/core";
 
+const { toNumber } = Core;
+
 interface CommentLike {
     _removedByConsolidation?: boolean;
     _structPropertyTrailing?: boolean;
@@ -24,12 +26,7 @@ interface CommentTrackerEntry {
 
 function resolveCommentStartIndex(comment: unknown): number | null {
     const directStartIndex = Core.getCommentBoundaryIndex(comment, "start");
-    if (typeof directStartIndex === "number") {
-        return directStartIndex;
-    }
-
-    const fallbackStartIndex = Core.getNodeStartIndex(comment);
-    return typeof fallbackStartIndex === "number" ? fallbackStartIndex : null;
+    return toNumber(directStartIndex) ?? Core.getNodeStartIndex(comment);
 }
 
 function createCommentTrackerEntries(sourceComments: ReadonlyArray<unknown>): Array<CommentTrackerEntry> {

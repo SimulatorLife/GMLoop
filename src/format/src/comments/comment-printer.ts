@@ -4,7 +4,7 @@ import { Core } from "@gmloop/core";
 import { util } from "prettier";
 import { builders } from "prettier/doc";
 
-import { countTrailingBlankLines } from "../printer/semicolons.js";
+import { countTrailingBlankLines } from "../shared/index.js";
 
 const { isObjectLike } = Core;
 

@@ -589,14 +589,19 @@ void test("WebSocket client reports hot reload error notifications", async () =>
     delete globalWithWebSocket.WebSocket;
 });
 
-void test("WebSocket client waits for GameMaker builtins before applying patches", async () => {
+void test("WebSocket client applies patches when script tables are ready without GameMaker builtins", async () => {
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
     globalWithWebSocket.WebSocket = MockWebSocket;
 
     const globals = globalThis as Record<string, unknown>;
     const savedBuiltins = globals.g_pBuiltIn;
+    const savedJson = globals.JSON_game;
 
     delete globals.g_pBuiltIn;
+    globals.JSON_game = {
+        ScriptNames: ["gml_Script_bootstrap"],
+        Scripts: [() => void 0]
+    };
 
     const client = RuntimeWrapper.createWebSocketClient({
         wrapper,
@@ -608,8 +613,8 @@ void test("WebSocket client waits for GameMaker builtins before applying patches
 
         const patch = {
             kind: "script",
-            id: "script:application_surface",
-            js_body: "return application_surface;"
+            id: "script:ready_without_builtins",
+            js_body: "return 123;"
         };
 
         const ws = client.getWebSocket();
@@ -619,19 +624,7 @@ void test("WebSocket client waits for GameMaker builtins before applying patches
 
         await wait(20);
 
-        assert.ok(!wrapper.hasScript(patch.id), "Patch should be deferred until builtins are ready");
-
-        globals.g_pBuiltIn = {
-            application_surface: 123,
-            get_application_surface() {
-                const self = this as Record<string, unknown>;
-                return self.application_surface;
-            }
-        };
-
-        await wait(150);
-
-        assert.ok(wrapper.hasScript(patch.id));
+        assert.ok(wrapper.hasScript(patch.id), "Patch should apply once script tables are ready");
         const fn = wrapper.getScript(patch.id);
         assert.ok(fn);
         const result = fn(null, null, []) as number;
@@ -643,6 +636,12 @@ void test("WebSocket client waits for GameMaker builtins before applying patches
             delete globals.g_pBuiltIn;
         } else {
             globals.g_pBuiltIn = savedBuiltins;
+        }
+
+        if (savedJson === undefined) {
+            delete globals.JSON_game;
+        } else {
+            globals.JSON_game = savedJson;
         }
 
         delete globalWithWebSocket.WebSocket;

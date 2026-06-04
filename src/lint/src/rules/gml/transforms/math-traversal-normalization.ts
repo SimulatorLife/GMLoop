@@ -1517,11 +1517,6 @@ function promoteLengthdirHalfDifference(
     AST.removeNodeFromAst(root, assignment);
 }
 
-export { replaceNodeWith } from "./math-ast-builders.js";
-export { findParentEntry, unwrapEnclosingParentheses } from "./math-lengthdir-transforms.js";
-export {
-    areNodesApproximatelyEquivalent,
-    areNodesEquivalent,
-    compareIndexProperties
-} from "./math-scalar-condensing.js";
-export { attemptConvertDegreesToRadians, matchDegreesToRadians } from "./math-trig-conversions.js";
+// Re-export the entire public API of math-ast-mutation.ts so callers importing
+// from this module get all mutation helpers transparently.
+export * from "./math-ast-mutation.js";

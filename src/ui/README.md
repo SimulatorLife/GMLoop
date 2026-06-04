@@ -101,6 +101,26 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - Keep UI feature code organized by surface or domain, for example `graph/`, `ast/`, `cli-docs/`, `mcp/`, `rules/`.
 - Maintain a canonical top-level surface catalog in code so future UI tabs are discoverable and consistently named.
 
+## Template Whitespace Rules
+
+Lit templates are whitespace-sensitive for inline elements (elements that receive their content through `html` interpolation without child nodes). Any indentation or newlines between an opening tag and its closing tag become text nodes in the rendered DOM. This produces unwanted visual padding and can break assumptions in styling.
+
+Symptoms include visible extra padding in output panes, mismatch with `white-space: pre` layouts, and broken test assertions like `doesNotMatch(rendered, /<element>\s+\S/u)`.
+
+The rule: for inline elements where content is provided via interpolation, keep the `html` template on a single line with no leading or trailing whitespace:
+
+```ts
+// ✅ Correct — no whitespace between opening and closing tags
+return html`<div class="output">${content}</div>`;
+
+// ❌ Incorrect — indentation becomes a text node, visible in the rendered output
+return html`<div class="output">
+    ${content}
+</div>`;
+```
+
+When a template must be broken across multiple lines (e.g., for readability), extract the element into a private class method or module-level helper that returns the complete `TemplateResult` on a single line. See `GmPlaygroundPanel.#renderOutput` and its test "playground panel output does not have leading whitespace nodes" for a reference implementation.
+
 ## Workspace Structure
 
 The current workspace structure is:
@@ -150,15 +170,21 @@ The graph visualization surface is split as:
 
 That separation is intentional and should be preserved as more UI surfaces are added.
 
+## Shared Status Badges
+
+`gm-status-chip` is the shared status badge for feature-page health and lifecycle state. Feature pages must select one of the component's supported statuses instead of passing arbitrary label text, so copy and styling remain consistent across surfaces.
+
+Each tab has one top-level page toolbar. That toolbar owns the page title, subtitle, page-level status badge, and any main controls for the current tab. Do not add a second hero/header toolbar inside a page body for the same title or controls. MCP and Live Reload status badges belong in the shared page toolbar title row, Live Reload start/open/stop controls belong in that same toolbar, and Docs subview/search controls belong in the shared toolbar instead of the Docs panel body. Docs subview tabs use the shared `gm-view-selector` tab control so CLI, MCP, Rules, Playground, and Config selectors keep one visual treatment.
+
 ## Live Reload Surface
 
 The Live Reload surface is observability-only. It displays data from the CLI status server and host-provided runtime-wrapper summaries without owning the hot-reload pipeline itself.
 
 - `@gmloop/cli` owns file watching, transpilation orchestration, WebSocket patch streaming, and `/status`.
 - `@gmloop/runtime-wrapper` owns browser-side patch application, queueing, rollback, registry state, and runtime diagnostics.
-- `@gmloop/ui` owns the presentation model, polling display, refresh event, cards, recent patch/error lists, and optional runtime health rendering.
+- `@gmloop/ui` owns the presentation model, automatic polling display, cards, recent patch/error lists, and optional runtime health rendering.
 
-Hosts can provide live-reload data through `GraphVisualizationRenderOptions.liveReload` or the `onRefreshLiveReloadStatus` callback.
+Hosts provide live-reload startup data through `GraphVisualizationRenderOptions.liveReload` and server-mode start/stop callbacks. Once a live-reload model includes a status URL, the Live Reload page updates status automatically by polling on a timer and by polling when the document becomes visible again. The Live Reload page must not expose a manual status-refresh button or host refresh callback; status freshness is owned by the timer/focus polling loop so the UI cannot drift into a separate manual-refresh state. In server mode, the Stop control is always rendered in the shared page toolbar and uses disabled state to communicate availability; it is enabled only while an active live-reload session exists. Starting Live Reload from the UI must complete build/startup sequencing before the runtime tab opens: the host start endpoint reports success only with a concrete runtime URL, and the browser opens that URL directly instead of reserving an `about:blank` placeholder tab. UI starts use start-or-reuse semantics instead of forced restart semantics so a healthy existing watcher/status/runtime session is adopted instead of spawning a duplicate process into occupied ports; when a new watcher child is required, the graph server assigns per-session status and WebSocket ports and polls those exact endpoints instead of binding the fixed default ports. UI hot reloads from Vite or the served-UI revision watcher must preserve the host-owned game Live Reload session. Start and stop callbacks mirror the active live-reload model into the web bootstrap payload so a UI remount cannot show stale "not running" controls while the watcher process is still active.
 
 ## Serve Host Contract
 

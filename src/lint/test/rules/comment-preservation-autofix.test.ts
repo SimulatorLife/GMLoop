@@ -2,14 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import * as LintWorkspace from "@gmloop/lint";
+import { ruleIds } from "@gmloop/lint";
 import { ESLint, type Linter } from "eslint";
 
 import { lintWithRule } from "./lint-rule-test-harness.js";
 
 function buildAllRuleLevels(): Linter.RulesRecord {
-    return Object.fromEntries(
-        Object.values(LintWorkspace.Lint.ruleIds).map((ruleId) => [ruleId, "error" satisfies Linter.RuleEntry])
-    );
+    return Object.fromEntries(Object.values(ruleIds).map((ruleId) => [ruleId, "error" satisfies Linter.RuleEntry]));
 }
 
 async function runAllRuleAutofixes(
