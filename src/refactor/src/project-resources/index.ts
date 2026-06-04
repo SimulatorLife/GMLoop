@@ -16,6 +16,7 @@ export type {
     AddProjectResourceRequest,
     DuplicateProjectResourceRequest,
     MoveProjectResourceRequest,
+    ProjectManifestEntry,
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
     RenameProjectResourceRequest
@@ -23,6 +24,7 @@ export type {
 export {
     addProjectResource,
     duplicateProjectResource,
+    getManifestResources,
     moveProjectResource,
     removeProjectResource,
     renameProjectResource

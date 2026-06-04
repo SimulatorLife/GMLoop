@@ -1410,14 +1410,20 @@ async function handleFileChange(
                 resolvedFileStats = await readFileStats(filePath);
             }
 
-            if (resolvedFileStats) {
-                const lastModified = runtimeContext.fileSnapshots.get(filePath);
-                if (lastModified !== undefined && resolvedFileStats.mtimeMs <= lastModified) {
-                    if (verbose && !quiet) {
-                        console.log("  ↳ Skipping unchanged file");
-                    }
-                    return;
+            if (!resolvedFileStats) {
+                if (verbose && !quiet) {
+                    console.log("  ↳ File removed before change event could be processed");
                 }
+                cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+                return;
+            }
+
+            const lastModified = runtimeContext.fileSnapshots.get(filePath);
+            if (lastModified !== undefined && resolvedFileStats.mtimeMs <= lastModified) {
+                if (verbose && !quiet) {
+                    console.log("  ↳ Skipping unchanged file");
+                }
+                return;
             }
         }
 
