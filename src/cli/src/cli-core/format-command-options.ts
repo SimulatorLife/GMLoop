@@ -70,32 +70,29 @@ function resolvePrettierConfiguration(
     };
 }
 
-function resolveTargetPathInput(options: CommandOptionsRecord, args?: unknown): TargetPathResolution {
-    // Positional path arguments are no longer supported for this command.
-    const positionalPath = Array.isArray(args) && args.length > 0;
+function resolveTargetPathInput(options: CommandOptionsRecord, _args?: unknown): TargetPathResolution {
     const optionPath = options.path ?? null;
-    const rawTarget = positionalPath ? null : optionPath;
 
-    if (rawTarget === null) {
+    if (optionPath === null) {
         return {
             targetPathInput: null,
             targetPathProvided: false
         };
     }
 
-    if (typeof rawTarget !== "string") {
+    if (typeof optionPath !== "string") {
         return {
-            targetPathInput: rawTarget,
+            targetPathInput: optionPath,
             targetPathProvided: true
         };
     }
 
-    const trimmedTarget = getNonEmptyTrimmedString(rawTarget);
+    const trimmedTarget = getNonEmptyTrimmedString(optionPath);
 
     return {
         targetPathInput: trimmedTarget ?? null,
         targetPathProvided: true,
-        rawTargetPathInput: trimmedTarget !== null && trimmedTarget !== rawTarget ? rawTarget : undefined
+        rawTargetPathInput: trimmedTarget !== null && trimmedTarget !== optionPath ? optionPath : undefined
     };
 }
 
@@ -104,8 +101,7 @@ export function collectFormatCommandOptions(
     { defaultParseErrorAction, defaultPrettierLogLevel }: CollectFormatCommandOptionsParameters = {}
 ): FormatCommandOptionsResult {
     const options = (command?.opts?.() ?? {}) as CommandOptionsRecord;
-    const commandArgs = command?.args;
-    const { targetPathInput, targetPathProvided, rawTargetPathInput } = resolveTargetPathInput(options, commandArgs);
+    const { targetPathInput, targetPathProvided, rawTargetPathInput } = resolveTargetPathInput(options);
 
     const { skippedDirectorySampleLimit, ignoredFileSampleLimit, unsupportedExtensionSampleLimit } =
         resolveFormatCommandSampleLimits(options);

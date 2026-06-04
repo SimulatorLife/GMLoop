@@ -47,7 +47,7 @@ void describe("normalizeCommandLineArguments", () => {
     });
 
     void it("treats implicit format targets with --help as format help requests", () => {
-        assert.deepEqual(normalizeCommandLineArguments(["src", "--help"]), ["format", "--help"]);
+        assert.deepEqual(normalizeCommandLineArguments(["src", "--help"]), ["format", "src", "--help"]);
     });
 
     void it("maps implicit format targets to --path when help is not requested", () => {
