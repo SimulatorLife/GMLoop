@@ -106,7 +106,8 @@ void test("getWorkspaceArrays preserves array contents", () => {
 });
 
 void test("isWorkspaceEditLike identifies valid workspace-edit-like objects", () => {
-    const validWorkspaceEdit = {
+    // The old partial object without metadataEdits/fileRenames should now fail
+    const partialWorkspaceEdit = {
         edits: [],
         addEdit() {},
         groupByFile() {
@@ -114,20 +115,77 @@ void test("isWorkspaceEditLike identifies valid workspace-edit-like objects", ()
         }
     };
 
+    // New complete workspace-like object satisfies the full contract
+    const validWorkspaceEdit = {
+        edits: [],
+        metadataEdits: [],
+        fileRenames: [],
+        addEdit() {},
+        addMetadataEdit() {},
+        addFileRename() {},
+        groupByFile() {
+            return new Map();
+        }
+    };
+
     assert.equal(isWorkspaceEditLike(validWorkspaceEdit), true);
     assert.equal(isWorkspaceEditLike(new WorkspaceEdit()), true);
+    // Partial objects no longer satisfy the contract
+    assert.equal(isWorkspaceEditLike(partialWorkspaceEdit), false);
 });
 
 void test("isWorkspaceEditLike rejects non-conforming objects", () => {
+    // Missing arrays
     assert.equal(isWorkspaceEditLike({ edits: [] }), false);
-    assert.equal(isWorkspaceEditLike({ edits: [], addEdit() {} }), false);
-    assert.equal(isWorkspaceEditLike({ addEdit() {}, groupByFile() {} }), false);
+    assert.equal(isWorkspaceEditLike({ edits: [], metadataEdits: [] }), false);
+    assert.equal(isWorkspaceEditLike({ edits: [], metadataEdits: [], fileRenames: [] }), false);
+    // Missing methods
+    assert.equal(isWorkspaceEditLike({ edits: [], metadataEdits: [], fileRenames: [], addEdit() {} }), false);
+    assert.equal(
+        isWorkspaceEditLike({
+            edits: [],
+            metadataEdits: [],
+            fileRenames: [],
+            addEdit() {},
+            addMetadataEdit() {}
+        }),
+        false
+    );
+    // Wrong types
     assert.equal(isWorkspaceEditLike(null), false);
     assert.equal(isWorkspaceEditLike(), false);
     assert.equal(
         isWorkspaceEditLike({
             edits: "not an array",
+            metadataEdits: [],
+            fileRenames: [],
             addEdit() {},
+            addMetadataEdit() {},
+            addFileRename() {},
+            groupByFile() {}
+        }),
+        false
+    );
+    assert.equal(
+        isWorkspaceEditLike({
+            edits: [],
+            metadataEdits: "not an array",
+            fileRenames: [],
+            addEdit() {},
+            addMetadataEdit() {},
+            addFileRename() {},
+            groupByFile() {}
+        }),
+        false
+    );
+    assert.equal(
+        isWorkspaceEditLike({
+            edits: [],
+            metadataEdits: [],
+            fileRenames: "not an array",
+            addEdit() {},
+            addMetadataEdit() {},
+            addFileRename() {},
             groupByFile() {}
         }),
         false
@@ -265,21 +323,33 @@ void test("getWorkspaceEditRevision returns null for objects that do not impleme
 void test("getWorkspaceEditRevision reads revision from any object implementing WORKSPACE_EDIT_REVISION_TOKEN", () => {
     // A minimal substitutable workspace implementation that exposes revision via
     // the well-known symbol, without extending WorkspaceEdit.
+    // This tests the full WorkspaceLike contract including the revision token.
     let internalRevision = 0;
 
     const substituteWorkspace = {
         edits: [] as Array<{ path: string; start: number; end: number; newText: string }>,
+        metadataEdits: [] as Array<{ path: string; content: string }>,
+        fileRenames: [] as Array<{ oldPath: string; newPath: string }>,
         addEdit(path: string, start: number, end: number, newText: string) {
             this.edits.push({ path, start, end, newText });
             internalRevision += 1;
         },
+        addMetadataEdit(path: string, content: string) {
+            this.metadataEdits.push({ path, content });
+        },
+        addFileRename(oldPath: string, newPath: string) {
+            this.fileRenames.push({ oldPath, newPath });
+        },
         groupByFile() {
-            return new Map();
+            return new Map<string, Array<{ start: number; end: number; newText: string }>>();
         },
         [WORKSPACE_EDIT_REVISION_TOKEN]() {
             return internalRevision;
         }
     };
+
+    // Verify the substitutable implementation satisfies the full contract
+    assert.equal(isWorkspaceEditLike(substituteWorkspace), true);
 
     assert.equal(getWorkspaceEditRevision(substituteWorkspace), 0);
 
