@@ -40,10 +40,9 @@ function createSafeMathFunction(
     globalScope: BrowserGlobalScope
 ): (value: unknown) => unknown {
     return function safeFn(value: unknown): unknown {
-        let realValue: number;
         const yyGetReal = globalScope.yyGetReal;
-
-        realValue = typeof yyGetReal === "function" ? (yyGetReal as (v: unknown) => number)(value) : Number(value);
+        const realValue: number =
+            typeof yyGetReal === "function" ? (yyGetReal as (v: unknown) => number)(value) : Number(value);
 
         if (Number.isNaN(realValue)) {
             return Number.NaN;
