@@ -165,7 +165,7 @@
 .editor-pane {
   display: flex;
   flex-direction: column;
-  background: rgba(8, 14, 24, 0.58);
+  background: #080e1894;
   overflow: hidden;
 }
 
@@ -256,7 +256,7 @@
 }
 
 .playground-input::placeholder {
-  color: rgba(173, 187, 208, 0.48);
+  color: #adbbd07a;
 }
 
 .rule-details {
@@ -276,7 +276,7 @@
   padding: 8px 10px;
   border-radius: var(--gm-radius-md);
   border: 1px solid var(--gm-border-accent);
-  background: rgba(143, 181, 255, 0.08);
+  background: var(--gm-surface-active);
   color: var(--gm-text-subdued);
   font-size: var(--gm-text-sm);
   line-height: 1.4;
@@ -406,7 +406,7 @@
 }
 
 .playground-output.is-error {
-  background: rgba(118, 31, 41, 0.16);
+  background: #761f2929;
   color: var(--gm-error-text);
 }
 

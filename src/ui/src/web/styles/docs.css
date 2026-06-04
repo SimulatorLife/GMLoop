@@ -63,7 +63,7 @@
     padding: 0 var(--gm-space-lg);
     border: 1px solid var(--gm-border-accent);
     border-radius: var(--gm-radius-md);
-    background: rgba(143, 181, 255, 0.12);
+    background: var(--gm-surface-active);
     color: var(--gm-text);
     font: inherit;
     font-weight: 700;

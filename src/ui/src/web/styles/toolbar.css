@@ -98,7 +98,7 @@
 }
 
 #search::placeholder {
-  color: rgba(173, 187, 208, 0.68);
+  color: #adbbd0ad;
 }
 
 .pending-badge {
@@ -109,8 +109,8 @@
   height: 20px;
   padding: 0 5px;
   border-radius: 999px;
-  background: rgba(142, 224, 240, 0.2);
-  border: 1px solid rgba(142, 224, 240, 0.4);
+  background: var(--gm-border-accent-subtle);
+  border: 1px solid var(--gm-border-accent-medium);
   color: var(--gm-accent);
   font-size: 11px;
   font-weight: 700;

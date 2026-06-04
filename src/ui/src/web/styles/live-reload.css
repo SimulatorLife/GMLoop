@@ -34,7 +34,7 @@
 .live-reload-btn:focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 1px rgba(6, 12, 22, 0.96),
+    0 0 0 1px #060c16f5,
     0 0 0 4px var(--gm-focus-ring);
 }
 
@@ -84,7 +84,7 @@
   display: inline-block;
   width: var(--gm-icon-sm);
   height: var(--gm-icon-sm);
-  border: 2px solid rgba(16, 24, 32, 0.28);
+  border: 2px solid #10182047;
   border-top-color: var(--gm-action-primary-text);
   border-radius: 50%;
   animation: live-reload-btn-spin 600ms linear infinite;
@@ -141,7 +141,7 @@
   padding: var(--gm-space-md);
   border: 1px solid var(--gm-border-subtle);
   border-radius: var(--gm-radius-lg);
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--gm-bg-subtle);
 }
 
 .live-reload-metric-item span,
@@ -192,9 +192,9 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid rgba(142, 224, 240, 0.2);
+  border: 1px solid var(--gm-border-accent-subtle);
   border-radius: var(--gm-radius-md);
-  background: rgba(142, 224, 240, 0.08);
+  background: var(--gm-surface-accent-subtle);
   color: var(--gm-text);
   font-size: var(--gm-text-sm);
   font-weight: 800;
@@ -208,7 +208,7 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--gm-radius-full);
-  background: rgba(115, 200, 255, 0.18);
+  background: var(--gm-surface-accent-strong-subtle);
   color: var(--gm-accent-strong);
   font-size: var(--gm-text-xs);
   font-variant-numeric: tabular-nums;

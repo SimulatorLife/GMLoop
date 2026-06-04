@@ -78,7 +78,7 @@
     width: min(340px, 92vw);
     max-width: 92vw;
     border-right: 1px solid var(--gm-border-strong);
-    box-shadow: 16px 0 36px rgba(0, 0, 0, 0.34);
+    box-shadow: 16px 0 36px #00000057;
     transform: translateX(0);
     transition: transform 180ms ease;
   }
