@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { GRAPH_UI_EVENT_SAVE_CONFIG } from "../src/app/components/events.js";
@@ -206,10 +207,13 @@ void test("config panel defaults to rendered view and exposes configuration deta
     assert.match(rendered, /config-filter-reset/u);
     assert.match(rendered, /Reset Filters/u);
     assert.match(rendered, /disabled=true/u);
-    assert.match(rendered, /\.tone=warning/u);
-    assert.match(rendered, /\.tone=error/u);
-    assert.match(rendered, /class="config-segmented-indicator"/u);
-    assert.match(rendered, /<gm-badge[^>]*\.label=fixable/u);
+    assert.match(rendered, /class="gm-view-selector config-rule-level-selector"/u);
+    assert.match(rendered, /class=gm-btn--chip active config-rule-level-warn/u);
+    assert.match(rendered, /class=gm-btn--chip active config-rule-level-error/u);
+    assert.doesNotMatch(rendered, /config-segmented/u);
+    assert.doesNotMatch(rendered, /config-segmented-indicator/u);
+    assert.match(rendered, /class="config-rule-title"[\s\S]*class="config-rule-fixable-badge"/u);
+    assert.match(rendered, /<gm-badge[^>]*class="config-rule-fixable-badge"[^>]*\.label=fixable/u);
     assert.doesNotMatch(rendered, /fixable:code/u);
     assert.doesNotMatch(rendered, /id="config-raw-json"/u);
     assert.doesNotMatch(rendered, /config-severity-badge/u);
@@ -244,6 +248,19 @@ void test("config panel renders editable raw JSON view", () => {
     assert.match(rendered, /class="config-raw-textarea"/u);
     assert.match(rendered, /Save Config/u);
     assert.match(rendered, /JSON is valid/u);
+});
+
+void test("config severity selector uses severity-colored active states", () => {
+    const source = readFileSync(new URL("../../src/web/styles/config.css", import.meta.url), "utf8");
+
+    assert.match(
+        source,
+        /\.config-rule-level-selector\s*>\s*\.config-rule-level-error\[aria-pressed="true"\]\s*\{[\s\S]*background:\s*var\(--gm-severity-error-bg\);/u
+    );
+    assert.match(
+        source,
+        /\.config-rule-level-selector\s*>\s*\.config-rule-level-warn\[aria-pressed="true"\]\s*\{[\s\S]*background:\s*var\(--gm-warning-surface\);/u
+    );
 });
 
 void test("app shell routes config save events through the host callback", async () => {

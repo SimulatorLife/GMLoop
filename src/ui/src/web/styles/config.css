@@ -200,12 +200,25 @@
   min-width: 0;
 }
 
-.config-rule-main span {
+.config-rule-title {
+  display: flex;
+  gap: var(--gm-space-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.config-rule-description {
   display: block;
   margin-top: 3px;
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
   line-height: var(--gm-leading-normal);
+}
+
+.config-rule-fixable-badge .gm-badge {
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .config-badge-row {
@@ -216,46 +229,18 @@
   margin-top: 7px;
 }
 
-.config-segmented {
-  display: inline-flex;
-  padding: 3px;
-  border: 1px solid var(--gm-border);
-  border-radius: var(--gm-radius-md);
-  background: var(--gm-bg-subtle);
+.config-rule-level-selector {
+  justify-self: end;
 }
 
-.config-segmented button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--gm-space-xs);
-  min-height: 32px;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: var(--gm-radius-sm);
-  background: transparent;
-  color: var(--gm-text-secondary);
-  font-size: var(--gm-text-xs);
-  font-weight: 800;
+.config-rule-level-selector > .config-rule-level-error[aria-pressed="true"] {
+  background: var(--gm-severity-error-bg);
+  color: var(--gm-severity-error-text);
 }
 
-.config-segmented button.active,
-.config-segmented button[aria-pressed="true"] {
-  background: var(--gm-surface-elevated);
-  color: var(--gm-text);
-}
-
-.config-segmented-indicator {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: var(--gm-radius-full);
-  background: var(--gm-success-surface);
-  color: var(--gm-success-text);
-  font-size: 10px;
-  line-height: 1;
+.config-rule-level-selector > .config-rule-level-warn[aria-pressed="true"] {
+  background: var(--gm-warning-surface);
+  color: var(--gm-warning-text);
 }
 
 .config-inline-json,
@@ -418,11 +403,7 @@
     align-items: stretch;
   }
 
-  .config-segmented {
+  .config-rule-level-selector {
     width: 100%;
-  }
-
-  .config-segmented button {
-    flex: 1;
   }
 }

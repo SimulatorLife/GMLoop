@@ -141,16 +141,6 @@ function getLintLevelLabel(level: LintLevel): string {
     return "Off";
 }
 
-function getLintLevelTone(level: LintLevel): GmBadgeTone {
-    if (level === "error") {
-        return "error";
-    }
-    if (level === "warn") {
-        return "warning";
-    }
-    return "muted";
-}
-
 function renderBadge(label: string, tone: GmBadgeTone = "neutral") {
     return html`<gm-badge .label=${label} .tone=${tone}></gm-badge>`;
 }
@@ -659,28 +649,36 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
         return html`
             <div class="config-rule-row" role="row">
                 <div class="config-rule-main" role="cell">
-                    <strong>${entry.ruleId}</strong>
-                    <span>${entry.description}</span>
-                    <span class="config-badge-row">
-                        ${renderBadge(getLintLevelLabel(effectiveLevel), getLintLevelTone(effectiveLevel))}
-                        ${fixableBadgeLabel === null ? nothing : renderBadge(fixableBadgeLabel, "neutral")}
-                    </span>
+                    <div class="config-rule-title">
+                        <strong>${entry.ruleId}</strong>
+                        ${fixableBadgeLabel === null
+                            ? nothing
+                            : html`<gm-badge
+                                  class="config-rule-fixable-badge"
+                                  .label=${fixableBadgeLabel}
+                                  .tone=${"neutral"}
+                              ></gm-badge>`}
+                    </div>
+                    <span class="config-rule-description">${entry.description}</span>
                     ${hasOptions
                         ? html`<pre class="config-inline-json">${serializeConfigurationValue(entry.options)}</pre>`
                         : nothing}
                 </div>
-                <div class="config-segmented" role="cell" aria-label=${`${entry.ruleId} severity`}>
+                <div
+                    class="gm-view-selector config-rule-level-selector"
+                    role="group"
+                    aria-label=${`${entry.ruleId} severity`}
+                >
                     ${LINT_LEVELS.map(
                         (level) => html`
                             <button
                                 type="button"
-                                class=${effectiveLevel === level ? "active" : ""}
+                                class=${effectiveLevel === level
+                                    ? `gm-btn--chip active config-rule-level-${level}`
+                                    : `gm-btn--chip config-rule-level-${level}`}
                                 aria-pressed=${effectiveLevel === level}
                                 @click=${() => this.#setLintRuleLevel(entry.ruleId, level)}
                             >
-                                ${effectiveLevel === level
-                                    ? html`<span class="config-segmented-indicator" aria-hidden="true">✓</span>`
-                                    : nothing}
                                 ${getLintLevelLabel(level)}
                             </button>
                         `
@@ -757,46 +755,6 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
         `;
     }
 
-    #renderToolMetadata(catalog: GraphVisualizationProjectConfigurationCatalog) {
-        const gameMakerCliCatalog = catalog.gameMakerCli;
-        return html`
-            <section class="config-tool-metadata" aria-labelledby="config-tool-metadata-heading">
-                <div class="config-section-heading">
-                    <h3 id="config-tool-metadata-heading">Tool Metadata</h3>
-                    <p>Read-only command and MCP catalogs discovered for this project.</p>
-                </div>
-                <details class="config-tool-group">
-                    <summary>
-                        <span>GameMaker CLI</span>
-                        ${renderBadge(`${String(gameMakerCliCatalog.cliCommands.length)} commands`, "muted")}
-                    </summary>
-                    <p>
-                        ${gameMakerCliCatalog.available
-                            ? `Live gm-cli metadata from ${gameMakerCliCatalog.invocation ?? "the detected gm-cli executable"}${gameMakerCliCatalog.version ? ` (v${gameMakerCliCatalog.version})` : ""}.`
-                            : (gameMakerCliCatalog.error ?? "gm-cli metadata is unavailable.")}
-                    </p>
-                    ${gameMakerCliCatalog.available
-                        ? gameMakerCliCatalog.cliCommands.map((entry) => renderGameMakerCliCommandEntry(entry))
-                        : nothing}
-                </details>
-                <details class="config-tool-group">
-                    <summary>
-                        <span>GameMaker MCP</span>
-                        ${renderBadge(`${String(gameMakerCliCatalog.mcpTools.length)} tools`, "muted")}
-                    </summary>
-                    <p>
-                        ${gameMakerCliCatalog.mcpServer.available
-                            ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} metadata from ${gameMakerCliCatalog.mcpServer.serverId ? `configured MCP server ${gameMakerCliCatalog.mcpServer.serverId}` : "gm-cli resourcetool mcp"}.`
-                            : (gameMakerCliCatalog.mcpServer.error ?? "ResourceTool MCP metadata is unavailable.")}
-                    </p>
-                    ${gameMakerCliCatalog.mcpServer.available
-                        ? gameMakerCliCatalog.mcpTools.map((entry) => renderGameMakerCliMcpToolEntry(entry))
-                        : nothing}
-                </details>
-            </section>
-        `;
-    }
-
     #renderRenderedConfig(catalog: GraphVisualizationProjectConfigurationCatalog, draft: DraftParseResult) {
         if (!draft.ok) {
             return html`
@@ -815,7 +773,7 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                 <div class="config-builder-main">
                     ${this.#renderFormatBuilder(catalog, draft.config)}
                     ${this.#renderLintBuilder(catalog, draft.config)}
-                    ${this.#renderRefactorBuilder(catalog, draft.config)} ${this.#renderToolMetadata(catalog)}
+                    ${this.#renderRefactorBuilder(catalog, draft.config)}
                 </div>
                 ${this.#renderSavePanel(catalog, draft)}
             </div>
