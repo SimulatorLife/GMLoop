@@ -2,64 +2,23 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { ScopeTracker } from "../src/scopes/scope-tracker.js";
-import { wrapNormalizedPathSpy } from "./scope-tracker-helpers.js";
-
-/**
- * Replaces wall-clock sleeps with a deterministic timestamp sequence so the
- * modification-cutoff assertions do not depend on scheduler delays or clock
- * granularity.  Scopes created while the clock is controlled receive stable,
- * monotonically-increasing timestamps, making assertions about "modified after
- * X" fully deterministic across all platforms and load conditions.
- */
-function withDeterministicDateNow(
-    callback: (advanceTimestamp: () => number) => void | Promise<void>
-): Promise<void> | void {
-    const originalDateNow = Date.now;
-    let currentTimestamp = 1000;
-
-    Date.now = () => currentTimestamp;
-
-    const advanceTimestamp = (): number => {
-        currentTimestamp += 1;
-        return currentTimestamp;
-    };
-
-    try {
-        return callback(advanceTimestamp);
-    } finally {
-        Date.now = originalDateNow;
-    }
-}
+import { withDeterministicDateNow, wrapNormalizedPathSpy } from "./scope-tracker-helpers.js";
 
 void describe("ScopeTracker: getFilePathsReferencingSymbol", () => {
-    void it("returns empty set for null symbol name", () => {
+    void it("returns empty set for null, undefined, or unknown symbol names", () => {
         const tracker = new ScopeTracker({ enabled: true });
         tracker.enterScope("program", { path: "/project/a.gml" });
         tracker.declare("x", { name: "x" });
 
         assert.equal(tracker.getFilePathsReferencingSymbol(null).size, 0);
-    });
-
-    void it("returns empty set for undefined symbol name", () => {
-        const tracker = new ScopeTracker({ enabled: true });
-        tracker.enterScope("program", { path: "/project/a.gml" });
-        tracker.declare("x", { name: "x" });
-
         assert.equal(tracker.getFilePathsReferencingSymbol(undefined).size, 0);
+        assert.equal(tracker.getFilePathsReferencingSymbol("unknown").size, 0);
     });
 
     void it("returns empty set when tracker is disabled", () => {
         const tracker = new ScopeTracker({ enabled: false });
 
         assert.equal(tracker.getFilePathsReferencingSymbol("x").size, 0);
-    });
-
-    void it("returns empty set for unknown symbol", () => {
-        const tracker = new ScopeTracker({ enabled: true });
-        tracker.enterScope("program", { path: "/project/a.gml" });
-        tracker.declare("x", { name: "x" });
-
-        assert.equal(tracker.getFilePathsReferencingSymbol("unknown").size, 0);
     });
 
     void it("excludes scopes that only declare the symbol without referencing it", () => {

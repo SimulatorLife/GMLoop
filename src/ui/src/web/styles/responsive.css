@@ -58,11 +58,11 @@
   }
 
   .playground-controls-toggle,
-  .view-selector {
+  .gm-view-selector {
     width: 100%;
   }
 
-  .view-option {
+  .gm-btn--chip {
     flex: 1;
   }
 

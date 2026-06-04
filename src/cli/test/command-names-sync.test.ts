@@ -15,6 +15,7 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
     const expectedCommands = [
         "format",
         "fix",
+        "gm-cli",
         "graph",
         "lint",
         "live-reload",
@@ -22,6 +23,7 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
         "object",
         "parse",
         "profile",
+        "script",
         "generate-gml-identifiers",
         "generate-quality-report",
         "collect-stats",
@@ -31,12 +33,14 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
         "refactor",
         "resource",
         "room",
+        "runtime",
         "runner",
         "symbol",
         "test",
         "transpile",
         "ui",
         "validate",
+        "watch",
         "help"
     ];
 

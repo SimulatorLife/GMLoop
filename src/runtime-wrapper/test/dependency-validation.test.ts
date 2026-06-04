@@ -176,6 +176,28 @@ void describe("Dependency Validation", () => {
         }
     });
 
+    void test("validatePatchDependencies accepts wrapper-owned GameMaker builtin dependencies", () => {
+        const registry: RuntimeRegistry = {
+            version: 0,
+            scripts: {},
+            events: {},
+            closures: {}
+        };
+
+        const patch: Patch = {
+            kind: "event",
+            id: "gml/event/oSpider/Step_0",
+            js_body: "self.distance = point_distance(0, 0, 3, 4);",
+            metadata: {
+                dependencies: ["gml/script/point_distance", "gml/script/lerp", "gml/script/array_copy"]
+            }
+        };
+
+        const result = validatePatchDependencies(patch, registry);
+        assert.strictEqual(result.satisfied, true);
+        assert.strictEqual(result.missingDependencies.length, 0);
+    });
+
     void test("validateBatchPatchDependencies accepts runtime script dependencies during replay", () => {
         const snapshot = snapshotGlobalProperties(["show_debug_overlay"]);
         const globals = globalThis as Record<string, unknown>;

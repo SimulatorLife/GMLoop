@@ -4,18 +4,13 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
+import { getManifestResources, type ProjectManifestEntry } from "./project-resource-operations.js";
+
 const ROOM_RESOURCE_DIRECTORY = "rooms";
 const OBJECT_RESOURCE_DIRECTORY = "objects";
 const INSTANCE_LAYER_RESOURCE_TYPE = "GMRInstanceLayer";
 const ROOM_INSTANCE_RESOURCE_TYPE = "GMRInstance";
 const ROOM_INSTANCE_NAME_PREFIX = "inst_";
-
-type ProjectManifestEntry = Readonly<{
-    id: Readonly<{
-        name: string;
-        path: string;
-    }>;
-}>;
 
 type RoomInstanceLayerRecord = Record<string, unknown> & {
     instances: Array<unknown>;
@@ -115,36 +110,6 @@ async function resolveProjectManifestPath(projectRoot: string): Promise<string> 
     }
 
     return path.join(projectRoot, manifestFileNames[0]);
-}
-
-function getManifestResources(document: Record<string, unknown>): Array<ProjectManifestEntry> {
-    const resources: Array<ProjectManifestEntry> = [];
-    for (const resourceEntry of Core.asArray(document.resources)) {
-        if (!Core.isObjectLike(resourceEntry)) {
-            continue;
-        }
-
-        const identifier = (resourceEntry as { id?: unknown }).id;
-        if (!Core.isObjectLike(identifier)) {
-            continue;
-        }
-
-        const name = Core.getNonEmptyString((identifier as { name?: unknown }).name);
-        const resourcePath = Core.getNonEmptyString((identifier as { path?: unknown }).path);
-        if (!name || !resourcePath) {
-            continue;
-        }
-
-        resources.push(
-            Object.freeze({
-                id: Object.freeze({
-                    name,
-                    path: resourcePath
-                })
-            })
-        );
-    }
-    return resources;
 }
 
 function locateResourceReference(

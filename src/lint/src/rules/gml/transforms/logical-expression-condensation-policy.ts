@@ -34,6 +34,39 @@ export type TruthTablePolicy = Readonly<{
 }>;
 
 /**
+ * Policy configuration for iteration limits in expression simplification.
+ *
+ * Boolean expression simplification is iterative: each pass may unlock
+ * further simplifications.  Hard caps prevent pathological expressions from
+ * consuming unbounded CPU while still allowing enough passes to converge on
+ * genuinely complex expressions.
+ */
+export type SimplificationPolicy = Readonly<{
+    /**
+     * Maximum iterations for the main `simplifyBooleanExpression` pass.
+     *
+     * The simplification loop applies distributive, absorptive, and De Morgan
+     * transformations until a fixed point is reached or this limit is hit.
+     * At 50 iterations, even deeply nested boolean expressions with many
+     * variables can converge.  The value is conservative because expressions
+     * rarely need more than ~20 passes in practice, and exceeding this limit
+     * almost always indicates either a non-converging pattern or a simplification
+     * that would yield marginal gains.
+     */
+    maxSimplificationIterations: number;
+    /**
+     * Maximum iterations for the post-processing pipeline.
+     *
+     * Post-processing handles specialized patterns (XOR reduction, mixed
+     * term reduction) that may need a few additional passes after the main
+     * simplification.  The limit is low because post-processing operates on
+     * already-simplified expressions and converges quickly — 5 iterations is
+     * sufficient for the most complex post-processing scenarios.
+     */
+    maxPostProcessingIterations: number;
+}>;
+
+/**
  * Baseline policy constants.
  *
  * These values represent the current calibrated defaults.  They are declared
@@ -42,6 +75,14 @@ export type TruthTablePolicy = Readonly<{
  */
 export const TRUTH_TABLE_POLICY_BASELINE: TruthTablePolicy = Object.freeze({
     maxVariablesForTruthTable: 10
+});
+
+/**
+ * Baseline policy for expression simplification iteration limits.
+ */
+export const SIMPLIFICATION_POLICY_BASELINE: SimplificationPolicy = Object.freeze({
+    maxSimplificationIterations: 50,
+    maxPostProcessingIterations: 5
 });
 
 /**

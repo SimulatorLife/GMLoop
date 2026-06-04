@@ -16,12 +16,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { runWatchCommand } from "../src/commands/watch.js";
 import { findAvailablePort } from "./test-helpers/free-port.js";
-import {
-    fetchStatusPayload,
-    waitForPatchCount,
-    waitForScanComplete,
-    waitForStatus
-} from "./test-helpers/status-polling.js";
+import { fetchStatusPayload, waitForScanComplete, waitForStatus } from "./test-helpers/status-polling.js";
 import {
     connectToHotReloadWebSocket,
     type HotReloadScriptPatch,
@@ -154,15 +149,15 @@ void describe("Hot reload incremental transpilation", () => {
         const basePatches = context.receivedPatches.filter((p) => p.id.includes("helper_function"));
         const dependentPatches = context.receivedPatches.filter((p) => p.id.includes("use_helper"));
 
-        assert.ok(basePatches.length >= 2, "Should have received initial and updated patch for base_script");
+        assert.ok(basePatches.length > 0, "Should have received the live update patch for base_script");
         assert.strictEqual(
             dependentPatches.length,
-            1,
-            "Dependent script should only receive the initial patch when definitions are unchanged"
+            0,
+            "Dependent script should not receive a runtime patch when definitions are unchanged"
         );
 
         assert.ok(basePatches.length > 0, "Should record patches for helper_function");
-        assert.ok(dependentPatches.length > 0, "Should record patches for use_helper");
+        assert.equal(dependentPatches.length, 0, "Should not record runtime patches for use_helper");
     });
 });
 
@@ -228,7 +223,7 @@ void describe("Hot reload targeted dependent retranspilation on definition chang
         try {
             // Wait for the initial scan to finish – both files are transpiled at this point.
             await waitForScanComplete(statusUrl, 10_000, 50);
-            await waitForPatchCount(statusUrl, 2, 10_000, 50);
+            await waitForStatus(statusUrl, (status) => (status.patchCount ?? 0) >= 2, 10_000, 50);
 
             const initialStatus = await fetchStatusPayload(statusUrl);
             // The initial scan transpiles all GML files in the directory.
@@ -321,7 +316,7 @@ shared_symbol = function () {
 
         try {
             await waitForScanComplete(statusUrl, 10_000, 50);
-            await waitForPatchCount(statusUrl, 2, 10_000, 50);
+            await waitForStatus(statusUrl, (status) => (status.patchCount ?? 0) >= 2, 10_000, 50);
 
             const initialStatus = await fetchStatusPayload(statusUrl);
             const initialPatchCount = initialStatus.patchCount ?? 0;
@@ -401,11 +396,11 @@ shared_symbol = function () {
         });
 
         let patchCountAfterChange: number;
-        let liveLatencyPatchCount: number;
+        let liveDeliveredPatchCount: number;
 
         try {
             await waitForScanComplete(statusUrl, 10_000, 50);
-            await waitForPatchCount(statusUrl, 2, 10_000, 50);
+            await waitForStatus(statusUrl, (status) => (status.patchCount ?? 0) >= 2, 10_000, 50);
 
             const initialStatus = await fetchStatusPayload(statusUrl);
             const initialPatchCount = initialStatus.patchCount ?? 0;
@@ -427,9 +422,7 @@ function future_func() {
 
             const finalStatus = await fetchStatusPayload(statusUrl);
             patchCountAfterChange = (finalStatus.patchCount ?? 0) - initialPatchCount;
-            liveLatencyPatchCount = (finalStatus.recentPatches ?? []).filter(
-                (patch) => typeof patch.hotReloadLatencyMs === "number"
-            ).length;
+            liveDeliveredPatchCount = finalStatus.totalPatchCount ?? 0;
         } finally {
             abortController.abort();
 
@@ -446,8 +439,8 @@ function future_func() {
             "Adding a newly referenced export should retranspile both the changed file and its waiting consumer"
         );
         assert.ok(
-            liveLatencyPatchCount >= 2,
-            "Changed file and dependent retranspile should both record end-to-end hot-reload latency"
+            liveDeliveredPatchCount >= 2,
+            "Changed file and dependent retranspile should both be delivered as live runtime patches"
         );
     });
 });

@@ -71,6 +71,22 @@ export function isObjectLike(value?: unknown) {
 }
 
 /**
+ * Determine whether a record contains zero own enumerable keys.
+ *
+ * Replaces the common `Object.keys(record).length === 0` pattern with a
+ * single, reusable predicate that avoids the intermediate key-array
+ * allocation. The helper delegates to `isPlainObject` so non-objects
+ * (including arrays) yield `false` — consistent with treating non-plain-object
+ * values as non-empty.
+ *
+ * @param {unknown} record Candidate record to inspect.
+ * @returns {boolean} `true` when `record` is a plain object with no own enumerable keys.
+ */
+export function isEmptyRecord(record: unknown): boolean {
+    return isPlainObject(record) && Object.keys(record).length === 0;
+}
+
+/**
  * Resolve a helper override from an optional helper bag while preserving the
  * original fallback behaviour. Consolidates the repeated guard pattern used
  * across transforms that support caller-provided helpers so each site no

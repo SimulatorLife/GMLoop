@@ -1,7 +1,7 @@
 import type { LintPluginShape } from "../contracts/index.js";
 import {
     FEATHER_RULE_LEVELS,
-    LintRuleLevel,
+    type LintRuleLevel,
     PERFORMANCE_RULE_LEVELS,
     RECOMMENDED_GML_RULE_LEVELS,
     RECOMMENDED_SAFE_FEATHER_RULE_LEVELS

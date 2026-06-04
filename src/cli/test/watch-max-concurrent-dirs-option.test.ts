@@ -77,7 +77,7 @@ void describe("watch command max-concurrent-dirs option", () => {
             const status = await fetchStatusPayload(statusBaseUrl);
             assert.equal(status.scanComplete, true, "Initial scan should complete");
             assert.ok(
-                (status.totalPatchCount ?? status.patchCount ?? 0) >= gmlFiles.length,
+                (status.patchCount ?? 0) >= gmlFiles.length,
                 "Initial scan should transpile discovered files with bounded concurrency"
             );
         } finally {

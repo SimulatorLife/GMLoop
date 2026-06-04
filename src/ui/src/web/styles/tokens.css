@@ -1,31 +1,168 @@
 :root {
+  /* ─── Text colors ────────────────────────────────────────── */
   color-scheme: dark;
   --gm-text: #f3f7fd;
   --gm-text-secondary: #d7e3f2;
   --gm-text-subdued: #adbbd0;
   --gm-text-interactive: #f8fbff;
+
+  /* ─── Accent colors ─────────────────────────────────────── */
   --gm-accent: #8ee0f0;
   --gm-accent-strong: #73c8ff;
+  --gm-accent-rgb: 142, 224, 240;
+
+  /* ─── Surfaces ──────────────────────────────────────────── */
   --gm-surface-app-top: #08101b;
   --gm-surface-app-bottom: #0e1726;
-  --gm-surface-elevated: rgba(16, 28, 46, 0.94);
-  --gm-surface-elevated-strong: rgba(11, 20, 34, 0.98);
-  --gm-surface-muted: rgba(255, 255, 255, 0.055);
-  --gm-surface-inset: rgba(5, 12, 22, 0.74);
-  --gm-surface-overlay: rgba(10, 18, 30, 0.96);
-  --gm-surface-highlight: rgba(142, 224, 240, 0.12);
+  --gm-surface-elevated: #101c2ef0;
+  --gm-surface-elevated-strong: #0b1422f9;
+  --gm-surface-muted: #ffffff0e;
+  --gm-surface-inset: #050c1680;
+  --gm-surface-overlay: #0a121ef5;
+  --gm-surface-highlight: #8ee0f01f;
+
+  /* ─── Background surfaces ─────────────────────────────── */
+  --gm-bg-subtle: #ffffff08;
+  --gm-bg-muted: #ffffff0a;
+  --gm-bg-light: #ffffff0d;
+  --gm-bg-hover: #ffffff14;
+  --gm-bg-active: #ffffff17;
+  --gm-bg-overlay: #050a1382;
+  --gm-bg-inset: #070d17c7;
+
+  /* ─── Borders ───────────────────────────────────────────── */
   --gm-border: rgba(143, 181, 255, 0.18);
   --gm-border-strong: rgba(143, 181, 255, 0.3);
+  --gm-border-subtle: rgba(143, 181, 255, 0.1);
+  --gm-border-muted: rgba(255, 255, 255, 0.08);
+  --gm-border-accent: rgba(143, 181, 255, 0.24);
+  --gm-border-interactive: rgba(142, 224, 240, 0.45);
   --gm-focus-ring: rgba(142, 224, 240, 0.65);
+
+  /* ─── Semantic status colors ──────────────────────────────── */
+  --gm-success-text: #d8ffe6;
+  --gm-success-border: rgba(88, 205, 132, 0.45);
+  --gm-success-surface: rgba(88, 205, 132, 0.12);
+  --gm-success-dot: #58cd84;
+
+  --gm-warning-text: #ffe9a8;
+  --gm-warning-border: rgba(247, 208, 129, 0.55);
+  --gm-warning-surface: rgba(247, 208, 129, 0.12);
+  --gm-warning-dot: #f6c46d;
+
+  --gm-danger-text: #ff7070;
+  --gm-danger-border: rgba(255, 80, 80, 0.4);
+  --gm-danger-surface: rgba(255, 80, 80, 0.15);
+  --gm-danger-surface-hover: rgba(255, 80, 80, 0.25);
+  --gm-danger-dot: #ff8989;
+
   --gm-error-text: #ffd6d6;
   --gm-error-border: rgba(255, 137, 137, 0.42);
   --gm-error-surface: rgba(118, 31, 41, 0.4);
+
+  /* ─── Accent / action colors ────────────────────────────── */
+  --gm-action-primary-bg: linear-gradient(135deg, #9ce8c8, #f7d081);
+  --gm-action-primary-text: #101820;
+  --gm-action-primary-text-hover: #ffffff;
+  --gm-action-primary-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+
+  /* ─── Glow/ambient colors ────────────────────────────────── */
+  --gm-ambient-teal: #59c3c32e;
+  --gm-ambient-purple: #8b5cf62e;
+
+  /* ─── Shadows ────────────────────────────────────────────── */
   --gm-shadow: 0 20px 44px rgba(0, 0, 0, 0.32);
-  --gm-space-tight: 8px;
-  --gm-space-related: 14px;
-  --gm-space-far: 22px;
+  --gm-shadow-sm: 0 10px 22px rgba(0, 0, 0, 0.2);
+  --gm-shadow-overlay: 0 20px 48px rgba(0, 0, 0, 0.32);
+
+  /* ─── Spacing ───────────────────────────────────────────── */
+  --gm-space-xs: 4px;
+  --gm-space-sm: 8px;
+  --gm-space-md: 12px;
+  --gm-space-lg: 16px;
+  --gm-space-xl: 24px;
+  --gm-space-related: var(--gm-space-sm);
+  --gm-space-far: var(--gm-space-lg);
+
+  /* ─── Border radius ─────────────────────────────────────── */
+  --gm-radius-sm: 8px;
+  --gm-radius-md: 12px;
+  --gm-radius-lg: 16px;
+  --gm-radius-xl: 22px;
+  --gm-radius-full: 999px;
+
+  /* ─── Typography ─────────────────────────────────────────── */
+  --gm-font-sans: "Manrope", system-ui, sans-serif;
+  --gm-font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --gm-text-xs: 11px;
+  --gm-text-sm: 12px;
+  --gm-text-lg: 15px;
+  --gm-text-xl: 16px;
+  --gm-text-2xl: 22px;
+
+  --gm-leading-tight: 1.2;
+  --gm-leading-normal: 1.4;
+  --gm-leading-relaxed: 1.55;
+  --gm-leading-loose: 1.6;
+
+  /* ─── Transitions ────────────────────────────────────────── */
+  --gm-transition: 150ms ease;
+
+  /* ─── Component heights ────────────────────────────────── */
+  --gm-height-sm: 32px;
+  --gm-height-md: 36px;
+  --gm-height-xl: 42px;
+
+  /* ─── Icon sizes ────────────────────────────────────────── */
+  --gm-icon-xs: 12px;
+  --gm-icon-sm: 16px;
+  --gm-icon-lg: 20px;
+
+  /* ─── Log/output colors ────────────────────────────────── */
+  --gm-log-bg: #071019;
+  --gm-log-text: #d9f7e7;
+
+  /* ─── Graph canvas colors ──────────────────────────────── */
+  --gm-graph-node-stroke: #050c14f5;
+  --gm-graph-toolset-stroke: #aaa;
+  --gm-graph-link-opacity: 0.72;
+  --gm-graph-text: #f1f6fc;
+  --gm-graph-arrow: #80c8ff;
+  --gm-graph-highlight-stroke: #ffffff;
+
+  /* ─── Code syntax highlighting colors ────────────────────── */
+  --gm-syntax-keyword: #c792ea;
+  --gm-syntax-function: #82aaff;
+  --gm-syntax-string: #c3e88d;
+  --gm-syntax-number: #f78c6c;
+  --gm-syntax-comment: #546e7a;
+  --gm-syntax-operator: #89ddff;
+  --gm-syntax-property: #e0af68;
+  --gm-syntax-constant: #ff5370;
+  --gm-syntax-type: #4ec9b0;
+  --gm-syntax-string-alt: #ce9178;
+  --gm-syntax-parameter: #f7d081;
+
+  /* ─── Severity badge colors ──────────────────────────────── */
+  --gm-severity-error-text: #fecaca;
+  --gm-severity-error-border: rgba(248, 113, 113, 0.42);
+  --gm-severity-error-bg: rgba(127, 29, 29, 0.42);
+
+  --gm-severity-warn-text: #fed7aa;
+  --gm-severity-warn-border: rgba(251, 146, 60, 0.42);
+  --gm-severity-warn-bg: rgba(124, 45, 18, 0.42);
+
+  --gm-severity-off-text: #cbd5e1;
+  --gm-severity-off-border: rgba(148, 163, 184, 0.28);
+  --gm-severity-off-bg: rgba(51, 65, 85, 0.36);
+
+  /* ─── Blur / overlay effects ─────────────────────────────── */
+  --gm-blur-sm: blur(6px);
+  --gm-blur-lg: blur(20px);
 }
 
+/* ─── Base ─────────────────────────────────────────────────── */
 html,
 body {
   margin: 0;
@@ -36,8 +173,8 @@ body {
   font-size: 15px;
   color: var(--gm-text);
   background:
-    radial-gradient(circle at top left, rgba(89, 195, 195, 0.18), transparent 28%),
-    radial-gradient(circle at top right, rgba(139, 92, 246, 0.18), transparent 24%),
+    radial-gradient(circle at top left, #59c3c32e, transparent 28%),
+    radial-gradient(circle at top right, #8b5cf62e, transparent 24%),
     linear-gradient(180deg, var(--gm-surface-app-top) 0%, #0b1220 45%, var(--gm-surface-app-bottom) 100%);
 }
 

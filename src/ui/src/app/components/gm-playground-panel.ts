@@ -95,6 +95,26 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #codemodSearchQuery = "";
 
+    /**
+     * Renders playground output (error, formatted code, or AST JSON).
+     *
+     * Lit templates are whitespace-sensitive: any indentation or newlines
+     * between the opening and closing tags become text nodes in the DOM.
+     * This produces unwanted visual padding in the output pane and violates
+     * the test assertion that no whitespace precedes content. All templates
+     * must keep their content on a single line with no leading/trailing
+     * whitespace.
+     */
+    #renderOutput(message: string | null, viewMode: "code" | "ast", highlighted: string, astJson: string): unknown {
+        if (message !== null) {
+            return html`<div class="playground-output is-error" role="status" aria-live="polite">${message}</div>`;
+        }
+        if (viewMode === "code") {
+            return html`<div class="playground-output" aria-live="polite">${unsafeHTML(highlighted)}</div>`;
+        }
+        return html`<pre class="playground-output" aria-live="polite">${astJson}</pre>`;
+    }
+
     public disconnectedCallback(): void {
         if (this.#debounceTimer !== null) {
             globalThis.clearTimeout(this.#debounceTimer);
@@ -600,7 +620,8 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             return html``;
         }
 
-        const activeClassName = this.state.activePage === "playground" ? "page active" : "page";
+        const activeClassName =
+            this.state.activePage === "playground" ? "page content-page active" : "page content-page";
         const controlsPanelClassName = this.#controlsPanelOpen
             ? "playground-layout controls-open"
             : "playground-layout controls-collapsed";
@@ -622,10 +643,10 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </span>
                         <span>${this.#controlsPanelOpen ? "Hide Controls" : "Show Controls"}</span>
                     </button>
-                    <div class="view-selector">
+                    <div class="gm-view-selector">
                         <button
                             type="button"
-                            class="view-option ${this.#viewMode === "code" ? "active" : ""}"
+                            class="gm-btn--chip ${this.#viewMode === "code" ? "active" : ""}"
                             aria-pressed=${this.#viewMode === "code"}
                             @click=${() => this.#setViewMode("code")}
                         >
@@ -633,7 +654,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </button>
                         <button
                             type="button"
-                            class="view-option ${this.#viewMode === "ast" ? "active" : ""}"
+                            class="gm-btn--chip ${this.#viewMode === "ast" ? "active" : ""}"
                             aria-pressed=${this.#viewMode === "ast"}
                             @click=${() => this.#setViewMode("ast")}
                         >
@@ -675,15 +696,12 @@ ${unsafeHTML(highlightGml(this.#gmlInput))}</pre
                                 >
                                 <span class="pane-header-status">Read-only</span>
                             </div>
-                            ${this.#error
-                                ? html`<div class="playground-output is-error" role="status" aria-live="polite">
-                                      ${this.#error}
-                                  </div>`
-                                : this.#viewMode === "code"
-                                  ? html`<div class="playground-output" aria-live="polite">
-                                        ${unsafeHTML(highlightGml(this.#gmlOutput))}
-                                    </div>`
-                                  : html`<pre class="playground-output" aria-live="polite">${this.#astJson}</pre>`}
+                            ${this.#renderOutput(
+                                this.#error,
+                                this.#viewMode,
+                                highlightGml(this.#gmlOutput),
+                                this.#astJson
+                            )}
                         </div>
                     </div>
                 </div>

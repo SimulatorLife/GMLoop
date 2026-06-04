@@ -3,9 +3,11 @@ import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
+import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
     ensureProjectGraphIndex,
+    filterGraphIndexResultsByKind,
     printProjectPayload,
     resolveCommandProjectContext,
     type SharedProjectContextOptions
@@ -141,13 +143,16 @@ export function createRoomCommand(): Command {
     list.action(async function roomListAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
-        const rooms = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: "",
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "room");
+        const rooms = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "room"
+        );
         printRoomPayload({ command: "room list", ok: true, payload: rooms });
     });
 
@@ -159,15 +164,16 @@ export function createRoomCommand(): Command {
     inspect.action(async function roomInspectAction(roomNameOrId: string) {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
+        const results = Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query: roomNameOrId,
+            toolsetRoot: options.toolsetRoot
+        }).results;
         const resolvedId = roomNameOrId.includes("::")
             ? roomNameOrId
-            : (Semantic.searchGraphIndex({
-                  databasePath: options.databasePath,
-                  projectConfig: context.projectConfig,
-                  projectRoot: context.projectRoot,
-                  query: roomNameOrId,
-                  toolsetRoot: options.toolsetRoot
-              }).results.find((entry) => entry.kind === "room")?.id ?? null);
+            : (filterGraphIndexResultsByKind(results, "room")[0]?.id ?? null);
         const payload =
             resolvedId === null
                 ? null
@@ -190,13 +196,16 @@ export function createRoomCommand(): Command {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
         const normalizedQuery = typeof text === "string" ? text : "";
-        const payload = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: normalizedQuery,
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "room");
+        const payload = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: normalizedQuery,
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "room"
+        );
 
         printRoomPayload({ command: "room query", ok: true, payload });
     });
@@ -207,13 +216,16 @@ export function createRoomCommand(): Command {
     validate.action(async function roomValidateAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
-        const rooms = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: "",
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "room");
+        const rooms = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "room"
+        );
 
         printRoomPayload({
             command: "room validate",
@@ -231,13 +243,16 @@ export function createRoomCommand(): Command {
     preview.action(async function roomPreviewAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
-        const rooms = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: "",
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "room");
+        const rooms = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "room"
+        );
 
         printRoomPayload({
             command: "room preview",
@@ -255,13 +270,16 @@ export function createRoomCommand(): Command {
     summary.action(async function roomSummaryAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
-        const rooms = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: "",
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "room");
+        const rooms = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "room"
+        );
 
         printRoomPayload({
             command: "room summary",
@@ -298,11 +316,20 @@ export function createRoomCommand(): Command {
         .argument("<x>", "Instance x coordinate")
         .argument("<y>", "Instance y coordinate")
         .addOption(createWriteOption());
-    instanceAdd.action(function roomInstanceAddAction(roomName: string, objectName: string, x: string, y: string) {
-        const options = this.opts<RoomMutationOptions>();
-        const parsedX = parseCoordinateArgument(x, "x");
-        const parsedY = parseCoordinateArgument(y, "y");
-        return runRoomInstanceAddAction(roomName, objectName, parsedX, parsedY, options);
+    instanceAdd.action(async function roomInstanceAddAction(
+        roomName: string,
+        objectName: string,
+        x: string,
+        y: string
+    ) {
+        try {
+            const options = this.opts<RoomMutationOptions>();
+            const parsedX = parseCoordinateArgument(x, "x");
+            const parsedY = parseCoordinateArgument(y, "y");
+            await runRoomInstanceAddAction(roomName, objectName, parsedX, parsedY, options);
+        } catch (error) {
+            handleCliError(error);
+        }
     });
     const instanceUpdate = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("update")).description("Update room instance.")
@@ -312,16 +339,20 @@ export function createRoomCommand(): Command {
         .argument("<x>", "Updated instance x coordinate")
         .argument("<y>", "Updated instance y coordinate")
         .addOption(createWriteOption());
-    instanceUpdate.action(function roomInstanceUpdateAction(
+    instanceUpdate.action(async function roomInstanceUpdateAction(
         roomName: string,
         instanceId: string,
         x: string,
         y: string
     ) {
-        const options = this.opts<RoomMutationOptions>();
-        const parsedX = parseCoordinateArgument(x, "x");
-        const parsedY = parseCoordinateArgument(y, "y");
-        return runRoomInstanceUpdateAction(roomName, instanceId, parsedX, parsedY, options);
+        try {
+            const options = this.opts<RoomMutationOptions>();
+            const parsedX = parseCoordinateArgument(x, "x");
+            const parsedY = parseCoordinateArgument(y, "y");
+            await runRoomInstanceUpdateAction(roomName, instanceId, parsedX, parsedY, options);
+        } catch (error) {
+            handleCliError(error);
+        }
     });
     const instanceDelete = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("delete")).description("Delete room instance.")

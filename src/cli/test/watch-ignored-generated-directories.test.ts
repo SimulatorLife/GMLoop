@@ -68,8 +68,8 @@ void describe("watch command ignored generated directories", () => {
 
             const payload = await fetchStatusPayload(statusBaseUrl);
             assert.ok(
-                (payload.totalPatchCount ?? 0) < 2,
-                "generated cache files should not contribute extra startup patches"
+                (payload.patchCount ?? 0) < 2,
+                "generated cache files should not contribute extra startup scan transpilations"
             );
             assert.ok(
                 (payload.recentPatches ?? []).every(
@@ -156,7 +156,7 @@ void describe("watch command ignored generated directories", () => {
 
             const payload = await fetchStatusPayload(statusBaseUrl);
             assert.equal(
-                payload.totalPatchCount,
+                payload.patchCount,
                 1,
                 "project files under the external temp root should still be transpiled"
             );
@@ -185,7 +185,7 @@ void describe("watch command ignored generated directories", () => {
             await waitForScanComplete(statusBaseUrl);
 
             const payload = await fetchStatusPayload(statusBaseUrl);
-            assert.equal(payload.totalPatchCount, 1, "project files under vendor/3DSpider should still be transpiled");
+            assert.equal(payload.patchCount, 1, "project files under vendor/3DSpider should still be transpiled");
             assert.equal(payload.recentPatches?.[0]?.filePath, path.join("scripts", "scr_player.gml"));
         } finally {
             abortController.abort();

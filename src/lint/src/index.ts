@@ -2,8 +2,6 @@ import { normalizeDocParamName } from "./doc-comment/normalize-param-name.js";
 import { gmlLanguage } from "./language/gml-language.js";
 import { forEachScientificNotationToken, toPlainDecimalFromScientificLiteral } from "./malformed/index.js";
 import { configs, featherPlugin, plugin } from "./plugin.js";
-import { ruleIds } from "./rules/catalog.js";
-import { listLintRuleCatalogEntries } from "./rules/rule-catalog.js";
 import { services } from "./services/index.js";
 
 const { performanceOverrideRuleIds } = services;
@@ -33,11 +31,11 @@ export const Lint = Object.freeze({
 
     // Malformed-source helpers (from malformed — avoids deep "../.." imports)
     forEachScientificNotationToken,
-    toPlainDecimalFromScientificLiteral,
-
-    // Rule catalog access — kept on Lint for backward compatibility with existing
-    // external consumers. Internal lint code should import directly from the
-    // rules/catalog and rules/rule-catalog modules instead.
-    listLintRuleCatalogEntries,
-    ruleIds
+    toPlainDecimalFromScientificLiteral
 });
+
+// Direct exports of rule catalog functions for consumers who prefer explicit
+// imports over namespace access. The functions are defined in the rules/
+// subdirectory and re-exported here for convenience.
+export { ruleIds } from "./rules/catalog.js";
+export { listLintRuleCatalogEntries } from "./rules/rule-catalog.js";

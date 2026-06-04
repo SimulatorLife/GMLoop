@@ -1,7 +1,8 @@
 import { Core, type GameMakerAstNode, type MutableGameMakerAstNode } from "@gmloop/core";
 
+import { replaceNodeWith } from "./math-ast-builders.js";
 import { computeNumericTolerance } from "./math-numeric-utils.js";
-import { matchDegreesToRadians, replaceNodeWith } from "./math-traversal-normalization.js";
+import { matchDegreesToRadians } from "./math-trig-conversions.js";
 
 const { BINARY_EXPRESSION, LITERAL, PARENTHESIZED_EXPRESSION } = Core;
 

@@ -82,11 +82,16 @@ void describe("Hot reload replay for late subscribers", () => {
     });
 
     void it("does not replay deleted file patches to new WebSocket clients", async () => {
+        const replayDir = path.join(process.cwd(), "tmp", `hot-reload-replay-deleted-${Date.now()}`);
+        await mkdir(replayDir, { recursive: true });
+
         const abortController = new AbortController();
         const websocketPort = await findAvailablePort();
         const statusPort = await findAvailablePort();
+        const listenerCapture: { listener: WatchListener<string> | undefined } = { listener: undefined };
+        const watchFactory = createMockWatchFactory(listenerCapture);
 
-        const watchPromise = runWatchCommand(testDir, {
+        const watchPromise = runWatchCommand(replayDir, {
             extensions: [".gml"],
             verbose: false,
             websocketPort,
@@ -94,15 +99,21 @@ void describe("Hot reload replay for late subscribers", () => {
             statusPort,
             runtimeServer: false,
             statusServer: true,
-            abortSignal: abortController.signal
+            abortSignal: abortController.signal,
+            debounceDelay: 0,
+            watchFactory
         });
 
-        const deletedFilePath = path.join(testDir, "deleted_before_connect.gml");
+        const deletedFilePath = path.join(replayDir, "deleted_before_connect.gml");
         let websocketClient: Awaited<ReturnType<typeof connectToHotReloadWebSocket>> | null = null;
 
         try {
+            const statusBaseUrl = `http://127.0.0.1:${statusPort}`;
+            await waitForScanComplete(statusBaseUrl, 5000, 25);
+
             await writeFile(deletedFilePath, "// first version\nvar deleted_value = 1;", "utf8");
-            await waitForPatchCount(`http://127.0.0.1:${statusPort}`, 1, 5000, 25);
+            listenerCapture.listener?.("change", path.basename(deletedFilePath));
+            await waitForPatchCount(statusBaseUrl, 1, 5000, 25);
 
             await unlink(deletedFilePath);
 
@@ -111,12 +122,13 @@ void describe("Hot reload replay for late subscribers", () => {
                 retryIntervalMs: 25
             });
 
-            const receivedPatches = await websocketClient.waitForPatches({
-                timeoutMs: 1500,
-                minCount: 1
+            await new Promise((resolve) => {
+                setTimeout(resolve, 150);
             });
 
-            const replayedDeletedPatch = receivedPatches.find((patch) => patch.id.includes("deleted_before_connect"));
+            const replayedDeletedPatch = websocketClient.receivedPatches.find((patch) =>
+                patch.id.includes("deleted_before_connect")
+            );
             assert.equal(replayedDeletedPatch, undefined, "Deleted files should not replay cached patches");
         } finally {
             abortController.abort();
@@ -130,6 +142,8 @@ void describe("Hot reload replay for late subscribers", () => {
             } catch {
                 // Expected when aborting
             }
+
+            await rm(replayDir, { recursive: true, force: true });
         }
     });
 

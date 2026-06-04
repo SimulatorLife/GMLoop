@@ -3,22 +3,37 @@ import { Core } from "@gmloop/core";
 import { createProjectIndexAbortGuard } from "../project-index/abort-guard.js";
 import type { ProjectIndexFsFacade } from "../project-index/fs-facade.js";
 
+export interface MetricsCacheTools {
+    caches?: {
+        recordHit: (cacheName: string) => void;
+        recordMiss: (cacheName: string) => void;
+        recordStale: (cacheName: string) => void;
+        recordMetric: (cacheName: string, key: string, amount?: number) => void;
+    };
+}
+
 const GML_IDENTIFIER_FILE_PATH = Core.GML_IDENTIFIER_METADATA_PATH;
 
 let cachedBuiltInIdentifiers = null;
 
-function extractBuiltInIdentifierNames(payload) {
+interface NormalizedIdentifierEntry {
+    name: string;
+    type: string;
+    descriptor: unknown;
+}
+
+function extractBuiltInIdentifierNames(payload: unknown): Set<string> {
     if (!Core.isPlainObject(payload)) {
         throw new TypeError("Built-in identifier metadata must be an object payload.");
     }
 
-    const { identifiers } = payload;
+    const { identifiers } = payload as { identifiers?: unknown };
     if (!Core.isPlainObject(identifiers)) {
         throw new TypeError("Built-in identifier metadata must expose an identifiers object.");
     }
 
-    const entries = Core.normalizeIdentifierMetadataEntries(payload);
-    const names = new Set();
+    const entries: NormalizedIdentifierEntry[] = Core.normalizeIdentifierMetadataEntries(payload);
+    const names = new Set<string>();
 
     for (const { name, type } of entries) {
         if (type.length === 0) {
@@ -31,7 +46,7 @@ function extractBuiltInIdentifierNames(payload) {
     return names;
 }
 
-function parseBuiltInIdentifierNames(rawContents) {
+function parseBuiltInIdentifierNames(rawContents: string): Set<string> {
     const payload = Core.parseJsonWithContext(rawContents, {
         source: GML_IDENTIFIER_FILE_PATH,
         description: "built-in identifier metadata"
@@ -40,7 +55,7 @@ function parseBuiltInIdentifierNames(rawContents) {
     return extractBuiltInIdentifierNames(payload);
 }
 
-function areMtimesEquivalent(cachedMtime, currentMtime) {
+function areMtimesEquivalent(cachedMtime: number | null, currentMtime: number | null): boolean {
     if (cachedMtime === currentMtime) {
         return true;
     }
@@ -56,13 +71,15 @@ export function loadBuiltInIdentifiers(
     fsFacade: Required<
         Pick<ProjectIndexFsFacade, "readFile" | "stat">
     > = Core.defaultFsFacade as Required<ProjectIndexFsFacade>,
-    metrics = null,
-    options: any = {}
+    metrics: MetricsCacheTools | null = null,
+    options: Record<string, unknown> = {}
 ) {
     const { fallbackMessage, ...guardOptions } = options ?? {};
 
     return Promise.resolve().then(() => {
-        const { signal, ensureNotAborted } = createProjectIndexAbortGuard(guardOptions, { fallbackMessage });
+        const { signal, ensureNotAborted } = createProjectIndexAbortGuard(guardOptions, {
+            fallbackMessage: fallbackMessage as string | null | undefined
+        });
 
         return Core.getFileMtime(fsFacade, GML_IDENTIFIER_FILE_PATH, { signal }).then((currentMtime) => {
             ensureNotAborted();

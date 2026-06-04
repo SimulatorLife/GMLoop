@@ -92,18 +92,15 @@ void test("optimize-math-expressions keeps fast dot_product rewrites stable acro
     assert.doesNotMatch(result.output, /\bpoint_distance_3d\(/u);
 });
 
-void test("optimize-math-expressions canonicalizes near-zero literals to '0' using epsilon comparison", () => {
-    // Values like 1e-15 are numerically zero for GML literal purposes.
-    // The rule must use tolerance-aware comparison (not strict ===) so that
-    // `1e-15` normalizes to "0" instead of staying as the raw scientific
-    // representation, which would break optimizations that compare against 0.
-    const input = "result = 1e-15 * value;\n";
+void test("optimize-math-expressions does not canonicalize nonzero near-zero literals to zero", () => {
+    // Near-zero decimal literals are still nonzero numeric values. Folding them
+    // to exactly 0 can turn a finite divisor into a divide-by-zero expression,
+    // so only literal zero should become canonical zero.
+    const input = "result = 0.000000000000001 * value;\n";
     const result = lintWithRule("optimize-math-expressions", input, {});
 
-    assert.equal(result.messages.length, 1);
-    // The literal 1e-15 should be treated as approximately 0, so the
-    // expression collapses to a canonical zero.
-    assert.equal(result.output.includes("0"), true);
+    assert.equal(result.messages.length, 0);
+    assert.equal(result.output, input);
 });
 
 void test("optimize-math-expressions rewrites division by near-2 as multiplication via epsilon comparison", () => {
@@ -155,27 +152,13 @@ void test("optimize-math-expressions removes *= 1 and /= 1 using epsilon toleran
 });
 
 void test("optimize-math-expressions uses epsilon-safe divisor guard for computed near-zero values", () => {
-    // `tryEvaluateExpression` guards against division by zero using strict
-    // equality (`rightValue === 0`). This guard can miss when a divisor is the
-    // computed result of prior floating-point arithmetic — for example,
-    // `0.1 / 1e20` evaluates to `1e-21` (a near-zero float, not exactly 0).
-    //
-    // With epsilon-safe comparison (`isApproximatelyZero`), such computed
-    // near-zero divisors are detected and the expression returns `undefined`,
-    // preventing the lint rule from producing an over-approximated finite
-    // constant for the whole expression.
-    //
-    // The inner divisor `0.1 / 1e20` is a literal expression that evaluates
-    // to a non-null floating-point value (~1e-21). `isApproximatelyZero` then
-    // classifies it as approximately zero, so `tryEvaluateExpression` for
-    // the outer `/` returns `undefined` and no constant folding occurs.
-    const input = "result = 1 / (0.1 / 1e20);\n";
+    // Computed near-zero divisors are detected before the rule attempts
+    // multiplicative component folding. The expression below evaluates the
+    // parenthesized divisor to ~1e-21, which is nonzero but close enough to zero
+    // that replacing the whole expression would be unsafe.
+    const input = "result = 1 / (0.1 / 100000000000000000000);\n";
     const result = lintWithRule("optimize-math-expressions", input, {});
 
-    // The inner divisor evaluates to ~1e-21 — not exactly zero, but well
-    // within the epsilon tolerance (≈8.9e-15). With the fix, this correctly
-    // triggers the `isApproximatelyZero` guard and the outer expression is
-    // not folded to a finite constant.
     assert.equal(
         result.output,
         input,

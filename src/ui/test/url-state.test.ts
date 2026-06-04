@@ -41,13 +41,11 @@ void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported n
         fixLogLines: [],
         fixStatus: "idle",
         isFixPending: false,
-        isLiveReloadRefreshPending: false,
         isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "always",
         liveReloadErrorMessage: null,
-        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         pendingActionCount: 0,
         searchQuery: "enemy ship"
