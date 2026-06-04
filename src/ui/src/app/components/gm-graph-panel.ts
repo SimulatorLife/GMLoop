@@ -17,6 +17,7 @@ import {
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
 import { GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const NODE_STYLE_BY_KIND = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
@@ -120,16 +121,16 @@ export class GmGraphPanel extends LightDomLitElement {
         this.requestUpdate();
     };
 
-    #eventBus = new EventBusManager(this, [{ event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults }]);
-
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.#eventBus.connect();
-    }
-
-    public disconnectedCallback(): void {
-        this.#eventBus.disconnect();
-        super.disconnectedCallback();
+    public constructor() {
+        super();
+        // EventBusManager holds the subscription list and connects/disconnects listeners
+        // on lifecycle transitions. LifecycleParticipantsController drives this via the
+        // ReactiveController host contract, eliminating the need for manual
+        // connectedCallback/disconnectedCallback overrides.
+        const eventBus = new EventBusManager(this, [
+            { event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults }
+        ]);
+        new LifecycleParticipantsController(this, [eventBus]);
     }
 
     #syncFilterDefaults(force = false): void {
