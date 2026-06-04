@@ -616,10 +616,16 @@ function repositionFunctionLinesAfterDeprecatedTag(
     result: MutableDocCommentLines,
     docTagHelpers: DocTagHelpers
 ): MutableDocCommentLines {
+    // Clone the input array so callers retain the original reference. Without
+    // this, any callers that hold onto `result` directly would see the
+    // mutations from `splice` on `remainingLines`, leading to shared state
+    // bugs where the same doc comment object appears to have different
+    // function-line positions depending on which reference is held.
+    const working = [...result];
     const functionLines: MutableDocCommentLines = [];
     const remainingLines: MutableDocCommentLines = [];
 
-    for (const line of result) {
+    for (const line of working) {
         if (docTagHelpers.isFunctionLine(line)) {
             functionLines.push(line);
         } else {
