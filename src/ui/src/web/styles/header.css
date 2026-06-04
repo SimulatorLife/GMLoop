@@ -3,8 +3,8 @@
   z-index: 15;
   display: flex;
   flex-direction: column;
-  gap: var(--gm-space-related);
-  padding: 18px 22px 14px;
+  gap: var(--gm-space-control-gap);
+  padding: var(--gm-space-lg) var(--gm-page-gutter);
   background: linear-gradient(180deg, var(--gm-surface-app-top-translucent), var(--gm-surface-app-bottom-translucent));
   border-bottom: 1px solid var(--gm-border);
   box-shadow: 0 12px 32px #0000003d;
@@ -21,13 +21,13 @@
 .header-primary {
   display: flex;
   flex-direction: column;
-  gap: var(--gm-space-related);
+  gap: var(--gm-space-control-gap);
   min-width: 0;
 }
 
 .header-identity-row {
   display: flex;
-  gap: var(--gm-space-related);
+  gap: var(--gm-space-control-gap);
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
@@ -36,7 +36,7 @@
 .brand-block {
   display: flex;
   align-items: center;
-  gap: var(--gm-space-related);
+  gap: var(--gm-space-control-gap);
   min-width: 0;
 }
 
@@ -58,7 +58,7 @@
 .brand-copy {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--gm-space-xs);
 }
 
 .brand-title {
@@ -78,7 +78,7 @@
 
 .header-actions {
   display: flex;
-  gap: 10px;
+  gap: var(--gm-space-control-gap);
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -91,10 +91,10 @@
 
 .top-nav {
   display: flex;
-  gap: 8px;
+  gap: var(--gm-space-control-gap-tight);
   align-items: center;
   flex-wrap: wrap;
-  padding: 6px;
+  padding: var(--gm-space-xs);
   border-radius: 18px;
   border: 1px solid var(--gm-border);
   background: var(--gm-surface-inset);
@@ -130,8 +130,8 @@
 .open-button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
+  gap: var(--gm-space-control-gap-tight);
+  padding: var(--gm-space-sm) var(--gm-space-lg);
   border-radius: 999px;
   border: 1px solid #59c3c36b;
   background: linear-gradient(135deg, #59c3c338, #8b5cf638);
@@ -148,11 +148,11 @@
 .loaded-target-stack {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 14px;
+  gap: var(--gm-space-control-gap);
   align-items: center;
   min-width: 0;
   max-width: 720px;
-  padding: 12px;
+  padding: var(--gm-space-md);
   border: 1px solid var(--gm-border);
   border-radius: 999px;
   background: linear-gradient(180deg, #0c1422b7, #080e18c2);

@@ -1,10 +1,10 @@
 .page-toolbar {
   display: flex;
   flex-direction: column;
-  gap: var(--gm-space-related);
+  gap: var(--gm-space-control-gap);
   align-items: stretch;
-  padding: 14px 18px;
-  margin: 0 22px;
+  padding: var(--gm-space-lg) var(--gm-space-xl);
+  margin: var(--gm-page-toolbar-gap) var(--gm-page-gutter) 0;
   border: 1px solid var(--gm-border);
   border-radius: 20px;
   background: linear-gradient(180deg, var(--gm-surface-elevated), var(--gm-surface-elevated-strong));
@@ -14,7 +14,7 @@
 .toolbar-title {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--gm-space-xs);
 }
 
 .toolbar-title-row {
@@ -26,7 +26,7 @@
 
 .toolbar-heading-row {
   display: flex;
-  gap: var(--gm-space-related);
+  gap: var(--gm-space-section-gap);
   align-items: flex-start;
   justify-content: space-between;
 }
@@ -34,22 +34,24 @@
 .toolbar-title {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--gm-space-xs);
   flex: 1 1 auto;
   min-width: 0;
 }
 
 .toolbar-live-reload-controls {
   display: flex;
-  gap: 8px;
+  gap: var(--gm-space-control-gap);
   align-items: flex-start;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
 .toolbar-fix-controls {
   display: flex;
-  gap: 8px;
+  gap: var(--gm-space-control-gap);
   align-items: flex-start;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
@@ -66,7 +68,7 @@
 
 .toolbar-controls {
   display: flex;
-  gap: var(--gm-space-related);
+  gap: var(--gm-space-section-gap);
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-start;
@@ -75,7 +77,7 @@
 
 .toolbar-control-group {
   display: flex;
-  gap: 8px;
+  gap: var(--gm-space-control-gap);
   align-items: center;
   flex-wrap: nowrap;
 }
@@ -89,7 +91,7 @@
 #search {
   min-width: 0;
   width: 100%;
-  padding: 9px 12px;
+  padding: var(--gm-space-sm) var(--gm-space-md);
   border: 1px solid var(--gm-border);
   border-radius: 14px;
   background: var(--gm-surface-inset);
@@ -107,7 +109,7 @@
   justify-content: center;
   min-width: 20px;
   height: 20px;
-  padding: 0 5px;
+  padding: 0 var(--gm-space-xs);
   border-radius: 999px;
   background: var(--gm-border-accent-subtle);
   border: 1px solid var(--gm-border-accent-medium);

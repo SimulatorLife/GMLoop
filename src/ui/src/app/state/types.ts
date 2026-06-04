@@ -41,6 +41,7 @@ export type GraphVisualizationUiState = Readonly<{
     fixLogLines: ReadonlyArray<string>;
     fixStatus: "idle" | "running" | "success" | "error";
     isLiveReloadStartPending: boolean;
+    isConfigSavePending: boolean;
     isFixPending: boolean;
     isOpenProjectPending: boolean;
     isRegeneratePending: boolean;
@@ -68,6 +69,7 @@ export type GraphVisualizationUiAction =
     | Readonly<{ type: "toggle-graph-view" }>
     | Readonly<{ type: "cycle-label-mode" }>
     | Readonly<{ pending: boolean; type: "set-regenerate-pending" }>
+    | Readonly<{ pending: boolean; type: "set-config-save-pending" }>
     | Readonly<{ pending: boolean; type: "set-fix-pending" }>
     | Readonly<{ errorMessage: string | null; type: "set-fix-error" }>
     | Readonly<{ logLines: ReadonlyArray<string>; type: "set-fix-log-lines" }>

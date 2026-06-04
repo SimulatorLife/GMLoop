@@ -674,3 +674,61 @@ void test("graph visualization server routes POST /api/config/create successfull
         await handle.stop();
     }
 });
+
+void test("graph visualization server routes POST /api/config/save successfully", async (testContext) => {
+    let savedConfig: Readonly<Record<string, unknown>> | null = null;
+
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            saveConfig: async ({ config }) => {
+                savedConfig = config;
+                return { changed: true };
+            }
+        },
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/config/save`, {
+                body: JSON.stringify({ config: { lintRuleset: "recommended", printWidth: 100 } }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+
+            assert.equal(response.status, 200);
+            const payload = (await response.json()) as { changed: boolean; ok: boolean };
+            assert.deepEqual(payload, { changed: true, ok: true });
+            assert.deepEqual(savedConfig, { lintRuleset: "recommended", printWidth: 100 });
+        }
+    );
+});
+
+void test("graph visualization server rejects malformed config save payloads", async (testContext) => {
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            saveConfig: async () => ({ changed: true })
+        },
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/config/save`, {
+                body: JSON.stringify({ config: [] }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+
+            assert.equal(response.status, 400);
+            const payload = (await response.json()) as { error: string };
+            assert.equal(payload.error, "Invalid JSON or non-object payload");
+        }
+    );
+});

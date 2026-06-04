@@ -1,6 +1,6 @@
 @media (max-width: 920px) {
   .app-header {
-    padding: 16px 14px 12px;
+    padding: var(--gm-space-lg) var(--gm-page-gutter-compact) var(--gm-space-md);
   }
 
   .topbar-row,
@@ -15,12 +15,13 @@
   }
 
   .page-toolbar {
-    margin: 0 14px;
+    margin: var(--gm-page-toolbar-gap) var(--gm-page-gutter-compact) 0;
+    padding: var(--gm-space-lg);
     border-radius: 18px;
   }
 
   main {
-    padding: 14px;
+    padding: var(--gm-page-toolbar-gap) var(--gm-page-gutter-compact) var(--gm-page-gutter-compact);
   }
 
   .loaded-target-stack {
@@ -37,6 +38,7 @@
   .toolbar-controls {
     width: 100%;
     justify-content: flex-start;
+    gap: var(--gm-space-control-gap);
   }
 
   .toolbar-heading-row {
@@ -51,10 +53,13 @@
 
   .toolbar-control-group {
     flex-wrap: wrap;
+    gap: var(--gm-space-control-gap-tight);
   }
 
   .playground-toolbar {
     align-items: stretch;
+    flex-direction: column;
+    gap: var(--gm-space-control-gap);
   }
 
   .playground-controls-toggle,

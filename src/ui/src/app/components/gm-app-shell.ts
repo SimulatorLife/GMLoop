@@ -25,6 +25,7 @@ import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
+    GRAPH_UI_EVENT_SAVE_CONFIG,
     GRAPH_UI_EVENT_SET_CONFIG_VIEW,
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
@@ -36,6 +37,7 @@ import {
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
     type GraphUiClearPageErrorDetail,
+    type GraphUiSaveConfigDetail,
     type GraphUiSetConfigViewDetail
 } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
@@ -173,6 +175,17 @@ export class GmAppShell extends LightDomLitElement {
         void this.#runHostActionWithPendingState("set-regenerate-pending", "config", this.callbacks.onCreateConfig);
     };
 
+    #onSaveConfig = (eventValue: Event): void => {
+        if (!this.model || !hasLoadedGraphProject(this.model)) {
+            return;
+        }
+
+        const config = (eventValue as CustomEvent<GraphUiSaveConfigDetail>).detail.config;
+        void this.#runHostActionWithPendingState("set-config-save-pending", "config", () =>
+            this.callbacks.onSaveConfig(config)
+        );
+    };
+
     #onTriggerFix = (): void => {
         if (!this.model || !hasLoadedGraphProject(this.model)) {
             return;
@@ -213,6 +226,7 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT, handler: this.#onTriggerOpenProject },
             { event: GRAPH_UI_EVENT_TRIGGER_REGENERATE, handler: this.#onTriggerRegenerate },
             { event: GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG, handler: this.#onTriggerCreateConfig },
+            { event: GRAPH_UI_EVENT_SAVE_CONFIG, handler: this.#onSaveConfig },
             { event: GRAPH_UI_EVENT_SET_CONFIG_VIEW, handler: this.#onSetConfigView },
             { event: GRAPH_UI_EVENT_TRIGGER_FIX, handler: this.#onTriggerFix },
             { event: GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, handler: this.#onTriggerStartLiveReload },
@@ -235,7 +249,7 @@ export class GmAppShell extends LightDomLitElement {
     }
 
     async #runHostActionWithPendingState(
-        pendingType: "set-open-project-pending" | "set-regenerate-pending",
+        pendingType: "set-config-save-pending" | "set-open-project-pending" | "set-regenerate-pending",
         page: GraphVisualizationUiPage,
         hostAction:
             | GraphVisualizationUiCallbacks["onOpenProject"]

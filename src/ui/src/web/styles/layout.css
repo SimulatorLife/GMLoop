@@ -11,7 +11,7 @@ main {
   position: relative;
   flex: 1;
   min-height: calc(100vh - 260px);
-  padding: var(--gm-space-xl) var(--gm-space-xl) var(--gm-space-xl);
+  padding: var(--gm-page-toolbar-gap) var(--gm-page-gutter) var(--gm-page-gutter);
 }
 
 .page {
@@ -37,7 +37,7 @@ main {
   position: absolute;
   left: -9999px;
   z-index: 9999;
-  padding: 12px 18px;
+  padding: var(--gm-space-md) var(--gm-space-lg);
   border-radius: 0 0 14px 14px;
   background: var(--gm-accent-strong);
   color: #04101d;

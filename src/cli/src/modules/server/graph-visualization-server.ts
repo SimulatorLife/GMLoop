@@ -49,6 +49,9 @@ type GraphVisualizationServerFixProgress = Readonly<{
 type GraphVisualizationServerGetFixProgress = () => GraphVisualizationServerFixProgress;
 type GraphVisualizationServerClearFixProgress = () => void;
 type GraphVisualizationServerCreateConfig = () => Promise<GraphVisualizationServerRegenerationResult>;
+type GraphVisualizationServerSaveConfig = (
+    input: Readonly<{ config: Readonly<Record<string, unknown>> }>
+) => Promise<GraphVisualizationServerRegenerationResult>;
 
 export type GraphVisualizationServerOptions = Readonly<{
     host?: string;
@@ -64,6 +67,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     startLiveReload?: GraphVisualizationServerStartLiveReload;
     stopLiveReload?: GraphVisualizationServerStopLiveReload;
     createConfig?: GraphVisualizationServerCreateConfig;
+    saveConfig?: GraphVisualizationServerSaveConfig;
 }>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
@@ -195,6 +199,11 @@ async function routeGraphVisualizationServerRequest(
 
     if (request.method === "POST" && request.url === "/api/config/create" && options.createConfig) {
         await handleCreateConfigRequest(options.createConfig, response);
+        return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/config/save" && options.saveConfig) {
+        await handleSaveConfigRequest(options.saveConfig, request, response);
         return;
     }
 
@@ -345,6 +354,27 @@ async function handleCreateConfigRequest(
 ): Promise<void> {
     try {
         const result = await createConfig();
+        writeJsonResponse(response, 200, { changed: result.changed, ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+async function handleSaveConfigRequest(
+    saveConfig: GraphVisualizationServerSaveConfig,
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const parsedBody = await readOptionalJsonObjectRequestBody(request);
+        if (parsedBody === null || !Core.isObjectLike(parsedBody.config) || Array.isArray(parsedBody.config)) {
+            writeInvalidJsonPayloadResponse(response);
+            return;
+        }
+
+        const result = await saveConfig({
+            config: Object.freeze({ ...(parsedBody.config as Record<string, unknown>) })
+        });
         writeJsonResponse(response, 200, { changed: result.changed, ok: true });
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });

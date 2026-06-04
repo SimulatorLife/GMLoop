@@ -102,6 +102,12 @@
   --gm-space-xl: 24px;
   --gm-space-related: var(--gm-space-sm);
   --gm-space-far: var(--gm-space-lg);
+  --gm-space-control-gap: var(--gm-space-md);
+  --gm-space-control-gap-tight: var(--gm-space-sm);
+  --gm-space-section-gap: var(--gm-space-xl);
+  --gm-page-gutter: var(--gm-space-xl);
+  --gm-page-gutter-compact: var(--gm-space-lg);
+  --gm-page-toolbar-gap: var(--gm-space-lg);
 
   /* ─── Border radius ─────────────────────────────────────── */
   --gm-radius-sm: 8px;

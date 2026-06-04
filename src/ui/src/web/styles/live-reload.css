@@ -28,7 +28,6 @@
 .live-reload-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-  pointer-events: none;
 }
 
 .live-reload-btn:focus-visible {

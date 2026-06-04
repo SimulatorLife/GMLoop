@@ -13,6 +13,7 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         fixErrorMessage: null,
         fixLogLines: [],
         fixStatus: "idle",
+        isConfigSavePending: false,
         isFixPending: false,
         isLiveReloadStartPending: false,
         isOpenProjectPending: false,
@@ -36,6 +37,7 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
 function computePendingActionCount(state: GraphVisualizationUiState): number {
     let count = 0;
     if (state.isFixPending) count++;
+    if (state.isConfigSavePending) count++;
     if (state.isLiveReloadStartPending) count++;
     if (state.isOpenProjectPending) count++;
     if (state.isRegeneratePending) count++;
@@ -109,6 +111,13 @@ export function reduceGraphVisualizationUiState(
                 ...state,
                 isRegeneratePending: action.pending,
                 pendingActionCount: computePendingActionCount({ ...state, isRegeneratePending: action.pending })
+            };
+        }
+        case "set-config-save-pending": {
+            return {
+                ...state,
+                isConfigSavePending: action.pending,
+                pendingActionCount: computePendingActionCount({ ...state, isConfigSavePending: action.pending })
             };
         }
         case "set-fix-pending": {

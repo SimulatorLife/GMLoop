@@ -33,7 +33,10 @@ import {
 import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
 import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
 import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
-import { createGraphVisualizationProjectConfigurationCatalog } from "../modules/ui/index.js";
+import {
+    createDefaultGmloopProjectConfig,
+    createGraphVisualizationProjectConfigurationCatalog
+} from "../modules/ui/index.js";
 import { findRepoRootSync } from "../shared/repo-root.js";
 import { discoverProjectRoot, resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 import {
@@ -1667,91 +1670,18 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             void openNextPendingActiveProjectStatePath();
         };
 
-        const DEFAULT_CONFIG = {
-            printWidth: 120,
-            tabWidth: 4,
-            semi: true,
-            allowInlineControlFlowBlocks: true,
-            logicalOperatorsStyle: "keywords",
-            lintRuleset: "recommended",
-            refactor: {
-                codemods: {
-                    loopLengthHoisting: {},
-                    namingConvention: {
-                        rules: {
-                            structDeclaration: {
-                                caseStyle: "pascal"
-                            },
-                            resource: {
-                                caseStyle: "lower_snake"
-                            },
-                            objectResourceName: {
-                                prefix: "obj_"
-                            },
-                            roomResourceName: {
-                                prefix: "rm_"
-                            },
-                            spriteResourceName: {
-                                prefix: "spr_"
-                            },
-                            audioResourceName: {
-                                prefix: "snd_"
-                            },
-                            timelineResourceName: {
-                                prefix: "tl_"
-                            },
-                            shaderResourceName: {
-                                prefix: "shd_"
-                            },
-                            fontResourceName: {
-                                prefix: "fnt_"
-                            },
-                            pathResourceName: {
-                                prefix: "pth_"
-                            },
-                            animationCurveResourceName: {
-                                prefix: "curve_"
-                            },
-                            sequenceResourceName: {
-                                prefix: "seq_"
-                            },
-                            tilesetResourceName: {
-                                prefix: "tile_"
-                            },
-                            particleSystemResourceName: {
-                                prefix: "ps_"
-                            },
-                            enum: {
-                                prefix: "e",
-                                caseStyle: "camel"
-                            },
-                            enumMember: {
-                                caseStyle: "upper_snake"
-                            },
-                            macro: {
-                                caseStyle: "upper_snake"
-                            },
-                            variable: {
-                                caseStyle: "lower_snake"
-                            }
-                        },
-                        exclusivePrefixes: {
-                            obj_: "objectResourceName",
-                            rm_: "roomResourceName",
-                            spr_: "spriteResourceName",
-                            snd_: "audioResourceName",
-                            tl_: "timelineResourceName",
-                            shd_: "shaderResourceName",
-                            fnt_: "fontResourceName",
-                            pth_: "pathResourceName",
-                            curve_: "animationCurveResourceName",
-                            seq_: "sequenceResourceName",
-                            tile_: "tilesetResourceName",
-                            ps_: "particleSystemResourceName"
-                        }
-                    }
-                }
-            }
+        const writeActiveProjectConfig = async (config: Readonly<Record<string, unknown>>) => {
+            const projectRoot = activeContext?.projectRoot ?? process.cwd();
+            const configPath = path.join(projectRoot, "gmloop.json");
+            await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+            const nextContext = await resolveGraphContext({
+                ...options,
+                path: projectRoot
+            });
+            updateActiveContext(nextContext);
+            await refreshActiveVisualizationArtifacts(nextContext);
+            markServeRevisionChanged();
+            return Object.freeze({ changed: true });
         };
 
         const server = await startGraphVisualizationServer({
@@ -1767,18 +1697,11 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 markServeRevisionChanged();
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
-            createConfig: async () => {
-                const projectRoot = activeContext?.projectRoot ?? process.cwd();
-                const configPath = path.join(projectRoot, "gmloop.json");
-                await writeFile(configPath, `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`, "utf8");
-                const nextContext = await resolveGraphContext({
-                    ...options,
-                    path: projectRoot
-                });
-                updateActiveContext(nextContext);
-                await refreshActiveVisualizationArtifacts(nextContext);
-                markServeRevisionChanged();
-                return Object.freeze({ changed: true });
+            createConfig: () => {
+                return writeActiveProjectConfig(createDefaultGmloopProjectConfig());
+            },
+            saveConfig: ({ config }) => {
+                return writeActiveProjectConfig(config);
             },
             openProjectTargets: async ({ path: selectedPath }) => {
                 const nextPathFromPicker =

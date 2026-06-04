@@ -207,6 +207,7 @@ void test("GmAppShell routes live-reload start events through the host callback"
     shell.callbacks = {
         onOpenProject: () => {},
         onRegenerate: () => {},
+        onSaveConfig: () => {},
         onRunFix: () => ({ logLines: [], status: "success" }),
         onStartLiveReload: () => {
             startCount += 1;
@@ -235,6 +236,7 @@ void test("GmAppShell ignores duplicate live-reload start events while startup i
     shell.callbacks = {
         onOpenProject: () => {},
         onRegenerate: () => {},
+        onSaveConfig: () => {},
         onRunFix: () => ({ logLines: [], status: "success" }),
         onStartLiveReload: () => {
             startCount += 1;
@@ -380,6 +382,7 @@ void test("GmAppShell routes live-reload stop events through the host callback",
     shell.callbacks = {
         onOpenProject: () => {},
         onRegenerate: () => {},
+        onSaveConfig: () => {},
         onRunFix: () => ({ logLines: [], status: "success" }),
         onStartLiveReload: () => null,
         onStopLiveReload: () => {
@@ -402,6 +405,7 @@ void test("GmAppShell clears live-reload model after stop callback succeeds", as
     shell.callbacks = {
         onOpenProject: () => {},
         onRegenerate: () => {},
+        onSaveConfig: () => {},
         onRunFix: () => ({ logLines: [], status: "success" }),
         onStartLiveReload: () => null,
         onStopLiveReload: async () => {}
@@ -425,6 +429,7 @@ void test("GmAppShell ignores live-reload stop events without an active session"
     shell.callbacks = {
         onOpenProject: () => {},
         onRegenerate: () => {},
+        onSaveConfig: () => {},
         onRunFix: () => ({ logLines: [], status: "success" }),
         onStartLiveReload: () => null,
         onStopLiveReload: () => {
@@ -491,6 +496,7 @@ void test("GmAppShell forwards live fix progress snapshots while a fix run is pe
     shell.callbacks = {
         onOpenProject: () => {},
         onRegenerate: () => {},
+        onSaveConfig: () => {},
         onRunFix: (options) => {
             options?.onProgress({ logLines: ["[1/3 Refactor Codemods]"] });
             return runFixPromise;

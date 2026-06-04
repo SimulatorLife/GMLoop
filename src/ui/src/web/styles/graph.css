@@ -3,7 +3,7 @@
   height: calc(100vh - 300px);
   min-height: 520px;
   border: 1px solid var(--gm-border);
-  border-radius: 24px;
+  border-radius: var(--gm-radius-xl);
   overflow: hidden;
   background: var(--gm-bg-light);
   box-shadow: var(--gm-shadow);
@@ -17,11 +17,11 @@
   position: absolute;
   inset: 50%;
   z-index: 5;
-  width: min(520px, calc(100% - 48px));
+  width: min(520px, calc(100% - (2 * var(--gm-page-gutter))));
   transform: translate(-50%, -50%);
-  padding: 24px;
+  padding: var(--gm-space-xl);
   border: 1px solid var(--gm-border);
-  border-radius: 24px;
+  border-radius: var(--gm-radius-xl);
   background: var(--gm-surface-overlay);
   color: var(--gm-text);
   text-align: center;
@@ -30,15 +30,15 @@
 }
 
 .graph-empty-state p {
-  margin: 10px 0 0;
+  margin: var(--gm-space-md) 0 0;
   color: var(--gm-text-secondary);
 }
 
 .graph-empty-state-indicator {
   display: inline-flex;
-  gap: 10px;
+  gap: var(--gm-space-control-gap);
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: var(--gm-space-md);
   color: var(--gm-text-secondary);
   font-size: 13px;
 }
@@ -49,7 +49,7 @@
 }
 
 .graph-empty-state-error {
-  margin-bottom: 12px;
+  margin-bottom: var(--gm-space-md);
   color: var(--gm-danger, #ff9b9b);
 }
 
@@ -65,9 +65,9 @@
 
 .loading-indicator {
   display: inline-flex;
-  gap: 12px;
+  gap: var(--gm-space-control-gap);
   align-items: center;
-  padding: 12px 16px;
+  padding: var(--gm-space-md) var(--gm-space-lg);
   border: 1px solid var(--gm-border-accent);
   border-radius: 999px;
   background: var(--gm-surface-overlay);
@@ -149,13 +149,13 @@ text {
   left: 20px;
   display: none;
   width: max-content;
-  max-width: min(520px, calc(100vw - 24px));
+  max-width: min(520px, calc(100vw - (2 * var(--gm-space-md))));
   box-sizing: border-box;
   overflow-wrap: anywhere;
   pointer-events: auto;
   user-select: text;
   z-index: 20;
-  padding: 12px;
+  padding: var(--gm-space-md);
   border-radius: 16px;
   border: 1px solid var(--gm-border-strong);
   background: var(--gm-surface-overlay);
@@ -171,22 +171,22 @@ text {
 }
 
 #tooltip h3 {
-  margin: 0 0 5px;
+  margin: 0 0 var(--gm-space-xs);
   color: #fff;
   font-size: 15px;
   overflow-wrap: anywhere;
 }
 
 #tooltip p {
-  margin: 8px 0 0;
+  margin: var(--gm-space-sm) 0 0;
 }
 
 #tooltip pre {
   max-height: 180px;
   overflow: auto;
-  margin: 10px 0 0;
-  padding: 8px;
-  border-radius: 8px;
+  margin: var(--gm-space-md) 0 0;
+  padding: var(--gm-space-sm);
+  border-radius: var(--gm-radius-sm);
   background: #0308109e;
   color: var(--gm-text-secondary);
   font-size: 12px;
@@ -200,7 +200,7 @@ text {
   display: none;
   overflow: auto;
   margin: 0;
-  padding: 18px 20px 20px;
+  padding: var(--gm-space-lg) var(--gm-space-xl) var(--gm-space-xl);
   font-size: 13px;
   line-height: 1.55;
   color: var(--gm-text-secondary);
@@ -213,12 +213,12 @@ text {
 
 #legend {
   position: absolute;
-  right: 20px;
-  bottom: 20px;
+  right: var(--gm-space-xl);
+  bottom: var(--gm-space-xl);
   z-index: 10;
   max-height: 72%;
   overflow-y: auto;
-  padding: 12px;
+  padding: var(--gm-space-md);
   border-radius: 18px;
   border: 1px solid var(--gm-border);
   background: var(--gm-surface-overlay-translucent);
@@ -250,33 +250,33 @@ text {
 
 .filter-item {
   display: flex;
-  gap: 6px;
+  gap: var(--gm-space-control-gap-tight);
   align-items: center;
-  margin-top: 4px;
+  margin-top: var(--gm-space-xs);
   cursor: pointer;
   font-size: 13px;
   line-height: 1.45;
 }
 
 .child-filter-item {
-  padding-left: 18px;
+  padding-left: var(--gm-space-lg);
 }
 
 .filter-children {
-  margin-left: 8px;
+  margin-left: var(--gm-space-sm);
   border-left: 1px solid var(--gm-border);
 }
 
 .filter-section {
-  margin-bottom: 10px;
+  margin-bottom: var(--gm-space-md);
 }
 
 .filter-section strong {
   display: block;
-  margin-bottom: 7px;
+  margin-bottom: var(--gm-space-sm);
   cursor: pointer;
 }
 
 .sub-filter {
-  margin-left: 15px;
+  margin-left: var(--gm-space-lg);
 }

@@ -1,13 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { GRAPH_UI_EVENT_SAVE_CONFIG } from "../src/app/components/events.js";
+import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmConfigPanel } from "../src/app/components/gm-config-panel.js";
+import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
 
 class TestableGmConfigPanel extends GmConfigPanel {
+    public renderForTest(): unknown {
+        return this.render();
+    }
+}
+
+class TestableGmAppShell extends GmAppShell {}
+
+class TestableGmGraphToolbar extends GmGraphToolbar {
     public renderForTest(): unknown {
         return this.render();
     }
@@ -178,24 +189,95 @@ void test("config panel defaults to rendered view and exposes configuration deta
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="config-page"[\s\S]*class=page content-page active/u);
+    assert.doesNotMatch(rendered, /Config Path:?/iu);
+    assert.doesNotMatch(rendered, /<dt>Draft<\/dt>/u);
+    assert.match(rendered, /<gm-badge[^>]*\.label=Saved/u);
     assert.doesNotMatch(rendered, /Project Root:?/iu);
-    assert.match(rendered, /Config Path:?/iu);
-    assert.match(rendered, /Format \(1\)/u);
-    assert.match(rendered, /Lint \(2\)/u);
-    assert.match(rendered, /Refactor \(1\)/u);
-    assert.match(rendered, /GameMaker CLI \(1\)/u);
-    assert.match(rendered, /GameMaker MCP \(1\)/u);
+    assert.doesNotMatch(rendered, /<dt>File<\/dt>/u);
+    assert.match(rendered, /id="config-format-heading"[\s\S]*Format/u);
+    assert.match(rendered, /id="config-lint-heading"[\s\S]*Lint/u);
+    assert.match(rendered, /id="config-refactor-heading"[\s\S]*Refactor/u);
+    assert.match(rendered, /id="config-tool-metadata-heading"[\s\S]*Tool Metadata/u);
     assert.match(rendered, /manual read/u);
     assert.match(rendered, /ResourceTool v2024\.14\.15/u);
-    assert.match(rendered, /configured MCP server "gamemaker-resource-tool"/u);
+    assert.match(rendered, /configured MCP server gamemaker-resource-tool/u);
     assert.match(rendered, /All Rules/u);
     assert.match(rendered, /All Levels/u);
-    assert.match(rendered, /class="config-filter-reset"/u);
+    assert.match(rendered, /config-filter-reset/u);
     assert.match(rendered, /Reset Filters/u);
     assert.match(rendered, /disabled=true/u);
-    assert.match(rendered, /class="?config-severity-badge warn"?/u);
-    assert.match(rendered, /class="?config-severity-badge error"?/u);
+    assert.match(rendered, /\.tone=warning/u);
+    assert.match(rendered, /\.tone=error/u);
+    assert.match(rendered, /class="config-segmented-indicator"/u);
     assert.match(rendered, /<gm-badge[^>]*\.label=fixable/u);
     assert.doesNotMatch(rendered, /fixable:code/u);
-    assert.doesNotMatch(rendered, /class="config-raw"/u);
+    assert.doesNotMatch(rendered, /id="config-raw-json"/u);
+    assert.doesNotMatch(rendered, /config-severity-badge/u);
+});
+
+void test("config toolbar restores rendered and raw JSON selector", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = createMockState();
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id="toolbar-heading"[\s\S]*Config/u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*Config path: \/tmp\/test\/gmloop\.json/u);
+    assert.match(rendered, /class="gm-view-selector"/u);
+    assert.match(rendered, /id="config-view-rendered"/u);
+    assert.match(rendered, /id="config-view-raw"/u);
+    assert.match(rendered, /Raw JSON/u);
+});
+
+void test("config panel renders editable raw JSON view", () => {
+    const panel = new TestableGmConfigPanel();
+    panel.model = createMockModel();
+    panel.state = {
+        ...createMockState(),
+        activeConfigView: "raw"
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="config-raw-json"/u);
+    assert.match(rendered, /class="config-raw-textarea"/u);
+    assert.match(rendered, /Save Config/u);
+    assert.match(rendered, /JSON is valid/u);
+});
+
+void test("app shell routes config save events through the host callback", async () => {
+    const shell = new TestableGmAppShell();
+    let savedConfig: Readonly<Record<string, unknown>> | null = null;
+    shell.model = {
+        ...createMockModel(),
+        loadedTarget: {
+            activePath: "/tmp/test/Game.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: [],
+            source: "working-directory"
+        }
+    };
+    shell.callbacks = {
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onSaveConfig: (config) => {
+            savedConfig = config;
+        },
+        onRunFix: () => ({ logLines: [], status: "success" }),
+        onStartLiveReload: () => null,
+        onStopLiveReload: () => {}
+    };
+
+    shell.connectedCallback();
+    shell.dispatchEvent(
+        new CustomEvent(GRAPH_UI_EVENT_SAVE_CONFIG, {
+            bubbles: true,
+            detail: { config: { lintRuleset: "recommended", printWidth: 100 } }
+        })
+    );
+    await Promise.resolve();
+    shell.disconnectedCallback();
+
+    assert.deepEqual(savedConfig, { lintRuleset: "recommended", printWidth: 100 });
 });

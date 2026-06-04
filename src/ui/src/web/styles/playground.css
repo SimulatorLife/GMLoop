@@ -19,8 +19,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--gm-space-lg);
-  padding: 12px var(--gm-space-xl);
+  gap: var(--gm-space-section-gap);
+  padding: var(--gm-space-lg) var(--gm-space-xl);
   background: var(--gm-bg-light);
   border-bottom: 1px solid var(--gm-border);
 }
@@ -28,9 +28,9 @@
 .playground-controls-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--gm-space-control-gap);
   min-height: var(--gm-height-md);
-  padding: 8px 14px;
+  padding: var(--gm-space-sm) var(--gm-space-lg);
   border-radius: var(--gm-radius-md);
   border: 1px solid var(--gm-border);
   background: var(--gm-bg-light);
@@ -101,7 +101,7 @@
 }
 
 .playground-control-section-note {
-  margin-top: 4px;
+  margin-top: var(--gm-space-xs);
   color: var(--gm-text-subdued);
   font-size: var(--gm-text-xs);
   line-height: 1.35;
@@ -147,7 +147,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--gm-space-sm);
+  gap: var(--gm-space-control-gap-tight);
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
   font-weight: 800;
@@ -268,12 +268,12 @@
 
 .rule-details-section {
   display: grid;
-  gap: 8px;
+  gap: var(--gm-space-control-gap-tight);
 }
 
 .rule-details-note {
   margin: 0;
-  padding: 8px 10px;
+  padding: var(--gm-space-sm) var(--gm-space-md);
   border-radius: var(--gm-radius-md);
   border: 1px solid var(--gm-border-accent);
   background: var(--gm-surface-active);
@@ -291,13 +291,13 @@
 .rule-details-header {
   display: flex;
   align-items: center;
-  gap: var(--gm-space-sm);
+  gap: var(--gm-space-control-gap-tight);
   min-height: var(--gm-height-md);
   border: 1px solid var(--gm-border-accent);
   border-radius: var(--gm-radius-md);
   background: var(--gm-bg-muted);
   color: var(--gm-text-secondary);
-  padding: 8px 10px;
+  padding: var(--gm-space-sm) var(--gm-space-md);
   text-align: left;
   font-size: var(--gm-text-sm);
   cursor: pointer;

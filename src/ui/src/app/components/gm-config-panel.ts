@@ -1,142 +1,215 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
 
 import type {
     GraphVisualizationExternalToolParameter,
     GraphVisualizationGameMakerCliCommandEntry,
     GraphVisualizationGameMakerCliMcpToolEntry,
+    GraphVisualizationProjectConfigurationCatalog,
     GraphVisualizationProjectConfigurationEntry,
     GraphVisualizationProjectConfigurationLintRuleEntry,
-    GraphVisualizationProjectConfigurationLintRulesetEntry,
     GraphVisualizationProjectConfigurationRefactorCodemodEntry
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG } from "./events.js";
+import {
+    GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_SAVE_CONFIG,
+    GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG,
+    type GraphUiSaveConfigDetail
+} from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
+import type { GmBadgeTone } from "./primitives/gm-badge.js";
 
-type LintLevelFilter = "all" | GraphVisualizationProjectConfigurationLintRuleEntry["level"];
+type ConfigJsonObject = Record<string, unknown>;
+type LintLevel = GraphVisualizationProjectConfigurationLintRuleEntry["level"];
+type LintLevelFilter = "all" | LintLevel;
+type DraftParseResult = Readonly<
+    { config: ConfigJsonObject; error: null; ok: true } | { config: null; error: string; ok: false }
+>;
+
+const FORMAT_BUILDER_OPTION_NAMES = new Set([
+    "allowInlineControlFlowBlocks",
+    "logicalOperatorsStyle",
+    "printWidth",
+    "semi",
+    "tabWidth"
+]);
+const LINT_LEVELS: ReadonlyArray<LintLevel> = ["error", "warn", "off"];
 
 function serializeConfigurationValue(value: unknown): string {
     return JSON.stringify(value, null, 2);
 }
 
-function renderConfigEntry(entry: GraphVisualizationProjectConfigurationEntry) {
-    return html`
-        <li class="config-item">
-            <strong>${entry.name}</strong>
-            <span>${entry.description}</span>
-            <div class="config-badge-row">
-                <gm-badge .label=${entry.source}></gm-badge>
-            </div>
-            <pre class="config-value">${serializeConfigurationValue(entry.value)}</pre>
-        </li>
-    `;
+function parseDraftConfig(text: string): DraftParseResult {
+    try {
+        const parsed = JSON.parse(text) as unknown;
+        if (!isConfigJsonObject(parsed)) {
+            return { config: null, error: "Config JSON must be an object.", ok: false };
+        }
+        return { config: parsed, error: null, ok: true };
+    } catch (error) {
+        return { config: null, error: error instanceof Error ? error.message : "Invalid JSON.", ok: false };
+    }
 }
 
-function getLintLevelLabel(level: GraphVisualizationProjectConfigurationLintRuleEntry["level"]): string {
+function isConfigJsonObject(value: unknown): value is ConfigJsonObject {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function cloneConfigObject(config: Readonly<Record<string, unknown>>): ConfigJsonObject {
+    return structuredClone(config);
+}
+
+function getInputValue(value: unknown): string {
+    if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+        return String(value);
+    }
+    return "";
+}
+
+function createEditableConfigFromCatalog(catalog: GraphVisualizationProjectConfigurationCatalog): ConfigJsonObject {
+    if (Object.keys(catalog.gmloop.rawConfig).length > 0) {
+        return cloneConfigObject(catalog.gmloop.rawConfig);
+    }
+
+    const config: ConfigJsonObject = {};
+    for (const entry of catalog.format.entries) {
+        if (FORMAT_BUILDER_OPTION_NAMES.has(entry.name)) {
+            config[entry.name] = entry.value;
+        }
+    }
+    if (catalog.lint.ruleset !== null) {
+        config.lintRuleset = catalog.lint.ruleset;
+    }
+
+    const codemods: ConfigJsonObject = {};
+    for (const codemod of catalog.refactor.codemods) {
+        if (codemod.enabled) {
+            codemods[codemod.id] = codemod.config ?? {};
+        }
+    }
+    if (Object.keys(codemods).length > 0) {
+        config.refactor = { codemods };
+    }
+
+    return config;
+}
+
+function readConfigObjectField(config: ConfigJsonObject, fieldName: string): ConfigJsonObject {
+    const value = config[fieldName];
+    if (isConfigJsonObject(value)) {
+        return value;
+    }
+    const nextValue: ConfigJsonObject = {};
+    config[fieldName] = nextValue;
+    return nextValue;
+}
+
+function readNestedConfigObjectField(config: ConfigJsonObject, firstFieldName: string, secondFieldName: string) {
+    return readConfigObjectField(readConfigObjectField(config, firstFieldName), secondFieldName);
+}
+
+function readRawLintRuleLevel(config: ConfigJsonObject, ruleId: string): LintLevel | null {
+    const lintRules = config.lintRules;
+    if (!isConfigJsonObject(lintRules)) {
+        return null;
+    }
+    const rawLevel = lintRules[ruleId];
+    return rawLevel === "error" || rawLevel === "warn" || rawLevel === "off" ? rawLevel : null;
+}
+
+function readRawCodemodConfig(config: ConfigJsonObject, codemodId: string): unknown {
+    const refactor = config.refactor;
+    if (!isConfigJsonObject(refactor)) {
+        return null;
+    }
+    const codemods = refactor.codemods;
+    if (!isConfigJsonObject(codemods)) {
+        return null;
+    }
+    return codemods[codemodId] ?? null;
+}
+
+function getLintLevelLabel(level: LintLevel): string {
     if (level === "error") {
         return "Error";
     }
-
     if (level === "warn") {
         return "Warn";
     }
-
     return "Off";
 }
 
-function renderConfigHelp(summary: string, body: string) {
-    return html`
-        <details class="config-help">
-            <summary aria-label=${summary}>?</summary>
-            <p>${body}</p>
-        </details>
-    `;
+function getLintLevelTone(level: LintLevel): GmBadgeTone {
+    if (level === "error") {
+        return "error";
+    }
+    if (level === "warn") {
+        return "warning";
+    }
+    return "muted";
 }
 
-function renderLintRuleEntry(entry: GraphVisualizationProjectConfigurationLintRuleEntry) {
-    const hasOptions = Object.keys(entry.options).length > 0;
-    const fixableBadgeLabel = getLintFixableBadgeLabel(entry.fixable);
-
-    return html`
-        <li class="config-item">
-            <strong>${entry.ruleId}</strong>
-            <span>${entry.description}</span>
-            <div class="config-badge-row">
-                <gm-badge
-                    class=${`config-severity-badge ${entry.level}`}
-                    .label=${getLintLevelLabel(entry.level)}
-                ></gm-badge>
-                ${fixableBadgeLabel === null ? null : html`<gm-badge .label=${fixableBadgeLabel}></gm-badge>`}
-            </div>
-            ${hasOptions ? html`<pre class="config-value">${serializeConfigurationValue(entry.options)}</pre>` : null}
-        </li>
-    `;
-}
-
-function renderCodemodEntry(entry: GraphVisualizationProjectConfigurationRefactorCodemodEntry) {
-    return html`
-        <li class="config-item">
-            <strong>${entry.id}</strong>
-            <span>${entry.description}</span>
-            <div class="config-badge-row">
-                <gm-badge .label=${entry.enabled ? "enabled" : "disabled"}></gm-badge>
-                <gm-badge
-                    .label=${entry.requiresSemanticProjectIndex ? "needs-semantic" : "semantic-optional"}
-                ></gm-badge>
-            </div>
-            <pre class="config-value">${serializeConfigurationValue(entry.config)}</pre>
-        </li>
-    `;
+function renderBadge(label: string, tone: GmBadgeTone = "neutral") {
+    return html`<gm-badge .label=${label} .tone=${tone}></gm-badge>`;
 }
 
 function renderExternalToolParameter(entry: GraphVisualizationExternalToolParameter) {
     return html`
-        <li class="config-item">
-            <strong>${entry.syntax}</strong>
-            <span>${entry.description || "No description provided by the source tool."}</span>
-            <div class="config-badge-row">
-                <gm-badge .label=${entry.kind}></gm-badge>
-                <gm-badge .label=${entry.required ? "required" : "optional"}></gm-badge>
-                <gm-badge .label=${entry.multiple ? "multiple" : entry.valueType}></gm-badge>
-                ${entry.choices.map((choice) => html`<gm-badge .label=${`choice:${choice}`}></gm-badge>`)}
-            </div>
+        <li class="config-tool-row">
+            <span class="config-tool-name">${entry.syntax}</span>
+            <span class="config-tool-description">${entry.description || "No description provided."}</span>
+            <span class="config-badge-row">
+                ${renderBadge(entry.kind, "muted")}
+                ${renderBadge(entry.required ? "Required" : "Optional", entry.required ? "warning" : "muted")}
+                ${renderBadge(entry.multiple ? "Multiple" : entry.valueType, "neutral")}
+                ${entry.choices.map((choice) => renderBadge(`Choice: ${choice}`, "muted"))}
+            </span>
         </li>
     `;
 }
 
 function renderGameMakerCliCommandEntry(entry: GraphVisualizationGameMakerCliCommandEntry) {
     return html`
-        <li class="config-item">
-            <strong>${entry.displayName}</strong>
-            <span>${entry.description || "No description provided by gm-cli."}</span>
-            <pre class="config-value">${entry.usageLines.join("\n")}</pre>
+        <details class="config-tool-details">
+            <summary>
+                <span>${entry.displayName}</span>
+                ${renderBadge(`${String(entry.parameters.length)} parameters`, "muted")}
+            </summary>
+            <p>${entry.description || "No description provided by gm-cli."}</p>
+            <pre class="config-code-block">${entry.usageLines.join("\n")}</pre>
             ${entry.parameters.length === 0
-                ? null
-                : html`<ul class="config-list">
+                ? nothing
+                : html`<ul class="config-tool-list">
                       ${entry.parameters.map((parameter) => renderExternalToolParameter(parameter))}
                   </ul>`}
-        </li>
+        </details>
     `;
 }
 
 function renderGameMakerCliMcpToolEntry(entry: GraphVisualizationGameMakerCliMcpToolEntry) {
     return html`
-        <li class="config-item">
-            <strong>${entry.name}</strong>
-            <span>${entry.description || "No description provided by ResourceTool MCP."}</span>
+        <details class="config-tool-details">
+            <summary>
+                <span>${entry.name}</span>
+                ${renderBadge(
+                    entry.fields.length === 0 ? "No input fields" : `${String(entry.fields.length)} fields`,
+                    "muted"
+                )}
+            </summary>
+            <p>${entry.description || "No description provided by ResourceTool MCP."}</p>
             ${entry.fields.length === 0
-                ? html`<div class="config-badge-row"><gm-badge .label=${"no-input-fields"}></gm-badge></div>`
-                : html`<ul class="config-list">
+                ? nothing
+                : html`<ul class="config-tool-list">
                       ${entry.fields.map((field) => renderExternalToolParameter(field))}
                   </ul>`}
-        </li>
+        </details>
     `;
 }
 
 /**
- * Config surface that renders active workspace configuration catalogs.
+ * Config surface that renders and edits active workspace configuration catalogs.
  */
 export class GmConfigPanel extends LightDomLitElement {
     public static properties = {
@@ -147,6 +220,12 @@ export class GmConfigPanel extends LightDomLitElement {
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
+
+    #draftCatalogKey = "";
+    #draftText = "{}";
+    #lintLevelFilter: LintLevelFilter = "all";
+    #lintRulesetFilter = "all";
+    #lintSearchQuery = "";
 
     #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
@@ -168,9 +247,6 @@ export class GmConfigPanel extends LightDomLitElement {
         super.disconnectedCallback();
     }
 
-    #lintLevelFilter: LintLevelFilter = "all";
-    #lintRulesetFilter = "all";
-
     #emitCreateConfig = (): void => {
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG, {
@@ -180,17 +256,114 @@ export class GmConfigPanel extends LightDomLitElement {
         );
     };
 
+    #emitSaveConfig(config: Readonly<Record<string, unknown>>): void {
+        this.dispatchEvent(
+            new CustomEvent<GraphUiSaveConfigDetail>(GRAPH_UI_EVENT_SAVE_CONFIG, {
+                bubbles: true,
+                composed: true,
+                detail: { config }
+            })
+        );
+    }
+
+    #ensureDraftForCatalog(catalog: GraphVisualizationProjectConfigurationCatalog): void {
+        const key = `${catalog.gmloop.configPath ?? "missing"}:${serializeConfigurationValue(catalog.gmloop.rawConfig)}`;
+        if (key === this.#draftCatalogKey) {
+            return;
+        }
+        this.#draftCatalogKey = key;
+        this.#draftText = serializeConfigurationValue(createEditableConfigFromCatalog(catalog));
+    }
+
+    #readDraft(): DraftParseResult {
+        return parseDraftConfig(this.#draftText);
+    }
+
+    #setDraftConfig(config: ConfigJsonObject): void {
+        this.#draftText = serializeConfigurationValue(config);
+        this.requestUpdate();
+    }
+
+    #updateDraftConfig(mutator: (config: ConfigJsonObject) => void): void {
+        const draft = this.#readDraft();
+        if (!draft.ok) {
+            return;
+        }
+        const nextConfig = cloneConfigObject(draft.config);
+        mutator(nextConfig);
+        this.#setDraftConfig(nextConfig);
+    }
+
+    #onRawConfigInput = (event: Event): void => {
+        const target = event.target;
+        if (!(target instanceof HTMLTextAreaElement)) {
+            return;
+        }
+        this.#draftText = target.value;
+        this.requestUpdate();
+    };
+
+    #setFormatEntry(entry: GraphVisualizationProjectConfigurationEntry, rawValue: string, checked: boolean): void {
+        this.#updateDraftConfig((config) => {
+            if (typeof entry.value === "boolean") {
+                config[entry.name] = checked;
+                return;
+            }
+            if (typeof entry.value === "number") {
+                const numericValue = Number(rawValue);
+                if (Number.isFinite(numericValue)) {
+                    config[entry.name] = numericValue;
+                }
+                return;
+            }
+            config[entry.name] = rawValue;
+        });
+    }
+
+    #setLintRuleset = (event: Event): void => {
+        const target = event.target;
+        if (!(target instanceof HTMLSelectElement)) {
+            return;
+        }
+        this.#updateDraftConfig((config) => {
+            config.lintRuleset = target.value;
+        });
+    };
+
+    #setLintRuleLevel(ruleId: string, level: LintLevel): void {
+        this.#updateDraftConfig((config) => {
+            const lintRules = readConfigObjectField(config, "lintRules");
+            lintRules[ruleId] = level;
+        });
+    }
+
+    #setCodemodEnabled(codemod: GraphVisualizationProjectConfigurationRefactorCodemodEntry, enabled: boolean): void {
+        this.#updateDraftConfig((config) => {
+            const codemods = readNestedConfigObjectField(config, "refactor", "codemods");
+            codemods[codemod.id] = enabled ? (codemod.config ?? {}) : false;
+        });
+    }
+
+    #setCodemodConfig(codemodId: string, value: string): void {
+        const parsed = parseDraftConfig(value);
+        if (!parsed.ok) {
+            return;
+        }
+        this.#updateDraftConfig((config) => {
+            const codemods = readNestedConfigObjectField(config, "refactor", "codemods");
+            codemods[codemodId] = parsed.config;
+        });
+    }
+
     #setLintLevelFilter = (event: Event): void => {
         const target = event.target;
         if (!(target instanceof HTMLSelectElement)) {
             return;
         }
-
         const nextValue = target.value;
         if (nextValue !== "all" && nextValue !== "error" && nextValue !== "off" && nextValue !== "warn") {
             return;
         }
-
         this.#lintLevelFilter = nextValue;
         this.requestUpdate();
     };
@@ -200,52 +373,252 @@ export class GmConfigPanel extends LightDomLitElement {
         if (!(target instanceof HTMLSelectElement)) {
             return;
         }
-
         this.#lintRulesetFilter = target.value.length > 0 ? target.value : "all";
+        this.requestUpdate();
+    };
+
+    #setLintSearchQuery = (event: Event): void => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+            return;
+        }
+        this.#lintSearchQuery = target.value;
         this.requestUpdate();
     };
 
     #resetLintFilters = (): void => {
         this.#lintLevelFilter = "all";
         this.#lintRulesetFilter = "all";
+        this.#lintSearchQuery = "";
         this.requestUpdate();
     };
 
+    #resetDraft(catalog: GraphVisualizationProjectConfigurationCatalog): void {
+        this.#draftCatalogKey = "";
+        this.#ensureDraftForCatalog(catalog);
+        this.requestUpdate();
+    }
+
     #isLintFilterResetDisabled(): boolean {
-        return this.#lintLevelFilter === "all" && this.#lintRulesetFilter === "all";
+        return (
+            this.#lintLevelFilter === "all" && this.#lintRulesetFilter === "all" && this.#lintSearchQuery.length === 0
+        );
     }
 
     #filterLintRules(
         lintRules: ReadonlyArray<GraphVisualizationProjectConfigurationLintRuleEntry>,
-        rulesets: ReadonlyArray<GraphVisualizationProjectConfigurationLintRulesetEntry>
+        catalog: GraphVisualizationProjectConfigurationCatalog
     ): ReadonlyArray<GraphVisualizationProjectConfigurationLintRuleEntry> {
-        const selectedRuleset = rulesets.find((ruleset) => ruleset.name === this.#lintRulesetFilter);
+        const selectedRuleset = catalog.lint.rulesets.find((ruleset) => ruleset.name === this.#lintRulesetFilter);
         const rulesetRuleIds =
             this.#lintRulesetFilter === "all" || selectedRuleset === undefined
                 ? null
                 : new Set(selectedRuleset.ruleIds);
+        const normalizedSearchQuery = this.#lintSearchQuery.trim().toLowerCase();
 
         return lintRules.filter((rule) => {
             const matchesRuleset = rulesetRuleIds === null || rulesetRuleIds.has(rule.ruleId);
             const matchesLevel = this.#lintLevelFilter === "all" || rule.level === this.#lintLevelFilter;
-            return matchesRuleset && matchesLevel;
+            const matchesSearch =
+                normalizedSearchQuery.length === 0 ||
+                rule.ruleId.toLowerCase().includes(normalizedSearchQuery) ||
+                rule.description.toLowerCase().includes(normalizedSearchQuery);
+            return matchesRuleset && matchesLevel && matchesSearch;
         });
     }
 
-    #renderLintFilters(rulesets: ReadonlyArray<GraphVisualizationProjectConfigurationLintRulesetEntry>) {
+    #renderSavePanel(catalog: GraphVisualizationProjectConfigurationCatalog, draft: DraftParseResult) {
+        const initialText = serializeConfigurationValue(createEditableConfigFromCatalog(catalog));
+        const isDirty = this.#draftText !== initialText;
+        const isSaveDisabled = !draft.ok || !isDirty || this.state?.isConfigSavePending === true;
+
+        return html`
+            <aside class="config-save-panel" aria-label="Config save and JSON preview">
+                <div class="config-save-panel-header">
+                    ${renderBadge(
+                        draft.ok ? (isDirty ? "Unsaved" : "Saved") : "Invalid",
+                        draft.ok ? (isDirty ? "warning" : "success") : "error"
+                    )}
+                </div>
+                <div class="config-save-actions">
+                    <button
+                        type="button"
+                        class="gm-btn gm-btn--primary"
+                        ?disabled=${isSaveDisabled}
+                        @click=${() => (draft.ok ? this.#emitSaveConfig(draft.config) : undefined)}
+                    >
+                        <span class="button-content">
+                            ${this.state?.isConfigSavePending === true
+                                ? html`<span class="button-spinner" aria-hidden="true"></span>`
+                                : nothing}
+                            <span class="button-label">Save Config</span>
+                        </span>
+                    </button>
+                    <button
+                        type="button"
+                        class="gm-btn gm-btn--chip"
+                        ?disabled=${!isDirty || this.state?.isConfigSavePending === true}
+                        @click=${() => this.#resetDraft(catalog)}
+                    >
+                        Reset Draft
+                    </button>
+                </div>
+                <p class=${draft.ok ? "config-validation is-valid" : "config-validation is-invalid"} aria-live="polite">
+                    ${draft.ok ? "JSON is valid and ready to save." : draft.error}
+                </p>
+                <pre class="config-json-preview">
+${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
+                >
+            </aside>
+        `;
+    }
+
+    #renderFormatBuilder(catalog: GraphVisualizationProjectConfigurationCatalog, draftConfig: ConfigJsonObject) {
+        const entries = catalog.format.entries.filter((entry) => FORMAT_BUILDER_OPTION_NAMES.has(entry.name));
+        return html`
+            <section class="config-builder-section" aria-labelledby="config-format-heading">
+                <div class="config-section-heading">
+                    <h3 id="config-format-heading">Format</h3>
+                    <p>Formatter-owned options saved at the top level of <code>gmloop.json</code>.</p>
+                </div>
+                <div class="config-form-grid">
+                    ${entries.map((entry) => this.#renderFormatControl(entry, draftConfig))}
+                </div>
+            </section>
+        `;
+    }
+
+    #renderFormatControl(entry: GraphVisualizationProjectConfigurationEntry, draftConfig: ConfigJsonObject) {
+        const value = draftConfig[entry.name] ?? entry.value;
+        const controlId = `config-format-${entry.name}`;
+        const sourceTone: GmBadgeTone = entry.source === "configured" ? "success" : "muted";
+
+        if (typeof entry.value === "boolean") {
+            return html`
+                <label class="config-field config-field--toggle" for=${controlId}>
+                    <span>
+                        <strong>${entry.name}</strong>
+                        <small>${entry.description}</small>
+                    </span>
+                    <input
+                        id=${controlId}
+                        type="checkbox"
+                        ?checked=${value === true}
+                        @change=${(event: Event) => {
+                            const target = event.target;
+                            if (target instanceof HTMLInputElement) {
+                                this.#setFormatEntry(entry, target.value, target.checked);
+                            }
+                        }}
+                    />
+                    ${renderBadge(entry.source, sourceTone)}
+                </label>
+            `;
+        }
+
+        if (entry.name === "logicalOperatorsStyle") {
+            return html`
+                <label class="config-field" for=${controlId}>
+                    <span>
+                        <strong>${entry.name}</strong>
+                        <small>${entry.description}</small>
+                    </span>
+                    <select
+                        id=${controlId}
+                        @change=${(event: Event) => {
+                            const target = event.target;
+                            if (target instanceof HTMLSelectElement) {
+                                this.#setFormatEntry(entry, target.value, false);
+                            }
+                        }}
+                    >
+                        <option value="keywords" ?selected=${value === "keywords"}>Keywords</option>
+                        <option value="symbols" ?selected=${value === "symbols"}>Symbols</option>
+                    </select>
+                    ${renderBadge(entry.source, sourceTone)}
+                </label>
+            `;
+        }
+
+        return html`
+            <label class="config-field" for=${controlId}>
+                <span>
+                    <strong>${entry.name}</strong>
+                    <small>${entry.description}</small>
+                </span>
+                <input
+                    id=${controlId}
+                    type=${typeof entry.value === "number" ? "number" : "text"}
+                    .value=${getInputValue(value)}
+                    min="1"
+                    @input=${(event: Event) => {
+                        const target = event.target;
+                        if (target instanceof HTMLInputElement) {
+                            this.#setFormatEntry(entry, target.value, target.checked);
+                        }
+                    }}
+                />
+                ${renderBadge(entry.source, sourceTone)}
+            </label>
+        `;
+    }
+
+    #renderLintBuilder(catalog: GraphVisualizationProjectConfigurationCatalog, draftConfig: ConfigJsonObject) {
+        const filteredLintRules = this.#filterLintRules(catalog.lint.rules, catalog);
+        const selectedRuleset =
+            typeof draftConfig.lintRuleset === "string" ? draftConfig.lintRuleset : catalog.lint.ruleset;
+
+        return html`
+            <section class="config-builder-section" aria-labelledby="config-lint-heading">
+                <div class="config-section-heading config-section-heading--split">
+                    <div>
+                        <h3 id="config-lint-heading">Lint</h3>
+                        <p>Choose the base ruleset and override individual rule severities.</p>
+                    </div>
+                    <label class="config-inline-field">
+                        <span>Ruleset</span>
+                        <select @change=${this.#setLintRuleset}>
+                            ${catalog.lint.rulesets.map(
+                                (ruleset) => html`
+                                    <option value=${ruleset.name} ?selected=${selectedRuleset === ruleset.name}>
+                                        ${ruleset.name}
+                                    </option>
+                                `
+                            )}
+                        </select>
+                    </label>
+                </div>
+                ${this.#renderLintFilters(catalog)}
+                <div class="config-rule-table" role="table" aria-label="Lint rule configuration">
+                    <div class="config-rule-table-header" role="row">
+                        <span role="columnheader">Rule</span>
+                        <span role="columnheader">Severity</span>
+                    </div>
+                    ${filteredLintRules.length === 0
+                        ? html`<p class="config-empty">No lint rules match these filters.</p>`
+                        : filteredLintRules.map((entry) => this.#renderLintRuleRow(entry, draftConfig))}
+                </div>
+            </section>
+        `;
+    }
+
+    #renderLintFilters(catalog: GraphVisualizationProjectConfigurationCatalog) {
         return html`
             <div class="config-filter-row" aria-label="Lint rule filters">
                 <label class="config-filter-field">
-                    <span>
-                        Ruleset
-                        ${renderConfigHelp(
-                            "Ruleset filter help",
-                            "Filter the lint list to rules included by one ruleset. All rules is the default catalog view."
-                        )}
-                    </span>
+                    <span>Search</span>
+                    <input
+                        type="search"
+                        .value=${this.#lintSearchQuery}
+                        placeholder="Rule id or description"
+                        @input=${this.#setLintSearchQuery}
+                    />
+                </label>
+                <label class="config-filter-field">
+                    <span>Ruleset</span>
                     <select @change=${this.#setLintRulesetFilter}>
                         <option value="all" ?selected=${this.#lintRulesetFilter === "all"}>All Rules</option>
-                        ${rulesets.map(
+                        ${catalog.lint.rulesets.map(
                             (ruleset) => html`
                                 <option value=${ruleset.name} ?selected=${this.#lintRulesetFilter === ruleset.name}>
                                     ${ruleset.name}
@@ -255,28 +628,227 @@ export class GmConfigPanel extends LightDomLitElement {
                     </select>
                 </label>
                 <label class="config-filter-field">
-                    <span>
-                        Level
-                        ${renderConfigHelp(
-                            "Lint level filter help",
-                            "Filter by the effective lint severity after gmloop.json ruleset and rule overrides are applied."
-                        )}
-                    </span>
+                    <span>Level</span>
                     <select @change=${this.#setLintLevelFilter}>
                         <option value="all" ?selected=${this.#lintLevelFilter === "all"}>All Levels</option>
-                        <option value="error" ?selected=${this.#lintLevelFilter === "error"}>Error</option>
-                        <option value="warn" ?selected=${this.#lintLevelFilter === "warn"}>Warn</option>
-                        <option value="off" ?selected=${this.#lintLevelFilter === "off"}>Off</option>
+                        ${LINT_LEVELS.map(
+                            (level) =>
+                                html`<option value=${level} ?selected=${this.#lintLevelFilter === level}>
+                                    ${getLintLevelLabel(level)}
+                                </option>`
+                        )}
                     </select>
                 </label>
                 <button
                     type="button"
-                    class="config-filter-reset"
+                    class="gm-btn gm-btn--chip config-filter-reset"
                     @click=${this.#resetLintFilters}
                     ?disabled=${this.#isLintFilterResetDisabled()}
                 >
                     Reset Filters
                 </button>
+            </div>
+        `;
+    }
+
+    #renderLintRuleRow(entry: GraphVisualizationProjectConfigurationLintRuleEntry, draftConfig: ConfigJsonObject) {
+        const effectiveLevel = readRawLintRuleLevel(draftConfig, entry.ruleId) ?? entry.level;
+        const fixableBadgeLabel = getLintFixableBadgeLabel(entry.fixable);
+        const hasOptions = Object.keys(entry.options).length > 0;
+
+        return html`
+            <div class="config-rule-row" role="row">
+                <div class="config-rule-main" role="cell">
+                    <strong>${entry.ruleId}</strong>
+                    <span>${entry.description}</span>
+                    <span class="config-badge-row">
+                        ${renderBadge(getLintLevelLabel(effectiveLevel), getLintLevelTone(effectiveLevel))}
+                        ${fixableBadgeLabel === null ? nothing : renderBadge(fixableBadgeLabel, "neutral")}
+                    </span>
+                    ${hasOptions
+                        ? html`<pre class="config-inline-json">${serializeConfigurationValue(entry.options)}</pre>`
+                        : nothing}
+                </div>
+                <div class="config-segmented" role="cell" aria-label=${`${entry.ruleId} severity`}>
+                    ${LINT_LEVELS.map(
+                        (level) => html`
+                            <button
+                                type="button"
+                                class=${effectiveLevel === level ? "active" : ""}
+                                aria-pressed=${effectiveLevel === level}
+                                @click=${() => this.#setLintRuleLevel(entry.ruleId, level)}
+                            >
+                                ${effectiveLevel === level
+                                    ? html`<span class="config-segmented-indicator" aria-hidden="true">✓</span>`
+                                    : nothing}
+                                ${getLintLevelLabel(level)}
+                            </button>
+                        `
+                    )}
+                </div>
+            </div>
+        `;
+    }
+
+    #renderRefactorBuilder(catalog: GraphVisualizationProjectConfigurationCatalog, draftConfig: ConfigJsonObject) {
+        return html`
+            <section class="config-builder-section" aria-labelledby="config-refactor-heading">
+                <div class="config-section-heading">
+                    <h3 id="config-refactor-heading">Refactor</h3>
+                    <p>Enable project codemods and inspect per-codemod JSON payloads.</p>
+                </div>
+                <div class="config-codemod-table">
+                    ${catalog.refactor.codemods.map((codemod) => this.#renderCodemodRow(codemod, draftConfig))}
+                </div>
+            </section>
+        `;
+    }
+
+    #renderCodemodRow(
+        entry: GraphVisualizationProjectConfigurationRefactorCodemodEntry,
+        draftConfig: ConfigJsonObject
+    ) {
+        const rawCodemodConfig = readRawCodemodConfig(draftConfig, entry.id);
+        const enabled = rawCodemodConfig === null ? entry.enabled : rawCodemodConfig !== false;
+        const configValue =
+            rawCodemodConfig === null || rawCodemodConfig === false ? (entry.config ?? {}) : rawCodemodConfig;
+
+        return html`
+            <details class="config-codemod-row">
+                <summary>
+                    <label class="config-toggle-label">
+                        <input
+                            type="checkbox"
+                            ?checked=${enabled}
+                            @change=${(event: Event) => {
+                                const target = event.target;
+                                if (target instanceof HTMLInputElement) {
+                                    this.#setCodemodEnabled(entry, target.checked);
+                                }
+                            }}
+                        />
+                        <span>
+                            <strong>${entry.id}</strong>
+                            <small>${entry.description}</small>
+                        </span>
+                    </label>
+                    <span class="config-badge-row">
+                        ${renderBadge(enabled ? "Enabled" : "Disabled", enabled ? "success" : "muted")}
+                        ${renderBadge(
+                            entry.requiresSemanticProjectIndex ? "Requires semantic index" : "No semantic index",
+                            entry.requiresSemanticProjectIndex ? "warning" : "muted"
+                        )}
+                    </span>
+                </summary>
+                <label class="config-json-field">
+                    <span>${entry.id} config JSON</span>
+                    <textarea
+                        spellcheck="false"
+                        .value=${serializeConfigurationValue(configValue)}
+                        @change=${(event: Event) => {
+                            const target = event.target;
+                            if (target instanceof HTMLTextAreaElement) {
+                                this.#setCodemodConfig(entry.id, target.value);
+                            }
+                        }}
+                    ></textarea>
+                </label>
+            </details>
+        `;
+    }
+
+    #renderToolMetadata(catalog: GraphVisualizationProjectConfigurationCatalog) {
+        const gameMakerCliCatalog = catalog.gameMakerCli;
+        return html`
+            <section class="config-tool-metadata" aria-labelledby="config-tool-metadata-heading">
+                <div class="config-section-heading">
+                    <h3 id="config-tool-metadata-heading">Tool Metadata</h3>
+                    <p>Read-only command and MCP catalogs discovered for this project.</p>
+                </div>
+                <details class="config-tool-group">
+                    <summary>
+                        <span>GameMaker CLI</span>
+                        ${renderBadge(`${String(gameMakerCliCatalog.cliCommands.length)} commands`, "muted")}
+                    </summary>
+                    <p>
+                        ${gameMakerCliCatalog.available
+                            ? `Live gm-cli metadata from ${gameMakerCliCatalog.invocation ?? "the detected gm-cli executable"}${gameMakerCliCatalog.version ? ` (v${gameMakerCliCatalog.version})` : ""}.`
+                            : (gameMakerCliCatalog.error ?? "gm-cli metadata is unavailable.")}
+                    </p>
+                    ${gameMakerCliCatalog.available
+                        ? gameMakerCliCatalog.cliCommands.map((entry) => renderGameMakerCliCommandEntry(entry))
+                        : nothing}
+                </details>
+                <details class="config-tool-group">
+                    <summary>
+                        <span>GameMaker MCP</span>
+                        ${renderBadge(`${String(gameMakerCliCatalog.mcpTools.length)} tools`, "muted")}
+                    </summary>
+                    <p>
+                        ${gameMakerCliCatalog.mcpServer.available
+                            ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} metadata from ${gameMakerCliCatalog.mcpServer.serverId ? `configured MCP server ${gameMakerCliCatalog.mcpServer.serverId}` : "gm-cli resourcetool mcp"}.`
+                            : (gameMakerCliCatalog.mcpServer.error ?? "ResourceTool MCP metadata is unavailable.")}
+                    </p>
+                    ${gameMakerCliCatalog.mcpServer.available
+                        ? gameMakerCliCatalog.mcpTools.map((entry) => renderGameMakerCliMcpToolEntry(entry))
+                        : nothing}
+                </details>
+            </section>
+        `;
+    }
+
+    #renderRenderedConfig(catalog: GraphVisualizationProjectConfigurationCatalog, draft: DraftParseResult) {
+        if (!draft.ok) {
+            return html`
+                <div class="config-editor-layout">
+                    <section class="config-builder-section config-builder-section--invalid">
+                        <h3>Rendered Config</h3>
+                        <p>Fix the JSON syntax in Raw JSON before using the visual editor.</p>
+                    </section>
+                    ${this.#renderSavePanel(catalog, draft)}
+                </div>
+            `;
+        }
+
+        return html`
+            <div class="config-editor-layout">
+                <div class="config-builder-main">
+                    ${this.#renderFormatBuilder(catalog, draft.config)}
+                    ${this.#renderLintBuilder(catalog, draft.config)}
+                    ${this.#renderRefactorBuilder(catalog, draft.config)} ${this.#renderToolMetadata(catalog)}
+                </div>
+                ${this.#renderSavePanel(catalog, draft)}
+            </div>
+        `;
+    }
+
+    #renderRawConfig(catalog: GraphVisualizationProjectConfigurationCatalog, draft: DraftParseResult) {
+        return html`
+            <div class="config-editor-layout config-editor-layout--raw">
+                <section class="config-builder-section config-raw-editor">
+                    <div class="config-section-heading">
+                        <h3>Raw JSON</h3>
+                        <p>
+                            Edit the exact <code>gmloop.json</code> payload. The rendered builder uses this same draft.
+                        </p>
+                    </div>
+                    <textarea
+                        id="config-raw-json"
+                        class="config-raw-textarea"
+                        spellcheck="false"
+                        aria-describedby="config-raw-validation"
+                        .value=${this.#draftText}
+                        @input=${this.#onRawConfigInput}
+                    ></textarea>
+                    <p
+                        id="config-raw-validation"
+                        class=${draft.ok ? "config-validation is-valid" : "config-validation is-invalid"}
+                        aria-live="polite"
+                    >
+                        ${draft.ok ? "JSON is valid." : draft.error}
+                    </p>
+                </section>
+                ${this.#renderSavePanel(catalog, draft)}
             </div>
         `;
     }
@@ -295,41 +867,33 @@ export class GmConfigPanel extends LightDomLitElement {
                 <section id="config-page" class=${configPageClassName}>
                     ${this.state.configErrorMessage
                         ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
-                        : null}
+                        : nothing}
                     <p id="config-meta" class="docs-meta">Project settings are not available right now.</p>
                     <div id="config-content" class="config-stack"></div>
                 </section>
             `;
         }
 
-        const formatEntries = configCatalog.format.entries;
-        const gameMakerCliCatalog = configCatalog.gameMakerCli;
-        const lintRules = configCatalog.lint.rules;
-        const lintRulesets = configCatalog.lint.rulesets;
-        const filteredLintRules = this.#filterLintRules(lintRules, lintRulesets);
-        const codemods = configCatalog.refactor.codemods;
+        this.#ensureDraftForCatalog(configCatalog);
+        const draft = this.#readDraft();
 
         return html`
             <section id="config-page" class=${configPageClassName}>
                 ${this.state.configErrorMessage
                     ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
-                    : null}
-                <p id="config-meta" class="docs-meta">
-                    ${configCatalog.gmloop.configPath
-                        ? html`Config Path: <strong>${configCatalog.gmloop.configPath}</strong>`
-                        : html`Config Path: <strong>Not found</strong>`}
-                </p>
+                    : nothing}
                 <div id="config-content" class="config-stack">
                     ${configCatalog.gmloop.exists
-                        ? null
+                        ? nothing
                         : html`
                               <div class="config-setup-banner">
-                                  <h3>Configure GMLoop for your project</h3>
-                                  <p>
-                                      Customize the formatter print width, enable/disable refactor codemods, and
-                                      configure lint rulesets by generating a default <code>gmloop.json</code> file in
-                                      your project's root directory.
-                                  </p>
+                                  <div>
+                                      <h3>Configure GMLoop for your project</h3>
+                                      <p>
+                                          Generate a default <code>gmloop.json</code>, or edit the draft below and save
+                                          it directly.
+                                      </p>
+                                  </div>
                                   <button
                                       type="button"
                                       class="gm-btn gm-btn--primary"
@@ -339,79 +903,15 @@ export class GmConfigPanel extends LightDomLitElement {
                                       <span class="button-content">
                                           ${this.state.isRegeneratePending
                                               ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                              : null}
+                                              : nothing}
                                           <span class="button-label">Create Default Config</span>
                                       </span>
                                   </button>
                               </div>
                           `}
-                    <gm-card class="config-card" .heading=${`Format (${String(formatEntries.length)})`}>
-                        <ul class="config-list">
-                            ${formatEntries.map((entry) => renderConfigEntry(entry))}
-                        </ul>
-                    </gm-card>
-                    <gm-card class="config-card" .heading=${`Lint (${String(filteredLintRules.length)})`}>
-                        <p>Active ruleset: ${configCatalog.lint.ruleset ?? "none"}. Filters affect this view only.</p>
-                        ${this.#renderLintFilters(lintRulesets)}
-                        <ul class="config-list">
-                            ${filteredLintRules.length === 0
-                                ? html`<li class="config-empty">No lint rules match these filters.</li>`
-                                : filteredLintRules.map((entry) => renderLintRuleEntry(entry))}
-                        </ul>
-                    </gm-card>
-                    <gm-card class="config-card" .heading=${`Refactor (${String(codemods.length)})`}>
-                        <ul class="config-list">
-                            ${codemods.map((entry) => renderCodemodEntry(entry))}
-                        </ul>
-                    </gm-card>
-                    <gm-card
-                        class="config-card"
-                        .heading=${`GameMaker CLI (${String(gameMakerCliCatalog.cliCommands.length)})`}
-                    >
-                        <p>
-                            ${gameMakerCliCatalog.available
-                                ? `Live gm-cli metadata sourced directly from ${gameMakerCliCatalog.invocation ?? "the detected gm-cli executable"}${gameMakerCliCatalog.version ? ` (v${gameMakerCliCatalog.version})` : ""}.`
-                                : (gameMakerCliCatalog.error ?? "gm-cli metadata is unavailable.")}
-                        </p>
-                        ${gameMakerCliCatalog.available
-                            ? html`
-                                  <ul class="config-list">
-                                      <li class="config-item">
-                                          <strong>Invocation</strong>
-                                          <span>${gameMakerCliCatalog.invocation ?? "Unavailable"}</span>
-                                      </li>
-                                      <li class="config-item">
-                                          <strong>Version</strong>
-                                          <span>${gameMakerCliCatalog.version ?? "Unknown"}</span>
-                                      </li>
-                                  </ul>
-                                  <ul class="config-list">
-                                      ${gameMakerCliCatalog.cliCommands.map((entry) =>
-                                          renderGameMakerCliCommandEntry(entry)
-                                      )}
-                                  </ul>
-                              `
-                            : null}
-                    </gm-card>
-                    <gm-card
-                        class="config-card"
-                        .heading=${`GameMaker MCP (${String(gameMakerCliCatalog.mcpTools.length)})`}
-                    >
-                        <p>
-                            ${gameMakerCliCatalog.mcpServer.available
-                                ? `${gameMakerCliCatalog.mcpServer.name ?? "ResourceTool"} v${gameMakerCliCatalog.mcpServer.version ?? "unknown"} tool metadata sourced directly from ${gameMakerCliCatalog.mcpServer.serverId ? `the configured MCP server "${gameMakerCliCatalog.mcpServer.serverId}"` : "gm-cli resourcetool mcp"}${gameMakerCliCatalog.mcpServer.sourcePath ? ` in ${gameMakerCliCatalog.mcpServer.sourcePath}` : ""}${gameMakerCliCatalog.mcpServer.projectPath ? ` for ${gameMakerCliCatalog.mcpServer.projectPath}` : ""}.`
-                                : (gameMakerCliCatalog.mcpServer.error ?? "ResourceTool MCP metadata is unavailable.")}
-                        </p>
-                        ${gameMakerCliCatalog.mcpServer.available
-                            ? html`
-                                  <ul class="config-list">
-                                      ${gameMakerCliCatalog.mcpTools.map((entry) =>
-                                          renderGameMakerCliMcpToolEntry(entry)
-                                      )}
-                                  </ul>
-                              `
-                            : null}
-                    </gm-card>
+                    ${this.state.activeConfigView === "raw"
+                        ? this.#renderRawConfig(configCatalog, draft)
+                        : this.#renderRenderedConfig(configCatalog, draft)}
                 </div>
             </section>
         `;

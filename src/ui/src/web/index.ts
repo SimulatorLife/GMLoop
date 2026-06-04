@@ -261,6 +261,18 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 }
                 reloadWhenChanged(result);
             },
+            onSaveConfig: async (config) => {
+                const response = await fetch("/api/config/save", {
+                    body: JSON.stringify({ config }),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST"
+                });
+                const result = await readJsonResponse<MutationApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Configuration save failed.");
+                }
+                reloadWhenChanged(result);
+            },
             onRunFix: async (options?: GraphVisualizationFixRunOptions) => {
                 const pollFixProgress = async (): Promise<void> => {
                     const progressResponse = await fetch("/api/fix/progress", {
