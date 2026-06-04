@@ -137,14 +137,6 @@ export class GmMcpPanel extends LightDomLitElement {
             <section id="mcp-page" class=${mcpPageClassName}>
                 <p id="mcp-meta" class="docs-meta">MCP bridge status, available tools, and connection activity.</p>
                 <div id="mcp-content" class="docs-grid">
-                    <gm-card class="catalog-card" .heading=${"Server Status"}>
-                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                            ${this.#renderServerStatusChip(serverStatus)}
-                        </div>
-                        <p style="margin-top: 12px; color: var(--gm-text-secondary); font-size: var(--gm-text-sm);">
-                            ${this.#getServerStatusDescription(serverStatus)}
-                        </p>
-                    </gm-card>
                     ${this.#renderServerMetadata()} ${this.#renderAvailableTools()} ${this.#renderActivityFeed()}
                 </div>
             </section>
