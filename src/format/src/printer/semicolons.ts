@@ -1,20 +1,13 @@
 /**
  * Semicolon emission rules for the printer layer.
  *
- * The core whitespace/blank-line helpers (`countTrailingBlankLines`,
- * `getNextNonWhitespaceCharacter`) live in the shared layout layer so both
- * printer and comment subsystems can use them without introducing a cross-domain
- * import dependency. This module re-exports them so existing call sites inside
- * the printer package do not need to change.
+ * Printer-internal helpers stay defined directly in this file. The shared
+ * layout helpers (`countTrailingBlankLines`, `getNextNonWhitespaceCharacter`)
+ * live in `../shared/layout-helpers.js` and are imported directly by callers.
  */
 
 import { Core } from "@gmloop/core";
 import type { AstPath } from "prettier";
-
-// Re-export shared helpers so printer module call sites remain unchanged.
-// Any printer-internal helper that is only used within the printer subsystem
-// stays defined directly in this file.
-export { countTrailingBlankLines, getNextNonWhitespaceCharacter } from "../shared/index.js";
 
 const { isObjectLike } = Core;
 

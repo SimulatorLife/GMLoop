@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 import { util } from "prettier";
 
-import { countTrailingBlankLines, getNextNonWhitespaceCharacter } from "../shared/index.js";
+import { countTrailingBlankLines, getNextNonWhitespaceCharacter } from "../shared/layout-helpers.js";
 import { DOC_COMMENT_OUTPUT_FLAG, NUMBER_TYPE, STRING_TYPE } from "./constants.js";
 import { safeGetParentNode } from "./path-utils.js";
 import { macroTextHasExplicitTrailingBlankLine } from "./source-text.js";
