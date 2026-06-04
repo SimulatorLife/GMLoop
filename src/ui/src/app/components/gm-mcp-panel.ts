@@ -1,12 +1,11 @@
 import { html } from "lit";
 
-import type { GraphVisualizationMcpToolCatalogEntry } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
- * MCP surface that displays server status, available tools, and connection activity.
+ * MCP surface that displays server status and connection activity.
  */
 export class GmMcpPanel extends LightDomLitElement {
     public static properties = {
@@ -40,45 +39,6 @@ export class GmMcpPanel extends LightDomLitElement {
         `;
     }
 
-    #renderToolCard(entry: GraphVisualizationMcpToolCatalogEntry) {
-        return html`
-            <li class="mcp-tool-item">
-                <strong>${entry.commandDisplayName}</strong>
-                <span>${entry.description}</span>
-                ${entry.fields.length > 0
-                    ? html`
-                          <ul class="catalog-list" style="margin-top: 8px; padding-left: 16px;">
-                              ${entry.fields.map(
-                                  (field) => html`
-                                      <li class="catalog-item">
-                                          <code>${field.name}</code>
-                                          : ${field.description}
-                                      </li>
-                                  `
-                              )}
-                          </ul>
-                      `
-                    : null}
-            </li>
-        `;
-    }
-
-    #renderAvailableTools() {
-        const docsCatalogs = this.model?.documentationCatalogs;
-        const mcpTools = docsCatalogs?.mcpTools ?? [];
-        const hasTools = mcpTools.length > 0;
-
-        return html`
-            <gm-card class="catalog-card" .heading=${`Available Tools (${String(mcpTools.length)})`}>
-                ${hasTools
-                    ? html`<ul class="mcp-tool-list">
-                          ${mcpTools.map((entry) => this.#renderToolCard(entry))}
-                      </ul>`
-                    : html`<p class="mcp-activity-empty">No tools are available right now.</p>`}
-            </gm-card>
-        `;
-    }
-
     #renderActivityFeed() {
         return html`
             <gm-card class="catalog-card" .heading=${"Activity Feed"}>
@@ -98,9 +58,9 @@ export class GmMcpPanel extends LightDomLitElement {
 
         return html`
             <section id="mcp-page" class=${mcpPageClassName}>
-                <p id="mcp-meta" class="docs-meta">MCP bridge status, available tools, and connection activity.</p>
+                <p id="mcp-meta" class="docs-meta">MCP bridge status and connection activity.</p>
                 <div id="mcp-content" class="docs-grid">
-                    ${this.#renderServerMetadata()} ${this.#renderAvailableTools()} ${this.#renderActivityFeed()}
+                    ${this.#renderServerMetadata()} ${this.#renderActivityFeed()}
                 </div>
             </section>
         `;

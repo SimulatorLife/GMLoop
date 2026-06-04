@@ -639,3 +639,38 @@ void test("graph visualization server reports cross-realm error messages via cap
         await handle.stop();
     }
 });
+
+void test("graph visualization server routes POST /api/config/create successfully", async (testContext) => {
+    let configCreated = false;
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            createConfig: async () => {
+                configCreated = true;
+                return { changed: true };
+            },
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/config/create`, { method: "POST" });
+        assert.equal(response.status, 200);
+        const payload = (await response.json()) as { changed: boolean; ok: boolean };
+        assert.deepEqual(payload, { changed: true, ok: true });
+        assert.equal(configCreated, true);
+    } finally {
+        await handle.stop();
+    }
+});

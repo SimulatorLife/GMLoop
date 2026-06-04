@@ -278,3 +278,36 @@ void test("GmDocsPanel shows an active-view empty state when search has no match
     assert.match(rendered, /No commands match “does-not-exist”\./u);
     assert.doesNotMatch(rendered, /graph visualize/u);
 });
+
+void test("GmDocsPanel renders the MCP tools subview and tool metadata when selected", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = {
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/project"
+        },
+        documentationCatalogs: createDocumentationCatalogs(),
+        isServerMode: false,
+        lastFixRun: null,
+        loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
+        projectConfigurationCatalog: null,
+        startupState: null,
+        title: "Docs MCP View"
+    };
+    panel.state = { ...createDocsPanelState(), activeDocsView: "mcp" };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="docs-page"[\s\S]*class=page content-page docs-page active/u);
+    assert.match(rendered, /project status/u);
+    assert.match(rendered, /Read the current project status\./u);
+    assert.match(rendered, /path/u);
+    assert.match(rendered, /Project path to inspect\./u);
+    assert.match(rendered, /manual read/u);
+    assert.match(rendered, /Read GameMaker manual entries\./u);
+});

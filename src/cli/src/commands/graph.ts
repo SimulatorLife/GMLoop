@@ -1258,7 +1258,9 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     async function refreshActiveVisualizationArtifacts(context: GraphResolutionContext | null): Promise<void> {
         if (context === null) {
             activeVisualizationPayload = createEmptyGraphVisualizationData();
-            activeProjectConfigurationCatalog = null;
+            activeProjectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(null, {
+                config: options.config
+            });
             return;
         }
 
@@ -1583,8 +1585,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     }
 
                     activeContext = null;
-                    activeVisualizationPayload = createEmptyGraphVisualizationData();
-                    activeProjectConfigurationCatalog = null;
+                    await refreshActiveVisualizationArtifacts(null);
                     activeStartupState = createGraphVisualizationServeErrorState(
                         "Failed to load the initial project.",
                         Core.getErrorMessage(error, { fallback: "Unknown graph visualization startup error" })
@@ -1767,15 +1768,12 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 return Object.freeze({ changed: previousPayloadString !== nextPayloadString });
             },
             createConfig: async () => {
-                const currentContext = activeContext;
-                if (!currentContext) {
-                    throw new Error("No active project open.");
-                }
-                const configPath = path.join(currentContext.projectRoot, "gmloop.json");
+                const projectRoot = activeContext?.projectRoot ?? process.cwd();
+                const configPath = path.join(projectRoot, "gmloop.json");
                 await writeFile(configPath, `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`, "utf8");
                 const nextContext = await resolveGraphContext({
                     ...options,
-                    path: currentContext.projectRoot
+                    path: projectRoot
                 });
                 updateActiveContext(nextContext);
                 await refreshActiveVisualizationArtifacts(nextContext);
