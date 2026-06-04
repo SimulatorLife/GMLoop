@@ -328,6 +328,7 @@ interface FileRemovalCleanupContext {
     fileContentHashes: Map<string, string>;
     fileContentLengths: Map<string, number>;
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>;
+    sourcePathToPatchIds: Map<string, Set<string>>;
     debouncedHandlers: Map<string, DebouncedFunction<[string, string, FileChangeOptions]>>;
 }
 
@@ -874,6 +875,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         metrics: [],
         errors: [],
         lastSuccessfulPatches: new Map(),
+        sourcePathToPatchIds: new Map(),
         bounds: { maxEntries: maxPatchHistory },
         totalPatchCount: 0,
         websocketServer: null,
@@ -1903,7 +1905,7 @@ function getSymbolIdFromFilePath(filePath: string): string {
 }
 
 function removeCachedPatchesForFile(
-    runtimeContext: Pick<FileRemovalCleanupContext, "lastSuccessfulPatches">,
+    runtimeContext: Pick<FileRemovalCleanupContext, "lastSuccessfulPatches" | "sourcePathToPatchIds">,
     filePath: string
 ): number {
     const symbolId = getSymbolIdFromFilePath(filePath);
@@ -1920,6 +1922,8 @@ function removeCachedPatchesForFile(
         runtimeContext.lastSuccessfulPatches.delete(patchId);
         removedCount += 1;
     }
+
+    runtimeContext.sourcePathToPatchIds.delete(filePath);
 
     return removedCount;
 }
