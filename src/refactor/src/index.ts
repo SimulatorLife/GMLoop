@@ -262,4 +262,21 @@ export { isSymbolKind, parseSymbolKind, requireSymbolKind, SymbolKind } from "./
 export { ConflictType, isConflictType, parseConflictType, requireConflictType } from "./types.js";
 export { isOccurrenceKind, OccurrenceKind, parseOccurrenceKind, requireOccurrenceKind } from "./types.js";
 export type { WorkspaceRevisionProvider } from "./workspace-edit.js";
-export { WORKSPACE_EDIT_REVISION_TOKEN, WorkspaceEdit } from "./workspace-edit.js";
+export type {
+    FileRename,
+    GroupedTextEdits,
+    MetadataEdit,
+    TextEdit,
+    WorkspaceEditTelemetry,
+    WorkspaceLike
+} from "./workspace-edit.js";
+export {
+    getWorkspaceArrays,
+    getWorkspaceEditRevision,
+    getWorkspaceEditTelemetry,
+    isWorkspaceEditLike,
+    mergeWorkspaceEditInto,
+    validateFileRenameOperations,
+    WORKSPACE_EDIT_REVISION_TOKEN,
+    WorkspaceEdit
+} from "./workspace-edit.js";

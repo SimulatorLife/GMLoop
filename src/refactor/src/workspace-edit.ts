@@ -36,6 +36,87 @@ export interface WorkspaceRevisionProvider {
     readonly [WORKSPACE_EDIT_REVISION_TOKEN]: () => number;
 }
 
+/**
+ * Duck-type contract for workspace edit containers used throughout the refactor
+ * engine. This interface documents the full set of properties and methods that
+ * any substitutable implementation must provide so that call sites can rely on
+ * the shared contract rather than `instanceof WorkspaceEdit`.
+ *
+ * Using `WorkspaceLike` (or the capability probe {@link isWorkspaceEditLike})
+ * instead of `instanceof` enables polymorphism across module boundaries: a
+ * third-party or test-only implementation that satisfies the contract can be
+ * substituted for the concrete {@link WorkspaceEdit} class without breaking
+ * any caller.
+ *
+ * @example
+ * ```ts
+ * // Substitutable implementation — not a WorkspaceEdit subclass
+ * class RecordingWorkspaceEdit {
+ *   readonly edits: Array<TextEdit> = [];
+ *   readonly metadataEdits: Array<MetadataEdit> = [];
+ *   readonly fileRenames: Array<FileRename> = [];
+ *
+ *   addEdit(path: string, start: number, end: number, newText: string): void { ... }
+ *   groupByFile(): Map<string, Array<Pick<TextEdit, "start" | "end" | "newText">>> { ... }
+ * }
+ *
+ * // Accepts any WorkspaceLike, not just the concrete WorkspaceEdit class
+ * function processWorkspace(workspace: WorkspaceLike): void {
+ *   const grouped = workspace.groupByFile();
+ *   ...
+ * }
+ * ```
+ */
+export interface WorkspaceLike {
+    /**
+     * Pending text edits to apply. Each edit replaces the range `[start, end)`
+     * in the identified file with `newText`.
+     */
+    readonly edits: Array<TextEdit>;
+
+    /**
+     * Pending full-document metadata rewrites for `.yy`/`.yyp` resources.
+     */
+    readonly metadataEdits: Array<MetadataEdit>;
+
+    /**
+     * Pending file renames (directory or file path changes).
+     */
+    readonly fileRenames: Array<FileRename>;
+
+    /**
+     * Append a text edit to the workspace.
+     *
+     * @param path - Absolute workspace path of the file to edit.
+     * @param start - Zero-based start offset of the range to replace.
+     * @param end - Zero-based exclusive end offset of the range to replace.
+     * @param newText - Replacement text inserted at the edit position.
+     */
+    addEdit(path: string, start: number, end: number, newText: string): void;
+
+    /**
+     * Append a full-document metadata rewrite for a `.yy`/`.yyp` resource.
+     *
+     * @param path - Absolute workspace path of the metadata file.
+     * @param content - Complete new file content as a JSON string.
+     */
+    addMetadataEdit(path: string, content: string): void;
+
+    /**
+     * Queue a file or directory rename.
+     *
+     * @param oldPath - Current workspace path.
+     * @param newPath - Desired workspace path after the rename.
+     */
+    addFileRename(oldPath: string, newPath: string): void;
+
+    /**
+     * Return a map from file path to that file's text edits, sorted in
+     * descending order by start position with duplicates removed.
+     */
+    groupByFile(): GroupedTextEdits;
+}
+
 export interface TextEdit {
     path: string;
     start: number;
@@ -160,7 +241,16 @@ function deduplicateSortedTextEdits(
     return sortedEdits;
 }
 
-export class WorkspaceEdit {
+/**
+ * Concrete workspace edit container used throughout the refactor engine.
+ *
+ * `WorkspaceEdit` is the canonical implementation of {@link WorkspaceLike}.
+ * Callers that only need to create or read workspaces should type their
+ * parameters as {@link WorkspaceLike} to accept any substitutable
+ * implementation. The concrete class is used internally when the caller
+ * owns the construction and needs deduplication, caching, or revision tracking.
+ */
+export class WorkspaceEdit implements WorkspaceLike {
     readonly edits: Array<TextEdit>;
     readonly fileRenames: Array<FileRename> = [];
     readonly metadataEdits: Array<MetadataEdit> = [];
@@ -309,14 +399,17 @@ export function getWorkspaceEditRevision(workspace: object): number | null {
 }
 
 /**
- * Determine whether a value behaves like a {@link WorkspaceEdit} by confirming
- * it exposes an `edits` array and the required methods. Accepts any object that
- * conforms to the expected contract (duck-typed interface) so refactor operations
- * can work with substitutable implementations without relying on `instanceof` checks
- * that break polymorphism across module boundaries.
+ * Capability probe that confirms a value satisfies the {@link WorkspaceLike}
+ * contract. Use this instead of `instanceof WorkspaceEdit` so that
+ * substitutable implementations can be recognized at runtime without
+ * sharing a common prototype chain.
+ *
+ * The probe verifies all three array properties (`edits`, `metadataEdits`,
+ * `fileRenames`) so that callers can safely destructure all arrays from an
+ * unknown workspace without null-checking each one individually.
  *
  * @param value - Candidate value to inspect.
- * @returns `true` when the value exposes the WorkspaceEdit contract.
+ * @returns `true` when the value satisfies the WorkspaceLike contract.
  */
 export function isWorkspaceEditLike(value?: unknown): boolean {
     if (value == null || typeof value !== "object") {
@@ -327,7 +420,11 @@ export function isWorkspaceEditLike(value?: unknown): boolean {
 
     return (
         Array.isArray(candidate.edits) &&
+        Array.isArray(candidate.metadataEdits) &&
+        Array.isArray(candidate.fileRenames) &&
         typeof candidate.addEdit === "function" &&
+        typeof candidate.addMetadataEdit === "function" &&
+        typeof candidate.addFileRename === "function" &&
         typeof candidate.groupByFile === "function"
     );
 }
