@@ -1509,11 +1509,11 @@ export default class GameMakerASTBuilder {
         let id: string | null = null;
         let idLocation: any = null;
 
-        // Guard against `null` as well as `undefined` from the parser runtime.
-        if (this.ensureToken(ctx.Identifier()) != null) {
-            const identifierNode = this.ensureToken(ctx.Identifier());
-            id = identifierNode.getText();
-            idLocation = this.createIdentifierLocation((identifierNode as any).symbol);
+        const identifierContext = this.ensureSingle(ctx.identifier?.());
+        if (identifierContext != null) {
+            const identifierNode = this.visit(identifierContext);
+            id = typeof identifierNode?.name === "string" ? identifierNode.name : null;
+            idLocation = identifierNode;
         }
 
         const paramListCtx = this.ensureSingle(ctx.parameterList());
@@ -1561,19 +1561,15 @@ export default class GameMakerASTBuilder {
     // Visit a parse tree produced by GameMakerLanguageParser#constructorClause.
     visitConstructorClause(ctx: ParserContext): any {
         let id: string | null = null;
-        let idLocation = null;
+        let idLocation: any = null;
         let params: any[] = [];
         let hasTrailingComma = false;
 
-        if (ctx.Identifier() != null) {
-            const identifierNode = this.ensureSingle(ctx.Identifier());
-            const identifierToken = this.ensureToken(identifierNode);
-            id = identifierToken.getText();
-            idLocation = this.createIdentifierLocation(
-                Core.isObjectLike(identifierNode) && "symbol" in identifierNode
-                    ? ((identifierNode as { symbol?: ParserToken }).symbol ?? identifierToken)
-                    : identifierToken
-            );
+        const identifierContext = this.ensureSingle(ctx.identifier?.());
+        if (identifierContext != null) {
+            const identifierNode = this.visit(identifierContext);
+            id = typeof identifierNode?.name === "string" ? identifierNode.name : null;
+            idLocation = identifierNode;
         }
 
         const argsCtx = this.ensureSingle(ctx.arguments?.());
@@ -1889,10 +1885,7 @@ export default class GameMakerASTBuilder {
 
     // Visit a parse tree produced by GameMakerLanguageParser#softKeyword.
     visitSoftKeyword(ctx: ParserContext): string | null {
-        if (ctx.Constructor() != null) {
-            return this.ensureToken(ctx.Constructor()).getText();
-        }
-        return null;
+        return this.ensureToken(ctx).getText();
     }
 
     // Visit a parse tree produced by GameMakerLanguageParser#propertySoftKeyword.

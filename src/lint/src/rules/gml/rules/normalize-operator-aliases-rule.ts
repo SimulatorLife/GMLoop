@@ -14,6 +14,11 @@ const LOGICAL_NOT_ALIAS = "not";
 const LOGICAL_NOT_OPERATOR = "!";
 const WHITESPACE_PATTERN = /\s/u;
 const WORD_OPERATOR_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+const WORD_OPERATOR_ALIASES = Object.freeze(
+    [...Core.OPERATOR_ALIAS_MAP.keys()]
+        .filter((operator) => operator !== LOGICAL_NOT_ALIAS && WORD_OPERATOR_PATTERN.test(operator))
+        .sort((left, right) => right.length - left.length)
+);
 
 function resolveReportLocation(context: Rule.RuleContext, index: number): { line: number; column: number } {
     const sourceCodeWithLocator = context.sourceCode as Rule.RuleContext["sourceCode"] & {
@@ -101,6 +106,13 @@ function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string): string {
             continue;
         }
 
+        const wordOperatorEdit = readWordOperatorAliasEditAt(sourceText, index);
+        if (wordOperatorEdit) {
+            edits.push(wordOperatorEdit);
+            index = wordOperatorEdit.end;
+            continue;
+        }
+
         if (!hasLogicalNotAliasAt(sourceText, index)) {
             index += 1;
             continue;
@@ -115,6 +127,40 @@ function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string): string {
     }
 
     return applySourceTextEdits(sourceText, edits);
+}
+
+function readWordOperatorAliasEditAt(sourceText: string, startIndex: number): SourceTextEdit | null {
+    for (const operatorAlias of WORD_OPERATOR_ALIASES) {
+        const endIndex = startIndex + operatorAlias.length;
+        if (endIndex > sourceText.length) {
+            continue;
+        }
+
+        const sourceOperator = sourceText.slice(startIndex, endIndex);
+        if (sourceOperator.toLowerCase() !== operatorAlias) {
+            continue;
+        }
+
+        if (
+            !Core.isIdentifierBoundaryCharacter(sourceText[startIndex - 1]) ||
+            !Core.isIdentifierBoundaryCharacter(sourceText[endIndex])
+        ) {
+            continue;
+        }
+
+        const canonicalOperator = Core.OPERATOR_ALIAS_MAP.get(operatorAlias);
+        if (typeof canonicalOperator !== "string" || sourceOperator === canonicalOperator) {
+            return null;
+        }
+
+        return {
+            start: startIndex,
+            end: endIndex,
+            text: canonicalOperator
+        };
+    }
+
+    return null;
 }
 
 function locateBinaryOperatorSourceRange(parameters: {
@@ -187,6 +233,41 @@ function locateBinaryOperatorSourceRange(parameters: {
     return null;
 }
 
+function reportOperatorAliasIfNeeded(context: Rule.RuleContext, definition: GmlRuleDefinition, node: Rule.Node): void {
+    const operatorValue = (node as { operator?: unknown }).operator;
+    const operator = typeof operatorValue === "string" ? operatorValue : "";
+    const canonical = Core.OPERATOR_ALIAS_MAP.get(operator.toLowerCase()) ?? operator.toLowerCase();
+    const start = Core.getNodeStartIndex(node);
+    const end = Core.getNodeEndIndex(node);
+    if (typeof start !== "number" || typeof end !== "number" || operator.length === 0) {
+        return;
+    }
+
+    const operatorRange = locateBinaryOperatorSourceRange({
+        sourceText: context.sourceCode.text,
+        node,
+        operator,
+        normalizedOperator: canonical,
+        expressionStart: start,
+        expressionEnd: end
+    });
+    if (operatorRange === null) {
+        return;
+    }
+
+    const [operatorStart, operatorEnd] = operatorRange;
+    const originalOperatorText = context.sourceCode.text.slice(operatorStart, operatorEnd);
+    if (originalOperatorText === canonical) {
+        return;
+    }
+
+    context.report({
+        loc: resolveReportLocation(context, operatorStart),
+        messageId: definition.messageId,
+        fix: (fixer) => fixer.replaceTextRange([operatorStart, operatorEnd], canonical)
+    });
+}
+
 export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
@@ -196,33 +277,10 @@ export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition
                     reportProgramTextRewrite(context, definition, rewriteLogicalNotAliasesOutsideTrivia);
                 },
                 BinaryExpression(node) {
-                    const operator = String(node.operator);
-                    const canonical = Core.OPERATOR_ALIAS_MAP.get(operator.toLowerCase()) ?? operator.toLowerCase();
-                    const start = Core.getNodeStartIndex(node);
-                    const end = Core.getNodeEndIndex(node);
-                    if (typeof start === "number" && typeof end === "number" && operator.length > 0) {
-                        const operatorRange = locateBinaryOperatorSourceRange({
-                            sourceText: context.sourceCode.text,
-                            node,
-                            operator,
-                            normalizedOperator: canonical,
-                            expressionStart: start,
-                            expressionEnd: end
-                        });
-                        if (operatorRange === null) {
-                            return;
-                        }
-
-                        const [operatorStart, operatorEnd] = operatorRange;
-                        const originalOperatorText = context.sourceCode.text.slice(operatorStart, operatorEnd);
-                        if (originalOperatorText !== canonical) {
-                            context.report({
-                                loc: resolveReportLocation(context, operatorStart),
-                                messageId: definition.messageId,
-                                fix: (fixer) => fixer.replaceTextRange([operatorStart, operatorEnd], canonical)
-                            });
-                        }
-                    }
+                    reportOperatorAliasIfNeeded(context, definition, node);
+                },
+                LogicalExpression(node) {
+                    reportOperatorAliasIfNeeded(context, definition, node);
                 },
                 UnaryExpression() {
                     // Parse-failure and legacy alias normalization is handled by Program text rewrite.

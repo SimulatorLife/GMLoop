@@ -491,11 +491,11 @@ propertyIdentifier
     ;
 
 functionDeclaration
-    : Function_ Identifier? parameterList constructorClause? block
+    : Function_ identifier? parameterList constructorClause? block
     ;
 
 constructorClause
-    : (Colon Identifier arguments)? Constructor
+    : (Colon identifier arguments)? Constructor
     ;
 
 parameterList
@@ -513,8 +513,6 @@ identifier
 memberIdentifier
     : identifier
     | propertySoftKeyword
-    | IntegerDivide
-    | Modulo
     ;
 
 enumeratorDeclaration
@@ -554,6 +552,12 @@ identifierStatement
 
 softKeyword
     : Constructor
+    | Not
+    | IntegerDivide
+    | Modulo
+    | And
+    | Or
+    | Xor
     ;
 
 propertySoftKeyword
