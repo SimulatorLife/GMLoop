@@ -97,6 +97,7 @@ export default class GameMakerASTBuilder {
     private scopeTracker: ParserScopeTracker;
     private binaryExpressions: any;
     private visitor: MutableParserVisitor;
+    private currentLValueObject: any = null;
 
     constructor(
         options: ParserOptions,
@@ -953,7 +954,9 @@ export default class GameMakerASTBuilder {
         // accumulate operations
         const ops = this.ensureArray(ctx.lValueChainOperator?.()) || [];
         for (const op of ops) {
+            this.currentLValueObject = object;
             const node = this.visit(op);
+            this.currentLValueObject = null;
             // The visitor contract allows individual rule handlers to return `null`
             // when they encounter malformed or otherwise-absent AST fragments (e.g.,
             // a parse error recovery path that skips a subtree). Attempting to assign
@@ -972,7 +975,9 @@ export default class GameMakerASTBuilder {
         }
 
         if (ctx.lValueFinalOperator() !== null) {
+            this.currentLValueObject = object;
             const finalOp = this.visit(ctx.lValueFinalOperator());
+            this.currentLValueObject = null;
             if (finalOp && typeof finalOp === "object") {
                 finalOp.object = object;
                 object = finalOp;
@@ -1014,12 +1019,21 @@ export default class GameMakerASTBuilder {
 
     // Visit a parse tree produced by GameMakerLanguageParser#MemberDotLValue.
     visitMemberDotLValue(ctx: ParserContext): any {
+        const isGlobal = this.currentLValueObject?.type === "Identifier" && this.currentLValueObject.name === "global";
+        const role = isGlobal
+            ? { type: "reference", kind: "variable", tags: ["global"], scopeOverride: GLOBAL_SCOPE_OVERRIDE_KEYWORD }
+            : { type: "reference", kind: "property" };
+
+        const property = this.withIdentifierRole(role, () => this.visit(ctx.identifier()));
+
+        if (isGlobal && this.scopeTracker && property) {
+            this.scopeTracker.markGlobalIdentifier(property);
+        }
+
         return this.astNode(ctx, {
             type: "MemberDotExpression",
             object: null,
-            property: this.withIdentifierRole({ type: "reference", kind: "property" }, () =>
-                this.visit(ctx.identifier())
-            )
+            property
         });
     }
 
@@ -1225,9 +1239,17 @@ export default class GameMakerASTBuilder {
     // Visit a parse tree produced by GameMakerLanguageParser#MemberDotExpression.
     visitMemberDotExpression(ctx: ParserContext): any {
         const object = this.visit(ctx.expression()[0]);
-        const property = this.withIdentifierRole({ type: "reference", kind: "property" }, () =>
-            this.visit(ctx.expression()[1])
-        );
+        const isGlobal = object?.type === "Identifier" && object.name === "global";
+        const role = isGlobal
+            ? { type: "reference", kind: "variable", tags: ["global"], scopeOverride: GLOBAL_SCOPE_OVERRIDE_KEYWORD }
+            : { type: "reference", kind: "property" };
+
+        const property = this.withIdentifierRole(role, () => this.visit(ctx.expression()[1]));
+
+        if (isGlobal && this.scopeTracker && property) {
+            this.scopeTracker.markGlobalIdentifier(property);
+        }
+
         const node: any = this.astNode(ctx, {
             type: "MemberDotExpression",
             object,

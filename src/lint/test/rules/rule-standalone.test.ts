@@ -1547,9 +1547,9 @@ void test("normalize-operator-aliases replaces invalid logical keyword 'not' wit
     assertEquals(result.output, expected);
 });
 
-void test("normalize-operator-aliases leaves uppercase binary aliases unchanged while fixing uppercase NOT", () => {
+void test("normalize-operator-aliases normalizes uppercase binary aliases and NOT", () => {
     const input = ["if (ready AND NOT done OR extra XOR flag) {", "    finish();", "}", ""].join("\n");
-    const expected = ["if (ready AND ! done OR extra XOR flag) {", "    finish();", "}", ""].join("\n");
+    const expected = ["if (ready && ! done || extra ^^ flag) {", "    finish();", "}", ""].join("\n");
     const result = lintWithRule("normalize-operator-aliases", input, {});
     assertEquals(result.output, expected);
 });

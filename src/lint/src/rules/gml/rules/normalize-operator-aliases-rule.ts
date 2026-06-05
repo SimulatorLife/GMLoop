@@ -165,7 +165,8 @@ function locateBinaryOperatorSourceRange(parameters: {
 
         for (const candidate of candidates) {
             const candidateEnd = cursor + candidate.length;
-            if (candidateEnd > searchEnd || parameters.sourceText.slice(cursor, candidateEnd) !== candidate) {
+            const sliced = parameters.sourceText.slice(cursor, candidateEnd);
+            if (candidateEnd > searchEnd || sliced.toLowerCase() !== candidate.toLowerCase()) {
                 continue;
             }
 
@@ -195,43 +196,30 @@ export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition
                     reportProgramTextRewrite(context, definition, rewriteLogicalNotAliasesOutsideTrivia);
                 },
                 BinaryExpression(node) {
-                    const normalized = Core.OPERATOR_ALIAS_MAP.get(node.operator);
-                    if (normalized) {
-                        const operator = String(node.operator);
-                        const start = Core.getNodeStartIndex(node);
-                        const end = Core.getNodeEndIndex(node);
-                        if (
-                            typeof start === "number" &&
-                            typeof end === "number" &&
-                            operator.length > 0 &&
-                            normalized !== operator
-                        ) {
-                            const operatorRange = locateBinaryOperatorSourceRange({
-                                sourceText: context.sourceCode.text,
-                                node,
-                                operator,
-                                normalizedOperator: normalized,
-                                expressionStart: start,
-                                expressionEnd: end
-                            });
-                            if (operatorRange === null) {
-                                return;
-                            }
+                    const operator = String(node.operator);
+                    const canonical = Core.OPERATOR_ALIAS_MAP.get(operator.toLowerCase()) ?? operator.toLowerCase();
+                    const start = Core.getNodeStartIndex(node);
+                    const end = Core.getNodeEndIndex(node);
+                    if (typeof start === "number" && typeof end === "number" && operator.length > 0) {
+                        const operatorRange = locateBinaryOperatorSourceRange({
+                            sourceText: context.sourceCode.text,
+                            node,
+                            operator,
+                            normalizedOperator: canonical,
+                            expressionStart: start,
+                            expressionEnd: end
+                        });
+                        if (operatorRange === null) {
+                            return;
+                        }
 
-                            const [operatorStart, operatorEnd] = operatorRange;
-                            const originalOperatorText = context.sourceCode.text.slice(operatorStart, operatorEnd);
-                            if (
-                                originalOperatorText.length === operator.length &&
-                                originalOperatorText.toLowerCase() === operator &&
-                                originalOperatorText !== operator
-                            ) {
-                                return;
-                            }
-
+                        const [operatorStart, operatorEnd] = operatorRange;
+                        const originalOperatorText = context.sourceCode.text.slice(operatorStart, operatorEnd);
+                        if (originalOperatorText !== canonical) {
                             context.report({
                                 loc: resolveReportLocation(context, operatorStart),
                                 messageId: definition.messageId,
-                                fix: (fixer) => fixer.replaceTextRange([operatorStart, operatorEnd], normalized)
+                                fix: (fixer) => fixer.replaceTextRange([operatorStart, operatorEnd], canonical)
                             });
                         }
                     }

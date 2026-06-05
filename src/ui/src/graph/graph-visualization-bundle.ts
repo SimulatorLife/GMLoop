@@ -1,10 +1,9 @@
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { build } from "vite";
 
 import {
     renderGraphVisualizationDocumentTitle,
@@ -19,6 +18,7 @@ import type {
 
 const GRAPH_VISUALIZATION_ENTRY_HTML_PATH = "index.html";
 const GRAPH_VISUALIZATION_WEB_ENTRY_RELATIVE_PATH = path.join("src", "web", "index.html");
+let staticWebBundleFilesPromise: Promise<ReadonlyArray<GraphVisualizationBundleFile>> | null = null;
 
 function resolveUiWorkspaceRoot(): string {
     const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -35,8 +35,8 @@ function resolveUiWorkspaceRoot(): string {
     throw new Error("Could not locate the @gmloop/ui workspace source root for graph visualization bundling.");
 }
 
-function resolveUiSourcePath(relativePath: string): string {
-    return path.join(resolveUiWorkspaceRoot(), "src", "web", relativePath);
+function resolveViteExecutablePath(workspaceRoot: string): string {
+    return path.join(workspaceRoot, "node_modules", ".bin", process.platform === "win32" ? "vite.cmd" : "vite");
 }
 
 function createGraphVisualizationBundleFile(
@@ -121,23 +121,65 @@ function injectBootstrapPayload(
 
 async function createViteWebBundle(outDirectory: string): Promise<void> {
     const workspaceRoot = resolveUiWorkspaceRoot();
-    const entryHtmlPath = resolveUiSourcePath("index.html");
-    await build({
-        base: "./",
-        build: {
-            emptyOutDir: true,
-            manifest: false,
-            outDir: outDirectory,
-            rollupOptions: {
-                input: entryHtmlPath
+    const viteExecutablePath = resolveViteExecutablePath(workspaceRoot);
+
+    await new Promise<void>((resolve, reject) => {
+        execFile(
+            viteExecutablePath,
+            ["build", "--config", path.join(workspaceRoot, "vite.config.ts"), "--outDir", outDirectory],
+            {
+                cwd: workspaceRoot,
+                env: {
+                    ...process.env,
+                    GMLOOP_UI_BUILD_MANIFEST: "0"
+                }
             },
-            sourcemap: true,
-            target: "es2021"
-        },
-        configFile: path.join(workspaceRoot, "vite.config.ts"),
-        root: path.dirname(entryHtmlPath),
-        logLevel: "silent"
+            (error, stdout, stderr) => {
+                if (error) {
+                    const output = [stdout, stderr]
+                        .filter((text) => text.trim().length > 0)
+                        .join("\n")
+                        .trim();
+                    reject(new Error(output.length > 0 ? output : "Failed to build graph visualization bundle."));
+                    return;
+                }
+                resolve();
+            }
+        );
     });
+}
+
+async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-ui-bundle-"));
+
+    try {
+        await createViteWebBundle(outputDirectory);
+        const relativePaths = await listBundleFiles(outputDirectory);
+        const files = await Promise.all(
+            relativePaths.map(async (relativePath) =>
+                createGraphVisualizationBundleFile(
+                    relativePath,
+                    resolveContentType(relativePath),
+                    await readFile(path.join(outputDirectory, relativePath))
+                )
+            )
+        );
+
+        return Object.freeze(files);
+    } finally {
+        await rm(outputDirectory, { force: true, recursive: true });
+    }
+}
+
+async function getGraphVisualizationWebBundleFiles(
+    options: GraphVisualizationRenderOptions
+): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
+    if (options.isServerMode === true) {
+        return await createGraphVisualizationWebBundleFiles();
+    }
+
+    staticWebBundleFilesPromise ??= createGraphVisualizationWebBundleFiles();
+    return await staticWebBundleFilesPromise;
 }
 
 /**
@@ -147,30 +189,18 @@ export async function renderGraphVisualizationBundle(
     data: GraphVisualizationData,
     options: GraphVisualizationRenderOptions
 ): Promise<GraphVisualizationBundleArtifact> {
-    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-ui-bundle-"));
+    const webBundleFiles = await getGraphVisualizationWebBundleFiles(options);
+    const files = webBundleFiles.map((file) => {
+        const content =
+            file.relativePath === GRAPH_VISUALIZATION_ENTRY_HTML_PATH
+                ? new TextEncoder().encode(injectBootstrapPayload(new TextDecoder().decode(file.bytes), data, options))
+                : file.bytes;
 
-    try {
-        await createViteWebBundle(outputDirectory);
-        const relativePaths = await listBundleFiles(outputDirectory);
-        const files = await Promise.all(
-            relativePaths.map(async (relativePath) => {
-                const bytes = await readFile(path.join(outputDirectory, relativePath));
-                const content =
-                    relativePath === GRAPH_VISUALIZATION_ENTRY_HTML_PATH
-                        ? new TextEncoder().encode(
-                              injectBootstrapPayload(new TextDecoder().decode(bytes), data, options)
-                          )
-                        : bytes;
+        return createGraphVisualizationBundleFile(file.relativePath, file.contentType, content);
+    });
 
-                return createGraphVisualizationBundleFile(relativePath, resolveContentType(relativePath), content);
-            })
-        );
-
-        return Object.freeze({
-            entryHtmlPath: GRAPH_VISUALIZATION_ENTRY_HTML_PATH,
-            files: Object.freeze(files)
-        });
-    } finally {
-        await rm(outputDirectory, { force: true, recursive: true });
-    }
+    return Object.freeze({
+        entryHtmlPath: GRAPH_VISUALIZATION_ENTRY_HTML_PATH,
+        files: Object.freeze(files)
+    });
 }
