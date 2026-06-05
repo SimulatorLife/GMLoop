@@ -106,10 +106,10 @@ void describe("Transpiler AST reuse", () => {
 
     void it("uses a provided AST without re-parsing sourceText", () => {
         const transpiler = new Transpiler.GmlTranspiler();
-        assert.throws(() => Parser.GMLParser.parse("invalid syntax %%%%"));
+        assert.throws(() => Parser.GMLParser.parse("\\"));
 
         const patch = transpiler.transpileScript({
-            sourceText: "invalid syntax %%%%",
+            sourceText: "\\",
             symbolId: "gml/script/ast_only",
             ast: {
                 type: "Program",
