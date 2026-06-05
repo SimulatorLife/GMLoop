@@ -308,7 +308,7 @@ newExpression
 lValueStartExpression
     : identifier # IdentifierLValue
     | newExpression # NewLValue
-    | Dot identifier # ImplicitMemberDotLValue
+    | Dot memberIdentifier # ImplicitMemberDotLValue
     | OpenParen expression CloseParen # ParenthesizedLValue
     | structLiteral # StructLiteralLValue
     ;
@@ -319,13 +319,13 @@ lValueExpression
 
 lValueChainOperator
     : accessor expressionSequence CloseBracket # MemberIndexLValue
-    | Dot identifier # MemberDotLValue
+    | Dot memberIdentifier # MemberDotLValue
     | arguments # CallLValue
     ;
 
 lValueFinalOperator
     : accessor expressionSequence CloseBracket # MemberIndexLValueFinal
-    | Dot identifier # MemberDotLValueFinal
+    | Dot memberIdentifier # MemberDotLValueFinal
     ;
 
 expressionSequence
@@ -369,7 +369,7 @@ callStatement
     ;
 
     implicitCallStatement
-        : Dot identifier arguments
+        : Dot memberIdentifier arguments
         | implicitCallStatement arguments
         ;
 
@@ -508,6 +508,13 @@ parameterArgument
 
 identifier
     : Identifier | softKeyword
+    ;
+
+memberIdentifier
+    : identifier
+    | propertySoftKeyword
+    | IntegerDivide
+    | Modulo
     ;
 
 enumeratorDeclaration

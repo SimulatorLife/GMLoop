@@ -1024,7 +1024,7 @@ export default class GameMakerASTBuilder {
             ? { type: "reference", kind: "variable", tags: ["global"], scopeOverride: GLOBAL_SCOPE_OVERRIDE_KEYWORD }
             : { type: "reference", kind: "property" };
 
-        const property = this.withIdentifierRole(role, () => this.visit(ctx.identifier()));
+        const property = this.withIdentifierRole(role, () => this.visit(ctx.memberIdentifier()));
 
         if (isGlobal && this.scopeTracker && property) {
             this.scopeTracker.markGlobalIdentifier(property);
@@ -1315,7 +1315,7 @@ export default class GameMakerASTBuilder {
                       type: "MemberDotExpression",
                       object: null,
                       property: this.withIdentifierRole({ type: "reference", kind: "property" }, () =>
-                          this.visit(ctx.identifier())
+                          this.visit(ctx.memberIdentifier())
                       )
                   })
                 : this.visit(ctx.implicitCallStatement());
@@ -1682,6 +1682,17 @@ export default class GameMakerASTBuilder {
             name
         });
         this.scopeTracker?.applyGlobalIdentifiersToNode(node);
+        this.scopeTracker?.applyCurrentRoleToIdentifier(name, node);
+        return node;
+    }
+
+    // Visit a parse tree produced by GameMakerLanguageParser#memberIdentifier.
+    visitMemberIdentifier(ctx: ParserContext): any {
+        const name = this.ensureToken(ctx).getText();
+        const node: any = this.astNode(ctx, {
+            type: "Identifier",
+            name
+        });
         this.scopeTracker?.applyCurrentRoleToIdentifier(name, node);
         return node;
     }

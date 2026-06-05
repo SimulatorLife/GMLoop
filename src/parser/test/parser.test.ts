@@ -638,6 +638,28 @@ void describe("GameMaker parser fixtures", () => {
         );
     });
 
+    void it("parses keyword-like names after member dots", () => {
+        const source = "function demo(vector, amount) {\n  return vector.Div(amount);\n}\n";
+        const ast = parseFixture(source, {
+            options: { getLocations: true, simplifyLocations: false }
+        });
+
+        const memberExpressions = collectNodesByType(ast, "MemberDotExpression");
+        const divMemberExpression = memberExpressions.find(
+            (memberExpression) => memberExpression.property?.name === "Div"
+        );
+
+        assert.ok(divMemberExpression, "Expected .Div to parse as a member-dot expression.");
+
+        const sourceOffset = source.indexOf(".Div");
+        assert.ok(sourceOffset !== -1, "Unable to locate .Div in source.");
+        assert.strictEqual(
+            Core.getNodeStartIndex(divMemberExpression.property),
+            sourceOffset + 1,
+            "Keyword-like member property should keep the property token location."
+        );
+    });
+
     void it("parses assignments that target member access on call results", () => {
         const source = 'set_mapping(gp_shoulderrb, 4, __INPUT_MAPPING.AXIS, "righttrigger").extended_range = true;\n';
         const ast = parseFixture(source, {
