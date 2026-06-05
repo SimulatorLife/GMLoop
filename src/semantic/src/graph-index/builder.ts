@@ -6,7 +6,11 @@ import { performance } from "node:perf_hooks";
 import { Core } from "@gmloop/core";
 
 import { isProjectManifestPath } from "../project-index/constants.js";
-import { buildProjectIndex } from "../project-index/index.js";
+import {
+    createProjectIndexCoordinator,
+    createProjectIndexDescriptor,
+    scanProjectTree
+} from "../project-index/index.js";
 import { resolveGraphIndexConfig } from "./config.js";
 import {
     GRAPH_INDEX_SCHEMA_VERSION,
@@ -1784,6 +1788,39 @@ function readGraphDatabaseIntegrityStatus(database: GraphDatabase): GraphDatabas
     });
 }
 
+async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndexSnapshot> {
+    const { yyFiles, gmlFiles } = await scanProjectTree(projectRoot);
+    const manifestMtimes: Record<string, number> = {};
+    const sourceMtimes: Record<string, number> = {};
+    for (const file of yyFiles) {
+        if (file.mtimeMs !== null) {
+            manifestMtimes[file.relativePath] = file.mtimeMs;
+        }
+    }
+    for (const file of gmlFiles) {
+        if (file.mtimeMs !== null) {
+            sourceMtimes[file.relativePath] = file.mtimeMs;
+        }
+    }
+
+    const coordinator = createProjectIndexCoordinator();
+    try {
+        const descriptor = createProjectIndexDescriptor({
+            projectRoot,
+            manifestMtimes,
+            sourceMtimes
+        });
+
+        const ready = await coordinator.ensureReady({
+            ...descriptor,
+            projectRoot
+        });
+        return ready.projectIndex as ProjectIndexSnapshot;
+    } finally {
+        coordinator.dispose();
+    }
+}
+
 /**
  * Build or rebuild the SQLite-backed graph index.
  */
@@ -1806,7 +1843,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
             ensureGraphEmbeddingModelAssets(config.embeddings);
         }
         const buildStart = performance.now();
-        const projectIndex = (await buildProjectIndex(config.projectRoot)) as ProjectIndexSnapshot;
+        const projectIndex = (await getOrBuildProjectIndex(config.projectRoot));
         const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
         projectResources(projectContext);
         projectObjectEventScopes(projectContext);
@@ -1818,7 +1855,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
 
         let toolsetContext: ProjectionContext | null = null;
         if (config.toolsetRoot) {
-            const toolsetIndex = (await buildProjectIndex(config.toolsetRoot)) as ProjectIndexSnapshot;
+            const toolsetIndex = (await getOrBuildProjectIndex(config.toolsetRoot));
             toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
             projectResources(toolsetContext);
             projectObjectEventScopes(toolsetContext);
