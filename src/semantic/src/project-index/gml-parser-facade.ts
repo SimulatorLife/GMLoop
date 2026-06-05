@@ -110,3 +110,33 @@ type ProjectIndexParserResolverOptions = {
 export function resolveProjectIndexParser(options: ProjectIndexParserResolverOptions | null = null) {
     return options?.parseGml ?? defaultProjectIndexParser;
 }
+
+export function isRecoverableProjectIndexParseError(error: unknown): boolean {
+    return Core.getErrorMessage(error).includes("Syntax Error (");
+}
+
+export function createTolerantProjectIndexParser(
+    baseParser: (sourceText: string, context?: any) => any,
+    onWarning?: (filePath: string, errorMessage: string) => void
+): (sourceText: string, context?: any) => any {
+    const skippedFilePaths = new Set<string>();
+    return (sourceText: string, context: { filePath?: string } = {}) => {
+        try {
+            return baseParser(sourceText, context);
+        } catch (error) {
+            if (!isRecoverableProjectIndexParseError(error)) {
+                throw error;
+            }
+
+            const filePath = context.filePath ?? "<unknown>";
+            if (!skippedFilePaths.has(filePath)) {
+                skippedFilePaths.add(filePath);
+                if (onWarning) {
+                    onWarning(filePath, Core.getErrorMessage(error));
+                }
+            }
+
+            return baseParser("", context);
+        }
+    };
+}

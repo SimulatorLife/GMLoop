@@ -7,8 +7,11 @@ import { Core } from "@gmloop/core";
 
 import { isProjectManifestPath } from "../project-index/constants.js";
 import {
+    buildProjectIndex,
     createProjectIndexCoordinator,
     createProjectIndexDescriptor,
+    createTolerantProjectIndexParser,
+    getDefaultProjectIndexParser,
     scanProjectTree
 } from "../project-index/index.js";
 import { resolveGraphIndexConfig } from "./config.js";
@@ -1803,7 +1806,17 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
         }
     }
 
-    const coordinator = createProjectIndexCoordinator();
+    const baseParser = getDefaultProjectIndexParser();
+    const tolerantParser = createTolerantProjectIndexParser(baseParser);
+
+    const coordinator = createProjectIndexCoordinator({
+        buildIndex: async (resolvedRoot, fsFacade, options) => {
+            return await buildProjectIndex(resolvedRoot, fsFacade, {
+                ...options,
+                parseGml: tolerantParser
+            });
+        }
+    });
     try {
         const descriptor = createProjectIndexDescriptor({
             projectRoot,
@@ -1843,7 +1856,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
             ensureGraphEmbeddingModelAssets(config.embeddings);
         }
         const buildStart = performance.now();
-        const projectIndex = (await getOrBuildProjectIndex(config.projectRoot));
+        const projectIndex = await getOrBuildProjectIndex(config.projectRoot);
         const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
         projectResources(projectContext);
         projectObjectEventScopes(projectContext);
@@ -1855,7 +1868,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
 
         let toolsetContext: ProjectionContext | null = null;
         if (config.toolsetRoot) {
-            const toolsetIndex = (await getOrBuildProjectIndex(config.toolsetRoot));
+            const toolsetIndex = await getOrBuildProjectIndex(config.toolsetRoot);
             toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
             projectResources(toolsetContext);
             projectObjectEventScopes(toolsetContext);

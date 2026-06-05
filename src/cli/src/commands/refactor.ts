@@ -110,39 +110,19 @@ type SemanticProjectIndex = {
     files?: Record<string, unknown>;
 };
 
-function isRecoverableProjectIndexParseError(error: unknown): boolean {
-    return Core.getErrorMessage(error).includes("Syntax Error (");
-}
-
 async function buildProjectIndexWithParseTolerance(
     projectRoot: string,
     fsFacade: typeof Core.defaultFsFacade | undefined,
     verbose: boolean
 ): Promise<Awaited<ReturnType<typeof buildProjectIndex>>> {
-    const parseProjectSource = Semantic.getDefaultProjectIndexParser();
-    const skippedFilePaths = new Set<string>();
+    const baseParser = Semantic.getDefaultProjectIndexParser();
+    const tolerantParser = Semantic.createTolerantProjectIndexParser(baseParser, (filePath, errorMessage) => {
+        console.warn(`Warning: Skipping parse-invalid file during refactor indexing: ${filePath} (${errorMessage})`);
+    });
 
     return await buildProjectIndex(projectRoot, fsFacade, {
         logger: verbose ? console : undefined,
-        parseGml: (sourceText: string, context: ProjectIndexParseContext = {}) => {
-            try {
-                return parseProjectSource(sourceText, context);
-            } catch (error) {
-                if (!isRecoverableProjectIndexParseError(error)) {
-                    throw error;
-                }
-
-                const filePath = context.filePath ?? "<unknown>";
-                if (!skippedFilePaths.has(filePath)) {
-                    skippedFilePaths.add(filePath);
-                    console.warn(
-                        `Warning: Skipping parse-invalid file during refactor indexing: ${filePath} (${Core.getErrorMessage(error)})`
-                    );
-                }
-
-                return parseProjectSource("", context);
-            }
-        }
+        parseGml: tolerantParser
     });
 }
 
@@ -164,8 +144,10 @@ async function getOrBuildProjectIndex(
         }
     }
 
-    const parseProjectSource = Semantic.getDefaultProjectIndexParser();
-    const skippedFilePaths = new Set<string>();
+    const baseParser = Semantic.getDefaultProjectIndexParser();
+    const tolerantParser = Semantic.createTolerantProjectIndexParser(baseParser, (filePath, errorMessage) => {
+        console.warn(`Warning: Skipping parse-invalid file during refactor indexing: ${filePath} (${errorMessage})`);
+    });
 
     const coordinator = Semantic.createProjectIndexCoordinator({
         fsFacade: undefined,
@@ -176,25 +158,7 @@ async function getOrBuildProjectIndex(
             return await buildProjectIndex(resolvedRoot, fsFacade, {
                 ...options,
                 logger: verbose ? console : undefined,
-                parseGml: (sourceText: string, context: ProjectIndexParseContext = {}) => {
-                    try {
-                        return parseProjectSource(sourceText, context);
-                    } catch (error) {
-                        if (!isRecoverableProjectIndexParseError(error)) {
-                            throw error;
-                        }
-
-                        const filePath = context.filePath ?? "<unknown>";
-                        if (!skippedFilePaths.has(filePath)) {
-                            skippedFilePaths.add(filePath);
-                            console.warn(
-                                `Warning: Skipping parse-invalid file during refactor indexing: ${filePath} (${Core.getErrorMessage(error)})`
-                            );
-                        }
-
-                        return parseProjectSource("", context);
-                    }
-                }
+                parseGml: tolerantParser
             });
         }
     });
