@@ -22,6 +22,15 @@ function isUndefinedIdentifier(expression: unknown): boolean {
     return false;
 }
 
+function resolveImmediateNegatedWrapperRange(sourceText: string, start: number, end: number): [number, number] | null {
+    const wrapperStart = start - 2;
+    if (wrapperStart < 0 || end >= sourceText.length) {
+        return null;
+    }
+
+    return sourceText.slice(wrapperStart, start) === "!(" && sourceText[end] === ")" ? [wrapperStart, end + 1] : null;
+}
+
 export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
@@ -46,15 +55,22 @@ export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition):
                             typeof otherEnd === "number"
                         ) {
                             const otherExprText = context.sourceCode.text.slice(otherStart, otherEnd);
+                            const negatedWrapperRange = resolveImmediateNegatedWrapperRange(
+                                context.sourceCode.text,
+                                start,
+                                end
+                            );
+                            const isNegated = negatedWrapperRange !== null;
                             const replacement =
-                                node.operator === "=="
+                                (node.operator === "==") === !isNegated
                                     ? `is_undefined(${otherExprText})`
                                     : `!is_undefined(${otherExprText})`;
+                            const replacementRange = negatedWrapperRange ?? [start, end];
 
                             context.report({
                                 node,
                                 messageId: definition.messageId,
-                                fix: (fixer) => fixer.replaceTextRange([start, end], replacement)
+                                fix: (fixer) => fixer.replaceTextRange(replacementRange, replacement)
                             });
                         }
                     }
