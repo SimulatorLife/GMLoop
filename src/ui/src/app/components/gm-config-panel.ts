@@ -1,9 +1,6 @@
 import { html, nothing } from "lit";
 
 import type {
-    GraphVisualizationExternalToolParameter,
-    GraphVisualizationGameMakerCliCommandEntry,
-    GraphVisualizationGameMakerCliMcpToolEntry,
     GraphVisualizationProjectConfigurationCatalog,
     GraphVisualizationProjectConfigurationEntry,
     GraphVisualizationProjectConfigurationLintRuleEntry,
@@ -143,59 +140,6 @@ function getLintLevelLabel(level: LintLevel): string {
 
 function renderBadge(label: string, tone: GmBadgeTone = "neutral") {
     return html`<gm-badge .label=${label} .tone=${tone}></gm-badge>`;
-}
-
-function renderExternalToolParameter(entry: GraphVisualizationExternalToolParameter) {
-    return html`
-        <li class="config-tool-row">
-            <span class="config-tool-name">${entry.syntax}</span>
-            <span class="config-tool-description">${entry.description || "No description provided."}</span>
-            <span class="config-badge-row">
-                ${renderBadge(entry.kind, "muted")}
-                ${renderBadge(entry.required ? "Required" : "Optional", entry.required ? "warning" : "muted")}
-                ${renderBadge(entry.multiple ? "Multiple" : entry.valueType, "neutral")}
-                ${entry.choices.map((choice) => renderBadge(`Choice: ${choice}`, "muted"))}
-            </span>
-        </li>
-    `;
-}
-
-function renderGameMakerCliCommandEntry(entry: GraphVisualizationGameMakerCliCommandEntry) {
-    return html`
-        <details class="config-tool-details">
-            <summary>
-                <span>${entry.displayName}</span>
-                ${renderBadge(`${String(entry.parameters.length)} parameters`, "muted")}
-            </summary>
-            <p>${entry.description || "No description provided by gm-cli."}</p>
-            <pre class="config-code-block">${entry.usageLines.join("\n")}</pre>
-            ${entry.parameters.length === 0
-                ? nothing
-                : html`<ul class="config-tool-list">
-                      ${entry.parameters.map((parameter) => renderExternalToolParameter(parameter))}
-                  </ul>`}
-        </details>
-    `;
-}
-
-function renderGameMakerCliMcpToolEntry(entry: GraphVisualizationGameMakerCliMcpToolEntry) {
-    return html`
-        <details class="config-tool-details">
-            <summary>
-                <span>${entry.name}</span>
-                ${renderBadge(
-                    entry.fields.length === 0 ? "No input fields" : `${String(entry.fields.length)} fields`,
-                    "muted"
-                )}
-            </summary>
-            <p>${entry.description || "No description provided by ResourceTool MCP."}</p>
-            ${entry.fields.length === 0
-                ? nothing
-                : html`<ul class="config-tool-list">
-                      ${entry.fields.map((field) => renderExternalToolParameter(field))}
-                  </ul>`}
-        </details>
-    `;
 }
 
 /**

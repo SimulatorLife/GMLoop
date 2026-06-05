@@ -102,10 +102,6 @@ type RefactorCommandIntent =
           options: ValidatedCodemodOptions;
       };
 
-type ProjectIndexParseContext = {
-    filePath?: string;
-};
-
 type SemanticProjectIndex = {
     files?: Record<string, unknown>;
 };
@@ -632,7 +628,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
             renameFile: (oldPath, newPath) => rename(resolvePath(oldPath), resolvePath(newPath)),
             dryRun,
             onlyCodemods: selectedCodemodIds,
-            onBeforeCodemod: async (codemodId) => {
+            onBeforeCodemod: (codemodId) => {
                 console.log(`\n[${codemodId}] running...`);
             },
             onAfterCodemod: async (summary, context) => {
