@@ -74,6 +74,8 @@ type ProjectIndexDescriptor = {
     formatterVersion?: string | null;
     pluginVersion?: string | null;
     buildOptions?: ProjectIndexBuildOptions | null;
+    manifestMtimes?: Record<string, unknown> | null;
+    sourceMtimes?: Record<string, unknown> | null;
 };
 
 export function createProjectIndexDescriptor({
@@ -82,14 +84,18 @@ export function createProjectIndexDescriptor({
     cacheFilePath = null,
     formatterVersion,
     pluginVersion,
-    buildOptions
+    buildOptions,
+    manifestMtimes,
+    sourceMtimes
 }: ProjectIndexDescriptor = {}) {
     const descriptor: ProjectIndexDescriptor = {
         projectRoot,
         cacheFilePath,
         formatterVersion,
         pluginVersion,
-        buildOptions: Core.isObjectLike(buildOptions) ? buildOptions : undefined
+        buildOptions: Core.isObjectLike(buildOptions) ? buildOptions : undefined,
+        manifestMtimes: Core.isObjectLike(manifestMtimes) ? manifestMtimes : undefined,
+        sourceMtimes: Core.isObjectLike(sourceMtimes) ? sourceMtimes : undefined
     };
 
     Core.withDefinedValue(

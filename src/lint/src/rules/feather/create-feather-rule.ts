@@ -893,6 +893,10 @@ function splitMacroLineSegments(line: string): MacroLineSegments {
 
 function removeTrailingMacroSemicolonIfSafe(line: string): string {
     const macroLineSegments = splitMacroLineSegments(line);
+    if (macroLineSegments.hasContinuation) {
+        return line;
+    }
+
     const trailingSemicolon = /;\s*$/u.exec(macroLineSegments.bodyWithoutContinuation);
     if (!trailingSemicolon) {
         return line;

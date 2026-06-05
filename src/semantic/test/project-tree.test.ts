@@ -8,7 +8,8 @@ type ProjectTreeFacade = Parameters<typeof scanProjectTree>[1];
 
 function createProjectTreeFacade(
     directories: Map<string, Array<string>>,
-    onReadDir?: (directoryPath: string) => void
+    onReadDir?: (directoryPath: string) => void,
+    mtimes?: Map<string, number>
 ): ProjectTreeFacade {
     return {
         async readDir(directoryPath: string): Promise<Array<string>> {
@@ -23,7 +24,7 @@ function createProjectTreeFacade(
         async stat(entryPath: string): Promise<{ isDirectory(): boolean; mtimeMs: number }> {
             const isDirectory = directories.has(entryPath);
             return {
-                mtimeMs: 0,
+                mtimeMs: mtimes?.get(entryPath) ?? 0,
                 isDirectory() {
                     return isDirectory;
                 }
@@ -41,29 +42,39 @@ void describe("project-index/project-tree", () => {
             [path.join(projectRoot, "scripts", "player"), ["player.gml", "player.yy"]],
             [path.join(projectRoot, "objects"), ["obj_player.yy"]]
         ]);
+        const mtimes = new Map<string, number>([
+            [path.join(projectRoot, "scripts", "enemy.gml"), 12_345],
+            [path.join(projectRoot, "scripts", "player", "player.gml"), 67_890],
+            [path.join(projectRoot, "objects", "obj_player.yy"), 11_111],
+            [path.join(projectRoot, "scripts", "player", "player.yy"), 22_222]
+        ]);
 
-        const facade = createProjectTreeFacade(directories);
+        const facade = createProjectTreeFacade(directories, undefined, mtimes);
 
         const result = await scanProjectTree(projectRoot, facade);
 
         assert.deepStrictEqual(result.gmlFiles, [
             {
                 absolutePath: path.join(projectRoot, "scripts", "enemy.gml"),
-                relativePath: "scripts/enemy.gml"
+                relativePath: "scripts/enemy.gml",
+                mtimeMs: 12_345
             },
             {
                 absolutePath: path.join(projectRoot, "scripts", "player", "player.gml"),
-                relativePath: "scripts/player/player.gml"
+                relativePath: "scripts/player/player.gml",
+                mtimeMs: 67_890
             }
         ]);
         assert.deepStrictEqual(result.yyFiles, [
             {
                 absolutePath: path.join(projectRoot, "objects", "obj_player.yy"),
-                relativePath: "objects/obj_player.yy"
+                relativePath: "objects/obj_player.yy",
+                mtimeMs: 11_111
             },
             {
                 absolutePath: path.join(projectRoot, "scripts", "player", "player.yy"),
-                relativePath: "scripts/player/player.yy"
+                relativePath: "scripts/player/player.yy",
+                mtimeMs: 22_222
             }
         ]);
     });
@@ -88,13 +99,15 @@ void describe("project-index/project-tree", () => {
         assert.deepStrictEqual(result.gmlFiles, [
             {
                 absolutePath: path.join(projectRoot, "scripts", "player.gml"),
-                relativePath: "scripts/player.gml"
+                relativePath: "scripts/player.gml",
+                mtimeMs: 0
             }
         ]);
         assert.deepStrictEqual(result.yyFiles, [
             {
                 absolutePath: path.join(projectRoot, "scripts", "player.yy"),
-                relativePath: "scripts/player.yy"
+                relativePath: "scripts/player.yy",
+                mtimeMs: 0
             }
         ]);
         assert.deepStrictEqual(scannedDirectories, [projectRoot, path.join(projectRoot, "scripts")]);

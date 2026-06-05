@@ -13,8 +13,10 @@ tools/
 /*.cjs
 /*.mjs
 */**/*debug*.txt
-.playwright
-.gmloop
+.playwright-mcp/
+.gmloop/
+.gmcache/
+**/.gmcache/
 
 # We only want extra markdown files in docs/ and README.md files for each workspace
 *.md
@@ -23,7 +25,6 @@ tools/
 !**/*/README.md
 !.github/copilot-instructions.md
 
-.gmloop
 **/.gmloop
 .playwright-mcp/
 *.png
