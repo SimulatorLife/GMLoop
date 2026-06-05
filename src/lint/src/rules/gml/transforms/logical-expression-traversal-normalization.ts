@@ -66,6 +66,19 @@ function traverseAndSimplify(node: any): boolean {
 }
 
 function simplifyNode(node: any): boolean {
+    if (isLogicalNotCallExpression(node)) {
+        replaceNode(node, {
+            type: "UnaryExpression",
+            operator: "!",
+            prefix: true,
+            argument: node.arguments[0],
+            start: node.start,
+            end: node.end,
+            parent: node.parent
+        });
+        return true;
+    }
+
     if (node.type === "UnaryExpression" && node.operator === "!") {
         return simplifyNot(node);
     }
@@ -158,6 +171,15 @@ function isLogicalBinaryNode(node: any): boolean {
 
 function isNegatedExpression(node: any): boolean {
     return Boolean(node && node.type === "UnaryExpression" && node.operator === "!");
+}
+
+function isLogicalNotCallExpression(node: any): boolean {
+    if (!node || node.type !== "CallExpression" || !Array.isArray(node.arguments) || node.arguments.length !== 1) {
+        return false;
+    }
+
+    const callee = node.callee ?? node.object;
+    return Boolean(callee && callee.type === "Identifier" && callee.name === "!");
 }
 
 function readExclusiveOrOperands(
