@@ -112,15 +112,19 @@ function collectPatchesFromMessage(value: unknown): ReadonlyArray<HotReloadPatch
 }
 
 async function runCliCommand(args: ReadonlyArray<string>, cwd = REPO_ROOT): Promise<CliRunResult> {
-    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI_ENTRYPOINT_PATH, ...args], {
-        cwd,
-        timeout: COMMAND_TIMEOUT_MS,
-        maxBuffer: 32 * 1024 * 1024,
-        env: {
-            ...process.env,
-            NO_COLOR: "1"
+    const { stdout, stderr } = await execFileAsync(
+        process.execPath,
+        ["--disable-warning=ExperimentalWarning", CLI_ENTRYPOINT_PATH, ...args],
+        {
+            cwd,
+            timeout: COMMAND_TIMEOUT_MS,
+            maxBuffer: 32 * 1024 * 1024,
+            env: {
+                ...process.env,
+                NO_COLOR: "1"
+            }
         }
-    });
+    );
 
     return {
         stdout,
@@ -170,6 +174,7 @@ function startWatchProcess(
     return spawn(
         process.execPath,
         [
+            "--disable-warning=ExperimentalWarning",
             CLI_ENTRYPOINT_PATH,
             "watch",
             projectRoot,
@@ -339,7 +344,14 @@ void test("3DSpider resource CLI tools inspect the real whole project", async ()
         ]);
         assertResourceSearchIncludes(inverseKinematicsSearch.stdout, "InverseKinematics");
 
-        const inspectResult = await runCliCommand(["resource", "inspect", "obj_spider", "--json", "--path", projectRoot]);
+        const inspectResult = await runCliCommand([
+            "resource",
+            "inspect",
+            "obj_spider",
+            "--json",
+            "--path",
+            projectRoot
+        ]);
         const inspectPayload = FixtureRunner.assertJsonCliPayload(inspectResult.stdout);
         assert.equal(inspectPayload.ok, true);
 

@@ -197,7 +197,7 @@ async function runTestRunAction(options: TestOptions): Promise<void> {
         return;
     }
 
-    const subprocessArguments = ["--test", ...files];
+    const subprocessArguments = ["--disable-warning=ExperimentalWarning", "--test", ...files];
     const startedAt = new Date().toISOString();
     const result = spawnSync(process.execPath, subprocessArguments, {
         cwd: projectRoot,

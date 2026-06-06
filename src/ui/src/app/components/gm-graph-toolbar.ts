@@ -109,7 +109,7 @@ function resolveFixStatusChipStatus(
 
 function resolveFixStatusSummary(state: GraphVisualizationUiState): string {
     if (state.isFixPending) {
-        return "Applying fixes to your project.";
+        return "Applying fixes to your project (this may take a while).";
     }
 
     if (state.fixStatus === "success") {

@@ -444,7 +444,15 @@ void test("graph visualize --serve boots without a project path and waits for UI
     try {
         serveProcess = spawn(
             process.execPath,
-            [path.resolve(REPO_ROOT, "src/cli/dist/index.js"), "graph", "visualize", "--serve", "--json", "--no-open"],
+            [
+                "--disable-warning=ExperimentalWarning",
+                path.resolve(REPO_ROOT, "src/cli/dist/index.js"),
+                "graph",
+                "visualize",
+                "--serve",
+                "--json",
+                "--no-open"
+            ],
             {
                 cwd: emptyWorkingDirectory,
                 stdio: ["ignore", "pipe", "pipe"]

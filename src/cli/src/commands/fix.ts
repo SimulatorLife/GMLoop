@@ -269,7 +269,12 @@ async function runRefactorCodemodSubprocess(options: ValidatedFixCommandOptions)
 
     const cliEntryPath = fileURLToPath(new URL("../../index.js", import.meta.url));
 
-    const subprocessArgs = ["--max-old-space-size=16384", cliEntryPath, ...createRefactorCodemodArgs(options)];
+    const subprocessArgs = [
+        "--disable-warning=ExperimentalWarning",
+        "--max-old-space-size=16384",
+        cliEntryPath,
+        ...createRefactorCodemodArgs(options)
+    ];
 
     await new Promise<void>((resolve, reject) => {
         const subprocessEnv = {

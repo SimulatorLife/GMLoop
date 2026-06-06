@@ -85,7 +85,14 @@ async function runGraphVisualizationFixWorkflow(
     onLogLine: ((logLine: string) => void) | null = null
 ): Promise<Readonly<{ logLines: ReadonlyArray<string> }>> {
     const cliEntryPath = fileURLToPath(new URL("../../index.js", import.meta.url));
-    const args = [cliEntryPath, "fix", "--write", "--path", context.projectRoot];
+    const args = [
+        "--disable-warning=ExperimentalWarning",
+        cliEntryPath,
+        "fix",
+        "--write",
+        "--path",
+        context.projectRoot
+    ];
     if (configPath) {
         args.push("--config", configPath);
     }
@@ -1373,6 +1380,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             const childProcess = spawn(
                 process.execPath,
                 [
+                    "--disable-warning=ExperimentalWarning",
                     cliEntrypointPath,
                     ...createGraphVisualizationLiveReloadDevCommandArgs(startupContext.projectRoot, startupOptions)
                 ],
