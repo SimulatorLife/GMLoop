@@ -101,21 +101,30 @@ void describe("resolveFormatEntryPoint", () => {
     });
 
     void it("expands leading tildes in environment overrides", () => {
-        const homeDirectory = os.homedir();
-        if (!homeDirectory) {
-            return;
+        const originalHome = process.env.HOME;
+        const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "gmloop-home-"));
+        temporaryDirectories.add(homeDirectory);
+
+        try {
+            process.env.HOME = homeDirectory;
+
+            const formatPath = createTemporaryFormatModuleFile({
+                baseDirectory: homeDirectory
+            });
+            const tildePath = `~${formatPath.slice(homeDirectory.length)}`;
+
+            const resolved = resolveFormatEntryPoint({
+                env: { PRETTIER_PLUGIN_GML_FORMAT_PATH: tildePath }
+            });
+
+            assert.strictEqual(resolved, formatPath);
+        } finally {
+            if (originalHome === undefined) {
+                delete process.env.HOME;
+            } else {
+                process.env.HOME = originalHome;
+            }
         }
-
-        const formatPath = createTemporaryFormatModuleFile({
-            baseDirectory: homeDirectory
-        });
-        const tildePath = `~${formatPath.slice(homeDirectory.length)}`;
-
-        const resolved = resolveFormatEntryPoint({
-            env: { PRETTIER_PLUGIN_GML_FORMAT_PATH: tildePath }
-        });
-
-        assert.strictEqual(resolved, formatPath);
     });
 
     void it("falls back to built-in candidates when overrides are not provided", () => {
