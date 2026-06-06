@@ -14,6 +14,7 @@ import type {
     ScopeLifecycle
 } from "../types/index.js";
 import BinaryExpressionDelegate from "./binary-expression-delegate.js";
+import { GameMakerSyntaxError } from "./gml-syntax-error.js";
 
 type IdentifierRole = {
     type: string;
@@ -46,6 +47,7 @@ type ParsedDefineMacroDirective = {
 };
 
 const GLOBAL_SCOPE_OVERRIDE_KEYWORD = "global" as const;
+const DISALLOWED_SYMBOLIC_IDENTIFIER_TEXTS = new Set(["%", "&&", "||", "^^"]);
 
 /**
  * Create a parser visitor instance whose generated `visit*` methods proxy to
@@ -280,6 +282,26 @@ export default class GameMakerASTBuilder {
             start,
             end: start + `#${keyword}`.length
         };
+    }
+
+    private isValidIdentifierContextText(text: string): boolean {
+        return !DISALLOWED_SYMBOLIC_IDENTIFIER_TEXTS.has(text) && (Core.isGmlIdentifierName(text) || text === "!");
+    }
+
+    private throwInvalidIdentifierSyntaxError(ctx: ParserContext, text: string): never {
+        const token = this.resolveParserToken(ctx?.start);
+        const line = typeof token?.line === "number" ? token.line : undefined;
+        const column = typeof token?.column === "number" ? token.column : undefined;
+        const location = line === undefined || column === undefined ? "" : `(line ${line}, column ${column}): `;
+
+        throw new GameMakerSyntaxError({
+            message: `Syntax Error ${location}unexpected symbol '${text}' while matching rule identifier`,
+            line,
+            column,
+            wrongSymbol: `symbol '${text}'`,
+            rule: "identifier",
+            offendingText: text
+        });
     }
 
     private parseDefineMacroDirective(rawText: string): ParsedDefineMacroDirective | null {
@@ -1673,6 +1695,10 @@ export default class GameMakerASTBuilder {
     // Visit a parse tree produced by GameMakerLanguageParser#identifier.
     visitIdentifier(ctx: ParserContext): any {
         const name = this.ensureToken(ctx).getText();
+        if (!this.isValidIdentifierContextText(name)) {
+            this.throwInvalidIdentifierSyntaxError(ctx, name);
+        }
+
         const node: any = this.astNode(ctx, {
             type: "Identifier",
             name

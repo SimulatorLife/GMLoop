@@ -247,6 +247,13 @@ void describe("GameMaker parser fixtures", () => {
         }
     });
 
+    void it("rejects symbolic operators recovered as identifier statements", () => {
+        assert.throws(() => parseFixture("invalid %%%%", { suppressErrors: true }), {
+            name: "GameMakerSyntaxError",
+            message: /unexpected symbol '%'.*identifier/
+        });
+    });
+
     void it("allows uppercase operator-looking names as identifiers", () => {
         const source = [
             "#macro NOT 1",

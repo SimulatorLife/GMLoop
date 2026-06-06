@@ -299,34 +299,18 @@ export class GmlTranspiler {
 
     transpileScript(request: TranspileScriptRequest): ScriptPatch {
         if (!request || typeof request !== "object") {
-            throw this.createTranspileError(
-                "request",
-                new TypeError("transpileScript requires a request object"),
-                TranspilerErrorCode.REQUEST_ERROR
-            );
+            throw new TypeError("transpileScript requires a request object");
         }
         const { sourceText, symbolId } = request;
         const sourcePath = request.sourcePath;
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw this.createTranspileError(
-                "request",
-                new TypeError("transpileScript requires a sourceText string"),
-                TranspilerErrorCode.REQUEST_ERROR
-            );
+            throw new TypeError("transpileScript requires a sourceText string");
         }
         if (typeof symbolId !== "string" || symbolId.length === 0) {
-            throw this.createTranspileError(
-                "request",
-                new TypeError("transpileScript requires a symbolId string"),
-                TranspilerErrorCode.REQUEST_ERROR
-            );
+            throw new TypeError("transpileScript requires a symbolId string");
         }
         if (sourcePath !== undefined && (typeof sourcePath !== "string" || sourcePath.length === 0)) {
-            throw this.createTranspileError(
-                "request",
-                new TypeError("transpileScript requires sourcePath to be a non-empty string when provided"),
-                TranspilerErrorCode.REQUEST_ERROR
-            );
+            throw new TypeError("transpileScript requires sourcePath to be a non-empty string when provided");
         }
 
         try {

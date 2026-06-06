@@ -1318,6 +1318,17 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                     targetNode = visitedNode.argument;
                     break;
                 }
+                case "ParenthesizedExpression": {
+                    const expression = unwrapParenthesized(visitedNode);
+                    if (
+                        expression?.type === "BinaryExpression" &&
+                        (parent as { type?: unknown } | null)?.type === "CallExpression" &&
+                        parentKey === "arguments"
+                    ) {
+                        targetNode = visitedNode;
+                    }
+                    break;
+                }
                 case "BinaryExpression": {
                     if (shouldSkipBinaryExpressionCandidate(parent, parentKey)) {
                         break;
