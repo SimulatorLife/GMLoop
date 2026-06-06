@@ -245,3 +245,4 @@ New top-level UI additions should:
 - **FEAT**: For all raw-JSON displayed in the UI, allow for collapsing/expanding nested objects and arrays for easier readability.
 - **BUG**: On the "Docs" page/tab, the search bar and its subtitle "Search current docs view" are misaligned from the toolbar's subtabs-component (CLI, MCP, etc.). The search bar should be visually aligned vertically with that subtab component.
 - **BUG**: On the "Docs" page/tab, when typing in the search bar, it does not allow certain characters like "r" to be typed (maybe those that are also used as hotkeys for the UI?). The search bar should allow all characters to be typed, and hotkeys should not interfere with typing in the search bar.
+- **BUG**: Instead of disabling the "Graph Index" tab/page in the UI when the opened project does not have a graph index, it should still be selectable since the user can generate it on that tab/page.
