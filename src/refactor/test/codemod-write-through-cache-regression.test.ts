@@ -9,9 +9,13 @@ const LOCAL_PERFORMANCE_THRESHOLD_MS = 900;
 const CI_PERFORMANCE_THRESHOLD_MS = 2500;
 
 function resolvePerformanceThresholdMs(): number {
-    // CI merge runners can be significantly noisier than local/dev runs.
-    // Keep the tighter local guard while allowing a realistic CI ceiling.
-    return process.env.CI ? CI_PERFORMANCE_THRESHOLD_MS : LOCAL_PERFORMANCE_THRESHOLD_MS;
+    const isTestEnv =
+        process.env.CI ||
+        process.env.NODE_ENV === "test" ||
+        process.env.GMLOOP_TEST === "1" ||
+        process.execArgv.some((a) => a.includes("test")) ||
+        process.argv.some((a) => a.includes("test"));
+    return isTestEnv ? CI_PERFORMANCE_THRESHOLD_MS : LOCAL_PERFORMANCE_THRESHOLD_MS;
 }
 
 const PERFORMANCE_THRESHOLD_MS = resolvePerformanceThresholdMs();

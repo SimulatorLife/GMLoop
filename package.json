@@ -69,7 +69,7 @@
     "format:quiet": "pnpm run format > /dev/null",
     "format:check": "pnpm exec -- prettier --ignore-path ./.prettierignore --check \"{src/**/*.ts,*.{ts,js,cjs,mjs}}\"",
     "format:gml": "pnpm run ensure:cli && pnpm run cli:compiled -- format",
-    "test": "pnpm run build:ts && pnpm run test:compiled && pnpm run test:fixtures:compiled",
+    "test": "pnpm run build:ts && pnpm --filter @gmloop/ui run build:web && pnpm run test:compiled && pnpm run test:fixtures",
     "test:list": "bash -lc 'find src test -type f \\( -path \"*/dist/test/*.test.js\" -o -path \"test/dist/*.test.js\" \\) -not -path \"*/node_modules/*\" -not -path \"*performance*.test.js\" -not -path \"*perf*.test.js\" -not -path \"*/dist/test/performance/*\" -not -path \"test/dist/fixture-suites.js\"'",
     "test:fixtures": "pnpm run build:ts && bash -lc 'test_file=\"test/dist/fixture-suites.js\"; if [ ! -f \"$test_file\" ]; then echo \"Compiled fixture test runner not found: $test_file\" >&2; exit 1; fi; node --test-force-exit --test --test-timeout=120000 \"$test_file\"'",
     "test:format:files": "find src/format/dist/test -type f -name \"*.test.js\" -not -path \"*/node_modules/*\"",

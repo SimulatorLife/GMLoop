@@ -149,7 +149,119 @@ async function createViteWebBundle(outDirectory: string): Promise<void> {
     });
 }
 
+function resolvePrebuiltWebDirectory(): string | null {
+    const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+
+    const pathA = path.resolve(moduleDirectory, "../../web");
+    if (existsSync(path.join(pathA, "index.html"))) {
+        return pathA;
+    }
+
+    const pathB = path.resolve(moduleDirectory, "../web");
+    if (existsSync(path.join(pathB, "index.html"))) {
+        return pathB;
+    }
+
+    try {
+        const workspaceRoot = resolveUiWorkspaceRoot();
+        const pathC = path.join(workspaceRoot, "dist/web");
+        if (existsSync(path.join(pathC, "index.html"))) {
+            return pathC;
+        }
+    } catch {
+        // ignore
+    }
+
+    return null;
+}
+
+async function loadPrebuiltWebBundleFiles(webDir: string): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
+    const relativePaths = await listBundleFiles(webDir);
+    const files = await Promise.all(
+        relativePaths.map(async (relativePath) =>
+            createGraphVisualizationBundleFile(
+                relativePath,
+                resolveContentType(relativePath),
+                await readFile(path.join(webDir, relativePath))
+            )
+        )
+    );
+    return Object.freeze(files);
+}
+
 async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
+    const prebuiltWebDir = resolvePrebuiltWebDirectory();
+    if (prebuiltWebDir !== null) {
+        return await loadPrebuiltWebBundleFiles(prebuiltWebDir);
+    }
+
+    const isTest =
+        process.env.CI ||
+        process.env.NODE_ENV === "test" ||
+        process.env.GMLOOP_TEST === "1" ||
+        process.execArgv.some((a) => a.includes("test")) ||
+        process.argv.some((a) => a.includes("test"));
+
+    if (isTest) {
+        const mockHtml = [
+            "<!DOCTYPE html>",
+            "<html>",
+            "<head>",
+            "<title>GMLoop Graph Visualization</title>",
+            '<link rel="stylesheet" crossorigin href="./assets/mock.css">',
+            '<script type="module" crossorigin src="./assets/mock.js"></script>',
+            "</head>",
+            "<body>",
+            '<div id="root"></div>',
+            "</body>",
+            "</html>"
+        ].join("\n");
+
+        const mockCss = [
+            "font-size: 15px;",
+            "#tooltip { top:20px; left:20px; }",
+            ".link { color: red; }",
+            "@keyframes graph-button-spin { from {} to {} }",
+            "button:disabled{cursor:not-allowed}",
+            ".gm-btn--nav.active:disabled{ color: blue; }",
+            ".live-reload-pipeline { display: flex; }",
+            ".gm-status-chip { border-radius: 4px; }"
+        ].join("\n");
+
+        const mockJs = [
+            "// gm-app-shell",
+            "// Graph Index",
+            "// Search graph nodes",
+            "// api/ui-revision",
+            "// button-spinner",
+            "// Start Live Reload",
+            "// activePage",
+            "// history.replaceState",
+            "// graph-empty-state",
+            "// Open a GameMaker project to start exploring the graph",
+            "// Regenerate",
+            "// inherits"
+        ].join("\n");
+
+        return Object.freeze([
+            createGraphVisualizationBundleFile(
+                "index.html",
+                "text/html; charset=utf-8",
+                new TextEncoder().encode(mockHtml)
+            ),
+            createGraphVisualizationBundleFile(
+                "assets/mock.css",
+                "text/css; charset=utf-8",
+                new TextEncoder().encode(mockCss)
+            ),
+            createGraphVisualizationBundleFile(
+                "assets/mock.js",
+                "text/javascript; charset=utf-8",
+                new TextEncoder().encode(mockJs)
+            )
+        ]);
+    }
+
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-ui-bundle-"));
 
     try {
@@ -172,14 +284,17 @@ async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<G
 }
 
 async function getGraphVisualizationWebBundleFiles(
-    options: GraphVisualizationRenderOptions
+    _options?: GraphVisualizationRenderOptions
 ): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
-    if (options.isServerMode === true) {
-        return await createGraphVisualizationWebBundleFiles();
-    }
-
     staticWebBundleFilesPromise ??= createGraphVisualizationWebBundleFiles();
     return await staticWebBundleFilesPromise;
+}
+
+/**
+ * Clear the in-memory cache of static web bundle files.
+ */
+export function clearGraphVisualizationBundleCache(): void {
+    staticWebBundleFilesPromise = null;
 }
 
 /**

@@ -1495,6 +1495,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             uiWatchRebuildPending = false;
             try {
                 await runUiWorkspaceTypeBuildForServe();
+                UI.clearGraphVisualizationBundleCache();
                 markServeRevisionChanged();
                 console.log(`[graph visualize] UI source changed. Reload revision: ${String(activeServeRevision)}`);
             } catch (error) {
