@@ -57,6 +57,38 @@ const COMMENT_SEQUENCE_PATTERN = /\/\/|\/\*|\*\//u;
 const MANUAL_MATH_CALL_SIGNAL_PATTERN =
     /\b(?:arccos|arcsin|arctan|arctan2|cos|darccos|darcsin|darctan|darctan2|dcos|degtorad|dsin|dtan|exp|lengthdir_[xy]|ln|log2|mean|point_direction|point_distance(?:_3d)?|power|radtodeg|sin|sqr|sqrt|tan)\s*\(/u;
 const NUMERIC_LITERAL_SIGNAL_PATTERN = /(?<![\w.])(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?(?![\w.])/iu;
+const STRONG_MATH_BINARY_OPERATORS = new Set(["*", "/", "%", "div", "mod"]);
+const ADDITIVE_MATH_BINARY_OPERATORS = new Set(["+", "-"]);
+const MATH_CALL_NAMES = new Set([
+    "arccos",
+    "arcsin",
+    "arctan",
+    "arctan2",
+    "cos",
+    "darccos",
+    "darcsin",
+    "darctan",
+    "darctan2",
+    "dcos",
+    "degtorad",
+    "dsin",
+    "dtan",
+    "exp",
+    "lengthdir_x",
+    "lengthdir_y",
+    "ln",
+    "log2",
+    "mean",
+    "point_direction",
+    "point_distance",
+    "point_distance_3d",
+    "power",
+    "radtodeg",
+    "sin",
+    "sqr",
+    "sqrt",
+    "tan"
+]);
 
 function tryEvaluateExpression(node: any): any {
     const unwrapped = unwrapParenthesized(node);
@@ -573,6 +605,47 @@ function shouldAttemptManualNormalization(sourceTextOfNode: string): boolean {
         MANUAL_MATH_CALL_SIGNAL_PATTERN.test(sourceTextOfNode) ||
         ((sourceTextOfNode.includes("+") || sourceTextOfNode.includes("-")) &&
             NUMERIC_LITERAL_SIGNAL_PATTERN.test(sourceTextOfNode))
+    );
+}
+
+function canAstShapeContainMathOptimizationCandidate(node: unknown): boolean {
+    const expression = unwrapParenthesized(node);
+    if (!expression) {
+        return false;
+    }
+
+    if (expression.type === "Literal") {
+        return Core.getLiteralNumberValue(expression) !== null;
+    }
+
+    if (expression.type === "UnaryExpression") {
+        return (
+            expression.operator === "-" ||
+            expression.operator === "+" ||
+            canAstShapeContainMathOptimizationCandidate(expression.argument)
+        );
+    }
+
+    if (expression.type === "CallExpression") {
+        const callName = Core.getCallExpressionIdentifierName(expression);
+        return typeof callName === "string" && MATH_CALL_NAMES.has(callName);
+    }
+
+    if (expression.type !== "BinaryExpression" || typeof expression.operator !== "string") {
+        return false;
+    }
+
+    if (STRONG_MATH_BINARY_OPERATORS.has(expression.operator)) {
+        return true;
+    }
+
+    if (!ADDITIVE_MATH_BINARY_OPERATORS.has(expression.operator)) {
+        return false;
+    }
+
+    return (
+        canAstShapeContainMathOptimizationCandidate(expression.left) ||
+        canAstShapeContainMathOptimizationCandidate(expression.right)
     );
 }
 
@@ -1266,6 +1339,10 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
 
             const targetRange: SourceTextRange = { start, end };
             if (isRangeInsideAnyRange(targetRange, normalizedExpressionRanges)) {
+                return;
+            }
+
+            if (!canAstShapeContainMathOptimizationCandidate(targetNode)) {
                 return;
             }
 

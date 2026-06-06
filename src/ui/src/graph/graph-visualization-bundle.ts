@@ -17,7 +17,8 @@ import type {
 } from "./types.js";
 
 const GRAPH_VISUALIZATION_ENTRY_HTML_PATH = "index.html";
-const GRAPH_VISUALIZATION_WEB_ENTRY_RELATIVE_PATH = path.join("src", "web", "index.html");
+const GRAPH_VISUALIZATION_WEB_ENTRY_RELATIVE_PATH = path.join("src", "web", GRAPH_VISUALIZATION_ENTRY_HTML_PATH);
+const UTF8_CONTENT_TYPE_SUFFIX = "; charset=utf-8";
 let staticWebBundleFilesPromise: Promise<ReadonlyArray<GraphVisualizationBundleFile>> | null = null;
 
 function resolveUiWorkspaceRoot(): string {
@@ -53,16 +54,16 @@ function createGraphVisualizationBundleFile(
 
 function resolveContentType(relativePath: string): string {
     if (relativePath.endsWith(".html")) {
-        return "text/html; charset=utf-8";
+        return `text/html${UTF8_CONTENT_TYPE_SUFFIX}`;
     }
     if (relativePath.endsWith(".css")) {
-        return "text/css; charset=utf-8";
+        return `text/css${UTF8_CONTENT_TYPE_SUFFIX}`;
     }
     if (relativePath.endsWith(".js")) {
-        return "text/javascript; charset=utf-8";
+        return `text/javascript${UTF8_CONTENT_TYPE_SUFFIX}`;
     }
     if (relativePath.endsWith(".map")) {
-        return "application/json; charset=utf-8";
+        return `application/json${UTF8_CONTENT_TYPE_SUFFIX}`;
     }
 
     return "application/octet-stream";
@@ -153,19 +154,19 @@ function resolvePrebuiltWebDirectory(): string | null {
     const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 
     const pathA = path.resolve(moduleDirectory, "../../web");
-    if (existsSync(path.join(pathA, "index.html"))) {
+    if (existsSync(path.join(pathA, GRAPH_VISUALIZATION_ENTRY_HTML_PATH))) {
         return pathA;
     }
 
     const pathB = path.resolve(moduleDirectory, "../web");
-    if (existsSync(path.join(pathB, "index.html"))) {
+    if (existsSync(path.join(pathB, GRAPH_VISUALIZATION_ENTRY_HTML_PATH))) {
         return pathB;
     }
 
     try {
         const workspaceRoot = resolveUiWorkspaceRoot();
         const pathC = path.join(workspaceRoot, "dist/web");
-        if (existsSync(path.join(pathC, "index.html"))) {
+        if (existsSync(path.join(pathC, GRAPH_VISUALIZATION_ENTRY_HTML_PATH))) {
             return pathC;
         }
     } catch {
@@ -245,18 +246,18 @@ async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<G
 
         return Object.freeze([
             createGraphVisualizationBundleFile(
-                "index.html",
-                "text/html; charset=utf-8",
+                GRAPH_VISUALIZATION_ENTRY_HTML_PATH,
+                resolveContentType(GRAPH_VISUALIZATION_ENTRY_HTML_PATH),
                 new TextEncoder().encode(mockHtml)
             ),
             createGraphVisualizationBundleFile(
                 "assets/mock.css",
-                "text/css; charset=utf-8",
+                resolveContentType("assets/mock.css"),
                 new TextEncoder().encode(mockCss)
             ),
             createGraphVisualizationBundleFile(
                 "assets/mock.js",
-                "text/javascript; charset=utf-8",
+                resolveContentType("assets/mock.js"),
                 new TextEncoder().encode(mockJs)
             )
         ]);

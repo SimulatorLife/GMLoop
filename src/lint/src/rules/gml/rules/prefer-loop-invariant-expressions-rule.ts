@@ -820,11 +820,26 @@ function pushChildNodesForLoopCandidateTraversal(stack: ParentVisitContext[], no
 
 function collectEquivalentLoopReplacementTargets(
     replacementCandidates: ReadonlyArray<LoopCandidate>,
-    targetExpressionNode: AstNodeWithType
+    targetExpressionNode: AstNodeWithType,
+    sourceText: string
 ): ReadonlyArray<LoopReplacementTarget> {
     const replacementTargets: LoopReplacementTarget[] = [];
+    const targetStart = Core.getNodeStartIndex(targetExpressionNode);
+    const targetEnd = Core.getNodeEndIndex(targetExpressionNode);
+    const shouldUseTextGate =
+        replacementCandidates.length > 100 && typeof targetStart === "number" && typeof targetEnd === "number";
+    const targetLength = shouldUseTextGate ? targetEnd - targetStart : 0;
+    const targetText = shouldUseTextGate ? sourceText.slice(targetStart, targetEnd) : "";
 
     for (const candidate of replacementCandidates) {
+        if (shouldUseTextGate && candidate.expressionEnd - candidate.expressionStart !== targetLength) {
+            continue;
+        }
+
+        if (shouldUseTextGate && sourceText.slice(candidate.expressionStart, candidate.expressionEnd) !== targetText) {
+            continue;
+        }
+
         if (!Core.areExpressionNodesEquivalentIgnoringParentheses(candidate.expressionNode, targetExpressionNode)) {
             continue;
         }
@@ -920,7 +935,8 @@ export function createPreferLoopInvariantExpressionsRule(definition: GmlRuleDefi
                         );
                         const replacementTargets = collectEquivalentLoopReplacementTargets(
                             candidateAnalysis.replacementCandidates,
-                            bestCandidate.expressionNode
+                            bestCandidate.expressionNode,
+                            sourceText
                         );
                         const declarationText =
                             `${indentation}var ${hoistIdentifierName} = ${expressionText};` + `${lineEnding}`;

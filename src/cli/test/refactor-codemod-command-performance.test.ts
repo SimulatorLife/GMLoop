@@ -7,8 +7,7 @@ import test from "node:test";
 import { runCliTestCommand } from "../src/cli.js";
 import {
     createSyntheticRefactorProject,
-    registerProjectResource,
-    writeScriptResource
+    writeScriptResourcesBatch
 } from "./test-helpers/refactor-codemod-command-fixture.js";
 
 const SCRIPT_COUNT = 320;
@@ -81,11 +80,16 @@ async function runRefactorCodemodWriteScenario(): Promise<{
         }
     });
 
-    for (let index = 0; index < SCRIPT_COUNT; index += 1) {
-        const scriptName = `demo_script_${index}`;
-        const sourceText = `function ${scriptName}() {\n    return ${index};\n}\n`;
-        await writeScriptResource(projectRoot, scriptName, sourceText);
-    }
+    await writeScriptResourcesBatch(
+        projectRoot,
+        Array.from({ length: SCRIPT_COUNT }, (_, index) => {
+            const scriptName = `demo_script_${index}`;
+            return {
+                scriptName,
+                sourceText: `function ${scriptName}() {\n    return ${index};\n}\n`
+            };
+        })
+    );
 
     const startTime = performance.now();
     const result = await runCliTestCommand({
@@ -147,19 +151,20 @@ void test("refactor codemod --write keeps mixed-case manifest path rewrites with
             });
             projectRoots.add(projectRoot);
 
-            for (let index = 0; index < CASE_INSENSITIVE_MANIFEST_SCRIPT_COUNT; index += 1) {
-                const scriptName = `demo_script_${index}`;
-                await writeScriptResource(
-                    projectRoot,
-                    scriptName,
-                    `function ${scriptName}() {\n    return ${index};\n}\n`
-                );
-                await registerProjectResource(
-                    projectRoot,
-                    `UPPER_${index}`,
-                    `SCRIPTS/DEMO_SCRIPT_${index}/DEMO_SCRIPT_${index}.YY`
-                );
-            }
+            await writeScriptResourcesBatch(
+                projectRoot,
+                Array.from({ length: CASE_INSENSITIVE_MANIFEST_SCRIPT_COUNT }, (_, index) => {
+                    const scriptName = `demo_script_${index}`;
+                    return {
+                        scriptName,
+                        sourceText: `function ${scriptName}() {\n    return ${index};\n}\n`
+                    };
+                }),
+                Array.from({ length: CASE_INSENSITIVE_MANIFEST_SCRIPT_COUNT }, (_, index) => ({
+                    resourceName: `UPPER_${index}`,
+                    resourcePath: `SCRIPTS/DEMO_SCRIPT_${index}/DEMO_SCRIPT_${index}.YY`
+                }))
+            );
 
             const projectManifestPath = path.join(projectRoot, "MyGame.yyp");
             const projectManifest = JSON.parse(await readFile(projectManifestPath, "utf8")) as {

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import type { PropertyValues } from "lit";
+
 import { GRAPH_UI_EVENT_SAVE_CONFIG } from "../src/app/components/events.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmConfigPanel } from "../src/app/components/gm-config-panel.js";
@@ -17,7 +19,9 @@ class TestableGmConfigPanel extends GmConfigPanel {
     }
 }
 
-class TestableGmAppShell extends GmAppShell {}
+class TestableGmAppShell extends GmAppShell {
+    protected override update(_changedProperties: PropertyValues<this>): void {}
+}
 
 class TestableGmGraphToolbar extends GmGraphToolbar {
     public renderForTest(): unknown {
@@ -198,10 +202,8 @@ void test("config panel defaults to rendered view and exposes configuration deta
     assert.match(rendered, /id="config-format-heading"[\s\S]*Format/u);
     assert.match(rendered, /id="config-lint-heading"[\s\S]*Lint/u);
     assert.match(rendered, /id="config-refactor-heading"[\s\S]*Refactor/u);
-    assert.match(rendered, /id="config-tool-metadata-heading"[\s\S]*Tool Metadata/u);
-    assert.match(rendered, /manual read/u);
-    assert.match(rendered, /ResourceTool v2024\.14\.15/u);
-    assert.match(rendered, /configured MCP server gamemaker-resource-tool/u);
+    assert.doesNotMatch(rendered, /id="config-tool-metadata-heading"/u);
+    assert.doesNotMatch(rendered, /Tool Metadata/u);
     assert.match(rendered, /All Rules/u);
     assert.match(rendered, /All Levels/u);
     assert.match(rendered, /config-filter-reset/u);

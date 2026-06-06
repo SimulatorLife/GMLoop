@@ -5,6 +5,7 @@ import path from "node:path";
 import * as Cli from "@gmloop/cli";
 
 import { findAvailablePort } from "./free-port.js";
+import { waitForStatusReady } from "./status-polling.js";
 
 type WatchCommandOptions = Parameters<typeof Cli.CLI.Commands.runWatchCommand>[1];
 
@@ -49,8 +50,9 @@ export async function runWatchTest(
 
         watchPromise = Cli.CLI.Commands.runWatchCommand(testDir, mergedOptions);
 
-        // Give the server time to start
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        if (mergedOptions.statusServer) {
+            await waitForStatusReady(`http://127.0.0.1:${statusPort}`);
+        }
 
         await testFn({
             testDir,
