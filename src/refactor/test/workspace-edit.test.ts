@@ -204,9 +204,23 @@ void test("WorkspaceEdit telemetry tracks edit counts and byte high-water marks"
     assert.equal(telemetry.textEditCount, 2);
     assert.equal(telemetry.metadataEditCount, 1);
     assert.equal(telemetry.fileRenameCount, 1);
-    assert.ok(telemetry.touchedFileCount >= 4);
-    assert.ok(telemetry.totalTextBytes > 0);
-    assert.ok(telemetry.highWaterTextBytes >= telemetry.totalTextBytes);
+    assert.equal(telemetry.touchedFileCount, 5);
+    assert.equal(telemetry.totalTextBytes, Buffer.byteLength('helloworld!{"resource":"o"}', "utf8"));
+    assert.equal(telemetry.highWaterTextBytes, telemetry.totalTextBytes);
+});
+
+void test("WorkspaceEdit telemetry ignores duplicate text edits and includes constructor edits", () => {
+    const workspace = new WorkspaceEdit([{ path: "scripts/initial.gml", start: 0, end: 3, newText: "αβ" }]);
+
+    workspace.addEdit("scripts/initial.gml", 0, 3, "αβ");
+    workspace.addEdit("scripts/other.gml", 4, 8, "name");
+
+    const telemetry = getWorkspaceEditTelemetry(workspace);
+
+    assert.equal(telemetry.textEditCount, 2);
+    assert.equal(telemetry.touchedFileCount, 2);
+    assert.equal(telemetry.totalTextBytes, Buffer.byteLength("αβname", "utf8"));
+    assert.equal(telemetry.highWaterTextBytes, telemetry.totalTextBytes);
 });
 
 void test("WorkspaceEdit ignores exact duplicate text edits", () => {

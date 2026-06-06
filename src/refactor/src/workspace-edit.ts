@@ -153,6 +153,9 @@ type WorkspaceEditMutableState = {
     groupedEditsRevision: number;
     revision: number;
     duplicateCheckSetDisabled: boolean;
+    touchedFilePaths: Set<string>;
+    totalTextBytes: number;
+    highWaterTextBytes: number;
 };
 
 const workspaceEditExactKeyState = new WeakMap<WorkspaceEdit, Set<string>>();
@@ -176,20 +179,51 @@ function getExactEditKeys(workspace: WorkspaceEdit): Set<string> {
     return created;
 }
 
+function createWorkspaceEditMutableState(workspace: WorkspaceEdit): WorkspaceEditMutableState {
+    const touchedFilePaths = new Set<string>();
+    let totalTextBytes = 0;
+
+    for (const edit of workspace.edits) {
+        touchedFilePaths.add(edit.path);
+        totalTextBytes += Buffer.byteLength(edit.newText, "utf8");
+    }
+
+    for (const metadataEdit of workspace.metadataEdits) {
+        touchedFilePaths.add(metadataEdit.path);
+        totalTextBytes += Buffer.byteLength(metadataEdit.content, "utf8");
+    }
+
+    for (const fileRename of workspace.fileRenames) {
+        touchedFilePaths.add(fileRename.oldPath);
+        touchedFilePaths.add(fileRename.newPath);
+    }
+
+    return {
+        groupedEditsCache: null,
+        groupedEditsRevision: -1,
+        revision: 0,
+        duplicateCheckSetDisabled: false,
+        touchedFilePaths,
+        totalTextBytes,
+        highWaterTextBytes: totalTextBytes
+    };
+}
+
 function getMutableState(workspace: WorkspaceEdit): WorkspaceEditMutableState {
     const existing = workspaceEditMutableState.get(workspace);
     if (existing) {
         return existing;
     }
 
-    const created: WorkspaceEditMutableState = {
-        groupedEditsCache: null,
-        groupedEditsRevision: -1,
-        revision: 0,
-        duplicateCheckSetDisabled: false
-    };
+    const created = createWorkspaceEditMutableState(workspace);
     workspaceEditMutableState.set(workspace, created);
     return created;
+}
+
+function recordWorkspaceTextPayload(mutableState: WorkspaceEditMutableState, path: string, content: string): void {
+    mutableState.touchedFilePaths.add(path);
+    mutableState.totalTextBytes += Buffer.byteLength(content, "utf8");
+    mutableState.highWaterTextBytes = Math.max(mutableState.highWaterTextBytes, mutableState.totalTextBytes);
 }
 
 function markWorkspaceEditChanged(workspace: WorkspaceEdit): void {
@@ -262,6 +296,7 @@ export class WorkspaceEdit implements WorkspaceLike {
      */
     constructor(initialEdits: Iterable<TextEdit> = []) {
         this.edits = Array.from(initialEdits);
+        workspaceEditMutableState.set(this, createWorkspaceEditMutableState(this));
     }
 
     addEdit(path: string, start: number, end: number, newText: string): void {
@@ -281,6 +316,7 @@ export class WorkspaceEdit implements WorkspaceLike {
         }
 
         this.edits.push({ path, start, end, newText });
+        recordWorkspaceTextPayload(mutableState, path, newText);
         mutableState.revision += 1;
         mutableState.groupedEditsCache = null;
         mutableState.groupedEditsRevision = -1;
@@ -288,6 +324,9 @@ export class WorkspaceEdit implements WorkspaceLike {
 
     addFileRename(oldPath: string, newPath: string): void {
         this.fileRenames.push({ oldPath, newPath });
+        const mutableState = getMutableState(this);
+        mutableState.touchedFilePaths.add(oldPath);
+        mutableState.touchedFilePaths.add(newPath);
         markWorkspaceEditChanged(this);
     }
 
@@ -296,6 +335,8 @@ export class WorkspaceEdit implements WorkspaceLike {
      */
     addMetadataEdit(path: string, content: string): void {
         this.metadataEdits.push({ path, content });
+        const mutableState = getMutableState(this);
+        recordWorkspaceTextPayload(mutableState, path, content);
         markWorkspaceEditChanged(this);
     }
 
@@ -347,31 +388,15 @@ export class WorkspaceEdit implements WorkspaceLike {
  * Return size/counter telemetry collected while building a workspace edit.
  */
 export function getWorkspaceEditTelemetry(workspace: WorkspaceEdit): WorkspaceEditTelemetry {
-    const touchedFiles = new Set<string>();
-    let totalTextBytes = 0;
-
-    for (const edit of workspace.edits) {
-        touchedFiles.add(edit.path);
-        totalTextBytes += Buffer.byteLength(edit.newText, "utf8");
-    }
-
-    for (const metadataEdit of workspace.metadataEdits) {
-        touchedFiles.add(metadataEdit.path);
-        totalTextBytes += Buffer.byteLength(metadataEdit.content, "utf8");
-    }
-
-    for (const fileRename of workspace.fileRenames) {
-        touchedFiles.add(fileRename.oldPath);
-        touchedFiles.add(fileRename.newPath);
-    }
+    const mutableState = getMutableState(workspace);
 
     return {
         textEditCount: workspace.edits.length,
         fileRenameCount: workspace.fileRenames.length,
         metadataEditCount: workspace.metadataEdits.length,
-        touchedFileCount: touchedFiles.size,
-        totalTextBytes,
-        highWaterTextBytes: totalTextBytes
+        touchedFileCount: mutableState.touchedFilePaths.size,
+        totalTextBytes: mutableState.totalTextBytes,
+        highWaterTextBytes: mutableState.highWaterTextBytes
     };
 }
 
