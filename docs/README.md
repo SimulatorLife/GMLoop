@@ -57,7 +57,16 @@ then return here for deeper context.
 ## Architecture, planning
 
 - [Project target state plan](target-state.md) — Canonical
-  ownership contract for formatter vs lint vs refactor responsibilities, including the two-tier malformed GML strategy and the native codemod model. Concepts, architecture, and integration HTML5 runtime fork, watcher pipeline, and runtime integration seams required for hot-reload tooling.
+  ownership contract for formatter vs lint vs refactor responsibilities, including the two-tier malformed GML strategy and the native codemod model.
+- [GML graph index plan](gml-graph-index-plan.md) — Architecture and
+  ownership contract for the semantic-owned graph index that backs the
+  `graph index`, `graph search`, and `graph doctor` CLI commands and the
+  MCP and UI graph surfaces.
+- [Autonomous GameMaker creator plan](autonomous-game-creator-plan.md) —
+  Long-running plan for the higher-level agent-driven game creation system
+  that builds on top of the formatter, lint, refactor, semantic, transpiler,
+  runtime wrapper, CLI, UI, and MCP workspaces, including the HTML5 runtime
+  fork, watcher pipeline, and hot-reload integration seams.
 - [Feather Data Plan](feather-data-plan.md) — Describes the scraping pipeline
   that collects built-in Feather debugger metadata and how the generated files
   are versioned.
