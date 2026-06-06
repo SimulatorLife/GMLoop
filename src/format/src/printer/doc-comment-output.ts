@@ -84,11 +84,21 @@ export function printNodeDocComments(node: any, path: any, options: any): any {
         docCommentEntriesForMetadata,
         originalText
     );
+    const mixedLeadingCommentBlock = buildMixedLeadingCommentBlock({
+        node,
+        printableDocComments,
+        docCommentEntries: docCommentEntriesForMetadata,
+        plainLeadingLines,
+        originalText,
+        nodeStartIndex
+    });
 
     const parts: any[] = [];
     const shouldEmitPlainLeadingLines = plainLeadingLines.length > 0;
 
-    if (shouldEmitPlainLeadingLines) {
+    if (mixedLeadingCommentBlock !== null) {
+        parts.push(mixedLeadingCommentBlock, hardline);
+    } else if (shouldEmitPlainLeadingLines) {
         parts.push(join(hardline, plainLeadingLines), hardline);
         if (docCommentDocs.length === 0) {
             parts.push(hardline);
@@ -125,7 +135,9 @@ export function printNodeDocComments(node: any, path: any, options: any): any {
             parts.push(hardline);
         }
 
-        parts.push(printableDocCommentBlock, hardline);
+        if (mixedLeadingCommentBlock === null) {
+            parts.push(printableDocCommentBlock, hardline);
+        }
     } else {
         if (Object.hasOwn(node, DOC_COMMENT_OUTPUT_FLAG)) {
             delete node[DOC_COMMENT_OUTPUT_FLAG];
@@ -167,6 +179,249 @@ export function markDocCommentsAsPrinted(node: any, path: any): void {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+type LeadingCommentItem = Readonly<{
+    doc: unknown;
+    endIndex: number | null;
+    sourceIndex: number;
+    stableIndex: number;
+}>;
+
+function buildMixedLeadingCommentBlock({
+    node,
+    printableDocComments,
+    docCommentEntries,
+    plainLeadingLines,
+    originalText,
+    nodeStartIndex
+}: {
+    node: any;
+    printableDocComments: ReadonlyArray<unknown>;
+    docCommentEntries: MutableDocCommentLines;
+    plainLeadingLines: ReadonlyArray<string>;
+    originalText: string | null;
+    nodeStartIndex: number | null;
+}): unknown {
+    if (
+        originalText === null ||
+        typeof nodeStartIndex !== NUMBER_TYPE ||
+        !Core.isNonEmptyArray(printableDocComments) ||
+        printableDocComments.length !== docCommentEntries.length ||
+        !docCommentEntries.every(isLineStyleDocCommentEntry) ||
+        (plainLeadingLines.length === 0 && !Array.isArray(node.comments))
+    ) {
+        return null;
+    }
+
+    const docItems = printableDocComments.map((doc, index) =>
+        resolveDocLeadingCommentItem(doc, docCommentEntries[index], originalText, nodeStartIndex, index)
+    );
+    const hasDocPositions = docItems.every((item) => Number.isFinite(item.sourceIndex));
+    if (!hasDocPositions) {
+        return null;
+    }
+
+    const earliestDocStartIndex = Math.min(...docItems.map((item) => item.sourceIndex));
+    const plainItems = [
+        ...resolveAttachedLeadingCommentItems(
+            node,
+            docCommentEntries,
+            originalText,
+            earliestDocStartIndex,
+            nodeStartIndex
+        ),
+        ...resolvePlainLeadingLineItems(
+            plainLeadingLines,
+            originalText,
+            earliestDocStartIndex,
+            nodeStartIndex,
+            docItems.length
+        )
+    ];
+    if (plainItems.length === 0) {
+        return null;
+    }
+
+    return joinLeadingCommentItemsPreservingSourceSpacing(
+        [...docItems, ...plainItems].toSorted((left, right) => {
+            if (left.sourceIndex !== right.sourceIndex) {
+                return left.sourceIndex - right.sourceIndex;
+            }
+
+            return left.stableIndex - right.stableIndex;
+        }),
+        originalText
+    );
+}
+
+function resolveAttachedLeadingCommentItems(
+    node: any,
+    docCommentEntries: MutableDocCommentLines,
+    originalText: string,
+    leadingBlockStartIndex: number,
+    nodeStartIndex: number
+): LeadingCommentItem[] {
+    if (!Array.isArray(node.comments)) {
+        return [];
+    }
+
+    const docCommentEntrySet = new Set(docCommentEntries.filter(Core.isObjectLike));
+    const items: LeadingCommentItem[] = [];
+
+    for (const comment of node.comments) {
+        if (!Core.isObjectLike(comment) || docCommentEntrySet.has(comment)) {
+            continue;
+        }
+
+        const sourceIndex = resolveDocCommentStartIndex(comment);
+        if (sourceIndex === null || sourceIndex < leadingBlockStartIndex || sourceIndex >= nodeStartIndex) {
+            continue;
+        }
+
+        const rawText = resolveRawAttachedCommentText(comment, originalText);
+        if (rawText === null) {
+            continue;
+        }
+
+        comment.printed = true;
+        items.push({
+            doc: rawText,
+            endIndex: resolveDocCommentEndIndex(comment),
+            sourceIndex,
+            stableIndex: docCommentEntries.length + items.length
+        });
+    }
+
+    return items;
+}
+
+function resolveRawAttachedCommentText(comment: Record<string, unknown>, originalText: string): string | null {
+    if (comment.type === "CommentLine") {
+        return Core.getLineCommentRawText(comment, { originalText });
+    }
+
+    if (comment.type !== "CommentBlock") {
+        return null;
+    }
+
+    const startIndex = resolveDocCommentStartIndex(comment);
+    const endIndex = resolveDocCommentEndIndex(comment);
+    if (startIndex === null || endIndex === null || endIndex < startIndex) {
+        return null;
+    }
+
+    return originalText.slice(startIndex, endIndex + 1);
+}
+
+function isLineStyleDocCommentEntry(commentEntry: unknown): boolean {
+    if (typeof commentEntry === "string") {
+        return commentEntry.trimStart().startsWith("///");
+    }
+
+    if (!Core.isObjectLike(commentEntry)) {
+        return false;
+    }
+
+    return (commentEntry as { type?: unknown }).type === "CommentLine";
+}
+
+function resolveDocLeadingCommentItem(
+    doc: unknown,
+    docCommentEntry: unknown,
+    originalText: string,
+    nodeStartIndex: number,
+    stableIndex: number
+): LeadingCommentItem {
+    const metadataStartIndex = resolveDocCommentStartIndex(docCommentEntry);
+    if (metadataStartIndex !== null) {
+        return {
+            doc,
+            endIndex: resolveDocCommentEndIndex(docCommentEntry),
+            sourceIndex: metadataStartIndex,
+            stableIndex
+        };
+    }
+
+    if (typeof doc === "string") {
+        const sourceIndex = originalText.lastIndexOf(doc, nodeStartIndex);
+        if (sourceIndex !== -1) {
+            return {
+                doc,
+                endIndex: sourceIndex + doc.length - 1,
+                sourceIndex,
+                stableIndex
+            };
+        }
+    }
+
+    return {
+        doc,
+        endIndex: null,
+        sourceIndex: Number.NaN,
+        stableIndex
+    };
+}
+
+function resolvePlainLeadingLineItems(
+    plainLeadingLines: ReadonlyArray<string>,
+    originalText: string,
+    leadingBlockStartIndex: number,
+    nodeStartIndex: number,
+    stableIndexOffset: number
+): ReadonlyArray<LeadingCommentItem> {
+    const items: LeadingCommentItem[] = [];
+    let searchIndex = leadingBlockStartIndex;
+
+    for (const [index, line] of plainLeadingLines.entries()) {
+        const sourceIndex = originalText.indexOf(line, searchIndex);
+        if (sourceIndex === -1 || sourceIndex >= nodeStartIndex) {
+            return [];
+        }
+
+        items.push({
+            doc: line,
+            endIndex: sourceIndex + line.length - 1,
+            sourceIndex,
+            stableIndex: stableIndexOffset + index
+        });
+        searchIndex = sourceIndex + line.length;
+    }
+
+    return items;
+}
+
+function joinLeadingCommentItemsPreservingSourceSpacing(
+    leadingCommentItems: ReadonlyArray<LeadingCommentItem>,
+    originalText: string
+): any {
+    const parts: any[] = [];
+    for (let index = 0; index < leadingCommentItems.length; index += 1) {
+        const item = leadingCommentItems[index];
+        parts.push(item.doc);
+
+        if (index >= leadingCommentItems.length - 1) {
+            continue;
+        }
+
+        const nextItem = leadingCommentItems[index + 1];
+        if (
+            !isRawBlockCommentDoc(item.doc) &&
+            item.endIndex !== null &&
+            nextItem.sourceIndex > item.endIndex &&
+            /\r?\n[ \t]*\r?\n/u.test(originalText.slice(item.endIndex + 1, nextItem.sourceIndex))
+        ) {
+            parts.push(hardline, hardline);
+        } else {
+            parts.push(hardline);
+        }
+    }
+
+    return concat(parts);
+}
+
+function isRawBlockCommentDoc(doc: unknown): boolean {
+    return typeof doc === "string" && doc.trimStart().startsWith("/*");
+}
 
 function joinDocCommentsPreservingSourceSpacing(
     printableDocComments: ReadonlyArray<unknown>,

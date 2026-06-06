@@ -243,7 +243,6 @@ function handleIntermediateTrailingSpacing({
         isLoopStatement &&
         (nextNodeIsVariableDeclaration || nextNodeIsLoop);
     const shouldForceVariableBlockLoopPadding =
-        isTopLevel &&
         hasAutomaticPaddingCapacityWithSuppressionGuard &&
         shouldForceVariableBlockBeforeLoopPadding(
             statements,

@@ -415,9 +415,9 @@ void test("does not promote plain comments into doc-comment attachments", async 
     assert.equal(
         formatted,
         [
+            "/// @function scr_create_fx",
             "// @param sprite_index",
             "/* @description Create an effect */",
-            "/// @function scr_create_fx",
             "/// @returns {Id.Instance} instance",
             "function scr_create_fx() {}",
             ""

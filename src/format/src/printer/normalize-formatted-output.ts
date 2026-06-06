@@ -7,6 +7,7 @@ const { isNonEmptyTrimmedString } = Core;
 const MULTIPLE_BLANK_LINE_PATTERN = /\n{3,}/g;
 const WHITESPACE_ONLY_BLANK_LINE_PATTERN = /\n([ \t]+\n)+/g;
 const LINE_COMMENT_TO_BLOCK_COMMENT_BLANK_PATTERN = /(\/\/(?!\/)[^\n]*\n)[ \t]*\n(?=[ \t]*\/\*)/g;
+const BLOCK_COMMENT_TO_DOC_COMMENT_BLANK_PATTERN = /(\/\*[^\n]*\*\/\n)[ \t]*\n(?=[ \t]*\/\/\/)/g;
 // Matches a blank line immediately after `{`, but not when the next
 // non-blank content is a comment (`///`, `//`, or `/*`).  Comments that
 // immediately follow a block opener are left with their blank line intact
@@ -34,6 +35,10 @@ const collapseWhitespaceOnlyBlankLines = createPatternReplacementStep(WHITESPACE
 const collapseLineCommentToBlockCommentBlankLines = createPatternReplacementStep(
     LINE_COMMENT_TO_BLOCK_COMMENT_BLANK_PATTERN,
     "$1\n"
+);
+const collapseBlockCommentToDocCommentBlankLines = createPatternReplacementStep(
+    BLOCK_COMMENT_TO_DOC_COMMENT_BLANK_PATTERN,
+    "$1"
 );
 
 // Collapse the blank line that directly follows `{` when the next
@@ -154,7 +159,8 @@ export function normalizeFormattedOutput(formatted: string): string {
         trimDecorativeCommentBlankLines,
         collapseDuplicateBlankLines,
         collapseWhitespaceOnlyBlankLines,
-        collapseLineCommentToBlockCommentBlankLines
+        collapseLineCommentToBlockCommentBlankLines,
+        collapseBlockCommentToDocCommentBlankLines
     ].reduce<string>((current, step) => step(current), formatted);
 
     const result = collapseDuplicateBlankLines(collapseWhitespaceOnlyBlankLines(normalized));
