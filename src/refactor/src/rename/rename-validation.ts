@@ -666,11 +666,30 @@ export function detectDuplicateTargetNames(
 
     const duplicates: Array<DuplicateTargetNameEntry> = [];
     for (const [newName, symbolIds] of nameToSymbols) {
-        if (symbolIds.length > 1) {
-            duplicates.push({ newName, symbolIds });
+        const conflictSymbolIds = removeCoupledScriptResourceCallableDuplicates(symbolIds);
+        if (conflictSymbolIds.length > 1) {
+            duplicates.push({ newName, symbolIds: conflictSymbolIds });
         }
     }
     return duplicates;
+}
+
+function removeCoupledScriptResourceCallableDuplicates(symbolIds: ReadonlyArray<string>): Array<string> {
+    const symbolIdSet = new Set(symbolIds);
+    const filtered: Array<string> = [];
+
+    for (const symbolId of symbolIds) {
+        if (symbolId.startsWith("gml/script/")) {
+            const scriptName = symbolId.slice("gml/script/".length);
+            if (symbolIdSet.has(`gml/scripts/${scriptName}`)) {
+                continue;
+            }
+        }
+
+        filtered.push(symbolId);
+    }
+
+    return filtered;
 }
 
 /**

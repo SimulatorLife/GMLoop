@@ -497,6 +497,21 @@ void describe("detectDuplicateTargetNames", () => {
         assert.deepEqual([...result[0].symbolIds].sort(), ["gml/script/scr_a", "gml/script/scr_b"]);
     });
 
+    void test("allows coupled script resource and callable renames to share a target name", () => {
+        const result = detectDuplicateTargetNames([
+            { symbolId: "gml/scripts/Attack", newName: "attack" },
+            { symbolId: "gml/script/Attack", newName: "attack" },
+            { symbolId: "gml/script/OtherAttack", newName: "attack" }
+        ]);
+
+        assert.deepEqual(result, [
+            {
+                newName: "attack",
+                symbolIds: ["gml/scripts/Attack", "gml/script/OtherAttack"]
+            }
+        ]);
+    });
+
     void test("skips entries with invalid (non-normalizable) newName", () => {
         const result = detectDuplicateTargetNames([
             { symbolId: "gml/script/scr_a", newName: "123invalid" },

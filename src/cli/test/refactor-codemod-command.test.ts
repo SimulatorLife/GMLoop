@@ -232,6 +232,56 @@ void test("refactor codemod --write preserves allowed leading underscores while 
     }
 });
 
+void test("refactor codemod --write keeps multi-callable script resource and matching constructor aligned", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: {
+                            caseStyle: "lower"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "Attack",
+            [
+                "function Attack(sound_attack, attack_range_max = infinity, attack_range_min) : Object() constructor {",
+                "}",
+                "",
+                "function AttackProjectileCircle(sound_attack, projectile_index) : Attack(sound_attack, infinity, 0) constructor {",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        await access(path.join(projectRoot, "scripts", "attack", "attack.gml"));
+        const source = await readFile(path.join(projectRoot, "scripts", "attack", "attack.gml"), "utf8");
+
+        assert.match(source, /function attack\(/);
+        assert.match(source, /function AttackProjectileCircle\(/);
+        assert.match(source, /: attack\(sound_attack, infinity, 0\) constructor/);
+        assert.doesNotMatch(source, /\bfunction Attack\(/);
+        assert.doesNotMatch(source, /: Attack\(/);
+
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write renames sibling object metadata inside a folder renamed earlier in the same batch", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {

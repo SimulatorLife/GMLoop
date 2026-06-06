@@ -733,6 +733,32 @@ void test("require-trailing-optional-defaults appends undefined defaults after e
     assertEquals(result.output, expected);
 });
 
+void test("require-trailing-optional-defaults preserves constructor bodies with nested static functions", () => {
+    const input = [
+        "function AttackProjectileCircle(knockback = 0, cooldown_max = random_range(0.9, 1.3), bonus_damage = 1, sound_attack, attack_range_max = infinity, attack_range_min = 0, projectile_index) : Attack(knockback, cooldown_max, bonus_damage, sound_attack, attack_range_max, attack_range_min) constructor {",
+        "    self.projectile_index = projectile_index;",
+        "",
+        "    static attack_projectile = function(x = 0, y = 0, z = 0, damage_bonus = 0, knockback_bonus = 0, speed_multiplier = 1, var_struct) {",
+        "        var total_damage = damage + damage_bonus;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    const expected = [
+        "function AttackProjectileCircle(knockback = 0, cooldown_max = random_range(0.9, 1.3), bonus_damage = 1, sound_attack = undefined, attack_range_max = infinity, attack_range_min = 0, projectile_index = undefined) : Attack(knockback, cooldown_max, bonus_damage, sound_attack, attack_range_max, attack_range_min) constructor {",
+        "    self.projectile_index = projectile_index;",
+        "",
+        "    static attack_projectile = function(x = 0, y = 0, z = 0, damage_bonus = 0, knockback_bonus = 0, speed_multiplier = 1, var_struct = undefined) {",
+        "        var total_damage = damage + damage_bonus;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("require-trailing-optional-defaults", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("reportUnsafe=false suppresses unsafe-only diagnostics", () => {
     const input = 'message = "HP: " + string(_i++);\n';
     const result = lintWithRule("prefer-string-interpolation", input, { reportUnsafe: false });

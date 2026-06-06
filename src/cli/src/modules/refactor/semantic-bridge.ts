@@ -333,6 +333,10 @@ function resolveOccurrenceEndIndex(endIndex: unknown): number | null {
     return typeof endIndex === "number" ? toExclusiveEndIndex(endIndex) : null;
 }
 
+function isIdentifierBoundary(character: string | undefined): boolean {
+    return character === undefined || !/[A-Za-z0-9_]/u.test(character);
+}
+
 /**
  * Extract position data from a semantic entry reference record and push a validated
  * reference occurrence onto the accumulator. Silently skips records with missing or
@@ -3144,8 +3148,68 @@ export class GmlSemanticBridge {
         }
 
         this.collectUnresolvedEnumMemberOccurrences(entry, occurrences);
+        this.collectEnumMemberMetadataOccurrences(entry, occurrences);
 
         return occurrences.filter((occurrence) => occurrence.path.length > 0);
+    }
+
+    private collectEnumMemberMetadataOccurrences(
+        entry: SemanticIdentifierEntry,
+        occurrences: Array<SymbolOccurrence>
+    ): void {
+        if (!Core.isNonEmptyString(entry.name) || !Core.isNonEmptyString(entry.enumName)) {
+            return;
+        }
+
+        const enumMemberReferenceText = `${entry.enumName}.${entry.name}`;
+        for (const metadataPath of this.listEnumMemberMetadataCandidatePaths()) {
+            const absoluteMetadataPath = path.resolve(this.projectRoot, metadataPath);
+            if (!fs.existsSync(absoluteMetadataPath)) {
+                continue;
+            }
+
+            const metadataSource = fs.readFileSync(absoluteMetadataPath, "utf8");
+            let searchStart = 0;
+            while (searchStart < metadataSource.length) {
+                const referenceStart = metadataSource.indexOf(enumMemberReferenceText, searchStart);
+                if (referenceStart === -1) {
+                    break;
+                }
+
+                const referenceEnd = referenceStart + enumMemberReferenceText.length;
+                searchStart = referenceEnd;
+                if (!isIdentifierBoundary(metadataSource[referenceStart - 1])) {
+                    continue;
+                }
+
+                if (!isIdentifierBoundary(metadataSource[referenceEnd])) {
+                    continue;
+                }
+
+                occurrences.push({
+                    path: metadataPath,
+                    start: referenceStart + entry.enumName.length + 1,
+                    end: referenceEnd,
+                    kind: "reference"
+                });
+            }
+        }
+    }
+
+    private listEnumMemberMetadataCandidatePaths(): Array<string> {
+        const candidatePaths = new Set<string>();
+
+        for (const [resourcePath, resource] of Object.entries(this.resources)) {
+            if (isRefactorOwnerMetadataPath(resourcePath)) {
+                candidatePaths.add(resourcePath);
+            }
+
+            if (Core.isNonEmptyString(resource.path) && isRefactorOwnerMetadataPath(resource.path)) {
+                candidatePaths.add(resource.path);
+            }
+        }
+
+        return [...candidatePaths];
     }
 
     private collectUnresolvedEnumMemberOccurrences(
