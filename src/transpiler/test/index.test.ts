@@ -13,7 +13,7 @@ void test("transpileScript validates inputs", () => {
             transpiler.transpileScript({
                 symbolId: "gml/script/foo"
             } as unknown as TranspileScriptArgs),
-        { name: "TypeError" }
+        { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
     );
 });
 
@@ -101,7 +101,7 @@ void test("transpileScript rejects empty source paths", () => {
                 symbolId: "gml/script/test",
                 sourcePath: ""
             }),
-        { name: "TypeError" }
+        { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
     );
 });
 

@@ -50,7 +50,7 @@ export async function runWatchTest(
 
         watchPromise = Cli.CLI.Commands.runWatchCommand(testDir, mergedOptions);
 
-        if (mergedOptions.statusServer) {
+        if (mergedOptions.statusServer !== false) {
             await waitForStatusReady(`http://127.0.0.1:${statusPort}`);
         }
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { Parser } from "@gmloop/parser";
-import { Transpiler } from "@gmloop/transpiler";
+import { Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
 
 void describe("GmlTranspiler.transpileEvent", () => {
     void describe("patch shape", () => {
@@ -197,31 +197,34 @@ void describe("GmlTranspiler.transpileEvent", () => {
     });
 
     void describe("input validation", () => {
-        void it("throws TypeError when request is not an object", () => {
+        void it("throws request error when request is not an object", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(() => transpiler.transpileEvent(null), {
-                name: "TypeError",
+                name: "TranspilerError",
+                code: TranspilerErrorCode.REQUEST_ERROR,
                 message: /transpileEvent requires a request object/
             });
         });
 
-        void it("throws TypeError when sourceText is empty", () => {
+        void it("throws request error when sourceText is empty", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(() => transpiler.transpileEvent({ sourceText: "", symbolId: "gml/event/x" }), {
-                name: "TypeError",
+                name: "TranspilerError",
+                code: TranspilerErrorCode.REQUEST_ERROR,
                 message: /transpileEvent requires a sourceText string/
             });
         });
 
-        void it("throws TypeError when symbolId is empty", () => {
+        void it("throws request error when symbolId is empty", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(() => transpiler.transpileEvent({ sourceText: "x = 1;", symbolId: "" }), {
-                name: "TypeError",
+                name: "TranspilerError",
+                code: TranspilerErrorCode.REQUEST_ERROR,
                 message: /transpileEvent requires a symbolId string/
             });
         });
 
-        void it("throws TypeError when sourcePath is an empty string", () => {
+        void it("throws request error when sourcePath is an empty string", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(
                 () =>
@@ -230,11 +233,15 @@ void describe("GmlTranspiler.transpileEvent", () => {
                         symbolId: "gml/event/obj/create",
                         sourcePath: ""
                     }),
-                { name: "TypeError", message: /sourcePath to be a non-empty string/ }
+                {
+                    name: "TranspilerError",
+                    code: TranspilerErrorCode.REQUEST_ERROR,
+                    message: /sourcePath to be a non-empty string/
+                }
             );
         });
 
-        void it("throws TypeError when thisName is an empty string", () => {
+        void it("throws request error when thisName is an empty string", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(
                 () =>
@@ -243,7 +250,11 @@ void describe("GmlTranspiler.transpileEvent", () => {
                         symbolId: "gml/event/obj/create",
                         thisName: ""
                     }),
-                { name: "TypeError", message: /thisName to be a non-empty string/ }
+                {
+                    name: "TranspilerError",
+                    code: TranspilerErrorCode.REQUEST_ERROR,
+                    message: /thisName to be a non-empty string/
+                }
             );
         });
 

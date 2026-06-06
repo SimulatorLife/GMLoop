@@ -19,6 +19,23 @@ const WORD_OPERATOR_ALIASES = Object.freeze(
         .filter((operator) => operator !== LOGICAL_NOT_ALIAS && WORD_OPERATOR_PATTERN.test(operator))
         .sort((left, right) => right.length - left.length)
 );
+const OPERATOR_ALIASES_BY_CANONICAL = createOperatorAliasesByCanonical();
+
+function createOperatorAliasesByCanonical(): ReadonlyMap<string, ReadonlyArray<string>> {
+    const aliasesByCanonical = new Map<string, string[]>();
+    for (const [alias, canonical] of Core.OPERATOR_ALIAS_MAP.entries()) {
+        const aliases = aliasesByCanonical.get(canonical) ?? [];
+        aliases.push(alias);
+        aliasesByCanonical.set(canonical, aliases);
+    }
+
+    return new Map(
+        [...aliasesByCanonical.entries()].map(([canonical, aliases]) => [
+            canonical,
+            Object.freeze(aliases.toSorted((left, right) => right.length - left.length))
+        ])
+    );
+}
 
 function resolveReportLocation(context: Rule.RuleContext, index: number): { line: number; column: number } {
     const sourceCodeWithLocator = context.sourceCode as Rule.RuleContext["sourceCode"] & {
@@ -93,6 +110,28 @@ function hasLogicalNotAliasAt(sourceText: string, startIndex: number): boolean {
     return nextTokenStart === "(" || isIdentifierStartCharacter(nextTokenStart);
 }
 
+function isDirectiveLineAtIndex(sourceText: string, index: number): boolean {
+    const lineStart = sourceText.lastIndexOf("\n", index - 1) + 1;
+    for (let cursor = lineStart; cursor < sourceText.length; cursor += 1) {
+        const character = sourceText[cursor];
+        if (character === "\n" || character === "\r") {
+            return false;
+        }
+        if (WHITESPACE_PATTERN.test(character)) {
+            continue;
+        }
+
+        return character === "#";
+    }
+
+    return false;
+}
+
+function findNextLineStart(sourceText: string, index: number): number {
+    const nextLineBreak = sourceText.indexOf("\n", index);
+    return nextLineBreak === -1 ? sourceText.length : nextLineBreak + 1;
+}
+
 function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string): string {
     const edits: SourceTextEdit[] = [];
     const scanState = Core.createStringCommentScanState();
@@ -103,6 +142,11 @@ function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string): string {
         const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
         if (scannedIndex !== index) {
             index = scannedIndex;
+            continue;
+        }
+
+        if (isDirectiveLineAtIndex(sourceText, index)) {
+            index = findNextLineStart(sourceText, index);
             continue;
         }
 
@@ -187,9 +231,10 @@ function locateBinaryOperatorSourceRange(parameters: {
         return null;
     }
 
-    const candidates = [
-        ...new Set([parameters.operator, parameters.normalizedOperator].filter((value) => value.length > 0))
-    ].sort((left, right) => right.length - left.length);
+    const aliases = OPERATOR_ALIASES_BY_CANONICAL.get(parameters.normalizedOperator) ?? [];
+    const candidates = [...new Set([parameters.operator, parameters.normalizedOperator, ...aliases])].sort(
+        (left, right) => right.length - left.length
+    );
     if (candidates.length === 0) {
         return null;
     }
