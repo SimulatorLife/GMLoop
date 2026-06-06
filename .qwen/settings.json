@@ -41,16 +41,17 @@
         }
       },
       {
-        "id": "MiniMax-M2.7",
+        "id": "MiniMax-M3",
         "envKey": "OPENAI_API_KEY",
         "baseUrl": "https://api.minimax.io/v1",
         "generationConfig": {
           "timeout": 900000,
           "enableCacheControl": true,
-          "contextWindowSize": 196608,
+          "contextWindowSize": 524288,
           "maxRetries": 3,
           "samplingParams": {
-            "max_tokens": 8192
+            "top_p": 0.97,
+            "temperature": 0.25
           }
         }
       }

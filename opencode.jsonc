@@ -77,8 +77,8 @@
 				"chunkTimeout": 60000
 			},
 			"models": {
-				"MiniMax-M2.7": {
-					"name": "MiniMax M2.7",
+				"MiniMax-M3": {
+					"name": "MiniMax M3",
 					"limit": {
 						"context": 104800,
 						"output": 4096
@@ -123,7 +123,7 @@
 		"gmloop-code-worker": {
 			"description": "General-purpose GMLoop coding subagent. Use multiple instances of this agent to analyze or implement different aspects of the same task in isolation.",
 			"mode": "subagent",
-			"model": "minimax/MiniMax-M2.7",
+			"model": "minimax/MiniMax-M3",
 			"prompt": "You are a quick, focused GMLoop code worker running as an isolated subagent to do a single specific task. Complete only the specific assignment given by the parent and then stop. Inspect only relevant files, use existing abstractions, preserve repo conventions, and avoid all unrelated work. Return concise findings, relevant files, recommended changes, risks, and validation suggestions as applicable based on the assignment. If asked to edit, keep changes narrow and summarize exactly what changed. Do not spawn additional subagents.",
 			"steps": 30,
 			"hidden": true,
