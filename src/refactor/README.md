@@ -44,7 +44,7 @@ Current guardrails focus on the two hottest naming-convention paths that showed 
 - CLI semantic bridge lookups for script-backed callable declarations now use a resource-path index instead of rescanning every script entry for each lookup.
 - Naming-convention planning now skips macro-expansion dependency scans for batches that only touch top-level/resource symbols, instead of parsing macro sources on every run whether local renames are present or not.
 - Resource rename metadata planning now indexes inbound metadata references once per semantic bridge and reuses parsed `.yy/.yyp` documents across the batch instead of rescanning and reparsing them for every rename.
-- `WorkspaceEdit` now caches grouped text edits per revision and skips the second structural validation pass when the same immutable workspace is applied immediately after validation.
+- `WorkspaceEdit` now caches grouped text edits per revision and tracks telemetry counters incrementally, avoiding extra full-edit scans in large codemod batches.
 - The CLI refactor command now uses the semantic workspace's default GML project-index concurrency instead of forcing a serial build, so large codemod runs do not bottleneck on one-file-at-a-time indexing.
 - Globalvar and loop-length codemod executions now reuse source text captured during planning when applying a workspace edit, eliminating redundant per-file reads in dry-run and write modes.
 - Semantic query caches now use least-recently-used eviction so hot symbol/file lookups survive cache pressure during large codemod batches.
