@@ -233,6 +233,9 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "struct": {
             return `gml/struct/${identifierId ?? entry.key ?? entry.scopeId ?? name}`;
         }
+        case "script": {
+            return `gml/script/${name}`;
+        }
         case "file": {
             return `gml/file/${entry.filePath ?? entry.key ?? name}`;
         }
@@ -248,7 +251,6 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "project":
         case "room":
         case "room_layer":
-        case "script":
         case "sequence":
         case "shader":
         case "sound":
@@ -550,19 +552,41 @@ function resolveEnumOwnerNodeId(context: ProjectionContext, entry: ProjectIndexI
     return enumName ? lookupUniqueNodeByNameAndKind(context, enumName, "enum") : null;
 }
 
-function resolveStructOwnerNodeId(context: ProjectionContext, entry: ProjectIndexIdentifierEntry): string | null {
+function findNearestPrecedingStructNodeId(
+    context: ProjectionContext,
+    filePath: string | null,
+    declarationLine: number | null
+): string | null {
+    if (!filePath || declarationLine === null) {
+        return null;
+    }
+
+    const candidates = context.nodeRecords.filter(
+        (node) =>
+            node.kind === "struct" &&
+            node.filePath === filePath &&
+            node.lineStart !== null &&
+            node.lineStart <= declarationLine
+    );
+
+    candidates.sort((left, right) => (right.lineStart ?? 0) - (left.lineStart ?? 0));
+    return candidates[0]?.id ?? null;
+}
+
+function resolveStructOwnerNodeId(
+    context: ProjectionContext,
+    entry: ProjectIndexIdentifierEntry,
+    declaration: Record<string, unknown> | null
+): string | null {
     const scopeId = getString(entry.scopeId);
-    if (!scopeId) {
-        return null;
+    const ownerNodeId = scopeId ? (context.nodeIdsByScopeId.get(scopeId) ?? null) : null;
+    const ownerNode = ownerNodeId ? (context.nodeRecords.find((node) => node.id === ownerNodeId) ?? null) : null;
+    if (ownerNode?.kind === "struct") {
+        return ownerNode.id;
     }
 
-    const ownerNodeId = context.nodeIdsByScopeId.get(scopeId) ?? null;
-    if (!ownerNodeId) {
-        return null;
-    }
-
-    const ownerNode = context.nodeRecords.find((node) => node.id === ownerNodeId) ?? null;
-    return ownerNode?.kind === "struct" ? ownerNode.id : null;
+    const filePath = getString(declaration?.filePath) ?? getString(entry.filePath);
+    return findNearestPrecedingStructNodeId(context, filePath, readLocationLine(asRecord(declaration?.start)));
 }
 
 function projectStructVariableOwnershipEdge(
@@ -570,7 +594,7 @@ function projectStructVariableOwnershipEdge(
     node: GraphNodeRecord,
     entry: ProjectIndexIdentifierEntry
 ): void {
-    const structNodeId = resolveStructOwnerNodeId(context, entry);
+    const structNodeId = resolveStructOwnerNodeId(context, entry, readFirstDeclaration(entry));
     if (structNodeId && structNodeId !== node.id) {
         context.edgeRecords.push({
             fromId: structNodeId,
@@ -976,6 +1000,53 @@ function createObjectEventDisplayName(scopeRecord: ProjectIndexScopeRecord): str
     return getString(scopeRecord.name);
 }
 
+function shouldProjectObjectEventFileNode(scopeRecord: ProjectIndexScopeRecord, firstFilePath: string | null): boolean {
+    if (!firstFilePath) {
+        return false;
+    }
+
+    const eventRecord = asRecord(scopeRecord.event);
+    const eventName = getString(eventRecord.name);
+    if (!eventName) {
+        return false;
+    }
+
+    return path.posix.basename(firstFilePath, path.posix.extname(firstFilePath)) === eventName;
+}
+
+function projectObjectEventFileNode(context: ProjectionContext, resourcePath: string, firstFilePath: string): void {
+    const fileName = path.posix.basename(firstFilePath);
+    const fileNodeId = createGraphNodeId(context.graphId, "file", firstFilePath);
+    const existingFileNode = context.nodeRecords.some((node) => node.id === fileNodeId);
+    if (existingFileNode) {
+        return;
+    }
+
+    const node = createNodeRecord({
+        displayName: firstFilePath,
+        filePath: firstFilePath,
+        graphId: context.graphId,
+        id: fileNodeId,
+        kind: "file",
+        name: fileName,
+        resourcePath,
+        summary: createGraphNodeSummary({
+            filePath: firstFilePath,
+            kind: "file",
+            name: fileName,
+            resourcePath
+        })
+    });
+
+    context.nodeRecords.push(node);
+    registerNodeIndexes(context, node);
+    context.edgeRecords.push({
+        fromId: createGraphNodeId(context.graphId, "resource", resourcePath),
+        toId: node.id,
+        type: "contains"
+    });
+}
+
 function createObjectEventName(scopeRecord: ProjectIndexScopeRecord, firstFilePath: string | null): string | null {
     const name = getString(scopeRecord.name);
     if (name) {
@@ -1040,6 +1111,10 @@ function projectObjectEventScopes(context: ProjectionContext): void {
             toId: node.id,
             type: "contains"
         });
+
+        if (shouldProjectObjectEventFileNode(scopeRecord, firstFilePath)) {
+            projectObjectEventFileNode(context, resourcePath, firstFilePath);
+        }
     }
 }
 
@@ -1671,6 +1746,18 @@ function rankSemanticMatches(
     }
 }
 
+function calculateExactGraphSearchMatchScore(row: {
+    kind: string;
+    resourcePath: string | null;
+    scipSymbol: string | null;
+}): number {
+    if (row.kind === "script" && row.resourcePath !== null) {
+        return 8;
+    }
+
+    return row.scipSymbol ? 7 : 5;
+}
+
 function applyGraphProximityBoost(database: GraphDatabase, candidateScores: Map<string, number>): void {
     const highConfidenceNodeIds = [...candidateScores.entries()]
         .filter(([, score]) => score >= 5)
@@ -1978,10 +2065,17 @@ export function searchGraphIndex(
         }
 
         const exactRows = database
-            .prepare("SELECT id, scip_symbol AS scipSymbol FROM nodes WHERE name = ? OR scip_symbol = ?")
-            .all(normalizedQuery, normalizedQuery) as Array<{ id: string; scipSymbol: string | null }>;
+            .prepare(
+                "SELECT id, kind, resource_path AS resourcePath, scip_symbol AS scipSymbol FROM nodes WHERE name = ? OR scip_symbol = ?"
+            )
+            .all(normalizedQuery, normalizedQuery) as Array<{
+            id: string;
+            kind: string;
+            resourcePath: string | null;
+            scipSymbol: string | null;
+        }>;
         for (const row of exactRows) {
-            candidateScores.set(row.id, (candidateScores.get(row.id) ?? 0) + (row.scipSymbol ? 7 : 5));
+            candidateScores.set(row.id, (candidateScores.get(row.id) ?? 0) + calculateExactGraphSearchMatchScore(row));
         }
 
         const aliasRows = database

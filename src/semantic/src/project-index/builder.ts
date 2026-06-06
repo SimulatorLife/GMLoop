@@ -1569,22 +1569,12 @@ function handleConstructorParentScriptCall({
         name: calleeName,
         start: node.idLocation?.start ?? null
     };
-    const parentStart = Core.cloneLocation(node.idLocation?.start ?? null);
-    const parentEnd = Core.cloneLocation(node.idLocation?.end ?? null);
-    if (parentStart === null || parentEnd === null) {
+    if (callee.start === null || callee.end === null) {
         return;
-    }
-    parentEnd.index -= 1;
-    if (typeof parentEnd.column === "number") {
-        parentEnd.column -= 1;
     }
     recordFunctionOrScriptCall({
         builtInNames,
-        callee: {
-            ...callee,
-            end: parentEnd,
-            start: parentStart
-        },
+        callee,
         calleeName,
         fileRecord,
         metrics,

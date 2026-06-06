@@ -122,38 +122,44 @@ const EVENT_TYPE_NAMES: Record<number, string> = {
 function resolveEventMetadata(event) {
     const eventType = getNumericEventField(event, ["eventType", "eventtype"]);
     const eventNum = getNumericEventField(event, ["eventNum", "enumb"]);
+    const eventKey =
+        eventType === null && eventNum === null
+            ? "event"
+            : `${eventType === null ? "event" : eventType}_${eventNum ?? 0}`;
 
     if (Core.isNonEmptyTrimmedString(event?.name)) {
-        return { eventType, eventNum, displayName: event.name };
+        return { eventType, eventNum, displayName: event.name, eventKey };
     }
 
     if (eventType === null && eventNum === null) {
-        return { eventType, eventNum, displayName: "event" };
+        return { eventType, eventNum, displayName: "event", eventKey };
     }
 
     if (eventType !== null) {
         const eventName = EVENT_TYPE_NAMES[eventType];
         if (eventName) {
             const numSuffix = eventNum === null ? "_0" : `_${eventNum}`;
-            return { eventType, eventNum, displayName: `${eventName}${numSuffix}` };
+            return { eventType, eventNum, displayName: `${eventName}${numSuffix}`, eventKey };
         }
     }
 
     if (eventNum === null) {
-        return { eventType, eventNum, displayName: String(eventType) };
+        return { eventType, eventNum, displayName: String(eventType), eventKey };
     }
 
-    return { eventType, eventNum, displayName: `${eventType}_${eventNum}` };
+    return { eventType, eventNum, displayName: `${eventType}_${eventNum}`, eventKey };
 }
 
 function createObjectEventScopeDescriptor(resourceRecord, event, gmlRelativePath) {
-    const { displayName, eventType, eventNum } = resolveEventMetadata(event);
-    const scopeId = deriveScopeId("object", [resourceRecord.name, displayName]);
+    const { displayName, eventKey, eventType, eventNum } = resolveEventMetadata(event);
+    const scopeId = deriveScopeId("object", [resourceRecord.name, eventKey]);
+    const fileBaseName = path.posix.basename(gmlRelativePath, path.posix.extname(gmlRelativePath));
+    const graphEventName = fileBaseName === displayName ? displayName : eventKey;
     return {
         id: scopeId,
         kind: "objectEvent",
-        name: `${resourceRecord.name}.${displayName}`,
-        displayName: `object.${resourceRecord.name}.${displayName}`,
+        name: `${resourceRecord.name}.${graphEventName}`,
+        displayName: `object.${resourceRecord.name}.${graphEventName}`,
         resourcePath: resourceRecord.path,
         gmlFile: gmlRelativePath,
         event: {
@@ -185,7 +191,7 @@ async function extractEventGmlPath(
     fsFacade,
     logger: ProjectIndexLogger = null
 ) {
-    const { displayName } = resolveEventMetadata(event);
+    const { displayName, eventKey } = resolveEventMetadata(event);
     for (const candidate of [
         event?.eventContents,
         event?.event,
@@ -207,22 +213,39 @@ async function extractEventGmlPath(
         return null;
     }
 
-    const standardRelativePath = path.posix.join(resourceRelativeDir, `${displayName}.gml`);
-    const standardAbsolutePath = path.join(projectRoot, standardRelativePath);
-    try {
-        if (fsFacade && typeof fsFacade.stat === "function") {
-            const stats = await fsFacade.stat(standardAbsolutePath);
-            if (stats) {
-                return standardRelativePath;
-            }
-        }
-    } catch (error) {
-        // Fall back to legacy format but log the failure for diagnostics.
-        logProjectIndexDebugError(
-            logger,
-            `Failed to stat '${standardAbsolutePath}', falling back to legacy GML path format.`,
-            error
+    const pathCandidates = [];
+    for (const eventFileBaseName of [
+        displayName,
+        eventKey,
+        `${resourceRecord.name}_${displayName}`,
+        `${resourceRecord.name}_${eventKey}`
+    ]) {
+        Core.pushUnique(pathCandidates, path.posix.join(resourceRelativeDir, `${eventFileBaseName}.gml`));
+    }
+
+    if (fsFacade && typeof fsFacade.stat === "function") {
+        const statResults = await Promise.all(
+            pathCandidates.map(async (candidatePath) => {
+                const absoluteCandidatePath = path.join(projectRoot, candidatePath);
+                try {
+                    const stats = await fsFacade.stat(absoluteCandidatePath);
+                    return stats ? candidatePath : null;
+                } catch (error) {
+                    logProjectIndexDebugError(
+                        logger,
+                        `Failed to stat inferred event path '${absoluteCandidatePath}'.`,
+                        error
+                    );
+                    return null;
+                }
+            })
         );
+        const existingCandidatePath = statResults.find(
+            (candidatePath): candidatePath is string => typeof candidatePath === "string"
+        );
+        if (existingCandidatePath) {
+            return existingCandidatePath;
+        }
     }
 
     return path.posix.join(resourceRelativeDir, `${resourceRecord.name}_${displayName}.gml`);
