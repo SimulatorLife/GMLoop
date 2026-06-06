@@ -238,7 +238,10 @@ New top-level UI additions should:
 ----
 
 ## TODO
-- **FEAT**: Add syntax highlighting to the `Playground` code (both `gml` and `js`)
 - **BUG**: Selecting *any* format option in the `Playground` tab/page for the format settings seems to enable the whole/default format settings too, not *just* that one control. Also not sure if the select-options are actually hooked up to live-update the playground's output view?
 - **FEAT**: For the playground tab/page, user should be able to select *any* of the 'golden' fixture .gml files to preview/test. Or, maybe this is only true if np project is opened in the UI. If a GameMaker project *is* opened in the UI, then the user could be able to select on of the .gml files from that project and test applying rules to those instead.
-- **FEAT**: The `Config` tab/page in the UI should allow for building/modifying a `gmloop.json` config file and then have an option to download it. If a project is opened and there is no `gmloop.json` present in it, users on the `Config` tab/page should be able to generate one which will then be added/included into their project's root directory. We can have a default/recommended `gmloop.json` with the recommended values & naming conventions. Users can, of course, then edit/modify that config the same way as a loaded one from then on.
+- **FEAT**: For the "Docs" page/tab, split the "Rules" subview into three separate: "Linting", "Formatting", and "Codemods" subviews, so the user can more easily find the rules they want to test or learn about. So, the result will have 5 same-level subviews: "CLI", "MCP", "Linting", "Formatting", and "Codemods".
+- **FEAT**: For all raw-JSON displayed in the UI, add a "copy to clipboard" button (single, reusable component) that copies the raw JSON string to the clipboard for easy external use.
+- **FEAT**: For all raw-JSON displayed in the UI, allow for collapsing/expanding nested objects and arrays for easier readability.
+- **BUG**: On the "Docs" page/tab, the search bar and its subtitle "Search current docs view" are misaligned from the toolbar's subtabs-component (CLI, MCP, etc.). The search bar should be visually aligned vertically with that subtab component.
+- **BUG**: On the "Docs" page/tab, when typing in the search bar, it does not allow certain characters like "r" to be typed (maybe those that are also used as hotkeys for the UI?). The search bar should allow all characters to be typed, and hotkeys should not interfere with typing in the search bar.

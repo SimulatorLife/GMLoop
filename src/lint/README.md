@@ -190,3 +190,4 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
 
 - When run through the CLI, if no eslint configuration file is detected in the project, the CLI should fall back to a default, recommended ruleset.
 - The structure/files of `src/lint/src/doc-comment` is confusing and disorganized. Would a flat structure be better where we move files in 'src/lint/src/doc-comment/service' up one level?
+- Add an ESLint auto-fix rule that detects simple numeric accumulation loops like `alpha += index` over a fixed range and replaces them with the equivalent arithmetic-series expression. Example: `for index = 0..9` can become `alpha += count * (count - 1) * 0.5`, avoiding unnecessary runtime iteration.
