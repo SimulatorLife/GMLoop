@@ -266,8 +266,8 @@ $abcd
 GML JSDoc-style comments use triple slash syntax:
 
 ```gml
-/// @function scr_my_function
 /// @param {real} value
+/// @desc This function does something important with the value.
 /// @returns {real}
 ```
 
@@ -277,6 +277,7 @@ Code-folding regions use:
 
 ```gml
 #region My Region
+// ...many lines of code...
 #endregion
 ```
 

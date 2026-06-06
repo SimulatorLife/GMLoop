@@ -193,3 +193,8 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
 - The structure/files of `src/lint/src/doc-comment` is confusing and disorganized. Would a flat structure be better where we move files in 'src/lint/src/doc-comment/service' up one level?
 - Add an ESLint auto-fix rule that detects simple numeric accumulation loops like `alpha += index` over a fixed range and replaces them with the equivalent arithmetic-series expression. Example: `for index = 0..9` can become `alpha += count * (count - 1) * 0.5`, avoiding unnecessary runtime iteration.
 - **BUG**: Split the large, multi-purpose `optimize-logical-flow` rule into multiple focused rules that each target a specific logical optimization pattern
+- **BUG**: As of 6/6/2026, we seem to have circular lint fixes somewhere:
+  ```
+  (node:89657) ESLintCircularFixesWarning: Circular fixes detected while fixing /Users/henrykirk/Desktop/CannonFatherSource/cannonfather/scripts/group_draw_sprite/group_draw_sprite.gml. It is likely that you have conflicting rules in your configuration.
+  ```
+  We should also ensure to NOT have any lint auto-fix rules that conflict. If one of our "gml/" lint rules conflicts with a "feather/" lint rule, the "gml/" auto-fix should take precedence and we should make the "feather/" rule **strictly report-only**.
