@@ -219,7 +219,7 @@ async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<G
 
         const mockCss = [
             "font-size: 15px;",
-            "#tooltip { top:20px; left:20px; }",
+            "#tooltip{ top:20px; left:20px; }",
             ".link { color: red; }",
             "@keyframes graph-button-spin { from {} to {} }",
             "button:disabled{cursor:not-allowed}",
