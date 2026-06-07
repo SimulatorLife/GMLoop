@@ -89,7 +89,11 @@ function canonicalizeFixtureText(text: string, comparison: FixtureComparison): s
     return text;
 }
 
-async function compareFixtureCaseResult(fixtureCase: FixtureCase, caseResult: FixtureCaseResult): Promise<void> {
+async function compareFixtureCaseResult(
+    fixtureCase: FixtureCase,
+    caseResult: FixtureCaseResult,
+    inputText: string | null
+): Promise<void> {
     if (fixtureCase.assertion === "parse-error") {
         throw new Error(`Fixture ${fixtureCase.caseId} expected a parse error but completed successfully.`);
     }
@@ -112,7 +116,7 @@ async function compareFixtureCaseResult(fixtureCase: FixtureCase, caseResult: Fi
     assert.equal(caseResult.resultKind, "text", `Fixture ${fixtureCase.caseId} must return a text result.`);
     const expectedText =
         fixtureCase.assertion === "idempotent"
-            ? await readFile(fixtureCase.inputFilePath ?? "", "utf8")
+            ? (inputText ?? "")
             : await readFile(fixtureCase.expectedFilePath ?? "", "utf8");
     const actualOutput = canonicalizeFixtureText(caseResult.outputText, fixtureCase.comparison);
     const canonicalExpected = canonicalizeFixtureText(expectedText, fixtureCase.comparison);
@@ -222,7 +226,7 @@ async function executeFixtureCase(
                 runProfiledStage
             });
             await stageTimer.runStage("compare", async () => {
-                await compareFixtureCaseResult(fixtureCase, caseResult);
+                await compareFixtureCaseResult(fixtureCase, caseResult, inputText);
             });
         });
 

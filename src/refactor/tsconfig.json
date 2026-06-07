@@ -9,7 +9,6 @@
       "@gmloop/core": ["../core/index.ts"],
       "@gmloop/fixture-runner": ["../fixture-runner/index.ts"],
       "@gmloop/parser": ["../parser/index.ts"],
-      "@gmloop/lint": ["../lint/index.ts"],
       "@gmloop/refactor": ["./index.ts"],
       "@gmloop/runtime-wrapper": ["../runtime-wrapper/index.ts"],
       "@gmloop/semantic": ["../semantic/index.ts"],
@@ -20,8 +19,7 @@
     { "path": "../core" },
     { "path": "../fixture-runner" },
     { "path": "../parser" },
-    { "path": "../semantic" },
-    { "path": "../lint" }
+    { "path": "../semantic" }
   ],
   "include": ["*.ts", "src/**/*.ts", "test/**/*.ts"],
   "exclude": ["dist"]
