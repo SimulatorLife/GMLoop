@@ -26,8 +26,10 @@ export {
     duplicateProjectResource,
     getManifestResources,
     moveProjectResource,
+    readProjectMetadataDocument,
     removeProjectResource,
-    renameProjectResource
+    renameProjectResource,
+    resolveProjectManifestFile
 } from "./project-resource-operations.js";
 export type {
     AddRoomInstanceRequest,

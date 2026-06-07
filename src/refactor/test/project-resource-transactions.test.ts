@@ -14,8 +14,10 @@ import {
     duplicateProjectResource,
     moveProjectResource,
     ProjectResourceKind,
+    readProjectMetadataDocument,
     removeProjectResource,
     renameProjectResource,
+    resolveProjectManifestFile,
     updateRoomInstance
 } from "../src/project-resources/index.js";
 
@@ -443,6 +445,70 @@ void test("addRoomInstance appends an object instance to a room with dry-run saf
         ).document;
         assert.deepEqual(deletedMetadata.instanceCreationOrder, []);
         assert.deepEqual(deletedMetadata.layers[0].instances, []);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("resolveProjectManifestFile returns the only .yyp file with a filename fallback name", async () => {
+    const projectRoot = await fsMkdtemp("gmloop-project-resource-");
+
+    try {
+        await writeProjectFile(projectRoot, "MyGame.yyp", "");
+
+        const manifest = await resolveProjectManifestFile(projectRoot);
+        assert.equal(manifest.absolutePath, path.join(projectRoot, "MyGame.yyp"));
+        assert.equal(manifest.projectName, "MyGame");
+        assert.equal(manifest.relativePath, "MyGame.yyp");
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("resolveProjectManifestFile throws when the project root is missing a .yyp manifest", async () => {
+    const projectRoot = await fsMkdtemp("gmloop-project-resource-");
+
+    try {
+        await assert.rejects(resolveProjectManifestFile(projectRoot), /Could not locate a \.yyp manifest/u);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("resolveProjectManifestFile throws when multiple .yyp manifests are present", async () => {
+    const projectRoot = await fsMkdtemp("gmloop-project-resource-");
+
+    try {
+        await writeProjectFile(projectRoot, "MyGame.yyp", "");
+        await writeProjectFile(projectRoot, "Secondary.yyp", "");
+
+        await assert.rejects(resolveProjectManifestFile(projectRoot), /require exactly one project manifest/u);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("readProjectMetadataDocument returns the parsed JSON document for a metadata file", async () => {
+    const projectRoot = await fsMkdtemp("gmloop-project-resource-");
+    const metadataRelativePath = "objects/obj_player/obj_player.yy";
+    const metadataAbsolutePath = path.join(projectRoot, metadataRelativePath);
+    const metadataContents = `${JSON.stringify(
+        {
+            name: "obj_player",
+            resourceType: "GMObject",
+            eventList: []
+        },
+        null,
+        4
+    )}\n`;
+
+    try {
+        await writeProjectFile(projectRoot, metadataRelativePath, metadataContents);
+
+        const document = await readProjectMetadataDocument(metadataAbsolutePath);
+        assert.equal(document.name, "obj_player");
+        assert.equal(document.resourceType, "GMObject");
+        assert.deepEqual(document.eventList, []);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }
