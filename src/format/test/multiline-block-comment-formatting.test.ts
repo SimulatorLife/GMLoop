@@ -1,4 +1,9 @@
-import assert from "node:assert";
+// Node.js deprecated the loose equality helpers (e.g. `assert.equal`) in the
+// `node:assert` module. This test suite migrates to the /strict subpath and
+// the strict helpers (`assert.strictEqual`, `assert.notStrictEqual`) for
+// value- and type-exact comparisons. Behaviour parity with the original calls
+// is validated via: pnpm test src/format/dist/test/multiline-block-comment-formatting.test.js
+import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { Format } from "../src/index.js";
@@ -26,13 +31,13 @@ var x = 1;
 `;
 
         const formatted = await Format.format(input, { parser: "gml" });
-        assert.notEqual(formatted, unexpected);
+        assert.notStrictEqual(formatted, unexpected);
         // The formatter always adds a trailing newline. The block comment body and
         // surrounding structure must be preserved verbatim — only a trailing "\n" is
         // appended. (The old `preserveTrailingNewlineForVerbatimTopLevelMultilineBlockComment`
         // fallback returned source unchanged, but that recovery strategy violated
         // target-state.md §3.2 and has been removed.)
-        assert.equal(formatted, `${input}\n`);
+        assert.strictEqual(formatted, `${input}\n`);
     });
 
     void it("preserves non-doc top-level multi-line block comments without adding * prefixes", async () => {
