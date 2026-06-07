@@ -155,31 +155,51 @@ function visit(node) {
     });
 }
 
+/**
+ * Walk the function/block/program body and attempt to condense each statement
+ * into a simplified boolean return expression. The traversal pattern is
+ * deliberately index-driven with manual advancement: both
+ * `tryExtractEarlyExitGuardClause` and `tryCondenseIfStatement` can rewrite the
+ * statement currently at `index` (splice in N+1 items, or replace/remove in
+ * place), so the loop must not advance past the rewritten slot. Falling
+ * through with an unconditional `index++` would skip the freshly inserted
+ * element on the next iteration and risk leaving the new guard clause or
+ * condensed return unprocessed.
+ */
 function condenseWithinStatements(statements) {
     if (!isNonEmptyArray(statements)) {
         return;
     }
 
-    for (let index = 0; index < statements.length; index++) {
+    for (let index = 0; index < statements.length; ) {
         const statement = statements[index];
         if (!isNode(statement)) {
+            index += 1;
             continue;
         }
 
         if (statement.type === "IfStatement") {
             const extractedGuard = tryExtractEarlyExitGuardClause(statements, index);
             if (extractedGuard) {
+                // The original IfStatement was replaced with a new guardIf at
+                // `index` (followed by the inlined consequent statements). Leave
+                // `index` pointing at the new guardIf so the next iteration
+                // re-processes it before advancing into the inlined block.
                 continue;
             }
 
             const condensed = tryCondenseIfStatement(statements, index);
             if (condensed) {
-                // Reprocess the new return statement in case nested condensing applies later.
+                // The original IfStatement (and possibly its trailing return)
+                // was replaced with a new ReturnStatement at `index`. Re-visit
+                // the slot in case nested condensing applies to the new
+                // expression before moving on.
                 continue;
             }
         }
 
         visit(statement);
+        index += 1;
     }
 }
 
