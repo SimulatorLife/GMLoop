@@ -1,36 +1,4 @@
-import { Core } from "@gmloop/core";
-
-const { createEnumeratedOptionHelpers } = Core;
-
-function createEnumHelpers<T extends Record<string, string>>(enumObject: T, typeName: string) {
-    type EnumValue = T[keyof T];
-    const values = Object.values(enumObject);
-    const validValues = values.join(", ");
-    const coreHelpers = createEnumeratedOptionHelpers(values, {
-        caseSensitive: true,
-        enforceStringType: false
-    });
-
-    return {
-        is: (value: unknown): value is EnumValue => {
-            return typeof value === "string" && coreHelpers.normalize(value) !== null;
-        },
-        parse: (value: unknown): EnumValue | null => {
-            return coreHelpers.normalize(value) as EnumValue | null;
-        },
-        require: (value: unknown, context?: string): EnumValue => {
-            const normalized = typeof value === "string" ? coreHelpers.normalize(value) : null;
-            if (normalized === null) {
-                const contextSuffix = context ? ` (in ${context})` : "";
-                throw new TypeError(
-                    `Invalid ${typeName}: ${JSON.stringify(value)}${contextSuffix}. Must be one of: ${validValues}.`
-                );
-            }
-
-            return normalized as EnumValue;
-        }
-    };
-}
+import { createEnumHelpers } from "../types.js";
 
 /**
  * Supported GameMaker resource families for project add/remove transactions.
