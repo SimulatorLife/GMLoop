@@ -206,18 +206,6 @@ export async function resolveProjectManifestFile(projectRoot: string): Promise<R
     });
 }
 
-async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProjectManifest> {
-    const manifest = await resolveProjectManifestFile(projectRoot);
-    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
-    const projectName = Core.getNonEmptyString(manifestDocument.name) ?? manifest.projectName;
-
-    return Object.freeze({
-        absolutePath: manifest.absolutePath,
-        projectName,
-        relativePath: manifest.relativePath
-    });
-}
-
 /**
  * Read and parse a GameMaker project metadata document from disk, returning the
  * raw record (without schema filtering) that downstream code mutates in place.
@@ -229,6 +217,17 @@ async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProj
 export async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
     const rawContent = await readFile(absolutePath, "utf8");
     return Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
+}
+
+async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProjectManifest> {
+    const manifest = await resolveProjectManifestFile(projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
+    const projectName = Core.getNonEmptyString(manifestDocument.name) ?? manifest.projectName;
+    return Object.freeze({
+        absolutePath: manifest.absolutePath,
+        projectName,
+        relativePath: manifest.relativePath
+    });
 }
 
 function createProjectResourceContext(
