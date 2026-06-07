@@ -1,5 +1,6 @@
 import type { StorageBackend } from "../backends/storage-backend.js";
 import type {
+    ConflictSeverityValue,
     ConflictTypeValue,
     GlobalvarToGlobalCodemodOptions,
     MaybePromise,
@@ -369,7 +370,7 @@ export interface BatchRenameValidation {
 export interface ConflictEntry {
     type: ConflictTypeValue;
     message: string;
-    severity?: string;
+    severity?: ConflictSeverityValue;
     path?: string;
 }
 

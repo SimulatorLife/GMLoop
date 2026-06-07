@@ -20,14 +20,18 @@ import * as RenamePreview from "./rename-preview.js";
 import { RenameValidationCache } from "./rename-validation-cache.js";
 import { SemanticQueryCache } from "./semantic-cache.js";
 import {
+    ConflictSeverity,
     ConflictType,
+    isConflictSeverity,
     isConflictType,
     isOccurrenceKind,
     isSymbolKind,
     OccurrenceKind,
+    parseConflictSeverity,
     parseConflictType,
     parseOccurrenceKind,
     parseSymbolKind,
+    requireConflictSeverity,
     requireConflictType,
     requireOccurrenceKind,
     requireSymbolKind,
@@ -55,6 +59,10 @@ export const Refactor = Object.freeze({
     isConflictType,
     parseConflictType,
     requireConflictType,
+    ConflictSeverity,
+    isConflictSeverity,
+    parseConflictSeverity,
+    requireConflictSeverity,
     OccurrenceKind,
     isOccurrenceKind,
     parseOccurrenceKind,
@@ -191,6 +199,7 @@ export type {
     ConfiguredCodemodRunResult,
     ConfiguredCodemodSummary,
     ConflictEntry,
+    ConflictSeverityValue,
     ConflictTypeValue,
     DependencyAnalyzer,
     DependentSymbol,
@@ -260,6 +269,7 @@ export type {
 } from "./types.js";
 export { isSymbolKind, parseSymbolKind, requireSymbolKind, SymbolKind } from "./types.js";
 export { ConflictType, isConflictType, parseConflictType, requireConflictType } from "./types.js";
+export { ConflictSeverity, isConflictSeverity, parseConflictSeverity, requireConflictSeverity } from "./types.js";
 export { isOccurrenceKind, OccurrenceKind, parseOccurrenceKind, requireOccurrenceKind } from "./types.js";
 export type { WorkspaceRevisionProvider } from "./workspace-edit.js";
 export type {

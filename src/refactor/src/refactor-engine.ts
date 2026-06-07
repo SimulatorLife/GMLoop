@@ -41,6 +41,7 @@ import {
     type ConfiguredCodemodRunRequest,
     type ConfiguredCodemodRunResult,
     type ConflictEntry,
+    ConflictSeverity,
     ConflictType,
     type ExecuteBatchRenameRequest,
     type ExecuteGlobalvarToGlobalCodemodRequest,
@@ -554,7 +555,7 @@ export class RefactorEngine {
         );
 
         for (const conflict of crossFileConflicts) {
-            if (conflict.severity === "warning") {
+            if (conflict.severity === ConflictSeverity.WARNING) {
                 warnings.push(conflict.message);
             } else {
                 errors.push(conflict.message);
@@ -2112,7 +2113,7 @@ export class RefactorEngine {
                 conflicts.push({
                     type: ConflictType.MISSING_SYMBOL,
                     message: `Symbol '${symbolId}' not found in semantic index`,
-                    severity: "error"
+                    severity: ConflictSeverity.ERROR
                 });
                 return {
                     valid: false,
@@ -2175,7 +2176,7 @@ export class RefactorEngine {
                 warnings.push({
                     type: ConflictType.LARGE_RENAME,
                     message: `This rename will affect ${totalOccurrences} occurrences across ${summary.affectedFiles.size} files`,
-                    severity: "warning"
+                    severity: ConflictSeverity.WARNING
                 });
             }
 
@@ -2183,14 +2184,14 @@ export class RefactorEngine {
                 warnings.push({
                     type: ConflictType.MANY_DEPENDENTS,
                     message: `${summary.dependentSymbols.size} other symbols depend on this symbol`,
-                    severity: "info"
+                    severity: ConflictSeverity.INFO
                 });
             }
         } catch (error) {
             conflicts.push({
                 type: ConflictType.ANALYSIS_ERROR,
                 message: `Failed to analyze impact: ${Core.getErrorMessage(error)}`,
-                severity: "error"
+                severity: ConflictSeverity.ERROR
             });
         }
 
