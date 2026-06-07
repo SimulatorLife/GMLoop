@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 import { printExpression, printNodeForAutofix, readNodeText } from "../../contracts/autofix-printing.js";
 import {
     convertLegacyReturnsDescriptionLinesToMetadata,
@@ -6,11 +8,6 @@ import {
     resolveParameterName
 } from "../../doc-comment/index.js";
 import { createLimitedRecoveryProjection } from "../../language/index.js";
-import {
-    forEachScientificNotationToken,
-    toPlainDecimalFromScientificLiteral,
-    trimInsignificantFractionalZeros
-} from "../../malformed/index.js";
 import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
 
 /**
@@ -65,9 +62,9 @@ export const gmlRuleLanguageServices = Object.freeze({
  * implementation file within that layer.
  */
 export const gmlRuleMalformedServices = Object.freeze({
-    forEachScientificNotationToken,
-    toPlainDecimalFromScientificLiteral,
-    trimInsignificantFractionalZeros
+    forEachScientificNotationToken: Core.forEachScientificNotationToken,
+    toPlainDecimalFromScientificLiteral: Core.toPlainDecimalFromScientificLiteral,
+    trimInsignificantFractionalZeros: Core.trimInsignificantFractionalZeros
 });
 
 /**
