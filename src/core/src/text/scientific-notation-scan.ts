@@ -1,24 +1,30 @@
-import { Core } from "@gmloop/core";
+import { isIdentifierBoundaryCharacter } from "../utils/string.js";
+import { advanceStringCommentScan, createStringCommentScanState } from "./source-text.js";
 
 /**
- * Source text scanning utilities for scientific-notation numeric literals.
+ * Source-text scanning utilities for scientific-notation numeric literals.
  *
- * This module is consumed by two layers of the `@gmloop/lint` workspace:
+ * The helpers in this module are pure text utilities that depend only on
+ * {@link Core}'s string/comment scanner. They are intentionally placed in
+ * `@gmloop/core` (alongside the other text primitives such as
+ * `createStringCommentScanState` and `advanceStringCommentScan`) so that
+ * **both** the `lint` workspace — which needs the helpers in pre-parse
+ * recovery (Phase A) and the AST rule (Phase B) — and the `refactor`
+ * workspace — which needs the helpers in the scientific-notation codemod —
+ * can share a single implementation without violating the architectural
+ * boundary that disallows `refactor → lint` dependencies.
  *
- *  1. **`language/recovery.ts`** (pre-parse, Phase A) — replaces every
- *     scientific-notation token with an equal-length placeholder so that the
- *     ANTLR parser does not choke on exponent syntax during malformed-source
- *     recovery.
+ * Earlier the file lived in `src/lint/src/malformed/` because both the
+ * pre-parse `language/recovery.ts` layer and the AST-phase rule
+ * `rules/gml/rules/no-scientific-notation-rule.ts` consumed it from the
+ * `lint` workspace. The `refactor` codemod's parallel need forced a
+ * `@gmloop/lint` import, which the `boundaries/element-types` rule
+ * forbids. Promoting the module to `@gmloop/core` resolves the violation
+ * without introducing a duplicate implementation, and it keeps the helpers
+ * near the other generic text utilities they build on.
  *
- *  2. **`rules/gml/rules/no-scientific-notation-rule.ts`** (AST phase) — walks
- *     the already-parsed source to report and auto-fix scientific-notation
- *     literals.
- *
- * Because this utility is needed by the `language/` layer (which runs *before*
- * rules), placing it here in `malformed/` — alongside `source-preprocessing.ts`
- * — keeps the dependency direction correct: the lower `language/` layer must
- * never import from the higher `rules/gml/` layer.  Moving the file here fixes
- * that architectural inversion.  (See target-state.md §2.1 and §3.1.)
+ * Architecture: this is a pure text utility, so it lives next to the other
+ * shared text primitives in `@gmloop/core/text` (target-state.md §2.1).
  */
 
 const EXPONENT_DIGIT_PATTERN = /^[+-]?\d+$/u;
@@ -36,8 +42,7 @@ export const SCIENTIFIC_NOTATION_PATTERN = /(?:\d+(?:\.\d*)?|\.\d+)[eE][+-]?\d+/
  */
 export function isScientificNotationBoundary(sourceText: string, startIndex: number, endIndex: number): boolean {
     return (
-        Core.isIdentifierBoundaryCharacter(sourceText[startIndex - 1]) &&
-        Core.isIdentifierBoundaryCharacter(sourceText[endIndex])
+        isIdentifierBoundaryCharacter(sourceText[startIndex - 1]) && isIdentifierBoundaryCharacter(sourceText[endIndex])
     );
 }
 
@@ -138,12 +143,12 @@ export function forEachScientificNotationToken(
     sourceText: string,
     onMatch: (start: number, end: number, text: string) => void
 ): void {
-    const scanState = Core.createStringCommentScanState();
+    const scanState = createStringCommentScanState();
     const sourceLength = sourceText.length;
 
     let index = 0;
     while (index < sourceLength) {
-        const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
+        const scannedIndex = advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
         if (scannedIndex !== index) {
             index = scannedIndex;
             continue;

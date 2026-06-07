@@ -1,6 +1,5 @@
 import { Core } from "@gmloop/core";
 
-import { forEachScientificNotationToken } from "../malformed/scientific-notation-scan.js";
 import { recoverParseSourceFromMissingBrace } from "../malformed/source-preprocessing.js";
 import { findNextNonWhitespaceIndex, findPreviousNonWhitespaceIndex } from "../rules/gml/rule-base-helpers.js";
 
@@ -246,7 +245,7 @@ function projectScientificNotationForRecovery(sourceText: string): string {
     const chunks: Array<string> = [];
     let copiedThrough = 0;
 
-    forEachScientificNotationToken(sourceText, (start, end, scientificText) => {
+    Core.forEachScientificNotationToken(sourceText, (start, end, scientificText) => {
         chunks.push(sourceText.slice(copiedThrough, start), "0".repeat(scientificText.length));
         copiedThrough = end;
     });
