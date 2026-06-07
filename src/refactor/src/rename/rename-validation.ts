@@ -7,6 +7,7 @@ import { Core } from "@gmloop/core";
 
 import {
     type ConflictEntry,
+    ConflictSeverity,
     ConflictType,
     type FileSymbolProvider,
     type KeywordProvider,
@@ -525,7 +526,7 @@ export async function validateCrossFileConsistency(
             errors.push({
                 type: ConflictType.LARGE_RENAME,
                 message: `File '${filePath}' contains ${occurrenceCount} occurrences - verify all references are updated`,
-                severity: "warning",
+                severity: ConflictSeverity.WARNING,
                 path: filePath
             });
         }

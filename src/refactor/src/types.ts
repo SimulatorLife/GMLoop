@@ -515,4 +515,78 @@ export function requireOccurrenceKind(value: unknown, context?: string): Occurre
     return occurrenceKindHelpers.require(value, context);
 }
 
+/**
+ * Enumerated constants for refactor conflict severity levels.
+ *
+ * Severity is reported alongside each `ConflictEntry` so callers can decide
+ * whether to surface the issue as a hard failure, an advisory warning, or
+ * background context. This enum centralizes the valid severity strings,
+ * replacing raw literals (e.g. `"error"`, `"warning"`, `"info"`) that used to
+ * live inline on conflict records and were compared with `===` in branching
+ * logic. Using typed constants prevents typo-induced mismatches and gives
+ * callers a single source of truth for validation.
+ *
+ * @example
+ * // Use typed constants instead of raw strings
+ * conflicts.push({ type: ConflictType.LARGE_RENAME, severity: ConflictSeverity.WARNING, ... });
+ *
+ * // Validate runtime strings
+ * const severity = parseConflictSeverity(rawInput);
+ */
+export const ConflictSeverity = Object.freeze({
+    ERROR: "error",
+    WARNING: "warning",
+    INFO: "info"
+} as const);
+
+export type ConflictSeverityValue = (typeof ConflictSeverity)[keyof typeof ConflictSeverity];
+
+const conflictSeverityHelpers = createEnumHelpers(ConflictSeverity, "conflict severity");
+
+/**
+ * Check whether a value is a valid conflict severity.
+ *
+ * @param value - Candidate value to test
+ * @returns True if value matches a known ConflictSeverity constant
+ *
+ * @example
+ * if (isConflictSeverity(rawString)) {
+ *   // Safe to use as ConflictSeverityValue
+ * }
+ */
+export function isConflictSeverity(value: unknown): value is ConflictSeverityValue {
+    return conflictSeverityHelpers.is(value);
+}
+
+/**
+ * Parse and validate a conflict severity string.
+ *
+ * @param value - Raw string to parse
+ * @returns Valid ConflictSeverityValue or null if invalid
+ *
+ * @example
+ * const severity = parseConflictSeverity(conflict.severity);
+ * if (severity === null) {
+ *   // Handle unknown severity
+ * }
+ */
+export function parseConflictSeverity(value: unknown): ConflictSeverityValue | null {
+    return conflictSeverityHelpers.parse(value);
+}
+
+/**
+ * Parse and validate a conflict severity string, throwing on invalid input.
+ *
+ * @param value - Raw string to parse
+ * @param context - Optional context for error message
+ * @returns Valid ConflictSeverityValue
+ * @throws {TypeError} If value is not a valid conflict severity
+ *
+ * @example
+ * const severity = requireConflictSeverity(conflict.severity, "rename validation");
+ */
+export function requireConflictSeverity(value: unknown, context?: string): ConflictSeverityValue {
+    return conflictSeverityHelpers.require(value, context);
+}
+
 export * from "./types/index.js";
