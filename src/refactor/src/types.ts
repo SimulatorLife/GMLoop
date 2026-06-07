@@ -266,7 +266,7 @@ export type ResolvedNamingConventionRules = Partial<Record<NamingCategory, Resol
  * @param typeName - Human-readable name for error messages
  * @returns Helper object with is, parse, and require methods
  */
-function createEnumHelpers<T extends Record<string, string>>(enumObj: T, typeName: string) {
+export function createEnumHelpers<T extends Record<string, string>>(enumObj: T, typeName: string) {
     type EnumValue = T[keyof T];
     const values = Object.values(enumObj);
     const validValues = values.join(", ");
