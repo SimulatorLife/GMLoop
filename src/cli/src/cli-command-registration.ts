@@ -3,6 +3,7 @@ import { handleCliError } from "./cli-core/errors.js";
 import { createCollectStatsCommand, runCollectStats } from "./commands/collect-stats.js";
 import { createFixCommand, runFixCommand } from "./commands/fix.js";
 import { createFormatCommand, runFormatCommand } from "./commands/format.js";
+import { createGameMakerCliCommand } from "./commands/game-maker-cli.js";
 import { createFeatherMetadataCommand, runGenerateFeatherMetadata } from "./commands/generate-feather-metadata.js";
 import { createGenerateIdentifiersCommand, runGenerateGmlIdentifiers } from "./commands/generate-gml-identifiers.js";
 import { createGenerateQualityReportCommand, runGenerateQualityReport } from "./commands/generate-quality-report.js";
@@ -237,6 +238,15 @@ function registerProjectWorkflowCommands({ registry }: CliCommandRegistryContext
 }
 
 function registerUtilityCommands({ registry }: CliCommandRegistryContext): void {
+    registry.registerCommand({
+        command: createGameMakerCliCommand(),
+        onError: (error) =>
+            handleCliError(error, {
+                prefix: "GameMaker CLI command failed.",
+                exitCode: 1
+            })
+    });
+
     registry.registerCommand({
         command: createMcpCommand(),
         onError: (error) =>

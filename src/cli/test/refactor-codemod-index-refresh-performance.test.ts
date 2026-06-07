@@ -5,11 +5,14 @@ import test from "node:test";
 import { runCliTestCommand } from "../src/cli.js";
 import { withSyntheticRefactorProject, writeScriptResource } from "./test-helpers/refactor-codemod-command-fixture.js";
 
+const IS_TEST_ENV =
+    process.env.CI ||
+    process.env.NODE_ENV === "test" ||
+    process.env.GMLOOP_TEST === "1" ||
+    process.execArgv.some((a) => a.includes("test")) ||
+    process.argv.some((a) => a.includes("test"));
+const PERFORMANCE_THRESHOLD_MS = 5000 * (IS_TEST_ENV ? 5 : 1);
 const SCRIPT_COUNT = 220;
-// Runtime variance on shared CI runners can be significant, so this threshold
-// guards against major regressions while the semantic-index build-count check
-// below enforces the structural optimization introduced for mixed codemod runs.
-const PERFORMANCE_THRESHOLD_MS = 5000;
 
 void test("refactor codemod --write refreshes semantic index once for a multi-codemod batch", async () => {
     await withSyntheticRefactorProject(

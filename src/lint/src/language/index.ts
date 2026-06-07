@@ -1,5 +1,5 @@
-export { printExpression, printNodeForAutofix, readNodeText } from "./autofix-printing.js";
-export { GML_VISITOR_KEYS, gmlLanguage } from "./gml-language.js";
+export { printExpression, printNodeForAutofix, readNodeText } from "../contracts/autofix-printing.js";
+export { GML_VISITOR_KEYS, gmlLanguage, type ParserFactory, setParserFactory } from "./gml-language.js";
 export { normalizeLintFilePath } from "./path-normalization.js";
 export type { InsertedArgumentSeparatorRecovery, RecoveryProjection, RecoveryTextInsertion } from "./recovery.js";
 export {

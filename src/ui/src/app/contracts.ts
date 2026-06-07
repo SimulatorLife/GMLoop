@@ -3,7 +3,6 @@ import type {
     GraphVisualizationDocumentationCatalogs,
     GraphVisualizationLastFixRun,
     GraphVisualizationLiveReloadModel,
-    GraphVisualizationLiveReloadStatusSnapshot,
     GraphVisualizationLoadedTarget,
     GraphVisualizationMcpServerStatus,
     GraphVisualizationProjectConfigurationCatalog,
@@ -53,6 +52,8 @@ export type GraphVisualizationUiCallbacks = Readonly<{
         | GraphVisualizationHostMutationResult
         | void
         | Promise<GraphVisualizationHostMutationResult | void>;
+    onCreateConfig?: () => void | Promise<void>;
+    onSaveConfig: (config: Readonly<Record<string, unknown>>) => void | Promise<void>;
     onRunFix: (
         options?: GraphVisualizationFixRunOptions
     ) => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
@@ -60,10 +61,7 @@ export type GraphVisualizationUiCallbacks = Readonly<{
         | GraphVisualizationLiveReloadModel
         | null
         | Promise<GraphVisualizationLiveReloadModel | null>;
-    onRefreshLiveReloadStatus: () =>
-        | GraphVisualizationLiveReloadStatusSnapshot
-        | null
-        | Promise<GraphVisualizationLiveReloadStatusSnapshot | null>;
+    onStopLiveReload: () => void | Promise<void>;
 }>;
 
 /**
@@ -94,9 +92,11 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
     return {
         onOpenProject: () => {},
         onRegenerate: () => {},
+        onCreateConfig: () => {},
+        onSaveConfig: () => {},
         onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
         onStartLiveReload: () => null,
-        onRefreshLiveReloadStatus: () => null
+        onStopLiveReload: () => {}
     };
 }
 

@@ -3,6 +3,17 @@ import type { Rule } from "eslint";
 
 import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
+import { applyDivisionToMultiplication } from "../math/math-division-to-multiplication.js";
+import { cleanupMultiplicativeIdentityParentheses } from "../math/math-parentheses-cleanup.js";
+// manual-transforms provide a comprehensive suite of normalization helpers that
+// the linter rule previously replicated only incompletely. We now invoke them
+// directly and print the resulting AST fragment ourselves so the rule can keep
+// its existing text-edit infrastructure and remain synchronous.
+import {
+    applyManualMathNormalization,
+    applyScalarCondensing,
+    simplifyZeroDivisionNumerators
+} from "../math/math-traversal-normalization.js";
 import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,
@@ -14,17 +25,6 @@ import {
     type SourceTextEdit,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import { applyDivisionToMultiplication } from "../transforms/math-division-to-multiplication.js";
-import { cleanupMultiplicativeIdentityParentheses } from "../transforms/math-parentheses-cleanup.js";
-// manual-transforms provide a comprehensive suite of normalization helpers that
-// the linter rule previously replicated only incompletely. We now invoke them
-// directly and print the resulting AST fragment ourselves so the rule can keep
-// its existing text-edit infrastructure and remain synchronous.
-import {
-    applyManualMathNormalization,
-    applyScalarCondensing,
-    simplifyZeroDivisionNumerators
-} from "../transforms/math-traversal-normalization.js";
 import { evaluateSkipDecision } from "./optimize-math-skip-evaluator.js";
 
 const {
@@ -34,9 +34,11 @@ const {
     createStringCommentScanState,
     advanceStringCommentScan,
     hasComment,
+    isApproximatelyZero,
     isIdentifierNode,
     isLogicalAndOperator,
     isLogicalOrOperator,
+    toNumber,
     unwrapParenthesizedExpression: unwrapParenthesized
 } = Core;
 
@@ -55,25 +57,38 @@ const COMMENT_SEQUENCE_PATTERN = /\/\/|\/\*|\*\//u;
 const MANUAL_MATH_CALL_SIGNAL_PATTERN =
     /\b(?:arccos|arcsin|arctan|arctan2|cos|darccos|darcsin|darctan|darctan2|dcos|degtorad|dsin|dtan|exp|lengthdir_[xy]|ln|log2|mean|point_direction|point_distance(?:_3d)?|power|radtodeg|sin|sqr|sqrt|tan)\s*\(/u;
 const NUMERIC_LITERAL_SIGNAL_PATTERN = /(?<![\w.])(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?(?![\w.])/iu;
-
-/**
- * Guard threshold for divisor checks in `tryEvaluateExpression`.
- *
- * Strict equality (`rightValue === 0`) can fail to guard division when a
- * divisor is the result of prior floating-point arithmetic.  For example,
- * `1 / 3 * 3` evaluates to `0.9999999999999999` rather than exactly `1`, so
- * a subsequent strict-zero guard would incorrectly pass and allow a
- * division that would trap at runtime in GML.
- *
- * Using `Math.abs(value) <= ZERO_CHECK_EPSILON` (≈ 8.9e-15) safely rejects
- * both genuinely zero operands and the small rounding artefacts that arise
- * from typical GML numeric literals.
- */
-const ZERO_CHECK_EPSILON = Number.EPSILON * 4;
-
-function isApproximatelyZero(value: number): boolean {
-    return Math.abs(value) <= ZERO_CHECK_EPSILON;
-}
+const STRONG_MATH_BINARY_OPERATORS = new Set(["*", "/", "%", "div", "mod"]);
+const ADDITIVE_MATH_BINARY_OPERATORS = new Set(["+", "-"]);
+const MATH_CALL_NAMES = new Set([
+    "arccos",
+    "arcsin",
+    "arctan",
+    "arctan2",
+    "cos",
+    "darccos",
+    "darcsin",
+    "darctan",
+    "darctan2",
+    "dcos",
+    "degtorad",
+    "dsin",
+    "dtan",
+    "exp",
+    "lengthdir_x",
+    "lengthdir_y",
+    "ln",
+    "log2",
+    "mean",
+    "point_direction",
+    "point_distance",
+    "point_distance_3d",
+    "power",
+    "radtodeg",
+    "sin",
+    "sqr",
+    "sqrt",
+    "tan"
+]);
 
 function tryEvaluateExpression(node: any): any {
     const unwrapped = unwrapParenthesized(node);
@@ -198,7 +213,7 @@ function tryEvaluateExpression(node: any): any {
 
 function tryEvaluateNumericExpression(node: any): number | null {
     const result = tryEvaluateExpression(node);
-    return typeof result === "number" ? result : null;
+    return toNumber(result);
 }
 
 function canUseOpaqueMathFactor(node: any): boolean {
@@ -294,6 +309,10 @@ function collectMultiplicativeComponents(sourceText: string, node: any): Multipl
             const current = combinedFactors.get(factor) ?? 0;
             const delta = unwrapped.operator === "*" ? power : -power;
             combinedFactors.set(factor, current + delta);
+        }
+
+        if (unwrapped.operator === "/" && isApproximatelyZero(right.coefficient)) {
+            return null;
         }
 
         return {
@@ -589,6 +608,47 @@ function shouldAttemptManualNormalization(sourceTextOfNode: string): boolean {
     );
 }
 
+function canAstShapeContainMathOptimizationCandidate(node: unknown): boolean {
+    const expression = unwrapParenthesized(node);
+    if (!expression) {
+        return false;
+    }
+
+    if (expression.type === "Literal") {
+        return Core.getLiteralNumberValue(expression) !== null;
+    }
+
+    if (expression.type === "UnaryExpression") {
+        return (
+            expression.operator === "-" ||
+            expression.operator === "+" ||
+            canAstShapeContainMathOptimizationCandidate(expression.argument)
+        );
+    }
+
+    if (expression.type === "CallExpression") {
+        const callName = Core.getCallExpressionIdentifierName(expression);
+        return typeof callName === "string" && MATH_CALL_NAMES.has(callName);
+    }
+
+    if (expression.type !== "BinaryExpression" || typeof expression.operator !== "string") {
+        return false;
+    }
+
+    if (STRONG_MATH_BINARY_OPERATORS.has(expression.operator)) {
+        return true;
+    }
+
+    if (!ADDITIVE_MATH_BINARY_OPERATORS.has(expression.operator)) {
+        return false;
+    }
+
+    return (
+        canAstShapeContainMathOptimizationCandidate(expression.left) ||
+        canAstShapeContainMathOptimizationCandidate(expression.right)
+    );
+}
+
 function tryReadNumericLiteralValue(node: unknown): number | null {
     const expression = unwrapParenthesized(node);
     if (!expression) {
@@ -839,7 +899,7 @@ function formatCanonicalNumericLiteral(value: number): string | null {
         return null;
     }
 
-    if (Core.areNumbersApproximatelyEqual(value, 0)) {
+    if (Object.is(value, -0) || value === 0) {
         return "0";
     }
 
@@ -1258,6 +1318,17 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                     targetNode = visitedNode.argument;
                     break;
                 }
+                case "ParenthesizedExpression": {
+                    const expression = unwrapParenthesized(visitedNode);
+                    if (
+                        expression?.type === "BinaryExpression" &&
+                        (parent as { type?: unknown } | null)?.type === "CallExpression" &&
+                        parentKey === "arguments"
+                    ) {
+                        targetNode = visitedNode;
+                    }
+                    break;
+                }
                 case "BinaryExpression": {
                     if (shouldSkipBinaryExpressionCandidate(parent, parentKey)) {
                         break;
@@ -1279,6 +1350,10 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
 
             const targetRange: SourceTextRange = { start, end };
             if (isRangeInsideAnyRange(targetRange, normalizedExpressionRanges)) {
+                return;
+            }
+
+            if (!canAstShapeContainMathOptimizationCandidate(targetNode)) {
                 return;
             }
 

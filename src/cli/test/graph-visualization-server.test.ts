@@ -399,7 +399,7 @@ void test("graph visualization server forwards restart intent to /api/live-reloa
                 receivedRestartFlags.push(restart);
                 return {
                     endpoints: {
-                        runtimeUrl: null,
+                        runtimeUrl: "http://127.0.0.1:51264/",
                         statusUrl: "http://127.0.0.1:9100/status",
                         websocketUrl: "ws://127.0.0.1:9101"
                     },
@@ -427,6 +427,45 @@ void test("graph visualization server forwards restart intent to /api/live-reloa
         });
         assert.equal(restartStartResponse.status, 200);
         assert.deepEqual(receivedRestartFlags, [false, true]);
+    } finally {
+        await handle.stop();
+    }
+});
+
+void test("graph visualization server rejects live-reload startup success without runtime URL", async (testContext) => {
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            startLiveReload: async () => ({
+                endpoints: {
+                    runtimeUrl: null,
+                    statusUrl: "http://127.0.0.1:9100/status",
+                    websocketUrl: "ws://127.0.0.1:9101"
+                },
+                pollIntervalMs: 2000,
+                runtimeHealth: null,
+                statusSnapshot: null
+            })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/live-reload/start`, { method: "POST" });
+        assert.equal(response.status, 500);
+        const payload = (await response.json()) as { error: string };
+        assert.match(payload.error, /without a runtime URL/u);
     } finally {
         await handle.stop();
     }
@@ -599,4 +638,97 @@ void test("graph visualization server reports cross-realm error messages via cap
     } finally {
         await handle.stop();
     }
+});
+
+void test("graph visualization server routes POST /api/config/create successfully", async (testContext) => {
+    let configCreated = false;
+    let handle;
+    try {
+        handle = await startGraphVisualizationServer({
+            regenerate: async () => ({ changed: true }),
+            createConfig: async () => {
+                configCreated = true;
+                return { changed: true };
+            },
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        });
+    } catch (error) {
+        if (isListenPermissionError(error)) {
+            testContext.skip("Local HTTP listen is not permitted in this environment.");
+            return;
+        }
+        throw error;
+    }
+
+    try {
+        const response = await fetch(`${handle.url}/api/config/create`, { method: "POST" });
+        assert.equal(response.status, 200);
+        const payload = (await response.json()) as { changed: boolean; ok: boolean };
+        assert.deepEqual(payload, { changed: true, ok: true });
+        assert.equal(configCreated, true);
+    } finally {
+        await handle.stop();
+    }
+});
+
+void test("graph visualization server routes POST /api/config/save successfully", async (testContext) => {
+    let savedConfig: Readonly<Record<string, unknown>> | null = null;
+
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            saveConfig: async ({ config }) => {
+                savedConfig = config;
+                return { changed: true };
+            }
+        },
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/config/save`, {
+                body: JSON.stringify({ config: { lintRuleset: "recommended", printWidth: 100 } }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+
+            assert.equal(response.status, 200);
+            const payload = (await response.json()) as { changed: boolean; ok: boolean };
+            assert.deepEqual(payload, { changed: true, ok: true });
+            assert.deepEqual(savedConfig, { lintRuleset: "recommended", printWidth: 100 });
+        }
+    );
+});
+
+void test("graph visualization server rejects malformed config save payloads", async (testContext) => {
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            saveConfig: async () => ({ changed: true })
+        },
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/config/save`, {
+                body: JSON.stringify({ config: [] }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+
+            assert.equal(response.status, 400);
+            const payload = (await response.json()) as { error: string };
+            assert.equal(payload.error, "Invalid JSON or non-object payload");
+        }
+    );
 });

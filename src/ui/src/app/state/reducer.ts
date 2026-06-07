@@ -8,21 +8,26 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         activeDocsView: "cli",
         activeGraphView: "visual",
         activePage: "graph",
+        activeConfigView: "rendered",
         errorMessage: null,
         fixErrorMessage: null,
         fixLogLines: [],
         fixStatus: "idle",
+        isConfigSavePending: false,
         isFixPending: false,
-        isLiveReloadRefreshPending: false,
         isLiveReloadStartPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
         liveReloadErrorMessage: null,
-        liveReloadStatus: null,
         mcpServerStatus: "not-started",
         pendingActionCount: 0,
-        searchQuery: ""
+        searchQuery: "",
+        graphErrorMessage: null,
+        docsErrorMessage: null,
+        configErrorMessage: null,
+        playgroundErrorMessage: null,
+        mcpErrorMessage: null
     };
 }
 
@@ -32,7 +37,7 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
 function computePendingActionCount(state: GraphVisualizationUiState): number {
     let count = 0;
     if (state.isFixPending) count++;
-    if (state.isLiveReloadRefreshPending) count++;
+    if (state.isConfigSavePending) count++;
     if (state.isLiveReloadStartPending) count++;
     if (state.isOpenProjectPending) count++;
     if (state.isRegeneratePending) count++;
@@ -71,6 +76,12 @@ export function reduceGraphVisualizationUiState(
                 activeDocsView: action.docsView
             };
         }
+        case "set-config-view": {
+            return {
+                ...state,
+                activeConfigView: action.configView
+            };
+        }
         case "set-mcp-server-status": {
             return {
                 ...state,
@@ -100,6 +111,13 @@ export function reduceGraphVisualizationUiState(
                 ...state,
                 isRegeneratePending: action.pending,
                 pendingActionCount: computePendingActionCount({ ...state, isRegeneratePending: action.pending })
+            };
+        }
+        case "set-config-save-pending": {
+            return {
+                ...state,
+                isConfigSavePending: action.pending,
+                pendingActionCount: computePendingActionCount({ ...state, isConfigSavePending: action.pending })
             };
         }
         case "set-fix-pending": {
@@ -135,13 +153,6 @@ export function reduceGraphVisualizationUiState(
                 pendingActionCount: computePendingActionCount({ ...state, isOpenProjectPending: action.pending })
             };
         }
-        case "set-live-reload-refresh-pending": {
-            return {
-                ...state,
-                isLiveReloadRefreshPending: action.pending,
-                pendingActionCount: computePendingActionCount({ ...state, isLiveReloadRefreshPending: action.pending })
-            };
-        }
         case "set-live-reload-start-pending": {
             return {
                 ...state,
@@ -155,23 +166,73 @@ export function reduceGraphVisualizationUiState(
                 liveReloadErrorMessage: action.errorMessage
             };
         }
-        case "set-live-reload-status": {
-            return {
-                ...state,
-                liveReloadErrorMessage: null,
-                liveReloadStatus: action.status
-            };
-        }
         case "set-error": {
             return {
                 ...state,
                 errorMessage: action.errorMessage
             };
         }
+        case "set-page-error": {
+            switch (action.page) {
+                case "graph": {
+                    return { ...state, graphErrorMessage: action.errorMessage };
+                }
+                case "docs": {
+                    return { ...state, docsErrorMessage: action.errorMessage };
+                }
+                case "config": {
+                    return { ...state, configErrorMessage: action.errorMessage };
+                }
+                case "playground": {
+                    return { ...state, playgroundErrorMessage: action.errorMessage };
+                }
+                case "mcp": {
+                    return { ...state, mcpErrorMessage: action.errorMessage };
+                }
+                case "fix": {
+                    return { ...state, fixErrorMessage: action.errorMessage };
+                }
+                case "live-reload": {
+                    return { ...state, liveReloadErrorMessage: action.errorMessage };
+                }
+                default: {
+                    return state;
+                }
+            }
+        }
+        case "clear-page-error": {
+            switch (action.page) {
+                case "graph": {
+                    return { ...state, errorMessage: null, graphErrorMessage: null };
+                }
+                case "docs": {
+                    return { ...state, docsErrorMessage: null };
+                }
+                case "config": {
+                    return { ...state, configErrorMessage: null };
+                }
+                case "playground": {
+                    return { ...state, playgroundErrorMessage: null };
+                }
+                case "mcp": {
+                    return { ...state, mcpErrorMessage: null };
+                }
+                case "fix": {
+                    return { ...state, fixErrorMessage: null };
+                }
+                case "live-reload": {
+                    return { ...state, liveReloadErrorMessage: null };
+                }
+                default: {
+                    return state;
+                }
+            }
+        }
         case "clear-error": {
             return {
                 ...state,
-                errorMessage: null
+                errorMessage: null,
+                graphErrorMessage: null
             };
         }
         case "reset-project-scoped-state": {
@@ -181,16 +242,22 @@ export function reduceGraphVisualizationUiState(
                 fixLogLines: [],
                 fixStatus: "idle",
                 liveReloadErrorMessage: null,
-                liveReloadStatus: null,
-                searchQuery: ""
+                searchQuery: "",
+                graphErrorMessage: null,
+                docsErrorMessage: null,
+                configErrorMessage: null,
+                playgroundErrorMessage: null,
+                mcpErrorMessage: null
             };
         }
+
         case "reset-defaults": {
             return {
                 ...state,
                 activeGraphView: "visual",
                 labelMode: "auto",
-                searchQuery: ""
+                searchQuery: "",
+                activeConfigView: "rendered"
             };
         }
         default: {

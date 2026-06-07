@@ -10,6 +10,48 @@ import { Refactor } from "@gmloop/refactor";
 import { runCliTestCommand } from "../src/cli.js";
 import { createRoomCommand } from "../src/commands/room.js";
 
+async function createTemporaryObjectEventCliProject(): Promise<string> {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-object-cli-"));
+    await writeFile(
+        path.join(projectRoot, "MyGame.yyp"),
+        `${JSON.stringify({ name: "MyGame", resourceType: "GMProject", resources: [] }, null, 4)}\n`,
+        "utf8"
+    );
+    await writeFile(path.join(projectRoot, "gmloop.json"), "{}\n", "utf8");
+    await Refactor.addProjectResource({
+        dryRun: false,
+        projectRoot,
+        resourceKind: "object",
+        resourceName: "obj_player"
+    });
+
+    const objectMetadataPath = path.join(projectRoot, "objects/obj_player/obj_player.yy");
+    const objectMetadata = Core.parseProjectMetadataDocumentForMutation(
+        await readFile(objectMetadataPath, "utf8"),
+        objectMetadataPath
+    ).document;
+    objectMetadata.eventList = [
+        {
+            $GMEvent: "",
+            "%Name": "",
+            collisionObjectId: null,
+            eventNum: 0,
+            eventType: 0,
+            isDnD: false,
+            name: "",
+            resourceType: "GMEvent",
+            resourceVersion: "2.0"
+        }
+    ];
+    await writeFile(
+        objectMetadataPath,
+        `${Core.stringifyProjectMetadataDocument(objectMetadata, objectMetadataPath)}\n`,
+        "utf8"
+    );
+    await writeFile(path.join(projectRoot, "objects/obj_player/0_0.gml"), "x = 1;\n", "utf8");
+    return projectRoot;
+}
+
 async function createTemporaryRoomInstanceCliProject(): Promise<string> {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-room-cli-"));
     await writeFile(
@@ -86,32 +128,127 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
     };
     assert.equal(eventListPayload.command, "object event list");
     assert.equal(eventListPayload.payload.state, "not_available");
+});
 
-    const eventUpdateResult = await runCliTestCommand({
-        argv: ["object", "event", "update", "obj_player", "Step:Begin", "x += 1;", "--json", "--write"]
-    });
-    assert.equal(eventUpdateResult.exitCode, 0);
-    const eventUpdatePayload = JSON.parse(eventUpdateResult.stdout) as {
-        command: string;
-        payload: {
-            details: {
-                event: {
-                    category: string;
-                    descriptor: string;
-                };
-                handler: string;
-                object: string;
+void test("object event add and update support dry-run and write modes", async () => {
+    const projectRoot = await createTemporaryObjectEventCliProject();
+    const eventSourcePath = path.join(projectRoot, "objects/obj_player/0_0.gml");
+    const addedEventSourcePath = path.join(projectRoot, "objects/obj_player/3_1.gml");
+    const objectMetadataPath = path.join(projectRoot, "objects/obj_player/obj_player.yy");
+
+    try {
+        const addDryRunResult = await runCliTestCommand({
+            argv: ["object", "event", "add", "obj_player", "Step:Begin", "x += 1;", "--path", projectRoot, "--json"]
+        });
+
+        assert.equal(addDryRunResult.exitCode, 0);
+        const addDryRunPayload = JSON.parse(addDryRunResult.stdout) as {
+            command: string;
+            payload: {
+                action: string;
+                dryRun: boolean;
+                eventFilePath: string;
+                eventNumber: number;
+                eventType: number;
+                writtenPaths: Array<string>;
             };
-            mode: string;
-            state: string;
         };
-    };
-    assert.equal(eventUpdatePayload.command, "object event update");
-    assert.equal(eventUpdatePayload.payload.mode, "apply");
-    assert.equal(eventUpdatePayload.payload.state, "not_available");
-    assert.equal(eventUpdatePayload.payload.details.object, "obj_player");
-    assert.equal(eventUpdatePayload.payload.details.event.category, "Step");
-    assert.equal(eventUpdatePayload.payload.details.event.descriptor, "Begin");
+        assert.equal(addDryRunPayload.command, "object event add");
+        assert.equal(addDryRunPayload.payload.action, "add");
+        assert.equal(addDryRunPayload.payload.dryRun, true);
+        assert.equal(addDryRunPayload.payload.eventType, 3);
+        assert.equal(addDryRunPayload.payload.eventNumber, 1);
+        assert.equal(addDryRunPayload.payload.eventFilePath, "objects/obj_player/3_1.gml");
+        assert.deepEqual(addDryRunPayload.payload.writtenPaths, [
+            "objects/obj_player/obj_player.yy",
+            "objects/obj_player/3_1.gml"
+        ]);
+        await assert.rejects(readFile(addedEventSourcePath, "utf8"));
+
+        const addWriteResult = await runCliTestCommand({
+            argv: [
+                "object",
+                "event",
+                "add",
+                "obj_player",
+                "Step:Begin",
+                "x += 2;",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+
+        assert.equal(addWriteResult.exitCode, 0);
+        const addWritePayload = JSON.parse(addWriteResult.stdout) as {
+            payload: { dryRun: boolean; objectName: string; objectPath: string };
+        };
+        assert.equal(addWritePayload.payload.dryRun, false);
+        assert.equal(addWritePayload.payload.objectName, "obj_player");
+        assert.equal(addWritePayload.payload.objectPath, "objects/obj_player/obj_player.yy");
+        assert.equal(await readFile(addedEventSourcePath, "utf8"), "x += 2;\n");
+
+        const objectMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(objectMetadataPath, "utf8"),
+            objectMetadataPath
+        ).document;
+        const eventList = Core.asArray(objectMetadata.eventList);
+        const addedEvent = eventList[1] as Record<string, unknown>;
+        assert.equal(eventList.length, 2);
+        assert.equal(addedEvent.eventType, 3);
+        assert.equal(addedEvent.eventNum, 1);
+        assert.equal(addedEvent.eventContents, "objects/obj_player/3_1.gml");
+
+        const dryRunResult = await runCliTestCommand({
+            argv: ["object", "event", "update", "obj_player", "Create:0", "x = 2;", "--path", projectRoot, "--json"]
+        });
+
+        assert.equal(dryRunResult.exitCode, 0);
+        const dryRunPayload = JSON.parse(dryRunResult.stdout) as {
+            command: string;
+            payload: {
+                dryRun: boolean;
+                eventFilePath: string;
+                eventNumber: number;
+                eventType: number;
+                writtenPaths: Array<string>;
+            };
+        };
+        assert.equal(dryRunPayload.command, "object event update");
+        assert.equal(dryRunPayload.payload.dryRun, true);
+        assert.equal(dryRunPayload.payload.eventType, 0);
+        assert.equal(dryRunPayload.payload.eventNumber, 0);
+        assert.equal(dryRunPayload.payload.eventFilePath, "objects/obj_player/0_0.gml");
+        assert.deepEqual(dryRunPayload.payload.writtenPaths, ["objects/obj_player/0_0.gml"]);
+        assert.equal(await readFile(eventSourcePath, "utf8"), "x = 1;\n");
+
+        const writeResult = await runCliTestCommand({
+            argv: [
+                "object",
+                "event",
+                "update",
+                "obj_player",
+                "Create:0",
+                "x = 3;",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+
+        assert.equal(writeResult.exitCode, 0);
+        const writePayload = JSON.parse(writeResult.stdout) as {
+            payload: { dryRun: boolean; objectName: string; objectPath: string };
+        };
+        assert.equal(writePayload.payload.dryRun, false);
+        assert.equal(writePayload.payload.objectName, "obj_player");
+        assert.equal(writePayload.payload.objectPath, "objects/obj_player/obj_player.yy");
+        assert.equal(await readFile(eventSourcePath, "utf8"), "x = 3;\n");
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
 });
 
 void test("object event mutations reject invalid event descriptor format", async () => {

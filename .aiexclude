@@ -12,6 +12,8 @@
 .husky/
 .github/
 .gmloop/
+.playwright-mcp/
+.gmcache/
 
 scripts/
 vendor/

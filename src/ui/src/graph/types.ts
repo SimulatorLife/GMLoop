@@ -172,7 +172,7 @@ export type GraphVisualizationLoadedTarget = Readonly<{
     activePath: string;
     projectRoot: string;
     selectedPaths: ReadonlyArray<string>;
-    source: "cli-path" | "demo-project" | "finder-open" | "working-directory";
+    source: "active-project-state" | "cli-path" | "demo-project" | "finder-open" | "working-directory";
 }>;
 
 /**
@@ -217,6 +217,7 @@ export type GraphVisualizationLiveReloadStatusSnapshot = Readonly<{
     p95HotReloadLatencyMs: number | null;
     recentErrors: ReadonlyArray<GraphVisualizationLiveReloadRecentError>;
     recentPatches: ReadonlyArray<GraphVisualizationLiveReloadRecentPatch>;
+    runtimeUrl: string | null;
     scanComplete: boolean;
     totalPatchCount: number | null;
     uptimeMs: number;

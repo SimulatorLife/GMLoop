@@ -18,6 +18,8 @@ import type {
     FixtureStageName
 } from "../types.js";
 
+const { toNumber } = Core;
+
 type ResourceUsageSnapshot = ReturnType<typeof process.resourceUsage>;
 type MemoryUsageSnapshot = ReturnType<typeof process.memoryUsage>;
 type CpuUsageSnapshot = ReturnType<typeof process.cpuUsage>;
@@ -63,7 +65,7 @@ function readBudgetValue(
 ): number | null {
     const budgetMap = budgets?.[metricName];
     const rawValue = budgetMap?.[stageName];
-    return typeof rawValue === "number" ? rawValue : null;
+    return toNumber(rawValue);
 }
 
 function createEmptyAggregateSummary(): FixtureProfileAggregateSummary {

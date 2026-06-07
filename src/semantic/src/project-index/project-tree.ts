@@ -12,10 +12,11 @@ import {
 
 const PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS = new Set<string>([".git", ".gmcache", "node_modules"]);
 
-function createProjectTreeRecord(absolutePath, relativePosix) {
+function createProjectTreeRecord(absolutePath, relativePosix, mtimeMs = null) {
     return {
         absolutePath,
-        relativePath: relativePosix
+        relativePath: relativePosix,
+        mtimeMs
     };
 }
 
@@ -38,13 +39,13 @@ function createProjectTreeCollector(metrics = null) {
         }
     }
 
-    function register(relativePosix, absolutePath) {
+    function register(relativePosix, absolutePath, mtimeMs = null) {
         const category = resolveProjectFileCategory(relativePosix);
         if (!category) {
             return;
         }
 
-        recordFile(category, createProjectTreeRecord(absolutePath, relativePosix));
+        recordFile(category, createProjectTreeRecord(absolutePath, relativePosix, mtimeMs));
     }
 
     function snapshot() {
@@ -156,7 +157,7 @@ async function processDirectoryEntries({
             return;
         }
 
-        collector.register(descriptor.relativePosix, descriptor.absolutePath);
+        collector.register(descriptor.relativePosix, descriptor.absolutePath, stats?.mtimeMs ?? null);
     });
 }
 

@@ -1,36 +1,9 @@
 import { html } from "lit";
 
-import { type GraphVisualizationUiModel, hasLoadedGraphProject } from "../contracts.js";
+import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
-import { GRAPH_UI_EVENT_TRIGGER_FIX } from "./events.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
-
-function getFixStatusLabel(state: GraphVisualizationUiState): string {
-    if (state.isFixPending) {
-        return "Running";
-    }
-
-    if (state.fixStatus === "success") {
-        return "Completed";
-    }
-
-    if (state.fixStatus === "error") {
-        return "Needs Review";
-    }
-
-    return "Ready";
-}
-
-function getEffectiveFixStatus(
-    model: GraphVisualizationUiModel,
-    state: GraphVisualizationUiState
-): GraphVisualizationUiState["fixStatus"] {
-    if (state.fixStatus === "idle" && state.fixLogLines.length === 0 && hasCurrentProjectFixRun(model)) {
-        return model.lastFixRun.status;
-    }
-
-    return state.fixStatus;
-}
 
 function getEffectiveFixLogLines(
     model: GraphVisualizationUiModel,
@@ -64,13 +37,24 @@ export class GmFixPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
-    #emitRunFix(): void {
+    #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
-            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_FIX, {
+            new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
                 bubbles: true,
-                composed: true
+                composed: true,
+                detail: { page: "fix" }
             })
         );
+    };
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+    }
+
+    public disconnectedCallback(): void {
+        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+        super.disconnectedCallback();
     }
 
     protected render() {
@@ -78,53 +62,18 @@ export class GmFixPanel extends LightDomLitElement {
             return html``;
         }
 
-        const activeClassName = this.state.activePage === "fix" ? "page docs-page active" : "page docs-page";
-        const hasProject = hasLoadedGraphProject(this.model);
-        const canRunFix = hasProject && this.model.isServerMode;
-        const effectiveFixStatus = getEffectiveFixStatus(this.model, this.state);
+        const activeClassName = this.state.activePage === "fix" ? "page content-page active" : "page content-page";
         const logLines = getEffectiveFixLogLines(this.model, this.state);
 
         return html`
             <section id="fix-page" class=${activeClassName}>
-                <div class="fix-action-bar">
-                    <div class="fix-action-card" role="status" aria-live="polite">
-                        <span class=${`fix-status-chip ${effectiveFixStatus}`}>
-                            ${getFixStatusLabel({ ...this.state, fixStatus: effectiveFixStatus })}
-                        </span>
-                        <button
-                            id="run-fix"
-                            class="fix-run-button"
-                            ?disabled=${this.state.isFixPending || !canRunFix}
-                            @click=${() => this.#emitRunFix()}
-                        >
-                            <span class="button-content">
-                                ${this.state.isFixPending
-                                    ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                    : null}
-                                <span class="button-label"
-                                    >${this.state.isFixPending ? "Applying Fixes..." : "Apply Fixes"}</span
-                                >
-                            </span>
-                        </button>
-                        ${hasProject
-                            ? html`<span class="fix-target"
-                                  >${this.model.isServerMode
-                                      ? this.model.loadedTarget?.projectRoot
-                                      : "Serve mode is required to apply fixes."}</span
-                              >`
-                            : html`<span class="fix-target is-empty">Open a project before running fixes.</span>`}
-                    </div>
-                </div>
-
                 ${this.state.fixErrorMessage
                     ? html`<gm-error-banner .message=${this.state.fixErrorMessage}></gm-error-banner>`
                     : null}
 
                 <section class="fix-log-section" aria-labelledby="fix-log-heading">
                     <h2 id="fix-log-heading">Run Log</h2>
-                    <gm-card class="fix-log-card">
-                        <pre class="fix-log" aria-live="polite">${logLines.join("\n")}</pre>
-                    </gm-card>
+                    <pre class="fix-log" aria-live="polite">${logLines.join("\n")}</pre>
                 </section>
             </section>
         `;

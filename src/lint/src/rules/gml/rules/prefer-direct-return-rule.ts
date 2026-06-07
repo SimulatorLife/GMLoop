@@ -138,11 +138,10 @@ function buildDirectReturnCandidate(
     declarationIndex: number
 ): DirectReturnCandidate | null {
     const declarationKind = Core.toNormalizedLowerCaseString(variableDeclarationNode.kind);
-    // Accept both `var` and `static` declarations — the same collapsing pattern is
-    // valid for both, and GameMaker allows the `var` keyword to be elided in local
-    // scope while `static` requires its keyword, so both represent legitimate
-    // single-variable declarations that should be candidates for direct return.
-    if (declarationKind !== "var" && declarationKind !== "static") {
+    // Only accept `var` declarations. Collapsing `static` declarations into a direct return
+    // is invalid because static variables are evaluated once and persist across calls (e.g. for singletons/caching).
+    // Collapsing them would re-evaluate the initializer expression and return a new instance on every call.
+    if (declarationKind !== "var") {
         return null;
     }
 

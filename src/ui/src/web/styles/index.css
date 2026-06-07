@@ -1,4 +1,5 @@
 @import "./tokens.css";
+@import "./components.css";
 @import "./layout.css";
 @import "./header.css";
 @import "./toolbar.css";
@@ -8,5 +9,6 @@
 @import "./fix.css";
 @import "./playground.css";
 @import "./live-reload.css";
+@import "./mcp.css";
 @import "./primitives.css";
 @import "./responsive.css";

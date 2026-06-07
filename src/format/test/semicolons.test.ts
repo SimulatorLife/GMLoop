@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import type { AstPath } from "prettier";
 
 import * as Semicolons from "../src/printer/semicolons.js";
+import { countTrailingBlankLines, getNextNonWhitespaceCharacter } from "../src/shared/layout-helpers.js";
 
 void describe("semicolon helpers", () => {
     void it("flags statement nodes that require a terminator", () => {
@@ -19,14 +20,14 @@ void describe("semicolon helpers", () => {
     void it("counts trailing blank lines after a given index", () => {
         const text = "foo();\n\n\nbar();";
         const newlineIndex = text.indexOf("\n");
-        assert.strictEqual(Semicolons.countTrailingBlankLines(text, newlineIndex), 2);
-        assert.strictEqual(Semicolons.countTrailingBlankLines(null, 0), 0);
+        assert.strictEqual(countTrailingBlankLines(text, newlineIndex), 2);
+        assert.strictEqual(countTrailingBlankLines(null, 0), 0);
     });
 
     void it("finds the next non-whitespace character", () => {
         const text = "  \n  }";
-        assert.strictEqual(Semicolons.getNextNonWhitespaceCharacter(text, 0), "}");
-        assert.strictEqual(Semicolons.getNextNonWhitespaceCharacter(null, 0), null);
+        assert.strictEqual(getNextNonWhitespaceCharacter(text, 0), "}");
+        assert.strictEqual(getNextNonWhitespaceCharacter(null, 0), null);
     });
 
     void it("recognizes whitespace characters the semicolon scanner skips", () => {
@@ -79,21 +80,21 @@ void describe("semicolon helpers", () => {
     void it("handles Unicode whitespace beyond ASCII", () => {
         const textWithEmSpace = "\u2003\u2003}";
         assert.strictEqual(
-            Semicolons.getNextNonWhitespaceCharacter(textWithEmSpace, 0),
+            getNextNonWhitespaceCharacter(textWithEmSpace, 0),
             "}",
             "Should skip Unicode em-space (U+2003) whitespace"
         );
 
         const textWithThinSpace = "\u2009\u2009bar";
         assert.strictEqual(
-            Semicolons.getNextNonWhitespaceCharacter(textWithThinSpace, 0),
+            getNextNonWhitespaceCharacter(textWithThinSpace, 0),
             "b",
             "Should skip Unicode thin-space (U+2009) whitespace"
         );
 
         const textWithOghamSpace = "\u1680{";
         assert.strictEqual(
-            Semicolons.getNextNonWhitespaceCharacter(textWithOghamSpace, 0),
+            getNextNonWhitespaceCharacter(textWithOghamSpace, 0),
             "{",
             "Should skip Unicode Ogham space (U+1680) whitespace"
         );
@@ -104,7 +105,7 @@ void describe("semicolon helpers", () => {
         const newlineIndex = textWithUnicodeSpaces.indexOf("\n");
 
         assert.strictEqual(
-            Semicolons.countTrailingBlankLines(textWithUnicodeSpaces, newlineIndex),
+            countTrailingBlankLines(textWithUnicodeSpaces, newlineIndex),
             2,
             "Should count blank lines correctly with Unicode whitespace"
         );

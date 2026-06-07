@@ -240,6 +240,61 @@ export function isAssignmentExpressionNode(node: unknown): node is AssignmentExp
     return isAstNodeRecord(node) && node.type === "AssignmentExpression";
 }
 
+/**
+ * Structural type for binary expression nodes in lint rule contexts.
+ *
+ * For operator-specific narrowing, use
+ * {@link isBinaryExpressionNodeWithOperator} instead.
+ */
+export type BinaryExpressionNode = AstNodeRecord &
+    Readonly<{
+        type: "BinaryExpression";
+        operator?: unknown;
+        left?: unknown;
+        right?: unknown;
+    }>;
+
+/**
+ * Type guard for binary expression nodes (any operator).
+ *
+ * Matches any node-like value where `type` is `"BinaryExpression"`,
+ * regardless of the specific operator. For narrowing to a particular
+ * operator, use {@link isBinaryExpressionNodeWithOperator}.
+ *
+ * @param node Candidate value to inspect.
+ * @returns `true` when `node` is a binary expression.
+ */
+export function isBinaryExpressionNode(node: unknown): node is BinaryExpressionNode {
+    return isAstNodeRecord(node) && node.type === "BinaryExpression";
+}
+
+/**
+ * Determines whether a value is a binary-expression node whose operator
+ * satisfies the provided guard.
+ *
+ * @param value Candidate node-like value.
+ * @param operatorGuard Predicate that validates the `operator` field.
+ * @returns Whether the candidate is a typed binary-expression record.
+ */
+export function isBinaryExpressionNodeWithOperator<TOperator extends string>(
+    value: unknown,
+    operatorGuard: (operator: unknown) => operator is TOperator
+): value is BinaryExpressionNode &
+    Readonly<{
+        type: "BinaryExpression";
+        operator: TOperator;
+        left: unknown;
+        right: unknown;
+    }> {
+    return (
+        isAstNodeRecord(value) &&
+        value.type === "BinaryExpression" &&
+        operatorGuard(value.operator) &&
+        Object.hasOwn(value, "left") &&
+        Object.hasOwn(value, "right")
+    );
+}
+
 export function isCommentOnlyLine(line: string): boolean {
     // returns true if the line consists solely of whitespace and/or comment tokens
     // (single-line comments or block comments). This is a simple heuristic used by

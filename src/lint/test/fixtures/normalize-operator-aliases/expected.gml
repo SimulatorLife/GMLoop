@@ -1,3 +1,8 @@
+#macro AND &&
+#macro OR ||
+#macro NOT !
+#macro XOR ^^
+
 if (a && !b || c ^^ d) {
     result = true;
 }

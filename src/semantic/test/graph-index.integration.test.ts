@@ -1652,10 +1652,6 @@ void test("buildGraphIndex projects the project manifest as the connected projec
                         type: "contains"
                     },
                     {
-                        toId: "project::resource::extensions/mystery_resource/mystery_resource.yy",
-                        type: "contains"
-                    },
-                    {
                         toId: "project::resource::scripts/kickoff/kickoff.yy",
                         type: "contains"
                     }

@@ -79,7 +79,7 @@ jobs:
         FALLBACK INVOCATION PATH (if task/subagent tooling is unavailable):
         - Launch local workers directly with qwen-code CLI + MiniMax in parallel, one per shard.
         - Required worker command pattern:
-          pnpm --silent dlx @qwen-code/qwen-code@latest --yolo --model=MiniMax-M2.7 --output-format=stream-json --prompt "" < shard-prompt.txt
+          pnpm --silent dlx @qwen-code/qwen-code@latest --yolo --model=MiniMax-M3 --output-format=stream-json --prompt "" < shard-prompt.txt
         - Run workers concurrently (at least ${{ inputs.min_subagents }}), capture each worker stream/log separately, then integrate outputs.
 
         EXECUTION GUARDS:
@@ -97,7 +97,7 @@ jobs:
         set +e
         stdbuf -oL -eL pnpm --silent dlx @qwen-code/qwen-code@latest \
           --yolo \
-          --model=MiniMax-M2.7 \
+          --model=MiniMax-M3 \
           --output-format=stream-json \
           --prompt "" < "${AGENT_PROMPT_FILE}" \
           2>&1 | tee "$RUNNER_TEMP/agent-stream.jsonl"

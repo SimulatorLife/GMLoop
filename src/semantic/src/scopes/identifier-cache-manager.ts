@@ -65,17 +65,18 @@ export class IdentifierCacheManager {
     public write(name: string, scopeId: string, declaration: ScopeSymbolMetadata | null): void {
         let scopeResults = this.cache.get(name);
         if (scopeResults) {
-            // Mark as recently used at the top-level cache.
             this.cache.delete(name);
             this.cache.set(name, scopeResults);
         } else {
-            scopeResults = new Map();
-            this.cache.set(name, scopeResults);
+            const newScopeResults = new Map<string, ScopeSymbolMetadata | null>();
+            this.cache.set(name, newScopeResults);
+            scopeResults = newScopeResults;
         }
 
         if (!scopeResults.has(scopeId) && scopeResults.size >= this.maxScopesPerName) {
-            const oldestScopeId = scopeResults.keys().next().value;
-            if (oldestScopeId) {
+            const oldestScopeIdIter = scopeResults.keys();
+            const oldestScopeId = oldestScopeIdIter.next().value;
+            if (oldestScopeId !== undefined) {
                 scopeResults.delete(oldestScopeId);
             }
         }
@@ -83,8 +84,9 @@ export class IdentifierCacheManager {
         scopeResults.set(scopeId, declaration);
 
         if (this.cache.size > this.maxTrackedNames) {
-            const oldestName = this.cache.keys().next().value;
-            if (oldestName) {
+            const oldestNameIter = this.cache.keys();
+            const oldestName = oldestNameIter.next().value;
+            if (oldestName !== undefined) {
                 this.cache.delete(oldestName);
             }
         }

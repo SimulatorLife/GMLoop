@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import {
     parseGraphVisualizationUiStateFromUrlSearch,
     resetProjectScopedGraphVisualizationUiState,
@@ -33,32 +34,22 @@ void test("parseGraphVisualizationUiStateFromUrlSearch rejects invalid values an
 
 void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported navigation state", () => {
     const search = serializeGraphVisualizationUiStateToUrlSearch({
+        ...createInitialGraphVisualizationUiState(),
+        activeConfigView: "rendered",
         activeDocsView: "rules",
         activeGraphView: "json",
         activePage: "config",
-        errorMessage: null,
-        fixErrorMessage: null,
-        fixLogLines: [],
-        fixStatus: "idle",
-        isFixPending: false,
-        isLiveReloadRefreshPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
         labelMode: "always",
-        liveReloadErrorMessage: null,
-        liveReloadStatus: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
         searchQuery: "enemy ship"
     });
 
-    assert.equal(search, "?page=config&docs=rules&view=json&labels=always&q=enemy+ship");
+    assert.equal(search, "?page=config&docs=rules&view=json&labels=always&config=rendered&q=enemy+ship");
     const parsed = parseGraphVisualizationUiStateFromUrlSearch(search);
     assert.equal(parsed.activePage, "config");
     assert.equal(parsed.activeDocsView, "rules");
     assert.equal(parsed.activeGraphView, "json");
     assert.equal(parsed.labelMode, "always");
+    assert.equal(parsed.activeConfigView, "rendered");
     assert.equal(parsed.searchQuery, "enemy ship");
 });
 
@@ -81,5 +72,8 @@ void test("resetProjectScopedGraphVisualizationUiState removes project search fr
         liveReloadErrorMessage: "Old project live reload error."
     });
 
-    assert.equal(serializeGraphVisualizationUiStateToUrlSearch(reset), "?page=fix&docs=rules&view=json&labels=always");
+    assert.equal(
+        serializeGraphVisualizationUiStateToUrlSearch(reset),
+        "?page=fix&docs=rules&view=json&labels=always&config=rendered"
+    );
 });

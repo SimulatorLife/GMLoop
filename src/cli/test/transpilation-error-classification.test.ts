@@ -15,6 +15,7 @@ function createTranspilationContext(): TranspilationContext {
         metrics: [],
         errors: [],
         lastSuccessfulPatches: new Map(),
+        sourcePathToPatchIds: new Map(),
         bounds: { maxEntries: 10 },
         totalPatchCount: 0,
         websocketServer: null

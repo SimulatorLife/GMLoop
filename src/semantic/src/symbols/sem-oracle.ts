@@ -1,5 +1,5 @@
 import type { ScopeTracker } from "../scopes/scope-tracker.js";
-import { sym } from "./scip.js";
+import { buildCallTargetSymbol, buildQualifiedSymbol } from "./symbol-building.js";
 
 /**
  * Type guard to check if a value is an identifier metadata object.
@@ -237,26 +237,7 @@ export class BasicSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyz
         }
 
         const kind = this.kindOfIdent(node);
-
-        switch (kind) {
-            case "script": {
-                return sym("script", node.name);
-            }
-            case "global_field": {
-                return sym("var", `global::${node.name}`);
-            }
-            case "builtin": {
-                return sym("macro", node.name);
-            }
-            case "local":
-            case "self_field":
-            case "other_field": {
-                return null;
-            }
-            default: {
-                return null;
-            }
-        }
+        return buildQualifiedSymbol(kind, node.name);
     }
 
     /**
@@ -300,16 +281,6 @@ export class BasicSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyz
             return null;
         }
 
-        switch (kind) {
-            case "script": {
-                return sym("script", node.object.name);
-            }
-            case "builtin": {
-                return sym("macro", node.object.name);
-            }
-            default: {
-                return null;
-            }
-        }
+        return buildCallTargetSymbol(kind, node.object.name);
     }
 }

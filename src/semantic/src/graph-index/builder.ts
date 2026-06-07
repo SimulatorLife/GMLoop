@@ -6,7 +6,14 @@ import { performance } from "node:perf_hooks";
 import { Core } from "@gmloop/core";
 
 import { isProjectManifestPath } from "../project-index/constants.js";
-import { buildProjectIndex } from "../project-index/index.js";
+import {
+    buildProjectIndex,
+    createProjectIndexCoordinator,
+    createProjectIndexDescriptor,
+    createTolerantProjectIndexParser,
+    getDefaultProjectIndexParser,
+    scanProjectTree
+} from "../project-index/index.js";
 import { resolveGraphIndexConfig } from "./config.js";
 import {
     GRAPH_INDEX_SCHEMA_VERSION,
@@ -188,7 +195,7 @@ function readLocationIndex(location: Record<string, unknown> | null): number | n
 }
 
 function readFirstDeclaration(entry: ProjectIndexIdentifierEntry): Record<string, unknown> | null {
-    const declarations = Array.isArray(entry.declarations) ? entry.declarations : [];
+    const declarations = Core.toArray(entry.declarations);
     return declarations.length > 0 && Core.isObjectLike(declarations[0]) ? declarations[0] : null;
 }
 
@@ -226,6 +233,9 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "struct": {
             return `gml/struct/${identifierId ?? entry.key ?? entry.scopeId ?? name}`;
         }
+        case "script": {
+            return `gml/script/${name}`;
+        }
         case "file": {
             return `gml/file/${entry.filePath ?? entry.key ?? name}`;
         }
@@ -241,7 +251,6 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "project":
         case "room":
         case "room_layer":
-        case "script":
         case "sequence":
         case "shader":
         case "sound":
@@ -543,19 +552,41 @@ function resolveEnumOwnerNodeId(context: ProjectionContext, entry: ProjectIndexI
     return enumName ? lookupUniqueNodeByNameAndKind(context, enumName, "enum") : null;
 }
 
-function resolveStructOwnerNodeId(context: ProjectionContext, entry: ProjectIndexIdentifierEntry): string | null {
+function findNearestPrecedingStructNodeId(
+    context: ProjectionContext,
+    filePath: string | null,
+    declarationLine: number | null
+): string | null {
+    if (!filePath || declarationLine === null) {
+        return null;
+    }
+
+    const candidates = context.nodeRecords.filter(
+        (node) =>
+            node.kind === "struct" &&
+            node.filePath === filePath &&
+            node.lineStart !== null &&
+            node.lineStart <= declarationLine
+    );
+
+    candidates.sort((left, right) => (right.lineStart ?? 0) - (left.lineStart ?? 0));
+    return candidates[0]?.id ?? null;
+}
+
+function resolveStructOwnerNodeId(
+    context: ProjectionContext,
+    entry: ProjectIndexIdentifierEntry,
+    declaration: Record<string, unknown> | null
+): string | null {
     const scopeId = getString(entry.scopeId);
-    if (!scopeId) {
-        return null;
+    const ownerNodeId = scopeId ? (context.nodeIdsByScopeId.get(scopeId) ?? null) : null;
+    const ownerNode = ownerNodeId ? (context.nodeRecords.find((node) => node.id === ownerNodeId) ?? null) : null;
+    if (ownerNode?.kind === "struct") {
+        return ownerNode.id;
     }
 
-    const ownerNodeId = context.nodeIdsByScopeId.get(scopeId) ?? null;
-    if (!ownerNodeId) {
-        return null;
-    }
-
-    const ownerNode = context.nodeRecords.find((node) => node.id === ownerNodeId) ?? null;
-    return ownerNode?.kind === "struct" ? ownerNode.id : null;
+    const filePath = getString(declaration?.filePath) ?? getString(entry.filePath);
+    return findNearestPrecedingStructNodeId(context, filePath, readLocationLine(asRecord(declaration?.start)));
 }
 
 function projectStructVariableOwnershipEdge(
@@ -563,7 +594,7 @@ function projectStructVariableOwnershipEdge(
     node: GraphNodeRecord,
     entry: ProjectIndexIdentifierEntry
 ): void {
-    const structNodeId = resolveStructOwnerNodeId(context, entry);
+    const structNodeId = resolveStructOwnerNodeId(context, entry, readFirstDeclaration(entry));
     if (structNodeId && structNodeId !== node.id) {
         context.edgeRecords.push({
             fromId: structNodeId,
@@ -913,7 +944,7 @@ function projectResources(context: ProjectionContext): void {
         if (!kind) {
             continue;
         }
-        const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
+        const gmlFiles = Core.toArray(resourceRecord.gmlFiles);
         const primaryGmlFile = gmlFiles.find(
             (gmlFile): gmlFile is string => typeof gmlFile === "string" && gmlFile.trim().length > 0
         );
@@ -969,6 +1000,53 @@ function createObjectEventDisplayName(scopeRecord: ProjectIndexScopeRecord): str
     return getString(scopeRecord.name);
 }
 
+function shouldProjectObjectEventFileNode(scopeRecord: ProjectIndexScopeRecord, firstFilePath: string | null): boolean {
+    if (!firstFilePath) {
+        return false;
+    }
+
+    const eventRecord = asRecord(scopeRecord.event);
+    const eventName = getString(eventRecord.name);
+    if (!eventName) {
+        return false;
+    }
+
+    return path.posix.basename(firstFilePath, path.posix.extname(firstFilePath)) === eventName;
+}
+
+function projectObjectEventFileNode(context: ProjectionContext, resourcePath: string, firstFilePath: string): void {
+    const fileName = path.posix.basename(firstFilePath);
+    const fileNodeId = createGraphNodeId(context.graphId, "file", firstFilePath);
+    const existingFileNode = context.nodeRecords.some((node) => node.id === fileNodeId);
+    if (existingFileNode) {
+        return;
+    }
+
+    const node = createNodeRecord({
+        displayName: firstFilePath,
+        filePath: firstFilePath,
+        graphId: context.graphId,
+        id: fileNodeId,
+        kind: "file",
+        name: fileName,
+        resourcePath,
+        summary: createGraphNodeSummary({
+            filePath: firstFilePath,
+            kind: "file",
+            name: fileName,
+            resourcePath
+        })
+    });
+
+    context.nodeRecords.push(node);
+    registerNodeIndexes(context, node);
+    context.edgeRecords.push({
+        fromId: createGraphNodeId(context.graphId, "resource", resourcePath),
+        toId: node.id,
+        type: "contains"
+    });
+}
+
 function createObjectEventName(scopeRecord: ProjectIndexScopeRecord, firstFilePath: string | null): string | null {
     const name = getString(scopeRecord.name);
     if (name) {
@@ -999,7 +1077,7 @@ function projectObjectEventScopes(context: ProjectionContext): void {
 
         const scopeId = getString(scopeRecord.id);
         const resourcePath = getString(scopeRecord.resourcePath);
-        const filePath_ = (Array.isArray(scopeRecord.filePaths) ? scopeRecord.filePaths : []).find(
+        const filePath_ = Core.toArray(scopeRecord.filePaths).find(
             (filePath): filePath is string => typeof filePath === "string" && filePath.trim().length > 0
         );
         const firstFilePath = filePath_ ?? null;
@@ -1033,6 +1111,10 @@ function projectObjectEventScopes(context: ProjectionContext): void {
             toId: node.id,
             type: "contains"
         });
+
+        if (shouldProjectObjectEventFileNode(scopeRecord, firstFilePath)) {
+            projectObjectEventFileNode(context, resourcePath, firstFilePath);
+        }
     }
 }
 
@@ -1229,7 +1311,7 @@ function projectIdentifierOwnershipEdges(
             continue;
         }
 
-        const declarations = Array.isArray(entry.declarations) ? entry.declarations : [];
+        const declarations = Core.toArray(entry.declarations);
         for (const rawDeclaration of declarations) {
             const declaration = asRecord(rawDeclaration);
             const filePath = getString(declaration.filePath) ?? getString(entry.filePath);
@@ -1253,7 +1335,7 @@ function projectIdentifierOwnershipEdges(
             });
         }
 
-        const references = Array.isArray(entry.references) ? entry.references : [];
+        const references = Core.toArray(entry.references);
         for (const rawReference of references) {
             const reference = asRecord(rawReference);
             const filePath = getString(reference.filePath) ?? getString(entry.filePath);
@@ -1283,7 +1365,7 @@ function projectRelationshipEdges(context: ProjectionContext): void {
     const files = asRecord(context.projectIndex.files);
     for (const [relativePath, rawFileRecord] of Object.entries(files)) {
         const fileRecord = asRecord(rawFileRecord);
-        const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
+        const scriptCalls = Core.toArray(fileRecord.scriptCalls);
         const callerOwnerNodeId =
             resolveFileSemanticOwnerNodeId(context, relativePath) ?? resolveProjectRootNodeId(context);
         if (!callerOwnerNodeId) {
@@ -1409,7 +1491,7 @@ function addCrossGraphEdges(
 
     for (const [relativePath, rawFileRecord] of Object.entries(projectIndexedFiles)) {
         const fileRecord = asRecord(rawFileRecord);
-        const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
+        const scriptCalls = Core.toArray(fileRecord.scriptCalls);
         const projectCallerOwnerNodeId =
             resolveFileSemanticOwnerNodeId(projectContext, relativePath) ?? resolveProjectRootNodeId(projectContext);
         if (!projectCallerOwnerNodeId) {
@@ -1664,6 +1746,18 @@ function rankSemanticMatches(
     }
 }
 
+function calculateExactGraphSearchMatchScore(row: {
+    kind: string;
+    resourcePath: string | null;
+    scipSymbol: string | null;
+}): number {
+    if (row.kind === "script" && row.resourcePath !== null) {
+        return 8;
+    }
+
+    return row.scipSymbol ? 7 : 5;
+}
+
 function applyGraphProximityBoost(database: GraphDatabase, candidateScores: Map<string, number>): void {
     const highConfidenceNodeIds = [...candidateScores.entries()]
         .filter(([, score]) => score >= 5)
@@ -1784,6 +1878,49 @@ function readGraphDatabaseIntegrityStatus(database: GraphDatabase): GraphDatabas
     });
 }
 
+async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndexSnapshot> {
+    const { yyFiles, gmlFiles } = await scanProjectTree(projectRoot);
+    const manifestMtimes: Record<string, number> = {};
+    const sourceMtimes: Record<string, number> = {};
+    for (const file of yyFiles) {
+        if (file.mtimeMs !== null) {
+            manifestMtimes[file.relativePath] = file.mtimeMs;
+        }
+    }
+    for (const file of gmlFiles) {
+        if (file.mtimeMs !== null) {
+            sourceMtimes[file.relativePath] = file.mtimeMs;
+        }
+    }
+
+    const baseParser = getDefaultProjectIndexParser();
+    const tolerantParser = createTolerantProjectIndexParser(baseParser);
+
+    const coordinator = createProjectIndexCoordinator({
+        buildIndex: async (resolvedRoot, fsFacade, options) => {
+            return await buildProjectIndex(resolvedRoot, fsFacade, {
+                ...options,
+                parseGml: tolerantParser
+            });
+        }
+    });
+    try {
+        const descriptor = createProjectIndexDescriptor({
+            projectRoot,
+            manifestMtimes,
+            sourceMtimes
+        });
+
+        const ready = await coordinator.ensureReady({
+            ...descriptor,
+            projectRoot
+        });
+        return ready.projectIndex as ProjectIndexSnapshot;
+    } finally {
+        coordinator.dispose();
+    }
+}
+
 /**
  * Build or rebuild the SQLite-backed graph index.
  */
@@ -1806,7 +1943,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
             ensureGraphEmbeddingModelAssets(config.embeddings);
         }
         const buildStart = performance.now();
-        const projectIndex = (await buildProjectIndex(config.projectRoot)) as ProjectIndexSnapshot;
+        const projectIndex = await getOrBuildProjectIndex(config.projectRoot);
         const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
         projectResources(projectContext);
         projectObjectEventScopes(projectContext);
@@ -1818,7 +1955,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
 
         let toolsetContext: ProjectionContext | null = null;
         if (config.toolsetRoot) {
-            const toolsetIndex = (await buildProjectIndex(config.toolsetRoot)) as ProjectIndexSnapshot;
+            const toolsetIndex = await getOrBuildProjectIndex(config.toolsetRoot);
             toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
             projectResources(toolsetContext);
             projectObjectEventScopes(toolsetContext);
@@ -1928,10 +2065,17 @@ export function searchGraphIndex(
         }
 
         const exactRows = database
-            .prepare("SELECT id, scip_symbol AS scipSymbol FROM nodes WHERE name = ? OR scip_symbol = ?")
-            .all(normalizedQuery, normalizedQuery) as Array<{ id: string; scipSymbol: string | null }>;
+            .prepare(
+                "SELECT id, kind, resource_path AS resourcePath, scip_symbol AS scipSymbol FROM nodes WHERE name = ? OR scip_symbol = ?"
+            )
+            .all(normalizedQuery, normalizedQuery) as Array<{
+            id: string;
+            kind: string;
+            resourcePath: string | null;
+            scipSymbol: string | null;
+        }>;
         for (const row of exactRows) {
-            candidateScores.set(row.id, (candidateScores.get(row.id) ?? 0) + (row.scipSymbol ? 7 : 5));
+            candidateScores.set(row.id, (candidateScores.get(row.id) ?? 0) + calculateExactGraphSearchMatchScore(row));
         }
 
         const aliasRows = database

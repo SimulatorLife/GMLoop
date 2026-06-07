@@ -88,7 +88,7 @@ var x = 1;
 
     void it("inserts blank line before top-level line comment following a single-line block comment", () => {
         // Regression: updateBlockCommentState incorrectly treated /* ... */ as
-        // opening a block comment, causing the following top-level /// @description
+        // opening a block comment, causing the following top-of-function-level /// @description
         // to be skipped for blank-line insertion.
         const input =
             "/* single-line block comment */\n/// @description A description of this function\nfunction foo() {}\n";

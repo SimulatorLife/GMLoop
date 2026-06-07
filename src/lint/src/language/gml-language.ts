@@ -19,6 +19,41 @@ type GMLAstNode = {
     sourceType: string;
 };
 
+/**
+ * Abstract factory for creating GML parser instances.
+ *
+ * High-level language wiring consumes this contract instead of directly
+ * instantiating `new Parser.GMLParser(...)`. Concrete adapters are assembled
+ * behind this boundary so the language layer remains decoupled from the
+ * parser workspace implementation.
+ */
+export type ParserFactory = (source: string) => {
+    parse: () => GMLAstNode;
+};
+
+/**
+ * Injects a custom parser factory for the GML language.
+ *
+ * This enables test doubles and alternate parser implementations without
+ * modifying the language definition itself. The factory is consumed by
+ * `parseAst` when the language parses source text.
+ *
+ * @param factory - A function that accepts source text and returns a
+ *   parser instance with a `parse()` method producing a GML AST.
+ */
+export function setParserFactory(factory: ParserFactory): void {
+    parserFactory = factory;
+}
+
+let parserFactory: ParserFactory = (source: string) =>
+    new Parser.GMLParser(source, {
+        astFormat: "gml",
+        asJSON: false,
+        getComments: true,
+        getLocations: true,
+        simplifyLocations: false
+    });
+
 type GMLLanguageOptions = {
     recovery: "none" | "limited";
 };
@@ -473,13 +508,7 @@ function getErrorLineColumn(error: unknown): { line: number; column: number; mes
 export const GML_VISITOR_KEYS = Object.freeze({}) as Record<string, string[]>;
 
 function parseAst(text: string): GMLAstNode {
-    const parser = new Parser.GMLParser(text, {
-        astFormat: "gml",
-        asJSON: false,
-        getComments: true,
-        getLocations: true,
-        simplifyLocations: false
-    });
+    const parser = parserFactory(text);
     return normalizeProgramShape(parser.parse());
 }
 

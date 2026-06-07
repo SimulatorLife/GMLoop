@@ -1,6 +1,5 @@
 import type { ParserRuleContext, Token, TokenStream } from "antlr4";
 
-import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "../config/parser-constants.js";
 import type { ScopeTrackerOptions } from "./scope-tracker.js";
 
 export type ParserContext =
@@ -175,7 +174,7 @@ export interface PredictionStrategyOptions {
      * Maximum source length that will use SLL prediction mode.
      *
      * Values above this threshold skip SLL and parse directly in LL mode.
-     * Set to `0` to disable the SLL fast path globally.
+     * A value of 0 falls back to the default threshold (8000).
      *
      * @default 8000
      */
@@ -204,6 +203,15 @@ const DEFAULT_SCOPE_TRACKER_OPTIONS: ScopeTrackerOptions = Object.freeze({
     enabled: false,
     getIdentifierMetadata: false
 });
+
+/**
+ * Default maximum source length for which the parser uses the SLL fast path.
+ *
+ * The SLL fast path is significantly faster for small/medium inputs but can
+ * trigger expensive fallback behavior on very large sources. This threshold
+ * lets callers tune the SLL/LL hand-off to match project size characteristics.
+ */
+export const DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH = 8000;
 
 export const defaultParserOptions: ParserOptions = Object.freeze({
     getComments: true,

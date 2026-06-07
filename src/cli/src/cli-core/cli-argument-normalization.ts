@@ -79,7 +79,7 @@ function normalizeFormatCommandHelpShortcut(args: Array<unknown>): Array<unknown
     }
 
     if (containsHelpFlag(args)) {
-        return [FORMAT_ACTION, "--help"];
+        return [FORMAT_ACTION, firstArgument, "--help"];
     }
 
     return [FORMAT_ACTION, "--path", firstArgument, ...args.slice(1)];

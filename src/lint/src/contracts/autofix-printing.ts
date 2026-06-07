@@ -1,3 +1,29 @@
+/**
+ * JavaScript string rendering for lint autofix output.
+ *
+ * PURPOSE: Renders AST nodes back to GML source text for rule-level autofixes.
+ * This is an output-only concern — it does NOT perform layout, formatting, or
+ * precedence analysis for pretty-printing; those belong in `@gmloop/format`.
+ *
+ * ARCHITECTURAL BOUNDARY: This module is intentionally isolated in `src/contracts/`
+ * (a directory that holds cross-cutting public APIs for the lint workspace) so
+ * that:
+ *   1. The printing contract is discoverable as a first-class artifact.
+ *   2. Consumers can depend on this stable re-export surface without reaching
+ *      into the `language/` subdirectory.
+ *   3. Any future refactoring of the underlying printing logic only requires
+ *      updating the re-export here, not every call site.
+ *
+ * The original location was `src/lint/src/language/autofix-printing.ts`. Moving
+ * it here better reflects its role as a **published contract** rather than an
+ * internal language-layer helper. (target-state.md §2.4, "Lint owns rules.")
+ *
+ * USAGE:
+ *   import { printExpression, printNodeForAutofix, readNodeText } from "@gmloop/lint";
+ *   // or for granular control:
+ *   import { gmlRuleAutofixServices } from "@gmloop/lint/src/rules/gml/gml-rule-services.js";
+ */
+
 import { Core, isMemberAccessor } from "@gmloop/core";
 
 function getLogicalPrecedence(operator: string): number {

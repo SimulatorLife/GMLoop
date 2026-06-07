@@ -19,6 +19,11 @@ import {
 import { EventContextOracle } from "../event-context/index.js";
 import { TranspilerError, TranspilerErrorCode } from "./errors.js";
 
+const SCRIPT_REQUEST_CONTEXT = "script request";
+const EXPRESSION_REQUEST_CONTEXT = "expression request";
+const EVENT_REQUEST_CONTEXT = "event request";
+const CLOSURE_REQUEST_CONTEXT = "closure request";
+
 export interface TranspileScriptRequest {
     /**
      * Absolute or workspace-relative file path that produced the source.
@@ -145,7 +150,12 @@ export class GmlTranspiler {
     }
 
     private parseProgram(sourceText: string) {
-        const parser = new Parser.GMLParser(sourceText, {});
+        const parser = new Parser.GMLParser(sourceText, {
+            getComments: false,
+            getLocations: true,
+            simplifyLocations: true,
+            attachFunctionDocComments: false
+        });
         return parser.parse();
     }
 
@@ -249,6 +259,10 @@ export class GmlTranspiler {
         );
     }
 
+    private createRequestError(contextLabel: string, message: string): TranspilerError {
+        return this.createTranspileError(contextLabel, new TypeError(message), TranspilerErrorCode.REQUEST_ERROR);
+    }
+
     /**
      * Build patch metadata from optional source path and an emitter's collected
      * script-reference set.
@@ -294,18 +308,21 @@ export class GmlTranspiler {
 
     transpileScript(request: TranspileScriptRequest): ScriptPatch {
         if (!request || typeof request !== "object") {
-            throw new TypeError("transpileScript requires a request object");
+            throw this.createRequestError(SCRIPT_REQUEST_CONTEXT, "transpileScript requires a request object");
         }
         const { sourceText, symbolId } = request;
         const sourcePath = request.sourcePath;
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileScript requires a sourceText string");
+            throw this.createRequestError(SCRIPT_REQUEST_CONTEXT, "transpileScript requires a sourceText string");
         }
         if (typeof symbolId !== "string" || symbolId.length === 0) {
-            throw new TypeError("transpileScript requires a symbolId string");
+            throw this.createRequestError(SCRIPT_REQUEST_CONTEXT, "transpileScript requires a symbolId string");
         }
         if (sourcePath !== undefined && (typeof sourcePath !== "string" || sourcePath.length === 0)) {
-            throw new TypeError("transpileScript requires sourcePath to be a non-empty string when provided");
+            throw this.createRequestError(
+                SCRIPT_REQUEST_CONTEXT,
+                "transpileScript requires sourcePath to be a non-empty string when provided"
+            );
         }
 
         try {
@@ -345,11 +362,19 @@ export class GmlTranspiler {
 
     transpileExpression(sourceText: string): string {
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileExpression requires a sourceText string");
+            throw this.createRequestError(
+                EXPRESSION_REQUEST_CONTEXT,
+                "transpileExpression requires a sourceText string"
+            );
         }
 
         try {
-            const parser = new Parser.GMLParser(sourceText);
+            const parser = new Parser.GMLParser(sourceText, {
+                getComments: false,
+                getLocations: true,
+                simplifyLocations: true,
+                attachFunctionDocComments: false
+            });
             const ast = parser.parse();
             const emitter = new GmlToJsEmitter(this.getSemanticAnalyzers(), this.emitterOptions);
             return emitter.emit(ast);
@@ -382,21 +407,27 @@ export class GmlTranspiler {
      */
     transpileEvent(request: TranspileEventRequest): EventPatch {
         if (!request || typeof request !== "object") {
-            throw new TypeError("transpileEvent requires a request object");
+            throw this.createRequestError(EVENT_REQUEST_CONTEXT, "transpileEvent requires a request object");
         }
         const { sourceText, symbolId } = request;
         const sourcePath = request.sourcePath;
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileEvent requires a sourceText string");
+            throw this.createRequestError(EVENT_REQUEST_CONTEXT, "transpileEvent requires a sourceText string");
         }
         if (typeof symbolId !== "string" || symbolId.length === 0) {
-            throw new TypeError("transpileEvent requires a symbolId string");
+            throw this.createRequestError(EVENT_REQUEST_CONTEXT, "transpileEvent requires a symbolId string");
         }
         if (sourcePath !== undefined && (typeof sourcePath !== "string" || sourcePath.length === 0)) {
-            throw new TypeError("transpileEvent requires sourcePath to be a non-empty string when provided");
+            throw this.createRequestError(
+                EVENT_REQUEST_CONTEXT,
+                "transpileEvent requires sourcePath to be a non-empty string when provided"
+            );
         }
         if (request.thisName !== undefined && (typeof request.thisName !== "string" || request.thisName.length === 0)) {
-            throw new TypeError("transpileEvent requires thisName to be a non-empty string when provided");
+            throw this.createRequestError(
+                EVENT_REQUEST_CONTEXT,
+                "transpileEvent requires thisName to be a non-empty string when provided"
+            );
         }
 
         try {
@@ -450,18 +481,21 @@ export class GmlTranspiler {
      */
     transpileClosure(request: TranspileClosureRequest): ClosurePatch {
         if (!request || typeof request !== "object") {
-            throw new TypeError("transpileClosure requires a request object");
+            throw this.createRequestError(CLOSURE_REQUEST_CONTEXT, "transpileClosure requires a request object");
         }
         const { sourceText, symbolId } = request;
         const sourcePath = request.sourcePath;
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileClosure requires a sourceText string");
+            throw this.createRequestError(CLOSURE_REQUEST_CONTEXT, "transpileClosure requires a sourceText string");
         }
         if (typeof symbolId !== "string" || symbolId.length === 0) {
-            throw new TypeError("transpileClosure requires a symbolId string");
+            throw this.createRequestError(CLOSURE_REQUEST_CONTEXT, "transpileClosure requires a symbolId string");
         }
         if (sourcePath !== undefined && (typeof sourcePath !== "string" || sourcePath.length === 0)) {
-            throw new TypeError("transpileClosure requires sourcePath to be a non-empty string when provided");
+            throw this.createRequestError(
+                CLOSURE_REQUEST_CONTEXT,
+                "transpileClosure requires sourcePath to be a non-empty string when provided"
+            );
         }
 
         try {

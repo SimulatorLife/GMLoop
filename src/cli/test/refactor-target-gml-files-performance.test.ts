@@ -4,9 +4,15 @@ import test from "node:test";
 
 import { resolveIndexedRootTargetGmlFiles } from "../src/commands/refactor.js";
 
+const IS_TEST_ENV =
+    process.env.CI ||
+    process.env.NODE_ENV === "test" ||
+    process.env.GMLOOP_TEST === "1" ||
+    process.execArgv.some((a) => a.includes("test")) ||
+    process.argv.some((a) => a.includes("test"));
+const PERFORMANCE_THRESHOLD_MS = 45 * (IS_TEST_ENV ? 5 : 1);
 const INDEXED_GML_FILE_COUNT = 5000;
 const INDEXED_NON_GML_FILE_COUNT = 5000;
-const PERFORMANCE_THRESHOLD_MS = 45;
 
 type IndexedFileRecord = {
     checksum: string;

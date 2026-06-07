@@ -87,7 +87,7 @@ void test("prefer-direct-return does not rewrite when the returned identifier is
     assertEquals(result.output, input);
 });
 
-void test("prefer-direct-return collapses adjacent static declaration and return into a direct return", () => {
+void test("prefer-direct-return does not collapse adjacent static declaration and return", () => {
     const input = [
         "function cache_stats() {",
         "    static stats = ds_map_create();",
@@ -95,11 +95,10 @@ void test("prefer-direct-return collapses adjacent static declaration and return
         "}",
         ""
     ].join("\n");
-    const expected = ["function cache_stats() {", "    return ds_map_create();", "}", ""].join("\n");
 
     const result = lintWithRule("prefer-direct-return", input, {});
-    assertEquals(result.messages.length, 1);
-    assertEquals(result.output, expected);
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
 });
 
 void test("prefer-direct-return does not rewrite multi-declarator declarations", () => {

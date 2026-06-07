@@ -15,6 +15,7 @@ export const CLI_COMMAND_NAMES = Object.freeze(
     new Set([
         "format",
         "fix",
+        "gm-cli",
         "graph",
         "lint",
         "live-reload",
@@ -22,6 +23,7 @@ export const CLI_COMMAND_NAMES = Object.freeze(
         "object",
         "parse",
         "profile",
+        "script",
         "generate-gml-identifiers",
         "generate-quality-report",
         "collect-stats",

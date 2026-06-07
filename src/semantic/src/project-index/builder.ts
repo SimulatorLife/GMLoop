@@ -1569,22 +1569,12 @@ function handleConstructorParentScriptCall({
         name: calleeName,
         start: node.idLocation?.start ?? null
     };
-    const parentStart = Core.cloneLocation(node.idLocation?.start ?? null);
-    const parentEnd = Core.cloneLocation(node.idLocation?.end ?? null);
-    if (parentStart === null || parentEnd === null) {
+    if (callee.start === null || callee.end === null) {
         return;
-    }
-    parentEnd.index -= 1;
-    if (typeof parentEnd.column === "number") {
-        parentEnd.column -= 1;
     }
     recordFunctionOrScriptCall({
         builtInNames,
-        callee: {
-            ...callee,
-            end: parentEnd,
-            start: parentStart
-        },
+        callee,
         calleeName,
         fileRecord,
         metrics,
@@ -1882,40 +1872,6 @@ function parseProjectGmlSource({ contents, file, parseProjectSource, metrics, pr
         })
     );
 }
-function analyseProjectGmlAst({
-    ast,
-    builtInNames,
-    scopeRecord,
-    fileRecord,
-    relationships,
-    resourceAnalysis,
-    identifierCollections,
-    scopeDescriptor,
-    metrics,
-    sourceContents,
-    lineOffsets,
-    identifierSink
-}) {
-    const structVariableDeclarationScopeIds = collectConstructorVariableDeclarationScopeIds(ast);
-    metrics.timers.timeSync("gml.analyse", () =>
-        analyseGmlAst({
-            ast,
-            builtInNames,
-            scopeRecord,
-            fileRecord,
-            relationships,
-            scriptNameToScopeId: resourceAnalysis.scriptNameToScopeId,
-            scriptNameToResourcePath: resourceAnalysis.scriptNameToResourcePath,
-            identifierCollections,
-            scopeDescriptor,
-            metrics,
-            sourceContents,
-            lineOffsets,
-            structVariableDeclarationScopeIds,
-            identifierSink
-        })
-    );
-}
 async function processProjectGmlFile({
     file,
     fsFacade,
@@ -1954,20 +1910,25 @@ async function processProjectGmlFile({
         metrics,
         projectRoot
     });
-    analyseProjectGmlAst({
-        ast,
-        builtInNames,
-        scopeRecord,
-        fileRecord,
-        relationships,
-        resourceAnalysis,
-        identifierCollections,
-        scopeDescriptor,
-        metrics,
-        sourceContents: contents,
-        lineOffsets,
-        identifierSink
-    });
+    const structVariableDeclarationScopeIds = collectConstructorVariableDeclarationScopeIds(ast);
+    metrics.timers.timeSync("gml.analyse", () =>
+        analyseGmlAst({
+            ast,
+            builtInNames,
+            scopeRecord,
+            fileRecord,
+            relationships,
+            scriptNameToScopeId: resourceAnalysis.scriptNameToScopeId,
+            scriptNameToResourcePath: resourceAnalysis.scriptNameToResourcePath,
+            identifierCollections,
+            scopeDescriptor,
+            metrics,
+            sourceContents: contents,
+            lineOffsets,
+            structVariableDeclarationScopeIds,
+            identifierSink
+        })
+    );
 }
 /**
  * Centralize the mutable collections used while aggregating project index

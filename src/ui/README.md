@@ -101,6 +101,26 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - Keep UI feature code organized by surface or domain, for example `graph/`, `ast/`, `cli-docs/`, `mcp/`, `rules/`.
 - Maintain a canonical top-level surface catalog in code so future UI tabs are discoverable and consistently named.
 
+## Template Whitespace Rules
+
+Lit templates are whitespace-sensitive for inline elements (elements that receive their content through `html` interpolation without child nodes). Any indentation or newlines between an opening tag and its closing tag become text nodes in the rendered DOM. This produces unwanted visual padding and can break assumptions in styling.
+
+Symptoms include visible extra padding in output panes, mismatch with `white-space: pre` layouts, and broken test assertions like `doesNotMatch(rendered, /<element>\s+\S/u)`.
+
+The rule: for inline elements where content is provided via interpolation, keep the `html` template on a single line with no leading or trailing whitespace:
+
+```ts
+// ✅ Correct — no whitespace between opening and closing tags
+return html`<div class="output">${content}</div>`;
+
+// ❌ Incorrect — indentation becomes a text node, visible in the rendered output
+return html`<div class="output">
+    ${content}
+</div>`;
+```
+
+When a template must be broken across multiple lines (e.g., for readability), extract the element into a private class method or module-level helper that returns the complete `TemplateResult` on a single line. See `GmPlaygroundPanel.#renderOutput` and its test "playground panel output does not have leading whitespace nodes" for a reference implementation.
+
 ## Workspace Structure
 
 The current workspace structure is:
@@ -150,15 +170,21 @@ The graph visualization surface is split as:
 
 That separation is intentional and should be preserved as more UI surfaces are added.
 
+## Shared Status Badges
+
+`gm-status-chip` is the shared status badge for feature-page health and lifecycle state. Feature pages must select one of the component's supported statuses instead of passing arbitrary label text, so copy and styling remain consistent across surfaces.
+
+Each tab has one top-level page toolbar. That toolbar owns the page title, subtitle, page-level status badge, and any main controls for the current tab. Do not add a second hero/header toolbar inside a page body for the same title or controls. MCP and Live Reload status badges belong in the shared page toolbar title row, Live Reload start/open/stop controls belong in that same toolbar, and Docs subview/search controls belong in the shared toolbar instead of the Docs panel body. Docs subview tabs use the shared `gm-view-selector` tab control so CLI, MCP, Rules, Playground, and Config selectors keep one visual treatment.
+
 ## Live Reload Surface
 
 The Live Reload surface is observability-only. It displays data from the CLI status server and host-provided runtime-wrapper summaries without owning the hot-reload pipeline itself.
 
 - `@gmloop/cli` owns file watching, transpilation orchestration, WebSocket patch streaming, and `/status`.
 - `@gmloop/runtime-wrapper` owns browser-side patch application, queueing, rollback, registry state, and runtime diagnostics.
-- `@gmloop/ui` owns the presentation model, polling display, refresh event, cards, recent patch/error lists, and optional runtime health rendering.
+- `@gmloop/ui` owns the presentation model, automatic polling display, cards, recent patch/error lists, and optional runtime health rendering.
 
-Hosts can provide live-reload data through `GraphVisualizationRenderOptions.liveReload` or the `onRefreshLiveReloadStatus` callback.
+Hosts provide live-reload startup data through `GraphVisualizationRenderOptions.liveReload` and server-mode start/stop callbacks. Once a live-reload model includes a status URL, the Live Reload page updates status automatically by polling on a timer and by polling when the document becomes visible again. The Live Reload page must not expose a manual status-refresh button or host refresh callback; status freshness is owned by the timer/focus polling loop so the UI cannot drift into a separate manual-refresh state. In server mode, the Stop control is always rendered in the shared page toolbar and uses disabled state to communicate availability; it is enabled only while an active live-reload session exists. Starting Live Reload from the UI must complete build/startup sequencing before the runtime tab opens: the host start endpoint reports success only with a concrete runtime URL, and the browser opens that URL directly instead of reserving an `about:blank` placeholder tab. UI starts use start-or-reuse semantics instead of forced restart semantics so a healthy existing watcher/status/runtime session is adopted instead of spawning a duplicate process into occupied ports; when a new watcher child is required, the graph server assigns per-session status and WebSocket ports and polls those exact endpoints instead of binding the fixed default ports. UI hot reloads from Vite or the served-UI revision watcher must preserve the host-owned game Live Reload session. Start and stop callbacks mirror the active live-reload model into the web bootstrap payload so a UI remount cannot show stale "not running" controls while the watcher process is still active.
 
 ## Serve Host Contract
 
@@ -212,7 +238,14 @@ New top-level UI additions should:
 ----
 
 ## TODO
-- **FEAT**: Add syntax highlighting to the `Playground` code (both `gml` and `js`)
 - **BUG**: Selecting *any* format option in the `Playground` tab/page for the format settings seems to enable the whole/default format settings too, not *just* that one control. Also not sure if the select-options are actually hooked up to live-update the playground's output view?
 - **FEAT**: For the playground tab/page, user should be able to select *any* of the 'golden' fixture .gml files to preview/test. Or, maybe this is only true if np project is opened in the UI. If a GameMaker project *is* opened in the UI, then the user could be able to select on of the .gml files from that project and test applying rules to those instead.
-- **FEAT**: The `Config` tab/page in the UI should allow for building/modifying a `gmloop.json` config file and then have an option to download it. If a project is opened and there is no `gmloop.json` present in it, users on the `Config` tab/page should be able to generate one which will then be added/included into their project's root directory. We can have a default/recommended `gmloop.json` with the recommended values & naming conventions. Users can, of course, then edit/modify that config the same way as a loaded one from then on.
+- **FEAT**: For the "Docs" page/tab, split the "Rules" subview into three separate: "Linting", "Formatting", and "Codemods" subviews, so the user can more easily find the rules they want to test or learn about. So, the result will have 5 same-level subviews: "CLI", "MCP", "Linting", "Formatting", and "Codemods".
+- **FEAT**: For all raw-JSON displayed in the UI, add a "copy to clipboard" button (single, reusable component) that copies the raw JSON string to the clipboard for easy external use.
+- **FEAT**: For all raw-JSON displayed in the UI, allow for collapsing/expanding nested objects and arrays for easier readability.
+- **BUG**: On the "Docs" page/tab, the search bar and its subtitle "Search current docs view" are misaligned from the toolbar's subtabs-component (CLI, MCP, etc.). The search bar should be visually aligned vertically with that subtab component.
+- **BUG**: On the "Docs" page/tab, when typing in the search bar, it does not allow certain characters like "r" to be typed (maybe those that are also used as hotkeys for the UI?). The search bar should allow all characters to be typed, and hotkeys should not interfere with typing in the search bar.
+- **BUG**: In the UI's navigation, instead of disabling the "Graph Index" menu-item/option tab/page when the opened project does not have a graph index, it should still be selectable since the user can generate it on that tab/page.
+- **BUG**: When the GMLoop UI is served locally w/ live-reloading, when the UI code is changed and hot-reloads and the "Apply Fixes" fix-workflow is in-progress (on the "Fix" page/tab), the progress/state is reset/discarded when the UI hot-reloads. The fix workflow progress/state should be preserved across UI hot-reloads, so if the user is in the middle of a long-running fix workflow and makes a change to the UI code, they won't lose their place in the fix workflow and can continue to monitor its progress without interruption. Its possible it is still running in the background and the UI just loses the connection to it, so maybe we just need to re-establish the connection to the in-flight workflow after hot-reload instead of losing all progress/state.
+- **FEAT**: In the UI's "Fix" page/tab (also probably the CLI output since they should be the same), it is unclear if/when GMLoop is rebuilding/updating the semantic-index. It just shows `[1/3 Refactor Codemods]... [namingConvention] running...` for a long time but we want some more visibility into when the semantic index is being updated, since that is a critical part of the process and can take a long time for larger projects. We should add some explicit log/status messages to indicate when the semantic index is being created/rebuilt/updated, and ideally also show progress updates for that step if possible (e.g. "Updating semantic index... [n%]").
+- **FEAT**: In the UI's "Fix" page/tab we should have a way/button to stop/cancel an in-flight fix workflow, in case the user accidentally starts a fix workflow or realizes they need to change their fix configuration before starting the workflow

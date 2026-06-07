@@ -56,7 +56,7 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
                 summary,
                 snippet
             FROM nodes
-            WHERE kind NOT IN ('file', 'resource')
+            WHERE kind != 'resource'
               AND (resource_path IS NULL OR resource_path NOT LIKE 'options/%')
               AND (relative_path IS NULL OR relative_path NOT LIKE '%.yy' AND relative_path NOT LIKE '%.yyp')
         `

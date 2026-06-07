@@ -1,7 +1,7 @@
+import { toNumber } from "../utils/number.js";
 import { isObjectLike, withObjectLike } from "../utils/object.js";
 import type { GameMakerAstNode } from "./types.js";
 
-type AstNode = GameMakerAstNode;
 type LocationKey = "start" | "end";
 type LocationField = "index" | "line";
 
@@ -42,7 +42,7 @@ function getLocationNumber(node: unknown, key: LocationKey, field: LocationField
                 location,
                 (locationObject) => {
                     const value = locationObject[field];
-                    return typeof value === "number" ? value : null;
+                    return toNumber(value);
                 },
                 () => null
             );
@@ -124,7 +124,7 @@ function getNodeEndIndex(node: unknown): number | null {
 
     const fallbackStart = getNodeStartIndex(node);
 
-    return typeof fallbackStart === "number" ? fallbackStart : null;
+    return toNumber(fallbackStart);
 }
 
 /**
@@ -186,7 +186,7 @@ function cloneLocation<TLocation = unknown>(location?: TLocation): TLocation | u
  * @param {unknown} template Source node providing location metadata.
  * @returns {TTarget | null | undefined} The original target reference.
  */
-function assignClonedLocation<TTarget extends AstNode>(
+function assignClonedLocation<TTarget extends GameMakerAstNode>(
     target: TTarget | null | undefined,
     template: unknown
 ): TTarget | null | undefined {
@@ -265,35 +265,12 @@ function getNodeEndLine(node: unknown): number | null {
     return getLocationNumber(node, "end", "line") ?? getLocationNumber(node, "start", "line");
 }
 
-/**
- * Safely extract the source text covered by an AST node.
- *
- * Consolidates the repeated guard pattern:
- *   const start = getNodeStartIndex(node);
- *   const end = getNodeEndIndex(node);
- *   if (typeof start !== "number" || typeof end !== "number") { return null; }
- *   return sourceText.slice(start, end);
- *
- * @param sourceText Full source text of the file.
- * @param node       AST node whose bounds should be used.
- * @returns The source text slice for `node`, or `null` when either boundary is not a valid offset.
- */
-function getNodeSourceText(sourceText: string, node: unknown): string | null {
-    const start = getNodeStartIndex(node);
-    const end = getNodeEndIndex(node);
-    if (typeof start !== "number" || typeof end !== "number") {
-        return null;
-    }
-    return sourceText.slice(start, end);
-}
-
 export {
     assignClonedLocation,
     cloneLocation,
     getNodeEndIndex,
     getNodeEndLine,
     getNodeRangeIndices,
-    getNodeSourceText,
     getNodeStartIndex,
     getNodeStartLine,
     getPreferredLocation

@@ -380,6 +380,9 @@ export async function executeRegisteredCodemods(
 
     await Core.runSequentially(configuredSelections, async (selection) => {
         const definition = getRegisteredCodemodDefinition(selection.id);
+        if (request.onBeforeCodemod) {
+            await request.onBeforeCodemod(selection.id);
+        }
         const result = await definition.execute(engine, request, selection.effectiveConfig);
 
         for (const [filePath, content] of result.appliedFiles.entries()) {

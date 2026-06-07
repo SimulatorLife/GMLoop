@@ -1,5 +1,6 @@
 import { createInitialGraphVisualizationUiState, reduceGraphVisualizationUiState } from "./reducer.js";
 import type {
+    GraphVisualizationUiConfigView,
     GraphVisualizationUiDocsView,
     GraphVisualizationUiGraphView,
     GraphVisualizationUiLabelMode,
@@ -10,6 +11,7 @@ import type {
 const VALID_DOCS_VIEWS = new Set<GraphVisualizationUiDocsView>(["cli", "mcp", "rules"]);
 const VALID_GRAPH_VIEWS = new Set<GraphVisualizationUiGraphView>(["visual", "json"]);
 const VALID_LABEL_MODES = new Set<GraphVisualizationUiLabelMode>(["auto", "always", "hidden"]);
+const VALID_CONFIG_VIEWS = new Set<GraphVisualizationUiConfigView>(["rendered", "raw"]);
 const VALID_PAGES = new Set<GraphVisualizationUiPage>([
     "graph",
     "docs",
@@ -62,6 +64,16 @@ function readValidLabelMode(
         : fallback;
 }
 
+function readValidConfigView(
+    parameters: URLSearchParams,
+    fallback: GraphVisualizationUiConfigView
+): GraphVisualizationUiConfigView {
+    const configView = readUrlParameterValue(parameters, "config");
+    return configView !== null && VALID_CONFIG_VIEWS.has(configView as GraphVisualizationUiConfigView)
+        ? (configView as GraphVisualizationUiConfigView)
+        : fallback;
+}
+
 /**
  * Parse a graph-visualization URL search string into immutable UI state.
  */
@@ -76,6 +88,7 @@ export function parseGraphVisualizationUiStateFromUrlSearch(search: string): Gra
         activeGraphView: readValidGraphView(parameters, defaults.activeGraphView),
         activePage: readValidPage(parameters, defaults.activePage),
         labelMode: readValidLabelMode(parameters, defaults.labelMode),
+        activeConfigView: readValidConfigView(parameters, defaults.activeConfigView),
         searchQuery
     };
 }
@@ -89,6 +102,7 @@ export function serializeGraphVisualizationUiStateToUrlSearch(state: GraphVisual
     parameters.set("docs", state.activeDocsView);
     parameters.set("view", state.activeGraphView);
     parameters.set("labels", state.labelMode);
+    parameters.set("config", state.activeConfigView);
     if (state.searchQuery.length > 0) {
         parameters.set("q", state.searchQuery);
     }

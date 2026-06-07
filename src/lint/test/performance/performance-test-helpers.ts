@@ -61,10 +61,6 @@ export function lintSingleRuleWithTiming(ruleId: string, sourceText: string, fil
 
     const linter = new Linter({ configType: "flat" });
 
-    linter.verifyAndFix(sourceText, configEntry, {
-        filename: filePath
-    });
-
     const startedAtNanoseconds = process.hrtime.bigint();
     const result = linter.verifyAndFix(sourceText, configEntry, {
         filename: filePath

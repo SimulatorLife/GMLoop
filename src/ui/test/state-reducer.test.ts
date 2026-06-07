@@ -7,23 +7,13 @@ import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 void test("reset-defaults restores visual view, auto labels, and clears search query", () => {
     const state = reduceGraphVisualizationUiState(
         {
+            ...createInitialGraphVisualizationUiState(),
+            activeConfigView: "rendered",
             activeDocsView: "cli",
             activeGraphView: "json",
             activePage: "graph",
             errorMessage: "something went wrong",
-            fixErrorMessage: null,
-            fixLogLines: [],
-            fixStatus: "idle",
-            isFixPending: false,
-            isLiveReloadRefreshPending: false,
-            isLiveReloadStartPending: false,
-            isOpenProjectPending: false,
-            isRegeneratePending: false,
             labelMode: "always",
-            liveReloadErrorMessage: null,
-            liveReloadStatus: null,
-            mcpServerStatus: "not-started",
-            pendingActionCount: 0,
             searchQuery: "player object"
         },
         { type: "reset-defaults" }
@@ -69,24 +59,13 @@ void test("reset-defaults on a state already at defaults is a no-op identity", (
 void test("clear-error sets errorMessage to null regardless of prior value", () => {
     const stateWithError = reduceGraphVisualizationUiState(
         {
+            ...createInitialGraphVisualizationUiState(),
+            activeConfigView: "rendered",
             activeDocsView: "cli",
             activeGraphView: "visual",
             activePage: "graph",
             errorMessage: "Project open failed: invalid path",
-            fixErrorMessage: null,
-            fixLogLines: [],
-            fixStatus: "idle",
-            isFixPending: false,
-            isLiveReloadRefreshPending: false,
-            isLiveReloadStartPending: false,
-            isOpenProjectPending: false,
-            isRegeneratePending: false,
-            labelMode: "auto",
-            liveReloadErrorMessage: null,
-            liveReloadStatus: null,
-            mcpServerStatus: "not-started",
-            pendingActionCount: 0,
-            searchQuery: ""
+            labelMode: "auto"
         },
         { type: "clear-error" }
     );
@@ -113,21 +92,6 @@ void test("reset-project-scoped-state clears project-specific workflow and filte
         fixStatus: "success" as const,
         labelMode: "always" as const,
         liveReloadErrorMessage: "Previous project live-reload error.",
-        liveReloadStatus: {
-            avgHotReloadLatencyMs: 12,
-            errorCount: 1,
-            maxPatchHistory: 20,
-            patchCount: 2,
-            patchHistorySize: 2,
-            p95HotReloadLatencyMs: 14,
-            recentErrors: [],
-            recentPatches: [],
-            scanComplete: true,
-            totalPatchCount: 2,
-            uptimeMs: 500,
-            watcherStatus: "running" as const,
-            websocketClients: 1
-        },
         searchQuery: "previous project"
     };
 
@@ -141,6 +105,37 @@ void test("reset-project-scoped-state clears project-specific workflow and filte
     assert.deepEqual(reset.fixLogLines, []);
     assert.equal(reset.fixStatus, "idle");
     assert.equal(reset.liveReloadErrorMessage, null);
-    assert.equal(reset.liveReloadStatus, null);
     assert.equal(reset.searchQuery, "");
+});
+
+void test("reduceGraphVisualizationUiState with set-page-error and clear-page-error sets and clears page-specific errors", () => {
+    const initial = createInitialGraphVisualizationUiState();
+
+    const graphError = reduceGraphVisualizationUiState(initial, {
+        errorMessage: "Graph failed",
+        page: "graph",
+        type: "set-page-error"
+    });
+    assert.equal(graphError.graphErrorMessage, "Graph failed");
+
+    const configError = reduceGraphVisualizationUiState(graphError, {
+        errorMessage: "Config failed",
+        page: "config",
+        type: "set-page-error"
+    });
+    assert.equal(configError.graphErrorMessage, "Graph failed");
+    assert.equal(configError.configErrorMessage, "Config failed");
+
+    const clearedGraph = reduceGraphVisualizationUiState(configError, {
+        page: "graph",
+        type: "clear-page-error"
+    });
+    assert.equal(clearedGraph.graphErrorMessage, null);
+    assert.equal(clearedGraph.configErrorMessage, "Config failed");
+
+    const clearedConfig = reduceGraphVisualizationUiState(clearedGraph, {
+        page: "config",
+        type: "clear-page-error"
+    });
+    assert.equal(clearedConfig.configErrorMessage, null);
 });

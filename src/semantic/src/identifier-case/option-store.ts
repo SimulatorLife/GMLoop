@@ -141,7 +141,7 @@ function deleteFromStore(storeKey, key) {
 
     delete entry[key];
 
-    if (Object.keys(entry).length === 0) {
+    if (Core.isEmptyRecord(entry)) {
         optionStoreMap.delete(storeKey);
     }
 }

@@ -16,10 +16,9 @@
     },
     "gamemaker-resource-tool": {
       "type": "stdio",
-      "command": "npx",
+      "command": "gmloop",
       "args": [
-        "@gamemaker/gm-cli@latest",
-        "resourcetool",
+        "gm-cli",
         "mcp"
       ],
       "env": {}

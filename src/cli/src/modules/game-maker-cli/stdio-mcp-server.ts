@@ -90,8 +90,10 @@ export async function probeStdioMcpServer(
                 stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
                 if (rawLine.length > 0) {
                     try {
-                        const parsedLine = JSON.parse(rawLine) as Record<string, unknown>;
-                        pendingMessages.push(parsedLine);
+                        const parsedLine = JSON.parse(rawLine);
+                        if (isValidJsonRpcMessage(parsedLine)) {
+                            pendingMessages.push(parsedLine);
+                        }
                     } catch {
                         // Ignore stdout log lines that are not JSON-RPC payloads.
                     }
@@ -253,6 +255,24 @@ export async function probeStdioMcpServer(
     });
 }
 
+/**
+ * Type guard: true when `value` is a plain Record (non-null object that is not
+ * an Array).  Useful for narrowing unknown JSON-deserialized payloads.
+ */
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === "object" && Array.isArray(value) === false;
+}
+
+/**
+ * Type guard: true when `value` is a valid JSON-RPC 2.0 message object.
+ *
+ * JSON-RPC 2.0 requires that every message is a JSON object with a "jsonrpc"
+ * property set to exactly "2.0". This guard rejects null, arrays, primitives,
+ * and objects that lack the required field, preventing malformed payloads from
+ * entering the message queue where they could cause downstream type errors.
+ *
+ * @see https://www.jsonrpc.org/specification
+ */
+function isValidJsonRpcMessage(value: unknown): value is Record<string, unknown> {
+    return isObjectRecord(value) && value.jsonrpc === "2.0";
 }

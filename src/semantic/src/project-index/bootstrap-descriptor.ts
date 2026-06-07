@@ -5,12 +5,20 @@ type ProjectIndexConcurrencySettings = {
     gmlParsing: number;
 };
 
+export type { ProjectIndexConcurrencySettings };
+
 type ProjectIndexBuildOptions = {
     logger?: { debug?: (message?: string, payload?: unknown) => void } | null;
     logMetrics?: boolean;
     concurrency?: ProjectIndexConcurrencySettings | null;
     parseGml?: (text: string, filePath?: string) => unknown;
 };
+
+export type { ProjectIndexBuildOptions };
+
+function isPositiveInteger(value: unknown): value is number {
+    return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
 
 export function createProjectIndexBuildOptions({
     logger = null,
@@ -30,17 +38,31 @@ export function createProjectIndexBuildOptions({
                 return;
             }
 
+            if (!Core.isObjectLike(value)) {
+                return;
+            }
+
+            const rawGml = (value as Record<string, unknown>).gml;
+            const rawGmlParsing = (value as Record<string, unknown>).gmlParsing;
+
+            if (!isPositiveInteger(rawGml) || !isPositiveInteger(rawGmlParsing)) {
+                return;
+            }
+
             buildOptions.concurrency = {
-                gml: value.gml,
-                gmlParsing: value.gmlParsing
+                gml: rawGml,
+                gmlParsing: rawGmlParsing
             };
         },
         () => {}
     );
 
-    if (parseGml) {
-        buildOptions.parseGml = parseGml;
-    }
+    Core.withDefinedValue(parseGml, (fn) => {
+        if (typeof fn !== "function") {
+            return;
+        }
+        buildOptions.parseGml = fn;
+    });
 
     return buildOptions;
 }
@@ -52,6 +74,8 @@ type ProjectIndexDescriptor = {
     formatterVersion?: string | null;
     pluginVersion?: string | null;
     buildOptions?: ProjectIndexBuildOptions | null;
+    manifestMtimes?: Record<string, unknown> | null;
+    sourceMtimes?: Record<string, unknown> | null;
 };
 
 export function createProjectIndexDescriptor({
@@ -60,14 +84,18 @@ export function createProjectIndexDescriptor({
     cacheFilePath = null,
     formatterVersion,
     pluginVersion,
-    buildOptions
+    buildOptions,
+    manifestMtimes,
+    sourceMtimes
 }: ProjectIndexDescriptor = {}) {
     const descriptor: ProjectIndexDescriptor = {
         projectRoot,
         cacheFilePath,
         formatterVersion,
         pluginVersion,
-        buildOptions
+        buildOptions: Core.isObjectLike(buildOptions) ? buildOptions : undefined,
+        manifestMtimes: Core.isObjectLike(manifestMtimes) ? manifestMtimes : undefined,
+        sourceMtimes: Core.isObjectLike(sourceMtimes) ? sourceMtimes : undefined
     };
 
     Core.withDefinedValue(

@@ -43,6 +43,11 @@ const DEFINITELY_LOCAL_NAMING_CATEGORIES = new Set<NamingCategory>([
     "loopIndexVariable",
     "staticVariable"
 ]);
+const SCRIPT_CALLABLE_NAMING_CATEGORIES = new Set<NamingCategory>([
+    "constructorFunction",
+    "function",
+    "structDeclaration"
+]);
 
 let cachedReservedLocalIdentifierNames: ReadonlySet<string> | null = null;
 
@@ -686,6 +691,53 @@ function deduplicateNamingTargets(targets: ReadonlyArray<NamingConventionTarget>
     return deduplicated;
 }
 
+function expandNamingDiscoveryCategories(requestedCategories: ReadonlyArray<NamingCategory>): Array<NamingCategory> {
+    const expandedCategories = new Set(requestedCategories);
+    if (expandedCategories.has("scriptResourceName")) {
+        expandedCategories.add("constructorFunction");
+        expandedCategories.add("function");
+        expandedCategories.add("structDeclaration");
+    }
+
+    return [...expandedCategories];
+}
+
+function findSameNameScriptCallableTarget(
+    targets: ReadonlyArray<NamingConventionTarget>,
+    scriptResourceTarget: NamingConventionTarget
+): NamingConventionTarget | null {
+    const expectedSourcePath = scriptResourceTarget.path.replace(/\.yy$/iu, ".gml");
+    for (const candidate of targets) {
+        if (!SCRIPT_CALLABLE_NAMING_CATEGORIES.has(candidate.category)) {
+            continue;
+        }
+
+        if (
+            candidate.name === scriptResourceTarget.name &&
+            candidate.path === expectedSourcePath &&
+            candidate.symbolId !== null
+        ) {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
+function appendTopLevelRenameOnce(
+    topLevelRenames: Array<{ symbolId: string; newName: string }>,
+    seenTopLevelRenames: Set<string>,
+    rename: { symbolId: string; newName: string }
+): void {
+    const key = `${rename.symbolId}:${rename.newName}`;
+    if (seenTopLevelRenames.has(key)) {
+        return;
+    }
+
+    seenTopLevelRenames.add(key);
+    topLevelRenames.push(rename);
+}
+
 async function listNamingConventionTargetsResilient(parameters: {
     semantic: {
         listNamingConventionTargets: NonNullable<PartialSemanticAnalyzer["listNamingConventionTargets"]>;
@@ -791,6 +843,7 @@ export async function planNamingConventionCodemod(
     const includeViolations = parameters.includeViolations !== false;
     const resolvedRules = resolveNamingConventionRules(policy);
     const requestedCategories = Object.keys(resolvedRules) as Array<NamingCategory>;
+    const discoveryCategories = expandNamingDiscoveryCategories(requestedCategories);
     const tracksLocalTargets = requestedCategoriesMayContainLocalTargets(requestedCategories);
     let workspace = new WorkspaceEditClass();
     const warnings: Array<string> = [];
@@ -813,7 +866,7 @@ export async function planNamingConventionCodemod(
     const queriedTargetsResult = await listNamingConventionTargetsResilient({
         semantic: namingTargetProvider,
         queryPaths,
-        requestedCategories
+        requestedCategories: discoveryCategories
     });
     warnings.push(...queriedTargetsResult.warnings);
     const queriedTargets = queriedTargetsResult.targets;
@@ -861,13 +914,28 @@ export async function planNamingConventionCodemod(
         }
 
         if (target.symbolId !== null) {
-            const key = `${target.symbolId}:${evaluation.suggestedName}`;
-            if (!seenTopLevelRenames.has(key)) {
-                seenTopLevelRenames.add(key);
-                topLevelRenames.push({
-                    symbolId: target.symbolId,
-                    newName: evaluation.suggestedName
-                });
+            appendTopLevelRenameOnce(topLevelRenames, seenTopLevelRenames, {
+                symbolId: target.symbolId,
+                newName: evaluation.suggestedName
+            });
+
+            if (target.category === "scriptResourceName") {
+                const callableTarget = findSameNameScriptCallableTarget(selectedTargets, target);
+                if (callableTarget?.symbolId) {
+                    const callableEvaluation = evaluateNamingConvention(
+                        callableTarget.name,
+                        callableTarget.category,
+                        policy,
+                        resolvedRules,
+                        { includeMessage: false }
+                    );
+                    if (callableEvaluation.compliant) {
+                        appendTopLevelRenameOnce(topLevelRenames, seenTopLevelRenames, {
+                            symbolId: callableTarget.symbolId,
+                            newName: evaluation.suggestedName
+                        });
+                    }
+                }
             }
             continue;
         }

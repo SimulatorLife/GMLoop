@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { Transpiler } from "@gmloop/transpiler";
+import { Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
 
 type TranspilerInstance = InstanceType<typeof Transpiler.GmlTranspiler>;
 type TranspileClosureArgs = Parameters<TranspilerInstance["transpileClosure"]>[0];
@@ -229,25 +229,26 @@ void describe("GmlTranspiler.transpileClosure", () => {
     });
 
     void describe("input validation", () => {
-        void it("throws TypeError when request is not an object", () => {
+        void it("throws request error when request is not an object", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(() => transpiler.transpileClosure(null), {
-                name: "TypeError"
+                name: "TranspilerError",
+                code: TranspilerErrorCode.REQUEST_ERROR
             });
         });
 
-        void it("throws TypeError when sourceText is missing", () => {
+        void it("throws request error when sourceText is missing", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(
                 () =>
                     transpiler.transpileClosure({
                         symbolId: "gml/closure/scr/f"
                     } as unknown as TranspileClosureArgs),
-                { name: "TypeError" }
+                { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
             );
         });
 
-        void it("throws TypeError when sourceText is empty", () => {
+        void it("throws request error when sourceText is empty", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(
                 () =>
@@ -255,11 +256,11 @@ void describe("GmlTranspiler.transpileClosure", () => {
                         sourceText: "",
                         symbolId: "gml/closure/scr/f"
                     }),
-                { name: "TypeError" }
+                { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
             );
         });
 
-        void it("throws TypeError when symbolId is missing", () => {
+        void it("throws request error when symbolId is missing", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(
                 () =>
@@ -267,11 +268,11 @@ void describe("GmlTranspiler.transpileClosure", () => {
                         sourceText: "function f() {}",
                         symbolId: ""
                     }),
-                { name: "TypeError" }
+                { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
             );
         });
 
-        void it("throws TypeError when sourcePath is an empty string", () => {
+        void it("throws request error when sourcePath is an empty string", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(
                 () =>
@@ -280,7 +281,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
                         symbolId: "gml/closure/scr/f",
                         sourcePath: ""
                     }),
-                { name: "TypeError" }
+                { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
             );
         });
 

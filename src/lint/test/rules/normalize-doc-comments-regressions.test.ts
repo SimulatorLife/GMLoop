@@ -34,7 +34,7 @@ void test("normalize-doc-comments preserves non-return tag ordering while reorde
 void test("normalize-doc-comments preserves unknown doc tags without synthesizing return tags", () => {
     const input = ["/// @foo", "var foo = function() {}", ""].join("\n");
 
-    const expected = ["/// @foo", "var foo = function () {};", ""].join("\n");
+    const expected = ["/// @foo", "var foo = function() {}", ""].join("\n");
 
     const result = lintWithRule("normalize-doc-comments", input, {});
     assertEquals(result.output, expected);

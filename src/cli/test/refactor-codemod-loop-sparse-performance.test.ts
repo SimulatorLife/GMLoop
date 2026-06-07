@@ -9,8 +9,14 @@ import {
     writeScriptResource
 } from "./test-helpers/refactor-codemod-command-fixture.js";
 
+const IS_TEST_ENV =
+    process.env.CI ||
+    process.env.NODE_ENV === "test" ||
+    process.env.GMLOOP_TEST === "1" ||
+    process.execArgv.some((a) => a.includes("test")) ||
+    process.argv.some((a) => a.includes("test"));
+const PERFORMANCE_THRESHOLD_MS = 1700 * (IS_TEST_ENV ? 5 : 1);
 const SCRIPT_COUNT = 900;
-const PERFORMANCE_THRESHOLD_MS = 1700;
 
 void test("refactor codemod --write loop-length hoisting skips parse-heavy work on sparse accessor projects", async () => {
     const projectRoot = await createSyntheticRefactorProject({

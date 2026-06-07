@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { GmFixPanel } from "../src/app/components/gm-fix-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
 
@@ -40,28 +41,18 @@ function createMockModel(): GraphVisualizationUiModel {
 
 function createMockState(): GraphVisualizationUiState {
     return {
+        ...createInitialGraphVisualizationUiState(),
+        activeConfigView: "rendered",
         activeDocsView: "cli",
         activeGraphView: "visual",
         activePage: "fix",
-        errorMessage: null,
-        fixErrorMessage: null,
         fixLogLines: ["[1/3 Refactor Codemods]", "[2/3 Lint Fixes]", "[3/3 Format]"],
         fixStatus: "success",
-        isFixPending: false,
-        isLiveReloadRefreshPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
-        labelMode: "auto",
-        liveReloadErrorMessage: null,
-        liveReloadStatus: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
-        searchQuery: ""
+        labelMode: "auto"
     };
 }
 
-void test("GmFixPanel renders the fix workflow button, status, target, and log", () => {
+void test("GmFixPanel renders the fix log section", () => {
     const panel = new TestableGmFixPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
@@ -70,16 +61,14 @@ void test("GmFixPanel renders the fix workflow button, status, target, and log",
     const runLogIndex = rendered.indexOf("Run Log");
     const firstLogLineIndex = rendered.indexOf("[1/3 Refactor Codemods]");
 
-    assert.match(rendered, /id="fix-page"[\s\S]*class=page docs-page active/u);
-    assert.match(rendered, /class="fix-action-bar"/u);
-    assert.match(rendered, /id="run-fix"/u);
-    assert.match(rendered, /Completed/u);
+    assert.match(rendered, /id="fix-page"[\s\S]*class=page content-page active/u);
+    assert.match(rendered, /class="fix-log-section"/u);
     assert.match(rendered, /Run Log/u);
     assert.notEqual(runLogIndex, -1);
     assert.ok(firstLogLineIndex > runLogIndex);
     assert.match(rendered, /\[1\/3 Refactor Codemods\]/u);
-    assert.match(rendered, /\/tmp\/test/u);
-    assert.doesNotMatch(rendered, /Apply Project Fixes/u);
+    assert.doesNotMatch(rendered, /fix-action-bar/u);
+    assert.doesNotMatch(rendered, /id="run-fix"/u);
     assert.doesNotMatch(rendered, /1\. Refactor/u);
     assert.doesNotMatch(rendered, /2\. Lint/u);
     assert.doesNotMatch(rendered, /3\. Format/u);
@@ -103,7 +92,6 @@ void test("GmFixPanel renders the last server-side fix run after UI reload clear
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Completed/u);
     assert.match(rendered, /Project root: \/tmp\/test/u);
     assert.match(rendered, /Success!/u);
     assert.doesNotMatch(rendered, /No fix run has been started/u);
@@ -127,12 +115,11 @@ void test("GmFixPanel ignores a server-side fix run from a different project", (
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Ready/u);
     assert.match(rendered, /No fix run has been started from this UI session\./u);
     assert.doesNotMatch(rendered, /Previous project fix log/u);
 });
 
-void test("GmFixPanel disables the run button when no project is loaded", () => {
+void test("GmFixPanel renders the fix log section even when no project is loaded", () => {
     const panel = new TestableGmFixPanel();
     panel.model = {
         ...createMockModel(),
@@ -142,6 +129,7 @@ void test("GmFixPanel disables the run button when no project is loaded", () => 
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /id="run-fix"[\s\S]*disabled/u);
-    assert.match(rendered, /Open a project before running fixes\./u);
+    assert.match(rendered, /class="fix-log-section"/u);
+    assert.match(rendered, /Run Log/u);
+    assert.doesNotMatch(rendered, /id="run-fix"/u);
 });

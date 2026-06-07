@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { GmPlaygroundPanel } from "../src/app/components/gm-playground-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../src/app/playground-default-gml.js";
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationProjectConfigurationCatalog } from "../src/graph/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -37,24 +39,12 @@ function createMockModel(): GraphVisualizationUiModel {
 
 function createMockState(): GraphVisualizationUiState {
     return {
+        ...createInitialGraphVisualizationUiState(),
+        activeConfigView: "rendered",
         activePage: "playground",
         activeGraphView: "visual",
         activeDocsView: "cli",
-        errorMessage: null,
-        fixErrorMessage: null,
-        fixLogLines: [],
-        fixStatus: "idle",
-        isFixPending: false,
-        isLiveReloadRefreshPending: false,
-        isLiveReloadStartPending: false,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
-        labelMode: "auto",
-        liveReloadErrorMessage: null,
-        liveReloadStatus: null,
-        mcpServerStatus: "not-started",
-        pendingActionCount: 0,
-        searchQuery: ""
+        labelMode: "auto"
     };
 }
 
@@ -164,6 +154,7 @@ void test("playground panel renders controls panel toggle with expanded state", 
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
+    assert.match(rendered, /id="playground-page"[\s\S]*class=page content-page active/u);
     assert.match(rendered, /button\s+type="button"\s+class="playground-controls-toggle is-open"/u);
     assert.match(rendered, /aria-controls="playground-controls-panel"/u);
     assert.match(rendered, /aria-expanded=true/u);
@@ -183,7 +174,7 @@ void test("playground panel view selector uses semantic <button> elements", () =
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /button\s+type="button"\s+class="view-option active"\s+aria-pressed=true/u);
+    assert.match(rendered, /button\s+type="button"\s+class="gm-btn--chip active"\s+aria-pressed=true/u);
     assert.match(rendered, /Output Code/u);
     assert.match(rendered, /AST View/u);
 });
@@ -429,4 +420,59 @@ void test("playground panel syncs format options from project configuration cata
     // (even when the section is collapsed).
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /0\/2 enabled/u);
+});
+
+void test("playground panel output does not have leading whitespace nodes", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // Make sure the markup does not introduce text nodes (whitespace) inside the pre-formatted element
+    assert.match(rendered, /<div class="playground-output" aria-live="polite">[^<]*<\/div>/u);
+    // There shouldn't be newlines or spaces right after the opening tag — whitespace in a
+    // Lit template becomes a DOM text node that is visible inside white-space: pre elements.
+    // The pattern matches the opening tag followed by whitespace (\s+) then a non-whitespace
+    // character (\S). If the doesNotMatch passes, no leading whitespace exists.
+    assert.doesNotMatch(rendered, /<div class="playground-output" aria-live="polite">\s+\S/u);
+});
+
+/**
+ * Verify the AST output path is also free of leading whitespace text nodes.
+ *
+ * The AST pane uses a <pre> element with white-space: pre so any leading whitespace
+ * inside it would be rendered visibly. The same template rule from #renderOutput
+ * applies here — keep the html template on a single line.
+ */
+void test("playground panel AST output does not have leading whitespace nodes", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+    panel.renderForTest();
+    // The compiled JS is in dist/src/app/components/ from the test dist directory.
+    // We verify the <pre> template is structurally sound by checking the compiled source.
+    const source = readFileSync(new URL("../src/app/components/gm-playground-panel.js", import.meta.url), "utf8");
+    // The AST output is rendered inside #renderOutput. The html template for the <pre>
+    // element must be on a single line with no leading whitespace inside the tags.
+    assert.match(source, /html `<pre class="playground-output" aria-live="polite">\$\{astJson\}<\/pre>`/u);
+    // Verify the <pre> template does not span multiple lines with indentation.
+    // A multiline template with leading whitespace would break the whitespace test.
+    assert.doesNotMatch(source, /html `<pre class="playground-output" aria-live="polite">\s*\n\s*\$\{astJson\}/u);
+});
+
+void test("playground panel input uses a highlighted overlay with synchronized textarea", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // Verify the highlighted overlay wrapper structure exists
+    assert.match(rendered, /class="playground-input-surface"/u);
+
+    // Verify the highlight layer exists
+    assert.match(rendered, /<pre class="playground-input-highlight" aria-hidden="true">/u);
+
+    // Verify the transparent textarea exists
+    assert.match(rendered, /<textarea\s+class="playground-input"/u);
+    assert.match(rendered, /@scroll=/u);
 });

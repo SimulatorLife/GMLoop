@@ -8,9 +8,8 @@ import GameMakerASTBuilder from "./ast/gml-ast-builder.js";
 import createGameMakerParseErrorListener, { createGameMakerLexerErrorListener } from "./ast/gml-syntax-error.js";
 import { createHiddenNodeProcessor } from "./ast/hidden-node-processor.js";
 import { assertNestedTernaryConsequentsAreParenthesized } from "./ast/ternary-expression-grouping-validation.js";
-import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "./config/parser-constants.js";
 import { installRecognitionExceptionLikeGuard } from "./runtime/index.js";
-import { defaultParserOptions, type ParserOptions } from "./types/index.js";
+import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH, defaultParserOptions, type ParserOptions } from "./types/index.js";
 
 const PredictionMode =
     (antlr4 as unknown as { atn?: { PredictionMode: unknown } }).atn?.PredictionMode ??
@@ -91,7 +90,7 @@ function parseProgramWithLlPredictionMode(sourceText: string): unknown {
 }
 
 function normalizeSllPredictionMaxSourceLength(value: unknown): number {
-    return Core.coercePositiveIntegerOption(value, DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH, { zeroReplacement: 0 });
+    return Core.coercePositiveIntegerOption(value, DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH);
 }
 
 function shouldUseSllPredictionMode(sourceText: string, maxSourceLength: number): boolean {

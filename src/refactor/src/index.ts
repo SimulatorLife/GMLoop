@@ -106,20 +106,25 @@ export {
 export { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
 export { normalizeRefactorProjectConfig, normalizeRefactorProjectConfigOrNull } from "./project-config.js";
 export type {
+    AddObjectEventRequest,
     AddProjectResourceRequest,
     AddRoomInstanceRequest,
     DeleteRoomInstanceRequest,
     DuplicateProjectResourceRequest,
     MoveProjectResourceRequest,
+    ObjectEventDescriptor,
+    ObjectEventMutationResult,
     ProjectResourceKindValue,
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
     RenameProjectResourceRequest,
     RoomInstanceMutationResult,
+    UpdateObjectEventRequest,
     UpdateRoomInstanceRequest
 } from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
 export {
+    addObjectEvent,
     addProjectResource,
     addRoomInstance,
     deleteRoomInstance,
@@ -127,6 +132,7 @@ export {
     moveProjectResource,
     removeProjectResource,
     renameProjectResource,
+    updateObjectEvent,
     updateRoomInstance
 } from "./project-resources/index.js";
 export {
@@ -135,13 +141,6 @@ export {
     ProjectResourceKind,
     requireProjectResourceKind
 } from "./project-resources/index.js";
-export {
-    APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT,
-    CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
-    CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES,
-    DUPLICATE_EDIT_CHECK_MAX_SET_SIZE,
-    RENAME_VALIDATION_CACHE_MAX_SIZE
-} from "./refactor-constants.js";
 export { RefactorEngine } from "./refactor-engine.js";
 export type {
     CrossRenameConfusion,
@@ -263,4 +262,21 @@ export { isSymbolKind, parseSymbolKind, requireSymbolKind, SymbolKind } from "./
 export { ConflictType, isConflictType, parseConflictType, requireConflictType } from "./types.js";
 export { isOccurrenceKind, OccurrenceKind, parseOccurrenceKind, requireOccurrenceKind } from "./types.js";
 export type { WorkspaceRevisionProvider } from "./workspace-edit.js";
-export { WORKSPACE_EDIT_REVISION_TOKEN, WorkspaceEdit } from "./workspace-edit.js";
+export type {
+    FileRename,
+    GroupedTextEdits,
+    MetadataEdit,
+    TextEdit,
+    WorkspaceEditTelemetry,
+    WorkspaceLike
+} from "./workspace-edit.js";
+export {
+    getWorkspaceArrays,
+    getWorkspaceEditRevision,
+    getWorkspaceEditTelemetry,
+    isWorkspaceEditLike,
+    mergeWorkspaceEditInto,
+    validateFileRenameOperations,
+    WORKSPACE_EDIT_REVISION_TOKEN,
+    WorkspaceEdit
+} from "./workspace-edit.js";

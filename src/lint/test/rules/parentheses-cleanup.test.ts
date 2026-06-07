@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { cleanupMultiplicativeIdentityParentheses } from "../../src/rules/gml/transforms/math-parentheses-cleanup.js";
-import { normalizeTraversalContext } from "../../src/rules/gml/transforms/math-traversal-normalization.js";
+import { cleanupMultiplicativeIdentityParentheses } from "../../src/rules/gml/math/math-parentheses-cleanup.js";
+import { normalizeTraversalContext } from "../../src/rules/gml/math/math-traversal-normalization.js";
 
 void describe("cleanupMultiplicativeIdentityParentheses", () => {
     void it("unwraps safe multiplicative identity replacements", () => {

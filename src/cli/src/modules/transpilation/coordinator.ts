@@ -252,6 +252,11 @@ export interface PatchHistoryStore {
      */
     patches: Array<PatchSummary>;
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>;
+    /**
+     * Secondary index mapping source file paths to their associated patch IDs.
+     * Enables O(k) stale-patch cleanup instead of O(n) iteration over all patches.
+     */
+    sourcePathToPatchIds: Map<string, Set<string>>;
     bounds: BoundedCollectionBounds;
 }
 
@@ -385,6 +390,14 @@ export interface TranspilationOptions {
      * Omit for the initial scan pass, where there is no preceding watch event.
      */
     fileChangeDetectedAt?: number;
+    /**
+     * Controls whether the generated patch should be added to runtime history and
+     * broadcast to connected clients. Initial dependency scans generate patches
+     * only to validate transpilation and collect metadata; those patches mirror
+     * code already present in a freshly built runtime and must not be replayed as
+     * live edits.
+     */
+    deliverRuntimePatch?: boolean;
 }
 
 export interface TranspilationResult {
@@ -415,9 +428,45 @@ function addToBoundedCollection<T>(collection: Array<T>, item: T, maxSize: numbe
 }
 
 /**
- * Parses GML content and extracts symbols/references when parsing succeeds.
- * Accepts pre-parsed AST and pre-extracted symbols/references to skip redundant
- * work when the caller has already produced them (e.g., during the initial
+ * Extracts symbol declarations and reference identifiers from a parsed GML AST.
+ *
+ * This function performs a single AST traversal to collect both symbols and
+ * references, which is more efficient than calling extraction separately.
+ *
+ * When pre-extracted values are provided, they are reused to skip redundant
+ * work during incremental updates (e.g., when only part of the AST changed).
+ */
+function extractMetadataFromAst(
+    ast: unknown,
+    filePath: string,
+    preExtractedSymbols?: ReadonlyArray<string>,
+    preExtractedReferences?: ReadonlyArray<string>
+): { parsedSymbols: Array<string>; parsedReferences: Array<string> } {
+    if (preExtractedSymbols !== undefined && preExtractedReferences !== undefined) {
+        return {
+            parsedSymbols: Array.from(preExtractedSymbols),
+            parsedReferences: Array.from(preExtractedReferences)
+        };
+    }
+
+    const parsedSymbols =
+        preExtractedSymbols === undefined ? extractSymbolsFromAst(ast, filePath) : Array.from(preExtractedSymbols);
+    const parsedReferences =
+        preExtractedReferences === undefined ? extractReferencesFromAst(ast) : Array.from(preExtractedReferences);
+
+    return { parsedSymbols, parsedReferences };
+}
+
+/**
+ * Parses GML content into an AST, then extracts symbol declarations and
+ * reference identifiers from it.
+ *
+ * This function orchestrates two distinct responsibilities:
+ * 1. Parse: Convert GML source text into an Abstract Syntax Tree
+ * 2. Extract: Walk the AST to collect symbols and references
+ *
+ * Accepts pre-parsed AST and pre-extracted values to skip redundant work
+ * when the caller has already produced them (e.g., during the initial
  * startup scan).
  */
 function parseAstAndExtractMetadata(
@@ -428,19 +477,20 @@ function parseAstAndExtractMetadata(
     preExtractedReferences?: ReadonlyArray<string>
 ): ParsedAstExtractionResult {
     try {
-        let ast: unknown;
-        if (preParseAst === undefined) {
-            const parser = new Parser.GMLParser(content, {});
-            ast = parser.parse();
-        } else {
-            ast = preParseAst;
-        }
-
-        // Reuse pre-extracted values when available to avoid a second full AST walk.
-        const parsedSymbols =
-            preExtractedSymbols === undefined ? extractSymbolsFromAst(ast, filePath) : Array.from(preExtractedSymbols);
-        const parsedReferences =
-            preExtractedReferences === undefined ? extractReferencesFromAst(ast) : Array.from(preExtractedReferences);
+        const ast =
+            preParseAst ??
+            new Parser.GMLParser(content, {
+                getComments: false,
+                getLocations: true,
+                simplifyLocations: true,
+                attachFunctionDocComments: false
+            }).parse();
+        const { parsedSymbols, parsedReferences } = extractMetadataFromAst(
+            ast,
+            filePath,
+            preExtractedSymbols,
+            preExtractedReferences
+        );
 
         return {
             ast,
@@ -552,20 +602,21 @@ function hasRuntimePatchChanged(
  */
 function clearStalePatchesForSourcePath(
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>,
+    sourcePathToPatchIds: Map<string, Set<string>>,
     sourcePath: string,
     nextPatchId: string
 ): void {
-    for (const [patchId, patch] of lastSuccessfulPatches.entries()) {
-        if (patchId === nextPatchId) {
-            continue;
-        }
+    const stalePatchIds = sourcePathToPatchIds.get(sourcePath);
+    if (!stalePatchIds) {
+        return;
+    }
 
-        const metadata = Core.isObjectLike(patch.metadata) ? patch.metadata : null;
-        const patchSourcePath = Core.isNonEmptyString(metadata?.sourcePath) ? metadata.sourcePath : null;
-        if (patchSourcePath === sourcePath) {
+    for (const patchId of stalePatchIds) {
+        if (patchId !== nextPatchId) {
             lastSuccessfulPatches.delete(patchId);
         }
     }
+    stalePatchIds.clear();
 }
 
 /**
@@ -583,7 +634,15 @@ export function transpileFile(
     lines: number,
     options: TranspilationOptions
 ): TranspilationResult {
-    const { verbose, quiet, cachedAst, cachedSymbols, cachedReferences, fileChangeDetectedAt } = options;
+    const {
+        verbose,
+        quiet,
+        cachedAst,
+        cachedSymbols,
+        cachedReferences,
+        fileChangeDetectedAt,
+        deliverRuntimePatch = true
+    } = options;
     const startTime = performance.now();
 
     try {
@@ -646,16 +705,37 @@ export function transpileFile(
 
         addToBoundedCollection(context.metrics, metrics, context.bounds.maxEntries);
 
-        clearStalePatchesForSourcePath(context.lastSuccessfulPatches, filePath, patchPayload.id);
+        if (context.scriptNames && fileKind.kind === "script") {
+            registerScriptNamesFromSymbols(parsedSymbols, context.scriptNames);
+        }
+
+        if (!deliverRuntimePatch) {
+            return {
+                success: true,
+                patch: patchPayload,
+                metrics,
+                symbols: parsedSymbols,
+                references: parsedReferences
+            };
+        }
+
+        clearStalePatchesForSourcePath(
+            context.lastSuccessfulPatches,
+            context.sourcePathToPatchIds,
+            filePath,
+            patchPayload.id
+        );
         const previousPatch = context.lastSuccessfulPatches.get(patchPayload.id);
         const runtimePatchChanged = hasRuntimePatchChanged(previousPatch, patchPayload);
 
         context.lastSuccessfulPatches.set(patchPayload.id, patchPayload);
 
-        if (context.scriptNames && fileKind.kind === "script") {
-            registerScriptNamesFromSymbols(parsedSymbols, context.scriptNames);
+        let patchIdsForSource = context.sourcePathToPatchIds.get(filePath);
+        if (!patchIdsForSource) {
+            patchIdsForSource = new Set();
+            context.sourcePathToPatchIds.set(filePath, patchIdsForSource);
         }
-
+        patchIdsForSource.add(patchPayload.id);
         if (runtimePatchChanged) {
             addToBoundedCollection(context.patches, createPatchSummary(patchPayload), context.bounds.maxEntries);
             context.totalPatchCount += 1;

@@ -74,19 +74,31 @@ export function safeGetPathName(path: AstPath<any>): PropertyKey | null {
  * functions that search for a specific enclosing node kind (e.g.,
  * the nearest enclosing function declaration or constructor).
  *
+ * PERFORMANCE: When `targetType` is a plain string (not a function), the
+ * implementation short-circuits the predicate call entirely and performs
+ * a direct `===` string comparison. This eliminates function-call overhead,
+ * closure allocation, and optional-chain evaluation on the hot inner loop.
+ * Callers that match on `node.type === "X"` should always pass the string
+ * directly to benefit from the fast path.
+ *
  * @param path - The Prettier AST path object.
- * @param predicate - A function that returns `true` when the desired ancestor is found.
+ * @param predicateOrType - Either a predicate function, or a node type string
+ *                          for O(1) exact-type matching.
  * @returns The first matching ancestor node, or `null` if none is found.
  *
  * @example
  * ```ts
- * const enclosingFn = findAncestorNode(path, (node) => node.type === "FunctionDeclaration");
+ * const enclosingFn = findAncestorNode(path, "FunctionDeclaration");
+ * const enclosingFn2 = findAncestorNode(path, (node) => node.type === "FunctionDeclaration");
  * ```
  */
-export function findAncestorNode(path: AstPath<any>, predicate: (node: any) => boolean): any {
+export function findAncestorNode(path: AstPath<any>, predicateOrType: string | ((node: any) => boolean)): any {
     if (!path || typeof path.getParentNode !== "function") {
         return null;
     }
+
+    const isTypeString = typeof predicateOrType === "string";
+    const targetType = isTypeString ? predicateOrType : null;
 
     for (let depth = 0; ; depth += 1) {
         const parent = safeGetParentNode(path, depth);
@@ -94,7 +106,12 @@ export function findAncestorNode(path: AstPath<any>, predicate: (node: any) => b
             return null;
         }
 
-        if (predicate(parent)) {
+        if (isTypeString) {
+            // Fast path: direct string comparison avoids function-call overhead.
+            if ((parent as { type?: unknown }).type === targetType) {
+                return parent;
+            }
+        } else if (predicateOrType(parent)) {
             return parent;
         }
     }
@@ -114,5 +131,5 @@ export function findAncestorNode(path: AstPath<any>, predicate: (node: any) => b
  * @returns The nearest enclosing `FunctionDeclaration` node, or `undefined`
  */
 export function findEnclosingFunctionDeclaration(path: AstPath<any>): unknown {
-    return findAncestorNode(path, (node: unknown) => (node as { type?: string }).type === "FunctionDeclaration");
+    return findAncestorNode(path, "FunctionDeclaration");
 }
