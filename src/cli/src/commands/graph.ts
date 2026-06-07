@@ -31,8 +31,10 @@ import {
     DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT
 } from "../modules/live-reload/config.js";
 import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
-import { startGraphVisualizationServer } from "../modules/server/graph-visualization-server.js";
-import { openUrlInDefaultBrowser } from "../modules/server/open-url.js";
+import {
+    openUrlInDefaultBrowser,
+    startGraphVisualizationServer
+} from "../modules/server/graph-visualization-server.js";
 import {
     createDefaultGmloopProjectConfig,
     createGraphVisualizationProjectConfigurationCatalog
