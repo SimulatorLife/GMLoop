@@ -24,9 +24,7 @@ function execute(ast: MutableGameMakerAstNode, _options: EmptyTransformOptions):
 }
 
 function eliminateRedundantTemporaryReturns(ast: MutableGameMakerAstNode): void {
-    const body = Array.isArray((ast as MutableAstRecord).body)
-        ? ((ast as MutableAstRecord).body as StatementList)
-        : null;
+    const body = Array.isArray(ast.body) ? (ast.body as StatementList) : null;
     if (!body) {
         return;
     }
@@ -62,12 +60,12 @@ function visitStatementChildrenWithStatementListProcessor(
     processStatementList: (statements: StatementList) => void,
     visitStatementChildren: (statement: MutableGameMakerAstNode) => void
 ): void {
-    const nodeRecord = statement as MutableAstRecord;
+    const nodeRecord = statement;
 
     if (Array.isArray(nodeRecord.body)) {
         processStatementList(nodeRecord.body as StatementList);
     } else if (Core.isObjectLike(nodeRecord.body)) {
-        visitStatementChildren(nodeRecord.body as MutableGameMakerAstNode);
+        visitStatementChildren(nodeRecord.body);
     }
 
     if (statement.type === "IfStatement") {
@@ -117,7 +115,7 @@ function maybeBuildRedundantTempReturnReplacement(
         return null;
     }
 
-    const declarations = Core.asArray<MutableAstRecord>((declarationStatement as MutableAstRecord).declarations);
+    const declarations = Core.asArray<MutableAstRecord>(declarationStatement.declarations);
     if (declarations.length !== 1) {
         return null;
     }
@@ -133,7 +131,7 @@ function maybeBuildRedundantTempReturnReplacement(
         return null;
     }
 
-    const returnArgument = (returnStatement as MutableAstRecord).argument as MutableGameMakerAstNode | null | undefined;
+    const returnArgument = returnStatement.argument as MutableGameMakerAstNode | null | undefined;
     if (
         !returnArgument ||
         Core.getIdentifierText(returnArgument) !== temporaryName ||
@@ -147,13 +145,11 @@ function maybeBuildRedundantTempReturnReplacement(
         argument: Core.cloneAstNode(initializer),
         start: Core.cloneLocation(declarationStatement.start),
         end: Core.cloneLocation(returnStatement.end)
-    } as MutableGameMakerAstNode;
+    };
 }
 
 function optimizeConditionalMemberAccessCaching(ast: MutableGameMakerAstNode): void {
-    const body = Array.isArray((ast as MutableAstRecord).body)
-        ? ((ast as MutableAstRecord).body as StatementList)
-        : null;
+    const body = Array.isArray(ast.body) ? (ast.body as StatementList) : null;
     if (!body) {
         return;
     }
@@ -250,7 +246,7 @@ function maybeCacheRepeatedMemberAccessForIfStatement(
         return 0;
     }
 
-    statement.test = nextTest as MutableGameMakerAstNode;
+    statement.test = nextTest;
 
     const initializerNode = recreateMemberPathExpression(selectedPath, nextTest as MutableGameMakerAstNode);
     if (!initializerNode) {
@@ -276,7 +272,7 @@ function maybeHoistInvariantLoopCondition(
         return 0;
     }
 
-    const loopBody = (statement as MutableAstRecord).body as unknown;
+    const loopBody = statement.body as unknown;
     if (containsCallExpression(loopBody)) {
         return 0;
     }
@@ -310,7 +306,7 @@ function maybeHoistInvariantLoopCondition(
     const usedNames = new Set(collectIdentifierNamesInSubtree(statements));
     const cachedVariableName = createUniqueTemporaryName("__gml_invariant_condition", usedNames);
 
-    const conditionRecord = statement as MutableAstRecord;
+    const conditionRecord = statement;
     const conditionRoot = { test: conditionRecord.test };
     const replacedCount = replaceMemberAccessPath(conditionRoot, "test", selectedPath, cachedVariableName);
     const nextTest = conditionRoot.test;
@@ -436,7 +432,7 @@ function recreateMemberPathExpression(
         name: segments[0],
         start: Core.cloneLocation(sourceNode.start),
         end: Core.cloneLocation(sourceNode.end)
-    } as MutableGameMakerAstNode;
+    };
 
     for (let index = 1; index < segments.length; index += 1) {
         expression = {
@@ -450,7 +446,7 @@ function recreateMemberPathExpression(
             },
             start: Core.cloneLocation(sourceNode.start),
             end: Core.cloneLocation(sourceNode.end)
-        } as MutableGameMakerAstNode;
+        };
     }
 
     return expression;
@@ -462,7 +458,7 @@ function getMemberAccessPath(node: unknown): string | null {
     }
 
     if ((node as MutableGameMakerAstNode).type === "Identifier") {
-        return Core.getIdentifierText(node as MutableGameMakerAstNode);
+        return Core.getIdentifierText(node);
     }
 
     if ((node as MutableGameMakerAstNode).type !== "MemberDotExpression") {
@@ -471,7 +467,7 @@ function getMemberAccessPath(node: unknown): string | null {
 
     const nodeRecord = node as MutableAstRecord;
     const objectPath = getMemberAccessPath(nodeRecord.object);
-    const propertyName = Core.getIdentifierText(nodeRecord.property as MutableGameMakerAstNode);
+    const propertyName = Core.getIdentifierText(nodeRecord.property);
 
     if (!objectPath || !propertyName) {
         return null;
@@ -489,7 +485,7 @@ function isCollectibleMemberAccessNode(
         return false;
     }
 
-    if (Core.hasComment(node as MutableGameMakerAstNode)) {
+    if (Core.hasComment(node)) {
         return false;
     }
 
@@ -501,7 +497,7 @@ function isCollectibleMemberAccessNode(
         return false;
     }
 
-    const memberPath = getMemberAccessPath(node as MutableGameMakerAstNode);
+    const memberPath = getMemberAccessPath(node);
     if (!memberPath) {
         return false;
     }
@@ -533,7 +529,7 @@ function createCachedVariableDeclaration(
             }
         ],
         start: Core.cloneLocation(startLocation)
-    } as MutableGameMakerAstNode;
+    };
 }
 
 function createUniqueTemporaryName(baseName: string, takenNames: Set<string>): string {
@@ -555,17 +551,17 @@ function createUniqueTemporaryName(baseName: string, takenNames: Set<string>): s
 function collectAssignedIdentifiersFromNode(node: unknown, assignedIdentifiers: Set<string>): void {
     walkNode(node, null, null, (child) => {
         if (child.type === "VariableDeclarator") {
-            collectAssignedIdentifiersFromTarget((child as MutableAstRecord).id, assignedIdentifiers);
+            collectAssignedIdentifiersFromTarget(child.id, assignedIdentifiers);
             return;
         }
 
         if (child.type === "AssignmentExpression") {
-            collectAssignedIdentifiersFromTarget((child as MutableAstRecord).left, assignedIdentifiers);
+            collectAssignedIdentifiersFromTarget(child.left, assignedIdentifiers);
             return;
         }
 
-        if (child.type === "IncDecExpression" || child.type === "IncDecStatement") {
-            collectAssignedIdentifiersFromTarget((child as MutableAstRecord).argument, assignedIdentifiers);
+        if (Core.isIncDecNode(child)) {
+            collectAssignedIdentifiersFromTarget(child.argument, assignedIdentifiers);
         }
     });
 }
@@ -576,7 +572,7 @@ function collectAssignedIdentifiersFromTarget(target: unknown, assignedIdentifie
     }
 
     if ((target as MutableGameMakerAstNode).type === "Identifier") {
-        const identifierName = Core.getIdentifierText(target as MutableGameMakerAstNode);
+        const identifierName = Core.getIdentifierText(target);
         if (identifierName) {
             assignedIdentifiers.add(identifierName);
         }
@@ -623,7 +619,7 @@ function getLoopConditionExpression(loopNode: MutableGameMakerAstNode): MutableG
         return null;
     }
 
-    const testNode = (loopNode as MutableAstRecord).test;
+    const testNode = loopNode.test;
     return Core.isObjectLike(testNode) ? (testNode as MutableGameMakerAstNode) : null;
 }
 

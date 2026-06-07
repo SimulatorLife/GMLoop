@@ -45,8 +45,7 @@ export function collectDeprecatedFunctionNames(
         return names;
     }
 
-    const traversal: DocCommentTraversalService =
-        docCommentTraversal ?? (resolveDocCommentTraversalService(ast) as DocCommentTraversalService);
+    const traversal: DocCommentTraversalService = docCommentTraversal ?? resolveDocCommentTraversalService(ast);
 
     traversal.forEach((node, comments) => {
         if (!topLevelFunctions.has(node)) {

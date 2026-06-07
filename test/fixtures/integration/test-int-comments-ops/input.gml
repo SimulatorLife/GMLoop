@@ -60,7 +60,8 @@ function twojointik(x1, y1, z1, x2dir, y2dir, z2dir, x3, y3, z3, length1, length
 	return [x2, y2, z2, x3, y3, z3];
 }
 
-alarm[1] = 10; // not everything loaded yet, check again in a bit
+alarm[1] =  10 // not everything loaded yet, check again in a bit
+
 
 #region Collision
 

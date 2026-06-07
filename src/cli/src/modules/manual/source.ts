@@ -49,7 +49,7 @@ async function ensureDirectoryExists(root, { required, label }) {
         }
 
         const message = getErrorMessageOrFallback(error);
-        throw new Error(`${label} '${root}' is unavailable. (${message})`);
+        throw new Error(`${label} '${root}' is unavailable. (${message})`, { cause: error });
     }
 }
 
@@ -102,7 +102,7 @@ export async function readManualText(root, relativePath) {
         return await fs.readFile(absolutePath, "utf8");
     } catch (error) {
         const message = getErrorMessageOrFallback(error);
-        throw new Error(`Failed to read manual asset '${relativePath}' from '${root}'. (${message})`);
+        throw new Error(`Failed to read manual asset '${relativePath}' from '${root}'. (${message})`, { cause: error });
     }
 }
 
@@ -116,7 +116,7 @@ export async function readManualJson(root, relativePath) {
         });
     } catch (error) {
         const message = getErrorMessageOrFallback(error);
-        throw new Error(`Manual asset '${relativePath}' did not contain valid JSON. (${message})`);
+        throw new Error(`Manual asset '${relativePath}' did not contain valid JSON. (${message})`, { cause: error });
     }
 }
 

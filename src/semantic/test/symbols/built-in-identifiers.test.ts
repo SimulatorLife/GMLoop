@@ -33,12 +33,7 @@ void describe("loadBuiltInIdentifiers", () => {
 
         const result = await loadBuiltInIdentifiers(facade);
 
-        const sortedNames = [...result.names].reduce((acc, item) => {
-            const insertIndex = acc.findIndex((existing) => existing > item);
-            return insertIndex === -1
-                ? [...acc, item]
-                : [...acc.slice(0, insertIndex), item, ...acc.slice(insertIndex)];
-        }, []);
+        const sortedNames = [...result.names].sort();
         assert.deepStrictEqual(sortedNames, ["demo", "other"]);
     });
 

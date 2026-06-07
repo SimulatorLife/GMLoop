@@ -10,11 +10,12 @@ This package powers GML-native codemods and semantic refactoring transactions, a
 - Owns atomic cross-file edits, metadata updates, and structural migrations.
 - Implements a jscodeshift-like Collection API for GML ASTs.
 - Is the ONLY layer that should decide whether a rename requires cross-file edits or metadata changes.
+- **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 
 It does not replace lint or formatter domains:
 
-- `@gmloop/lint` owns **Diagnostic Reporting** and **Local Repairs** (single-file fixes).
-- `@gmloop/format` is **Formatter-only** (layout/canonical rendering) and does not own refactor transactions.
+- `@gmloop/lint` owns **Diagnostic Reporting** and **Local Repairs** (single-file fixes). **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
+- `@gmloop/format` is **Formatter-only** (layout/canonical rendering) and does not own refactor transactions. **The formatter never repairs invalid syntax and only formats valid AST.**
 - `@gmloop/cli` is the composition root that invokes refactor workflows through the `refactor` command.
 
 ## Responsibilities
@@ -43,7 +44,7 @@ Current guardrails focus on the two hottest naming-convention paths that showed 
 - CLI semantic bridge lookups for script-backed callable declarations now use a resource-path index instead of rescanning every script entry for each lookup.
 - Naming-convention planning now skips macro-expansion dependency scans for batches that only touch top-level/resource symbols, instead of parsing macro sources on every run whether local renames are present or not.
 - Resource rename metadata planning now indexes inbound metadata references once per semantic bridge and reuses parsed `.yy/.yyp` documents across the batch instead of rescanning and reparsing them for every rename.
-- `WorkspaceEdit` now caches grouped text edits per revision and skips the second structural validation pass when the same immutable workspace is applied immediately after validation.
+- `WorkspaceEdit` now caches grouped text edits per revision and tracks telemetry counters incrementally, avoiding extra full-edit scans in large codemod batches.
 - The CLI refactor command now uses the semantic workspace's default GML project-index concurrency instead of forcing a serial build, so large codemod runs do not bottleneck on one-file-at-a-time indexing.
 - Globalvar and loop-length codemod executions now reuse source text captured during planning when applying a workspace edit, eliminating redundant per-file reads in dry-run and write modes.
 - Semantic query caches now use least-recently-used eviction so hot symbol/file lookups survive cache pressure during large codemod batches.
@@ -425,11 +426,8 @@ configures the `function` category.
                     "rm_": "roomResourceName"
                 }
             },
-            "loopLengthHoisting": {
-                "functionSuffixes": {
-                    "array_length": "len"
-                }
-            }
+            "scientificNotation": {},
+            "docCommentAlignment": {}
         }
     }
 }
@@ -853,15 +851,12 @@ if (!plan.batchValidation.valid) {
 }
 
 // Review hot reload dependency cascade
+// Use top-level aliases to avoid four-segment property chains
 if (plan.cascadeResult) {
-    console.log(
-        `Total symbols to reload: ${plan.cascadeResult.metadata.totalSymbols}`
-    );
-    console.log(
-        `Max dependency distance: ${plan.cascadeResult.metadata.maxDistance}`
-    );
+    console.log(`Total symbols to reload: ${plan.cascadeResult.totalSymbols}`);
+    console.log(`Max dependency distance: ${plan.cascadeResult.maxDistance}`);
 
-    if (plan.cascadeResult.metadata.hasCircular) {
+    if (plan.cascadeResult.hasCircular) {
         console.warn("Circular dependencies detected:");
         for (const cycle of plan.cascadeResult.circular) {
             console.warn("  Cycle:", cycle.join(" → "));
@@ -1543,5 +1538,6 @@ providing instant feedback in IDE rename dialogs.
 
 ## TODO
 
+- **FEAT**: For renaming script files, we should allow for specifying a different naming convention for ones that contain a single struct definition. For example, if we have "LinkedHashMap.gml" that defines a single struct called `LinkedHashMap`, we should allow for the file to be renamed to match the struct name (e.g., "LinkedHashMap.gml") without being flagged for renaming, even if it doesn't follow the standard script naming convention (e.g., `scr_` prefix). This would allow for more natural naming of struct files while still enforcing naming conventions for regular scripts.
 - For the renaming fix, we should support an allow/deny list of prefixes, suffixes, and names that are exempt from renaming. For example, if a project's `gmploop.json` specifies that sprites must use the `spr_` prefix, the rename configuration should also allow exceptions such as sprites with the tex\_ prefix so they are not flagged for renaming.
 - Alternatively, instead of requiring a specific prefix or suffix, we could support a denylist of disallowed names, prefixes, or suffixes. So, resources would only be flagged for renaming if they match an entry in the denylist. For example, if a resource is named `__apple` and the denylist includes the prefix `__`, it would be flagged for renaming, since it matches a disallowed naming pattern. In this mode, renaming would follow a default or separately defined naming rule (e.g., a standard prefix/suffix or pattern), applied only when a name violates the denylist. In this mode, a resource that matches the denylist would first check its inheritance tree and try to inherit a valid naming prefix from its parent chain. If no applicable prefix is found, it should attempt to remove the disallowed prefix, provided the result passes all safety checks. If that still fails, it should fall back to the default naming convention.

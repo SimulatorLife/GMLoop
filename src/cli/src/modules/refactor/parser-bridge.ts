@@ -1,24 +1,40 @@
 import { readFile } from "node:fs/promises";
 
-import { Parser } from "@gmloop/parser";
 import type * as Refactor from "@gmloop/refactor";
 
+import type { ParserAdapterFactory } from "./bridge-types.js";
+
 /**
- * Parser bridge that adapts @gmloop/parser to the refactor engine.
+ * Parser bridge that adapts the GML parser to the refactor engine's parser contract.
+ *
+ * The parser adapter is injected through the constructor so callers can supply
+ * a custom parse function for testing without requiring a real GMLParser instance.
+ * The default adapter factory is provided by the bridge-dependencies module, keeping
+ * concrete workspace imports out of this adapter class.
  */
 export class GmlParserBridge implements Refactor.ParserBridge {
+    private readonly parserAdapter: (source: string) => unknown;
+
+    /**
+     * @param parserAdapterFactory - Optional factory that returns a parse function.
+     *   When omitted, the caller (typically the bridge-factory) is responsible for
+     *   providing the default adapter through the factory function so the bridge
+     *   itself remains decoupled from the parser workspace.
+     */
+    constructor(parserAdapterFactory?: ParserAdapterFactory) {
+        // The factory (if provided) is a factory-of-factories: it produces the
+        // parse function itself, allowing callers to capture custom parser
+        // configuration at the point where the concrete adapter is assembled.
+        this.parserAdapter = parserAdapterFactory ? parserAdapterFactory() : () => ({ start: 0, end: 0 });
+    }
+
     /**
      * Parse a GML file and return a refactor-compatible AST.
      * @param filePath Path to the GML file
      */
     async parse(filePath: string): Promise<Refactor.AstNode> {
         const sourceText = await readFile(filePath, "utf8");
-        const parser = new Parser.GMLParser(sourceText, {
-            getLocations: true,
-            simplifyLocations: true
-        });
-
-        const ast = parser.parse();
+        const ast = this.parserAdapter(sourceText);
 
         // Adapt the @gmloop/parser AST to @gmloop/refactor AST
         return this.adaptNode(ast);

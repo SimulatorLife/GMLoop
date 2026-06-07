@@ -4,22 +4,11 @@ import { describe, it } from "node:test";
 import { ScopeTracker } from "../src/scopes/scope-tracker.js";
 
 void describe("ScopeTracker: getScopesByPath", () => {
-    void it("returns empty array for null path", () => {
+    void it("returns empty array for null, undefined, or empty string path", () => {
         const tracker = new ScopeTracker({ enabled: true });
-        const result = tracker.getScopesByPath(null);
-        assert.deepStrictEqual(result, []);
-    });
-
-    void it("returns empty array for undefined path", () => {
-        const tracker = new ScopeTracker({ enabled: true });
-        const result = tracker.getScopesByPath(undefined);
-        assert.deepStrictEqual(result, []);
-    });
-
-    void it("returns empty array for empty string path", () => {
-        const tracker = new ScopeTracker({ enabled: true });
-        const result = tracker.getScopesByPath("");
-        assert.deepStrictEqual(result, []);
+        assert.deepStrictEqual(tracker.getScopesByPath(null), []);
+        assert.deepStrictEqual(tracker.getScopesByPath(undefined), []);
+        assert.deepStrictEqual(tracker.getScopesByPath(""), []);
     });
 
     void it("returns empty array for non-existent path", () => {

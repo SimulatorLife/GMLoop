@@ -4,8 +4,7 @@ import { resolveProjectRelativeFilePath } from "../project-index/path-normalizat
 import { applyAssetRenames, planAssetRenames } from "./asset-renames/index.js";
 import { evaluateIdentifierCaseAssetRenamePolicy } from "./asset-renames/policy.js";
 import { ConflictSeverity } from "./conflict-severity.js";
-import { defaultIdentifierCaseFsFacade } from "./fs-facade.js";
-import { peekIdentifierCaseDryRunContext } from "./identifier-case-context.js";
+import { defaultIdentifierCaseFsFacade, peekIdentifierCaseDryRunContext } from "./identifier-case-helpers.js";
 import { formatIdentifierCase } from "./identifier-case-utils.js";
 import { setIdentifierCaseOption } from "./option-store.js";
 import { IdentifierCaseStyle, normalizeIdentifierCaseAssetStyle, normalizeIdentifierCaseOptions } from "./options.js";
@@ -57,6 +56,25 @@ type IdentifierCaseStyleValue = (typeof IdentifierCaseStyle)[keyof typeof Identi
 // non-enumerable property to the Map instance so it does not affect normal
 // behavior. Remove once the failing fixtures are resolved.
 let DBG_RENAME_MAP_COUNTER = 1;
+
+/**
+ * Tags a rename Map with a non-enumerable debug identifier for test diagnostics.
+ * Safe to call on non-Map objects or Maps that already have the property set.
+ */
+function attachDebugRenameMapId(renameMap: Map<unknown, unknown>): void {
+    try {
+        if (renameMap && typeof Object.defineProperty === "function" && !Object.hasOwn(renameMap, "__dbgId")) {
+            Object.defineProperty(renameMap, "__dbgId", {
+                value: `rm-${DBG_RENAME_MAP_COUNTER++}`,
+                enumerable: false,
+                configurable: true,
+                writable: false
+            });
+        }
+    } catch {
+        /* ignore */
+    }
+}
 
 function getScopeDisplayName(scopeRecord, fallback = "<unknown>") {
     if (!Core.isObjectLike(scopeRecord)) {
@@ -779,18 +797,7 @@ export async function prepareIdentifierCasePlan(options) {
     // the same Map instance flows through capture/attach/apply or if new
     // instances are created/overwritten. This metadata is non-enumerable
     // and purely diagnostic; remove it after triage is complete.
-    try {
-        if (renameMap && typeof Object.defineProperty === "function" && !Object.hasOwn(renameMap, "__dbgId")) {
-            Object.defineProperty(renameMap, "__dbgId", {
-                value: `rm-${DBG_RENAME_MAP_COUNTER++}`,
-                enumerable: false,
-                configurable: true,
-                writable: false
-            });
-        }
-    } catch {
-        /* ignore */
-    }
+    attachDebugRenameMapId(renameMap);
 
     setIdentifierCaseOption(options, "__identifierCaseRenameMap", renameMap);
     finalizeIdentifierCasePlan({
@@ -1033,18 +1040,7 @@ function finalizePlanWithoutFileRecord({
     metrics,
     finalizeMetrics
 }: FinalizePlanWithoutFileRecordParams) {
-    try {
-        if (renameMap && typeof Object.defineProperty === "function" && !Object.hasOwn(renameMap, "__dbgId")) {
-            Object.defineProperty(renameMap, "__dbgId", {
-                value: `rm-${DBG_RENAME_MAP_COUNTER++}`,
-                enumerable: false,
-                configurable: true,
-                writable: false
-            });
-        }
-    } catch {
-        /* ignore */
-    }
+    attachDebugRenameMapId(renameMap);
 
     if (renameMap && typeof renameMap.size === "number" && renameMap.size > 0) {
         setIdentifierCaseOption(options, "__identifierCaseRenameMap", renameMap);

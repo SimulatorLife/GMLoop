@@ -7,12 +7,18 @@ import { test } from "node:test";
 import { Core } from "@gmloop/core";
 
 import {
+    addObjectEvent,
     addProjectResource,
+    addRoomInstance,
+    deleteRoomInstance,
     duplicateProjectResource,
     moveProjectResource,
     ProjectResourceKind,
+    readProjectMetadataDocument,
     removeProjectResource,
-    renameProjectResource
+    renameProjectResource,
+    resolveProjectManifestFile,
+    updateRoomInstance
 } from "../src/project-resources/index.js";
 
 async function createTemporaryProjectRoot(): Promise<string> {
@@ -242,6 +248,258 @@ void test("duplicateProjectResource and moveProjectResource support dry-run sema
         });
         assert.equal(moveWrite.resourcePath, "scripts/moved/scr_copy.yy");
         await assert.doesNotReject(access(path.join(projectRoot, "scripts/moved/scr_copy.gml")));
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("addObjectEvent appends event metadata and source with dry-run safety", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.OBJECT,
+            resourceName: "obj_player"
+        });
+
+        const dryRun = await addObjectEvent({
+            descriptor: { category: "Create", descriptor: "0" },
+            dryRun: true,
+            handlerSource: "x = 1;",
+            objectName: "obj_player",
+            projectRoot
+        });
+        assert.equal(dryRun.action, "add");
+        assert.equal(dryRun.dryRun, true);
+        assert.equal(dryRun.eventFilePath, "objects/obj_player/0_0.gml");
+        assert.deepEqual(dryRun.writtenPaths, ["objects/obj_player/obj_player.yy", "objects/obj_player/0_0.gml"]);
+        await assert.rejects(access(path.join(projectRoot, "objects/obj_player/0_0.gml")));
+
+        const writeResult = await addObjectEvent({
+            descriptor: { category: "Create", descriptor: "0" },
+            dryRun: false,
+            handlerSource: "x = 2;",
+            objectName: "obj_player",
+            projectRoot
+        });
+        assert.equal(writeResult.dryRun, false);
+        assert.equal(writeResult.eventType, 0);
+        assert.equal(writeResult.eventNumber, 0);
+
+        const objectMetadataPath = path.join(projectRoot, "objects/obj_player/obj_player.yy");
+        const objectMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(objectMetadataPath, "utf8"),
+            objectMetadataPath
+        ).document;
+        assert.equal(objectMetadata.eventList[0].eventType, 0);
+        assert.equal(objectMetadata.eventList[0].eventNum, 0);
+        assert.equal(objectMetadata.eventList[0].eventContents, "objects/obj_player/0_0.gml");
+        assert.equal(await readFile(path.join(projectRoot, "objects/obj_player/0_0.gml"), "utf8"), "x = 2;\n");
+
+        await assert.rejects(
+            addObjectEvent({
+                descriptor: { category: "Create", descriptor: "0" },
+                dryRun: true,
+                handlerSource: "x = 3;",
+                objectName: "obj_player",
+                projectRoot
+            }),
+            /already has event 0:0/u
+        );
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("addRoomInstance appends an object instance to a room with dry-run safety", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.OBJECT,
+            resourceName: "obj_player"
+        });
+        await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.ROOM,
+            resourceName: "rm_main"
+        });
+
+        const dryRun = await addRoomInstance({
+            dryRun: true,
+            objectName: "obj_player",
+            projectRoot,
+            roomName: "rm_main",
+            x: 32,
+            y: 64
+        });
+        assert.equal(dryRun.action, "add");
+        assert.equal(dryRun.dryRun, true);
+        assert.equal(dryRun.objectPath, "objects/obj_player/obj_player.yy");
+        assert.equal(dryRun.roomPath, "rooms/rm_main/rm_main.yy");
+        assert.deepEqual(dryRun.writtenPaths, ["rooms/rm_main/rm_main.yy"]);
+
+        const roomMetadataPath = path.join(projectRoot, "rooms/rm_main/rm_main.yy");
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.deepEqual(dryRunRoomMetadata.instanceCreationOrder, []);
+
+        const writeResult = await addRoomInstance({
+            dryRun: false,
+            objectName: "obj_player",
+            projectRoot,
+            roomName: "rm_main",
+            x: 128,
+            y: 256
+        });
+        assert.equal(writeResult.dryRun, false);
+        assert.match(writeResult.instanceId, /^inst_[a-f0-9]{32}$/u);
+
+        const roomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(roomMetadata.instanceCreationOrder[0].name, writeResult.instanceId);
+        assert.equal(roomMetadata.instanceCreationOrder[0].path, "rooms/rm_main/rm_main.yy");
+        assert.equal(roomMetadata.layers[0].instances[0].name, writeResult.instanceId);
+        assert.equal(roomMetadata.layers[0].instances[0].objectId.name, "obj_player");
+        assert.equal(roomMetadata.layers[0].instances[0].objectId.path, "objects/obj_player/obj_player.yy");
+        assert.equal(Number(roomMetadata.layers[0].instances[0].x), 128);
+        assert.equal(Number(roomMetadata.layers[0].instances[0].y), 256);
+
+        const updateDryRun = await updateRoomInstance({
+            dryRun: true,
+            instanceId: writeResult.instanceId,
+            projectRoot,
+            roomName: "rm_main",
+            x: 400,
+            y: 500
+        });
+        assert.equal(updateDryRun.action, "update");
+        assert.equal(updateDryRun.dryRun, true);
+        assert.equal(updateDryRun.x, 400);
+        assert.equal(updateDryRun.y, 500);
+
+        const dryRunUpdateMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(Number(dryRunUpdateMetadata.layers[0].instances[0].x), 128);
+        assert.equal(Number(dryRunUpdateMetadata.layers[0].instances[0].y), 256);
+
+        const updateWrite = await updateRoomInstance({
+            dryRun: false,
+            instanceId: writeResult.instanceId,
+            projectRoot,
+            roomName: "rm_main",
+            x: 640,
+            y: 360
+        });
+        assert.equal(updateWrite.action, "update");
+        assert.equal(updateWrite.objectPath, "objects/obj_player/obj_player.yy");
+
+        const updatedMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(Number(updatedMetadata.layers[0].instances[0].x), 640);
+        assert.equal(Number(updatedMetadata.layers[0].instances[0].y), 360);
+
+        const deleteDryRun = await deleteRoomInstance({
+            dryRun: true,
+            instanceId: writeResult.instanceId,
+            projectRoot,
+            roomName: "rm_main"
+        });
+        assert.equal(deleteDryRun.action, "delete");
+        assert.equal(deleteDryRun.dryRun, true);
+        assert.equal(deleteDryRun.x, 640);
+        assert.equal(deleteDryRun.y, 360);
+
+        const dryRunDeleteMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(dryRunDeleteMetadata.instanceCreationOrder[0].name, writeResult.instanceId);
+        assert.equal(dryRunDeleteMetadata.layers[0].instances[0].name, writeResult.instanceId);
+
+        const deleteWrite = await deleteRoomInstance({
+            dryRun: false,
+            instanceId: writeResult.instanceId,
+            projectRoot,
+            roomName: "rm_main"
+        });
+        assert.equal(deleteWrite.action, "delete");
+        assert.equal(deleteWrite.objectName, "obj_player");
+
+        const deletedMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.deepEqual(deletedMetadata.instanceCreationOrder, []);
+        assert.deepEqual(deletedMetadata.layers[0].instances, []);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("resolveProjectManifestFile locates the single .yyp manifest and reports its descriptor", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        const manifest = await resolveProjectManifestFile(projectRoot);
+
+        assert.equal(manifest.absolutePath, path.join(projectRoot, "MyGame.yyp"));
+        assert.equal(manifest.relativePath, "MyGame.yyp");
+        assert.equal(manifest.projectName, "MyGame");
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("resolveProjectManifestFile throws when the project root has no .yyp manifest", async () => {
+    const projectRoot = await fsMkdtemp("gmloop-missing-manifest-");
+
+    try {
+        await assert.rejects(resolveProjectManifestFile(projectRoot), /Could not locate a \.yyp manifest/u);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("resolveProjectManifestFile throws when the project root has multiple .yyp manifests", async () => {
+    const projectRoot = await fsMkdtemp("gmloop-duplicate-manifest-");
+
+    try {
+        await writeProjectFile(projectRoot, "First.yyp", '{"name":"First"}\n');
+        await writeProjectFile(projectRoot, "Second.yyp", '{"name":"Second"}\n');
+
+        await assert.rejects(
+            resolveProjectManifestFile(projectRoot),
+            /multiple \.yyp manifests.*Project operations require exactly one project manifest/u
+        );
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("readProjectMetadataDocument parses a manifest into its underlying record", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        const manifestPath = path.join(projectRoot, "MyGame.yyp");
+        const document = await readProjectMetadataDocument(manifestPath);
+
+        assert.equal(document.name, "MyGame");
+        assert.equal(document.resourceType, "GMProject");
+        assert.deepEqual(document.resources, []);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

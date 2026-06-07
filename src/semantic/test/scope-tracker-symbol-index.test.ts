@@ -109,14 +109,12 @@ void test("getScopesForSymbol provides O(1) lookup for hot reload invalidation",
 
     tracker.exitScope();
 
-    const startTime = Date.now();
+    const start = performance.now();
     const result = tracker.getScopesForSymbol("hotSymbol");
-    const endTime = Date.now();
+    const elapsed = performance.now() - start;
 
     assert.strictEqual(result.length, 10);
-
-    const lookupTime = endTime - startTime;
-    assert.ok(lookupTime < 10, `Lookup took ${lookupTime}ms, expected < 10ms for O(1) performance`);
+    assert.ok(elapsed < 10, `Lookup took ${elapsed.toFixed(3)}ms, expected < 10ms for O(1) performance`);
 });
 
 void test("getScopesForSymbol handles symbols with both declarations and references", () => {

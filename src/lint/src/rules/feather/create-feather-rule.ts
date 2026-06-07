@@ -1,9 +1,13 @@
 import type { Rule } from "eslint";
 
-import { normalizeDocParamName } from "../../parameter-utils/index.js";
-import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
+import { normalizeDocParamName } from "../../doc-comment/normalize-param-name.js";
+import { gmlRuleDeprecatedIdentifierServices } from "../gml/gml-rule-services.js";
 import { findMatchingBraceEndIndex, resolveLocFromIndex } from "../gml/rule-base-helpers.js";
 import type { FeatherManifestEntry } from "./manifest.js";
+
+// Consume deprecated-identifier metadata through the shared rule-services
+// contract so rule callers stay stable if the backing catalog module moves.
+const { getDeprecatedIdentifierCatalogEntry } = gmlRuleDeprecatedIdentifierServices;
 
 type EnumBlockMatch = {
     start: number;
@@ -730,38 +734,51 @@ function createGm1030Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 function splitCodeAndTrailingLineComment(line: string): { codeSegment: string; trailingComment: string } {
-    let inSingleQuotedString = false;
-    let inDoubleQuotedString = false;
-    let escaped = false;
+    // Track position within the line and current parsing mode using a discriminated
+    // union instead of three separate boolean flags. This makes the state transitions
+    // explicit and eliminates the verbose compound boolean checks (e.g. "!inSingleQuotedString
+    // && !inDoubleQuotedString").
+    let state: "outside" | "'" | '"' | "escaped" = "outside";
+
     for (let index = 0; index < line.length - 1; index += 1) {
         const character = line[index];
         const nextCharacter = line[index + 1];
 
-        if (escaped) {
-            escaped = false;
-            continue;
-        }
+        if (state === "escaped") {
+            state = "outside";
+        } else if (state === "'" || state === '"') {
+            if (character === "\\") {
+                state = "escaped";
+            } else if (character === state) {
+                state = "outside";
+            }
+        } else {
+            // "outside"
+            switch (character) {
+                case "\\": {
+                    state = "escaped";
 
-        if ((inSingleQuotedString || inDoubleQuotedString) && character === "\\") {
-            escaped = true;
-            continue;
-        }
+                    break;
+                }
+                case "'": {
+                    state = "'";
 
-        if (!inDoubleQuotedString && character === "'") {
-            inSingleQuotedString = !inSingleQuotedString;
-            continue;
-        }
+                    break;
+                }
+                case '"': {
+                    state = '"';
 
-        if (!inSingleQuotedString && character === '"') {
-            inDoubleQuotedString = !inDoubleQuotedString;
-            continue;
-        }
-
-        if (!inSingleQuotedString && !inDoubleQuotedString && character === "/" && nextCharacter === "/") {
-            return {
-                codeSegment: line.slice(0, index),
-                trailingComment: line.slice(index)
-            };
+                    break;
+                }
+                default: {
+                    if (character === "/" && nextCharacter === "//") {
+                        return {
+                            codeSegment: line.slice(0, index),
+                            trailingComment: line.slice(index)
+                        };
+                    }
+                }
+            }
         }
     }
 
@@ -876,6 +893,10 @@ function splitMacroLineSegments(line: string): MacroLineSegments {
 
 function removeTrailingMacroSemicolonIfSafe(line: string): string {
     const macroLineSegments = splitMacroLineSegments(line);
+    if (macroLineSegments.hasContinuation) {
+        return line;
+    }
+
     const trailingSemicolon = /;\s*$/u.exec(macroLineSegments.bodyWithoutContinuation);
     if (!trailingSemicolon) {
         return line;
@@ -1337,10 +1358,10 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                 ];
                 const aliasEntries = aliasMatches.map((match) => ({
                     name: match[1],
-                    index: Number.parseInt(match[2])
+                    index: Number.parseInt(match[2], 10)
                 }));
                 const argumentIndexes = [...body.matchAll(/\bargument(\d+)\b/g)].map((match) =>
-                    Number.parseInt(match[1])
+                    Number.parseInt(match[1], 10)
                 );
                 const maxArgumentIndex = argumentIndexes.length === 0 ? -1 : Math.max(...argumentIndexes);
 
@@ -1409,7 +1430,7 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 
                 const functionBody = fullText.slice(openBraceIndex + 1, closeBraceEndIndex - 1);
                 const argumentIndexes = [...functionBody.matchAll(/\bargument(\d+)\b/g)].map((match) =>
-                    Number.parseInt(match[1])
+                    Number.parseInt(match[1], 10)
                 );
                 const maxArgumentIndex = argumentIndexes.length === 0 ? -1 : Math.max(...argumentIndexes);
 
@@ -1418,7 +1439,7 @@ function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                     /^\s*var\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*argument(\d+)\s*;\s*$/gm
                 )) {
                     const aliasName = match[1];
-                    const aliasIndex = Number.parseInt(match[2]);
+                    const aliasIndex = Number.parseInt(match[2], 10);
                     aliasNamesByIndex.set(aliasIndex, aliasName);
                 }
 
@@ -1852,7 +1873,7 @@ function createGm2031Rule(entry: FeatherManifestEntry): Rule.RuleModule {
             if (previousNonEmptyLineIndex >= 0 && lines[previousNonEmptyLineIndex].trim() === "file_find_close();") {
                 // A close already precedes this open — skip past it so we keep scanning
                 // for subsequent un-guarded opens rather than stopping immediately.
-                index = previousNonEmptyLineIndex + 1;
+                index += 1;
                 continue;
             }
 

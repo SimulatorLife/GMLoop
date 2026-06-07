@@ -70,3 +70,23 @@ export function normalizeLintRulesConfig(
 
     return Object.freeze(normalizedRules);
 }
+
+/**
+ * Normalize `lintRules` from a shared `gmloop.json` object.
+ *
+ * Returns `null` when the config contains invalid `lintRules`, an invalid
+ * `lintRuleset` value, or malformed rule-level entries, making it suitable
+ * for project-open flows where unknown gmloop properties should not crash the UI.
+ *
+ * @param config Shared top-level project config.
+ * @returns Normalized rule-level overrides, or `null` when the config is invalid.
+ */
+export function normalizeLintRulesConfigOrNull(
+    config: GmloopProjectConfig
+): Readonly<Record<string, "off" | "warn" | "error">> | null {
+    try {
+        return normalizeLintRulesConfig(config);
+    } catch {
+        return null;
+    }
+}

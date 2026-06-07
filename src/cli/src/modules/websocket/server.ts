@@ -16,13 +16,7 @@ const { describeValueForError } = Core;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 17_890;
 
-function describeWebSocketError(error: unknown): string {
-    if (Core.isErrorLike(error)) {
-        return error.message;
-    }
-
-    return describeValueForError(error);
-}
+const describeWebSocketError = Core.getErrorMessage;
 
 export interface PatchWebSocketServerOptions {
     host?: string;
@@ -140,12 +134,12 @@ export async function startPatchWebSocketServer({
 
         if (prepareInitialMessages) {
             try {
-                let replayedCount = 0;
-                for (const payload of prepareInitialMessages()) {
-                    if (sendJsonMessage(ws, payload, clientId)) {
-                        replayedCount += 1;
-                    }
-                }
+                const replayPayloads = Array.from(prepareInitialMessages());
+                const replayPayload = replayPayloads.length === 1 ? replayPayloads[0] : replayPayloads;
+                const replayedCount =
+                    replayPayloads.length > 0 && sendJsonMessage(ws, replayPayload, clientId)
+                        ? replayPayloads.length
+                        : 0;
 
                 if (verbose && replayedCount > 0) {
                     console.log(`[WebSocket] Sent ${replayedCount} queued message(s) to ${clientId}`);

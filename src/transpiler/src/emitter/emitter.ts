@@ -65,9 +65,17 @@ import { collectGlobalVarNames } from "./local-variable-collector.js";
 import { mapBinaryOperator, mapUnaryOperator } from "./operator-mapping.js";
 import { ensureStatementTerminated } from "./statement-termination-policy.js";
 import { StringBuilder } from "./string-builder.js";
+import {
+    isIdentifierNode,
+    isIfStatementNode,
+    isLiteralNode,
+    isProgramNode,
+    isTemplateStringTextNode
+} from "./type-guards.js";
 import { lowerWithStatement } from "./with-lowering.js";
 
 type StatementLike = GmlNode | undefined | null;
+const EMPTY_ARGUMENT_LIST: readonly string[] = Object.freeze([]);
 
 const DEFAULT_OPTIONS: EmitOptions = Object.freeze({
     globalsIdent: "global",
@@ -76,10 +84,16 @@ const DEFAULT_OPTIONS: EmitOptions = Object.freeze({
 });
 
 export class GmlToJsEmitter {
-    private readonly identifierAnalyzer: IdentifierAnalyzer;
-    private readonly callTargetAnalyzer: CallTargetAnalyzer;
+    /**
+     * Semantic oracle combining identifier analysis and call-target classification.
+     *
+     * Both capabilities are provided by the same object (e.g. `DefaultSemanticOracle`
+     * or `EventContextOracle`) so a single field suffices for both roles.
+     */
+    private readonly semantic: IdentifierAnalyzer & CallTargetAnalyzer;
     private readonly options: EmitOptions;
     private readonly globalVars: Set<string>;
+    private readonly initializedGlobalVars: Set<string>;
     /**
      * Script symbol IDs referenced by call expressions encountered during emission.
      *
@@ -94,10 +108,10 @@ export class GmlToJsEmitter {
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
     constructor(semantic: IdentifierAnalyzer & CallTargetAnalyzer, options: Partial<EmitOptions> = {}) {
-        this.identifierAnalyzer = semantic;
-        this.callTargetAnalyzer = semantic;
+        this.semantic = semantic;
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this.globalVars = new Set();
+        this.initializedGlobalVars = new Set();
         this.scriptRefs = new Set();
         this.emitDepth = 0;
     }
@@ -126,6 +140,7 @@ export class GmlToJsEmitter {
         const isTopLevelEmit = this.emitDepth === 0;
         if (isTopLevelEmit) {
             this.globalVars.clear();
+            this.initializedGlobalVars.clear();
             this.scriptRefs.clear();
         }
         this.emitDepth += 1;
@@ -133,7 +148,7 @@ export class GmlToJsEmitter {
             // Pre-collect all globalvar-declared names before walking the AST so that
             // identifiers referenced before their `globalvar` declaration (a legal GML
             // forward reference) are emitted as `global.<name>` rather than bare names.
-            if (ast.type === "Program") {
+            if (isProgramNode(ast)) {
                 for (const name of collectGlobalVarNames(ast)) {
                     this.globalVars.add(name);
                 }
@@ -335,8 +350,8 @@ export class GmlToJsEmitter {
     }
 
     private visitIdentifier(ast: IdentifierNode): string {
-        const kind = this.identifierAnalyzer.kindOfIdent(ast);
-        const name = this.identifierAnalyzer.nameOfIdent(ast);
+        const kind = this.semantic.kindOfIdent(ast);
+        const name = this.semantic.nameOfIdent(ast);
         if (this.globalVars.has(name)) {
             return `${this.options.globalsIdent}.${name}`;
         }
@@ -395,7 +410,7 @@ export class GmlToJsEmitter {
         // Fall back to runtime evaluation
         const operand = this.visit(ast.argument);
         const op = mapUnaryOperator(ast.operator);
-        if (ast.argument.type === "Literal") {
+        if (isLiteralNode(ast.argument)) {
             return `${op}${operand}`;
         }
         return ast.prefix === false ? `(${operand})${op}` : `${op}(${operand})`;
@@ -439,7 +454,7 @@ export class GmlToJsEmitter {
     }
 
     private visitCallExpression(ast: CallExpressionNode): string {
-        const kind = this.callTargetAnalyzer.callTargetKind(ast);
+        const kind = this.semantic.callTargetKind(ast);
 
         // Fast path: builtin functions. Avoid eagerly joining arguments here so
         // the builtin path only visits each argument once.
@@ -453,7 +468,7 @@ export class GmlToJsEmitter {
         const argsList = this.joinArguments(ast.arguments);
 
         if (kind === "script") {
-            const scriptSymbol = this.callTargetAnalyzer.callTargetSymbol(ast);
+            const scriptSymbol = this.semantic.callTargetSymbol(ast);
             const scriptId = scriptSymbol ?? this.resolveIdentifierName(ast.object) ?? this.visit(ast.object);
             // Record this script reference for dependency tracking. The set is
             // populated during the single emission pass and exposed via getDependencies().
@@ -481,14 +496,10 @@ export class GmlToJsEmitter {
             const code = this.emit(stmts[0]);
             return code ? this.ensureStatementTermination(code) : "";
         }
-        // Multiple statements: use StringBuilder for efficiency
+        // Multiple statements: use StringBuilder for efficiency.
+        // Call `visit` directly to avoid re-entering the `emit` lifecycle for each statement.
         const builder = new StringBuilder(stmts.length);
-        for (const stmt of stmts) {
-            const code = this.emit(stmt);
-            if (code) {
-                builder.append(this.ensureStatementTermination(code));
-            }
-        }
+        this.appendStatementsWithTermination(builder, stmts);
         return builder.toString("\n");
     }
 
@@ -497,18 +508,17 @@ export class GmlToJsEmitter {
         if (stmts.length === 0) {
             return "{\n}";
         }
-        // Build block body with StringBuilder for efficiency
-        // Capacity: statements count + opening brace + closing brace
-        const builder = new StringBuilder(stmts.length + 2);
-        builder.append("{\n");
+        // Build block body by collecting terminated statements into an array, then
+        // joining.  This avoids allocating a StringBuilder for the common case where
+        // all statements produce output.  The result is wrapped with braces directly.
+        const codeLines: string[] = [];
         for (const stmt of stmts) {
-            const code = this.emit(stmt);
+            const code = this.visit(stmt);
             if (code) {
-                builder.append(`${this.ensureStatementTermination(code)}\n`);
+                codeLines.push(this.ensureStatementTermination(code));
             }
         }
-        builder.append("}");
-        return builder.toString();
+        return `{\n${codeLines.join("\n")}\n}`;
     }
 
     private visitIfStatement(ast: IfStatementNode): string {
@@ -517,10 +527,9 @@ export class GmlToJsEmitter {
         if (!ast.alternate) {
             return `if ${test}${consequent}`;
         }
-        const alternate =
-            ast.alternate.type === "IfStatement"
-                ? ` else ${this.visit(ast.alternate)}`
-                : ` else ${wrapConditionalBody(ast.alternate, this.visitNode)}`;
+        const alternate = isIfStatementNode(ast.alternate)
+            ? ` else ${this.visit(ast.alternate)}`
+            : ` else ${wrapConditionalBody(ast.alternate, this.visitNode)}`;
         return `if ${test}${consequent}${alternate}`;
     }
 
@@ -616,12 +625,7 @@ export class GmlToJsEmitter {
 
             // Process statements for this case
             const caseBuilder = new StringBuilder(stmts.length);
-            for (const stmt of stmts) {
-                const code = this.visit(stmt);
-                if (code) {
-                    caseBuilder.append(this.ensureStatementTermination(code));
-                }
-            }
+            this.appendStatementsWithTermination(caseBuilder, stmts);
 
             if (caseBuilder.length === 0) {
                 builder.append(header);
@@ -644,7 +648,11 @@ export class GmlToJsEmitter {
                 if (!identifier) {
                     return "";
                 }
+                if (this.initializedGlobalVars.has(identifier)) {
+                    return "";
+                }
                 this.globalVars.add(identifier);
+                this.initializedGlobalVars.add(identifier);
                 return `if (!Object.prototype.hasOwnProperty.call(${globalsIdent}, "${identifier}")) { ${globalsIdent}.${identifier} = undefined; }`;
             })
         );
@@ -725,7 +733,7 @@ export class GmlToJsEmitter {
             return "``";
         }
         // Fast path: single static text
-        if (atoms.length === 1 && atoms[0]?.type === "TemplateStringText") {
+        if (atoms.length === 1 && isTemplateStringTextNode(atoms[0])) {
             return `\`${escapeTemplateText(atoms[0].value)}\``;
         }
         // Build template string with StringBuilder to avoid O(n²) string concatenation
@@ -735,9 +743,7 @@ export class GmlToJsEmitter {
             if (!atom) {
                 continue;
             }
-            builder.append(
-                atom.type === "TemplateStringText" ? escapeTemplateText(atom.value) : `\${${this.visit(atom)}}`
-            );
+            builder.append(isTemplateStringTextNode(atom) ? escapeTemplateText(atom.value) : `\${${this.visit(atom)}}`);
         }
         builder.append("`");
         return builder.toString();
@@ -877,13 +883,7 @@ export class GmlToJsEmitter {
         const builder = new StringBuilder(statements.length + 2);
         builder.append("{\n");
         builder.append(`${prologueStatement};\n`);
-        for (const statement of statements) {
-            const code = this.emit(statement);
-            if (!code) {
-                continue;
-            }
-            builder.append(`${this.ensureStatementTermination(code)}\n`);
-        }
+        this.appendStatementsWithTermination(builder, statements);
         builder.append("}");
         return builder.toString();
     }
@@ -918,8 +918,8 @@ export class GmlToJsEmitter {
         if (typeof (node as IdentifierMetadata).name === "string") {
             return (node as IdentifierMetadata).name;
         }
-        if ((node as GmlNode).type === "Identifier") {
-            return this.identifierAnalyzer.nameOfIdent(node as IdentifierNode);
+        if (isIdentifierNode(node)) {
+            return this.semantic.nameOfIdent(node);
         }
         return null;
     }
@@ -939,8 +939,8 @@ export class GmlToJsEmitter {
     }
 
     private resolveMemberDotProperty(node: GmlNode): string {
-        if (node.type === "Identifier") {
-            return this.identifierAnalyzer.nameOfIdent(node);
+        if (isIdentifierNode(node)) {
+            return this.semantic.nameOfIdent(node);
         }
         return this.visit(node);
     }
@@ -949,10 +949,10 @@ export class GmlToJsEmitter {
      * Visit an array of argument nodes and return an array of strings.
      * This is optimized for the builtin function path which needs the array.
      */
-    private visitArguments(args: readonly GmlNode[]): string[] {
+    private visitArguments(args: readonly GmlNode[]): readonly string[] {
         // Fast path: no arguments
         if (args.length === 0) {
-            return [];
+            return EMPTY_ARGUMENT_LIST;
         }
         // Fast path: single argument
         if (args.length === 1) {
@@ -966,6 +966,15 @@ export class GmlToJsEmitter {
      * Join argument nodes into a comma-separated string.
      * This is optimized to avoid creating intermediate arrays.
      */
+    private appendStatementsWithTermination(builder: StringBuilder, stmts: readonly GmlNode[]): void {
+        for (const stmt of stmts) {
+            const code = this.emit(stmt);
+            if (code) {
+                builder.append(this.ensureStatementTermination(code));
+            }
+        }
+    }
+
     private joinArguments(args: readonly GmlNode[]): string {
         // Fast path: no arguments
         if (args.length === 0) {

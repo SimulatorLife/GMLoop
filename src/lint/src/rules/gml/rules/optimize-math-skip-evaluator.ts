@@ -264,24 +264,14 @@ export function evaluateMathOptimizationCandidate(
 }
 
 /**
- * Helper to narrow unknown to the shape expected by Core helpers that
- * accept `AstNodeRecord | null | undefined`.
- */
-function isAstNodeRecord(candidate: unknown): candidate is Record<string, unknown> {
-    return candidate !== null && typeof candidate === "object" && !Array.isArray(candidate);
-}
-
-/**
  * Evaluates whether a node should be skipped from traversal-based optimization.
- * This uses the core traversal skip logic in addition to expression-position checks.
+ * Delegates to Core.shouldSkipTraversal, which already handles non-object inputs
+ * by returning `false` — eliminating the need for a separate isAstNodeRecord guard.
  *
  * @param node - The AST node to evaluate
  * @returns true if the node should be skipped
  */
 export function shouldSkipNodeFromTraversal(node: unknown): boolean {
-    if (!isAstNodeRecord(node)) {
-        return false;
-    }
     return shouldSkipTraversal(node);
 }
 
@@ -313,7 +303,7 @@ export function evaluateCanonicalFormDecision(
     node: unknown,
     config: NumericLiteralCanonicalFormPolicy = DEFAULT_NUMERIC_LITERAL_POLICY
 ): boolean {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "Literal") {
         return false;
     }
@@ -328,9 +318,27 @@ export function evaluateCanonicalFormDecision(
         return false;
     }
 
-    const literalText = sourceText;
+    // Compute the canonical representation of the numeric value.  Since the
+    // source text may contain floating-point noise (e.g. "1.0000000000000002"
+    // parses to a value numerically equal to 1), compare using an epsilon-
+    // tolerant helper rather than strict string equality.
     const canonicalText = formatCanonicalNumericLiteralWithConfig(numericValue, config);
-    return literalText !== null && canonicalText !== null && literalText === canonicalText;
+    if (canonicalText === null) {
+        return false;
+    }
+
+    // When the canonical text is a finite number, use epsilon comparison so
+    // that noisy literals match their canonical form (e.g. "1.0000000000000002"
+    // → canonical "1" → numerically equal).  This guards against floating-point
+    // rounding artefacts from the parser that would otherwise prevent a
+    // legitimate rewrite even when the source and target are the same value.
+    const parsedCanonical = Number(canonicalText);
+    if (Number.isFinite(parsedCanonical)) {
+        return Core.areNumbersApproximatelyEqual(numericValue, parsedCanonical);
+    }
+
+    // Non-finite (NaN / ±Infinity) canonical text: fall back to strict equality.
+    return sourceText === canonicalText;
 }
 
 /**
@@ -391,7 +399,7 @@ function formatCanonicalNumericLiteralWithConfig(
  * @returns Numeric value if node represents a constant number, null otherwise
  */
 export function tryEvaluateNumericOperand(node: unknown): number | null {
-    const expression = unwrapParenthesized(node as Parameters<typeof unwrapParenthesized>[0]);
+    const expression = unwrapParenthesized(node);
     if (!expression) {
         return null;
     }

@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, reportProgramTextRewrite } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const DEFAULT_COMMENT_PLACEHOLDER_FRAGMENTS = Object.freeze([
     "Script assets have changed for v2.3.0",

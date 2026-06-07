@@ -8,6 +8,7 @@ import {
     collectIdentifierNamesInSubtree,
     createCommentTokenRangeIndex,
     findFirstAstNodeBy,
+    findNextNonWhitespaceIndex,
     findPreviousNonWhitespaceCharacter,
     findPreviousNonWhitespaceIndex,
     isAssignmentExpressionNode,
@@ -162,6 +163,18 @@ void test("findPreviousNonWhitespaceIndex honors line boundaries when requested"
 void test("findPreviousNonWhitespaceCharacter returns null when no prior token exists", () => {
     assert.equal(findPreviousNonWhitespaceCharacter("   \t", 2, false), null);
     assert.equal(findPreviousNonWhitespaceCharacter("x + y", 4, false), "+");
+});
+
+void test("findNextNonWhitespaceIndex skips whitespace and returns the closest token index", () => {
+    const sourceText = "x + y";
+    const spaceIndex = sourceText.indexOf(" ");
+
+    assert.equal(findNextNonWhitespaceIndex(sourceText, spaceIndex), spaceIndex + 1);
+});
+
+void test("findNextNonWhitespaceIndex returns null when no trailing token exists", () => {
+    assert.equal(findNextNonWhitespaceIndex("abc   ", 3), null);
+    assert.equal(findNextNonWhitespaceIndex("abc", 3), null);
 });
 
 void test("rangeContainsCommentToken uses the prefix index to detect comment markers without rescanning", () => {

@@ -7,7 +7,6 @@ import {
     Refactor,
     type RefactorEngine,
     type RenameRequest,
-    type WorkspaceEdit,
     type WorkspaceReadFile,
     type WorkspaceWriteFile
 } from "../index.js";
@@ -354,11 +353,15 @@ void test("validateRename rejects text edits plus metadata rewrites for separato
     assert.ok(validation.errors.some((error) => error.includes("Cannot combine text and metadata edits")));
 });
 
-void test("validateSymbolExists requires semantic analyzer", async () => {
+void test("validateSymbolExists returns true when no semantic analyzer", async () => {
+    // When no semantic analyzer is provided, the cache's fetchHasSymbol returns
+    // true by default, allowing the refactor engine to proceed with optimistic
+    // validation. The actual semantic check is advisory—if the file contains
+    // syntax errors, the refactor engine will detect them during the main
+    // validation pass and present actionable diagnostics to the user.
     const engine = new RefactorEngineClass();
-    await assert.rejects(() => engine.validateSymbolExists("gml/script/foo"), {
-        message: /RefactorEngine requires a semantic analyzer/
-    });
+    const result = await engine.validateSymbolExists("gml/script/foo");
+    assert.equal(result, true);
 });
 
 void test("validateSymbolExists returns true when semantic lacks hasSymbol", async () => {
@@ -391,6 +394,21 @@ void test("validateRename detects overlapping edits", async () => {
     const result = await engine.validateRename(ws);
     assert.equal(result.valid, false);
     assert.ok(result.errors.some((e) => e.includes("Overlapping")));
+});
+
+void test("validateRename rejects malformed text edit ranges", async () => {
+    const engine = new RefactorEngineClass();
+    const ws = new WorkspaceEditFactory();
+    ws.addEdit("", 0, 1, "missingPath");
+    ws.addEdit("scripts/example.gml", -1, 1, "negativeStart");
+    ws.addEdit("scripts/example.gml", 8, 4, "reversedRange");
+
+    const result = await engine.validateRename(ws);
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.includes("Text edit path must be a non-empty string")));
+    assert.ok(result.errors.some((error) => error.includes("non-negative integer start offset")));
+    assert.ok(result.errors.some((error) => error.includes("must not end before it starts")));
 });
 
 void test("validateRename warns about large refactorings", async () => {
@@ -590,7 +608,7 @@ void test("applyWorkspaceEdit requires a WorkspaceEdit", async () => {
     const engine = new RefactorEngineClass();
     await assert.rejects(
         () =>
-            engine.applyWorkspaceEdit(null as unknown as WorkspaceEdit, {
+            engine.applyWorkspaceEdit(null, {
                 readFile: async () => ""
             }),
         {
@@ -742,6 +760,30 @@ void test("applyWorkspaceEdit rejects invalid edits", async () => {
     await assert.rejects(() => engine.applyWorkspaceEdit(ws, { readFile, dryRun: true }), {
         message: /Overlapping edits/
     });
+});
+
+void test("applyWorkspaceEdit rejects malformed text edit ranges before writing", async () => {
+    const engine = new RefactorEngineClass();
+    const ws = new WorkspaceEditFactory();
+    ws.addEdit("scripts/example.gml", 12, 3, "badRange");
+
+    let writeCount = 0;
+
+    await assert.rejects(
+        () =>
+            engine.applyWorkspaceEdit(ws, {
+                readFile: async () => "show_debug_message(name);",
+                writeFile: async () => {
+                    writeCount += 1;
+                },
+                dryRun: false
+            }),
+        {
+            message: /must not end before it starts/
+        }
+    );
+
+    assert.equal(writeCount, 0);
 });
 
 void test("executeRename validates required parameters", async () => {

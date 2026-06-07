@@ -12,3 +12,5 @@
 datafiles
 vector_store
 .DS_Store
+.gmcache
+.gmloop

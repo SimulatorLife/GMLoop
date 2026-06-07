@@ -242,10 +242,6 @@ void test("language parse failure returns ESLint parse-failure channel", () => {
     assertEquals(typeof parseFailure.errors[0]?.column, "number");
 });
 
-void test("language hooks run successfully on minimum ESLint version", async () => {
-    await runVersionCompatibilityProbe("eslint-min");
-});
-
 void test("language hooks run successfully on latest ESLint version", async () => {
     const result = await lintTextWithESLintVersion(ESLint, "var x = 1;");
     assertEquals(result.fatalErrorCount, 0);

@@ -12,10 +12,15 @@ import { Core } from "@gmloop/core";
 import { createTempFileStorageBackend, type StorageBackend } from "./backends/index.js";
 import { executeRegisteredCodemods } from "./codemod-registry.js";
 import { applyGlobalvarToGlobalCodemod, collectGlobalvarDeclaredNames } from "./codemods/globalvar-to-global/index.js";
-import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 import { planNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import * as HotReload from "./hot-reload.js";
 import { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
+import {
+    APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT,
+    CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
+    CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES,
+    RENAME_VALIDATION_CACHE_MAX_SIZE
+} from "./refactor-constants.js";
 import { assertRenameRequest, assertValidIdentifierName, extractSymbolName } from "./rename/index.js";
 import {
     detectCircularRenames,
@@ -26,7 +31,7 @@ import {
     validateCrossFileConsistency
 } from "./rename/rename-validation.js";
 import { RenameValidationCache } from "./rename-validation-cache.js";
-import { SemanticQueryCache } from "./semantic-cache.js";
+import { DefaultOccurrenceCachePolicy, SemanticQueryCache } from "./semantic-cache.js";
 import * as SymbolQueries from "./symbol-queries.js";
 import {
     type ApplyWorkspaceEditOptions,
@@ -40,8 +45,6 @@ import {
     type ExecuteBatchRenameRequest,
     type ExecuteGlobalvarToGlobalCodemodRequest,
     type ExecuteGlobalvarToGlobalCodemodResult,
-    type ExecuteLoopLengthHoistingCodemodRequest,
-    type ExecuteLoopLengthHoistingCodemodResult,
     type ExecuteRenameRequest,
     type ExecuteRenameResult,
     type HotReloadCascadeResult,
@@ -80,9 +83,6 @@ import {
     WorkspaceEdit
 } from "./workspace-edit.js";
 
-const RENAME_VALIDATION_CACHE_MAX_SIZE = 4096;
-const APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT = 8;
-const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 256;
 const validatedWorkspaceRevisions = new WeakMap<object, number>();
 const DEFAULT_HOT_RELOAD_COORDINATOR: RefactorHotReloadCoordinator = Object.freeze({
     checkHotReloadSafety: HotReload.checkHotReloadSafety,
@@ -162,6 +162,13 @@ function toWorkspacePathKey(filePath: string): string {
     return path.posix.normalize(normalizedPath);
 }
 
+function resolveCodemodReadThroughCacheMaxEntries(fileCount: number): number {
+    return Math.min(
+        CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
+        Math.max(CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES, fileCount)
+    );
+}
+
 function semanticSupportsBatchWorkspaceOverlay(
     semantic: PartialSemanticAnalyzer | null
 ): semantic is PartialSemanticAnalyzer &
@@ -200,6 +207,37 @@ function dropRedundantTextEditsForMetadataRewrites(workspace: WorkspaceEdit): Wo
     }
 
     return normalizedWorkspace;
+}
+
+function collectTextEditValidationErrors(
+    filePath: string,
+    edits: ReadonlyArray<Pick<TextEdit, "end" | "newText" | "start">>
+): Array<string> {
+    const errors: Array<string> = [];
+
+    if (!Core.isNonEmptyString(filePath)) {
+        errors.push("Text edit path must be a non-empty string");
+    }
+
+    for (const edit of edits) {
+        if (!Number.isInteger(edit.start) || edit.start < 0) {
+            errors.push(`Text edit for ${filePath} must have a non-negative integer start offset`);
+        }
+
+        if (!Number.isInteger(edit.end) || edit.end < 0) {
+            errors.push(`Text edit for ${filePath} must have a non-negative integer end offset`);
+        }
+
+        if (Number.isInteger(edit.start) && Number.isInteger(edit.end) && edit.end < edit.start) {
+            errors.push(`Text edit for ${filePath} must not end before it starts`);
+        }
+
+        if (typeof edit.newText !== "string") {
+            errors.push(`Text edit for ${filePath} must replace with a string`);
+        }
+    }
+
+    return errors;
 }
 
 function applyGroupedTextEditsToContent(
@@ -264,7 +302,7 @@ export class RefactorEngine {
             // results so the planning phase can reuse the validation lookups.
             maxSize: 8192,
             ttlMs: 300_000,
-            maxOccurrenceCacheEntries: 4000
+            occurrenceCachePolicy: new DefaultOccurrenceCachePolicy(4000)
         });
     }
 
@@ -276,19 +314,24 @@ export class RefactorEngine {
     /**
      * Find the symbol at a specific location in a file.
      * Useful for triggering refactorings from editor positions.
+     *
+     * Uses the semantic cache when available for efficient repeated lookups.
+     * Falls back to parser-based AST traversal when the semantic analyzer
+     * doesn't provide position-based lookup.
      */
     findSymbolAtLocation(filePath: string, offset: number): Promise<SymbolLocation | null> {
-        return SymbolQueries.findSymbolAtLocation(filePath, offset, this.semantic, this.parser);
+        if (this.semantic !== null) {
+            return this.semanticCache.getSymbolAtPosition(filePath, offset);
+        }
+
+        return SymbolQueries.findSymbolAtLocationFallback(filePath, offset, this.parser);
     }
 
     /**
      * Validate symbol exists in the semantic index.
+     * Uses the semantic cache when available for efficient repeated lookups.
      */
     validateSymbolExists(symbolId: string): Promise<boolean> {
-        if (this.semantic === null) {
-            return SymbolQueries.validateSymbolExists(symbolId, this.semantic);
-        }
-
         return this.semanticCache.hasSymbol(symbolId);
     }
 
@@ -786,6 +829,8 @@ export class RefactorEngine {
         // start position. Overlaps indicate that two edits target overlapping or
         // adjacent text spans, which would corrupt the output if applied naively.
         for (const [filePath, edits] of grouped.entries()) {
+            errors.push(...collectTextEditValidationErrors(filePath, edits));
+
             for (let i = 0; i < edits.length - 1; i++) {
                 const current = edits[i];
                 const next = edits[i + 1];
@@ -978,11 +1023,21 @@ export class RefactorEngine {
         }
 
         // Validate that every individual rename request is structurally valid and
-        // that the batch contains no duplicate source or target names. These checks
-        // are delegated to focused helpers so the orchestration sequence stays
-        // readable at a single abstraction level.
-        assertBatchHasUniqueSymbolIds(renames);
-        assertBatchHasUniqueTargetNames(renames);
+        // that the batch contains no duplicate source or target names. Reuse the
+        // same helpers that validateBatchRenameRequest uses so both paths agree on
+        // what constitutes a conflict, avoiding divergent error messages across
+        // the high-level and low-level entry points.
+        const duplicateSymbolIdErrors = detectDuplicateSourceSymbolIds(renames).map(
+            ({ symbolId, count }) => `Duplicate rename request for symbolId '${symbolId}' (${count} entries)`
+        );
+        const duplicateTargetNameErrors = detectDuplicateTargetNames(renames).map(
+            ({ newName, symbolIds }) => `Cannot rename multiple symbols to '${newName}': ${symbolIds.join(", ")}`
+        );
+
+        if (duplicateSymbolIdErrors.length > 0 || duplicateTargetNameErrors.length > 0) {
+            const allErrors = [...duplicateSymbolIdErrors, ...duplicateTargetNameErrors].join("; ");
+            throw new Error(allErrors);
+        }
 
         // Detect circular rename chains where symbol names form a cycle, such as
         // renaming A→B and B→A simultaneously. These chains create conflicts because
@@ -1274,76 +1329,6 @@ export class RefactorEngine {
     }
 
     /**
-     * Execute the loop-length hoisting codemod across the provided files.
-     *
-     * The engine parses each file exactly once, collects all codemod rewrites into a
-     * single workspace transaction, and applies them atomically via applyWorkspaceEdit.
-     */
-    async executeLoopLengthHoistingCodemod(
-        request: ExecuteLoopLengthHoistingCodemodRequest
-    ): Promise<ExecuteLoopLengthHoistingCodemodResult> {
-        const { filePaths, readFile, writeFile, options, dryRun = false } = request ?? {};
-
-        if (!Array.isArray(filePaths) || filePaths.length === 0) {
-            throw new TypeError("executeLoopLengthHoistingCodemod requires a non-empty filePaths array");
-        }
-
-        Core.assertFunction(readFile, "readFile", {
-            errorMessage: "executeLoopLengthHoistingCodemod requires a readFile function"
-        });
-        const uniqueFilePaths = Core.uniqueArray(filePaths);
-
-        const workspace = new WorkspaceEdit();
-        const sourceTextByPath = new Map<string, string>();
-        const changedFiles: ExecuteLoopLengthHoistingCodemodResult["changedFiles"] = [];
-
-        await Core.runSequentially(uniqueFilePaths, async (filePath) => {
-            Core.assertNonEmptyString(filePath, {
-                errorMessage: "executeLoopLengthHoistingCodemod file paths must be non-empty strings"
-            });
-
-            const sourceText = await readFile(filePath);
-            sourceTextByPath.set(filePath, sourceText);
-            const result = applyLoopLengthHoistingCodemod(sourceText, options);
-
-            if (!result.changed) {
-                return;
-            }
-
-            workspace.addEdit(filePath, 0, sourceText.length, result.outputText);
-            changedFiles.push({
-                path: filePath,
-                appliedEditCount: result.appliedEdits.length,
-                diagnosticOffsets: [...result.diagnosticOffsets]
-            });
-        });
-
-        if (workspace.edits.length === 0) {
-            return {
-                workspace,
-                applied: new Map(),
-                changedFiles
-            };
-        }
-
-        if (!dryRun) {
-            Core.assertFunction(writeFile, "writeFile", {
-                errorMessage: "executeLoopLengthHoistingCodemod requires a writeFile function"
-            });
-        }
-
-        const applied = await this.applyWorkspaceEdit(workspace, {
-            readFile,
-            sourceTextByPath,
-            writeFile,
-            includeResultContent: dryRun,
-            dryRun
-        });
-
-        return { workspace, applied, changedFiles };
-    }
-
-    /**
      * Plan naming-policy-driven edits for the selected project paths.
      */
     async planNamingConventionCodemod(parameters: {
@@ -1396,6 +1381,7 @@ export class RefactorEngine {
         const overlaySpillIndex = new Set<string>();
         const readThroughCache = new Map<string, string>();
         const readThroughCacheOrder: Array<string> = [];
+        const readThroughCacheMaxEntries = resolveCodemodReadThroughCacheMaxEntries(gmlFilePaths.length);
         const appliedFiles = new Map<string, string>();
         let overlayBytes = 0;
         let overlayHighWaterBytes = 0;
@@ -1419,7 +1405,7 @@ export class RefactorEngine {
             readThroughCache.set(filePath, content);
             readThroughCacheOrder.push(filePath);
 
-            while (readThroughCacheOrder.length > CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES) {
+            while (readThroughCacheOrder.length > readThroughCacheMaxEntries) {
                 const evictedFilePath = readThroughCacheOrder.shift();
                 if (evictedFilePath !== undefined) {
                     readThroughCache.delete(evictedFilePath);
@@ -1478,7 +1464,11 @@ export class RefactorEngine {
                 overlayBytes -= previousSize;
             } else if (overlaySpillIndex.has(filePath) && spillBackend) {
                 overlaySpillIndex.delete(filePath);
-                await spillBackend.deleteEntry(filePath);
+                // Use removeFromIndex instead of deleteEntry to reclaim memory
+                // from the backend's path index and read cache without the
+                // overhead of a disk I/O call. The backing file stays valid in
+                // case other reads need it; it will be cleaned up at disposal.
+                spillBackend.removeFromIndex(filePath);
             }
 
             overlay.set(filePath, content);
@@ -1697,9 +1687,10 @@ export class RefactorEngine {
      *
      * // Review hot reload cascade to see all affected symbols
      * if (plan.cascadeResult) {
-     *     console.log(`Total symbols to reload: ${plan.cascadeResult.metadata.totalSymbols}`);
-     *     console.log(`Max dependency distance: ${plan.cascadeResult.metadata.maxDistance}`);
-     *     if (plan.cascadeResult.metadata.hasCircular) {
+     *     // Use top-level aliases to avoid `plan.cascadeResult.metadata.totalSymbols` chain
+     *     console.log(`Total symbols to reload: ${plan.cascadeResult.totalSymbols}`);
+     *     console.log(`Max dependency distance: ${plan.cascadeResult.maxDistance}`);
+     *     if (plan.cascadeResult.hasCircular) {
      *         console.warn("Circular dependencies detected:");
      *         for (const cycle of plan.cascadeResult.circular) {
      *             console.warn("  Cycle:", cycle.join(" → "));
@@ -2546,44 +2537,6 @@ export class RefactorEngine {
      */
     getSemanticCacheStats() {
         return this.semanticCache.getStats();
-    }
-}
-
-/**
- * Assert that every rename request in the batch has a unique source symbol ID.
- * Validates each request's structure and identifier name while detecting
- * duplicates, so both concerns are handled in a single linear pass.
- *
- * @throws {Error} When any request fails structural validation or a symbol ID appears more than once.
- */
-function assertBatchHasUniqueSymbolIds(renames: Array<RenameRequest>): void {
-    const seenSymbolIds = new Set<string>();
-    for (const rename of renames) {
-        assertRenameRequest(rename, "Each rename in planBatchRename");
-        if (seenSymbolIds.has(rename.symbolId)) {
-            throw new Error(`Duplicate rename request for symbolId '${rename.symbolId}'`);
-        }
-        seenSymbolIds.add(rename.symbolId);
-        assertValidIdentifierName(rename.newName);
-    }
-}
-
-/**
- * Assert that no two renames in the batch target the same normalized name.
- * Renaming multiple symbols to the same name would cause them to collide after
- * the refactoring (e.g., renaming both `foo` and `bar` to `baz`), which would
- * produce a corrupted workspace edit.
- *
- * @throws {Error} When two or more renames share the same normalized target name.
- */
-function assertBatchHasUniqueTargetNames(renames: Array<RenameRequest>): void {
-    const seenTargetNames = new Set<string>();
-    for (const rename of renames) {
-        const normalizedNewName = assertValidIdentifierName(rename.newName);
-        if (seenTargetNames.has(normalizedNewName)) {
-            throw new Error(`Cannot rename multiple symbols to '${normalizedNewName}'`);
-        }
-        seenTargetNames.add(normalizedNewName);
     }
 }
 

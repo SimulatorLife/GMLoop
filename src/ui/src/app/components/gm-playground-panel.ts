@@ -1,12 +1,12 @@
-// import { Format } from "@gmloop/format";
-// import { Parser } from "@gmloop/parser";
-// import { Refactor } from "@gmloop/refactor";
-import { Core } from "@gmloop/core";
 import { html, type PropertyValues } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import { getUiErrorMessage } from "../error-message.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE, resolveInitialPlaygroundGmlSource } from "../playground-default-gml.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
+import { highlightGml } from "../syntax-highlight-gml.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
@@ -22,6 +22,28 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
+    #onDismissErrorBanner = (): void => {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
+                bubbles: true,
+                composed: true,
+                detail: { page: "playground" }
+            })
+        );
+    };
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+    }
+
+    public constructor() {
+        super();
+        if ("matchMedia" in globalThis && globalThis.matchMedia("(max-width: 920px)").matches) {
+            this.#controlsPanelOpen = false;
+        }
+    }
+
     #gmlInput = DEFAULT_PLAYGROUND_GML_SOURCE;
 
     #gmlOutput = "";
@@ -30,17 +52,84 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     #viewMode: "code" | "ast" = "code";
 
-    #isFormatEnabled = true;
-
-    #isLintEnabled = true;
-
-    #isRefactorEnabled = true;
-
     #transpileMode: "none" | "patch" | "expression" = "none";
+
+    #controlsPanelOpen = true;
 
     #error: string | null = null;
 
     #debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+    #enabledLintRules = new Map<string, boolean>();
+
+    #enabledFormatOptions = new Map<string, boolean>();
+
+    #enabledCodemods = new Map<string, boolean>();
+
+    #syncEnabledFormatOptionsFromModel(model: GraphVisualizationUiModel | null): void {
+        const formatOptions = this.#resolveFormatOptionsForModel(model);
+        for (const option of formatOptions) {
+            if (!this.#enabledFormatOptions.has(option.name)) {
+                this.#enabledFormatOptions.set(option.name, true);
+            }
+        }
+    }
+
+    #syncEnabledLintRulesFromModel(model: GraphVisualizationUiModel | null): void {
+        const lintRules = this.#resolveLintRulesForModel(model);
+        for (const rule of lintRules) {
+            if (!this.#enabledLintRules.has(rule.ruleId)) {
+                this.#enabledLintRules.set(rule.ruleId, true);
+            }
+        }
+    }
+
+    #syncEnabledCodemodsFromModel(model: GraphVisualizationUiModel | null): void {
+        const codemods = this.#resolveCodemodsForModel(model);
+        for (const codemod of codemods) {
+            if (!this.#enabledCodemods.has(codemod.id)) {
+                this.#enabledCodemods.set(codemod.id, true);
+            }
+        }
+    }
+
+    #onModelChange = (): void => {
+        this.#syncEnabledFormatOptionsFromModel(this.model);
+        this.#syncEnabledLintRulesFromModel(this.model);
+        this.#syncEnabledCodemodsFromModel(this.model);
+    };
+
+    #showFormatDetails = false;
+
+    #showLintDetails = false;
+
+    #showCodemodDetails = false;
+
+    #formatSearchQuery = "";
+
+    #lintSearchQuery = "";
+
+    #codemodSearchQuery = "";
+
+    /**
+     * Renders playground output (error, formatted code, or AST JSON).
+     *
+     * Lit templates are whitespace-sensitive: any indentation or newlines
+     * between the opening and closing tags become text nodes in the DOM.
+     * This produces unwanted visual padding in the output pane and violates
+     * the test assertion that no whitespace precedes content. All templates
+     * must keep their content on a single line with no leading/trailing
+     * whitespace.
+     */
+    #renderOutput(message: string | null, viewMode: "code" | "ast", highlighted: string, astJson: string): unknown {
+        if (message !== null) {
+            return html`<div class="playground-output is-error" role="status" aria-live="polite">${message}</div>`;
+        }
+        if (viewMode === "code") {
+            return html`<div class="playground-output" aria-live="polite">${unsafeHTML(highlighted)}</div>`;
+        }
+        return html`<pre class="playground-output" aria-live="polite">${astJson}</pre>`;
+    }
 
     public disconnectedCallback(): void {
         if (this.#debounceTimer !== null) {
@@ -48,6 +137,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             this.#debounceTimer = null;
         }
 
+        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
         super.disconnectedCallback();
     }
 
@@ -57,7 +147,16 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         if (savedInput !== this.#gmlInput) {
             localStorage.setItem("gmloop-playground-input", this.#gmlInput);
         }
-        void this.#processInput();
+        if (this.state?.activePage === "playground") {
+            void this.#processInput();
+        }
+    }
+
+    protected willUpdate(changedProperties: PropertyValues): void {
+        super.willUpdate(changedProperties);
+        if (changedProperties.has("model")) {
+            this.#onModelChange();
+        }
     }
 
     protected updated(changedProperties: PropertyValues): void {
@@ -65,6 +164,81 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         if (changedProperties.has("state") && this.state?.activePage === "playground") {
             void this.#processInput();
         }
+    }
+
+    #toggleFormatOption(optionName: string): void {
+        const current = this.#enabledFormatOptions.get(optionName) ?? false;
+        this.#enabledFormatOptions.set(optionName, !current);
+        void this.#processInput();
+        this.requestUpdate();
+    }
+
+    #toggleLintRule(ruleId: string): void {
+        const current = this.#enabledLintRules.get(ruleId) ?? false;
+        this.#enabledLintRules.set(ruleId, !current);
+        void this.#processInput();
+        this.requestUpdate();
+    }
+
+    #toggleCodemod(codemodId: string): void {
+        const current = this.#enabledCodemods.get(codemodId) ?? false;
+        this.#enabledCodemods.set(codemodId, !current);
+        void this.#processInput();
+        this.requestUpdate();
+    }
+
+    #toggleFormatDetails(): void {
+        this.#showFormatDetails = !this.#showFormatDetails;
+        this.requestUpdate();
+    }
+
+    #toggleLintDetails(): void {
+        this.#showLintDetails = !this.#showLintDetails;
+        this.requestUpdate();
+    }
+
+    #toggleCodemodDetails(): void {
+        this.#showCodemodDetails = !this.#showCodemodDetails;
+        this.requestUpdate();
+    }
+
+    #setFormatSearchQuery(value: string): void {
+        this.#formatSearchQuery = value.trim().toLowerCase();
+        this.requestUpdate();
+    }
+
+    #setLintSearchQuery(value: string): void {
+        this.#lintSearchQuery = value.trim().toLowerCase();
+        this.requestUpdate();
+    }
+
+    #setCodemodSearchQuery(value: string): void {
+        this.#codemodSearchQuery = value.trim().toLowerCase();
+        this.requestUpdate();
+    }
+
+    #setAllFormatOptionsEnabled(enabled: boolean, entries: ReadonlyArray<{ name: string }>): void {
+        for (const entry of entries) {
+            this.#enabledFormatOptions.set(entry.name, enabled);
+        }
+        void this.#processInput();
+        this.requestUpdate();
+    }
+
+    #setAllLintRulesEnabled(enabled: boolean, entries: ReadonlyArray<{ ruleId: string }>): void {
+        for (const entry of entries) {
+            this.#enabledLintRules.set(entry.ruleId, enabled);
+        }
+        void this.#processInput();
+        this.requestUpdate();
+    }
+
+    #setAllCodemodsEnabled(enabled: boolean, entries: ReadonlyArray<{ id: string }>): void {
+        for (const entry of entries) {
+            this.#enabledCodemods.set(entry.id, enabled);
+        }
+        void this.#processInput();
+        this.requestUpdate();
     }
 
     readonly #onInputChange = (e: Event): void => {
@@ -84,6 +258,15 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     };
 
+    readonly #onInputScroll = (e: Event): void => {
+        const target = e.target as HTMLTextAreaElement;
+        const pre = this.renderRoot.querySelector(".playground-input-highlight");
+        if (pre) {
+            pre.scrollTop = target.scrollTop;
+            pre.scrollLeft = target.scrollLeft;
+        }
+    };
+
     async #processInput(): Promise<void> {
         this.#error = null;
         if (!this.#gmlInput.trim()) {
@@ -92,15 +275,28 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             return;
         }
 
+        const formatOptions = this.#resolveFormatOptions();
+        const lintRules = this.#resolveLintRules();
+        const codemods = this.#resolveCodemods();
+        const configuredFormatOptionNames = this.#extractConfiguredFormatOptionNames();
+        const enabledFormatOptionNames = this.#resolveEnabledFormatOptionNames(formatOptions).filter((optionName) =>
+            configuredFormatOptionNames.has(optionName)
+        );
+        const enabledLintRuleIds = this.#resolveEnabledLintRuleIds(lintRules);
+        const enabledCodemodIds = this.#resolveEnabledCodemodIds(codemods);
+
         try {
             const response = await fetch("/api/playground/process", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     gml: this.#gmlInput,
-                    format: this.#isFormatEnabled,
-                    lint: this.#isLintEnabled,
-                    refactor: this.#isRefactorEnabled,
+                    format: enabledFormatOptionNames.length > 0,
+                    formatOptionNames: enabledFormatOptionNames,
+                    lint: enabledLintRuleIds.length > 0,
+                    lintRuleIds: enabledLintRuleIds,
+                    refactor: enabledCodemodIds.length > 0,
+                    codemodIds: enabledCodemodIds,
                     transpileMode: this.#transpileMode
                 })
             });
@@ -120,7 +316,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 this.#gmlOutput = data.payload.output;
             }
         } catch (error) {
-            this.#error = Core.getErrorMessage(error, { fallback: "Unknown error" });
+            this.#error = getUiErrorMessage(error, "Unknown error");
             this.#gmlOutput = "";
             this.#astJson = "";
         }
@@ -128,22 +324,90 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
-    #toggleFormat(): void {
-        this.#isFormatEnabled = !this.#isFormatEnabled;
-        void this.#processInput();
-        this.requestUpdate();
+    #resolveFormatOptions(): ReadonlyArray<{ description: string; name: string }> {
+        return this.#resolveFormatOptionsForModel(this.model);
     }
 
-    #toggleLint(): void {
-        this.#isLintEnabled = !this.#isLintEnabled;
-        void this.#processInput();
-        this.requestUpdate();
+    #extractConfiguredFormatOptionNames(): ReadonlySet<string> {
+        const configuredEntries = this.model?.projectConfigurationCatalog?.format.entries;
+        if (!configuredEntries || configuredEntries.length === 0) {
+            return new Set<string>();
+        }
+        return new Set(configuredEntries.map((entry) => entry.name));
     }
 
-    #toggleRefactor(): void {
-        this.#isRefactorEnabled = !this.#isRefactorEnabled;
-        void this.#processInput();
-        this.requestUpdate();
+    #resolveFormatOptionsForModel(
+        model: GraphVisualizationUiModel | null
+    ): ReadonlyArray<{ description: string; name: string }> {
+        const workspaceRules = model?.documentationCatalogs?.workspaceRules;
+        const configuredEntries = model?.projectConfigurationCatalog?.format.entries;
+        if (configuredEntries && configuredEntries.length > 0) {
+            return configuredEntries.map((entry) => ({ description: entry.description, name: entry.name }));
+        }
+        return (workspaceRules?.formatOptions ?? []).map((entry) => ({
+            description: entry.description,
+            name: entry.name
+        }));
+    }
+
+    #resolveLintRules(): ReadonlyArray<{ description: string; ruleId: string }> {
+        const workspaceRules = this.model?.documentationCatalogs?.workspaceRules;
+        const configuredRules = this.model?.projectConfigurationCatalog?.lint.rules;
+        if (configuredRules && configuredRules.length > 0) {
+            return configuredRules;
+        }
+        return workspaceRules?.lintRules ?? [];
+    }
+
+    #resolveLintRulesForModel(
+        model: GraphVisualizationUiModel | null
+    ): ReadonlyArray<{ description: string; ruleId: string }> {
+        const workspaceRules = model?.documentationCatalogs?.workspaceRules;
+        const configuredRules = model?.projectConfigurationCatalog?.lint.rules;
+        if (configuredRules && configuredRules.length > 0) {
+            return configuredRules;
+        }
+        return workspaceRules?.lintRules ?? [];
+    }
+
+    #resolveCodemods(): ReadonlyArray<{ description: string; id: string }> {
+        const workspaceRules = this.model?.documentationCatalogs?.workspaceRules;
+        const configuredCodemods = this.model?.projectConfigurationCatalog?.refactor.codemods;
+        if (configuredCodemods && configuredCodemods.length > 0) {
+            return configuredCodemods;
+        }
+        return workspaceRules?.refactorCodemods ?? [];
+    }
+
+    #resolveCodemodsForModel(
+        model: GraphVisualizationUiModel | null
+    ): ReadonlyArray<{ description: string; id: string }> {
+        const workspaceRules = model?.documentationCatalogs?.workspaceRules;
+        const configuredCodemods = model?.projectConfigurationCatalog?.refactor.codemods;
+        if (configuredCodemods && configuredCodemods.length > 0) {
+            return configuredCodemods;
+        }
+        return workspaceRules?.refactorCodemods ?? [];
+    }
+
+    #resolveEnabledFormatOptionNames(
+        formatOptions: ReadonlyArray<{ description: string; name: string }>
+    ): ReadonlyArray<string> {
+        return formatOptions
+            .filter((option) => this.#enabledFormatOptions.get(option.name) === true)
+            .map((option) => option.name);
+    }
+
+    #resolveEnabledLintRuleIds(
+        lintRules: ReadonlyArray<{ description: string; ruleId: string }>
+    ): ReadonlyArray<string> {
+        return lintRules.filter((rule) => this.#enabledLintRules.get(rule.ruleId) === true).map((rule) => rule.ruleId);
+    }
+
+    #resolveEnabledCodemodIds(codemods: ReadonlyArray<{ description: string; id: string }>): ReadonlyArray<string> {
+        return codemods
+            .filter((codemod) => this.#enabledCodemods.get(codemod.id) === true)
+            .map((codemod) => codemod.id);
     }
 
     #setTranspileMode(mode: "patch" | "expression"): void {
@@ -157,63 +421,252 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
+    #toggleControlsPanel(event: Event): void {
+        event.preventDefault();
+        this.#controlsPanelOpen = !this.#controlsPanelOpen;
+        this.requestUpdate();
+    }
+
+    #renderRuleRow(parameters: { description: string; keyText: string; onToggle: () => void; selected: boolean }) {
+        return html`
+            <label class="rule-details-item" title=${parameters.description}>
+                <input type="checkbox" .checked=${parameters.selected} @change=${parameters.onToggle} />
+                <span class="rule-details-item-key">${parameters.keyText}</span>
+                <span class="rule-details-item-description">${parameters.description}</span>
+            </label>
+        `;
+    }
+
+    #renderRuleSection(parameters: {
+        entries: ReadonlyArray<{ description: string; keyText: string; onToggle: () => void; selected: boolean }>;
+        expanded: boolean;
+        label: string;
+        searchQuery: string;
+        setAllSelected: (selected: boolean) => void;
+        setExpanded: () => void;
+        setSearchQuery: (value: string) => void;
+    }) {
+        const filteredEntries =
+            parameters.searchQuery.length === 0
+                ? parameters.entries
+                : parameters.entries.filter(
+                      (entry) =>
+                          entry.keyText.toLowerCase().includes(parameters.searchQuery) ||
+                          entry.description.toLowerCase().includes(parameters.searchQuery)
+                  );
+        const selectedCount = parameters.entries.filter((entry) => entry.selected).length;
+        const sectionId = parameters.label.toLowerCase().replaceAll(" ", "-");
+        const entriesListId = `${sectionId}-entries`;
+
+        return html`
+            <div class="rule-details-section">
+                <button
+                    type="button"
+                    class="rule-details-header ${parameters.expanded ? "expanded" : ""}"
+                    aria-controls=${entriesListId}
+                    aria-expanded=${parameters.expanded}
+                    @click=${parameters.setExpanded}
+                >
+                    <span class="rule-details-header-icon">${parameters.expanded ? "▾" : "▸"}</span>
+                    <span class="rule-details-header-label">${parameters.label}</span>
+                    <span class="rule-details-count">${selectedCount}/${parameters.entries.length} enabled</span>
+                </button>
+                ${parameters.expanded
+                    ? html`
+                          <div class="rule-details-controls">
+                              <input
+                                  class="rule-details-search"
+                                  type="text"
+                                  aria-label="Search ${parameters.label}"
+                                  placeholder="Search ${parameters.label.toLowerCase()}..."
+                                  .value=${parameters.searchQuery}
+                                  @input=${(event: Event) => {
+                                      const target = event.target as HTMLInputElement;
+                                      parameters.setSearchQuery(target.value);
+                                  }}
+                              />
+                              <button
+                                  type="button"
+                                  class="rule-details-bulk-action"
+                                  @click=${() => parameters.setAllSelected(true)}
+                              >
+                                  Enable all
+                              </button>
+                              <button
+                                  type="button"
+                                  class="rule-details-bulk-action"
+                                  @click=${() => parameters.setAllSelected(false)}
+                              >
+                                  Disable all
+                              </button>
+                          </div>
+                          <div
+                              id=${entriesListId}
+                              class="rule-details-list"
+                              role="group"
+                              aria-label=${parameters.label}
+                          >
+                              ${filteredEntries.map((entry) => this.#renderRuleRow(entry))}
+                          </div>
+                          <div class="rule-details-footer">
+                              ${filteredEntries.length === parameters.entries.length
+                                  ? `${parameters.entries.length} items`
+                                  : `${filteredEntries.length} of ${parameters.entries.length} items`}
+                          </div>
+                      `
+                    : null}
+            </div>
+        `;
+    }
+
+    #renderRuleDetails() {
+        const formatOptions = this.#resolveFormatOptions();
+        const hasConfiguredFormatOptions = this.#extractConfiguredFormatOptionNames().size > 0;
+        const lintRules = this.#resolveLintRules();
+        const codemods = this.#resolveCodemods();
+        if (formatOptions.length === 0 && lintRules.length === 0 && codemods.length === 0) {
+            return html``;
+        }
+
+        return html`
+            <div class="rule-details">
+                ${formatOptions.length > 0
+                    ? html`
+                          ${hasConfiguredFormatOptions
+                              ? null
+                              : html`<p class="rule-details-note" role="note">
+                                    Set formatter values in <code>gmloop.json</code> to apply Playground format options.
+                                </p>`}
+                          ${this.#renderRuleSection({
+                              entries: formatOptions.map((option) => ({
+                                  description: option.description,
+                                  keyText: option.name,
+                                  onToggle: () => this.#toggleFormatOption(option.name),
+                                  selected: this.#enabledFormatOptions.get(option.name) === true
+                              })),
+                              expanded: this.#showFormatDetails,
+                              label: "Format Options",
+                              searchQuery: this.#formatSearchQuery,
+                              setAllSelected: (enabled) => this.#setAllFormatOptionsEnabled(enabled, formatOptions),
+                              setExpanded: () => this.#toggleFormatDetails(),
+                              setSearchQuery: (value) => this.#setFormatSearchQuery(value)
+                          })}
+                      `
+                    : null}
+                ${lintRules.length > 0
+                    ? this.#renderRuleSection({
+                          entries: lintRules.map((rule) => ({
+                              description: rule.description,
+                              keyText: rule.ruleId,
+                              onToggle: () => this.#toggleLintRule(rule.ruleId),
+                              selected: this.#enabledLintRules.get(rule.ruleId) === true
+                          })),
+                          expanded: this.#showLintDetails,
+                          label: "Lint Rules",
+                          searchQuery: this.#lintSearchQuery,
+                          setAllSelected: (enabled) => this.#setAllLintRulesEnabled(enabled, lintRules),
+                          setExpanded: () => this.#toggleLintDetails(),
+                          setSearchQuery: (value) => this.#setLintSearchQuery(value)
+                      })
+                    : null}
+                ${codemods.length > 0
+                    ? this.#renderRuleSection({
+                          entries: codemods.map((codemod) => ({
+                              description: codemod.description,
+                              keyText: codemod.id,
+                              onToggle: () => this.#toggleCodemod(codemod.id),
+                              selected: this.#enabledCodemods.get(codemod.id) === true
+                          })),
+                          expanded: this.#showCodemodDetails,
+                          label: "Codemods",
+                          searchQuery: this.#codemodSearchQuery,
+                          setAllSelected: (enabled) => this.#setAllCodemodsEnabled(enabled, codemods),
+                          setExpanded: () => this.#toggleCodemodDetails(),
+                          setSearchQuery: (value) => this.#setCodemodSearchQuery(value)
+                      })
+                    : null}
+            </div>
+        `;
+    }
+
+    #renderTranspileControls() {
+        return html`
+            <div class="playground-control-section">
+                <div class="playground-control-section-header">
+                    <span>Transpile</span>
+                    <span class="playground-control-section-note">Optional JS output</span>
+                </div>
+                <div class="rule-toggles">
+                    <button
+                        type="button"
+                        class="rule-toggle ${this.#transpileMode === "patch" ? "active" : ""}"
+                        aria-pressed=${this.#transpileMode === "patch"}
+                        @click=${() => this.#setTranspileMode("patch")}
+                    >
+                        Patch Transpile
+                    </button>
+                    <button
+                        type="button"
+                        class="rule-toggle ${this.#transpileMode === "expression" ? "active" : ""}"
+                        aria-pressed=${this.#transpileMode === "expression"}
+                        @click=${() => this.#setTranspileMode("expression")}
+                    >
+                        Expression Transpile
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    #renderControlsPanel() {
+        return html`
+            <aside
+                id="playground-controls-panel"
+                class="playground-controls-panel ${this.#controlsPanelOpen ? "is-open" : "is-collapsed"}"
+                aria-label="Playground controls"
+            >
+                <div class="playground-controls-body">
+                    ${this.#renderTranspileControls()} ${this.#renderRuleDetails()}
+                </div>
+            </aside>
+        `;
+    }
+
     protected render() {
         if (!this.model || !this.state) {
             return html``;
         }
 
-        const activeClassName = this.state.activePage === "playground" ? "page active" : "page";
+        const activeClassName =
+            this.state.activePage === "playground" ? "page content-page active" : "page content-page";
+        const controlsPanelClassName = this.#controlsPanelOpen
+            ? "playground-layout controls-open"
+            : "playground-layout controls-collapsed";
 
         return html`
             <section id="playground-page" class=${activeClassName}>
+                ${this.state.playgroundErrorMessage
+                    ? html`<gm-error-banner .message=${this.state.playgroundErrorMessage}></gm-error-banner>`
+                    : null}
                 <div class="playground-toolbar">
-                    <div class="rule-toggles">
+                    <button
+                        type="button"
+                        class="playground-controls-toggle ${this.#controlsPanelOpen ? "is-open" : "is-closed"}"
+                        aria-controls="playground-controls-panel"
+                        aria-expanded=${this.#controlsPanelOpen}
+                        @click=${(event: Event) => this.#toggleControlsPanel(event)}
+                    >
+                        <span class="playground-controls-toggle-icon" aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </span>
+                        <span>${this.#controlsPanelOpen ? "Hide Controls" : "Show Controls"}</span>
+                    </button>
+                    <div class="gm-view-selector">
                         <button
                             type="button"
-                            class="rule-toggle ${this.#isFormatEnabled ? "active" : ""}"
-                            aria-pressed=${this.#isFormatEnabled}
-                            @click=${() => this.#toggleFormat()}
-                        >
-                            Format
-                        </button>
-                        <button
-                            type="button"
-                            class="rule-toggle ${this.#isLintEnabled ? "active" : ""}"
-                            aria-pressed=${this.#isLintEnabled}
-                            @click=${() => this.#toggleLint()}
-                        >
-                            Lint
-                        </button>
-                        <button
-                            type="button"
-                            class="rule-toggle ${this.#isRefactorEnabled ? "active" : ""}"
-                            aria-pressed=${this.#isRefactorEnabled}
-                            @click=${() => this.#toggleRefactor()}
-                        >
-                            Refactor
-                        </button>
-                        <button
-                            type="button"
-                            class="rule-toggle ${this.#transpileMode === "patch" ? "active" : ""}"
-                            aria-pressed=${this.#transpileMode === "patch"}
-                            @click=${() => this.#setTranspileMode("patch")}
-                        >
-                            Patch Transpile
-                        </button>
-                        <button
-                            type="button"
-                            class="rule-toggle ${this.#transpileMode === "expression" ? "active" : ""}"
-                            aria-pressed=${this.#transpileMode === "expression"}
-                            @click=${() => this.#setTranspileMode("expression")}
-                        >
-                            Expression Transpile
-                        </button>
-                    </div>
-                    <div class="playground-toolbar-spacer" aria-hidden="true"></div>
-                    <div class="view-selector">
-                        <button
-                            type="button"
-                            class="view-option ${this.#viewMode === "code" ? "active" : ""}"
+                            class="gm-btn--chip ${this.#viewMode === "code" ? "active" : ""}"
                             aria-pressed=${this.#viewMode === "code"}
                             @click=${() => this.#setViewMode("code")}
                         >
@@ -221,7 +674,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </button>
                         <button
                             type="button"
-                            class="view-option ${this.#viewMode === "ast" ? "active" : ""}"
+                            class="gm-btn--chip ${this.#viewMode === "ast" ? "active" : ""}"
                             aria-pressed=${this.#viewMode === "ast"}
                             @click=${() => this.#setViewMode("ast")}
                         >
@@ -229,37 +682,47 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </button>
                     </div>
                 </div>
-
-                <div class="playground-main">
-                    <div class="editor-pane">
-                        <div class="pane-header">
-                            <span>Input GML</span>
-                            <span class="pane-header-status">Writable</span>
+                <div class=${controlsPanelClassName}>
+                    ${this.#renderControlsPanel()}
+                    <div class="playground-main">
+                        <div class="editor-pane">
+                            <div class="pane-header">
+                                <span>Input GML</span>
+                                <span class="pane-header-status">Writable</span>
+                            </div>
+                            <div class="playground-input-surface">
+                                <pre class="playground-input-highlight" aria-hidden="true">
+${unsafeHTML(highlightGml(this.#gmlInput))}</pre
+                                >
+                                <textarea
+                                    class="playground-input"
+                                    aria-label="Playground input GML"
+                                    placeholder="Paste or write GML code here..."
+                                    .value=${this.#gmlInput}
+                                    @input=${this.#onInputChange}
+                                    @scroll=${this.#onInputScroll}
+                                    spellcheck="false"
+                                ></textarea>
+                            </div>
                         </div>
-                        <textarea
-                            class="playground-input"
-                            placeholder="Paste or write GML code here..."
-                            .value=${this.#gmlInput}
-                            @input=${this.#onInputChange}
-                            spellcheck="false"
-                        ></textarea>
-                    </div>
-                    <div class="editor-pane">
-                        <div class="pane-header">
-                            <span
-                                >${this.#viewMode === "code"
-                                    ? this.#transpileMode === "none"
-                                        ? "GML"
-                                        : "JS"
-                                    : "Parsed AST"}</span
-                            >
-                            <span class="pane-header-status">Read-only</span>
+                        <div class="editor-pane">
+                            <div class="pane-header">
+                                <span
+                                    >${this.#viewMode === "code"
+                                        ? this.#transpileMode === "none"
+                                            ? "GML"
+                                            : "JS"
+                                        : "Parsed AST"}</span
+                                >
+                                <span class="pane-header-status">Read-only</span>
+                            </div>
+                            ${this.#renderOutput(
+                                this.#error,
+                                this.#viewMode,
+                                highlightGml(this.#gmlOutput),
+                                this.#astJson
+                            )}
                         </div>
-                        ${this.#error
-                            ? html`<div class="playground-output is-error">${this.#error}</div>`
-                            : this.#viewMode === "code"
-                              ? html`<pre class="playground-output">${this.#gmlOutput}</pre>`
-                              : html`<pre class="playground-output">${this.#astJson}</pre>`}
                     </div>
                 </div>
             </section>

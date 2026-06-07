@@ -10,7 +10,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
-import type { EventPatch, ScriptPatch, Transpiler } from "@gmloop/transpiler";
+import { type Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
 
 import { formatCliError } from "../../cli-core/index.js";
 import type { PatchBroadcaster } from "../websocket/server.js";
@@ -22,7 +22,9 @@ import {
 import { extractReferencesFromAst, extractSymbolsFromAst } from "./symbol-extraction.js";
 
 type RuntimeTranspiler = InstanceType<typeof Transpiler.GmlTranspiler>;
-export type RuntimeTranspilerPatch = ScriptPatch | EventPatch;
+export type RuntimeTranspilerPatch =
+    | ReturnType<RuntimeTranspiler["transpileScript"]>
+    | ReturnType<RuntimeTranspiler["transpileEvent"]>;
 
 export interface TranspilationMetrics {
     timestamp: number;
@@ -98,6 +100,14 @@ function resolveSyntaxRecoveryHint(message: string): string | undefined {
     return undefined;
 }
 
+/**
+ * Classifies a transpilation error using structured error codes.
+ *
+ * This function checks for a TranspilerError with a known error code
+ * (PARSE_ERROR, VALIDATION_ERROR, REQUEST_ERROR, INTERNAL_ERROR).
+ * Unstructured errors are treated as unknown to keep classification
+ * contract explicit and avoid brittle legacy string matching paths.
+ */
 function classifyTranspilationError(error: unknown): {
     category: ErrorCategory;
     message: string;
@@ -111,74 +121,75 @@ function classifyTranspilationError(error: unknown): {
         targetError = error.cause;
     }
 
-    if (Core.isGmlParseError(targetError)) {
-        const syntaxError = targetError;
-        const line = syntaxError.line;
-        const column = syntaxError.column;
-        const recoveryHint = resolveSyntaxRecoveryHint(syntaxError.message);
-
+    // Classify using structured error codes when available.
+    // This avoids fragile string matching and provides reliable categorization
+    // for errors thrown by the transpiler workspace.
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.PARSE_ERROR)) {
+        // Extract line/column from the cause if it's a GML parse error.
+        if (Core.isGmlParseError(targetError)) {
+            return {
+                category: "syntax",
+                message: targetError.message,
+                line: targetError.line,
+                column: targetError.column,
+                recoveryHint: resolveSyntaxRecoveryHint(targetError.message)
+            };
+        }
+        // Fallback: parse error without location info.
         return {
             category: "syntax",
-            message: syntaxError.message,
-            line,
-            column,
-            recoveryHint
+            message: Core.getErrorMessage(error),
+            recoveryHint: "Check for syntax errors in the GML source."
         };
     }
 
-    if (Core.isErrorLike(error)) {
-        if (error.message.includes("Generated patch failed validation")) {
-            return {
-                category: "validation",
-                message: error.message,
-                recoveryHint:
-                    "The transpiler produced invalid output. This may indicate an internal issue. Try simplifying the code."
-            };
-        }
-
-        if (
-            error.message.includes("requires a request object") ||
-            error.message.includes("requires a sourceText string") ||
-            error.message.includes("requires a symbolId string")
-        ) {
-            return {
-                category: "validation",
-                message: error.message,
-                recoveryHint: "Ensure the file is a valid GML source file."
-            };
-        }
-
-        if (error.message.includes("Failed to transpile script")) {
-            const causeMatch = /Failed to transpile script [^:]+: (.+)$/u.exec(error.message);
-            const innerMessage = causeMatch ? causeMatch[1] : error.message;
-            return {
-                category: "internal",
-                message: innerMessage,
-                recoveryHint:
-                    "An internal transpilation error occurred. This may be a bug. Check for unsupported GML features."
-            };
-        }
-
-        if (error.message.includes("Failed to transpile event")) {
-            const causeMatch = /Failed to transpile event [^:]+: (?<inner>.+)$/u.exec(error.message);
-            const innerMessage = causeMatch?.groups?.inner ?? error.message;
-            return {
-                category: "internal",
-                message: innerMessage,
-                recoveryHint:
-                    "An internal event transpilation error occurred. This may be a bug. Check for unsupported GML features."
-            };
-        }
-
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.VALIDATION_ERROR)) {
         return {
-            category: "unknown",
-            message: error.message
+            category: "validation",
+            message: Core.getErrorMessage(error),
+            recoveryHint:
+                "The transpiler produced invalid output. This may indicate an internal issue. Try simplifying the code."
         };
     }
 
-    // Use a capability probe rather than `instanceof Error` so that cross-realm
-    // errors (e.g. from sandboxed modules) are handled correctly.
-    const errorString = Core.isErrorLike(error) ? String(error) : "Unknown error";
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.REQUEST_ERROR)) {
+        return {
+            category: "validation",
+            message: Core.getErrorMessage(error),
+            recoveryHint: "Ensure the file is a valid GML source file."
+        };
+    }
+
+    if (Core.isErrorWithCode(error, TranspilerErrorCode.INTERNAL_ERROR)) {
+        // If the cause is a GML parse error, classify as syntax error.
+        // This handles the common case where the transpiler wraps a parse error.
+        if (Core.isGmlParseError(targetError)) {
+            return {
+                category: "syntax",
+                message: targetError.message,
+                line: targetError.line,
+                column: targetError.column,
+                recoveryHint: resolveSyntaxRecoveryHint(targetError.message)
+            };
+        }
+        // Extract inner message if this is a transpiler-wrapped error.
+        const message = Core.getErrorMessage(error);
+        const causeMatch = /Failed to transpile (?:script|event|closure|expression) [^:]+: (?<inner>.+)$/u.exec(
+            message
+        );
+        const innerMessage = causeMatch?.groups?.inner ?? message;
+        return {
+            category: "internal",
+            message: innerMessage,
+            recoveryHint:
+                "An internal transpilation error occurred. This may be a bug. Check for unsupported GML features."
+        };
+    }
+
+    // At this point error is not error-like (all isErrorLike branches returned).
+    // Use Core.getErrorMessage for consistent fallback: it attempts
+    // to produce a meaningful string from strings, objects, and primitives.
+    const errorString = Core.getErrorMessage(error, { fallback: "Unknown error" });
 
     return {
         category: "unknown",
@@ -213,6 +224,21 @@ export interface TranspilerProvider {
 }
 
 /**
+ * Bounded collection size configuration.
+ *
+ * Captures the maximum number of entries that a bounded collection can hold.
+ * This contract is extracted from the three state interfaces (PatchHistoryStore,
+ * MetricsCollector, ErrorCollector) that all shared `maxPatchHistory: number`.
+ *
+ * Separating the bounds configuration from the collection state implements ISP:
+ * callers that only need to configure bounds can depend on this interface alone
+ * without being coupled to the full state of patches, metrics, or errors.
+ */
+export interface BoundedCollectionBounds {
+    maxEntries: number;
+}
+
+/**
  * Patch history management.
  *
  * Provides patch summary storage and successful patch caching without
@@ -226,8 +252,12 @@ export interface PatchHistoryStore {
      */
     patches: Array<PatchSummary>;
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>;
-    maxPatchHistory: number;
-    totalPatchCount: number;
+    /**
+     * Secondary index mapping source file paths to their associated patch IDs.
+     * Enables O(k) stale-patch cleanup instead of O(n) iteration over all patches.
+     */
+    sourcePathToPatchIds: Map<string, Set<string>>;
+    bounds: BoundedCollectionBounds;
 }
 
 /**
@@ -238,7 +268,28 @@ export interface PatchHistoryStore {
  */
 export interface MetricsCollector {
     metrics: Array<TranspilationMetrics>;
-    maxPatchHistory: number;
+    bounds: BoundedCollectionBounds;
+}
+
+/**
+ * Successful-patch counter.
+ *
+ * Provides an increment-only counter of all successfully emitted patches.
+ * Does not track patch contents; callers that need per-patch details
+ * should consult PatchHistoryStore instead.
+ */
+export interface TranspilationCounter {
+    totalPatchCount: number;
+}
+
+/**
+ * Read-only snapshot of the patch counter for display/monitoring purposes.
+ *
+ * Provides a stable view of the counter without coupling to transpilation
+ * state, metrics tracking, or broadcasting.
+ */
+export interface PatchCounter {
+    readonly totalPatchCount: number;
 }
 
 /**
@@ -249,7 +300,7 @@ export interface MetricsCollector {
  */
 export interface ErrorCollector {
     errors: Array<TranspilationError>;
-    maxPatchHistory: number;
+    bounds: BoundedCollectionBounds;
 }
 
 /**
@@ -273,6 +324,26 @@ export interface ScriptRegistry {
 }
 
 /**
+ * Metrics snapshot for display purposes.
+ *
+ * Provides a read-only view of transpilation metrics without coupling to
+ * patch history, error tracking, or broadcasting operations.
+ */
+export interface MetricsSnapshot {
+    readonly metrics: ReadonlyArray<TranspilationMetrics>;
+}
+
+/**
+ * Errors snapshot for display purposes.
+ *
+ * Provides a read-only view of transpilation errors without coupling to
+ * metrics, patch history, or broadcasting operations.
+ */
+export interface ErrorsSnapshot {
+    readonly errors: ReadonlyArray<TranspilationError>;
+}
+
+/**
  * Complete transpilation context interface.
  *
  * Combines all role-focused interfaces for consumers that need full
@@ -281,8 +352,10 @@ export interface ScriptRegistry {
  * rather than this composite interface when possible.
  */
 export interface TranspilationContext
-    extends TranspilerProvider,
+    extends
+        TranspilerProvider,
         PatchHistoryStore,
+        TranspilationCounter,
         MetricsCollector,
         ErrorCollector,
         PatchBroadcastService,
@@ -298,6 +371,18 @@ export interface TranspilationOptions {
      */
     cachedAst?: unknown;
     /**
+     * Pre-extracted symbol definitions to reuse instead of re-traversing the AST.
+     * When provided alongside `cachedAst`, the symbol walker is skipped entirely,
+     * saving a second full AST traversal during the initial scan.
+     */
+    cachedSymbols?: ReadonlyArray<string>;
+    /**
+     * Pre-extracted symbol references to reuse instead of re-traversing the AST.
+     * When provided alongside `cachedAst`, the reference walker is skipped entirely,
+     * saving a second full AST traversal during the initial scan.
+     */
+    cachedReferences?: ReadonlyArray<string>;
+    /**
      * Wall-clock timestamp (Date.now()) recorded when the filesystem change event
      * was first detected. When provided, the transpiler records the end-to-end
      * hot-reload latency (detection → broadcast) in {@link TranspilationMetrics.hotReloadLatencyMs}.
@@ -305,6 +390,14 @@ export interface TranspilationOptions {
      * Omit for the initial scan pass, where there is no preceding watch event.
      */
     fileChangeDetectedAt?: number;
+    /**
+     * Controls whether the generated patch should be added to runtime history and
+     * broadcast to connected clients. Initial dependency scans generate patches
+     * only to validate transpilation and collect metadata; those patches mirror
+     * code already present in a freshly built runtime and must not be replayed as
+     * live edits.
+     */
+    deliverRuntimePatch?: boolean;
 }
 
 export interface TranspilationResult {
@@ -335,28 +428,75 @@ function addToBoundedCollection<T>(collection: Array<T>, item: T, maxSize: numbe
 }
 
 /**
- * Parses GML content and extracts symbols/references when parsing succeeds.
- * Accepts an optional pre-parsed AST to skip the parse step when the caller
- * has already produced the AST (e.g., during the initial file cache build).
+ * Extracts symbol declarations and reference identifiers from a parsed GML AST.
+ *
+ * This function performs a single AST traversal to collect both symbols and
+ * references, which is more efficient than calling extraction separately.
+ *
+ * When pre-extracted values are provided, they are reused to skip redundant
+ * work during incremental updates (e.g., when only part of the AST changed).
+ */
+function extractMetadataFromAst(
+    ast: unknown,
+    filePath: string,
+    preExtractedSymbols?: ReadonlyArray<string>,
+    preExtractedReferences?: ReadonlyArray<string>
+): { parsedSymbols: Array<string>; parsedReferences: Array<string> } {
+    if (preExtractedSymbols !== undefined && preExtractedReferences !== undefined) {
+        return {
+            parsedSymbols: Array.from(preExtractedSymbols),
+            parsedReferences: Array.from(preExtractedReferences)
+        };
+    }
+
+    const parsedSymbols =
+        preExtractedSymbols === undefined ? extractSymbolsFromAst(ast, filePath) : Array.from(preExtractedSymbols);
+    const parsedReferences =
+        preExtractedReferences === undefined ? extractReferencesFromAst(ast) : Array.from(preExtractedReferences);
+
+    return { parsedSymbols, parsedReferences };
+}
+
+/**
+ * Parses GML content into an AST, then extracts symbol declarations and
+ * reference identifiers from it.
+ *
+ * This function orchestrates two distinct responsibilities:
+ * 1. Parse: Convert GML source text into an Abstract Syntax Tree
+ * 2. Extract: Walk the AST to collect symbols and references
+ *
+ * Accepts pre-parsed AST and pre-extracted values to skip redundant work
+ * when the caller has already produced them (e.g., during the initial
+ * startup scan).
  */
 function parseAstAndExtractMetadata(
     content: string,
     filePath: string,
-    preParseAst?: unknown
+    preParseAst?: unknown,
+    preExtractedSymbols?: ReadonlyArray<string>,
+    preExtractedReferences?: ReadonlyArray<string>
 ): ParsedAstExtractionResult {
     try {
-        let ast: unknown;
-        if (preParseAst === undefined) {
-            const parser = new Parser.GMLParser(content, {});
-            ast = parser.parse();
-        } else {
-            ast = preParseAst;
-        }
+        const ast =
+            preParseAst ??
+            new Parser.GMLParser(content, {
+                getComments: false,
+                getLocations: true,
+                simplifyLocations: true,
+                attachFunctionDocComments: false
+            }).parse();
+        const { parsedSymbols, parsedReferences } = extractMetadataFromAst(
+            ast,
+            filePath,
+            preExtractedSymbols,
+            preExtractedReferences
+        );
+
         return {
             ast,
             parseError: null,
-            parsedSymbols: extractSymbolsFromAst(ast, filePath),
-            parsedReferences: extractReferencesFromAst(ast)
+            parsedSymbols,
+            parsedReferences
         };
     } catch (error) {
         return {
@@ -462,20 +602,21 @@ function hasRuntimePatchChanged(
  */
 function clearStalePatchesForSourcePath(
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>,
+    sourcePathToPatchIds: Map<string, Set<string>>,
     sourcePath: string,
     nextPatchId: string
 ): void {
-    for (const [patchId, patch] of lastSuccessfulPatches.entries()) {
-        if (patchId === nextPatchId) {
-            continue;
-        }
+    const stalePatchIds = sourcePathToPatchIds.get(sourcePath);
+    if (!stalePatchIds) {
+        return;
+    }
 
-        const metadata = Core.isObjectLike(patch.metadata) ? patch.metadata : null;
-        const patchSourcePath = Core.isNonEmptyString(metadata?.sourcePath) ? metadata.sourcePath : null;
-        if (patchSourcePath === sourcePath) {
+    for (const patchId of stalePatchIds) {
+        if (patchId !== nextPatchId) {
             lastSuccessfulPatches.delete(patchId);
         }
     }
+    stalePatchIds.clear();
 }
 
 /**
@@ -493,7 +634,15 @@ export function transpileFile(
     lines: number,
     options: TranspilationOptions
 ): TranspilationResult {
-    const { verbose, quiet, cachedAst, fileChangeDetectedAt } = options;
+    const {
+        verbose,
+        quiet,
+        cachedAst,
+        cachedSymbols,
+        cachedReferences,
+        fileChangeDetectedAt,
+        deliverRuntimePatch = true
+    } = options;
     const startTime = performance.now();
 
     try {
@@ -501,7 +650,9 @@ export function transpileFile(
         const { ast, parseError, parsedSymbols, parsedReferences } = parseAstAndExtractMetadata(
             content,
             filePath,
-            cachedAst
+            cachedAst,
+            cachedSymbols,
+            cachedReferences
         );
 
         let patch: RuntimeTranspilerPatch;
@@ -552,20 +703,41 @@ export function transpileFile(
             linesProcessed: lines
         };
 
-        addToBoundedCollection(context.metrics, metrics, context.maxPatchHistory);
-
-        clearStalePatchesForSourcePath(context.lastSuccessfulPatches, filePath, patchPayload.id);
-        const previousPatch = context.lastSuccessfulPatches.get(patchPayload.id);
-        const runtimePatchChanged = hasRuntimePatchChanged(previousPatch, patchPayload);
-
-        context.lastSuccessfulPatches.set(patchPayload.id, patchPayload);
+        addToBoundedCollection(context.metrics, metrics, context.bounds.maxEntries);
 
         if (context.scriptNames && fileKind.kind === "script") {
             registerScriptNamesFromSymbols(parsedSymbols, context.scriptNames);
         }
 
+        if (!deliverRuntimePatch) {
+            return {
+                success: true,
+                patch: patchPayload,
+                metrics,
+                symbols: parsedSymbols,
+                references: parsedReferences
+            };
+        }
+
+        clearStalePatchesForSourcePath(
+            context.lastSuccessfulPatches,
+            context.sourcePathToPatchIds,
+            filePath,
+            patchPayload.id
+        );
+        const previousPatch = context.lastSuccessfulPatches.get(patchPayload.id);
+        const runtimePatchChanged = hasRuntimePatchChanged(previousPatch, patchPayload);
+
+        context.lastSuccessfulPatches.set(patchPayload.id, patchPayload);
+
+        let patchIdsForSource = context.sourcePathToPatchIds.get(filePath);
+        if (!patchIdsForSource) {
+            patchIdsForSource = new Set();
+            context.sourcePathToPatchIds.set(filePath, patchIdsForSource);
+        }
+        patchIdsForSource.add(patchPayload.id);
         if (runtimePatchChanged) {
-            addToBoundedCollection(context.patches, createPatchSummary(patchPayload), context.maxPatchHistory);
+            addToBoundedCollection(context.patches, createPatchSummary(patchPayload), context.bounds.maxEntries);
             context.totalPatchCount += 1;
 
             const broadcastResult = context.websocketServer?.broadcast(patchPayload);
@@ -638,7 +810,7 @@ export function transpileFile(
             recoveryHint: classified.recoveryHint
         };
 
-        addToBoundedCollection(context.errors, transpilationError, context.maxPatchHistory);
+        addToBoundedCollection(context.errors, transpilationError, context.bounds.maxEntries);
 
         if (context.websocketServer) {
             const errorNotification = createErrorNotification(filePath, classified.message);
@@ -676,10 +848,7 @@ export function transpileFile(
  * Displays transpilation and error statistics.
  */
 export function displayTranspilationStatistics(
-    context: {
-        metrics: ReadonlyArray<TranspilationMetrics>;
-        errors: ReadonlyArray<TranspilationError>;
-    },
+    context: MetricsSnapshot & ErrorsSnapshot,
     verbose: boolean,
     quiet: boolean
 ): void {

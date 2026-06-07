@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { PatchHistoryReader, PatchUndoController } from "../browser/runtime/types.js";
 import { RuntimeWrapper } from "../index.js";
-import type { PatchHistoryReader, PatchUndoController } from "../src/runtime/types.js";
 
 void test("runtime wrapper exposes timing helpers through the dedicated timing namespace", () => {
     assert.strictEqual(typeof RuntimeWrapper.Timing.getHighResolutionTime, "function");
@@ -418,7 +418,7 @@ void test("undo restores previous version of patched script", () => {
 
     const fn1 = wrapper.getScript("script:test");
     assert.ok(fn1);
-    assert.strictEqual(fn1(null, null, []) as number, 1);
+    assert.strictEqual(fn1(null, null, []), 1);
 
     wrapper.applyPatch({
         kind: "script",
@@ -428,12 +428,12 @@ void test("undo restores previous version of patched script", () => {
 
     const fn2 = wrapper.getScript("script:test");
     assert.ok(fn2);
-    assert.strictEqual(fn2(null, null, []) as number, 2);
+    assert.strictEqual(fn2(null, null, []), 2);
 
     wrapper.undo();
     const fn3 = wrapper.getScript("script:test");
     assert.ok(fn3);
-    assert.strictEqual(fn3(null, null, []) as number, 1);
+    assert.strictEqual(fn3(null, null, []), 1);
     assert.strictEqual(fn3, fn1);
 });
 
@@ -683,7 +683,7 @@ void test("trySafeApply applies valid patch to actual registry", () => {
 
     const fn = wrapper.getScript("script:multiply");
     assert.ok(fn);
-    assert.strictEqual(fn(null, null, [3, 4]) as number, 12);
+    assert.strictEqual(fn(null, null, [3, 4]), 12);
 });
 
 void test("trySafeApply supports custom validation callback", () => {
@@ -1222,7 +1222,7 @@ void test("applyPatchBatch handles empty array", () => {
 void test("applyPatchBatch validates input is array", () => {
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
-    assert.throws(() => wrapper.applyPatchBatch(null as unknown as Array<unknown>), {
+    assert.throws(() => wrapper.applyPatchBatch(null), {
         message: /applyPatchBatch expects an array/
     });
 });

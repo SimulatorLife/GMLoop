@@ -11,12 +11,46 @@ const UNC_PREFIX_PATTERN = /^\\\\/;
 // when `path.relative` escapes the provided parent without rejecting file names
 // that legitimately begin with `..`.
 const PARENT_SEGMENT_PATTERN = /(?:^|[\\/])\.\.(?:[\\/]|$)/;
+// Patterns for detecting Windows path formats
+const WINDOWS_DRIVE_LETTER_PATH_PATTERN = /^[a-zA-Z]:/;
+const WINDOWS_UNC_PATH_PATTERN = /^\\\\[^\\]+\\[^\\]+/;
+
+// ---------------------------------------------------------------------------
+// Windows path detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect if a path uses Windows-style syntax.
+ *
+ * Returns `true` for:
+ * - Drive letter paths (e.g., `C:\` or `C:/`)
+ * - UNC paths (e.g., `\\server\share`)
+ *
+ * This enables correct path resolution when cross-platform absolute paths
+ * appear in project configurations or user-provided file references.
+ *
+ * @param {string | null | undefined} candidate Path to inspect.
+ * @returns {boolean} `true` when the path uses Windows syntax.
+ */
+export function isWin32Path(candidate: string | null | undefined): boolean {
+    if (!isNonEmptyString(candidate)) {
+        return false;
+    }
+
+    return WINDOWS_DRIVE_LETTER_PATH_PATTERN.test(candidate) || WINDOWS_UNC_PATH_PATTERN.test(candidate);
+}
+
+// ---------------------------------------------------------------------------
+// Normalization helpers
+// ---------------------------------------------------------------------------
 
 // Windows path patterns for root detection and normalization
 const WINDOWS_DRIVE_ROOT_PATTERN = /^[A-Za-z]:\\$/;
 const WINDOWS_DRIVE_ROOT_WITH_OPTIONAL_SEPARATOR_PATTERN = /^(?:[A-Za-z]:)\\?$/;
 const UNC_SHARE_ROOT_PATTERN = /^\\\\[^\\]+\\[^\\]+$/;
 const UNC_SHARE_ROOT_WITH_TRAILING_SEPARATOR_PATTERN = /^\\\\[^\\]+\\[^\\]+\\$/;
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u;
+const WINDOWS_UNC_PATH_PATTERN_ABSOLUTE = /^[\\/]{2}[^/\\]+[\\/][^/\\]+/u;
 
 /**
  * Replace any Windows-style backslashes with forward slashes so downstream
@@ -28,7 +62,7 @@ const UNC_SHARE_ROOT_WITH_TRAILING_SEPARATOR_PATTERN = /^\\\\[^\\]+\\[^\\]+\\$/;
  * @returns {string} Normalized POSIX path string, or an empty string when the
  *                   input is missing/invalid.
  */
-export function toPosixPath(inputPath) {
+export function toPosixPath(inputPath: unknown): string {
     if (!isNonEmptyString(inputPath)) {
         return "";
     }
@@ -45,7 +79,7 @@ export function toPosixPath(inputPath) {
  * @param {unknown} inputPath Candidate POSIX path string.
  * @returns {string} Path rewritten using the runtime's path separator.
  */
-export function fromPosixPath(inputPath) {
+export function fromPosixPath(inputPath: unknown): string {
     if (!isNonEmptyString(inputPath)) {
         return "";
     }
@@ -55,6 +89,42 @@ export function fromPosixPath(inputPath) {
     }
 
     return inputPath.replaceAll(POSIX_SEPARATOR_PATTERN, path.sep);
+}
+
+/**
+ * Report whether a path is absolute in either the current platform syntax or
+ * Windows absolute/UNC syntax.
+ *
+ * @param {string} candidate Raw path candidate.
+ * @returns {boolean} Whether the candidate is already absolute.
+ */
+export function isPortableAbsolutePath(candidate: string): boolean {
+    return (
+        path.isAbsolute(candidate) ||
+        WINDOWS_ABSOLUTE_PATH_PATTERN.test(candidate) ||
+        WINDOWS_UNC_PATH_PATTERN_ABSOLUTE.test(candidate)
+    );
+}
+
+/**
+ * Resolve a path candidate to an absolute path while preserving Windows
+ * absolute and UNC semantics on non-Windows hosts.
+ *
+ * Node's POSIX resolver treats values such as `C:\project` and
+ * `\\server\share` as relative filenames when the process is not running on
+ * Windows. This helper selects the Win32 resolver only for paths that are
+ * already absolute in Windows syntax, while keeping normal relative-path
+ * resolution tied to the current platform.
+ *
+ * @param {string} candidate Raw path candidate.
+ * @returns {string} Absolute path resolved with the matching platform flavor.
+ */
+export function resolvePortableAbsolutePath(candidate: string): string {
+    if (WINDOWS_ABSOLUTE_PATH_PATTERN.test(candidate) || WINDOWS_UNC_PATH_PATTERN_ABSOLUTE.test(candidate)) {
+        return path.win32.resolve(candidate);
+    }
+
+    return path.resolve(candidate);
 }
 
 /**
@@ -71,12 +141,23 @@ export function fromPosixPath(inputPath) {
  * @returns {string | null} Relative path when the child is contained within the
  *                          parent, otherwise `null`.
  */
-export function resolveContainedRelativePath(childPath, parentPath) {
+export function resolveContainedRelativePath(
+    childPath: string | null | undefined,
+    parentPath: string | null | undefined
+): string | null {
     if (!isNonEmptyString(childPath) || !isNonEmptyString(parentPath)) {
         return null;
     }
 
-    const relative = path.relative(parentPath, childPath);
+    const isChildWindows = WINDOWS_DRIVE_LETTER_PATTERN.test(childPath) || UNC_PREFIX_PATTERN.test(childPath);
+    const isParentWindows = WINDOWS_DRIVE_LETTER_PATTERN.test(parentPath) || UNC_PREFIX_PATTERN.test(parentPath);
+    const shouldUseWin32Relative = isChildWindows || isParentWindows;
+    const relative = shouldUseWin32Relative
+        ? path.win32.relative(
+              isParentWindows ? parentPath.replaceAll("/", "\\") : parentPath.replaceAll("\\", "/"),
+              isChildWindows ? childPath.replaceAll("/", "\\") : childPath.replaceAll("\\", "/")
+          )
+        : path.relative(parentPath, childPath);
 
     if (relative === "") {
         return "";
@@ -106,12 +187,15 @@ export function resolveContainedRelativePath(childPath, parentPath) {
  *        itself.
  * @returns {Generator<string, void, void>} Iterator over ancestor directories.
  */
-export function* walkAncestorDirectories(startPath, { includeSelf = true } = {}) {
+export function* walkAncestorDirectories(
+    startPath: string | null | undefined,
+    { includeSelf = true }: { includeSelf?: boolean } = {}
+): Generator<string, void, void> {
     if (!isNonEmptyString(startPath)) {
         return;
     }
 
-    const visited = new Set();
+    const visited = new Set<string>();
     let current = path.resolve(startPath);
 
     if (!includeSelf) {
@@ -131,7 +215,7 @@ export function* walkAncestorDirectories(startPath, { includeSelf = true } = {})
     }
 }
 
-export function isPathInside(childPath, parentPath) {
+export function isPathInside(childPath: string | null | undefined, parentPath: string | null | undefined): boolean {
     const relative = resolveContainedRelativePath(childPath, parentPath);
     return relative !== null;
 }
@@ -210,33 +294,30 @@ export function trimTrailingSeparators(value: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Path-boundary canonicalization (moved from lint workspace per TODO)
+// Path-boundary canonicalization
 // ---------------------------------------------------------------------------
 
-function isWindowsLikeBoundaryPath(value: string): boolean {
-    return WINDOWS_DRIVE_LETTER_PATTERN.test(value) || UNC_PREFIX_PATTERN.test(value);
-}
-
-function normalizeBoundarySeparators(value: string): string {
-    if (isWindowsLikeBoundaryPath(value)) {
-        return value.replaceAll("/", "\\");
-    }
-
-    return value.replaceAll("\\", "/");
-}
-
-function canonicalizeBoundaryPathCase(value: string): string {
-    if (isWindowsLikeBoundaryPath(value)) {
-        return value.toLowerCase();
-    }
-
-    return value;
-}
-
+/**
+ * Normalize path separators and case for prefix comparisons.
+ *
+ * Converts all path separators to `/` on POSIX or `\` on Windows, then applies
+ * case folding on Windows. This canonicalizes the path for use in
+ * {@link normalizeBoundaryPath} and {@link isPathWithinBoundary}.
+ *
+ * @param value Path to canonicalize.
+ * @returns Canonicalized path with normalized separators and case.
+ */
 function canonicalizeFromString(value: string): string {
-    const withNormalizedSeparators = normalizeBoundarySeparators(value);
+    const isWindows = WINDOWS_DRIVE_LETTER_PATTERN.test(value) || UNC_PREFIX_PATTERN.test(value);
+
+    // Normalize separators: Windows uses backslash, POSIX uses forward slash.
+    const withNormalizedSeparators = isWindows ? value.replaceAll("/", "\\") : value.replaceAll("\\", "/");
+
+    // Trim trailing separators from the normalized result (not the original input).
     const trimmed = trimTrailingSeparators(withNormalizedSeparators);
-    return canonicalizeBoundaryPathCase(trimmed);
+
+    // Case-fold Windows paths; POSIX is already case-sensitive.
+    return isWindows ? trimmed.toLowerCase() : trimmed;
 }
 
 /**
@@ -259,7 +340,8 @@ export function normalizeBoundaryPath(pathValue: string): string {
 }
 
 function boundaryPathSeparatorFor(pathValue: string): string {
-    return isWindowsLikeBoundaryPath(pathValue) ? "\\" : "/";
+    const isWindows = WINDOWS_DRIVE_LETTER_PATTERN.test(pathValue) || UNC_PREFIX_PATTERN.test(pathValue);
+    return isWindows ? "\\" : "/";
 }
 
 function splitPathSegments(pathValue: string): Array<string> {

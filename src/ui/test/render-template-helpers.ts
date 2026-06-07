@@ -1,3 +1,4 @@
+import { Core } from "@gmloop/core";
 import type { TemplateResult } from "lit";
 
 function isTemplateResult(value: unknown): value is TemplateResult {
@@ -33,4 +34,15 @@ export function renderTemplateValue(value: unknown): string {
     }
 
     return JSON.stringify(value) ?? "";
+}
+
+/**
+ * Builds a regex that matches a rendered `<button>` element with a specific id and aria-pressed value.
+ * Uses lookahead assertions so attribute order does not affect the match.
+ */
+export function createButtonAriaPressedPattern(buttonId: string, pressed: boolean): RegExp {
+    return new RegExp(
+        `<button(?=[^>]*id="${Core.escapeRegExp(buttonId)}")(?=[^>]*aria-pressed=(?:"${String(pressed)}"|${String(pressed)}))[^>]*>`,
+        "u"
+    );
 }

@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { normalizeDocParamName } from "../../../parameter-utils/index.js";
 import { gmlRuleDocCommentServices } from "../gml-rule-services.js";
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeWithType,
     computeLineStartOffsets,
@@ -11,10 +11,10 @@ import {
     reportFullTextRewrite,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const {
     convertLegacyReturnsDescriptionLinesToMetadata,
+    normalizeDocParamName,
     promoteLeadingDocCommentTextToDescription,
     resolveParameterName
 } = gmlRuleDocCommentServices;
@@ -24,7 +24,7 @@ const { applyJsDocTagAliasReplacements } = Core;
 const { getNodeStartIndex } = Core;
 
 function normalizeDocCommentPrefixLine(line: string): string {
-    // support the legacy "// /" notation used by some fixtures/legacy code
+    // support the "// /" notation used by some fixtures code
     // but avoid matching "// //" which is just a normal comment starting with two
     // slashes. we only want the single-slash variant.
     const docSlashMatch = /^(\s*)\/\/\s*\/(?!\/)(.*)$/u.exec(line);
@@ -795,35 +795,65 @@ function analyzeFunctionReturnInference(
     let concreteReturnType: string | null = null;
     const structValuedIdentifiers = new Set<string>();
 
-    const bodyNode = Reflect.get(functionNode, "body");
-    const stack: unknown[] = [];
-    if (bodyNode && typeof bodyNode === "object") {
-        stack.push(bodyNode);
-    }
-
-    while (stack.length > 0) {
-        const current = stack.pop();
-        if (!current || typeof current !== "object") {
-            continue;
+    // Two-pass traversal:
+    //  1. Collect struct-valued identifiers from every declarator/assignment in scope.
+    //  2. Re-walk, now resolving return types against the complete identifier map.
+    //
+    // This mirrors the original while-loop ordering without hand-rolling a mutable
+    // stack: pass 1 processes all siblings before recursing into any subtree, so
+    // `var foo = {}` is always seen before `return foo`.
+    const collectStructIdentifiers = (node: unknown): void => {
+        if (!node || typeof node !== "object") {
+            return;
         }
 
-        if (Array.isArray(current)) {
-            for (let index = current.length - 1; index >= 0; index -= 1) {
-                stack.push(current[index]);
+        if (Array.isArray(node)) {
+            for (const item of node) {
+                collectStructIdentifiers(item);
             }
-            continue;
+            return;
         }
 
-        const currentType = Reflect.get(current, "type");
-        recordStructValuedIdentifierFromDeclarator(current, structValuedIdentifiers);
-        recordStructValuedIdentifierFromAssignment(current, structValuedIdentifiers);
+        const nodeType = Reflect.get(node, "type");
+        if (typeof nodeType === "string" && isFunctionLikeNodeType(nodeType)) {
+            return; // nested functions have their own scope
+        }
 
-        if (currentType === "ReturnStatement") {
+        recordStructValuedIdentifierFromDeclarator(node, structValuedIdentifiers);
+        recordStructValuedIdentifierFromAssignment(node, structValuedIdentifiers);
+
+        // Recurse into all children for this pass.
+        for (const [key, value] of Object.entries(node)) {
+            if (key === "parent") {
+                continue;
+            }
+            collectStructIdentifiers(value);
+        }
+    };
+
+    const analyzeReturns = (node: unknown): void => {
+        if (!node || typeof node !== "object") {
+            return;
+        }
+
+        if (Array.isArray(node)) {
+            for (const item of node) {
+                analyzeReturns(item);
+            }
+            return;
+        }
+
+        const nodeType = Reflect.get(node, "type");
+        if (typeof nodeType === "string" && isFunctionLikeNodeType(nodeType)) {
+            return; // nested functions have their own scope
+        }
+
+        if (nodeType === "ReturnStatement") {
             hasReturnStatement = true;
-            const argument = Reflect.get(current, "argument");
+            const argument = Reflect.get(node, "argument");
             if (argument == null || isUndefinedReturnArgument(argument)) {
                 hasUndefinedReturn = true;
-                continue;
+                return;
             }
 
             hasConcreteReturn = true;
@@ -837,22 +867,21 @@ function analyzeFunctionReturnInference(
                 structValuedIdentifiers
             );
             concreteReturnType = mergeConcreteReturnType(concreteReturnType, inferredType);
-            continue;
+            return;
         }
 
-        if (typeof currentType === "string" && isFunctionLikeNodeType(currentType)) {
-            continue;
-        }
-
-        for (const [key, value] of Object.entries(current)) {
+        for (const [key, value] of Object.entries(node)) {
             if (key === "parent") {
                 continue;
             }
-
-            if (value && typeof value === "object") {
-                stack.push(value);
-            }
+            analyzeReturns(value);
         }
+    };
+
+    const bodyNode = Reflect.get(functionNode, "body");
+    if (bodyNode && typeof bodyNode === "object") {
+        collectStructIdentifiers(bodyNode);
+        analyzeReturns(bodyNode);
     }
 
     return {
@@ -970,10 +999,8 @@ function synthesizeFunctionDocCommentBlock(
     const name = getFunctionNodeName(functionNode);
     // start with a mutable copy of whatever the user already wrote
     const block = existingLines ? Array.from(existingLines) : [];
-    const hadInputDocLines = block.length > 0;
-    if (block.length === 0 && !allowSynthesisWithoutDocs) {
-        return null;
-    }
+    // hadInputDocLines: only true when there are real existing lines (not empty or synthetic)
+    const hadInputDocLines = existingLines !== null && existingLines.length > 0;
 
     // remove any literal placeholder description that simply repeats the name
     for (let i = block.length - 1; i >= 0; i--) {
@@ -983,6 +1010,12 @@ function synthesizeFunctionDocCommentBlock(
         ) {
             block.splice(i, 1);
         }
+    }
+
+    // blockBecameEmptyAfterPruning: true when pruning removed only placeholder docs
+    const blockBecameEmptyAfterPruning = block.length === 0 && hadInputDocLines;
+    if (block.length === 0 && !allowSynthesisWithoutDocs && !blockBecameEmptyAfterPruning) {
+        return null;
     }
 
     const indentation = /^((?:\s*)?)\S?/.exec(block[0] || "")?.[1] || "";
@@ -1065,7 +1098,10 @@ function synthesizeFunctionDocCommentBlock(
         returnInference,
         inferredReturnType,
         hasExistingReturnLine: hasReturns,
-        suppressSyntheticReturns
+        suppressSyntheticReturns,
+        hasRecognizedFunctionDocTagInBlock: hasRecognizedFunctionDocTag(block),
+        hasUnrecognizedFunctionDocTagInBlock: hasUnrecognizedFunctionDocTag(block),
+        blockBecameEmptyAfterPruning
     });
 
     if (hasReturns && shouldSynthesizeReturnLine) {
@@ -1423,6 +1459,17 @@ function isTextualConstructorFunctionLine(line: string): boolean {
     return /\bfunction\b/u.test(line) && /\bconstructor\b/u.test(line);
 }
 
+function hasRecognizedFunctionDocTag(docLines: ReadonlyArray<string>): boolean {
+    return docLines.some((docLine) => /^\s*\/\/\/\s*@(description|desc|param|returns?)\b/u.test(docLine));
+}
+
+function hasUnrecognizedFunctionDocTag(docLines: ReadonlyArray<string>): boolean {
+    return docLines.some(
+        (docLine) =>
+            /^\s*\/\/\/\s*@(.+)$/u.test(docLine) && !/^\s*\/\/\/\s*@(description|desc|param|returns?)\b/u.test(docLine)
+    );
+}
+
 function synthesizeTextFallbackDocCommentBlock({
     processedBlock,
     line,
@@ -1443,6 +1490,10 @@ function synthesizeTextFallbackDocCommentBlock({
 
     mergeFallbackParamLines(fallbackBlock, fallbackParams, indentation);
 
+    // Only check for recognized function tags AFTER merging params, so that
+    // synthesized @param lines from function signatures are visible to the check.
+    const hasRecognizedFunctionTag = hasRecognizedFunctionDocTag(fallbackBlock);
+
     const hasReturnLine = fallbackBlock.some((docLine) => /^\s*\/\/\/\s*@returns?/.test(docLine));
     const hasConcreteReturnText = hasConcreteReturnTextAfterLine(lines, lineIndex);
     const inferredReturnType = inferReturnDocTypeFromTextAfterLine(
@@ -1457,7 +1508,7 @@ function synthesizeTextFallbackDocCommentBlock({
         removeReturnDocLines(fallbackBlock);
     }
 
-    if (!hasReturnLine && !isConstructorFunctionLine) {
+    if (!hasReturnLine && !isConstructorFunctionLine && hasRecognizedFunctionTag) {
         if (inferredReturnType !== null) {
             fallbackBlock.push(`${indentation}/// @returns {${inferredReturnType}}`);
         } else if (!hasConcreteReturnText || functionHeaderCount === 1) {
@@ -1513,11 +1564,12 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
 
                         const astFunctionCandidate = functionNodesByLineIndex.get(lineIndex)?.[0] ?? null;
                         const hasAstNode = astFunctionCandidate !== null;
+
                         // when running under the minimalist test harness the AST will be
                         // just `{type:"Program"}` so the map will be empty; fall back to a
                         // simple regex to recognize function headers in that case.
-                        const hasLeadingIndentation = /^\s+/u.test(line);
                         const isTextualFunctionDeclaration = isTextualNamedFunctionDeclarationLine(line);
+                        const hasLeadingIndentation = /^\s+/u.test(line);
                         const isTextualFunctionAssignment = /^\s*(?:var|static)\s+[A-Za-z_]\w*\s*=\s*function\b/u.test(
                             line
                         );
@@ -1640,7 +1692,10 @@ function determineIfShouldSynthesizeReturnLine({
     returnInference,
     inferredReturnType,
     hasExistingReturnLine,
-    suppressSyntheticReturns
+    suppressSyntheticReturns,
+    hasRecognizedFunctionDocTagInBlock,
+    hasUnrecognizedFunctionDocTagInBlock,
+    blockBecameEmptyAfterPruning
 }: {
     assignmentStyle: boolean;
     propertyStyle: boolean;
@@ -1652,6 +1707,9 @@ function determineIfShouldSynthesizeReturnLine({
     inferredReturnType: string;
     hasExistingReturnLine: boolean;
     suppressSyntheticReturns: boolean;
+    hasRecognizedFunctionDocTagInBlock: boolean;
+    hasUnrecognizedFunctionDocTagInBlock: boolean;
+    blockBecameEmptyAfterPruning: boolean;
 }): boolean {
     if (suppressSyntheticReturns) {
         return false;
@@ -1672,6 +1730,12 @@ function determineIfShouldSynthesizeReturnLine({
         !hasExistingReturnLine &&
         returnInference.hasConcreteReturn &&
         normalizeReturnTypeForComparison(inferredReturnType) !== "struct";
+    const suppressUnknownDocTagOnlyReturn =
+        blockBecameEmptyAfterPruning ||
+        (hadInputDocLines &&
+            (functionParameterNamesInOrder.length > 0 || hasUnrecognizedFunctionDocTagInBlock) &&
+            !hasRecognizedFunctionDocTagInBlock);
+
     const suppressUndocumentedNoParamPropertyFunctionReturn =
         propertyStyle && !hadInputDocLines && functionParameterNamesInOrder.length === 0;
     const suppressUndocumentedFunctionPropertyStructReturn =
@@ -1684,6 +1748,7 @@ function determineIfShouldSynthesizeReturnLine({
         !suppressUndocumentedAssignmentWithoutParams &&
         !suppressNestedUndocumentedNoParamConcreteReturn &&
         !suppressDocOnlyNoParamConcreteReturn &&
+        !suppressUnknownDocTagOnlyReturn &&
         !suppressUndocumentedNoParamPropertyFunctionReturn &&
         !suppressUndocumentedFunctionPropertyStructReturn
     );

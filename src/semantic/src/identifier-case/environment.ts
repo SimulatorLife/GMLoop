@@ -1,6 +1,6 @@
 import { Core } from "@gmloop/core";
 
-import { warnWithReason } from "./logger.js";
+import { warnWithReason } from "./identifier-case-helpers.js";
 import { deleteIdentifierCaseOption, setIdentifierCaseOption } from "./option-store.js";
 import { captureIdentifierCasePlanSnapshot, prepareIdentifierCasePlan } from "./plan-service.js";
 import { bootstrapIdentifierCaseProjectIndex } from "./project-index-gateway.js";
@@ -136,20 +136,6 @@ export function attachIdentifierCasePlanSnapshot(ast, options) {
             // inert snapshots which strip rename data from downstream printers.
             if (!snapshot || (snapshot.planGenerated !== true && !Core.isMapLike(snapshot.renameMap))) {
                 return;
-            }
-
-            try {
-                if (Core.isMapLike(snapshot.renameMap)) {
-                    const samples = [];
-                    let c = 0;
-                    for (const k of snapshot.renameMap.keys()) {
-                        samples.push(String(k));
-                        c += 1;
-                        if (c >= 5) break;
-                    }
-                }
-            } catch {
-                /* ignore */
             }
 
             Object.defineProperty(objectAst, "__identifierCasePlanSnapshot", {

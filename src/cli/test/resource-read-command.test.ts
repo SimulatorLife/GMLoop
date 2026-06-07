@@ -24,9 +24,26 @@ void test("resource command catalog includes list and find leaves", async () => 
     assert.ok(catalog.some((entry) => entry.displayName === "resource deps"));
     assert.ok(catalog.some((entry) => entry.displayName === "resource dependents"));
     assert.ok(catalog.some((entry) => entry.displayName === "resource audit"));
-    assert.ok(catalog.some((entry) => entry.displayName === "resource rename"));
-    assert.ok(catalog.some((entry) => entry.displayName === "resource duplicate"));
-    assert.ok(catalog.some((entry) => entry.displayName === "resource move"));
+    assert.equal(
+        catalog.some((entry) => entry.displayName === "resource add"),
+        false
+    );
+    assert.equal(
+        catalog.some((entry) => entry.displayName === "resource remove"),
+        false
+    );
+    assert.equal(
+        catalog.some((entry) => entry.displayName === "resource rename"),
+        false
+    );
+    assert.equal(
+        catalog.some((entry) => entry.displayName === "resource duplicate"),
+        false
+    );
+    assert.equal(
+        catalog.some((entry) => entry.displayName === "resource move"),
+        false
+    );
 });
 
 void test("resource find returns graph search payload", async () => {
@@ -54,59 +71,15 @@ void test("resource find returns graph search payload", async () => {
     });
 });
 
-void test("resource rename/duplicate/move require their contract options", async () => {
-    const renameHelp = await runCliTestCommand({
-        argv: ["resource", "rename", "--help"]
-    });
-    assert.equal(renameHelp.exitCode, 0);
-    assert.match(renameHelp.stdout, /--new-name <name>/);
-
-    const duplicateHelp = await runCliTestCommand({
-        argv: ["resource", "duplicate", "--help"]
-    });
-    assert.equal(duplicateHelp.exitCode, 0);
-    assert.match(duplicateHelp.stdout, /--new-name <name>/);
-
-    const moveHelp = await runCliTestCommand({
-        argv: ["resource", "move", "--help"]
-    });
-    assert.equal(moveHelp.exitCode, 0);
-    assert.match(moveHelp.stdout, /--destination-folder <path>/);
-});
-
-void test("resource rename/duplicate/move resolve to implemented backend mutations", async () => {
+void test("resource command help points edits at gm-cli resourcetool", async () => {
     await withTempDir(async (projectRoot) => {
-        await writeFile(
-            path.join(projectRoot, "Project.yyp"),
-            JSON.stringify({ name: "Project", resources: [] }),
-            "utf8"
-        );
+        await writeFile(path.join(projectRoot, "Project.yyp"), JSON.stringify({ name: "Project" }), "utf8");
 
-        const rename = await runCliTestCommand({
-            argv: ["resource", "rename", "script", "old_name", "--new-name", "new_name", "--path", projectRoot]
+        const helpResult = await runCliTestCommand({
+            argv: ["resource", "--help"],
+            cwd: projectRoot
         });
-        assert.equal(rename.exitCode, 1);
-        assert.match(rename.stderr, /Could not find a script resource named 'old_name'/u);
-
-        const duplicate = await runCliTestCommand({
-            argv: ["resource", "duplicate", "script", "old_name", "--new-name", "copy_name", "--path", projectRoot]
-        });
-        assert.equal(duplicate.exitCode, 1);
-        assert.match(duplicate.stderr, /Could not find a script resource named 'old_name'/u);
-
-        const move = await runCliTestCommand({
-            argv: [
-                "resource",
-                "move",
-                "script",
-                "old_name",
-                "--destination-folder",
-                "scripts/new_folder",
-                "--path",
-                projectRoot
-            ]
-        });
-        assert.equal(move.exitCode, 1);
-        assert.match(move.stderr, /Could not find a script resource named 'old_name'/u);
+        assert.equal(helpResult.exitCode, 0);
+        assert.match(helpResult.stdout, /@gamemaker\/gm-cli@latest resourcetool eval/u);
     });
 });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { formatGeneratedDate } from "../src/utils/date.js";
+import { formatGeneratedDate } from "../src/utils/capability-probes.js";
 
 void describe("date-utils", () => {
     void it("formats Date instances using only the YYYY-MM-DD portion", () => {

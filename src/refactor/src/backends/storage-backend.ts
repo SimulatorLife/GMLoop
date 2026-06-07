@@ -23,6 +23,15 @@ export interface StorageBackend {
     deleteEntry(key: string): Promise<void>;
     dispose(): Promise<void>;
     getStats(): StorageBackendStats;
+    /**
+     * Remove a spilled entry from the backend's path index and read cache
+     * without deleting the backing file on disk.
+     *
+     * Used by overlay scenarios where the overlay entry has been written back
+     * and the spill reference is now stale, but the file contents are still
+     * valid for the in-memory overlay map.
+     */
+    removeFromIndex(key: string): void;
 }
 
 type TempFileStorageBackendOptions = {
@@ -183,14 +192,24 @@ export class TempFileStorageBackend implements StorageBackend {
         }
     }
 
+    removeFromIndex(key: string): void {
+        if (this.disposed) {
+            return;
+        }
+
+        this.readCacheByKey.delete(key);
+        this.pathByKey.delete(key);
+        this.stats.spilledEntries = this.pathByKey.size;
+    }
+
     async dispose(): Promise<void> {
         this.disposed = true;
         const pendingPromise = this.tempRootPathPromise;
         const rootPath = this.tempRootPath;
         this.tempRootPath = null;
         this.tempRootPathPromise = null;
-        this.pathByKey.clear();
         this.readCacheByKey.clear();
+        this.pathByKey.clear();
 
         // If mkdtemp() is still in-flight, await it so the newly created
         // directory can be removed. Without this, dispose() would return

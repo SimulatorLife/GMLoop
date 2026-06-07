@@ -21,7 +21,7 @@ type ProjectResourceArtifact = Readonly<{
     path: string;
 }>;
 
-type ProjectManifestEntry = Readonly<{
+export type ProjectManifestEntry = Readonly<{
     id: Readonly<{
         name: string;
         path: string;
@@ -166,7 +166,18 @@ async function pathExists(candidatePath: string): Promise<boolean> {
     }
 }
 
-async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProjectManifest> {
+/**
+ * Locate the single `.yyp` project manifest file inside `projectRoot`.
+ *
+ * The returned descriptor carries the absolute file path, a project-root-relative
+ * posix path, and a filename-derived fallback `projectName`. The manifest body
+ * itself is not read here, so callers that need the canonical project name should
+ * also read the document and prefer its `name` field.
+ *
+ * @param projectRoot - Absolute path to the GameMaker project root.
+ * @returns Frozen descriptor describing the located manifest file.
+ */
+export async function resolveProjectManifestFile(projectRoot: string): Promise<ResolvedProjectManifest> {
     const directoryEntries = await readdir(projectRoot, {
         withFileTypes: true
     });
@@ -181,25 +192,41 @@ async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProj
 
     if (manifestFileNames.length > 1) {
         throw new Error(
-            `Found multiple .yyp manifests in '${projectRoot}'. Resource operations require exactly one project manifest.`
+            `Found multiple .yyp manifests in '${projectRoot}'. Project operations require exactly one project manifest.`
         );
     }
 
     const manifestFileName = manifestFileNames[0];
     const manifestAbsolutePath = path.join(projectRoot, manifestFileName);
-    const manifestDocument = await readProjectMetadataDocument(manifestAbsolutePath);
-    const manifestName =
-        Core.getNonEmptyString(manifestDocument.name) ??
-        path.basename(manifestFileName, path.extname(manifestFileName));
 
     return Object.freeze({
         absolutePath: manifestAbsolutePath,
-        projectName: manifestName,
+        projectName: path.basename(manifestFileName, path.extname(manifestFileName)),
         relativePath: Core.toPosixPath(manifestFileName)
     });
 }
 
-async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
+async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProjectManifest> {
+    const manifest = await resolveProjectManifestFile(projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
+    const projectName = Core.getNonEmptyString(manifestDocument.name) ?? manifest.projectName;
+
+    return Object.freeze({
+        absolutePath: manifest.absolutePath,
+        projectName,
+        relativePath: manifest.relativePath
+    });
+}
+
+/**
+ * Read and parse a GameMaker project metadata document from disk, returning the
+ * raw record (without schema filtering) that downstream code mutates in place.
+ *
+ * @param absolutePath - Absolute path to the `.yy`/`.yyp` metadata file.
+ * @returns The parsed metadata document, including any post-mutation source
+ *   metadata captured by {@link Core.parseProjectMetadataDocumentForMutation}.
+ */
+export async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
     const rawContent = await readFile(absolutePath, "utf8");
     return Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
 }
@@ -224,7 +251,7 @@ function createProjectResourceContext(
     });
 }
 
-function getManifestResources(document: Record<string, unknown>): Array<ProjectManifestEntry> {
+export function getManifestResources(document: Record<string, unknown>): Array<ProjectManifestEntry> {
     const resourceEntries = Core.asArray(document.resources);
     const normalizedEntries: Array<ProjectManifestEntry> = [];
 

@@ -9,8 +9,7 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 
 import { Parser } from "@gmloop/parser";
-
-import { Transpiler } from "../index.js";
+import { Transpiler } from "@gmloop/transpiler";
 
 void describe("Transpiler AST reuse", () => {
     void it("accepts pre-parsed AST and produces valid patch", () => {
@@ -107,10 +106,10 @@ void describe("Transpiler AST reuse", () => {
 
     void it("uses a provided AST without re-parsing sourceText", () => {
         const transpiler = new Transpiler.GmlTranspiler();
-        assert.throws(() => Parser.GMLParser.parse("invalid syntax %%%%"));
+        assert.throws(() => Parser.GMLParser.parse("\\"));
 
         const patch = transpiler.transpileScript({
-            sourceText: "invalid syntax %%%%",
+            sourceText: "\\",
             symbolId: "gml/script/ast_only",
             ast: {
                 type: "Program",

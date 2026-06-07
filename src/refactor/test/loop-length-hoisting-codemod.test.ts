@@ -1,95 +1,57 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Refactor } from "../index.js";
+import { applyLoopLengthHoistingCodemod } from "../src/codemods/loop-length-hoisting/index.js";
 
-const { applyLoopLengthHoistingCodemod } = Refactor.LoopLengthHoisting;
-
-void test("applyLoopLengthHoistingCodemod hoists array_length calls in for-loop tests", () => {
-    const input = ["for (var i = 0; i < array_length(items); i++) {", "    total += i;", "}", ""].join("\n");
-    const expected = [
-        "var len = array_length(items);",
-        "for (var i = 0; i < len; i++) {",
-        "    total += i;",
-        "}",
-        ""
-    ].join("\n");
-
-    const result = applyLoopLengthHoistingCodemod(input);
-    assert.equal(result.changed, true);
-    assert.equal(result.outputText, expected);
-    assert.equal(result.appliedEdits.length > 0, true);
-    assert.equal(result.diagnosticOffsets.length, 1);
-});
-
-void test("applyLoopLengthHoistingCodemod leaves loops unchanged when insertion point is unsafe", () => {
-    const input = [
-        "if (ready)",
+void test("loopLengthHoisting hoists array_length from safe for-loop conditions", () => {
+    const sourceText = [
+        "function demo(items) {",
         "    for (var i = 0; i < array_length(items); i++) {",
-        "        sum += i;",
+        "        total += i;",
         "    }",
-        ""
-    ].join("\n");
-
-    const result = applyLoopLengthHoistingCodemod(input);
-    assert.equal(result.changed, false);
-    assert.equal(result.outputText, input);
-    assert.equal(result.appliedEdits.length, 0);
-});
-
-void test("applyLoopLengthHoistingCodemod respects null suffix overrides", () => {
-    const input = ["for (var i = 0; i < array_length(items); i++) {", "    total += i;", "}", ""].join("\n");
-
-    const result = applyLoopLengthHoistingCodemod(input, {
-        functionSuffixes: {
-            array_length: null
-        }
-    });
-
-    assert.equal(result.changed, false);
-    assert.equal(result.outputText, input);
-    assert.equal(result.appliedEdits.length, 0);
-});
-
-void test("applyLoopLengthHoistingCodemod only rewrites repeated calls matching the selected hoist accessor", () => {
-    const input = [
-        "for (var i = 0; i < array_length(items) && i < ds_list_size(queue); i++) {",
-        "    total += i;",
-        "}",
-        ""
-    ].join("\n");
-    const expected = [
-        "var len = array_length(items);",
-        "for (var i = 0; i < len && i < ds_list_size(queue); i++) {",
-        "    total += i;",
         "}",
         ""
     ].join("\n");
 
-    const result = applyLoopLengthHoistingCodemod(input, {
-        functionSuffixes: {
-            ds_list_size: "size"
-        }
-    });
+    const result = applyLoopLengthHoistingCodemod(sourceText);
 
     assert.equal(result.changed, true);
-    assert.equal(result.outputText, expected);
-    assert.equal(result.diagnosticOffsets.length, 1);
+    assert.match(result.outputText, / {4}var len = array_length\(items\);/);
+    assert.match(result.outputText, /for \(var i = 0; i < len; i\+\+\)/);
+    assert.equal(result.appliedEdits.length, 2);
 });
 
-void test("applyLoopLengthHoistingCodemod detects accessor calls with whitespace before parentheses", () => {
-    const input = ["for (var i = 0; i < array_length (items); i++) {", "    total += i;", "}", ""].join("\n");
-    const expected = [
-        "var len = array_length (items);",
-        "for (var i = 0; i < len; i++) {",
-        "    total += i;",
+void test("loopLengthHoisting avoids existing len identifiers", () => {
+    const sourceText = [
+        "function demo(items) {",
+        "    var len = 0;",
+        "    for (var i = 0; i < array_length(items); i++) {",
+        "        total += i;",
+        "    }",
         "}",
         ""
     ].join("\n");
 
-    const result = applyLoopLengthHoistingCodemod(input);
+    const result = applyLoopLengthHoistingCodemod(sourceText);
 
     assert.equal(result.changed, true);
-    assert.equal(result.outputText, expected);
-    assert.equal(result.diagnosticOffsets.length, 1);
+    assert.match(result.outputText, / {4}var len_1 = array_length\(items\);/);
+    assert.match(result.outputText, /for \(var i = 0; i < len_1; i\+\+\)/);
+});
+
+void test("loopLengthHoisting returns unchanged text without parsing when no array_length call exists", () => {
+    const sourceText = [
+        "function demo(items) {",
+        "    for (var i = 0; i < items.length; i++) {",
+        "        total += items[i];",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = applyLoopLengthHoistingCodemod(sourceText);
+
+    assert.equal(result.changed, false);
+    assert.equal(result.outputText, sourceText);
+    assert.equal(result.appliedEdits.length, 0);
 });

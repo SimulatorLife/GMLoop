@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, isAstNodeRecord, resolveLocFromIndex } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 function collectGlobalVarStatementStartOffsets(programNode: unknown): ReadonlyArray<number> {
     const statementStartOffsets: Array<number> = [];

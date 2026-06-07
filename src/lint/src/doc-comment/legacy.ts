@@ -90,7 +90,7 @@ export function reorderDescriptionLinesToTop(docLines: DocCommentLines | string[
     const normalizedDocLines: string[] = toMutableArray(docLines, { clone: true });
 
     if (normalizedDocLines.length === 0) {
-        return normalizedDocLines as DocCommentLines;
+        return normalizedDocLines;
     }
 
     const descriptionBlocks: number[][] = [];
@@ -123,7 +123,7 @@ export function reorderDescriptionLinesToTop(docLines: DocCommentLines | string[
     }
 
     if (descriptionBlocks.length === 0) {
-        return normalizedDocLines as DocCommentLines;
+        return normalizedDocLines;
     }
 
     const descriptionIndices = descriptionBlocks.flat();
@@ -157,7 +157,7 @@ export function reorderDescriptionLinesToTop(docLines: DocCommentLines | string[
     const result = [...descriptionLines, ...filtered] as MutableDocCommentLines;
     copyDocCommentFlags(docLines, result);
 
-    return result as DocCommentLines;
+    return result;
 }
 
 export function convertLegacyReturnsDescriptionLinesToMetadata(

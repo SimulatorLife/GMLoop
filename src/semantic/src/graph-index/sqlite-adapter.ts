@@ -9,11 +9,10 @@ const SQLITE_BUSY_TIMEOUT_MS = 5000;
 export type GraphDatabaseRuntimeInfo = Readonly<{
     busyTimeoutMs: number;
     driver: "node:sqlite";
-    experimental: true;
     foreignKeysEnabled: boolean;
     journalMode: string;
+    runtimeStability: "stable";
     synchronousMode: string;
-    warningPolicy: "documented-and-reported";
 }>;
 
 export type GraphDatabaseIntegrityReport = Readonly<{
@@ -83,9 +82,9 @@ export function getGraphDatabaseRuntimeInfo(database: GraphDatabase): GraphDatab
     return Object.freeze({
         busyTimeoutMs: SQLITE_BUSY_TIMEOUT_MS,
         driver: "node:sqlite",
-        experimental: true,
         foreignKeysEnabled: foreignKeysRow?.foreign_keys === 1,
         journalMode: journalModeRow?.journal_mode ?? "unknown",
+        runtimeStability: "stable",
         synchronousMode:
             synchronousRow?.synchronous === 0
                 ? "OFF"
@@ -95,8 +94,7 @@ export function getGraphDatabaseRuntimeInfo(database: GraphDatabase): GraphDatab
                     ? "FULL"
                     : synchronousRow?.synchronous === 3
                       ? "EXTRA"
-                      : "unknown",
-        warningPolicy: "documented-and-reported"
+                      : "unknown"
     });
 }
 

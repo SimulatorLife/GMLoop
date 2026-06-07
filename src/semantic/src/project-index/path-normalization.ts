@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { isWin32Path, resolveProjectPathInfo } from "./path-info.js";
+import { resolveProjectPathInfo } from "./path-info.js";
 
 /**
  * Normalize a raw resource path into a POSIX-style path relative to the
@@ -26,7 +26,7 @@ export function normalizeProjectResourcePath(
         return normalized;
     }
 
-    const useWin32 = isWin32Path(normalized) || isWin32Path(projectRoot);
+    const useWin32 = Core.isWin32Path(normalized) || Core.isWin32Path(projectRoot);
     const pathApi = useWin32 ? path.win32 : path;
     const absoluteCandidate = pathApi.isAbsolute(normalized) ? normalized : pathApi.join(projectRoot, normalized);
 

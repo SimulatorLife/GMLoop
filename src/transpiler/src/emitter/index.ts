@@ -13,4 +13,5 @@ export type { SemanticOracleOptions } from "./semantic-factory.js";
 export { createSemanticOracle } from "./semantic-factory.js";
 export { ensureStatementTerminated, isStatementTerminated } from "./statement-termination-policy.js";
 export { StringBuilder } from "./string-builder.js";
+export * from "./type-guards.js";
 export { lowerWithStatement } from "./with-lowering.js";

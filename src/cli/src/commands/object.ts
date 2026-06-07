@@ -1,13 +1,17 @@
+import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
-import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
+import { handleCliError } from "../cli-core/errors.js";
+import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
-    ensurePlannedSurfaceGraphIndex,
-    type PlannedSurfaceSharedOptions,
-    printPlannedSurfacePayload
-} from "./planned-ai-surface-shared.js";
+    ensureProjectGraphIndex,
+    filterGraphIndexResultsByKind,
+    printProjectPayload,
+    resolveCommandProjectContext,
+    type SharedProjectContextOptions
+} from "../workflow/project-root.js";
 
 function addObjectSharedOptions(command: Command): Command {
     return command
@@ -19,13 +23,85 @@ function addObjectSharedOptions(command: Command): Command {
         .option("--json", "Emit JSON output.");
 }
 
+const OBJECT_NAME_ARGUMENT_DESCRIPTION = "Object name";
+const OBJECT_EVENT_MUTATION_CAPABILITY = "object_event_mutation";
+const EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION = "Event descriptor (category:event)";
+
+type ObjectEventDescriptor = Readonly<{
+    category: string;
+    descriptor: string;
+}>;
+
 function printObjectPayload(payload: unknown): void {
-    printPlannedSurfacePayload(payload);
+    printProjectPayload(payload);
+}
+
+type ObjectMutationOptions = SharedProjectContextOptions &
+    Readonly<{
+        write?: boolean;
+    }>;
+
+function toObjectEventMutationPayload(result: Awaited<ReturnType<typeof Refactor.addObjectEvent>>) {
+    return {
+        action: result.action,
+        dryRun: result.dryRun,
+        eventFilePath: result.eventFilePath,
+        eventNumber: result.eventNumber,
+        eventType: result.eventType,
+        objectName: result.objectName,
+        objectPath: result.objectPath,
+        warnings: result.warnings,
+        writtenPaths: result.writtenPaths
+    };
+}
+
+async function runObjectEventAddAction(
+    objectName: string,
+    eventDescriptor: ObjectEventDescriptor,
+    handler: string,
+    options: ObjectMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.addObjectEvent({
+        descriptor: eventDescriptor,
+        dryRun: options.write !== true,
+        handlerSource: handler,
+        objectName,
+        projectRoot: context.projectRoot
+    });
+
+    printObjectPayload({
+        command: "object event add",
+        ok: true,
+        payload: toObjectEventMutationPayload(result)
+    });
+}
+
+async function runObjectEventUpdateAction(
+    objectName: string,
+    eventDescriptor: ObjectEventDescriptor,
+    handler: string,
+    options: ObjectMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.updateObjectEvent({
+        descriptor: eventDescriptor,
+        dryRun: options.write !== true,
+        handlerSource: handler,
+        objectName,
+        projectRoot: context.projectRoot
+    });
+
+    printObjectPayload({
+        command: "object event update",
+        ok: true,
+        payload: toObjectEventMutationPayload(result)
+    });
 }
 
 function emitObjectUnavailableLeaf(
     commandName: string,
-    options: PlannedSurfaceSharedOptions,
+    options: ObjectMutationOptions,
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
@@ -35,9 +111,25 @@ function emitObjectUnavailableLeaf(
         payload: {
             capability,
             details,
+            mode: options.write === true ? "apply" : "dry-run",
             state: "not_available"
         }
     });
+}
+
+function parseObjectEventDescriptor(eventDescriptor: string): ObjectEventDescriptor {
+    const [rawCategory, ...rawDescriptorSegments] = eventDescriptor.split(":");
+    const category = rawCategory?.trim() ?? "";
+    const descriptor = rawDescriptorSegments.join(":").trim();
+    if (category.length === 0 || descriptor.length === 0) {
+        throw new Error(
+            `Invalid event descriptor "${eventDescriptor}". Expected format: category:event (for example Step:Begin).`
+        );
+    }
+    return {
+        category,
+        descriptor
+    };
 }
 
 export function createObjectCommand(): Command {
@@ -49,15 +141,18 @@ export function createObjectCommand(): Command {
         applyStandardCommandOptions(new Command("list")).description("List object resources.")
     );
     list.action(async function objectListAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
-        const payload = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: "",
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "object");
+        const options = this.opts<SharedProjectContextOptions>();
+        const context = await ensureProjectGraphIndex(options);
+        const payload = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "object"
+        );
         printObjectPayload({ command: "object list", ok: true, payload });
     });
 
@@ -67,17 +162,18 @@ export function createObjectCommand(): Command {
             .argument("<object>", "Object name or graph node id.")
     );
     inspect.action(async function objectInspectAction(objectNameOrId: string) {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const options = this.opts<SharedProjectContextOptions>();
+        const context = await ensureProjectGraphIndex(options);
+        const results = Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query: objectNameOrId,
+            toolsetRoot: options.toolsetRoot
+        }).results;
         const resolvedId = objectNameOrId.includes("::")
             ? objectNameOrId
-            : (Semantic.searchGraphIndex({
-                  databasePath: options.databasePath,
-                  projectConfig: context.projectConfig,
-                  projectRoot: context.projectRoot,
-                  query: objectNameOrId,
-                  toolsetRoot: options.toolsetRoot
-              }).results.find((entry) => entry.kind === "object")?.id ?? null);
+            : (filterGraphIndexResultsByKind(results, "object")[0]?.id ?? null);
         const payload =
             resolvedId === null
                 ? null
@@ -94,10 +190,10 @@ export function createObjectCommand(): Command {
     const update = addObjectSharedOptions(
         applyStandardCommandOptions(new Command("update"))
             .description("Update object.")
-            .argument("<object>", "Object name")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
     );
     update.action(function objectUpdateAction(objectName: string) {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
+        const options = this.opts<SharedProjectContextOptions>();
         emitObjectUnavailableLeaf("object update", options, "object_property_mutation", { object: objectName });
     });
 
@@ -105,15 +201,18 @@ export function createObjectCommand(): Command {
         applyStandardCommandOptions(new Command("validate")).description("Validate object metadata.")
     );
     validate.action(async function objectValidateAction() {
-        const options = this.opts<PlannedSurfaceSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
-        const objects = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: "",
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "object");
+        const options = this.opts<SharedProjectContextOptions>();
+        const context = await ensureProjectGraphIndex(options);
+        const objects = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "object"
+        );
         printObjectPayload({
             command: "object validate",
             ok: true,
@@ -125,16 +224,91 @@ export function createObjectCommand(): Command {
     });
 
     const event = applyStandardCommandOptions(new Command("event")).description("Object event operations.");
-    for (const eventLeaf of ["list", "inspect", "add", "update", "delete"]) {
-        const nested = addObjectSharedOptions(
-            applyStandardCommandOptions(new Command(eventLeaf)).description(`Object event ${eventLeaf}.`)
-        );
-        nested.action(function objectEventLeafAction() {
-            const options = this.opts<PlannedSurfaceSharedOptions>();
-            emitObjectUnavailableLeaf(`object event ${eventLeaf}`, options, "object_event_mutation");
+
+    const eventList = addObjectSharedOptions(
+        applyStandardCommandOptions(new Command("list"))
+            .description("Object event list.")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
+    );
+    eventList.action(function objectEventListAction(objectName: string) {
+        const options = this.opts<ObjectMutationOptions>();
+        emitObjectUnavailableLeaf("object event list", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
+            object: objectName
         });
-        event.addCommand(nested);
-    }
+    });
+
+    const eventInspect = addObjectSharedOptions(
+        applyStandardCommandOptions(new Command("inspect"))
+            .description("Object event inspect.")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
+            .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
+    );
+    eventInspect.action(function objectEventInspectAction(objectName: string, eventDescriptor: string) {
+        const options = this.opts<ObjectMutationOptions>();
+        emitObjectUnavailableLeaf("object event inspect", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
+            event: eventDescriptor,
+            object: objectName
+        });
+    });
+
+    const eventAdd = addObjectSharedOptions(
+        applyStandardCommandOptions(new Command("add"))
+            .description("Object event add.")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
+            .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
+            .argument("<handler>", "Handler source snippet or statement block")
+    ).addOption(createWriteOption());
+    eventAdd.action(async function objectEventAddAction(objectName: string, eventDescriptor: string, handler: string) {
+        try {
+            const options = this.opts<ObjectMutationOptions>();
+            const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
+            await runObjectEventAddAction(objectName, parsedDescriptor, handler, options);
+        } catch (error) {
+            handleCliError(error);
+        }
+    });
+
+    const eventUpdate = addObjectSharedOptions(
+        applyStandardCommandOptions(new Command("update"))
+            .description("Object event update.")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
+            .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
+            .argument("<handler>", "Updated handler source snippet or statement block")
+    ).addOption(createWriteOption());
+    eventUpdate.action(async function objectEventUpdateAction(
+        objectName: string,
+        eventDescriptor: string,
+        handler: string
+    ) {
+        try {
+            const options = this.opts<ObjectMutationOptions>();
+            const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
+            await runObjectEventUpdateAction(objectName, parsedDescriptor, handler, options);
+        } catch (error) {
+            handleCliError(error);
+        }
+    });
+
+    const eventDelete = addObjectSharedOptions(
+        applyStandardCommandOptions(new Command("delete"))
+            .description("Object event delete.")
+            .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
+            .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
+    ).addOption(createWriteOption());
+    eventDelete.action(function objectEventDeleteAction(objectName: string, eventDescriptor: string) {
+        const options = this.opts<ObjectMutationOptions>();
+        const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
+        emitObjectUnavailableLeaf("object event delete", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
+            event: parsedDescriptor,
+            object: objectName
+        });
+    });
+
+    event.addCommand(eventList);
+    event.addCommand(eventInspect);
+    event.addCommand(eventAdd);
+    event.addCommand(eventUpdate);
+    event.addCommand(eventDelete);
 
     command.addCommand(list);
     command.addCommand(inspect);

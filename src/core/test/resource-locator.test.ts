@@ -33,27 +33,21 @@ void test("resolveBundledResourcePath locates bundled resources from the reposit
     assert.match(resourcePath, /resources[\\/]gml-identifiers\.json$/u);
 });
 
-void test("resource locator prefers the generated package manifest when present", () => {
-    const fixture = createTemporaryCoreWorkspaceFixture();
-
-    try {
-        const configuredResourceDirectoryPath = path.join(fixture.fixtureRootPath, "installed-resources");
-        mkdirSync(configuredResourceDirectoryPath, { recursive: true });
-        writeFileSync(
-            path.join(fixture.packageDirectoryPath, "resource-directory.json"),
-            JSON.stringify({ resourceDirectory: configuredResourceDirectoryPath }, null, 2)
-        );
-
-        assert.equal(
-            __resolveBundledResourceBaseDirectoryForTests(fixture.nestedModuleDirectoryPath),
-            configuredResourceDirectoryPath
-        );
-    } finally {
-        rmSync(fixture.fixtureRootPath, { force: true, recursive: true });
-    }
+void test("resolveBundledResourcePath rejects parent-directory traversal", () => {
+    assert.throws(
+        () => resolveBundledResourcePath("../README.md"),
+        /must resolve to a safe relative path within the bundled resources/u
+    );
 });
 
-void test("resource locator ignores stale generated package manifest paths", () => {
+void test("resolveBundledResourcePath rejects URL-encoded parent-directory traversal", () => {
+    assert.throws(
+        () => resolveBundledResourcePath("%2e%2e/README.md"),
+        /must resolve to a safe relative path within the bundled resources/u
+    );
+});
+
+void test("resource locator ignores obsolete generated package manifest paths", () => {
     const fixture = createTemporaryCoreWorkspaceFixture();
 
     try {

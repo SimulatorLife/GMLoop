@@ -3,6 +3,7 @@
   "allowInlineControlFlowBlocks": false,
   "lintRules": {
     "gml/normalize-doc-comments": "error",
+    "gml/no-empty-comments": "error",
     "gml/remove-default-comments": "error",
     "gml/normalize-operator-aliases": "error"
   },
@@ -10,5 +11,10 @@
     "kind": "integration",
     "assertion": "transform",
     "comparison": "exact"
+  },
+  "refactor": {
+    "codemods": {
+      "docCommentAlignment": {}
+    }
   }
 }

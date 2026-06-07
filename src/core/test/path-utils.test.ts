@@ -10,10 +10,13 @@ import {
     isDirectoryExcludedBySegments,
     isPathInside,
     isPathWithinBoundary,
+    isPortableAbsolutePath,
     normalizeBoundaryPath,
     resolveContainedRelativePath,
+    resolvePortableAbsolutePath,
     walkAncestorDirectories
 } from "../src/fs/path.js";
+import { isProjectPathExcluded } from "../src/project-config/project-excludes.js";
 
 void describe("path-utils", () => {
     void describe("resolveContainedRelativePath", () => {
@@ -45,6 +48,13 @@ void describe("path-utils", () => {
         void it("returns null for empty inputs", () => {
             assert.strictEqual(resolveContainedRelativePath(null, projectRoot), null);
             assert.strictEqual(resolveContainedRelativePath(childFile, null), null);
+        });
+
+        void it("supports Windows-style absolute paths on non-Windows hosts", () => {
+            const windowsRoot = String.raw`C:\project`;
+            const windowsChild = String.raw`C:\project\src\index.gml`;
+            const relative = resolveContainedRelativePath(windowsChild, windowsRoot);
+            assert.strictEqual(relative, String.raw`src\index.gml`);
         });
     });
 
@@ -103,6 +113,30 @@ void describe("path-utils", () => {
             assert.strictEqual(isPathInside("", root), false);
             assert.strictEqual(isPathInside(root, ""), false);
         });
+    });
+});
+
+void describe("portable path resolution", () => {
+    void it("recognizes current-platform and Windows absolute paths", () => {
+        assert.strictEqual(isPortableAbsolutePath(path.resolve("project")), true);
+        assert.strictEqual(isPortableAbsolutePath(String.raw`C:\project\file.gml`), true);
+        assert.strictEqual(isPortableAbsolutePath(String.raw`\\server\share\file.gml`), true);
+        assert.strictEqual(isPortableAbsolutePath("relative/file.gml"), false);
+    });
+
+    void it("preserves Windows absolute paths on non-Windows hosts", () => {
+        assert.strictEqual(
+            resolvePortableAbsolutePath(String.raw`C:\Project\file.gml`),
+            String.raw`C:\Project\file.gml`
+        );
+        assert.strictEqual(
+            resolvePortableAbsolutePath(String.raw`\\server\share\Project\file.gml`),
+            String.raw`\\server\share\Project\file.gml`
+        );
+    });
+
+    void it("resolves relative paths with the current-platform resolver", () => {
+        assert.strictEqual(resolvePortableAbsolutePath("relative/file.gml"), path.resolve("relative/file.gml"));
     });
 });
 
@@ -199,5 +233,29 @@ void describe("isDirectoryExcludedBySegments", () => {
             ),
             true
         );
+    });
+});
+
+void describe("isProjectPathExcluded", () => {
+    void it("matches nested excluded directory names", () => {
+        assert.strictEqual(
+            isProjectPathExcluded("scripts/node_modules/pkg/index.gml", {
+                directoryNames: ["node_modules"]
+            }),
+            true
+        );
+    });
+
+    void it("matches file names, relative paths, and extensions after POSIX normalization", () => {
+        const excludes = {
+            fileNames: ["Thumbs.db"],
+            relativePaths: ["scripts/generated/cache.gml"],
+            extensions: [".tmp"]
+        };
+
+        assert.strictEqual(isProjectPathExcluded("sprites/Thumbs.db", excludes), true);
+        assert.strictEqual(isProjectPathExcluded(String.raw`scripts\generated\cache.gml`, excludes), true);
+        assert.strictEqual(isProjectPathExcluded("notes/session.tmp", excludes), true);
+        assert.strictEqual(isProjectPathExcluded("scripts/live.gml", excludes), false);
     });
 });

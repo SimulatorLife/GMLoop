@@ -60,13 +60,21 @@ export interface ParserVisitorBaseConstructor {
     readonly prototype: ParserVisitorPrototype;
 }
 
+function coerceParserListenerBaseConstructor(value: unknown): ParserListenerBaseConstructor {
+    return value as ParserListenerBaseConstructor;
+}
+
+function coerceParserVisitorBaseConstructor(value: unknown): ParserVisitorBaseConstructor {
+    return value as ParserVisitorBaseConstructor;
+}
+
 /**
  * Provides a stable handle to the generated parser listener base class so
  * runtime code can depend on an injected constructor rather than reaching into
  * the generated output directly.
  */
 export function getParserListenerBase(): ParserListenerBaseConstructor {
-    return GameMakerLanguageParserListenerBase as unknown as ParserListenerBaseConstructor;
+    return coerceParserListenerBaseConstructor(GameMakerLanguageParserListenerBase);
 }
 
 /**
@@ -75,7 +83,7 @@ export function getParserListenerBase(): ParserListenerBaseConstructor {
  * the generated output directly.
  */
 export function getParserVisitorBase(): ParserVisitorBaseConstructor {
-    return GameMakerLanguageParserVisitorBase as unknown as ParserVisitorBaseConstructor;
+    return coerceParserVisitorBaseConstructor(GameMakerLanguageParserVisitorBase);
 }
 
 /**

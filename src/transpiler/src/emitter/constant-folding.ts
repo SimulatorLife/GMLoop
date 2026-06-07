@@ -1,11 +1,9 @@
+import { Core } from "@gmloop/core";
+
 import type { BinaryExpressionNode, GmlNode, TernaryExpressionNode, UnaryExpressionNode } from "./ast.js";
 import { normalizeStructKeyText } from "./js-string-utils.js";
 
-const ZERO_COMPARISON_EPSILON = Number.EPSILON * 4;
-
-function isApproximatelyZero(value: number): boolean {
-    return Math.abs(value) <= ZERO_COMPARISON_EPSILON;
-}
+const { isApproximatelyZero } = Core;
 
 /**
  * Relative and absolute epsilon for floating-point equality comparisons.
@@ -98,32 +96,82 @@ const NUMERIC_OPERATORS = new Map<string, (a: number, b: number) => number | boo
 // to preserve JavaScript's short-circuit semantics (e.g., false && x returns false without evaluating x).
 const BOOLEAN_OPERATORS = new Set(["&&", "and", "||", "or"]);
 
+// Equality operators handled by evaluateEqualityOperator.
+// Any other operator returns null from that function, signalling "cannot fold".
+const EQUALITY_OPERATORS = new Set(["==", "!=", "===", "!=="]);
+
 function evaluateEqualityOperator(
     operator: string,
     left: string | number | boolean,
     right: string | number | boolean
 ): boolean | null {
-    switch (operator) {
-        case "==":
-        case "===": {
-            // Apply epsilon-tolerant comparison for numeric operands to handle
-            // floating-point rounding artifacts from intermediate computation.
-            if (typeof left === "number" && typeof right === "number") {
-                return isApproximatelyEqual(left, right);
-            }
-            return left === right;
-        }
-        case "!=":
-        case "!==": {
-            if (typeof left === "number" && typeof right === "number") {
-                return !isApproximatelyEqual(left, right);
-            }
-            return left !== right;
-        }
-        default: {
-            return null;
-        }
+    if (!EQUALITY_OPERATORS.has(operator)) {
+        return null;
     }
+
+    const isNegated = operator === "!=" || operator === "!==";
+
+    // Numeric operands: all equality operators use epsilon-tolerant comparison
+    // to handle floating-point rounding artifacts from intermediate computation.
+    // (The strict/loose distinction applies only to boolean-number coercion below.)
+    if (typeof left === "number" && typeof right === "number") {
+        const equal = isApproximatelyEqual(left, right);
+        return isNegated ? !equal : equal;
+    }
+
+    // Boolean-string: "true" == true, "false" == false (loose); types differ (strict).
+    // Return null (cannot fold) when the string is not "true" or "false".
+    if (typeof left === "string" && typeof right === "boolean") {
+        const normalized = normalizeStringToBoolean(left);
+        if (normalized !== null) {
+            const equal = normalized === right;
+            return isNegated ? !equal : equal;
+        }
+        return null;
+    }
+    if (typeof left === "boolean" && typeof right === "string") {
+        const normalized = normalizeStringToBoolean(right);
+        if (normalized !== null) {
+            const equal = left === normalized;
+            return isNegated ? !equal : equal;
+        }
+        return null;
+    }
+
+    // Boolean-number: in GML loose equality true == 1 and false == 0.
+    // Strict equality (===/!==) preserves type identity — always false/true respectively
+    // for mixed types since booleans and numbers are never equal. Loose equality
+    // (==/!=) coerces booleans to 1/0 before comparison.
+    if (typeof left === "boolean" && typeof right === "number") {
+        if (operator === "===" || operator === "!==") {
+            // Types differ, so === is false and !== is true.
+            return operator === "===" ? false : true;
+        }
+        const equal = (left ? 1 : 0) === right;
+        return isNegated ? !equal : equal;
+    }
+    if (typeof left === "number" && typeof right === "boolean") {
+        if (operator === "===" || operator === "!==") {
+            return operator === "===" ? false : true;
+        }
+        const equal = left === (right ? 1 : 0);
+        return isNegated ? !equal : equal;
+    }
+
+    // Same-type comparisons (booleans, non-boolean strings, or unknown operators).
+    // Booleans compare directly; strings were already handled above.
+    const equal = left === right;
+    return isNegated ? !equal : equal;
+}
+
+/**
+ * Convert the string literal "true" or "false" to its boolean equivalent.
+ * Returns null for any other value so callers can bail out of the fold safely.
+ */
+function normalizeStringToBoolean(value: unknown): boolean | null {
+    if (value === "true") return true;
+    if (value === "false") return false;
+    return null;
 }
 
 /**
@@ -147,6 +195,14 @@ function evaluateEqualityOperator(
  *          operation can be safely evaluated, otherwise null
  */
 export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | string | boolean | null {
+    // Guard: abort if either operand node is missing.  In recovery mode the
+    // parser may emit a node whose `type` field is present but whose structural
+    // children are undefined; accessing `.value` on either would throw a
+    // TypeError.  Returning null signals that folding cannot proceed safely.
+    if (!ast.left || !ast.right) {
+        return null;
+    }
+
     // Only fold if both operands are literals
     if (ast.left.type !== "Literal" || ast.right.type !== "Literal") {
         return null;
@@ -155,7 +211,10 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
     const left = ast.left.value;
     const right = ast.right.value;
 
-    // Handle null/undefined operands conservatively
+    // Abort folding when either operand is null or undefined (the parser uses these
+    // as sentinels for missing or malformed AST fields). Returning null here signals
+    // "cannot fold at compile time" so the caller emits the expression at runtime
+    // instead of crashing on a property access like `.value` or `.operator` of null.
     if (isNullishValue(left) || isNullishValue(right)) {
         return null;
     }
@@ -176,7 +235,11 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
                 return result;
             }
         }
-        // Fall through to equality check for comparison operators in the map that return null
+        // Numeric operators (`+ - * /`, etc.) are dispatched via `NUMERIC_OPERATORS`.
+        // Comparison operators (`< <= > >=`) in that same map return null when
+        // their operands don't satisfy the comparison (e.g., `1 < 0` → null),
+        // so we fall through to `evaluateEqualityOperator` for every non-null
+        // result — including ordinary equality checks like `1 === 1`.
         const equalityResult = evaluateEqualityOperator(op, leftNumber, rightNumber);
         if (equalityResult !== null) {
             return equalityResult;
@@ -185,19 +248,53 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
 
     // String operations.
     // The GML parser stores string literal values with their surrounding
-    // double quotes (e.g., the GML literal "hello" has `value === '"hello"'`).
-    // We must strip those parser quotes before folding so that the emitter's
-    // `JSON.stringify` re-wraps the result correctly.
+    // double quotes preserved in the token text (e.g., the GML literal "hello"
+    // is lexed as the token sequence `"` `hello` `"`, and the Literal node's
+    // `value` field holds `'"hello"'`). `normalizeStructKeyText` strips the
+    // leading and trailing quote so we can perform the actual string operation.
+    // The emitter then re-wraps the result in `JSON.stringify`, restoring the
+    // correct GML syntax for the transpiled output.
+    //
+    // Hoist normalization to local variables so we avoid repeated calls when
+    // both the + operator and equality/comparison checks need the normalized
+    // values — saves up to 3 redundant normalizeStructKeyText calls per operand.
     if (typeof left === "string" && typeof right === "string") {
+        const normalizedLeft = normalizeStructKeyText(left);
+        const normalizedRight = normalizeStructKeyText(right);
+
         if (op === "+") {
-            return normalizeStructKeyText(left) + normalizeStructKeyText(right);
+            return normalizedLeft + normalizedRight;
         }
 
-        const equalityResult = evaluateEqualityOperator(
-            op,
-            normalizeStructKeyText(left),
-            normalizeStructKeyText(right)
-        );
+        const equalityResult = evaluateEqualityOperator(op, normalizedLeft, normalizedRight);
+        if (equalityResult !== null) {
+            return equalityResult;
+        }
+
+        // Mixed-type boolean-string comparisons normalized above, but fall through
+        // here if the operator wasn't handled — no further action needed.
+    }
+
+    // Mixed-type comparisons where one operand is boolean and the other is numeric.
+    // Loose equality (`==`) coerces booleans to 1/0 before comparison; strict equality
+    // (`===`) preserves type identity so returns false when types differ.
+    if (
+        (typeof left === "boolean" && typeof right === "number") ||
+        (typeof left === "number" && typeof right === "boolean")
+    ) {
+        const equalityResult = evaluateEqualityOperator(op, left, right);
+        if (equalityResult !== null) {
+            return equalityResult;
+        }
+    }
+
+    // Mixed-type boolean-string comparisons: boolean literal compared against
+    // the string literal "true" or "false". Normalize the string to boolean.
+    if (
+        (typeof left === "boolean" && typeof right === "string") ||
+        (typeof left === "string" && typeof right === "boolean")
+    ) {
+        const equalityResult = evaluateEqualityOperator(op, left, right);
         if (equalityResult !== null) {
             return equalityResult;
         }
@@ -214,7 +311,10 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
             }
             return leftBoolean || rightBoolean;
         }
-        // Fall through to equality check
+        // Comparison operators on boolean literals are handled here.
+        // If both sides are boolean literals the equality check is meaningful;
+        // otherwise evaluateEqualityOperator returns null and the whole fold is
+        // aborted so we never produce incorrect results from mixed-type operands.
         const equalityResult = evaluateEqualityOperator(op, leftBoolean, rightBoolean);
         if (equalityResult !== null) {
             return equalityResult;
@@ -243,6 +343,13 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
  *          operation can be safely evaluated, otherwise null
  */
 export function tryFoldConstantUnaryExpression(ast: UnaryExpressionNode): number | boolean | null {
+    // Guard: abort if the operand node is missing.  In recovery mode the parser
+    // may emit a node whose `type` field is present but whose `argument` child
+    // is undefined; accessing `.value` on it would throw a TypeError.
+    if (!ast.argument) {
+        return null;
+    }
+
     // Only fold if the operand is a literal
     if (ast.argument.type !== "Literal") {
         return null;
@@ -250,20 +357,28 @@ export function tryFoldConstantUnaryExpression(ast: UnaryExpressionNode): number
 
     const operand = ast.argument.value;
 
-    // Handle null/undefined operands conservatively
+    // Return null when the operand is null or undefined so the caller falls back
+    // to runtime evaluation rather than crashing on a null property access.
     if (isNullishValue(operand)) {
         return null;
     }
 
     const op = ast.operator;
 
-    // Helper to check if a value is a boolean literal (handles parser quirk where
-    // boolean literals are represented as strings "true"/"false")
+    // Detect boolean operands in both native JS and parser-string form.
+    // The GML parser represents boolean literals as strings ("true" / "false")
+    // rather than native booleans, so the check covers both representations.
+    // This guard is critical: applying unary arithmetic to a boolean value
+    // (e.g. `-true`) would silently coerce it to a number (1) in JavaScript,
+    // which is not equivalent to any valid GML constant expression — GML raises
+    // a type error for arithmetic on booleans at runtime. Skipping the fold here
+    // keeps the transpiled output syntactically valid and lets the runtime
+    // produce the same error GML would, rather than silently producing a wrong
+    // numeric result.
     const isBooleanLiteral = typeof operand === "boolean" || operand === "true" || operand === "false";
 
-    // Numeric unary operations
-    // Note: The parser represents numeric literals as strings, so we need to parse them.
-    // Skip boolean values to avoid incorrect numeric conversion (e.g., true → 1)
+    // Numeric unary operations — the parser stores numeric literals as strings,
+    // so we parse them before applying the operator.
     if (!isBooleanLiteral) {
         const numValue = typeof operand === "number" ? operand : Number(operand);
         if (!Number.isNaN(numValue)) {
@@ -309,6 +424,13 @@ export function tryFoldConstantUnaryExpression(ast: UnaryExpressionNode): number
  * @returns The selected branch node when folding is safe, otherwise null
  */
 export function tryFoldConstantTernaryExpression(ast: TernaryExpressionNode): GmlNode | null {
+    // Guard: abort if the test node is missing.  In recovery mode the parser may
+    // emit a node whose `type` field is present but whose structural children are
+    // undefined; accessing `.value` would throw a TypeError.
+    if (!ast.test) {
+        return null;
+    }
+
     if (ast.test.type !== "Literal") {
         return null;
     }
@@ -318,8 +440,9 @@ export function tryFoldConstantTernaryExpression(ast: TernaryExpressionNode): Gm
         return null;
     }
 
-    // Guard against malformed AST where consequent/alternate are missing.
-    // Returning null signals that folding cannot proceed safely.
+    // Guard: return null if either branch is absent.  A ternary with only one branch
+    // (e.g. `condition ? value`) is valid GML but semantically different from a
+    // two-branch form, and collapsing it would alter program behaviour at runtime.
     if (!ast.consequent || !ast.alternate) {
         return null;
     }

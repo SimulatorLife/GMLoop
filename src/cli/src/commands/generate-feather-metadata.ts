@@ -6,6 +6,7 @@ import { applyStandardCommandOptions } from "../cli-core/command-standard-option
 import type { CommanderCommandLike } from "../cli-core/commander-types.js";
 import { isMainModule, runAsMainModule } from "../cli-core/main-module-runner.js";
 import { assertSupportedNodeVersion } from "../cli-core/node-version.js";
+import { normalizeManualGeneratorBaseOptions } from "../modules/manual/command-options.js";
 import {
     getDirectElementChildren,
     parseManualDocument,
@@ -89,12 +90,7 @@ export function createFeatherMetadataCommand() {
 function resolveFeatherMetadataOptions(command?: CommanderCommandLike): NormalizedFeatherMetadataOptions {
     const options: FeatherMetadataCommandOptions = command?.opts?.() ?? {};
 
-    return {
-        outputPath: options.output ?? DEFAULT_OUTPUT_PATH,
-        manualRoot: options.manualRoot ?? null,
-        manualPackage: options.manualPackage ?? null,
-        quiet: Boolean(options.quiet)
-    };
+    return normalizeManualGeneratorBaseOptions(options, DEFAULT_OUTPUT_PATH);
 }
 
 function createVerboseState({ quiet }) {

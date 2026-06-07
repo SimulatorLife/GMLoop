@@ -8,14 +8,26 @@
  * comparison so parenthesised and non-parenthesised forms are treated as
  * equivalent.
  *
+ * Numeric literal values are compared with epsilon tolerance to avoid false
+ * negatives due to floating-point rounding (e.g., `0.1 + 0.2` vs `0.3`).
+ *
  * **Prior location**: `src/lint/src/rules/gml/ast-node-equivalence.ts`.
  * Moved here because Core owns "Clone / equality helpers" (target-state.md
  * §2.1) and this module has zero lint-specific dependencies—it only relies
  * on `unwrapParenthesizedExpression` from Core's own node helpers.
  */
 
+import { ZERO_CHECK_EPSILON } from "../utils/number.js";
 import { unwrapParenthesizedExpression } from "./node-helpers/index.js";
-import type { GameMakerAstNode } from "./types.js";
+
+/**
+ * Return `true` when two numbers are within floating-point tolerance of each other,
+ * accounting for relative error that grows with magnitude.
+ */
+function areNumericValuesApproximatelyEqual(left: number, right: number): boolean {
+    const magnitude = Math.max(1, Math.abs(left), Math.abs(right));
+    return Math.abs(left - right) <= ZERO_CHECK_EPSILON * magnitude;
+}
 
 /**
  * AST metadata keys that carry position/token data and should be excluded
@@ -24,6 +36,20 @@ import type { GameMakerAstNode } from "./types.js";
  * subtrees that appear at different source positions.
  */
 export const IGNORED_AST_METADATA_KEYS = new Set(["start", "end", "range", "loc", "parent", "comments", "tokens"]);
+
+function areExpressionArrayValuesEquivalentIgnoringParentheses(left: unknown, right: unknown): boolean {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+        return false;
+    }
+
+    for (const [index, element] of left.entries()) {
+        if (!areExpressionNodesEquivalentIgnoringParentheses(element, right[index])) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 /**
  * Deep-compares two raw AST values for structural equivalence, recursively
@@ -44,17 +70,7 @@ export function areAstValuesEquivalentIgnoringParentheses(left: unknown, right: 
     }
 
     if (Array.isArray(left) || Array.isArray(right)) {
-        if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
-            return false;
-        }
-
-        for (const [index, element] of left.entries()) {
-            if (!areExpressionNodesEquivalentIgnoringParentheses(element, right[index])) {
-                return false;
-            }
-        }
-
-        return true;
+        return areExpressionArrayValuesEquivalentIgnoringParentheses(left, right);
     }
 
     if (typeof left !== typeof right) {
@@ -62,6 +78,14 @@ export function areAstValuesEquivalentIgnoringParentheses(left: unknown, right: 
     }
 
     if (typeof left !== "object" || typeof right !== "object") {
+        // Use epsilon-tolerant comparison for numeric values to handle floating-point
+        // rounding (e.g., 0.1 + 0.2 vs 0.3 in IEEE 754 binary).
+        if (typeof left === "number" && typeof right === "number") {
+            return areNumericValuesApproximatelyEqual(left, right);
+        }
+        // All other non-object types (string, boolean, undefined, symbol) are
+        // compared by strict equality — matching the existing behaviour for
+        // string/boolean primitives.
         return false;
     }
 
@@ -104,7 +128,7 @@ export function areAstValuesEquivalentIgnoringParentheses(left: unknown, right: 
  */
 export function areExpressionNodesEquivalentIgnoringParentheses(left: unknown, right: unknown): boolean {
     return areAstValuesEquivalentIgnoringParentheses(
-        unwrapParenthesizedExpression(left as GameMakerAstNode | null | undefined),
-        unwrapParenthesizedExpression(right as GameMakerAstNode | null | undefined)
+        unwrapParenthesizedExpression(left),
+        unwrapParenthesizedExpression(right)
     );
 }

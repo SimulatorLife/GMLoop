@@ -5,8 +5,7 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createPathOption } from "../cli-core/shared-command-options.js";
-import { printProjectPayload } from "../workflow/project-context.js";
-import { discoverProjectRoot } from "../workflow/project-root.js";
+import { discoverProjectRoot, printProjectPayload } from "../workflow/project-root.js";
 
 type ProjectCacheCleanOptions = Readonly<{
     force?: boolean;

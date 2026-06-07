@@ -11,7 +11,10 @@ const INPUT_FILE_NAME = "input.gml";
 const EXPECTED_FILE_NAME = "expected.gml";
 const PROJECT_DIRECTORY_NAME = "project";
 const EXPECTED_DIRECTORY_NAME = "expected";
+const PROJECT_TREE_ASSERTION = "project-tree";
+const EXTERNAL_PROJECT_FIXTURE_KIND = "external-project";
 const TEXT_FIXTURE_KINDS = new Set(["format", "lint", "integration"]);
+const EXTERNAL_PROJECT_FIXTURE_KINDS = new Set([EXTERNAL_PROJECT_FIXTURE_KIND]);
 
 type FixtureCaseLayoutValidation = {
     allowedFiles: ReadonlySet<string>;
@@ -30,8 +33,8 @@ function deriveDefaultAssertion(config: FixtureProjectConfig, fileNames: Readonl
         return config.fixture.assertion;
     }
 
-    if (config.fixture.kind === "refactor") {
-        return "project-tree";
+    if (config.fixture.kind === "refactor" || config.fixture.kind === EXTERNAL_PROJECT_FIXTURE_KIND) {
+        return PROJECT_TREE_ASSERTION;
     }
 
     if (fileNames.has(EXPECTED_FILE_NAME)) {
@@ -124,12 +127,13 @@ function validateRefactorFixtureCaseLayout(
         allowedDirectories: new Set([PROJECT_DIRECTORY_NAME, EXPECTED_DIRECTORY_NAME]),
         requiredFiles: [],
         requiredDirectories: [PROJECT_DIRECTORY_NAME, EXPECTED_DIRECTORY_NAME],
-        additionalErrors: assertion === "project-tree" ? [] : ["refactor fixtures must use the project-tree assertion"]
+        additionalErrors:
+            assertion === PROJECT_TREE_ASSERTION ? [] : ["refactor fixtures must use the project-tree assertion"]
     });
 }
 
 function isSupportedFixtureKind(kind: string): kind is FixtureCase["kind"] {
-    return kind === "refactor" || TEXT_FIXTURE_KINDS.has(kind);
+    return kind === "refactor" || TEXT_FIXTURE_KINDS.has(kind) || EXTERNAL_PROJECT_FIXTURE_KINDS.has(kind);
 }
 
 function collectFixtureCaseValidationErrors(
@@ -146,6 +150,17 @@ function collectFixtureCaseValidationErrors(
         return validateRefactorFixtureCaseLayout(assertion, fileNames, directoryNames);
     }
 
+    if (kind === EXTERNAL_PROJECT_FIXTURE_KIND) {
+        return validateFixtureEntries(fileNames, directoryNames, {
+            allowedFiles: new Set([GMLOOP_CONFIG_FILE_NAME]),
+            allowedDirectories: new Set(),
+            requiredFiles: [GMLOOP_CONFIG_FILE_NAME],
+            requiredDirectories: [],
+            additionalErrors:
+                assertion === PROJECT_TREE_ASSERTION ? [] : ["external-project fixtures must use project-tree"]
+        });
+    }
+
     return validateTextFixtureCaseLayout(assertion, fileNames, directoryNames);
 }
 
@@ -160,6 +175,15 @@ function deriveFixtureCasePaths(
             expectedFilePath: null,
             projectDirectoryPath: path.join(fixturePath, PROJECT_DIRECTORY_NAME),
             expectedDirectoryPath: path.join(fixturePath, EXPECTED_DIRECTORY_NAME)
+        };
+    }
+
+    if (kind === EXTERNAL_PROJECT_FIXTURE_KIND) {
+        return {
+            inputFilePath: null,
+            expectedFilePath: null,
+            projectDirectoryPath: null,
+            expectedDirectoryPath: null
         };
     }
 
@@ -204,6 +228,28 @@ async function createFixtureCase(rootPath: string, fixturePath: string): Promise
     });
 }
 
+function collectRejectedReasons(settledCases: ReadonlyArray<PromiseSettledResult<FixtureCase>>): ReadonlyArray<string> {
+    return settledCases
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .map((result) => {
+            // Use a capability probe rather than `instanceof Error` so that
+            // cross-realm errors and custom error-like objects are handled correctly.
+            if (Core.isErrorLike(result.reason)) {
+                return result.reason.message;
+            }
+
+            return String(result.reason);
+        });
+}
+
+function collectFulfilledFixtureCases(
+    settledCases: ReadonlyArray<PromiseSettledResult<FixtureCase>>
+): ReadonlyArray<FixtureCase> {
+    return settledCases
+        .filter((result): result is PromiseFulfilledResult<FixtureCase> => result.status === "fulfilled")
+        .map((result) => result.value);
+}
+
 /**
  * Discover directory-per-case fixtures rooted at {@link fixtureRoot}.
  *
@@ -215,23 +261,11 @@ export async function discoverFixtureCases(fixtureRoot: string): Promise<Readonl
     const settledCases = await Promise.allSettled(
         caseDirectories.map((fixturePath) => createFixtureCase(fixtureRoot, fixturePath))
     );
-    const validationErrors = settledCases
-        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-        .map((result) => {
-            // Use a capability probe rather than `instanceof Error` so that
-            // cross-realm errors and custom error-like objects are handled correctly.
-            if (Core.isErrorLike(result.reason)) {
-                return result.reason.message;
-            }
-
-            return String(result.reason);
-        });
+    const validationErrors = collectRejectedReasons(settledCases);
     if (validationErrors.length > 0) {
         throw new Error(`Invalid fixture cases under ${fixtureRoot}:\n- ${validationErrors.join("\n- ")}`);
     }
 
-    const fixtureCases = settledCases
-        .filter((result): result is PromiseFulfilledResult<FixtureCase> => result.status === "fulfilled")
-        .map((result) => result.value);
+    const fixtureCases = collectFulfilledFixtureCases(settledCases);
     return Object.freeze(fixtureCases);
 }

@@ -230,8 +230,28 @@ const CHAR_CODE_UPPER_END = 90; // Z
 const CHAR_CODE_LOWER_START = 97; // a
 const CHAR_CODE_LOWER_END = 122; // z
 const CHAR_CODE_UNDERSCORE = 95; // _
-const OBJECT_TO_STRING = Object.prototype.toString.bind(Object.prototype);
 const STARTS_WITH_VOWEL_PATTERN = /^[aeiou]/i;
+const LEADING_NUMERIC_TOKEN_PATTERN = /^\d+/;
+const NUMERIC_TOKENS_REQUIRING_INDEFINITE_AN = new Set(["11", "18"]);
+
+function startsWithIndefiniteAnSound(label: string): boolean {
+    if (STARTS_WITH_VOWEL_PATTERN.test(label)) {
+        return true;
+    }
+
+    const numericPrefix = label.match(LEADING_NUMERIC_TOKEN_PATTERN)?.[0];
+    if (!numericPrefix) {
+        return false;
+    }
+
+    if (numericPrefix.startsWith("8")) {
+        return true;
+    }
+
+    // "11" and "18" are pronounced with an initial vowel sound ("eleven",
+    // "eighteen"), so they conventionally pair with "an".
+    return NUMERIC_TOKENS_REQUIRING_INDEFINITE_AN.has(numericPrefix);
+}
 
 function normalizeIndefiniteArticle(label) {
     if (typeof label !== "string") {
@@ -243,7 +263,7 @@ function normalizeIndefiniteArticle(label) {
         return null;
     }
 
-    return `${STARTS_WITH_VOWEL_PATTERN.test(normalized) ? "an" : "a"} ${normalized}`;
+    return `${startsWithIndefiniteAnSound(normalized) ? "an" : "a"} ${normalized}`;
 }
 
 function toSafeString(value: unknown): string {
@@ -255,14 +275,6 @@ function toSafeString(value: unknown): string {
         return value;
     }
 
-    if (typeof value === "object") {
-        const toString = (value as { toString?: unknown }).toString;
-        if (typeof toString === "function" && toString !== Object.prototype.toString) {
-            return (toString as (this: unknown) => string).call(value);
-        }
-        return OBJECT_TO_STRING(value);
-    }
-
     if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
         return String(value);
     }
@@ -271,8 +283,23 @@ function toSafeString(value: unknown): string {
         return value.toString();
     }
 
-    const unexpected: never = value as never;
-    return String(unexpected);
+    // `typeof value === "object"` — invoke the custom toString if the object's
+    // prototype chain provides one; fall back to Object.prototype.toString for
+    // plain objects so callers receive "[object Object]" rather than silently
+    // dropping to a generic string that masks the actual type.
+    const obj = value as object;
+    if (
+        "toString" in obj &&
+        typeof (obj as unknown as { toString(): string }).toString === "function" &&
+        (obj as unknown as { toString(): string }).toString !== Object.prototype.toString
+    ) {
+        // Invoking the custom toString after confirming it differs from Object.prototype.toString.
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- the guard above confirms this is a custom toString
+        return obj.toString();
+    }
+    // Plain object: fall back to the generic tag. The preceding guard ensures
+    // method is Object.prototype.toString here, so using it directly is safe.
+    return Object.prototype.toString.call(value);
 }
 
 /**

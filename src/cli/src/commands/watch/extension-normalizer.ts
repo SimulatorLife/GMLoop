@@ -15,7 +15,12 @@ function coerceExtensionValue(value: unknown): string | null {
         return null;
     }
 
-    const cleaned = value
+    const trimmedValue = value.trim();
+    if (trimmedValue.startsWith("!")) {
+        return null;
+    }
+
+    const cleaned = trimmedValue
         .toLowerCase()
         .replace(/.*[\\/]/, "")
         .replace(/^[*?]+/, "");
@@ -27,7 +32,17 @@ function coerceExtensionValue(value: unknown): string | null {
     const extensionCandidate =
         cleaned.startsWith(".") || !cleaned.includes(".") ? cleaned : path.extname(cleaned) || cleaned;
 
-    return normalizeExtensionSuffix(extensionCandidate);
+    const braceTrimmedCandidate = extensionCandidate
+        .replaceAll("{", "")
+        .replaceAll("}", "")
+        .replaceAll("[", "")
+        .replaceAll("]", "")
+        .replaceAll("(", "")
+        .replaceAll(")", "")
+        .replaceAll("<", "")
+        .replaceAll(">", "");
+
+    return normalizeExtensionSuffix(braceTrimmedCandidate);
 }
 
 function splitExtensionInput(value: unknown): Array<string> {

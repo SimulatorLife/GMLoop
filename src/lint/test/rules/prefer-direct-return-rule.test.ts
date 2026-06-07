@@ -77,7 +77,17 @@ void test("prefer-direct-return does not rewrite when initializer references the
     assertEquals(result.output, input);
 });
 
-void test("prefer-direct-return does not rewrite non-var declarations", () => {
+void test("prefer-direct-return does not rewrite when the returned identifier is not declared", () => {
+    // GML does not require `var` in function scope, so an undeclared identifier
+    // being returned should not be rewritten — the declaration is not present.
+    const input = ["function step_score() {", "    score = score + 1;", "    return score;", "}", ""].join("\n");
+    const result = lintWithRule("prefer-direct-return", input, {});
+
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("prefer-direct-return does not collapse adjacent static declaration and return", () => {
     const input = [
         "function cache_stats() {",
         "    static stats = ds_map_create();",
@@ -85,14 +95,22 @@ void test("prefer-direct-return does not rewrite non-var declarations", () => {
         "}",
         ""
     ].join("\n");
-    const result = lintWithRule("prefer-direct-return", input, {});
 
+    const result = lintWithRule("prefer-direct-return", input, {});
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
 
 void test("prefer-direct-return does not rewrite multi-declarator declarations", () => {
     const input = ["function cache_stats() {", "    var hp = 100, mp = 50;", "    return hp;", "}", ""].join("\n");
+    const result = lintWithRule("prefer-direct-return", input, {});
+
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("prefer-direct-return does not rewrite static declaration without initializer", () => {
+    const input = ["function cache_stats() {", "    static stats;", "    return stats;", "}", ""].join("\n");
     const result = lintWithRule("prefer-direct-return", input, {});
 
     assertEquals(result.messages.length, 0);

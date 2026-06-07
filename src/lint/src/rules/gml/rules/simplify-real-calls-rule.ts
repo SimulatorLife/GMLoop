@@ -29,8 +29,8 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, isAstNodeRecord, walkAstNodes } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 /**
  * Matches a valid GML numeric literal string: optional sign, integer part,

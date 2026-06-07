@@ -72,6 +72,11 @@ class InMemoryOverlayStorageBackend implements StorageBackend {
         this.stats.spilledEntries = this.valuesByKey.size;
     }
 
+    removeFromIndex(_key: string): void {
+        // In-memory backend has no separate index — the Map IS the index.
+        // This is a no-op that matches the StorageBackend contract.
+    }
+
     async dispose(): Promise<void> {
         this.disposed = true;
         this.valuesByKey.clear();
@@ -90,42 +95,54 @@ class InMemoryOverlayStorageBackend implements StorageBackend {
 void test("listRegisteredCodemods returns the v1 configured codemod set", () => {
     assert.deepEqual(
         Refactor.listRegisteredCodemods().map((codemod) => codemod.id),
-        ["globalvarToGlobal", "loopLengthHoisting", "namingConvention"]
+        ["docCommentAlignment", "scientificNotation", "globalvarToGlobal", "loopLengthHoisting", "namingConvention"]
     );
 });
 
 void test("listConfiguredCodemods reports normalized effective config and selection state", () => {
-    assert.deepEqual(
-        Refactor.listConfiguredCodemods({ codemods: { loopLengthHoisting: {} } }, ["loopLengthHoisting"]),
-        [
-            {
-                id: "globalvarToGlobal",
-                description:
-                    "Remove legacy `globalvar` declarations and replace all bare identifier references with `global.<name>`.",
-                configured: false,
-                selected: false,
-                effectiveConfig: null
-            },
-            {
-                id: "loopLengthHoisting",
-                description: "Hoist repeated loop-length helper calls out of for-loop test expressions.",
-                configured: true,
-                selected: true,
-                effectiveConfig: {}
-            },
-            {
-                id: "namingConvention",
-                description: "Plan and apply naming-policy-driven renames.",
-                configured: false,
-                selected: false,
-                effectiveConfig: null
-            }
-        ]
-    );
+    assert.deepEqual(Refactor.listConfiguredCodemods({ codemods: { globalvarToGlobal: {} } }, ["globalvarToGlobal"]), [
+        {
+            id: "docCommentAlignment",
+            description:
+                "Align function doc-comment @param tags with the function signature (rename, reorder, and mark defaulted params as optional).",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "scientificNotation",
+            description: "Expand unsupported scientific-notation number literals into plain decimal literals.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "globalvarToGlobal",
+            description:
+                "Remove legacy `globalvar` declarations and replace all bare identifier references with `global.<name>`.",
+            configured: true,
+            selected: true,
+            effectiveConfig: {}
+        },
+        {
+            id: "loopLengthHoisting",
+            description: "Hoist array_length(...) calls from safe for-loop conditions into local length variables.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "namingConvention",
+            description: "Plan and apply naming-policy-driven renames.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        }
+    ]);
 });
 
-void test("executeConfiguredCodemods defaults to dry-run for loop-length hoisting", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+void test("executeConfiguredCodemods defaults to dry-run for configured codemods", async () => {
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const result = await engine.executeConfiguredCodemods({
         projectRoot: "/project",
@@ -133,7 +150,7 @@ void test("executeConfiguredCodemods defaults to dry-run for loop-length hoistin
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText
@@ -142,18 +159,18 @@ void test("executeConfiguredCodemods defaults to dry-run for loop-length hoistin
     assert.equal(result.dryRun, true);
     assert.deepEqual(result.summaries, [
         {
-            id: "loopLengthHoisting",
+            id: "globalvarToGlobal",
             changed: true,
             changedFiles: ["scripts/example.gml"],
             warnings: [],
             errors: []
         }
     ]);
-    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
 });
 
 void test("executeConfiguredCodemods deduplicates repeated target and gml file paths", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const reads = new Map<string, number>();
 
@@ -163,7 +180,7 @@ void test("executeConfiguredCodemods deduplicates repeated target and gml file p
         gmlFilePaths: ["scripts/example.gml", "scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async (filePath) => {
@@ -175,18 +192,18 @@ void test("executeConfiguredCodemods deduplicates repeated target and gml file p
     assert.equal(reads.get("scripts/example.gml"), 1);
     assert.deepEqual(result.summaries, [
         {
-            id: "loopLengthHoisting",
+            id: "globalvarToGlobal",
             changed: true,
             changedFiles: ["scripts/example.gml"],
             warnings: [],
             errors: []
         }
     ]);
-    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
 });
 
 void test("executeConfiguredCodemods reuses read-through cache across codemod passes", async () => {
-    const sourceText = "function sample_script() {\n    return 1;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     let readCount = 0;
 
@@ -196,7 +213,6 @@ void test("executeConfiguredCodemods reuses read-through cache across codemod pa
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {},
                 globalvarToGlobal: {}
             }
         },
@@ -206,12 +222,12 @@ void test("executeConfiguredCodemods reuses read-through cache across codemod pa
         }
     });
 
-    assert.equal(result.summaries.length, 2);
+    assert.equal(result.summaries.length, 1);
     assert.equal(readCount, 1);
 });
 
 void test("executeConfiguredCodemods avoids retaining full file content in write mode", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const writes = new Map<string, string>();
     const engine = new Refactor.RefactorEngine();
 
@@ -221,7 +237,7 @@ void test("executeConfiguredCodemods avoids retaining full file content in write
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
@@ -233,11 +249,11 @@ void test("executeConfiguredCodemods avoids retaining full file content in write
 
     assert.equal(result.dryRun, false);
     assert.equal(result.appliedFiles.get("scripts/example.gml"), "");
-    assert.match(writes.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(writes.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
 });
 
 void test("executeConfiguredCodemods reports overlay telemetry and emits callback", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const telemetrySnapshots: Array<CodemodExecutionTelemetry> = [];
 
@@ -247,7 +263,7 @@ void test("executeConfiguredCodemods reports overlay telemetry and emits callbac
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
@@ -265,7 +281,7 @@ void test("executeConfiguredCodemods reports overlay telemetry and emits callbac
 });
 
 void test("executeConfiguredCodemods spills dry-run overlay when threshold is exceeded", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
 
     const result = await engine.executeConfiguredCodemods({
@@ -274,7 +290,7 @@ void test("executeConfiguredCodemods spills dry-run overlay when threshold is ex
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
@@ -285,11 +301,11 @@ void test("executeConfiguredCodemods spills dry-run overlay when threshold is ex
     assert.ok(result.telemetry);
     assert.ok((result.telemetry?.overlaySpillWrites ?? 0) > 0);
     assert.ok((result.telemetry?.overlayEntryCount ?? 0) >= (result.telemetry?.overlaySpilledEntries ?? 0));
-    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
 });
 
 void test("executeConfiguredCodemods uses injected dry-run overlay backend and disposes it", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const backend = new InMemoryOverlayStorageBackend();
 
@@ -299,7 +315,7 @@ void test("executeConfiguredCodemods uses injected dry-run overlay backend and d
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,

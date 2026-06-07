@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { defaultOptions, formatOptions } from "../src/format-entry.js";
-import { resolveCoreOptionOverrides } from "../src/options/core-option-overrides.js";
+import { DEFAULT_CORE_OPTION_OVERRIDES } from "../src/options/core-option-overrides.js";
 
 void test("defaultOptions includes defaults defined by format options", () => {
     for (const [optionName, optionConfig] of Object.entries(formatOptions)) {
@@ -20,7 +20,7 @@ void test("defaultOptions includes defaults defined by format options", () => {
 });
 
 void test("defaultOptions stays frozen and preserves forced core overrides", () => {
-    const expectedCoreOverrides = resolveCoreOptionOverrides();
+    const expectedCoreOverrides = DEFAULT_CORE_OPTION_OVERRIDES;
 
     assert.ok(Object.isFrozen(defaultOptions), "expected defaultOptions to be frozen");
     assert.strictEqual(defaultOptions.trailingComma, expectedCoreOverrides.trailingComma);

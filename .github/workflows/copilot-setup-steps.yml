@@ -44,6 +44,7 @@ jobs:
           if ! pnpm run build:ts; then
             echo "::warning::TypeScript workspace build failed; continuing environment setup."
           fi
+        continue-on-error: true
 
       - name: Protect golden test fixtures (local environment)
         run: |

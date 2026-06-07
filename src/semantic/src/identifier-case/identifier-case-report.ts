@@ -11,9 +11,11 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { ConflictSeverity, normalizeConflictSeverityWithFallback } from "./conflict-severity.js";
-import { defaultIdentifierCaseFsFacade as defaultFsFacade } from "./fs-facade.js";
-import { consumeIdentifierCaseDryRunContext } from "./identifier-case-context.js";
-import { warnWithReason } from "./logger.js";
+import {
+    consumeIdentifierCaseDryRunContext,
+    defaultIdentifierCaseFsFacade as defaultFsFacade,
+    warnWithReason
+} from "./identifier-case-helpers.js";
 import { getIdentifierCaseOptionStore, setIdentifierCaseOption } from "./option-store.js";
 
 type IdentifierCaseReportSummary = {

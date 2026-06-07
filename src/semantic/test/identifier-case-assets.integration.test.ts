@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import {
     clearIdentifierCaseDryRunContexts,
     setIdentifierCaseDryRunContext
-} from "../src/identifier-case/identifier-case-context.js";
+} from "../src/identifier-case/identifier-case-helpers.js";
 import { prepareIdentifierCasePlan } from "../src/identifier-case/plan-service.js";
 import { buildProjectIndex } from "../src/project-index/index.js";
 import { createAssetCollisionProject, createAssetRenameProject } from "./identifier-case-asset-helpers.js";

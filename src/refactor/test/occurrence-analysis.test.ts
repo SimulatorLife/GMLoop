@@ -125,7 +125,7 @@ void describe("classifyOccurrences", () => {
     });
 
     void it("throws on invalid input type", () => {
-        assert.throws(() => classifyOccurrences(null as unknown as Array<SymbolOccurrence>), {
+        assert.throws(() => classifyOccurrences(null), {
             name: "TypeError",
             message: /requires an array/
         });
@@ -183,13 +183,10 @@ void describe("filterOccurrencesByKind", () => {
     });
 
     void it("validates input types", () => {
-        assert.throws(
-            () => filterOccurrencesByKind(null as unknown as Array<SymbolOccurrence>, [OccurrenceKind.DEFINITION]),
-            {
-                name: "TypeError",
-                message: /requires an array of occurrences/
-            }
-        );
+        assert.throws(() => filterOccurrencesByKind(null, [OccurrenceKind.DEFINITION]), {
+            name: "TypeError",
+            message: /requires an array of occurrences/
+        });
 
         assert.throws(() => filterOccurrencesByKind(occurrences, "not an array" as unknown as Array<string>), {
             name: "TypeError",
@@ -239,7 +236,7 @@ void describe("groupOccurrencesByFile", () => {
     });
 
     void it("validates input type", () => {
-        assert.throws(() => groupOccurrencesByFile(null as unknown as Array<SymbolOccurrence>), {
+        assert.throws(() => groupOccurrencesByFile(null), {
             name: "TypeError",
             message: /requires an array/
         });
@@ -292,7 +289,7 @@ void describe("findOccurrencesInFile", () => {
     });
 
     void it("validates input types", () => {
-        assert.throws(() => findOccurrencesInFile(null as unknown as Array<SymbolOccurrence>, "test.gml"), {
+        assert.throws(() => findOccurrencesInFile(null, "test.gml"), {
             name: "TypeError",
             message: /requires an array of occurrences/
         });
@@ -302,7 +299,7 @@ void describe("findOccurrencesInFile", () => {
             message: /requires a non-empty file path string/
         });
 
-        assert.throws(() => findOccurrencesInFile(occurrences, null as unknown as string), {
+        assert.throws(() => findOccurrencesInFile(occurrences, null), {
             name: "TypeError",
             message: /requires a non-empty file path string/
         });
@@ -352,7 +349,7 @@ void describe("countAffectedFiles", () => {
     });
 
     void it("validates input type", () => {
-        assert.throws(() => countAffectedFiles(null as unknown as Array<SymbolOccurrence>), {
+        assert.throws(() => countAffectedFiles(null), {
             name: "TypeError",
             message: /requires an array/
         });

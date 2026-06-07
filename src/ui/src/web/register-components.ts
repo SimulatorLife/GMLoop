@@ -6,9 +6,14 @@ import {
     GmCard,
     GmConfigPanel,
     GmDocsPanel,
+    GmErrorBanner,
+    GmFixPanel,
     GmGraphPanel,
     GmGraphToolbar,
-    GmPlaygroundPanel
+    GmLiveReloadPanel,
+    GmMcpPanel,
+    GmPlaygroundPanel,
+    GmStatusChip
 } from "../app/components/index.js";
 
 function defineCustomElementOnce(name: string, constructorValue: CustomElementConstructor): void {
@@ -24,11 +29,16 @@ export function registerGraphVisualizationCustomElements(): void {
     defineCustomElementOnce("gm-button", GmButton);
     defineCustomElementOnce("gm-card", GmCard);
     defineCustomElementOnce("gm-badge", GmBadge);
+    defineCustomElementOnce("gm-error-banner", GmErrorBanner);
+    defineCustomElementOnce("gm-status-chip", GmStatusChip);
     defineCustomElementOnce("gm-app-header", GmAppHeader);
-    defineCustomElementOnce("gm-graph-toolbar", GmGraphToolbar);
+    defineCustomElementOnce("gm-page-toolbar", GmGraphToolbar);
     defineCustomElementOnce("gm-graph-panel", GmGraphPanel);
+    defineCustomElementOnce("gm-live-reload-panel", GmLiveReloadPanel);
     defineCustomElementOnce("gm-playground-panel", GmPlaygroundPanel);
     defineCustomElementOnce("gm-docs-panel", GmDocsPanel);
+    defineCustomElementOnce("gm-fix-panel", GmFixPanel);
     defineCustomElementOnce("gm-config-panel", GmConfigPanel);
+    defineCustomElementOnce("gm-mcp-panel", GmMcpPanel);
     defineCustomElementOnce("gm-app-shell", GmAppShell);
 }

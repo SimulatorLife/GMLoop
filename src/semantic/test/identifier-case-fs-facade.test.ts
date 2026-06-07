@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { DEFAULT_WRITE_ACCESS_MODE, defaultIdentifierCaseFsFacade } from "../src/identifier-case/fs-facade.js";
+import {
+    DEFAULT_WRITE_ACCESS_MODE,
+    defaultIdentifierCaseFsFacade
+} from "../src/identifier-case/identifier-case-helpers.js";
 
 void describe("defaultIdentifierCaseFsFacade", () => {
     void it("is frozen so callers cannot mutate the shared default", () => {
@@ -28,15 +31,12 @@ void describe("defaultIdentifierCaseFsFacade", () => {
     });
 
     void it("readFileSync rejects non-string paths", () => {
-        assert.throws(
-            () => defaultIdentifierCaseFsFacade.readFileSync(42 as unknown as string),
-            /readFileSync only accepts string paths/
-        );
+        assert.throws(() => defaultIdentifierCaseFsFacade.readFileSync(42), /readFileSync only accepts string paths/);
     });
 
     void it("writeFileSync rejects non-string paths", () => {
         assert.throws(
-            () => defaultIdentifierCaseFsFacade.writeFileSync(42 as unknown as string, "contents"),
+            () => defaultIdentifierCaseFsFacade.writeFileSync(42, "contents"),
             /writeFileSync only accepts string paths/
         );
     });

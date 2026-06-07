@@ -4,6 +4,18 @@ import { describe, it } from "node:test";
 import { runCliTestCommand } from "../src/cli.js";
 
 void describe("runCliTestCommand", () => {
+    void it("includes the updated top-level command summary in help output", async () => {
+        const result = await runCliTestCommand({
+            argv: ["--help"]
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(
+            result.stdout,
+            /Provides formatting, linting, refactoring, transpiling, graph analysis, runtime\s+workflows, and report generation commands\./u
+        );
+    });
+
     void it("restores environment variables overridden for the test run", async () => {
         const overrideKey = "PRETTIER_PLUGIN_GML_TEST_OVERRIDE";
         const originalValue = process.env[overrideKey];

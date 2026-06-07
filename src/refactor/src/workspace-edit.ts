@@ -4,6 +4,8 @@
  * represent a semantic-safe refactoring operation across multiple files.
  */
 
+import { DUPLICATE_EDIT_CHECK_MAX_SET_SIZE } from "./refactor-constants.js";
+
 /**
  * Well-known symbol that any workspace-edit-like object can implement to expose
  * its current mutation revision without being an instance of {@link WorkspaceEdit}.
@@ -32,6 +34,87 @@ export const WORKSPACE_EDIT_REVISION_TOKEN: unique symbol = Symbol("WorkspaceEdi
  */
 export interface WorkspaceRevisionProvider {
     readonly [WORKSPACE_EDIT_REVISION_TOKEN]: () => number;
+}
+
+/**
+ * Duck-type contract for workspace edit containers used throughout the refactor
+ * engine. This interface documents the full set of properties and methods that
+ * any substitutable implementation must provide so that call sites can rely on
+ * the shared contract rather than `instanceof WorkspaceEdit`.
+ *
+ * Using `WorkspaceLike` (or the capability probe {@link isWorkspaceEditLike})
+ * instead of `instanceof` enables polymorphism across module boundaries: a
+ * third-party or test-only implementation that satisfies the contract can be
+ * substituted for the concrete {@link WorkspaceEdit} class without breaking
+ * any caller.
+ *
+ * @example
+ * ```ts
+ * // Substitutable implementation — not a WorkspaceEdit subclass
+ * class RecordingWorkspaceEdit {
+ *   readonly edits: Array<TextEdit> = [];
+ *   readonly metadataEdits: Array<MetadataEdit> = [];
+ *   readonly fileRenames: Array<FileRename> = [];
+ *
+ *   addEdit(path: string, start: number, end: number, newText: string): void { ... }
+ *   groupByFile(): Map<string, Array<Pick<TextEdit, "start" | "end" | "newText">>> { ... }
+ * }
+ *
+ * // Accepts any WorkspaceLike, not just the concrete WorkspaceEdit class
+ * function processWorkspace(workspace: WorkspaceLike): void {
+ *   const grouped = workspace.groupByFile();
+ *   ...
+ * }
+ * ```
+ */
+export interface WorkspaceLike {
+    /**
+     * Pending text edits to apply. Each edit replaces the range `[start, end)`
+     * in the identified file with `newText`.
+     */
+    readonly edits: Array<TextEdit>;
+
+    /**
+     * Pending full-document metadata rewrites for `.yy`/`.yyp` resources.
+     */
+    readonly metadataEdits: Array<MetadataEdit>;
+
+    /**
+     * Pending file renames (directory or file path changes).
+     */
+    readonly fileRenames: Array<FileRename>;
+
+    /**
+     * Append a text edit to the workspace.
+     *
+     * @param path - Absolute workspace path of the file to edit.
+     * @param start - Zero-based start offset of the range to replace.
+     * @param end - Zero-based exclusive end offset of the range to replace.
+     * @param newText - Replacement text inserted at the edit position.
+     */
+    addEdit(path: string, start: number, end: number, newText: string): void;
+
+    /**
+     * Append a full-document metadata rewrite for a `.yy`/`.yyp` resource.
+     *
+     * @param path - Absolute workspace path of the metadata file.
+     * @param content - Complete new file content as a JSON string.
+     */
+    addMetadataEdit(path: string, content: string): void;
+
+    /**
+     * Queue a file or directory rename.
+     *
+     * @param oldPath - Current workspace path.
+     * @param newPath - Desired workspace path after the rename.
+     */
+    addFileRename(oldPath: string, newPath: string): void;
+
+    /**
+     * Return a map from file path to that file's text edits, sorted in
+     * descending order by start position with duplicates removed.
+     */
+    groupByFile(): GroupedTextEdits;
 }
 
 export interface TextEdit {
@@ -70,12 +153,14 @@ type WorkspaceEditMutableState = {
     groupedEditsRevision: number;
     revision: number;
     duplicateCheckSetDisabled: boolean;
+    touchedFilePaths: Set<string>;
+    totalTextBytes: number;
+    highWaterTextBytes: number;
 };
 
 const workspaceEditExactKeyState = new WeakMap<WorkspaceEdit, Set<string>>();
 const workspaceEditMutableState = new WeakMap<WorkspaceEdit, WorkspaceEditMutableState>();
 const TEXT_EDIT_IDENTITY_DELIMITER = "\u0000";
-const DUPLICATE_EDIT_CHECK_MAX_SET_SIZE = 1024;
 
 function createTextEditIdentityKey(path: string, start: number, end: number, newText: string): string {
     return `${path}${TEXT_EDIT_IDENTITY_DELIMITER}${start}${TEXT_EDIT_IDENTITY_DELIMITER}${end}${TEXT_EDIT_IDENTITY_DELIMITER}${newText}`;
@@ -94,20 +179,51 @@ function getExactEditKeys(workspace: WorkspaceEdit): Set<string> {
     return created;
 }
 
+function createWorkspaceEditMutableState(workspace: WorkspaceEdit): WorkspaceEditMutableState {
+    const touchedFilePaths = new Set<string>();
+    let totalTextBytes = 0;
+
+    for (const edit of workspace.edits) {
+        touchedFilePaths.add(edit.path);
+        totalTextBytes += Buffer.byteLength(edit.newText, "utf8");
+    }
+
+    for (const metadataEdit of workspace.metadataEdits) {
+        touchedFilePaths.add(metadataEdit.path);
+        totalTextBytes += Buffer.byteLength(metadataEdit.content, "utf8");
+    }
+
+    for (const fileRename of workspace.fileRenames) {
+        touchedFilePaths.add(fileRename.oldPath);
+        touchedFilePaths.add(fileRename.newPath);
+    }
+
+    return {
+        groupedEditsCache: null,
+        groupedEditsRevision: -1,
+        revision: 0,
+        duplicateCheckSetDisabled: false,
+        touchedFilePaths,
+        totalTextBytes,
+        highWaterTextBytes: totalTextBytes
+    };
+}
+
 function getMutableState(workspace: WorkspaceEdit): WorkspaceEditMutableState {
     const existing = workspaceEditMutableState.get(workspace);
     if (existing) {
         return existing;
     }
 
-    const created: WorkspaceEditMutableState = {
-        groupedEditsCache: null,
-        groupedEditsRevision: -1,
-        revision: 0,
-        duplicateCheckSetDisabled: false
-    };
+    const created = createWorkspaceEditMutableState(workspace);
     workspaceEditMutableState.set(workspace, created);
     return created;
+}
+
+function recordWorkspaceTextPayload(mutableState: WorkspaceEditMutableState, path: string, content: string): void {
+    mutableState.touchedFilePaths.add(path);
+    mutableState.totalTextBytes += Buffer.byteLength(content, "utf8");
+    mutableState.highWaterTextBytes = Math.max(mutableState.highWaterTextBytes, mutableState.totalTextBytes);
 }
 
 function markWorkspaceEditChanged(workspace: WorkspaceEdit): void {
@@ -159,7 +275,16 @@ function deduplicateSortedTextEdits(
     return sortedEdits;
 }
 
-export class WorkspaceEdit {
+/**
+ * Concrete workspace edit container used throughout the refactor engine.
+ *
+ * `WorkspaceEdit` is the canonical implementation of {@link WorkspaceLike}.
+ * Callers that only need to create or read workspaces should type their
+ * parameters as {@link WorkspaceLike} to accept any substitutable
+ * implementation. The concrete class is used internally when the caller
+ * owns the construction and needs deduplication, caching, or revision tracking.
+ */
+export class WorkspaceEdit implements WorkspaceLike {
     readonly edits: Array<TextEdit>;
     readonly fileRenames: Array<FileRename> = [];
     readonly metadataEdits: Array<MetadataEdit> = [];
@@ -171,6 +296,7 @@ export class WorkspaceEdit {
      */
     constructor(initialEdits: Iterable<TextEdit> = []) {
         this.edits = Array.from(initialEdits);
+        workspaceEditMutableState.set(this, createWorkspaceEditMutableState(this));
     }
 
     addEdit(path: string, start: number, end: number, newText: string): void {
@@ -190,6 +316,7 @@ export class WorkspaceEdit {
         }
 
         this.edits.push({ path, start, end, newText });
+        recordWorkspaceTextPayload(mutableState, path, newText);
         mutableState.revision += 1;
         mutableState.groupedEditsCache = null;
         mutableState.groupedEditsRevision = -1;
@@ -197,6 +324,9 @@ export class WorkspaceEdit {
 
     addFileRename(oldPath: string, newPath: string): void {
         this.fileRenames.push({ oldPath, newPath });
+        const mutableState = getMutableState(this);
+        mutableState.touchedFilePaths.add(oldPath);
+        mutableState.touchedFilePaths.add(newPath);
         markWorkspaceEditChanged(this);
     }
 
@@ -205,6 +335,8 @@ export class WorkspaceEdit {
      */
     addMetadataEdit(path: string, content: string): void {
         this.metadataEdits.push({ path, content });
+        const mutableState = getMutableState(this);
+        recordWorkspaceTextPayload(mutableState, path, content);
         markWorkspaceEditChanged(this);
     }
 
@@ -256,31 +388,15 @@ export class WorkspaceEdit {
  * Return size/counter telemetry collected while building a workspace edit.
  */
 export function getWorkspaceEditTelemetry(workspace: WorkspaceEdit): WorkspaceEditTelemetry {
-    const touchedFiles = new Set<string>();
-    let totalTextBytes = 0;
-
-    for (const edit of workspace.edits) {
-        touchedFiles.add(edit.path);
-        totalTextBytes += Buffer.byteLength(edit.newText, "utf8");
-    }
-
-    for (const metadataEdit of workspace.metadataEdits) {
-        touchedFiles.add(metadataEdit.path);
-        totalTextBytes += Buffer.byteLength(metadataEdit.content, "utf8");
-    }
-
-    for (const fileRename of workspace.fileRenames) {
-        touchedFiles.add(fileRename.oldPath);
-        touchedFiles.add(fileRename.newPath);
-    }
+    const mutableState = getMutableState(workspace);
 
     return {
         textEditCount: workspace.edits.length,
         fileRenameCount: workspace.fileRenames.length,
         metadataEditCount: workspace.metadataEdits.length,
-        touchedFileCount: touchedFiles.size,
-        totalTextBytes,
-        highWaterTextBytes: totalTextBytes
+        touchedFileCount: mutableState.touchedFilePaths.size,
+        totalTextBytes: mutableState.totalTextBytes,
+        highWaterTextBytes: mutableState.highWaterTextBytes
     };
 }
 
@@ -308,14 +424,17 @@ export function getWorkspaceEditRevision(workspace: object): number | null {
 }
 
 /**
- * Determine whether a value behaves like a {@link WorkspaceEdit} by confirming
- * it exposes an `edits` array and the required methods. Accepts any object that
- * conforms to the expected contract (duck-typed interface) so refactor operations
- * can work with substitutable implementations without relying on `instanceof` checks
- * that break polymorphism across module boundaries.
+ * Capability probe that confirms a value satisfies the {@link WorkspaceLike}
+ * contract. Use this instead of `instanceof WorkspaceEdit` so that
+ * substitutable implementations can be recognized at runtime without
+ * sharing a common prototype chain.
+ *
+ * The probe verifies all three array properties (`edits`, `metadataEdits`,
+ * `fileRenames`) so that callers can safely destructure all arrays from an
+ * unknown workspace without null-checking each one individually.
  *
  * @param value - Candidate value to inspect.
- * @returns `true` when the value exposes the WorkspaceEdit contract.
+ * @returns `true` when the value satisfies the WorkspaceLike contract.
  */
 export function isWorkspaceEditLike(value?: unknown): boolean {
     if (value == null || typeof value !== "object") {
@@ -326,7 +445,11 @@ export function isWorkspaceEditLike(value?: unknown): boolean {
 
     return (
         Array.isArray(candidate.edits) &&
+        Array.isArray(candidate.metadataEdits) &&
+        Array.isArray(candidate.fileRenames) &&
         typeof candidate.addEdit === "function" &&
+        typeof candidate.addMetadataEdit === "function" &&
+        typeof candidate.addFileRename === "function" &&
         typeof candidate.groupByFile === "function"
     );
 }

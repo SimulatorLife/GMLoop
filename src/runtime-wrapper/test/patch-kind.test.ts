@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { getPatchKindMetadata, getSupportedPatchKinds, isSupportedPatchKind } from "../src/runtime/patch-kind.js";
+import { getPatchKindMetadata, getSupportedPatchKinds, isSupportedPatchKind } from "../browser/runtime/patch-kind.js";
 
 void describe("patch kind metadata", () => {
     void it("returns metadata for each supported patch kind", () => {

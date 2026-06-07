@@ -3,10 +3,34 @@
 
 model_verbosity = "low"
 approval_policy = "never"
-model_supports_reasoning_summaries = true # Force reasoning
+model_supports_reasoning_summaries = true # Force reasoning summary metadata, not reasoning itself
 personality = "pragmatic"
 sandbox_mode = "workspace-write"
 background_terminal_max_timeout = 600000
+
+[mcp_servers.gmloop]
+command = "gmloop"
+args = ["mcp"]
+enabled = true
+default_tools_approval_mode = "approve"
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+enabled = true
+default_tools_approval_mode = "approve"
+
+[mcp_servers.playwright.tools.browser_run_code_unsafe]
+approval_mode = "approve"
+
+[mcp_servers.gm-cli]
+command = "gmloop"
+args = [
+  "gm-cli",
+  "mcp"
+]
+enabled = true
+default_tools_approval_mode = "approve"
 
 [features]
 shell_snapshot = true           # Speed up repeated commands
@@ -37,21 +61,3 @@ network_access = true
 [agents]
 max_threads = 5
 max_depth = 1
-
-[model_providers.minimax]
-name = "MiniMax"
-base_url = "https://api.minimax.io/v1"
-env_key = "OPENAI_API_KEY"
-wire_api = "responses"
-
-[profiles.minimax]
-model_provider = "minimax"
-model = "MiniMax-M2.7"
-
-[profiles.minimax.features]
-multi_agent = false
-browser_use = false
-apps = false
-computer_use = false
-in_app_browser = false
-plugins = false

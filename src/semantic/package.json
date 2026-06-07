@@ -15,13 +15,15 @@
     "@gmloop/core": "workspace:*",
     "@gmloop/parser": "workspace:*"
   },
+  "devDependencies": {
+    "typescript": "catalog:"
+  },
   "scripts": {
     "build:types": "tsc -p tsconfig.json",
     "clean:types": "rm -rf dist",
-    "test": "pnpm run build:types && node --test dist/test/**/*.test.js"
+    "test": "pnpm run build:types && node --disable-warning=ExperimentalWarning --test dist/test/**/*.test.js"
   },
   "engines": {
     "node": ">=22.5.0"
-  },
-  "packageManager": "pnpm@11.0.8"
+  }
 }

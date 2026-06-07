@@ -37,13 +37,13 @@ void describe("fixMalformedComments", () => {
     });
 
     void it("returns unchanged text for non-string input", () => {
-        const result = fixMalformedComments(null as unknown as string);
+        const result = fixMalformedComments(null);
         assert.strictEqual(result.sourceText, null);
         assert.strictEqual(result.indexMapper(5), 5);
     });
 
     void it("returns unchanged text for undefined input", () => {
-        const result = fixMalformedComments(undefined as unknown as string);
+        const result = fixMalformedComments(undefined);
         assert.strictEqual(result.sourceText, undefined);
         assert.strictEqual(result.indexMapper(5), 5);
     });
@@ -121,6 +121,13 @@ void describe("recoverParseSourceFromMissingBrace", () => {
         const error = new Error("missing associated closing brace");
         const result = recoverParseSourceFromMissingBrace(source, error);
         assert.strictEqual(result, null);
+    });
+
+    void it("resumes brace scanning after CR-only single-line comments", () => {
+        const source = "// generated header\rif (ready) {";
+        const error = new Error("missing associated closing brace");
+        const result = recoverParseSourceFromMissingBrace(source, error);
+        assert.strictEqual(result, "// generated header\rif (ready) {\n}");
     });
 
     void it("ignores braces inside block comments", () => {

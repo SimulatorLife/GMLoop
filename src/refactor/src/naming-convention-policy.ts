@@ -748,10 +748,8 @@ export function evaluateNamingConvention(
     }
 
     let issueMessage: string | null = null;
-    // When the case-style branch detects a violation it already computes the
-    // expected name, so we capture it here to avoid a second identical call to
-    // composeExpectedIdentifierName at the bottom of the function.
-    let precomputedSuggestedName: string | undefined;
+    // Computed suggested name: undefined = not yet computed, null = no suggestion available
+    let suggestedName: string | null | undefined = undefined;
     const coreName = stripKnownAffixes(currentName, rule, policy, category);
     const exclusivePrefix = longestMatchingAffix(currentName, policy.exclusivePrefixes, "prefix");
     const exclusiveSuffix = longestMatchingAffix(currentName, policy.exclusiveSuffixes, "suffix");
@@ -770,11 +768,13 @@ export function evaluateNamingConvention(
         issueMessage = `Identifier ${JSON.stringify(currentName)} must end with ${JSON.stringify(rule.suffix)}.`;
     } else if (rule.minChars !== null && coreName.length < rule.minChars) {
         issueMessage = `Identifier ${JSON.stringify(currentName)} is shorter than the minimum core length ${rule.minChars}.`;
+        suggestedName = null; // No meaningful suggestion for length violations
     } else if (rule.maxChars !== null && coreName.length > rule.maxChars) {
         issueMessage = `Identifier ${JSON.stringify(currentName)} exceeds the maximum core length ${rule.maxChars}.`;
+        suggestedName = null; // No meaningful suggestion for length violations
     } else if (rule.enforceCaseStyle) {
-        precomputedSuggestedName = composeExpectedIdentifierName(coreName, rule);
-        if (precomputedSuggestedName !== currentName) {
+        suggestedName = composeExpectedIdentifierName(coreName, rule);
+        if (suggestedName !== currentName) {
             issueMessage = `Identifier ${JSON.stringify(currentName)} does not match ${rule.caseStyle} case.`;
         }
     }
@@ -787,24 +787,12 @@ export function evaluateNamingConvention(
         };
     }
 
-    if (
-        (rule.minChars !== null && coreName.length < rule.minChars) ||
-        (rule.maxChars !== null && coreName.length > rule.maxChars)
-    ) {
-        return {
-            compliant: false,
-            suggestedName: null,
-            message: issueMessage
-        };
-    }
-
-    // Reuse the expected name already computed in the case-style branch when
-    // available; otherwise compute it now for other violation types.
-    const suggestedName = precomputedSuggestedName ?? composeExpectedIdentifierName(coreName, rule);
+    // Finalize suggestion: use already-computed value (including null) or compute now
+    const finalSuggestion = suggestedName === undefined ? composeExpectedIdentifierName(coreName, rule) : suggestedName;
 
     return {
-        compliant: suggestedName === currentName,
-        suggestedName,
+        compliant: finalSuggestion === currentName,
+        suggestedName: finalSuggestion,
         message: includeMessage ? issueMessage : null
     };
 }

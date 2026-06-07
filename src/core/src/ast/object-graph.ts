@@ -94,7 +94,7 @@ export function walkObjectGraph(root: unknown, options: WalkObjectGraphOptions =
                 continue;
             }
 
-            stackValues.push(childValue as object | Array<unknown>);
+            stackValues.push(childValue);
             stackParents.push(objectValue);
             stackKeys.push(childKey);
         }

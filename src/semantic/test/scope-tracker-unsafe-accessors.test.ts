@@ -227,7 +227,7 @@ void describe("ScopeTracker unsafe accessors", () => {
             tracker.enterScope("program");
             tracker.declare("valid", { name: "valid" });
 
-            const results = tracker.getBatchSymbolOccurrencesUnsafe([null as any, undefined as any, "valid"]);
+            const results = tracker.getBatchSymbolOccurrencesUnsafe([null, undefined, "valid"]);
 
             assert.equal(results.size, 1);
             assert.ok(results.has("valid"));

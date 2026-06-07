@@ -7,12 +7,11 @@ import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from 
 import { getDefaultProjectIndexCacheMaxSize, loadProjectIndexCache, saveProjectIndexCache } from "./cache.js";
 import { clampConcurrency } from "./concurrency.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
+import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { resolveProjectIndexParser } from "./gml-parser-facade.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
 import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metrics.js";
-import { runWithMissingPathFallback } from "./missing-path-fallback.js";
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
@@ -59,7 +58,7 @@ function cloneEntryCollections(entry, ...keys) {
 }
 export function createProjectIndexCoordinator(options: ProjectIndexCoordinatorOptions = {}) {
     const {
-        fsFacade = defaultFsFacade,
+        fsFacade = Core.defaultFsFacade,
         loadCache = loadProjectIndexCache,
         saveCache = saveProjectIndexCache,
         buildIndex = buildProjectIndex,
@@ -1453,6 +1452,17 @@ function resolveCallTargetKind(identifierNode) {
     return null;
 }
 
+/**
+ * Appends a call record to all three aggregation targets (file, scope, and
+ * relationship lists). Extracted from `recordFunctionOrScriptCall` so the
+ * orchestrator stays focused on record construction rather than bookkeeping.
+ */
+function recordScriptCallInTargets(fileRecord, scopeRecord, relationships, callRecord) {
+    fileRecord.scriptCalls.push(callRecord);
+    scopeRecord.scriptCalls.push(callRecord);
+    relationships.scriptCalls.push(callRecord);
+}
+
 function recordFunctionOrScriptCall({
     builtInNames,
     callee,
@@ -1498,9 +1508,7 @@ function recordFunctionOrScriptCall({
         }
     };
 
-    fileRecord.scriptCalls.push(callRecord);
-    scopeRecord.scriptCalls.push(callRecord);
-    relationships.scriptCalls.push(callRecord);
+    recordScriptCallInTargets(fileRecord, scopeRecord, relationships, callRecord);
     metrics?.counters?.increment("scriptCalls.discovered");
 }
 
@@ -1561,22 +1569,12 @@ function handleConstructorParentScriptCall({
         name: calleeName,
         start: node.idLocation?.start ?? null
     };
-    const parentStart = Core.cloneLocation(node.idLocation?.start ?? null);
-    const parentEnd = Core.cloneLocation(node.idLocation?.end ?? null);
-    if (parentStart === null || parentEnd === null) {
+    if (callee.start === null || callee.end === null) {
         return;
-    }
-    parentEnd.index -= 1;
-    if (typeof parentEnd.column === "number") {
-        parentEnd.column -= 1;
     }
     recordFunctionOrScriptCall({
         builtInNames,
-        callee: {
-            ...callee,
-            end: parentEnd,
-            start: parentStart
-        },
+        callee,
         calleeName,
         fileRecord,
         metrics,
@@ -1874,40 +1872,6 @@ function parseProjectGmlSource({ contents, file, parseProjectSource, metrics, pr
         })
     );
 }
-function analyseProjectGmlAst({
-    ast,
-    builtInNames,
-    scopeRecord,
-    fileRecord,
-    relationships,
-    resourceAnalysis,
-    identifierCollections,
-    scopeDescriptor,
-    metrics,
-    sourceContents,
-    lineOffsets,
-    identifierSink
-}) {
-    const structVariableDeclarationScopeIds = collectConstructorVariableDeclarationScopeIds(ast);
-    metrics.timers.timeSync("gml.analyse", () =>
-        analyseGmlAst({
-            ast,
-            builtInNames,
-            scopeRecord,
-            fileRecord,
-            relationships,
-            scriptNameToScopeId: resourceAnalysis.scriptNameToScopeId,
-            scriptNameToResourcePath: resourceAnalysis.scriptNameToResourcePath,
-            identifierCollections,
-            scopeDescriptor,
-            metrics,
-            sourceContents,
-            lineOffsets,
-            structVariableDeclarationScopeIds,
-            identifierSink
-        })
-    );
-}
 async function processProjectGmlFile({
     file,
     fsFacade,
@@ -1946,20 +1910,25 @@ async function processProjectGmlFile({
         metrics,
         projectRoot
     });
-    analyseProjectGmlAst({
-        ast,
-        builtInNames,
-        scopeRecord,
-        fileRecord,
-        relationships,
-        resourceAnalysis,
-        identifierCollections,
-        scopeDescriptor,
-        metrics,
-        sourceContents: contents,
-        lineOffsets,
-        identifierSink
-    });
+    const structVariableDeclarationScopeIds = collectConstructorVariableDeclarationScopeIds(ast);
+    metrics.timers.timeSync("gml.analyse", () =>
+        analyseGmlAst({
+            ast,
+            builtInNames,
+            scopeRecord,
+            fileRecord,
+            relationships,
+            scriptNameToScopeId: resourceAnalysis.scriptNameToScopeId,
+            scriptNameToResourcePath: resourceAnalysis.scriptNameToResourcePath,
+            identifierCollections,
+            scopeDescriptor,
+            metrics,
+            sourceContents: contents,
+            lineOffsets,
+            structVariableDeclarationScopeIds,
+            identifierSink
+        })
+    );
 }
 /**
  * Centralize the mutable collections used while aggregating project index
@@ -2040,7 +2009,8 @@ function createProjectIndexResultSnapshot({
             resourceType: record.resourceType,
             scopes: [...record.scopes],
             gmlFiles: [...record.gmlFiles],
-            assetReferences: record.assetReferences.map((reference) => cloneAssetReference(reference))
+            assetReferences: record.assetReferences.map((reference) => cloneAssetReference(reference)),
+            layers: record.layers
         }),
         { sortEntries: false }
     );
@@ -2435,7 +2405,7 @@ function finalizeProjectIndexResult({ metricsReporting, options, projectIndex })
     }
     return projectIndex;
 }
-export async function buildProjectIndex(projectRoot, fsFacade = defaultFsFacade, options = {} as any) {
+export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFacade, options = {} as any) {
     if (!projectRoot) {
         throw new Error("projectRoot must be provided to buildProjectIndex");
     }

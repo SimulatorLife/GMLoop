@@ -1,5 +1,5 @@
-import type { MutableGameMakerAstNode } from "@gmloop/core";
-import type { Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
+import type { MutableDocCommentLines, MutableGameMakerAstNode } from "@gmloop/core";
+import type { Doc, Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
 
 export type GmlAst = MutableGameMakerAstNode;
 
@@ -20,6 +20,9 @@ export type GmlFormatComponentContract = Readonly<{
     print: GmlPrintFunction;
     handleComments: GmlHandleComments;
     printComment: GmlPrintCommentFunction;
+    buildPrintableDocCommentLines: (docCommentDocs: MutableDocCommentLines, originalText: string | null) => Doc[];
+    countTrailingBlankLines: (text: string | null | undefined, startIndex: number) => number;
+    getNextNonWhitespaceCharacter: (text: string | null | undefined, startIndex: number) => string | null;
     LogicalOperatorsStyle: LogicalOperatorsStyleMap;
 }>;
 
@@ -42,7 +45,7 @@ export type GmlFormat = Omit<PrettierPlugin<GmlAst>, "defaultOptions"> & {
     formatOptions?: SupportOptions;
     format: (source: string, options?: Record<string, unknown>) => Promise<string>;
     extractProjectFormatOptions: (config: Record<string, unknown>) => Record<string, unknown>;
-    listProjectFormatOptionCatalogEntries: () => ReadonlyArray<ProjectFormatOptionCatalogEntry>;
+    projectFormatOptionCatalog: ReadonlyArray<ProjectFormatOptionCatalogEntry>;
     /**
      * Layout-only post-processing pass applied after Prettier formats the GML
      * source. Owned by the format workspace because all of its

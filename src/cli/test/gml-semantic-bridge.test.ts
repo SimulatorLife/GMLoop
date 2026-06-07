@@ -119,6 +119,117 @@ void describe("GmlSemanticBridge tests", () => {
         assert.strictEqual(xTarget?.occurrences?.[1]?.end, 42);
     });
 
+    void it("listNamingConventionTargets includes enum-member references in GameMaker metadata", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-enum-metadata-"));
+        const enumFilePath = "scripts/block_defs/block_defs.gml";
+        const objectMetadataPath = "objects/obj_slope/obj_slope.yy";
+        const roomMetadataPath = "rooms/rm_level/rm_level.yy";
+        const objectMetadataSource = `${JSON.stringify(
+            {
+                name: "obj_slope",
+                resourceType: "GMObject",
+                properties: [
+                    { value: "eBlockType.slope_r" },
+                    { value: "eBlockType.slope_ramp" },
+                    { value: "OtherEnum.slope_r" }
+                ]
+            },
+            null,
+            2
+        )}\n`;
+        const roomMetadataSource = `${JSON.stringify(
+            {
+                name: "rm_level",
+                resourceType: "GMRoom",
+                instances: [{ properties: [{ value: "eBlockType.slope_r" }] }]
+            },
+            null,
+            2
+        )}\n`;
+
+        fs.mkdirSync(path.join(tmpRoot, "scripts", "block_defs"), { recursive: true });
+        fs.mkdirSync(path.join(tmpRoot, "objects", "obj_slope"), { recursive: true });
+        fs.mkdirSync(path.join(tmpRoot, "rooms", "rm_level"), { recursive: true });
+        fs.writeFileSync(path.join(tmpRoot, enumFilePath), "enum eBlockType { slope_r }\n", "utf8");
+        fs.writeFileSync(path.join(tmpRoot, objectMetadataPath), objectMetadataSource, "utf8");
+        fs.writeFileSync(path.join(tmpRoot, roomMetadataPath), roomMetadataSource, "utf8");
+
+        const declarationStart = "enum eBlockType { ".length;
+        const objectMetadataReferenceStart = objectMetadataSource.indexOf("eBlockType.slope_r") + "eBlockType.".length;
+        const objectPartialReferenceStart =
+            objectMetadataSource.indexOf("eBlockType.slope_ramp") + "eBlockType.".length;
+        const roomMetadataReferenceStart = roomMetadataSource.indexOf("eBlockType.slope_r") + "eBlockType.".length;
+        const mockProjectIndex = {
+            identifiers: {
+                enumMembers: {
+                    "enum-member:eBlockType:slope_r": {
+                        identifierId: "enum-member:eBlockType:slope_r",
+                        enumName: "eBlockType",
+                        name: "slope_r",
+                        declarations: [
+                            {
+                                name: "slope_r",
+                                filePath: enumFilePath,
+                                start: { index: declarationStart },
+                                end: { index: declarationStart + "slope_r".length - 1 }
+                            }
+                        ],
+                        references: []
+                    }
+                }
+            },
+            resources: {
+                [objectMetadataPath]: {
+                    path: objectMetadataPath,
+                    name: "obj_slope",
+                    resourceType: "GMObject"
+                },
+                [roomMetadataPath]: {
+                    path: roomMetadataPath,
+                    name: "rm_level",
+                    resourceType: "GMRoom"
+                }
+            }
+        };
+
+        try {
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+            const enumMemberTarget = targets.find(
+                (target) => target.category === "enumMember" && target.name === "slope_r"
+            );
+
+            assert.ok(enumMemberTarget, "Expected slope_r enum member target");
+            assert.ok(
+                enumMemberTarget.occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === objectMetadataPath &&
+                        occurrence.start === objectMetadataReferenceStart &&
+                        occurrence.end === objectMetadataReferenceStart + "slope_r".length
+                ),
+                "Expected object metadata enum member value to be included"
+            );
+            assert.ok(
+                enumMemberTarget.occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === roomMetadataPath &&
+                        occurrence.start === roomMetadataReferenceStart &&
+                        occurrence.end === roomMetadataReferenceStart + "slope_r".length
+                ),
+                "Expected room metadata enum member value to be included"
+            );
+            assert.ok(
+                !enumMemberTarget.occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === objectMetadataPath && occurrence.start === objectPartialReferenceStart
+                ),
+                "Expected partial enum member metadata values to be ignored"
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
     void it("listNamingConventionTargets does not treat enum-member references as local variable occurrences", async () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-local-occurrences-"));
         const sourceText = "function demo(X) {\n    var collider = array_create(CM.X);\n    return X;\n}\n";
@@ -371,6 +482,82 @@ void describe("GmlSemanticBridge tests", () => {
                         occurrence.kind === Refactor.OccurrenceKind.REFERENCE
                 ),
                 "expected instanceof string comparison to be reported as an occurrence"
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("getSymbolOccurrences includes the matching callable in multi-callable script callable renames", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-multi-callable-resource-"));
+        const scriptMetadataPath = "scripts/Attack/Attack.yy";
+        const scriptSourcePath = "scripts/Attack/Attack.gml";
+        const scriptSource = [
+            "function Attack() constructor {}",
+            "function AttackProjectileCircle() : Attack() constructor {}",
+            ""
+        ].join("\n");
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "Attack"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify(
+                    {
+                        name: "MyGame",
+                        resourceType: "GMProject",
+                        resources: [{ id: { name: "Attack", path: scriptMetadataPath } }]
+                    },
+                    null,
+                    2
+                )}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, scriptMetadataPath),
+                `${JSON.stringify(
+                    {
+                        name: "Attack",
+                        resourceType: "GMScript",
+                        resourcePath: scriptMetadataPath
+                    },
+                    null,
+                    2
+                )}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, scriptSourcePath), scriptSource, "utf8");
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const occurrences = bridge.getSymbolOccurrences("Attack", "gml/script/Attack");
+            const declarationStart = scriptSource.indexOf("Attack");
+            const parentCallStart = scriptSource.lastIndexOf("Attack()");
+            const otherConstructorStart = scriptSource.indexOf("AttackProjectileCircle");
+
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === scriptSourcePath &&
+                        occurrence.start === declarationStart &&
+                        occurrence.end === declarationStart + "Attack".length &&
+                        occurrence.kind === Refactor.OccurrenceKind.DEFINITION
+                ),
+                "expected the callable declaration matching the resource name"
+            );
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === scriptSourcePath &&
+                        occurrence.start === parentCallStart &&
+                        occurrence.end === parentCallStart + "Attack".length &&
+                        occurrence.kind === Refactor.OccurrenceKind.REFERENCE
+                ),
+                "expected parent constructor call references to the matching callable"
+            );
+            assert.ok(
+                !occurrences.some(
+                    (occurrence) => occurrence.path === scriptSourcePath && occurrence.start === otherConstructorStart
+                ),
+                "expected other callables in the same script resource to remain independent"
             );
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -3683,7 +3870,7 @@ void describe("GmlSemanticBridge tests", () => {
                     "fake.gml": { path: "fake.gml", declarations: [] }
                 },
                 scopes: {}
-            } as any,
+            },
             "/fake/path"
         );
 

@@ -9,6 +9,11 @@
     "gml/prefer-epsilon-comparisons": "error",
     "gml/optimize-math-expressions": "error"
   },
+  "refactor": {
+    "codemods": {
+      "docCommentAlignment": {}
+    }
+  },
   "fixture": {
     "kind": "integration",
     "assertion": "transform",

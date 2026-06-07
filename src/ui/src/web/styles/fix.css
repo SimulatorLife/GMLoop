@@ -1,0 +1,30 @@
+#fix-page {
+  padding: var(--gm-space-xl);
+}
+
+.fix-log-section h2 {
+  margin: 0 0 10px;
+  color: var(--gm-text);
+  font-size: var(--gm-text-lg);
+  line-height: var(--gm-leading-tight);
+}
+
+.fix-log-card .gm-card {
+  padding: 10px;
+}
+
+.fix-log {
+  min-height: 280px;
+  max-height: min(56vh, 620px);
+  margin: 0;
+  padding: var(--gm-space-lg);
+  overflow: auto;
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-log-bg);
+  color: var(--gm-log-text);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-relaxed);
+  white-space: pre-wrap;
+}

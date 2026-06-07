@@ -138,7 +138,7 @@ void describe("Watch unknown-scan abort signal (resource-leak regression)", () =
                         // `void triggerUnknown()` synchronously, which starts the async
                         // scheduleUnknownFileChanges chain. The async body (readdir, stat,
                         // readFile) is queued and has NOT run yet when we proceed.
-                        listenerCapture.listener?.("change", undefined as unknown as string);
+                        listenerCapture.listener?.("change", undefined);
 
                         // Activate timer tracking and immediately trigger cleanup.
                         // Because the async scan body hasn't run yet, the abort from

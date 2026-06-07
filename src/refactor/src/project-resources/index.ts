@@ -1,3 +1,10 @@
+export type {
+    AddObjectEventRequest,
+    ObjectEventDescriptor,
+    ObjectEventMutationResult,
+    UpdateObjectEventRequest
+} from "./object-event-operations.js";
+export { addObjectEvent, updateObjectEvent } from "./object-event-operations.js";
 export type { ProjectResourceKindValue } from "./project-resource-kinds.js";
 export {
     isProjectResourceKind,
@@ -9,6 +16,7 @@ export type {
     AddProjectResourceRequest,
     DuplicateProjectResourceRequest,
     MoveProjectResourceRequest,
+    ProjectManifestEntry,
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
     RenameProjectResourceRequest
@@ -16,7 +24,17 @@ export type {
 export {
     addProjectResource,
     duplicateProjectResource,
+    getManifestResources,
     moveProjectResource,
+    readProjectMetadataDocument,
     removeProjectResource,
-    renameProjectResource
+    renameProjectResource,
+    resolveProjectManifestFile
 } from "./project-resource-operations.js";
+export type {
+    AddRoomInstanceRequest,
+    DeleteRoomInstanceRequest,
+    RoomInstanceMutationResult,
+    UpdateRoomInstanceRequest
+} from "./room-instance-operations.js";
+export { addRoomInstance, deleteRoomInstance, updateRoomInstance } from "./room-instance-operations.js";

@@ -1,6 +1,6 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
-import { replaceNode } from "./math-ast-builders.js";
+import { replaceNode } from "../math/math-ast-builders.js";
 
 const { isObjectLike, unwrapParenthesizedExpression } = Core;
 
@@ -66,6 +66,19 @@ function traverseAndSimplify(node: any): boolean {
 }
 
 function simplifyNode(node: any): boolean {
+    if (isLogicalNotCallExpression(node)) {
+        replaceNode(node, {
+            type: "UnaryExpression",
+            operator: "!",
+            prefix: true,
+            argument: node.arguments[0],
+            start: node.start,
+            end: node.end,
+            parent: node.parent
+        });
+        return true;
+    }
+
     if (node.type === "UnaryExpression" && node.operator === "!") {
         return simplifyNot(node);
     }
@@ -98,25 +111,46 @@ function simplifyBooleanLiteralComparison(node: any): boolean {
         return false;
     }
 
-    const leftBoolean = getBooleanValue(node.left);
-    const rightBoolean = getBooleanValue(node.right);
-    const hasLeftBoolean = leftBoolean !== undefined;
-    const hasRightBoolean = rightBoolean !== undefined;
-
-    if (hasLeftBoolean === hasRightBoolean) {
+    const comparedOperands = readBooleanLiteralComparisonOperands(node.left, node.right);
+    if (comparedOperands === null) {
         return false;
     }
 
-    const comparedBoolean = hasLeftBoolean ? leftBoolean : rightBoolean;
-    const comparedExpression = hasLeftBoolean ? node.right : node.left;
-    if (comparedBoolean === undefined || !comparedExpression) {
-        return false;
-    }
-
+    const { comparedBoolean, comparedExpression } = comparedOperands;
     const shouldNegate = operator === "==" ? comparedBoolean === false : comparedBoolean === true;
     const replacement = shouldNegate ? negateNode(comparedExpression) : comparedExpression;
     replaceNode(node, replacement);
     return true;
+}
+
+function readBooleanLiteralComparisonOperands(
+    leftOperand: MutableGameMakerAstNode | null | undefined,
+    rightOperand: MutableGameMakerAstNode | null | undefined
+): Readonly<{ comparedBoolean: boolean; comparedExpression: MutableGameMakerAstNode }> | null {
+    if (leftOperand == null || rightOperand == null) {
+        return null;
+    }
+
+    const leftBoolean = getBooleanValue(leftOperand);
+    const rightBoolean = getBooleanValue(rightOperand);
+
+    if (leftBoolean !== undefined && rightBoolean !== undefined) {
+        return null;
+    }
+
+    if (leftBoolean === undefined && rightBoolean === undefined) {
+        return null;
+    }
+
+    if (leftBoolean !== undefined) {
+        return Object.freeze({ comparedBoolean: leftBoolean, comparedExpression: rightOperand });
+    }
+
+    if (rightBoolean !== undefined) {
+        return Object.freeze({ comparedBoolean: rightBoolean, comparedExpression: leftOperand });
+    }
+
+    return null;
 }
 
 function isLogicalOperator(operator: unknown): boolean {
@@ -137,6 +171,15 @@ function isLogicalBinaryNode(node: any): boolean {
 
 function isNegatedExpression(node: any): boolean {
     return Boolean(node && node.type === "UnaryExpression" && node.operator === "!");
+}
+
+function isLogicalNotCallExpression(node: any): boolean {
+    if (!node || node.type !== "CallExpression" || !Array.isArray(node.arguments) || node.arguments.length !== 1) {
+        return false;
+    }
+
+    const callee = node.callee ?? node.object;
+    return Boolean(callee && callee.type === "Identifier" && callee.name === "!");
 }
 
 function readExclusiveOrOperands(
@@ -176,26 +219,32 @@ function readExclusiveOrOperands(
 function simplifyStatementList(body: any[]): boolean {
     if (!Array.isArray(body)) return false;
     let changed = false;
-    for (let i = 0; i < body.length - 1; i++) {
-        const current = body[i];
-        const next = body[i + 1];
+
+    // Only sibling pairs can be simplified here (`current` + `next`), so we stop at `length - 1`.
+    // Use explicit index traversal so in-place splices stay aligned with the next sibling pair.
+    for (let index = 0; index < body.length - 1; ) {
+        const current = body[index];
+        const next = body[index + 1];
 
         if (current && next && current.type === "IfStatement" && !current.alternate) {
             // if (cond) { return true; } return false;
             const consequent = unwrapBlock(current.consequent);
 
-            if (consequent.type === "ReturnStatement" && next.type === "ReturnStatement") {
+            if (consequent && consequent.type === "ReturnStatement" && next.type === "ReturnStatement") {
                 const consBool = getBooleanValue(consequent.argument);
                 const nextBool = getBooleanValue(next.argument);
 
                 const shouldNegate = resolveBooleanReturnNegation(consBool, nextBool);
                 if (shouldNegate !== null) {
-                    body[i] = createBooleanReturnStatement(current.test, current.start, next.end, shouldNegate);
-                    body.splice(i + 1, 1);
+                    body[index] = createBooleanReturnStatement(current.test, current.start, next.end, shouldNegate);
+                    body.splice(index + 1, 1);
                     changed = true;
+                    continue;
                 }
             }
         }
+
+        index += 1;
     }
     return changed;
 }
@@ -212,7 +261,7 @@ function simplifyIfStatement(node: any): boolean {
     if (alternate !== null) {
         // Rules 1 & 2: if (cond) return true/false; else return false/true; -> return cond/!cond;
         // These apply even inside else-if chains (a return collapses the entire branch).
-        if (consequent.type === "ReturnStatement" && alternate.type === "ReturnStatement") {
+        if (consequent && consequent.type === "ReturnStatement" && alternate.type === "ReturnStatement") {
             const consBool = getBooleanValue(consequent.argument);
             const altBool = getBooleanValue(alternate.argument);
             const shouldNegate = resolveBooleanReturnNegation(consBool, altBool);
@@ -368,7 +417,7 @@ function createBooleanReturnStatement(
 }
 
 function unwrapBlock(node: any): any {
-    if (node.type === "BlockStatement" && node.body.length === 1) {
+    if (node && node.type === "BlockStatement" && Array.isArray(node.body) && node.body.length === 1) {
         return node.body[0];
     }
     return node;
@@ -421,7 +470,7 @@ function isUndefinedCheck(condition: any, target: any): boolean {
 
 function nodesRecursiveEqual(a: any, b: any): boolean {
     if (a === b) return true;
-    if (!a || !b) return false;
+    if (!isObjectLike(a) || !isObjectLike(b)) return false;
     if (a.type !== b.type) return false;
 
     if (a.type === "Identifier") return a.name === b.name;
@@ -456,10 +505,25 @@ function negateNode(inner: any): any {
 function simplifyNot(node: any): boolean {
     const argument = node.argument;
 
-    // Double negation: !!A -> A (only if A is boolean-safe or we are in a boolean context?
-    // For now, let's limit to !(!A) -> A.
-    // In GML, (!(!exp)) is equivalent to bool(exp). If exp is strictly boolean, it is A.
-    // But safely, !(!A) where argument is a UnaryExpression(!)
+    // Double negation: !!A → A
+    //
+    // In GML, `!(!(exp))` is always equivalent to `bool(exp)`, so `!!A` should
+    // collapse to `A`.  However, we conservatively restrict this transform to
+    // the exact pattern `!(!A)` (where the inner operand is a `UnaryExpression`
+    // with operator `!`) for two reasons:
+    //
+    // 1. De Morgan's law below handles the `(!(A && B))` / `(!(A || B))` cases
+    //    separately, and applying both rules in a single pass can cause the
+    //    traverser to miss intermediate simplifications.
+    // 2. Without side-effect analysis we cannot safely drop a double negation on
+    //    arbitrary expressions—for example `!!(func())` remains a valid
+    //    side-effect-preserving guard in GML, whereas `!(!func())` could be
+    //    misinterpreted if the transform ever encounters a non-boolean operand
+    //    in a looser variant of this rule.
+    //
+    // Adding broader transforms (e.g. `!(!(!(A)))` or `!!func()`) requires
+    // either a dedicated side-effect detection pass or a broader scope note
+    // in this module's documentation.
     if (argument.type === "UnaryExpression" && argument.operator === "!") {
         // Replace current node with argument.argument
         // We can't replace the node reference, so we have to copy properties.
@@ -527,9 +591,20 @@ function simplifyLogical(node: any): boolean {
             replaceNode(node, node.left); // Replace with the 'false' literal
             return true;
         }
-        // A && false -> false (if A has no side effects?)
-        // Safer to not remove A if it might be a function call.
-        // For now, let's stick to the ones that preserve side effects or known constants.
+        // A && false -> false is NOT applied here.
+        //
+        // Unlike `false && A` (where `false` is on the left and the short-circuit
+        // is trivial), `A && false` on the right requires `A` to be evaluated
+        // first to determine whether the result is `false` or something else.
+        // Dropping `A` here would discard any side effects that `A` has (e.g.
+        // `func() && false` — the call must run even though the final result
+        // is `false`).  Unlike the left-side literal cases, evaluating whether
+        // `A` has side effects is non-trivial without a dedicated analysis pass.
+        //
+        // All other branches above preserve side effects or known constants:
+        // `true && A` / `A && true` → A, `false && A` → false, `false || A` /
+        // `A || false` → A, `true || A` → true.  Extending to `A && false`
+        // requires side-effect tracking.
     }
 
     if (node.operator === "||") {
@@ -721,7 +796,7 @@ function getBooleanValue(node: any): boolean | undefined {
 
 function nodesAreEqual(a: any, b: any): boolean {
     if (a === b) return true;
-    if (!a || !b) return false;
+    if (!isObjectLike(a) || !isObjectLike(b)) return false;
     if (a.type !== b.type) return false;
 
     if (a.type === "Identifier") {
@@ -730,7 +805,13 @@ function nodesAreEqual(a: any, b: any): boolean {
     if (a.type === "Literal") {
         return a.value === b.value;
     }
-    // Deep comparison for simple structural equality, avoiding cyclic issues
-    // Just handling simple Identifiers and Literals for now for Absorption laws.
+    // Structural equality is checked for absorption-law simplifications
+    // (A || (A && B) → A and A && (A || B) → A).  These laws only require
+    // comparing the top-level operands: the left side of the outer expression
+    // against the left side of the inner expression.  Deep structural comparison
+    // is intentionally omitted because the absorption rules operate exclusively
+    // on `Identifier` and `Literal` nodes; extending this function to handle
+    // richer node types (e.g. member expressions, call expressions) requires
+    // reviewing whether that change preserves correctness for all active rules.
     return false;
 }

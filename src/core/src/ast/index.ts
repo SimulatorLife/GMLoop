@@ -3,6 +3,7 @@ export * from "./binary-operators.js";
 export * from "./location-keys.js";
 export * from "./location-manipulation.js";
 export * from "./locations.js";
+export * from "./member-accessors.js";
 export * from "./node-classification.js";
 export * from "./node-helpers/index.js";
 export * from "./node-helpers/loop-length-accessor.js";

@@ -1,16 +1,11 @@
 import type { ScopeTracker } from "../scopes/scope-tracker.js";
-import { sym } from "./scip.js";
+import { buildCallTargetSymbol, buildQualifiedSymbol } from "./symbol-building.js";
 
 /**
  * Type guard to check if a value is an identifier metadata object.
  */
 function isIdentifierMetadata(value: unknown): value is { name: string; isGlobalIdentifier?: boolean } {
-    return (
-        typeof value === "object" &&
-        value !== null &&
-        "name" in value &&
-        typeof (value as { name: unknown }).name === "string"
-    );
+    return typeof value === "object" && value !== null && "name" in value && typeof value.name === "string";
 }
 
 /**
@@ -18,13 +13,13 @@ function isIdentifierMetadata(value: unknown): value is { name: string; isGlobal
  */
 function getClassifications(declaration: unknown): string[] | undefined {
     if (typeof declaration !== "object" || declaration === null) {
-        return undefined as undefined;
+        return undefined;
     }
 
     const classifications = (declaration as Record<string, unknown>).classifications;
 
     if (!Array.isArray(classifications)) {
-        return undefined as undefined;
+        return undefined;
     }
 
     return classifications as string[];
@@ -242,26 +237,7 @@ export class BasicSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyz
         }
 
         const kind = this.kindOfIdent(node);
-
-        switch (kind) {
-            case "script": {
-                return sym("script", node.name);
-            }
-            case "global_field": {
-                return sym("var", `global::${node.name}`);
-            }
-            case "builtin": {
-                return sym("macro", node.name);
-            }
-            case "local":
-            case "self_field":
-            case "other_field": {
-                return null;
-            }
-            default: {
-                return null;
-            }
-        }
+        return buildQualifiedSymbol(kind, node.name);
     }
 
     /**
@@ -305,16 +281,6 @@ export class BasicSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyz
             return null;
         }
 
-        switch (kind) {
-            case "script": {
-                return sym("script", node.object.name);
-            }
-            case "builtin": {
-                return sym("macro", node.object.name);
-            }
-            default: {
-                return null;
-            }
-        }
+        return buildCallTargetSymbol(kind, node.object.name);
     }
 }

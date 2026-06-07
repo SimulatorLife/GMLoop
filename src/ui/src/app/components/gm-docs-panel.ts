@@ -4,11 +4,12 @@ import type { GraphVisualizationCliCatalogEntry, GraphVisualizationMcpToolCatalo
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { createGraphVisualizationDocsPanelContent } from "./docs-panel-content.js";
-import { GRAPH_UI_EVENT_SET_DOCS_VIEW, type GraphUiSetDocsViewDetail } from "./events.js";
+import { normalizeCatalogSearchQuery, searchCliEntries, searchMcpEntries, searchRulesSections } from "./docs-search.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
- * Docs surface for CLI and MCP catalog entries.
+ * Docs surface for CLI, MCP, and rules catalog entries.
  */
 export class GmDocsPanel extends LightDomLitElement {
     public static properties = {
@@ -20,14 +21,24 @@ export class GmDocsPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
-    #emitDocsView(docsView: "cli" | "mcp" | "rules"): void {
+    #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
-            new CustomEvent<GraphUiSetDocsViewDetail>(GRAPH_UI_EVENT_SET_DOCS_VIEW, {
+            new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
                 bubbles: true,
                 composed: true,
-                detail: { docsView }
+                detail: { page: "docs" }
             })
         );
+    };
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+    }
+
+    public disconnectedCallback(): void {
+        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+        super.disconnectedCallback();
     }
 
     #renderCliCard(entry: GraphVisualizationCliCatalogEntry) {
@@ -53,6 +64,11 @@ export class GmDocsPanel extends LightDomLitElement {
         `;
     }
 
+    #createNoSearchResultsMessage(query: string, activeDocsView: "cli" | "mcp" | "rules"): string {
+        const catalogLabel = activeDocsView === "cli" ? "commands" : activeDocsView === "mcp" ? "tools" : "rules";
+        return `No ${catalogLabel} match “${query}”.`;
+    }
+
     #renderMcpCard(entry: GraphVisualizationMcpToolCatalogEntry) {
         return html`
             <gm-card class="catalog-card" .heading=${entry.commandDisplayName}>
@@ -74,41 +90,19 @@ export class GmDocsPanel extends LightDomLitElement {
             return html``;
         }
 
-        const docsPageClassName = this.state.activePage === "docs" ? "page docs-page active" : "page docs-page";
+        const docsPageClassName =
+            this.state.activePage === "docs" ? "page content-page docs-page active" : "page content-page docs-page";
         const docsPanelContent = createGraphVisualizationDocsPanelContent(this.model.documentationCatalogs);
-        const docsMeta =
-            this.state.activeDocsView === "cli"
-                ? docsPanelContent.cliMetaText
-                : this.state.activeDocsView === "mcp"
-                  ? docsPanelContent.mcpMetaText
-                  : docsPanelContent.rulesMetaText;
+        const searchQuery = normalizeCatalogSearchQuery(this.state.searchQuery);
+        const cliSearchResult = searchCliEntries(docsPanelContent.cliEntries, searchQuery);
+        const mcpSearchResult = searchMcpEntries(docsPanelContent.mcpEntries, searchQuery);
+        const rulesSearchResult = searchRulesSections(docsPanelContent.rulesSections, searchQuery);
 
         return html`
             <section id="docs-page" class=${docsPageClassName}>
-                <div class="docs-toggle-row" role="group" aria-label="Documentation view selector">
-                    <button
-                        id="docs-view-cli"
-                        class=${this.state.activeDocsView === "cli" ? "top-nav-button active" : "top-nav-button"}
-                        @click=${() => this.#emitDocsView("cli")}
-                    >
-                        CLI
-                    </button>
-                    <button
-                        id="docs-view-mcp"
-                        class=${this.state.activeDocsView === "mcp" ? "top-nav-button active" : "top-nav-button"}
-                        @click=${() => this.#emitDocsView("mcp")}
-                    >
-                        MCP
-                    </button>
-                    <button
-                        id="docs-view-rules"
-                        class=${this.state.activeDocsView === "rules" ? "top-nav-button active" : "top-nav-button"}
-                        @click=${() => this.#emitDocsView("rules")}
-                    >
-                        Rules
-                    </button>
-                </div>
-                <p id="docs-meta" class="docs-meta">${docsMeta}</p>
+                ${this.state.docsErrorMessage
+                    ? html`<gm-error-banner .message=${this.state.docsErrorMessage}></gm-error-banner>`
+                    : null}
                 <div id="docs-content">
                     <div
                         id="cli-page"
@@ -116,18 +110,26 @@ export class GmDocsPanel extends LightDomLitElement {
                     >
                         <div id="cli-content" class="docs-grid">
                             ${docsPanelContent.cliEntries.length === 0
-                                ? html`<p class="catalog-empty">No CLI command catalog entries found.</p>`
-                                : docsPanelContent.cliEntries.map((entry) => this.#renderCliCard(entry))}
+                                ? html`<p class="catalog-empty">No commands are available right now.</p>`
+                                : cliSearchResult.entries.length === 0
+                                  ? html`<p class="catalog-empty">
+                                        ${this.#createNoSearchResultsMessage(searchQuery, "cli")}
+                                    </p>`
+                                  : cliSearchResult.entries.map((entry) => this.#renderCliCard(entry))}
                         </div>
                     </div>
                     <div
-                        id="mcp-page"
+                        id="docs-mcp-page"
                         class=${this.state.activeDocsView === "mcp" ? "docs-subpage" : "docs-subpage hidden"}
                     >
                         <div id="mcp-content" class="docs-grid">
                             ${docsPanelContent.mcpEntries.length === 0
-                                ? html`<p class="catalog-empty">No MCP tool catalog entries found.</p>`
-                                : docsPanelContent.mcpEntries.map((entry) => this.#renderMcpCard(entry))}
+                                ? html`<p class="catalog-empty">No tools are available right now.</p>`
+                                : mcpSearchResult.entries.length === 0
+                                  ? html`<p class="catalog-empty">
+                                        ${this.#createNoSearchResultsMessage(searchQuery, "mcp")}
+                                    </p>`
+                                  : mcpSearchResult.entries.map((entry) => this.#renderMcpCard(entry))}
                         </div>
                     </div>
                     <div
@@ -137,28 +139,32 @@ export class GmDocsPanel extends LightDomLitElement {
                         <div id="rules-content" class="docs-grid">
                             ${docsPanelContent.rulesEmptyMessage
                                 ? html`<p class="catalog-empty">${docsPanelContent.rulesEmptyMessage}</p>`
-                                : docsPanelContent.rulesSections.map(
-                                      (section) => html`
-                                          <gm-card class="catalog-card" .heading=${section.title}>
-                                              <p>${section.description}</p>
-                                              <ul class="catalog-list">
-                                                  ${section.items.map(
-                                                      (item) => html`
-                                                          <li class="catalog-item">
-                                                              <div class="config-badge-row">
-                                                                  ${item.badges.map(
-                                                                      (badge) =>
-                                                                          html`<gm-badge .label=${badge}></gm-badge>`
-                                                                  )}
-                                                              </div>
-                                                              <code>${item.title}</code>: ${item.detail}
-                                                          </li>
-                                                      `
-                                                  )}
-                                              </ul>
-                                          </gm-card>
-                                      `
-                                  )}
+                                : rulesSearchResult.sections.length === 0
+                                  ? html`<p class="catalog-empty">
+                                        ${this.#createNoSearchResultsMessage(searchQuery, "rules")}
+                                    </p>`
+                                  : rulesSearchResult.sections.map(
+                                        (section) => html`
+                                            <gm-card class="catalog-card" .heading=${section.title}>
+                                                <p>${section.description}</p>
+                                                <ul class="catalog-list">
+                                                    ${section.items.map(
+                                                        (item) => html`
+                                                            <li class="catalog-item">
+                                                                <div class="config-badge-row">
+                                                                    ${item.badges.map(
+                                                                        (badge) =>
+                                                                            html`<gm-badge .label=${badge}></gm-badge>`
+                                                                    )}
+                                                                </div>
+                                                                <code>${item.title}</code>: ${item.detail}
+                                                            </li>
+                                                        `
+                                                    )}
+                                                </ul>
+                                            </gm-card>
+                                        `
+                                    )}
                         </div>
                     </div>
                 </div>

@@ -23,7 +23,7 @@ function createEngineWithSemantic(semanticOverrides: object): RefactorEngine {
 
 void test("planBatchRename requires an array", async () => {
     const engine = new RefactorEngineClass();
-    await assert.rejects(() => engine.planBatchRename(null as unknown as Array<RenameRequest>), {
+    await assert.rejects(() => engine.planBatchRename(null), {
         name: "TypeError",
         message: /requires an array/
     });

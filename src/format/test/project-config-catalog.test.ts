@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Format } from "../src/index.js";
+import { PROJECT_FORMAT_OPTION_CATALOG } from "../src/options/project-config-catalog.js";
 
-void test("listProjectFormatOptionCatalogEntries exposes formatter-owned option descriptions", () => {
-    const entries = Format.listProjectFormatOptionCatalogEntries();
+void test("PROJECT_FORMAT_OPTION_CATALOG exposes formatter-owned option entries", () => {
+    const entries = PROJECT_FORMAT_OPTION_CATALOG;
 
     assert.ok(entries.some((entry) => entry.name === "printWidth" && entry.defaultValue === 100));
     assert.ok(

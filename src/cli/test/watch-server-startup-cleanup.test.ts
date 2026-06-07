@@ -16,8 +16,9 @@ type RuntimeServerStarter = (options: { runtimeRoot: string; verbose?: boolean }
     stop: () => Promise<void>;
 }>;
 
-function createMockRuntimeServerStarter(onStop: () => void): RuntimeServerStarter {
+function createMockRuntimeServerStarter(onStart: () => void, onStop: () => void): RuntimeServerStarter {
     return async () => {
+        onStart();
         return {
             url: "http://127.0.0.1:8080/",
             origin: "http://127.0.0.1:8080",
@@ -32,21 +33,24 @@ function createMockRuntimeServerStarter(onStop: () => void): RuntimeServerStarte
 }
 
 void describe("Watch command server startup cleanup", () => {
-    void it("cleans up runtime server when WebSocket server fails to start", async () => {
+    void it("does not start runtime server when WebSocket server fails to start", async () => {
         const root = await mkdtemp(path.join(tmpdir(), "watch-server-cleanup-"));
-        let runtimeServerStopped = false;
+        let runtimeServerStarted = false;
 
-        const mockRuntimeServerStarter = createMockRuntimeServerStarter(() => {
-            runtimeServerStopped = true;
-        });
+        const mockRuntimeServerStarter = createMockRuntimeServerStarter(
+            () => {
+                runtimeServerStarted = true;
+            },
+            () => {}
+        );
 
         await withTemporaryProperty(
             process,
             "exit",
-            ((code?: number) => {
+            (code?: number) => {
                 void code;
                 throw new Error("process.exit called");
-            }) as typeof process.exit,
+            },
             async () => {
                 try {
                     await runWatchCommand(root, {
@@ -68,28 +72,27 @@ void describe("Watch command server startup cleanup", () => {
         );
         await rm(root, { recursive: true, force: true });
 
-        assert.equal(
-            runtimeServerStopped,
-            true,
-            "Runtime server should be stopped when WebSocket server fails to start"
-        );
+        assert.equal(runtimeServerStarted, false, "Runtime server should not start before WebSocket server succeeds");
     });
 
-    void it("cleans up all servers when status server fails to start", async () => {
+    void it("does not start runtime server when status server fails to start", async () => {
         const root = await mkdtemp(path.join(tmpdir(), "watch-server-cleanup-status-"));
-        let runtimeServerStopped = false;
+        let runtimeServerStarted = false;
 
-        const mockRuntimeServerStarter = createMockRuntimeServerStarter(() => {
-            runtimeServerStopped = true;
-        });
+        const mockRuntimeServerStarter = createMockRuntimeServerStarter(
+            () => {
+                runtimeServerStarted = true;
+            },
+            () => {}
+        );
 
         await withTemporaryProperty(
             process,
             "exit",
-            ((code?: number) => {
+            (code?: number) => {
                 void code;
                 throw new Error("process.exit called");
-            }) as typeof process.exit,
+            },
             async () => {
                 try {
                     await runWatchCommand(root, {
@@ -98,7 +101,7 @@ void describe("Watch command server startup cleanup", () => {
                         verbose: false,
                         quiet: true,
                         websocketServer: true,
-                        websocketPort: 17_890,
+                        websocketPort: 0,
                         statusServer: true,
                         statusPort: 999_999,
                         runtimeServer: true,
@@ -113,6 +116,6 @@ void describe("Watch command server startup cleanup", () => {
 
         await rm(root, { recursive: true, force: true });
 
-        assert.equal(runtimeServerStopped, true, "Runtime server should be stopped when status server fails to start");
+        assert.equal(runtimeServerStarted, false, "Runtime server should not start before status server succeeds");
     });
 });

@@ -41,7 +41,7 @@ var matrix2 = scr_matrix_build(
     image_zscale + 90
 );
 
-#define  SQUARE(_value)    ((_value)*(_value))
+#macro SQUARE(_value) sqr(_value)
 
 var total = 0;
 var limit = 99;
@@ -76,31 +76,33 @@ repeat (array_length(arr2)) {
     show_debug_message(arr2[i++]);
 }
 
-#define INCREMENT(_v) ((_v)+1)
+#macro INCREMENT(_v) ((_v)+1)
 
 do {
     value = INCREMENT(value);
     if (value == SQUARE(limit)) {
-        value = limit * limit;
+        value = sqr(limit);
         throw "Square limit";
     }
-} until (value > limit * limit);
+} until (value > sqr(limit));
 
 return total;
 
 /// @param condition
+/// @returns {any}
 function bool_passthrough(condition) {
     return condition;
 }
-/// @param {boolean} b - The second boolean
-/// @param {boolean} a - The first boolean
-/// @param a
-/// @param b
+
+/// @param {bool} a The first boolean
+/// @param {bool} b The second boolean
+/// @returns {bool}
 function bool_negated(a, b) {
     return !a and b;
 }
 
-/// @param condition
+/// @param {bool} condition
+/// @returns {bool}
 function bool_with_comment(condition) {
     if (condition) {
         // comment should stop simplification

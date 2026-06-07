@@ -65,4 +65,18 @@ void describe("project health", () => {
             buildSize: "2 B"
         });
     });
+
+    void it("treats missing workspace dist directories as zero build size instead of throwing", () => {
+        const workspaceRoot = createWorkspaceRoot();
+
+        writeWorkspaceFile(workspaceRoot, "src/alpha/src/index.ts", "const value = 1;\n");
+
+        const stats = scanProjectHealth(workspaceRoot);
+
+        assert.deepStrictEqual(stats, {
+            largeFiles: 0,
+            todos: 0,
+            buildSize: "0 B"
+        });
+    });
 });

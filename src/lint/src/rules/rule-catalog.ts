@@ -1,4 +1,4 @@
-import { featherLintRules, gmlLintRules } from "./index.js";
+import { featherLintRuleMap, gmlLintRuleMap } from "./catalog.js";
 
 export type LintRuleCatalogEntry = Readonly<{
     description: string;
@@ -33,7 +33,7 @@ function createLintRuleCatalogEntries(
  */
 export function listLintRuleCatalogEntries(): ReadonlyArray<LintRuleCatalogEntry> {
     return Object.freeze([
-        ...createLintRuleCatalogEntries(gmlLintRules, "gml"),
-        ...createLintRuleCatalogEntries(featherLintRules, "feather")
+        ...createLintRuleCatalogEntries(gmlLintRuleMap, "gml"),
+        ...createLintRuleCatalogEntries(featherLintRuleMap, "feather")
     ]);
 }

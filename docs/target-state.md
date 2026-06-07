@@ -9,17 +9,17 @@ This document synthesizes the target state for the GameMaker Language parser pro
 3. **Linter with Auto-Fixes**: Any non-layout, single-file-scoped rewrites should be handled by the linter's (`/lint`) rules with explicit diagnostics and optional `--write`. Lexical canonicalization (for example, operator aliases and numeric literal formatting) is permitted in the formatter, but syntactic or semantic rewriting is not. Any structural or semantic fixes must live in the `lint` workspace.
 4. **Robust Semantic Analysis**: Implement a semantic layer that annotates the parse tree to power linting, refactoring, and transpilation, using the Sourcegraph Code Intelligence Protocol (SCIP) as the canonical symbol model.
 5. **Bounded-Memory Refactors**: Run large-project semantic indexing and codemod pipelines without retaining monolithic project-wide aggregates in memory. The target architecture uses bounded-memory streaming with spill-to-disk backends and whole-plan validation only where correctness requires it.
-6. **Live Hot-Reloading**: Enable true hot-loading of GML code, assets, and shaders without restarting the game by transpiling GML to JavaScript on demand and injecting it via a runtime wrapper.
+6. **Live Hot-Reloading**: Enable true hot-loading of GML code, assets, and shaders without restarting the game by transpiling GML to JavaScript on demand and injecting it via a runtime wrapper. Live-reload UI status must be driven by automatic timer/focus polling of the status endpoint, not by a manual refresh button or parallel host refresh callback. Server-mode live-reload controls must remain visually stable: Stop is always present and disabled when no active session can be stopped. UI-triggered Live Reload startup must finish build/setup sequencing before opening the game runtime tab; successful startup responses must include a concrete runtime URL, and the UI must open that URL directly rather than pre-opening an `about:blank` placeholder. UI-triggered starts use start-or-reuse semantics so an existing healthy watcher/status/runtime session is adopted instead of starting a duplicate process that fails on occupied ports; new UI-owned watcher children must receive per-session status and WebSocket ports instead of binding the fixed default ports. Vite/served-UI hot reloads must preserve the host-owned game Live Reload session by keeping the web bootstrap payload synchronized after start/stop, so remounting the UI cannot expose stale Start controls or orphan a running watcher process. Each UI tab has one top-level page toolbar containing the page title, subtitle, lifecycle badge, and main page controls; UI lifecycle badges use the shared `gm-status-chip` component with a closed set of labels. Docs subview selection and catalog search are page-level controls and belong in that shared toolbar, not in a second Docs body toolbar.
 
-Concrete graph-index design and implementation details now live in [docs/gml-graph-index-plan.md](gml-graph-index-plan.md). Graph/search/context retrieval is owned by `@gmloop/semantic`.
+Concrete graph-index, retrieval, and visualization target-state details now live in [docs/gml-graph-index-plan.md](gml-graph-index-plan.md). Graph/search/context retrieval is owned by `@gmloop/semantic`; CLI, MCP, and UI layers present those semantic facts without duplicating graph truth.
 
 ## 2. Workspace Ownership Boundaries
 
 ### 2.1 General Ownership
 
-- **Formatter (`/format`)**: Layout-only printing, indentation, wrapping, spacing, semicolon layout, print-width wrapping, and logical-operator style rendering. Must not synthesize or normalize semantic content. Lexical canonicalization is permitted, but syntactic and semantic rewriting is not. Any structural or semantic fixes must live in the `lint` workspace.
-- **Linter (`/lint`)**: Semantic and content rewrites, synthetic tag generation, legacy prefix or tag normalization, default placeholder comment cleanup, and local single-file diagnostics and autofix rewrites.
-- **Refactor (`/refactor`)**: Codemod and migration transforms, explicit rename or refactor transactions, cross-file edits, metadata edits, impact analysis, hot-reload validation, project-wide identifier indexing, rename safety, hoist-name generation, and all other project-aware functionality.
+- **Formatter (`/format`)**: Layout-only printing, indentation, wrapping, spacing, semicolon layout, print-width wrapping, and logical-operator style rendering. Must not synthesize or normalize semantic content. Lexical canonicalization is permitted, but syntactic and semantic rewriting is not. **The formatter never repairs invalid syntax and only formats valid AST.**
+- **Linter (`/lint`)**: Semantic and content rewrites, synthetic tag generation, legacy prefix or tag normalization, default placeholder comment cleanup, and local single-file diagnostics and autofix rewrites. **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
+- **Refactor (`/refactor`)**: Codemod and migration transforms, explicit rename or refactor transactions, cross-file edits, metadata edits, impact analysis, hot-reload validation, project-wide identifier indexing, rename safety, hoist-name generation, and all other project-aware functionality. **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 - **Core (`/core`)**: Shared doc-comment helpers, AST metadata utilities, and normalization primitives.
 - **CLI Watcher (`/cli`)**: Monitors the filesystem, coordinates the transpilation pipeline, emits telemetry, and manages the WebSocket server.
 - **Transpiler (`/transpiler`)**: Parses GML via ANTLR4, converts GML AST to JavaScript, and generates patch objects.
@@ -33,7 +33,7 @@ Concrete graph-index design and implementation details now live in [docs/gml-gra
 - **Core** owns shared doc-comment helpers used by lint and format.
 - **Clarification**: Promotion of a plain comment into documentation form is a content-aware rewrite because it requires interpreting comment text to infer documentation structure. Such transformations must always live in lint rules, never in the formatter.
 
-_Migration rule_: Do not add new doc-comment content mutation logic in formatter printers or transforms. Any new doc-comment synthesis, promotion, or tag or content rewrite must be implemented as lint rule behavior.
+_Migration rule_: Do not add new doc-comment content mutation logic in formatter printers or transforms. Any new doc-comment synthesis, promotion, or tag or content rewrite must be implemented as lint rule or refactor behavior.
 
 ### 2.3 Lint/Refactor Overlap Resolution
 
@@ -545,28 +545,6 @@ Real-project workload:
    - semantic project-index metrics metadata (`maxRss`, `maxHeapUsed`)
    - refactor codemod overlay telemetry (queue, overlay, spill, and cache counters)
 
-Pass gate:
-
-1. No semantic or output regressions in fixtures and integration suites.
-2. Memory reduction or throughput improvements satisfy thresholds:
-   - at least 20 percent wall-clock improvement, or
-   - at least 25 percent max-RSS reduction
-
-Current blocker status (as of 2026-03-15):
-
-1. `pnpm run test:semantic` passes.
-2. `pnpm run test:refactor` passes.
-3. `pnpm run test:fixtures:profile` currently fails due to fixture correctness regressions, not budget failures, including:
-   - `[format] test-operators` parse error (`unexpected symbol 'myCount'`)
-   - `[integration] test-int-comments-ops` output mismatch
-   - `[integration] test-int-logic-flow` output mismatch
-4. `pnpm run test:fixtures:profile:deep-cpu` fails for the same fixture correctness regressions.
-
-Interpretation:
-
-1. Option C memory and streaming plumbing is benchmark-ready.
-2. Final benchmark sign-off remains blocked until the existing fixture correctness regressions are resolved.
-
 ## 6. Transpiler & Hot Reload Pipeline
 
 ### 6.1 Core Concept & Role of the Transpiler
@@ -575,6 +553,8 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 
 ### 6.2 System Architecture
 
+- **GameMaker build tooling (external)**: Produces the HTML5 export through `gm-cli` or Igor. GMLoop delegates export generation to these tools instead of reimplementing the GameMaker build pipeline.
+- **GameMaker project editing/manual lookup (external)**: ResourceTool and manual search stay owned by `gm-cli`; GMLoop should delegate those workflows instead of maintaining parallel CLI mutation/search implementations.
 - **Dev server (Node.js/CLI)**: Watches GML files, transpiles them into JavaScript functions on demand, and broadcasts them as JSON patches via WebSocket.
 - **Runtime wrapper (browser)**: Listens for patches via WebSocket and swaps function references in the GameMaker engine's internal registry.
 

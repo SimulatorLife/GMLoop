@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, findPreviousNonWhitespaceIndex } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type ControlFlowStatementNode = Readonly<Record<string, unknown> & { type: string }>;
 
@@ -134,7 +134,7 @@ function reportMissingControlFlowBraces(
     }
 
     context.report({
-        node: branchNode as never,
+        node: branchNode,
         messageId,
         fix: allowAutofix
             ? (fixer) => {

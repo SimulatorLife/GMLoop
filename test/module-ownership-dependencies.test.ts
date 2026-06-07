@@ -9,10 +9,17 @@ import { describe, it } from "node:test";
 
 type DependencyMap = Readonly<Record<string, string>>;
 
+type PackageExportRoot = Readonly<{
+    import?: string;
+    types?: string;
+}>;
+
 type PackageJson = Readonly<{
     dependencies?: DependencyMap;
     devDependencies?: DependencyMap;
     exports?: Readonly<Record<string, unknown>>;
+    main?: string;
+    types?: string;
 }>;
 
 const require = createRequire(import.meta.url);
@@ -65,6 +72,16 @@ void describe("workspace ownership dependency policy", () => {
         assert.strictEqual(getDependencyVersion(fixtureRunnerPackage, "@gmloop/lint"), null);
         assert.strictEqual(getDependencyVersion(fixtureRunnerPackage, "@gmloop/refactor"), null);
         assert.strictEqual(getDependencyVersion(fixtureRunnerPackage, "@gmloop/semantic"), null);
+    });
+
+    void it("transpiler publishes from the workspace root index", () => {
+        const transpilerPackage = readWorkspacePackage("@gmloop/transpiler");
+        const rootExport = transpilerPackage.exports?.["."] as PackageExportRoot | undefined;
+
+        assert.strictEqual(transpilerPackage.main, "./dist/index.js");
+        assert.strictEqual(transpilerPackage.types, "./dist/index.d.ts");
+        assert.strictEqual(rootExport?.import, "./dist/index.js");
+        assert.strictEqual(rootExport?.types, "./dist/index.d.ts");
     });
 
     void it("workspace packages do not publish test-support subpath exports", () => {

@@ -425,6 +425,29 @@ export function isIncDecStatementNode(node: unknown): node is MutableGameMakerAs
 }
 
 /**
+ * Type guard for any increment/decrement node — expression or statement form.
+ *
+ * In GML, `++` and `--` can appear either as expressions (e.g. `x++`) or as
+ * standalone statements (e.g. `x++;`). Both share the same semantic effect and
+ * are commonly checked together throughout the lint/transform pipeline.
+ * This helper consolidates the duplicated `type === "IncDecExpression" || type === "IncDecStatement"`
+ * pattern that independently appears in multiple files.
+ *
+ * Call sites updated:
+ *  - `prefer-loop-invariant-expressions-rule.ts` (mutation collection + disallowed-context check)
+ *  - `logical-expression-optimize-logical-expressions.ts` (assigned-identifiers collection)
+ *  - `prefer-string-interpolation-rule.ts` (unsafe-mutation detection)
+ */
+export function isIncDecNode(node: unknown): node is MutableGameMakerAstNode {
+    if (node == null || typeof node !== "object") {
+        return false;
+    }
+
+    const type = (node as { type?: unknown }).type;
+    return type === INC_DEC_EXPRESSION || type === INC_DEC_STATEMENT;
+}
+
+/**
  * Type guard for variable declaration nodes.
  *
  * Variable declarations represent `var`, `static`, or `global` declarations.

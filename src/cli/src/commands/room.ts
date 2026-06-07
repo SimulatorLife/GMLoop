@@ -1,19 +1,22 @@
-import { type ProjectResourceMutationResult, Refactor } from "@gmloop/refactor";
+import { Refactor, type RoomInstanceMutationResult } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
+import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
-    ensurePlannedSurfaceGraphIndex,
-    type PlannedSurfaceSharedOptions,
-    printPlannedSurfacePayload,
-    resolvePlannedSurfaceProjectContext
-} from "./planned-ai-surface-shared.js";
+    ensureProjectGraphIndex,
+    filterGraphIndexResultsByKind,
+    printProjectPayload,
+    resolveCommandProjectContext,
+    type SharedProjectContextOptions
+} from "../workflow/project-root.js";
 
-type RoomCommandSharedOptions = PlannedSurfaceSharedOptions &
+type RoomCommandSharedOptions = SharedProjectContextOptions;
+
+type RoomMutationOptions = SharedProjectContextOptions &
     Readonly<{
-        newName?: string;
         write?: boolean;
     }>;
 
@@ -21,7 +24,6 @@ function addRoomSharedOptions(command: Command): Command {
     return command
         .addOption(createPathOption())
         .addOption(createConfigOption())
-        .addOption(createWriteOption())
         .option("--database-path <path>", "Graph index database path override.")
         .option("--toolset-root <path>", "Toolset project root path override.")
         .option("--force", "Rebuild graph index before query.")
@@ -29,47 +31,94 @@ function addRoomSharedOptions(command: Command): Command {
 }
 
 function printRoomPayload(payload: unknown): void {
-    printPlannedSurfacePayload(payload);
+    printProjectPayload(payload);
 }
 
-function mapMutationResult(result: ProjectResourceMutationResult): {
-    action: string;
-    dryRun: boolean;
-    resourceKind: string;
-    resourceName: string;
-    writtenPaths: ReadonlyArray<string>;
-    deletedPaths: ReadonlyArray<string>;
-    warnings: ReadonlyArray<string>;
-} {
+function parseCoordinateArgument(value: string, argumentName: "x" | "y"): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        throw new TypeError(`Invalid ${argumentName} coordinate "${value}". Expected a finite numeric value.`);
+    }
+    return parsed;
+}
+
+function toRoomInstanceMutationPayload(result: RoomInstanceMutationResult) {
     return {
         action: result.action,
         deletedPaths: result.deletedPaths,
         dryRun: result.dryRun,
-        resourceKind: result.resourceKind,
-        resourceName: result.resourceName,
+        instanceId: result.instanceId,
+        layerName: result.layerName,
+        objectName: result.objectName,
+        objectPath: result.objectPath,
+        roomName: result.roomName,
+        roomPath: result.roomPath,
         warnings: result.warnings,
-        writtenPaths: result.writtenPaths
+        writtenPaths: result.writtenPaths,
+        x: result.x,
+        y: result.y
     };
 }
 
-async function runRoomResourceMutation(
-    commandName: string,
-    options: RoomCommandSharedOptions,
-    runMutation: (projectRoot: string) => Promise<ProjectResourceMutationResult>
+async function runRoomInstanceAddAction(
+    roomName: string,
+    objectName: string,
+    x: number,
+    y: number,
+    options: RoomMutationOptions
 ): Promise<void> {
-    const context = await resolvePlannedSurfaceProjectContext(options);
-    const result = await runMutation(context.projectRoot);
-
-    printRoomPayload({
-        command: commandName,
-        ok: true,
-        payload: mapMutationResult(result)
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.addRoomInstance({
+        dryRun: options.write !== true,
+        objectName,
+        projectRoot: context.projectRoot,
+        roomName,
+        x,
+        y
     });
+
+    printRoomPayload({ command: "room instance add", ok: true, payload: toRoomInstanceMutationPayload(result) });
+}
+
+async function runRoomInstanceUpdateAction(
+    roomName: string,
+    instanceId: string,
+    x: number,
+    y: number,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.updateRoomInstance({
+        dryRun: options.write !== true,
+        instanceId,
+        projectRoot: context.projectRoot,
+        roomName,
+        x,
+        y
+    });
+
+    printRoomPayload({ command: "room instance update", ok: true, payload: toRoomInstanceMutationPayload(result) });
+}
+
+async function runRoomInstanceDeleteAction(
+    roomName: string,
+    instanceId: string,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.deleteRoomInstance({
+        dryRun: options.write !== true,
+        instanceId,
+        projectRoot: context.projectRoot,
+        roomName
+    });
+
+    printRoomPayload({ command: "room instance delete", ok: true, payload: toRoomInstanceMutationPayload(result) });
 }
 
 function emitRoomUnavailableLeaf(
     commandName: string,
-    options: PlannedSurfaceSharedOptions,
+    options: RoomMutationOptions,
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
@@ -79,25 +128,31 @@ function emitRoomUnavailableLeaf(
         payload: {
             capability,
             details,
+            mode: options.write === true ? "apply" : "dry-run",
             state: "not_available"
         }
     });
 }
 
 export function createRoomCommand(): Command {
-    const command = applyStandardCommandOptions(new Command("room")).description("Inspect and mutate room resources.");
+    const command = applyStandardCommandOptions(new Command("room")).description(
+        "Inspect room resources. Use `gm-cli resourcetool ...` for room edits."
+    );
 
     const list = addRoomSharedOptions(applyStandardCommandOptions(new Command("list")).description("List rooms."));
     list.action(async function roomListAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
-        const rooms = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: "",
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "room");
+        const context = await ensureProjectGraphIndex(options);
+        const rooms = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "room"
+        );
         printRoomPayload({ command: "room list", ok: true, payload: rooms });
     });
 
@@ -108,16 +163,17 @@ export function createRoomCommand(): Command {
     );
     inspect.action(async function roomInspectAction(roomNameOrId: string) {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const context = await ensureProjectGraphIndex(options);
+        const results = Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query: roomNameOrId,
+            toolsetRoot: options.toolsetRoot
+        }).results;
         const resolvedId = roomNameOrId.includes("::")
             ? roomNameOrId
-            : (Semantic.searchGraphIndex({
-                  databasePath: options.databasePath,
-                  projectConfig: context.projectConfig,
-                  projectRoot: context.projectRoot,
-                  query: roomNameOrId,
-                  toolsetRoot: options.toolsetRoot
-              }).results.find((entry) => entry.kind === "room")?.id ?? null);
+            : (filterGraphIndexResultsByKind(results, "room")[0]?.id ?? null);
         const payload =
             resolvedId === null
                 ? null
@@ -138,15 +194,18 @@ export function createRoomCommand(): Command {
     );
     query.action(async function roomQueryAction(text?: string) {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
+        const context = await ensureProjectGraphIndex(options);
         const normalizedQuery = typeof text === "string" ? text : "";
-        const payload = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: normalizedQuery,
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "room");
+        const payload = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: normalizedQuery,
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "room"
+        );
 
         printRoomPayload({ command: "room query", ok: true, payload });
     });
@@ -156,14 +215,17 @@ export function createRoomCommand(): Command {
     );
     validate.action(async function roomValidateAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
-        const rooms = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: "",
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "room");
+        const context = await ensureProjectGraphIndex(options);
+        const rooms = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "room"
+        );
 
         printRoomPayload({
             command: "room validate",
@@ -180,14 +242,17 @@ export function createRoomCommand(): Command {
     );
     preview.action(async function roomPreviewAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
-        const rooms = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: "",
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "room");
+        const context = await ensureProjectGraphIndex(options);
+        const rooms = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "room"
+        );
 
         printRoomPayload({
             command: "room preview",
@@ -204,14 +269,17 @@ export function createRoomCommand(): Command {
     );
     summary.action(async function roomSummaryAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensurePlannedSurfaceGraphIndex(options);
-        const rooms = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: "",
-            toolsetRoot: options.toolsetRoot
-        }).results.filter((entry) => entry.kind === "room");
+        const context = await ensureProjectGraphIndex(options);
+        const rooms = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "room"
+        );
 
         printRoomPayload({
             command: "room summary",
@@ -221,74 +289,6 @@ export function createRoomCommand(): Command {
                 roomCount: rooms.length
             }
         });
-    });
-
-    const create = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("create")).description("Create a room.").argument("<room>", "Room name")
-    );
-    create.action(async function roomCreateAction(roomName: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        await runRoomResourceMutation("room create", options, (projectRoot) =>
-            Refactor.addProjectResource({
-                dryRun: !options.write,
-                projectRoot,
-                resourceKind: Refactor.ProjectResourceKind.ROOM,
-                resourceName: roomName
-            })
-        );
-    });
-
-    const duplicate = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("duplicate"))
-            .description("Duplicate a room.")
-            .argument("<room>", "Room name")
-            .requiredOption("--new-name <name>", "New room name")
-    );
-    duplicate.action(async function roomDuplicateAction(roomName: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        await runRoomResourceMutation("room duplicate", options, (projectRoot) =>
-            Refactor.duplicateProjectResource({
-                dryRun: !options.write,
-                newResourceName: options.newName ?? "",
-                projectRoot,
-                resourceKind: Refactor.ProjectResourceKind.ROOM,
-                resourceName: roomName
-            })
-        );
-    });
-
-    const rename = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("rename"))
-            .description("Rename a room.")
-            .argument("<room>", "Current room name")
-            .requiredOption("--new-name <name>", "New room name")
-    );
-    rename.action(async function roomRenameAction(roomName: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        await runRoomResourceMutation("room rename", options, (projectRoot) =>
-            Refactor.renameProjectResource({
-                dryRun: !options.write,
-                newResourceName: options.newName ?? "",
-                projectRoot,
-                resourceKind: Refactor.ProjectResourceKind.ROOM,
-                resourceName: roomName
-            })
-        );
-    });
-
-    const remove = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("delete")).description("Delete a room.").argument("<room>", "Room name")
-    );
-    remove.action(async function roomDeleteAction(roomName: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        await runRoomResourceMutation("room delete", options, (projectRoot) =>
-            Refactor.removeProjectResource({
-                dryRun: !options.write,
-                projectRoot,
-                resourceKind: Refactor.ProjectResourceKind.ROOM,
-                resourceName: roomName
-            })
-        );
     });
 
     const update = addRoomSharedOptions(
@@ -310,48 +310,120 @@ export function createRoomCommand(): Command {
     const instance = applyStandardCommandOptions(new Command("instance")).description("Room instance operations.");
     const instanceAdd = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("add")).description("Add room instance.")
-    );
-    instanceAdd.action(function roomInstanceAddAction() {
-        const options = this.opts<RoomCommandSharedOptions>();
-        emitRoomUnavailableLeaf("room instance add", options, "room_instance_mutation");
+    )
+        .argument("<room>", "Room name")
+        .argument("<object>", "Object resource name")
+        .argument("<x>", "Instance x coordinate")
+        .argument("<y>", "Instance y coordinate")
+        .addOption(createWriteOption());
+    instanceAdd.action(async function roomInstanceAddAction(
+        roomName: string,
+        objectName: string,
+        x: string,
+        y: string
+    ) {
+        try {
+            const options = this.opts<RoomMutationOptions>();
+            const parsedX = parseCoordinateArgument(x, "x");
+            const parsedY = parseCoordinateArgument(y, "y");
+            await runRoomInstanceAddAction(roomName, objectName, parsedX, parsedY, options);
+        } catch (error) {
+            handleCliError(error);
+        }
     });
     const instanceUpdate = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("update")).description("Update room instance.")
-    );
-    instanceUpdate.action(function roomInstanceUpdateAction() {
-        const options = this.opts<RoomCommandSharedOptions>();
-        emitRoomUnavailableLeaf("room instance update", options, "room_instance_mutation");
+    )
+        .argument("<room>", "Room name")
+        .argument("<instance-id>", "Room instance id")
+        .argument("<x>", "Updated instance x coordinate")
+        .argument("<y>", "Updated instance y coordinate")
+        .addOption(createWriteOption());
+    instanceUpdate.action(async function roomInstanceUpdateAction(
+        roomName: string,
+        instanceId: string,
+        x: string,
+        y: string
+    ) {
+        try {
+            const options = this.opts<RoomMutationOptions>();
+            const parsedX = parseCoordinateArgument(x, "x");
+            const parsedY = parseCoordinateArgument(y, "y");
+            await runRoomInstanceUpdateAction(roomName, instanceId, parsedX, parsedY, options);
+        } catch (error) {
+            handleCliError(error);
+        }
     });
     const instanceDelete = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("delete")).description("Delete room instance.")
-    );
-    instanceDelete.action(function roomInstanceDeleteAction() {
-        const options = this.opts<RoomCommandSharedOptions>();
-        emitRoomUnavailableLeaf("room instance delete", options, "room_instance_mutation");
+    )
+        .argument("<room>", "Room name")
+        .argument("<instance-id>", "Room instance id")
+        .addOption(createWriteOption());
+    instanceDelete.action(function roomInstanceDeleteAction(roomName: string, instanceId: string) {
+        const options = this.opts<RoomMutationOptions>();
+        return runRoomInstanceDeleteAction(roomName, instanceId, options);
     });
     instance.addCommand(instanceAdd);
     instance.addCommand(instanceUpdate);
     instance.addCommand(instanceDelete);
 
     const layer = applyStandardCommandOptions(new Command("layer")).description("Room layer operations.");
+    const layerMutationLeaves = new Set(["create", "update", "delete", "reorder", "move-resource"]);
     for (const layerLeaf of ["list", "inspect", "create", "update", "delete", "reorder", "move-resource"]) {
         const nested = addRoomSharedOptions(
             applyStandardCommandOptions(new Command(layerLeaf)).description(`Room layer ${layerLeaf}.`)
         );
+        if (layerMutationLeaves.has(layerLeaf)) {
+            nested.addOption(createWriteOption());
+        }
         nested.action(function roomLayerAction() {
-            const options = this.opts<RoomCommandSharedOptions>();
+            const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room layer ${layerLeaf}`, options, "room_layer_mutation");
         });
         layer.addCommand(nested);
     }
 
     const camera = applyStandardCommandOptions(new Command("camera")).description("Room camera operations.");
+    const cameraMutationLeaves = new Set(["update", "frame"]);
     for (const cameraLeaf of ["list", "inspect", "update", "frame"]) {
         const nested = addRoomSharedOptions(
             applyStandardCommandOptions(new Command(cameraLeaf)).description(`Room camera ${cameraLeaf}.`)
         );
+        if (cameraMutationLeaves.has(cameraLeaf)) {
+            nested.addOption(createWriteOption());
+        }
+        if (cameraLeaf === "update") {
+            nested
+                .argument("<room>", "Room name")
+                .argument("<camera-id>", "Camera id")
+                .argument("<x>", "Camera x coordinate")
+                .argument("<y>", "Camera y coordinate")
+                .argument("<width>", "Camera width")
+                .argument("<height>", "Camera height");
+            nested.action(function roomCameraUpdateAction(
+                roomName: string,
+                cameraId: string,
+                x: string,
+                y: string,
+                width: string,
+                height: string
+            ) {
+                const options = this.opts<RoomMutationOptions>();
+                emitRoomUnavailableLeaf("room camera update", options, "room_camera_mutation", {
+                    cameraId,
+                    height,
+                    room: roomName,
+                    width,
+                    x,
+                    y
+                });
+            });
+            camera.addCommand(nested);
+            continue;
+        }
         nested.action(function roomCameraAction() {
-            const options = this.opts<RoomCommandSharedOptions>();
+            const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room camera ${cameraLeaf}`, options, "room_camera_mutation");
         });
         camera.addCommand(nested);
@@ -363,10 +435,6 @@ export function createRoomCommand(): Command {
     command.addCommand(validate);
     command.addCommand(preview);
     command.addCommand(summary);
-    command.addCommand(create);
-    command.addCommand(duplicate);
-    command.addCommand(rename);
-    command.addCommand(remove);
     command.addCommand(update);
     command.addCommand(repair);
     command.addCommand(instance);

@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import {
     applySourceTextEdits,
     type AstNodeRecord,
@@ -11,7 +12,6 @@ import {
     type SourceTextEdit,
     walkAstNodes
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { compactArray, getNodeStartIndex, getNodeEndIndex, unwrapParenthesizedExpression: unwrapParenthesized } = Core;
 
@@ -71,7 +71,7 @@ function getMemberArgumentIndex(node: any): number | null {
         return null;
     }
 
-    const parsed = Number.parseInt(String(property.value));
+    const parsed = Number.parseInt(String(property.value), 10);
     return Number.isInteger(parsed) ? parsed : null;
 }
 
@@ -90,7 +90,7 @@ function getArgumentCountGuardIndex(testNode: any): number | null {
         return null;
     }
 
-    const parsed = Number.parseInt(String(right.value));
+    const parsed = Number.parseInt(String(right.value), 10);
     return Number.isInteger(parsed) ? (testNode.operator === ">" ? parsed : null) : null;
 }
 
@@ -268,6 +268,98 @@ function resolveFunctionParameterRange(sourceText: string, functionNode: any): {
     return null;
 }
 
+function findFunctionBodyStartIndex(sourceText: string, searchStart: number): number | null {
+    for (let index = searchStart; index < sourceText.length; index += 1) {
+        const character = sourceText[index];
+        if (character === "{") {
+            return index;
+        }
+
+        if (character === "\n" || character === "\r") {
+            return null;
+        }
+    }
+
+    return null;
+}
+
+function findMatchingBlockEndIndex(sourceText: string, openBraceIndex: number): number | null {
+    let depth = 0;
+    let quote: '"' | "'" | null = null;
+    let inLineComment = false;
+    let inBlockComment = false;
+
+    for (let index = openBraceIndex; index < sourceText.length; index += 1) {
+        const character = sourceText[index];
+        const nextCharacter = sourceText[index + 1];
+
+        if (inLineComment) {
+            if (character === "\n" || character === "\r") {
+                inLineComment = false;
+            }
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (character === "*" && nextCharacter === "/") {
+                inBlockComment = false;
+                index += 1;
+            }
+            continue;
+        }
+
+        if (quote !== null) {
+            if (character === "\\") {
+                index += 1;
+                continue;
+            }
+
+            if (character === quote) {
+                quote = null;
+            }
+            continue;
+        }
+
+        if (character === "/" && nextCharacter === "/") {
+            inLineComment = true;
+            index += 1;
+            continue;
+        }
+
+        if (character === "/" && nextCharacter === "*") {
+            inBlockComment = true;
+            index += 1;
+            continue;
+        }
+
+        if (character === '"' || character === "'") {
+            quote = character;
+            continue;
+        }
+
+        if (character === "{") {
+            depth += 1;
+            continue;
+        }
+
+        if (character !== "}") {
+            continue;
+        }
+
+        depth -= 1;
+        if (depth === 0) {
+            return index + 1;
+        }
+    }
+
+    return null;
+}
+
+function resolveFunctionSourceEndIndex(sourceText: string, parameterEndIndex: number): number | null {
+    const bodyStartIndex = findFunctionBodyStartIndex(sourceText, parameterEndIndex);
+    return bodyStartIndex === null ? null : findMatchingBlockEndIndex(sourceText, bodyStartIndex);
+}
+
 function getIdentifierNameFromParameterSegment(segment: string): string | null {
     const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(segment);
     return match ? match[1] : null;
@@ -354,9 +446,9 @@ function matchLeadingTernaryFallback(statement: any, sourceText: string): Leadin
 
 function rewriteFunctionForOptionalDefaults(sourceText: string, functionNode: any): SourceTextEdit | null {
     const functionStart = getNodeStartIndex(functionNode);
-    const functionEnd = getNodeEndIndex(functionNode);
     const bodyStatements = Array.isArray(functionNode?.body?.body) ? functionNode.body.body : [];
     const parameterRange = resolveFunctionParameterRange(sourceText, functionNode);
+    const functionEnd = parameterRange ? resolveFunctionSourceEndIndex(sourceText, parameterRange.end) : null;
 
     if (
         typeof functionStart !== "number" ||
@@ -488,11 +580,22 @@ function rewriteFunctionForOptionalDefaults(sourceText: string, functionNode: an
     }
 
     const newParamsText = rewrittenSegments.join(", ");
-    const headText = sourceText.slice(functionStart, parameterRange.start);
-    const tailText = sourceText.slice(parameterRange.end, functionEnd);
+    if (localEdits.length === 0) {
+        return {
+            start: parameterRange.start,
+            end: parameterRange.end,
+            text: newParamsText
+        };
+    }
 
-    const baseRewrittenText = `${headText}${newParamsText}${tailText}`;
-    const finalRewrittenText = applySourceTextEdits(baseRewrittenText, localEdits);
+    const finalRewrittenText = applySourceTextEdits(sourceText.slice(functionStart, functionEnd), [
+        ...localEdits,
+        {
+            start: parameterRange.start - functionStart,
+            end: parameterRange.end - functionStart,
+            text: newParamsText
+        }
+    ]);
 
     return {
         start: functionStart,
@@ -555,7 +658,7 @@ export function rewriteTrailingOptionalDefaultsProgram(sourceText: string, progr
     const callEdits: SourceTextEdit[] = [];
 
     walkAstNodes(programNode, (node) => {
-        if (node?.type === "FunctionDeclaration" || node?.type === "ConstructorDeclaration") {
+        if (Core.isFunctionLikeDeclaration(node)) {
             const edit = rewriteFunctionForOptionalDefaults(sourceText, node);
             if (edit) {
                 functionEdits.push(edit);

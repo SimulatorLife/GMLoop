@@ -15,6 +15,18 @@ import { findAvailablePort } from "./test-helpers/free-port.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 import { connectToHotReloadWebSocket } from "./test-helpers/websocket-client.js";
 
+async function runQuietVerboseConflictWatchCommand(testDir: string): Promise<void> {
+    await runWatchCommand(testDir, {
+        extensions: [".gml"],
+        quiet: true,
+        verbose: true,
+        runtimeServer: false,
+        websocketServer: false
+    }).catch(() => {
+        // Expected to throw from mocked process.exit.
+    });
+}
+
 void describe("Watch command quiet mode", () => {
     let testDir: string;
     let testFile: string;
@@ -97,20 +109,11 @@ void describe("Watch command quiet mode", () => {
                 withTemporaryProperty(
                     process,
                     "exit",
-                    ((code?: number) => {
+                    (code?: number) => {
                         exitCode = code;
                         throw new Error("process.exit called");
-                    }) as typeof process.exit,
-                    () =>
-                        runWatchCommand(testDir, {
-                            extensions: [".gml"],
-                            quiet: true,
-                            verbose: true,
-                            runtimeServer: false,
-                            websocketServer: false
-                        }).catch(() => {
-                            // Expected to throw from mocked process.exit
-                        })
+                    },
+                    () => runQuietVerboseConflictWatchCommand(testDir)
                 )
         );
 

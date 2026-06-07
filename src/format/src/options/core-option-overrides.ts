@@ -54,14 +54,3 @@ export const DEFAULT_CORE_OPTION_OVERRIDES: CoreOptionOverrides = Object.freeze(
     proseWrap: "preserve",
     htmlWhitespaceSensitivity: "css"
 });
-
-/**
- * Resolve the effective Prettier core option overrides for the current run.
- *
- * Returns the locked default map unconditionally. All option values are fixed;
- * user-provided values are silently ignored to prevent non-GML output or
- * misleading configurability.
- */
-export function resolveCoreOptionOverrides(): CoreOptionOverrides {
-    return DEFAULT_CORE_OPTION_OVERRIDES;
-}

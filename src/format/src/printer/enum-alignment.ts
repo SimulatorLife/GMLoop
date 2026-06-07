@@ -114,8 +114,8 @@ function collectTrailingEnumComments(member) {
         (comment) =>
             comment &&
             typeof comment === "object" &&
-            (("trailing" in comment && (comment as { trailing: unknown }).trailing === true) ||
-                ("placement" in comment && (comment as { placement: unknown }).placement === "endOfLine"))
+            (("trailing" in comment && comment.trailing === true) ||
+                ("placement" in comment && comment.placement === "endOfLine"))
     );
 
     return trailingComments.length > 0 ? trailingComments : null;

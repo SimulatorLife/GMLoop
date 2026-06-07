@@ -5,7 +5,6 @@
 export const LEGACY_FIXTURE_CASE_IDS_BY_WORKSPACE = Object.freeze({
     format: Object.freeze(["test-argument-docs", "test-banner", "test-preserve"]),
     integration: Object.freeze([
-        "test-int-comments-ops",
         "test-int-doc-banner",
         "test-int-flow-hoist",
         "test-int-format-strings",
@@ -18,4 +17,9 @@ export const LEGACY_FIXTURE_CASE_IDS_BY_WORKSPACE = Object.freeze({
     ])
 });
 
-export const INTEGRATION_LEGACY_CASE_IDS = LEGACY_FIXTURE_CASE_IDS_BY_WORKSPACE.integration;
+export const INTEGRATION_LEGACY_CASE_IDS = Object.freeze([
+    ...LEGACY_FIXTURE_CASE_IDS_BY_WORKSPACE.integration,
+    "test-int-comments-ops",
+    "test-int-func-desc-docs",
+    "test-int-struct-literal"
+]);

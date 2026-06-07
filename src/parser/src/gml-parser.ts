@@ -8,9 +8,8 @@ import GameMakerASTBuilder from "./ast/gml-ast-builder.js";
 import createGameMakerParseErrorListener, { createGameMakerLexerErrorListener } from "./ast/gml-syntax-error.js";
 import { createHiddenNodeProcessor } from "./ast/hidden-node-processor.js";
 import { assertNestedTernaryConsequentsAreParenthesized } from "./ast/ternary-expression-grouping-validation.js";
-import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "./config/parser-constants.js";
 import { installRecognitionExceptionLikeGuard } from "./runtime/index.js";
-import { defaultParserOptions, type ParserOptions } from "./types/index.js";
+import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH, defaultParserOptions, type ParserOptions } from "./types/index.js";
 
 const PredictionMode =
     (antlr4 as unknown as { atn?: { PredictionMode: unknown } }).atn?.PredictionMode ??
@@ -32,7 +31,7 @@ installRecognitionExceptionLikeGuard();
  */
 function mergeParserOptions(baseOptions: ParserOptions, overrides: Partial<ParserOptions> | undefined): ParserOptions {
     const overrideObject = Core.isObjectLike(overrides) ? overrides : {};
-    const mergedOptions = Object.assign({}, baseOptions, overrideObject) as ParserOptions;
+    const mergedOptions = Object.assign({}, baseOptions, overrideObject);
     mergedOptions.sllPredictionMaxSourceLength = normalizeSllPredictionMaxSourceLength(
         mergedOptions.sllPredictionMaxSourceLength
     );
@@ -91,7 +90,7 @@ function parseProgramWithLlPredictionMode(sourceText: string): unknown {
 }
 
 function normalizeSllPredictionMaxSourceLength(value: unknown): number {
-    return Core.coercePositiveIntegerOption(value, DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH, { zeroReplacement: 0 });
+    return Core.coercePositiveIntegerOption(value, DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH);
 }
 
 function shouldUseSllPredictionMode(sourceText: string, maxSourceLength: number): boolean {
@@ -464,13 +463,3 @@ export class GMLParser {
         Core.simplifyLocationMetadata(obj);
     }
 }
-
-/**
- * Re-exported utility function for counting line breaks in a string.
- *
- * @remarks
- * This convenience export allows consumers to access Core.getLineBreakCount
- * directly from the parser module without importing @gmloop/core.
- * Useful for calculating line metrics or validating source spans.
- */
-export const getLineBreakCount: typeof Core.getLineBreakCount = Core.getLineBreakCount;

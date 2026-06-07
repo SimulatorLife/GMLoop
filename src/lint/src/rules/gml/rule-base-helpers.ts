@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "./rule-definition.js";
+import type { GmlRuleDefinition } from "./index.js";
 
 const { clamp, isObjectLike } = Core;
 
@@ -74,6 +74,27 @@ export function findPreviousNonWhitespaceCharacter(
     }
 
     return sourceText[previousIndex];
+}
+
+/**
+ * Finds the nearest non-whitespace character after a source offset.
+ *
+ * @param sourceText Full source text to scan.
+ * @param startIndex Offset whose following text should be inspected.
+ * @returns Index of the nearest non-whitespace character after `startIndex`,
+ *   or `null` if none is found.
+ */
+export function findNextNonWhitespaceIndex(sourceText: string, startIndex: number): number | null {
+    let cursor = startIndex + 1;
+    while (cursor < sourceText.length) {
+        if (!/\s/u.test(sourceText[cursor])) {
+            return cursor;
+        }
+
+        cursor += 1;
+    }
+
+    return null;
 }
 
 export type AstNodeRecord = Record<string, unknown>;
@@ -217,6 +238,61 @@ export type AssignmentExpressionNode = AstNodeRecord &
  */
 export function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
     return isAstNodeRecord(node) && node.type === "AssignmentExpression";
+}
+
+/**
+ * Structural type for binary expression nodes in lint rule contexts.
+ *
+ * For operator-specific narrowing, use
+ * {@link isBinaryExpressionNodeWithOperator} instead.
+ */
+export type BinaryExpressionNode = AstNodeRecord &
+    Readonly<{
+        type: "BinaryExpression";
+        operator?: unknown;
+        left?: unknown;
+        right?: unknown;
+    }>;
+
+/**
+ * Type guard for binary expression nodes (any operator).
+ *
+ * Matches any node-like value where `type` is `"BinaryExpression"`,
+ * regardless of the specific operator. For narrowing to a particular
+ * operator, use {@link isBinaryExpressionNodeWithOperator}.
+ *
+ * @param node Candidate value to inspect.
+ * @returns `true` when `node` is a binary expression.
+ */
+export function isBinaryExpressionNode(node: unknown): node is BinaryExpressionNode {
+    return isAstNodeRecord(node) && node.type === "BinaryExpression";
+}
+
+/**
+ * Determines whether a value is a binary-expression node whose operator
+ * satisfies the provided guard.
+ *
+ * @param value Candidate node-like value.
+ * @param operatorGuard Predicate that validates the `operator` field.
+ * @returns Whether the candidate is a typed binary-expression record.
+ */
+export function isBinaryExpressionNodeWithOperator<TOperator extends string>(
+    value: unknown,
+    operatorGuard: (operator: unknown) => operator is TOperator
+): value is BinaryExpressionNode &
+    Readonly<{
+        type: "BinaryExpression";
+        operator: TOperator;
+        left: unknown;
+        right: unknown;
+    }> {
+    return (
+        isAstNodeRecord(value) &&
+        value.type === "BinaryExpression" &&
+        operatorGuard(value.operator) &&
+        Object.hasOwn(value, "left") &&
+        Object.hasOwn(value, "right")
+    );
 }
 
 export function isCommentOnlyLine(line: string): boolean {
@@ -797,4 +873,16 @@ export function readObjectOption(context: Rule.RuleContext): Record<string, unkn
 export function shouldReportUnsafe(context: Rule.RuleContext): boolean {
     const option = readObjectOption(context).reportUnsafe;
     return option === undefined ? true : option === true;
+}
+
+/**
+ * Unwraps chains of `ParenthesizedExpression` nodes to retrieve the innermost
+ * expression. Returns the original node when no wrapping is present.
+ *
+ * This is a lint-workspace wrapper around `Core.unwrapParenthesizedExpression`.
+ * It accepts a broader input type (`unknown`) to serve call sites that do not
+ * require a fully-typed AST node and that already guard with `isAstNodeRecord`.
+ */
+export function unwrapParenthesizedExpression(node: unknown): unknown {
+    return Core.unwrapParenthesizedExpression(node);
 }

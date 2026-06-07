@@ -19,16 +19,16 @@
  */
 
 import type { ProgramNode } from "./ast.js";
+import {
+    isAstRecord,
+    isFunctionScopeBoundary,
+    isGlobalVarStatementNode,
+    isIdentifierNode,
+    isVariableDeclarationNode,
+    isVariableDeclaratorNode
+} from "./type-guards.js";
 
 type AstRecord = Record<string, unknown>;
-
-function isAstRecord(value: unknown): value is AstRecord {
-    return value !== null && typeof value === "object";
-}
-
-function isFunctionScopeBoundary(node: AstRecord): boolean {
-    return node.type === "FunctionDeclaration" || node.type === "ConstructorDeclaration";
-}
 
 function walkAstNodes(root: unknown, visitNode: (node: AstRecord) => boolean | void): void {
     const traversalStack: unknown[] = [root];
@@ -59,18 +59,18 @@ function walkAstNodes(root: unknown, visitNode: (node: AstRecord) => boolean | v
 }
 
 function collectVarDeclaratorNames(node: AstRecord, localNames: Set<string>): void {
-    if (node.type !== "VariableDeclaration" || node.kind !== "var" || !Array.isArray(node.declarations)) {
+    if (!isVariableDeclarationNode(node) || node.kind !== "var" || !Array.isArray(node.declarations)) {
         return;
     }
 
     for (const declaration of node.declarations) {
-        if (!isAstRecord(declaration) || declaration.type !== "VariableDeclarator" || !isAstRecord(declaration.id)) {
+        if (!isVariableDeclaratorNode(declaration) || !isAstRecord(declaration.id)) {
             continue;
         }
 
-        const { name } = declaration.id;
-        if (typeof name === "string" && name.length > 0) {
-            localNames.add(name);
+        const idNode = declaration.id;
+        if (isIdentifierNode(idNode) && idNode.name.length > 0) {
+            localNames.add(idNode.name);
         }
     }
 }
@@ -153,17 +153,17 @@ export function collectGlobalVarNames(ast: ProgramNode): ReadonlySet<string> {
 }
 
 function collectGlobalVarNamesFromDeclaration(declaration: unknown, globalNames: Set<string>): void {
-    if (!isAstRecord(declaration) || !isAstRecord(declaration.id)) {
+    if (!isVariableDeclaratorNode(declaration) || !isAstRecord(declaration.id)) {
         return;
     }
-    const { name } = declaration.id;
-    if (typeof name === "string" && name.length > 0) {
-        globalNames.add(name);
+    const idNode = declaration.id;
+    if (isIdentifierNode(idNode) && idNode.name.length > 0) {
+        globalNames.add(idNode.name);
     }
 }
 
 function collectGlobalVarNamesFromNode(node: AstRecord, globalNames: Set<string>): void {
-    if (node.type === "GlobalVarStatement" && Array.isArray(node.declarations)) {
+    if (isGlobalVarStatementNode(node) && Array.isArray(node.declarations)) {
         for (const declaration of node.declarations) {
             collectGlobalVarNamesFromDeclaration(declaration, globalNames);
         }

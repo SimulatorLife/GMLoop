@@ -70,29 +70,29 @@ function resolvePrettierConfiguration(
     };
 }
 
-function resolveTargetPathInput(options: CommandOptionsRecord): TargetPathResolution {
-    const rawTarget = options.path ?? null;
+function resolveTargetPathInput(options: CommandOptionsRecord, _args?: unknown): TargetPathResolution {
+    const optionPath = options.path ?? null;
 
-    if (rawTarget === null) {
+    if (optionPath === null) {
         return {
             targetPathInput: null,
             targetPathProvided: false
         };
     }
 
-    if (typeof rawTarget !== "string") {
+    if (typeof optionPath !== "string") {
         return {
-            targetPathInput: rawTarget,
+            targetPathInput: optionPath,
             targetPathProvided: true
         };
     }
 
-    const trimmedTarget = getNonEmptyTrimmedString(rawTarget);
+    const trimmedTarget = getNonEmptyTrimmedString(optionPath);
 
     return {
         targetPathInput: trimmedTarget ?? null,
         targetPathProvided: true,
-        rawTargetPathInput: trimmedTarget !== null && trimmedTarget !== rawTarget ? rawTarget : undefined
+        rawTargetPathInput: trimmedTarget !== null && trimmedTarget !== optionPath ? optionPath : undefined
     };
 }
 
@@ -115,7 +115,7 @@ export function collectFormatCommandOptions(
     return {
         targetPathInput,
         targetPathProvided,
-        configPath: getNonEmptyTrimmedString(options.config as string | undefined) ?? null,
+        configPath: getNonEmptyTrimmedString(options.config) ?? null,
         prettierLogLevel,
         onParseError,
         dryRunMode,

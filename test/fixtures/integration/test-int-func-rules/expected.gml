@@ -28,6 +28,7 @@ my_func4(undefined);
 /// @param [x=0]
 /// @param [y=0]
 /// @param [z=0]
+/// @returns {array}
 function func_coords(x = 0, y = 0, z = 0) {
     return [x, y, z];
 }
@@ -35,9 +36,9 @@ function func_coords(x = 0, y = 0, z = 0) {
 var myCoords = func_coords(10, undefined, 20);
 
 /// @ignore
-/// @description Base class for all shapes. Shapes can be solid or not solid.
-///              Solid shapes will collide with other solid shapes, and
-///              non-solid shapes will not collide with anything.
+/// @desc Base class for all shapes. Shapes can be solid or not solid.
+///       Solid shapes will collide with other solid shapes, and
+///       non-solid shapes will not collide with anything.
 /// @param [color]
 function Shape(color = undefined) constructor {
     self.color = color;
@@ -47,9 +48,9 @@ function Shape(color = undefined) constructor {
         show_debug_message("I'm a shape");
     };
 
-    /// @description This will delete any geometry info contained within the mesh itself.
-    ///              It will not delete any geometry added to a ColMesh.
-    ///              After a mesh has been frozen, it can no longer be added to a colmesh.
+    /// @desc This will delete any geometry info contained within the mesh itself.
+    ///       It will not delete any geometry added to a ColMesh.
+    ///       After a mesh has been frozen, it can no longer be added to a colmesh.
     /// @returns {undefined}
     static freeze = function () {
         triangles = [];

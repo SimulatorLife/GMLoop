@@ -10,3 +10,8 @@ var answer_simple = FOO_SIMPLE + BAR_SIMPLE;
 #macro KEEP value;value // ensure this macro still retains its inline semicolon usage
 
 var total = FOO(2) + BAR + BAZ + KEEP;
+
+#macro MULTILINE_CONTINUED statement1();\
+                           statement2();\
+                           statement3();
+

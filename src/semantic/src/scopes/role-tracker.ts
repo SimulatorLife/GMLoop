@@ -1,5 +1,3 @@
-import { Core } from "@gmloop/core";
-
 import type { ScopeRole } from "./types.js";
 
 /**
@@ -17,7 +15,7 @@ export class IdentifierRoleTracker {
      * Executes a callback within the context of a specific identifier role.
      */
     public withRole<T>(role: ScopeRole | null, callback: () => T): T {
-        this.identifierRoles.push(role ?? ({} as ScopeRole));
+        this.identifierRoles.push(role ?? { type: "reference" });
         try {
             return callback();
         } finally {
@@ -41,13 +39,15 @@ export class IdentifierRoleTracker {
      */
     public cloneRole(role: ScopeRole | null): ScopeRole {
         if (!role) {
-            return { type: "reference" } as ScopeRole;
+            return { type: "reference" };
         }
 
-        const cloned = { ...role } as ScopeRole;
+        const cloned = { ...role };
 
         if (role.tags !== undefined) {
-            cloned.tags = [...Core.toArray(role.tags)];
+            const sourceTags = role.tags as readonly unknown[];
+            const sourceArray = Array.isArray(sourceTags) ? sourceTags : [sourceTags];
+            cloned.tags = [...sourceArray] as ScopeRole["tags"];
         }
 
         // Ensure type is present on the cloned role for callers that expect

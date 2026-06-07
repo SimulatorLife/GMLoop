@@ -1,8 +1,7 @@
 import type { StorageBackend } from "../backends/storage-backend.js";
-import type { GlobalvarToGlobalCodemodOptions } from "../codemods/globalvar-to-global/types.js";
-import type { LoopLengthHoistingCodemodOptions } from "../codemods/loop-length-hoisting/types.js";
 import type {
     ConflictTypeValue,
+    GlobalvarToGlobalCodemodOptions,
     MaybePromise,
     NamingCategory,
     Range,
@@ -71,35 +70,6 @@ export interface ExecuteGlobalvarToGlobalCodemodResult {
     workspace: WorkspaceEdit;
     applied: Map<string, string>;
     changedFiles: Array<GlobalvarToGlobalFileSummary>;
-}
-
-/**
- * Parameters for running the loop-length hoisting codemod across multiple files.
- */
-export interface ExecuteLoopLengthHoistingCodemodRequest {
-    filePaths: Array<string>;
-    readFile: WorkspaceReadFile;
-    writeFile?: WorkspaceWriteFile;
-    options?: LoopLengthHoistingCodemodOptions;
-    dryRun?: boolean;
-}
-
-/**
- * Summary of loop-length hoisting codemod execution for a single file.
- */
-export interface LoopLengthHoistingFileSummary {
-    path: string;
-    appliedEditCount: number;
-    diagnosticOffsets: Array<number>;
-}
-
-/**
- * Result payload returned after executing a loop-length hoisting codemod transaction.
- */
-export interface ExecuteLoopLengthHoistingCodemodResult {
-    workspace: WorkspaceEdit;
-    applied: Map<string, string>;
-    changedFiles: Array<LoopLengthHoistingFileSummary>;
 }
 
 /**
@@ -214,6 +184,7 @@ export interface ConfiguredCodemodRunRequest {
      */
     dryRunOverlayStorageBackend?: StorageBackend;
     onTelemetry?: (telemetry: CodemodExecutionTelemetry) => void;
+    onBeforeCodemod?: (codemodId: RefactorCodemodId) => MaybePromise<void>;
     onAfterCodemod?: (
         summary: ConfiguredCodemodSummary,
         context: {
@@ -339,11 +310,40 @@ export interface HotReloadCascadeMetadata {
     hasCircular: boolean;
 }
 
+/**
+ * Result of hot reload dependency cascade computation.
+ *
+ * Includes both structural data (cascade entries, circular dependencies, reload
+ * order) and derived convenience properties that callers frequently access via
+ * deep navigation (e.g., `result.metadata.totalSymbols`).  Promoting these to
+ * top-level eliminates four-segment property chains throughout the codebase and
+ * makes the API more self-documenting.
+ */
 export interface HotReloadCascadeResult {
+    /** All symbols in the dependency cascade with their traversal metadata. */
     cascade: Array<CascadeEntry>;
+    /** Topologically-safe reload order (leaves first, roots last). */
     order: Array<string>;
+    /** Detected dependency cycles; empty when no circular references exist. */
     circular: Array<Array<string>>;
+    /** Detailed metadata about the cascade. */
     metadata: HotReloadCascadeMetadata;
+    /**
+     * Derived: total number of symbols that must be reloaded.
+     * Convenience alias for `metadata.totalSymbols` so callers avoid
+     * the `result.metadata.totalSymbols` four-segment chain.
+     */
+    totalSymbols: number;
+    /**
+     * Derived: longest dependency distance from a changed symbol.
+     * Convenience alias for `metadata.maxDistance`.
+     */
+    maxDistance: number;
+    /**
+     * Derived: whether the cascade contains any circular dependency chains.
+     * Convenience alias for `metadata.hasCircular`.
+     */
+    hasCircular: boolean;
 }
 
 export interface HotReloadSafetySummary {
@@ -470,16 +470,13 @@ export interface CodemodSemanticProvider {
 /**
  * File-level codemod transform execution.
  *
- * Provides the ability to run file-transforming codemods (globalvar-to-global,
- * loop-length-hoisting) without coupling to rename or workspace edit operations.
+ * Provides the ability to run file-transforming codemods (globalvar-to-global)
+ * without coupling to rename or workspace edit operations.
  */
 export interface CodemodTransformExecutor {
     executeGlobalvarToGlobalCodemod(
         request: ExecuteGlobalvarToGlobalCodemodRequest
     ): Promise<ExecuteGlobalvarToGlobalCodemodResult>;
-    executeLoopLengthHoistingCodemod(
-        request: ExecuteLoopLengthHoistingCodemodRequest
-    ): Promise<ExecuteLoopLengthHoistingCodemodResult>;
 }
 
 /**
@@ -540,7 +537,8 @@ export interface CodemodCacheController {
  * interface when possible.
  */
 export interface CodemodEngine
-    extends CodemodSemanticProvider,
+    extends
+        CodemodSemanticProvider,
         CodemodTransformExecutor,
         CodemodRenameOperations,
         CodemodWorkspaceEditor,

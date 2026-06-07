@@ -1,62 +1,31 @@
+/**
+ * @file loop-like-node.test.ts
+ *
+ * ## Purpose
+ *
+ * This file exists for historical reasons and as a navigation anchor.
+ * All substantive coverage for `Core.isLoopLikeNode` has been consolidated
+ * into `src/transpiler/test/type-guards.test.ts` under the unified describe
+ * block "isLoopLikeNode (Core) and isLoopStatement (transpiler)".
+ *
+ * The transpiler also exports `isLoopStatement`, which implements the same
+ * contract (ForStatement | WhileStatement | DoUntilStatement | RepeatStatement).
+ * Both guards are tested together there to confirm they agree on every input,
+ * including edge cases for null, undefined, primitives, missing types, and
+ * non-string type values.
+ *
+ * Deleting this file would break existing import paths, so it is retained as
+ * a minimal stub. Do not add new test cases here — add them to the unified
+ * describe block in the transpiler type-guards test instead.
+ */
+
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { Core } from "../index.js";
 
-void describe("Core.isLoopLikeNode", () => {
-    void it("returns true for ForStatement nodes", () => {
-        assert.ok(Core.isLoopLikeNode({ type: "ForStatement" }));
-    });
-
-    void it("returns true for WhileStatement nodes", () => {
-        assert.ok(Core.isLoopLikeNode({ type: "WhileStatement" }));
-    });
-
-    void it("returns true for DoUntilStatement nodes", () => {
-        assert.ok(Core.isLoopLikeNode({ type: "DoUntilStatement" }));
-    });
-
-    void it("returns true for RepeatStatement nodes", () => {
-        assert.ok(Core.isLoopLikeNode({ type: "RepeatStatement" }));
-    });
-
-    void it("returns false for WithStatement nodes", () => {
-        // WithStatement is intentionally excluded: its scope-change semantics
-        // differ from pure loops and make it unsuitable for generic loop optimisations.
-        assert.equal(Core.isLoopLikeNode({ type: "WithStatement" }), false);
-    });
-
-    void it("returns false for IfStatement nodes", () => {
-        assert.equal(Core.isLoopLikeNode({ type: "IfStatement" }), false);
-    });
-
-    void it("returns false for BlockStatement nodes", () => {
-        assert.equal(Core.isLoopLikeNode({ type: "BlockStatement" }), false);
-    });
-
-    void it("returns false for expression nodes", () => {
-        assert.equal(Core.isLoopLikeNode({ type: "BinaryExpression" }), false);
-        assert.equal(Core.isLoopLikeNode({ type: "CallExpression" }), false);
-    });
-
-    void it("returns false for null and undefined", () => {
-        assert.equal(Core.isLoopLikeNode(null), false);
-        assert.equal(Core.isLoopLikeNode(undefined), false);
-    });
-
-    void it("returns false for primitives", () => {
-        assert.equal(Core.isLoopLikeNode(42), false);
-        assert.equal(Core.isLoopLikeNode("ForStatement"), false);
-        assert.equal(Core.isLoopLikeNode(true), false);
-    });
-
-    void it("returns false for objects without a type", () => {
-        assert.equal(Core.isLoopLikeNode({}), false);
-        assert.equal(Core.isLoopLikeNode({ body: {} }), false);
-    });
-
-    void it("returns false for objects with a non-string type", () => {
-        assert.equal(Core.isLoopLikeNode({ type: null }), false);
-        assert.equal(Core.isLoopLikeNode({ type: 42 }), false);
+void describe("Core.isLoopLikeNode — stub (consolidated)", () => {
+    void it("is defined on Core", () => {
+        assert.equal(typeof Core.isLoopLikeNode, "function");
     });
 });

@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, isAstNodeRecord, walkAstNodes } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 function hasInterpolationAtoms(atoms: ReadonlyArray<unknown>): boolean {
     return atoms.some((atom) => !isAstNodeRecord(atom) || atom.type !== "TemplateStringText");

@@ -3,7 +3,7 @@
     "manualRoot": "vendor/GameMaker-Manual",
     "packageName": null,
     "packageVersion": null,
-    "manualCommitHash": "15ff4622cd71c824c5492f1e1bde66d4da270f85",
+    "manualCommitHash": "85171ae3ceb3c7fc2c4dec2e10c8d1d13579e665",
     "manualPaths": {
       "diagnostics": "Manual/contents/The_Asset_Editors/Code_Editor_Properties/Feather_Messages.htm",
       "directives": "Manual/contents/The_Asset_Editors/Code_Editor_Properties/Feather_Directives.htm",

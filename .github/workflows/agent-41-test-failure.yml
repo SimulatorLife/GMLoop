@@ -1,118 +1,119 @@
 name: "Agent 41 - Failing Test Recovery"
 on:
-    workflow_dispatch:
-        inputs:
-            agent:
-                description: "Optional agent override."
-                required: false
-                default: ""
-                type: string
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "Optional agent override."
+        required: false
+        default: ""
+        type: string
 
 permissions:
-    contents: write
-    pull-requests: write
-    issues: write
+  contents: write
+  pull-requests: write
+  issues: write
 
 jobs:
-    check_validation:
-        runs-on: ubuntu-latest
-        outputs:
-            validation_failed: ${{ steps.run_validation.outputs.failed }}
-        steps:
-            - uses: actions/checkout@v6
+  check_validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      validation_failed: ${{ steps.run_validation.outputs.failed }}
+    steps:
+      - uses: actions/checkout@v6
 
-            - name: Setup pnpm
-              uses: pnpm/action-setup@v6
-              with:
-                cache: true
-
-            - name: Setup node
-              uses: actions/setup-node@v6
-              with:
-                node-version-file: .nvmrc
-                cache: 'pnpm'
-                cache-dependency-path: |
-                  pnpm-lock.yaml
-                  **/pnpm-lock.yaml
-
-            - name: Install dependencies
-              run: pnpm install --frozen-lockfile --recursive
-
-            - name: Run project validation
-              id: run_validation
-              run: |
-                  set +e
-                  failed_commands=()
-
-                  run_validation_command() {
-                    local label="$1"
-                    shift
-
-                    echo "::group::$label"
-                    "$@"
-                    local status=$?
-                    echo "::endgroup::"
-
-                    if [ "$status" -ne 0 ]; then
-                      echo "::warning::$label exited with $status"
-                      failed_commands+=("$label")
-                    else
-                      echo "$label passed"
-                    fi
-
-                    return "$status"
-                  }
-
-                  build_failed=false
-                  run_validation_command "pnpm run build:ts" pnpm run build:ts || build_failed=true
-                  run_validation_command "pnpm run lint:quiet" pnpm run lint:quiet
-
-                  if [ "$build_failed" = "true" ]; then
-                    echo "::notice::Skipping test probes because TypeScript build failed."
-                  else
-                    run_validation_command "pnpm run test" pnpm run test
-                  fi
-
-                  if [ "${#failed_commands[@]}" -ne 0 ]; then
-                    printf 'Project validation failed for: %s\n' "${failed_commands[*]}"
-                    {
-                      echo "failed=true"
-                      echo "failing_commands<<EOF"
-                      printf '%s\n' "${failed_commands[@]}"
-                      echo "EOF"
-                    } >> "$GITHUB_OUTPUT"
-                  else
-                    echo "Project validation passed"
-                    echo "failed=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-                  exit 0
-
-    run:
-        needs: check_validation
-        if: ${{ needs.check_validation.outputs.validation_failed == 'true' }}
-        uses: ./.github/workflows/_agent-open-pr-and-ping.yml
-        secrets: inherit
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
         with:
-            agent: ${{ inputs.agent }}
-            pr_title: "Agent: Recover Failing Validation"
-            prompt: >
-                There is at least one failing project validation command in the codebase. Start
-                by running the same validation surface used by this recovery workflow:
-                `pnpm run build:ts`, `pnpm run lint:quiet`, `pnpm run test`, and
-                `pnpm run test:performance`. Identify a single failing test, build error, lint
-                error, or the smallest related failure cluster with a shared root cause, then
-                explain the cause. Decide whether any failing test is still a valid expectation
-                for its workspace. If the test is outdated or no longer applicable, move or
-                update it with a clear justification. Otherwise, fix the implementation and
-                only adjust tests when that is truly necessary. If a golden fixture encodes
-                multiple formatting rules, choose one regression to address, implement the
-                necessary production fix or feature for that specific case, leave the rest
-                untouched, and document any remaining gaps. Never modify the existing golden
-                files (*.gml). Work sequentially and strategically, making one targeted change
-                at a time and re-running the failing validation command after each change to
-                confirm progress and prevent regressions. If your fix targets only part of a
-                failing test, add a new focused test (unit or integration) that explicitly
-                demonstrates the corrected behavior, but continue until the full validation
-                surface passes. Do not relax performance requirements to make performance
-                tests pass.
+          cache: true
+
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: "pnpm"
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --recursive
+
+      - name: Run project validation
+        id: run_validation
+        run: |
+          set +e
+          failed_commands=()
+
+          run_validation_command() {
+            local label="$1"
+            shift
+
+            echo "::group::$label"
+            "$@"
+            local status=$?
+            echo "::endgroup::"
+
+            if [ "$status" -ne 0 ]; then
+              echo "::warning::$label exited with $status"
+              failed_commands+=("$label")
+            else
+              echo "$label passed"
+            fi
+
+            return "$status"
+          }
+
+          build_failed=false
+          run_validation_command "pnpm run build:ts" pnpm run build:ts || build_failed=true
+          run_validation_command "pnpm run lint:quiet" pnpm run lint:quiet
+
+          if [ "$build_failed" = "true" ]; then
+            echo "::notice::Skipping test probes because TypeScript build failed."
+          else
+            run_validation_command "pnpm run test" pnpm run test
+          fi
+
+          if [ "${#failed_commands[@]}" -ne 0 ]; then
+            printf 'Project validation failed for: %s\n' "${failed_commands[*]}"
+            {
+              echo "failed=true"
+              echo "failing_commands<<EOF"
+              printf '%s\n' "${failed_commands[@]}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "Project validation passed"
+            echo "failed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          exit 0
+
+  run:
+    needs: check_validation
+    if: ${{ needs.check_validation.outputs.validation_failed == 'true' }}
+    uses: ./.github/workflows/_agent-open-pr-and-ping.yml
+    secrets: inherit
+    with:
+      agent: ${{ inputs.agent }}
+      pr_title: "Agent: Recover Failing Validation"
+      prompt: >
+        There is at least one failing project validation command in the codebase. Start
+        by running the same validation surface used by this recovery workflow:
+        `pnpm run build:ts`, `pnpm run lint:quiet`, `pnpm run test`, and
+        `pnpm run test:performance`. Identify a single failing test, build error, lint
+        error, or the smallest related failure cluster with a shared root cause, then
+        explain the cause. Decide whether any failing test is still a valid expectation
+        for its workspace. If the test is outdated or no longer applicable, move or
+        update it with a clear justification. Otherwise, fix the implementation and
+        only adjust tests when that is truly necessary. If a golden fixture encodes
+        multiple formatting rules, choose one regression to address, implement the
+        necessary production fix or feature for that specific case, leave the rest
+        untouched, and document any remaining gaps. Never modify the existing golden
+        files (*.gml). Work sequentially and strategically, making one targeted change
+        at a time and re-running the failing validation command after each change to
+        confirm progress and prevent regressions. If your fix targets only part of a
+        failing test, add a new focused test (unit or integration) that explicitly
+        demonstrates the corrected behavior, but continue until the full validation
+        surface passes. Do not relax performance requirements to make performance
+        tests pass.

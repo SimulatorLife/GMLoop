@@ -15,14 +15,16 @@
     "antlr4": "^4.13.2",
     "@gmloop/core": "workspace:*"
   },
+  "devDependencies": {
+    "typescript": "catalog:"
+  },
   "engines": {
     "node": ">=22.5.0"
   },
   "scripts": {
     "build:types": "pnpm --filter @gmloop/core run build:types && tsc -p tsconfig.json",
     "clean:types": "rm -rf dist",
-    "test": "pnpm run build:types && node --test dist/test/*.test.js",
+    "test": "pnpm run build:types && node --test-force-exit --test dist/test/*.test.js",
     "antlr": "java -Xmx500M -jar ../../resources/antlr/antlr4-4.13.2-complete.jar -Dlanguage=JavaScript -visitor -o generated/ GameMakerLanguageLexer.g4 && java -Xmx500M -jar ../../resources/antlr/antlr4-4.13.2-complete.jar -Dlanguage=JavaScript -visitor -o generated/ GameMakerLanguageParser.g4"
-  },
-  "packageManager": "pnpm@11.0.8"
+  }
 }

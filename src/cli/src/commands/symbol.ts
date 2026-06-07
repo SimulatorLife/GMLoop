@@ -3,7 +3,7 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
-import { ensureProjectGraphIndex } from "../workflow/project-context.js";
+import { ensureProjectGraphIndex } from "../workflow/project-root.js";
 
 type SymbolCommandSharedOptions = Readonly<{
     config?: string;

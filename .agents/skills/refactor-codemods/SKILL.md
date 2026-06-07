@@ -32,11 +32,12 @@ Refactor owns:
 - global edit validation
 - workspace edit application
 - refactor command behavior that is specific to codemods
+- **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 
 Refactor does not own:
 
-- formatter layout policy
-- lint rule diagnostics except as a consumer-facing handoff
+- formatter layout policy. **The formatter never repairs invalid syntax and only formats valid AST.**
+- lint rule diagnostics except as a consumer-facing handoff. **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
 - parser syntax behavior
 - semantic index construction internals
 - transpiler output

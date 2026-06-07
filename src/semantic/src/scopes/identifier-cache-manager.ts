@@ -3,11 +3,21 @@ import { Core } from "@gmloop/core";
 import type { ScopeSymbolMetadata } from "./types.js";
 
 /**
- * Manages caching for identifier resolution results within a scope tracker.
+ * Bounded, LRU-style cache for symbol metadata collected during scope tracking.
  *
- * This class handles the storage, retrieval, and invalidation of cached
- * identifier resolution results to optimize repetitive lookups across
- * the scope hierarchy.
+ * The cache is keyed by (name, scopeId) so that the same symbol name in different
+ * scopes occupies separate entries — each scope may declare or reference a name
+ * independently.
+ *
+ * Two independent limits govern eviction:
+ * - `maxTrackedNames` — global ceiling on distinct symbol names retained.
+ *   Pass `0` (or any non-positive value) to fall back to the default of 4000.
+ *   There is no "disable entirely" sentinel here; use a sufficiently large value
+ *   if unbounded growth is acceptable for the session.
+ * - `maxScopesPerName` — how many scope-entries may accumulate for a single
+ *   name before the per-name entry is pruned.  Pass `0` (or any non-positive
+ *   value) to fall back to the default of 64.  Pass `Infinity` to disable
+ *   per-name eviction entirely.
  */
 export class IdentifierCacheManager {
     /**
@@ -55,17 +65,18 @@ export class IdentifierCacheManager {
     public write(name: string, scopeId: string, declaration: ScopeSymbolMetadata | null): void {
         let scopeResults = this.cache.get(name);
         if (scopeResults) {
-            // Mark as recently used at the top-level cache.
             this.cache.delete(name);
             this.cache.set(name, scopeResults);
         } else {
-            scopeResults = new Map();
-            this.cache.set(name, scopeResults);
+            const newScopeResults = new Map<string, ScopeSymbolMetadata | null>();
+            this.cache.set(name, newScopeResults);
+            scopeResults = newScopeResults;
         }
 
         if (!scopeResults.has(scopeId) && scopeResults.size >= this.maxScopesPerName) {
-            const oldestScopeId = scopeResults.keys().next().value;
-            if (oldestScopeId) {
+            const oldestScopeIdIter = scopeResults.keys();
+            const oldestScopeId = oldestScopeIdIter.next().value;
+            if (oldestScopeId !== undefined) {
                 scopeResults.delete(oldestScopeId);
             }
         }
@@ -73,8 +84,9 @@ export class IdentifierCacheManager {
         scopeResults.set(scopeId, declaration);
 
         if (this.cache.size > this.maxTrackedNames) {
-            const oldestName = this.cache.keys().next().value;
-            if (oldestName) {
+            const oldestNameIter = this.cache.keys();
+            const oldestName = oldestNameIter.next().value;
+            if (oldestName !== undefined) {
                 this.cache.delete(oldestName);
             }
         }

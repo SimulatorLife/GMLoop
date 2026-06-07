@@ -23,30 +23,6 @@ async function readQwenSettings(): Promise<QwenSettings> {
     return JSON.parse(source) as QwenSettings;
 }
 
-interface GeminiSettings {
-    model: {
-        maxSessionTurns: number;
-    };
-    general: {
-        sessionRetention: {
-            enabled: boolean;
-        };
-    };
-    tools: {
-        core?: string[];
-        useRipgrep: boolean;
-        truncateToolOutputThreshold: number;
-        autoAccept?: boolean;
-        disableLLMCorrection?: boolean;
-    };
-}
-
-async function readGeminiSettings(): Promise<GeminiSettings> {
-    const source = await readFile(path.resolve(process.cwd(), ".gemini/settings.json"), "utf8");
-
-    return JSON.parse(source) as GeminiSettings;
-}
-
 async function readAllWorkflowSources(): Promise<string> {
     const workflowDirectory = path.resolve(process.cwd(), ".github/workflows");
     const directoryEntries = await readdir(workflowDirectory);
@@ -128,41 +104,6 @@ function getRequiredAiderCommand(source: string): string {
     return capturedCommandLines.join("\n");
 }
 
-function getRequiredGeminiCommand(source: string): string {
-    const directCommandStartIndex = source.indexOf("stdbuf -oL -eL gemini \\");
-    const nodeCommandStartIndex = source.indexOf("stdbuf -oL -eL node --max-old-space-size=");
-    const commandStartIndex =
-        directCommandStartIndex === -1
-            ? nodeCommandStartIndex
-            : nodeCommandStartIndex === -1
-              ? directCommandStartIndex
-              : Math.min(directCommandStartIndex, nodeCommandStartIndex);
-
-    assert.notEqual(commandStartIndex, -1, "Gemini workflow must invoke the Gemini CLI with streamed output.");
-
-    const commandTail = source.slice(commandStartIndex);
-    const commandLines = commandTail.split("\n");
-    const capturedCommandLines: string[] = [];
-
-    for (const line of commandLines) {
-        if (capturedCommandLines.length > 0 && line.includes("| tee ")) {
-            capturedCommandLines.push(line);
-            break;
-        }
-        if (
-            capturedCommandLines.length > 0 ||
-            line.includes("stdbuf -oL -eL gemini") ||
-            line.includes("stdbuf -oL -eL node --max-old-space-size=")
-        ) {
-            capturedCommandLines.push(line);
-        }
-    }
-
-    assert.ok(capturedCommandLines.length > 0, "Gemini workflow command block must not be empty.");
-
-    return capturedCommandLines.join("\n");
-}
-
 function assertAiderCommandIncludesRequiredFlags(commandSource: string): void {
     const commandLines = commandSource
         .split("\n")
@@ -206,57 +147,6 @@ function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
     assert.match(prompt, /generated files/u);
     assert.match(prompt, /dist files/u);
 }
-
-function assertQwenUsesLocalAgentLoop(source: string, sharedPrompt: string): void {
-    const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
-    const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
-
-    assertWorkflowDispatchesToReusableAgent(source, "qwen");
-    assert.doesNotMatch(source, /agent_cli:/u);
-    assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
-    assert.doesNotMatch(source, /^\s*QWEN_CI_SYSTEM_PROMPT=/mu);
-    assert.doesNotMatch(source, /^\s*QWEN_TASK_PROMPT=/mu);
-    assert.doesNotMatch(source, /local-qwen-smoke/u);
-    assert.match(source, /stdbuf -oL -eL qwen \\/u);
-    assert.match(source, /--prompt ""/u);
-    assert.match(source, /< "\$\{AGENT_PROMPT_FILE\}"/u);
-    assert.doesNotMatch(source, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
-    assert.doesNotMatch(source, /QWEN_AGENT_PROMPT/u);
-    assert.match(setupCommand, /pull_qwen_configured_model\(\)/u);
-    assert.match(setupCommand, /\.qwen\/settings\.json/u);
-    assert.match(setupCommand, /ollama pull "\$\{configured_model\}"/u);
-    assert.doesNotMatch(agentCommand, /ollama pull/u);
-    assert.match(agentCommand, /set \+e/u);
-    assert.match(agentCommand, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
-    assert.match(agentCommand, /set -e/u);
-    assert.match(agentCommand, /if \[ "\$\{agent_status\}" -ne 0 \]; then/u);
-    assert.match(agentCommand, /exit "\$\{agent_status\}"/u);
-    assert.match(source, /(--approval-mode yolo|--yolo)/u);
-    assert.doesNotMatch(source, /--append-system-prompt/u);
-    assert.doesNotMatch(source, /--prompt-interactive/u);
-    assert.doesNotMatch(source, /run_shell_command/u);
-    assert.doesNotMatch(source, /edit or write_file tools/u);
-}
-
-void test("qwen invoke is the single local-only Qwen workflow", async () => {
-    const source = await readWorkflowSource("qwen-invoke.yml");
-    const parentSource = await readWorkflowSource("agent-invoke.yml");
-    const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
-    const sharedPrompt = getRequiredSharedAgentPrompt(parentSource);
-
-    assertQwenUsesLocalAgentLoop(source, sharedPrompt);
-    assert.ok(
-        source.lastIndexOf("agent_setup_command") < source.lastIndexOf("agent_command"),
-        "Qwen must pull the configured local model before invoking the real task."
-    );
-    assert.doesNotMatch(source, /max_agent_retries:/u);
-    assert.doesNotMatch(source, /verify_qwen_/u);
-    assert.doesNotMatch(source, /openai-tool-registry/u);
-    assert.doesNotMatch(source, /OPENROUTER_API_KEY/u);
-    assert.doesNotMatch(source, /QWEN_OPENAI_MODEL/u);
-    assert.doesNotMatch(source, /@qwen-local/u);
-    assert.ok(!workflowFileNames.includes("qwen-local-code-tasks.yml"));
-});
 
 void test("qwen invoke uses checked-in settings for local model selection", async () => {
     const workflowSource = await readWorkflowSource("qwen-invoke.yml");
@@ -323,88 +213,6 @@ void test("aider invoke is the single local-only Aider workflow", async () => {
     assert.doesNotMatch(source, /@aider-local/u);
     assert.doesNotMatch(source, /--model/u);
     assert.ok(!workflowFileNames.includes("aider-local-code-tasks.yml"));
-});
-
-void test("gemini invoke is the maintained manual-only workflow for @gemini", async () => {
-    const source = await readWorkflowSource("gemini-invoke.yml");
-    const parentSource = await readWorkflowSource("agent-invoke.yml");
-    const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
-    const sharedPrompt = getRequiredSharedAgentPrompt(parentSource);
-    const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
-    const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
-    const geminiCommand = getRequiredGeminiCommand(source);
-
-    assert.match(source, /name: '▶️ Gemini Invoke'/u);
-    assertWorkflowDispatchesToReusableAgent(source, "gemini");
-    assert.doesNotMatch(source, /max_agent_retries:/u);
-    assert.doesNotMatch(source, /agent_cli:/u);
-    assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
-    assert.match(sharedPrompt, /one focused, minimal code change set/u);
-    assert.match(sharedPrompt, /Do not survey the entire repository exhaustively/u);
-    assert.match(sharedPrompt, /targeted search/u);
-    assert.match(sharedPrompt, /Keep command and tool output small/u);
-    assert.match(sharedPrompt, /Do not finish with only analysis or a plan/u);
-    assert.doesNotMatch(source, /^\s*GEMINI_TASK_PROMPT=/mu);
-    assert.match(setupCommand, /\.gemini\/policies\/tools\.toml/u);
-    assert.match(setupCommand, /cp ".gemini\/policies\/tools\.toml" "\$HOME\/.gemini\/policies\/tools\.toml"/u);
-    assert.match(agentCommand, /export GEMINI_CLI_TRUST_WORKSPACE=true/u);
-    assert.match(agentCommand, /export GEMINI_API_KEY="\$\{OPENAI_API_KEY\}"/u);
-    assert.match(agentCommand, /export NODE_OPTIONS="--max-old-space-size=\d+"/u);
-    assert.doesNotMatch(setupCommand, /bundle\/vendor\/ripgrep/u);
-    assert.doesNotMatch(setupCommand, /ln -sf "\$\(command -v rg\)"/u);
-    assert.match(geminiCommand, /--approval-mode(?:=| )yolo/u);
-    assert.match(geminiCommand, /--skip-trust/u);
-    assert.match(geminiCommand, /--output-format(?:=| )stream-json/u);
-    assert.doesNotMatch(geminiCommand, /--model/u);
-    assert.match(geminiCommand, /--prompt ""/u);
-    assert.match(geminiCommand, /< "\$\{AGENT_PROMPT_FILE\}"/u);
-    assert.match(source, /agent-stream\.jsonl/u);
-    assert.doesNotMatch(geminiCommand, /\$\(cat "\$\{AGENT_PROMPT_FILE\}"\)/u);
-    assert.doesNotMatch(agentCommand, /max_api_attempts="\$\{GEMINI_API_MAX_ATTEMPTS:-4\}"/u);
-    assert.doesNotMatch(agentCommand, /RESOURCE_EXHAUSTED\|429\|quota exceeded\|rate\.\?limit/u);
-    assert.doesNotMatch(agentCommand, /Please retry in/u);
-    assert.doesNotMatch(agentCommand, /jitter_ms=\$\(\(RANDOM % 1000\)\)/u);
-    assert.doesNotMatch(agentCommand, /sleep "\$\{sleep_seconds\}"/u);
-    assert.doesNotMatch(source, /GEMINI_AGENT_PROMPT/u);
-    assert.match(source, /agent_status="\$\{PIPESTATUS\[0\]\}"/u);
-    assert.doesNotMatch(source, /ollama pull/u);
-    assert.doesNotMatch(source, /_deprecated-gemini-invoke/u);
-    assert.ok(!workflowFileNames.includes("_deprecated-gemini-invoke.yml"));
-    assert.doesNotMatch(agentCommand, /ollama pull/u);
-    assert.doesNotMatch(agentCommand, /GEMINI_MODEL/u);
-});
-
-void test("gemini settings allow the git commands required for merge-conflict resolution workflows", async () => {
-    const settings = await readGeminiSettings();
-    const allowedTools = settings.tools.core ?? [];
-
-    assert.equal(settings.tools.useRipgrep, false);
-    assert.ok(settings.model.maxSessionTurns > 0, "Gemini must allow at least one agent turn.");
-    assert.ok(settings.tools.truncateToolOutputThreshold > 0, "Gemini must bound verbose tool output.");
-    assert.ok(!allowedTools.includes("GrepTool"));
-    assert.ok(!allowedTools.includes("RipGrepTool"));
-    if (allowedTools.length > 0) {
-        assert.ok(allowedTools.includes("LSTool"));
-        assert.ok(allowedTools.includes("ReadFileTool"));
-        assert.ok(allowedTools.includes("GlobTool"));
-        assert.ok(allowedTools.includes("EditTool"));
-        assert.ok(allowedTools.includes("WriteFileTool"));
-        assert.ok(allowedTools.includes("ActivateSkillTool"));
-        assert.ok(allowedTools.includes("run_shell_command"));
-    } else {
-        assert.equal(settings.tools.autoAccept, true);
-        assert.equal(settings.tools.disableLLMCorrection, true);
-    }
-});
-
-void test("aider invoke uses a repo-local .aider.conf.yml for local Ollama settings", async () => {
-    const source = await readFile(path.resolve(process.cwd(), ".aider.conf.yml"), "utf8");
-
-    assert.doesNotMatch(source, /provider:/u);
-    assert.doesNotMatch(source, /openai-api-type:/u);
-    assert.match(source, /^model:\s*\S+/mu);
-    assert.match(source, /^openai-api-key:\s*\S+/mu);
-    assert.match(source, /^openai-api-base:\s*http:\/\/(?:127\.0\.0\.1|localhost):\d+\/v1\s*$/mu);
 });
 
 void test("agent invoke validates local OpenAI-compatible endpoint without loading models", async () => {

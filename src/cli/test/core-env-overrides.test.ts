@@ -166,7 +166,7 @@ void describe("applyEnvOptionOverrides", () => {
                     envVar: "SECOND",
                     optionName: "secondOption",
                     resolveValue(value) {
-                        return Number.parseInt(value);
+                        return Number.parseInt(value, 10);
                     }
                 }
             ]

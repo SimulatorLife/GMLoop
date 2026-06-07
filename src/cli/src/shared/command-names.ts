@@ -15,17 +15,19 @@ export const CLI_COMMAND_NAMES = Object.freeze(
     new Set([
         "format",
         "fix",
+        "gm-cli",
         "graph",
         "lint",
-        "lookup-gml-identifier",
+        "live-reload",
+        "mcp",
         "object",
         "parse",
         "profile",
+        "script",
         "generate-gml-identifiers",
         "generate-quality-report",
         "collect-stats",
         "generate-feather-metadata",
-        "prepare-hot-reload",
         "project",
         "replay",
         "refactor",
@@ -39,7 +41,6 @@ export const CLI_COMMAND_NAMES = Object.freeze(
         "ui",
         "validate",
         "watch",
-        "watch-status",
         "help"
     ])
 );

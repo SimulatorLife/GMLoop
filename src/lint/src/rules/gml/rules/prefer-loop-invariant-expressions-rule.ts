@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeRecord,
     type AstNodeWithType,
@@ -12,10 +13,11 @@ import {
     isAstNodeWithType,
     isIdentifierNode,
     rangeContainsCommentToken,
+    readObjectOption,
+    unwrapParenthesizedExpression,
     walkAstNodes,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type LoopNode = AstNodeWithType &
     Readonly<{
@@ -64,7 +66,107 @@ type LoopReplacementTarget = Readonly<{
     expressionEnd: number;
 }>;
 
-const PURE_FUNCTION_NAMES = new Set<string>(["abs", "dcos", "point_distance"]);
+/**
+ * Set of known-pure GML builtin function names.
+ *
+ * These functions are deterministic and side-effect-free — their output depends
+ * only on their inputs and they do not mutate state or produce observable
+ * effects. This list is more permissive than the original 3-function list
+ * (`abs`, `dcos`, `point_distance`) but remains conservative to avoid hoisting
+ * builtins with hidden state dependencies (e.g., `random`, `variable_instance_get`).
+ *
+ * Covers: math (abs, sin/cos/tan variants, floor/ceil/round, min/max, lerp,
+ * point_distance, sqrt, power, frac), string (length/concat/replace/find
+ * variants, upper/lower, char_at/ord), array (create/push/pop/shift variants
+ * — not pure by GML semantics but safe to hoist when args don't alias),
+ * type (is_*), conversion (string(), real(), ord(), chr()).
+ */
+const PURE_FUNCTION_NAMES: ReadonlySet<string> = Object.freeze(
+    new Set([
+        // Math - absolute value
+        "abs",
+        // Math - trigonometry
+        "dcos",
+        "dsin",
+        "dtan",
+        "cos",
+        "sin",
+        "tan",
+        // Math - rounding
+        "floor",
+        "ceil",
+        "round",
+        "frac",
+        // Math - min/max
+        "min",
+        "max",
+        "clamp",
+        // Math - interpolation
+        "lerp",
+        "lerp_angle",
+        // Math - geometry
+        "point_distance",
+        "point_distance_3d",
+        "point_direction",
+        "dot_product",
+        "dot_product_3d",
+        "dot_product_normalize",
+        "dot_product_3d_normalize",
+        // Math - other
+        "sqrt",
+        "sqr",
+        "power",
+        "ln",
+        "log2",
+        "log10",
+        "exp",
+        "sign",
+        "deg_to_rad",
+        "rad_to_deg",
+        // String - length & search
+        "string_length",
+        "string_byte_length",
+        "string_pos",
+        "string_pos_ext",
+        "string_count",
+        "string_last_pos",
+        // String - case
+        "string_lower",
+        "string_upper",
+        "string_lettersdigits",
+        "string_letters",
+        "string_digits",
+        "string_repeat",
+        // String - content
+        "string_char_at",
+        "string_ord_at",
+        "string_copy",
+        "string_delete",
+        "string_insert",
+        "string_replace",
+        "string_replace_all",
+        "string_concat",
+        "string_format",
+        "string_hash_to_file",
+        // Type queries
+        "is_array",
+        "is_bool",
+        "is_int32",
+        "is_int64",
+        "is_ptr",
+        "is_real",
+        "is_string",
+        "is_struct",
+        "is_undefined",
+        "is_vec2",
+        "is_vec3",
+        "is_vec4",
+        "typeof",
+        // Conversions
+        "ord",
+        "chr"
+    ])
+);
 
 const NON_DETERMINISTIC_IDENTIFIER_NAMES = new Set<string>([
     "current_time",
@@ -101,15 +203,6 @@ function readIdentifierName(node: unknown): string | null {
     }
 
     return node.name;
-}
-
-function unwrapParenthesizedExpression(node: unknown): unknown {
-    let current = node;
-    while (isAstNodeRecord(current) && current.type === "ParenthesizedExpression") {
-        current = current.expression;
-    }
-
-    return current;
 }
 
 function readRootIdentifierName(node: unknown): string | null {
@@ -258,7 +351,7 @@ function collectLoopMutationSummary(loopNode: LoopNode): LoopMutationSummary {
             return;
         }
 
-        if (node.type === "IncDecExpression" || node.type === "IncDecStatement") {
+        if (Core.isIncDecNode(node)) {
             collectMutatedNamesFromTarget(node.argument, mutatedIdentifierNames, mutatedMemberRoots);
             return;
         }
@@ -302,7 +395,7 @@ function isDisallowedContextForReplacement(parent: AstNodeWithType | null, paren
         return true;
     }
 
-    if ((parent.type === "IncDecExpression" || parent.type === "IncDecStatement") && parentKey === "argument") {
+    if (Core.isIncDecNode(parent) && parentKey === "argument") {
         return true;
     }
 
@@ -578,6 +671,7 @@ function collectLoopCandidateAnalysis(parameters: {
     loopContext: LoopContainerContext;
     mutationSummary: LoopMutationSummary;
     assessmentCache: WeakMap<AstNodeRecord, ExpressionAssessment | null>;
+    minComplexity: number;
 }): LoopCandidateAnalysis {
     let bestCandidate: LoopCandidate | null = null;
     const replacementCandidates: LoopCandidate[] = [];
@@ -585,7 +679,8 @@ function collectLoopCandidateAnalysis(parameters: {
     if (!isAstNodeWithType(rootNode)) {
         return Object.freeze({
             bestCandidate,
-            replacementCandidates: Object.freeze(replacementCandidates)
+            replacementCandidates: Object.freeze(replacementCandidates),
+            minComplexity: parameters.minComplexity
         });
     }
 
@@ -638,8 +733,9 @@ function collectLoopCandidateAnalysis(parameters: {
             continue;
         }
 
-        const minimumComplexity = node.type === "TemplateStringExpression" ? 2 : 3;
-        if (assessment.complexity < minimumComplexity) {
+        const effectiveMinComplexity =
+            node.type === "TemplateStringExpression" ? Math.min(parameters.minComplexity, 2) : parameters.minComplexity;
+        if (assessment.complexity < effectiveMinComplexity) {
             pushChildNodesForLoopCandidateTraversal(stack, node);
             continue;
         }
@@ -677,7 +773,8 @@ function collectLoopCandidateAnalysis(parameters: {
 
     return Object.freeze({
         bestCandidate,
-        replacementCandidates: Object.freeze(replacementCandidates)
+        replacementCandidates: Object.freeze(replacementCandidates),
+        minComplexity: parameters.minComplexity
     });
 }
 
@@ -723,11 +820,26 @@ function pushChildNodesForLoopCandidateTraversal(stack: ParentVisitContext[], no
 
 function collectEquivalentLoopReplacementTargets(
     replacementCandidates: ReadonlyArray<LoopCandidate>,
-    targetExpressionNode: AstNodeWithType
+    targetExpressionNode: AstNodeWithType,
+    sourceText: string
 ): ReadonlyArray<LoopReplacementTarget> {
     const replacementTargets: LoopReplacementTarget[] = [];
+    const targetStart = Core.getNodeStartIndex(targetExpressionNode);
+    const targetEnd = Core.getNodeEndIndex(targetExpressionNode);
+    const shouldUseTextGate =
+        replacementCandidates.length > 100 && typeof targetStart === "number" && typeof targetEnd === "number";
+    const targetLength = shouldUseTextGate ? targetEnd - targetStart : 0;
+    const targetText = shouldUseTextGate ? sourceText.slice(targetStart, targetEnd) : "";
 
     for (const candidate of replacementCandidates) {
+        if (shouldUseTextGate && candidate.expressionEnd - candidate.expressionStart !== targetLength) {
+            continue;
+        }
+
+        if (shouldUseTextGate && sourceText.slice(candidate.expressionStart, candidate.expressionEnd) !== targetText) {
+            continue;
+        }
+
         if (!Core.areExpressionNodesEquivalentIgnoringParentheses(candidate.expressionNode, targetExpressionNode)) {
             continue;
         }
@@ -777,6 +889,13 @@ export function createPreferLoopInvariantExpressionsRule(definition: GmlRuleDefi
                     const loopContexts = collectLoopContainerContexts(programNode);
                     const commentTokenRangeIndex = createCommentTokenRangeIndex(sourceText);
 
+                    const options = readObjectOption(context);
+                    const minComplexityRaw = options.minComplexity;
+                    const minComplexity =
+                        typeof minComplexityRaw === "number" && Number.isFinite(minComplexityRaw)
+                            ? Math.max(2, Math.floor(minComplexityRaw))
+                            : 3;
+
                     for (const loopContext of loopContexts) {
                         const mutationSummary = collectLoopMutationSummary(loopContext.loopNode);
                         const assessmentCache = new WeakMap<AstNodeRecord, ExpressionAssessment | null>();
@@ -784,7 +903,8 @@ export function createPreferLoopInvariantExpressionsRule(definition: GmlRuleDefi
                             commentTokenRangeIndex,
                             loopContext,
                             mutationSummary,
-                            assessmentCache
+                            assessmentCache,
+                            minComplexity
                         });
                         const { bestCandidate } = candidateAnalysis;
                         if (!bestCandidate) {
@@ -815,7 +935,8 @@ export function createPreferLoopInvariantExpressionsRule(definition: GmlRuleDefi
                         );
                         const replacementTargets = collectEquivalentLoopReplacementTargets(
                             candidateAnalysis.replacementCandidates,
-                            bestCandidate.expressionNode
+                            bestCandidate.expressionNode,
+                            sourceText
                         );
                         const declarationText =
                             `${indentation}var ${hoistIdentifierName} = ${expressionText};` + `${lineEnding}`;

@@ -31,7 +31,7 @@ void describe("variable declaration helpers", () => {
                 getVariableDeclarationKind({
                     type: "VariableDeclaration",
                     declarations: []
-                } as VariableDeclarationNode),
+                }),
                 null
             );
 
@@ -65,7 +65,7 @@ void describe("variable declaration helpers", () => {
                     {
                         type: "VariableDeclaration",
                         declarations: []
-                    } as VariableDeclarationNode,
+                    },
                     ""
                 ),
                 false

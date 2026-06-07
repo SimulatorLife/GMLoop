@@ -142,7 +142,7 @@ export interface PredictionStrategyOptions {
      * Maximum source length that will use SLL prediction mode.
      *
      * Values above this threshold skip SLL and parse directly in LL mode.
-     * Set to `0` to disable the SLL fast path globally.
+     * A value of 0 falls back to the default threshold (8000).
      *
      * @default 8000
      */

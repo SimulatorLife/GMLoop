@@ -2,20 +2,23 @@
  * Regression tests for the core-option-overrides module.
  *
  * Validates that the formatter's Prettier-core option overrides are locked to
- * safe defaults and that resolveCoreOptionOverrides() always returns the
- * canonical frozen map — there is no external resolver hook or user-value
- * normalisation path that could introduce non-GML behaviour.
+ * safe defaults. The constant DEFAULT_CORE_OPTION_OVERRIDES is the canonical
+ * source of truth — it is frozen and directly imported at the single call site
+ * in format-entry.ts, eliminating a prior null-op thunk layer.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { DEFAULT_CORE_OPTION_OVERRIDES, resolveCoreOptionOverrides } from "../src/options/core-option-overrides.js";
+import { DEFAULT_CORE_OPTION_OVERRIDES } from "../src/options/core-option-overrides.js";
 
-void describe("resolveCoreOptionOverrides", () => {
-    void it("returns the canonical frozen override map", () => {
-        const overrides = resolveCoreOptionOverrides();
-        assert.strictEqual(overrides, DEFAULT_CORE_OPTION_OVERRIDES);
-        assert.deepEqual(Object.keys(overrides).toSorted(), [
+void describe("DEFAULT_CORE_OPTION_OVERRIDES", () => {
+    void it("is deeply frozen", () => {
+        assert.ok(Object.isFrozen(DEFAULT_CORE_OPTION_OVERRIDES));
+        assert.ok(Object.isFrozen(DEFAULT_CORE_OPTION_OVERRIDES));
+    });
+
+    void it("contains exactly the expected override keys", () => {
+        assert.deepEqual(Object.keys(DEFAULT_CORE_OPTION_OVERRIDES).toSorted(), [
             "arrowParens",
             "htmlWhitespaceSensitivity",
             "jsxSingleQuote",
@@ -23,20 +26,6 @@ void describe("resolveCoreOptionOverrides", () => {
             "singleAttributePerLine",
             "trailingComma"
         ]);
-    });
-
-    void it("returns the canonical map unconditionally", () => {
-        // Confirm the function always returns the same frozen map — there is no
-        // resolver hook or user-value normalisation path.
-        const overrides = resolveCoreOptionOverrides();
-        assert.strictEqual(overrides, DEFAULT_CORE_OPTION_OVERRIDES);
-    });
-});
-
-void describe("DEFAULT_CORE_OPTION_OVERRIDES", () => {
-    void it("is deeply frozen", () => {
-        assert.ok(Object.isFrozen(DEFAULT_CORE_OPTION_OVERRIDES));
-        assert.ok(Object.isFrozen(DEFAULT_CORE_OPTION_OVERRIDES));
     });
 
     void it("locks trailingComma to 'none' (GML positional commas)", () => {

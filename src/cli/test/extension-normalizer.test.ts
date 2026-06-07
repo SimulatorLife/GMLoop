@@ -31,3 +31,15 @@ void test("normalizeExtensions falls back when no valid fragments remain", () =>
 
     assert.deepStrictEqual(result, fallback);
 });
+
+void test("normalizeExtensions handles brace-glob extension lists", () => {
+    const result = normalizeExtensions("scripts/*.{gml,yy}");
+
+    assert.deepStrictEqual(result, [".gml", ".yy"]);
+});
+
+void test("normalizeExtensions ignores negated glob entries", () => {
+    const result = normalizeExtensions(["*.gml", "!*.yy"]);
+
+    assert.deepStrictEqual(result, [".gml"]);
+});

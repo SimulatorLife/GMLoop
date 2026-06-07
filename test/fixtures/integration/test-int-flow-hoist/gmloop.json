@@ -1,17 +1,26 @@
 {
   "printWidth": 120,
   "allowInlineControlFlowBlocks": false,
-  "functionSuffixes": {
-    "array_length": "len",
-    "ds_list_size": "size",
-    "ds_map_size": "size",
-    "ds_grid_width": "width",
-    "ds_grid_height": "height"
-  },
   "lintRules": {
     "gml/normalize-doc-comments": "error",
     "gml/prefer-hoistable-loop-accessors": "error",
-    "gml/optimize-logical-flow": "error"
+    "gml/optimize-logical-flow": "error",
+    "gml/normalize-directives": "error",
+    "gml/optimize-math-expressions": "error"
+  },
+  "refactor": {
+    "codemods": {
+      "docCommentAlignment": {},
+      "loopLengthHoisting": {
+        "functionSuffixes": {
+          "array_length": "len",
+          "ds_list_size": "size",
+          "ds_map_size": "size",
+          "ds_grid_width": "width",
+          "ds_grid_height": "height"
+        }
+      }
+    }
   },
   "fixture": {
     "kind": "integration",

@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
-import type { GlobalvarToGlobalCodemodOptions, GlobalvarToGlobalEdit, GlobalvarToGlobalResult } from "./types.js";
+import type { GlobalvarToGlobalCodemodOptions, GlobalvarToGlobalEdit, GlobalvarToGlobalResult } from "../../types.js";
 
 /**
  * Represents a `GlobalVarStatement` node extracted from the AST.

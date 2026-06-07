@@ -19,7 +19,7 @@ import { Core } from "@gmloop/core";
 
 import { normalizeExtensions } from "./extension-normalizer.js";
 
-const { clamp, getLineBreakCount } = Core;
+const { clamp, getLineBreakCount, toNormalizedInteger } = Core;
 
 // ---------------------------------------------------------------------------
 // Extension matching
@@ -117,7 +117,7 @@ export function hashSourceContent(source: string): string {
  */
 export function resolveUnknownScanConcurrency(configuredMaximum: number): number {
     const detectedParallelism = Math.max(1, availableParallelism());
-    const normalizedMaximum = Number.isFinite(configuredMaximum) ? Math.trunc(configuredMaximum) : detectedParallelism;
+    const normalizedMaximum = toNormalizedInteger(configuredMaximum) ?? detectedParallelism;
 
     return clamp(normalizedMaximum, 1, detectedParallelism);
 }
@@ -238,6 +238,12 @@ export function computeHotReloadLatencyStats(
 export interface InitialFileData {
     content: string;
     ast: unknown;
+    /** Cached symbol definitions extracted during the startup scan.
+     *  Reusing them avoids a second AST traversal in transpileFile. */
+    symbols: Array<string>;
+    /** Cached symbol references extracted during the startup scan.
+     *  Reusing them avoids a second AST traversal in transpileFile. */
+    references: Array<string>;
 }
 
 /**

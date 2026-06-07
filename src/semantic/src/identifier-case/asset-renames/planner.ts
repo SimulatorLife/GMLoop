@@ -3,7 +3,7 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { ConflictSeverity } from "../conflict-severity.js";
-import type { defaultIdentifierCaseFsFacade } from "../fs-facade.js";
+import type { defaultIdentifierCaseFsFacade } from "../identifier-case-helpers.js";
 import { formatIdentifierCase } from "../identifier-case-utils.js";
 import { IdentifierCaseStyle, normalizeIdentifierCaseAssetStyle } from "../options.js";
 import {

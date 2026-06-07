@@ -8,7 +8,7 @@ import {
     createProjectIndexCoordinator,
     createProjectIndexDescriptor,
     findProjectRoot,
-    getProjectIndexParserOverride
+    scanProjectTree
 } from "../project-index/index.js";
 import { IDENTIFIER_CASE_PROJECT_INDEX_CACHE_MAX_BYTES_OPTION_NAME } from "./options.js";
 
@@ -397,25 +397,46 @@ export async function bootstrapProjectIndex(options, storeOption) {
         cacheMaxSizeBytes
     });
 
-    const parserOverride = getProjectIndexParserOverride(options);
+    const parseGml = typeof options?.parseGml === "function" ? options.parseGml : undefined;
     const buildOptions = createProjectIndexBuildOptions({
         logger: options?.logger ?? null,
         logMetrics: options?.logIdentifierCaseMetrics === true,
-        projectIndexConcurrency,
-        parserOverride
-    } as any);
-
-    const descriptor = createProjectIndexDescriptor({
-        projectRoot,
-        cacheMaxSizeBytes,
-        cacheFilePath: options?.identifierCaseProjectIndexCachePath ?? null,
-        formatterVersion: getFormatterVersion(options) ?? undefined,
-        pluginVersion: getPluginVersion(options) ?? undefined,
-        buildOptions
-    } as any);
+        concurrency: projectIndexConcurrency
+            ? {
+                  gml: projectIndexConcurrency,
+                  gmlParsing: projectIndexConcurrency
+              }
+            : undefined,
+        parseGml
+    });
 
     let ready;
     try {
+        const { yyFiles, gmlFiles } = await scanProjectTree(projectRoot, fsFacade ?? undefined);
+        const manifestMtimes: Record<string, number> = {};
+        const sourceMtimes: Record<string, number> = {};
+        for (const file of yyFiles) {
+            if (file.mtimeMs !== null) {
+                manifestMtimes[file.relativePath] = file.mtimeMs;
+            }
+        }
+        for (const file of gmlFiles) {
+            if (file.mtimeMs !== null) {
+                sourceMtimes[file.relativePath] = file.mtimeMs;
+            }
+        }
+
+        const descriptor = createProjectIndexDescriptor({
+            projectRoot,
+            cacheMaxSizeBytes,
+            cacheFilePath: options?.identifierCaseProjectIndexCachePath ?? null,
+            formatterVersion: getFormatterVersion(options) ?? undefined,
+            pluginVersion: getPluginVersion(options) ?? undefined,
+            buildOptions,
+            manifestMtimes,
+            sourceMtimes
+        });
+
         ready = await coordinator.ensureReady(descriptor);
     } catch (error) {
         const failureResult = createFailureResult({

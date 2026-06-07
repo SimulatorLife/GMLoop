@@ -1,8 +1,8 @@
 import type { Rule } from "eslint";
 
 import { gmlRuleLanguageServices } from "../gml-rule-services.js";
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, readObjectOption } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { createLimitedRecoveryProjection } = gmlRuleLanguageServices;
 
@@ -67,7 +67,7 @@ function collectArgumentSeparatorInsertionOffsets(
         uniqueOffsets.add(recovery.originalOffset);
     }
 
-    return Object.freeze([...uniqueOffsets].sort((left, right) => left - right));
+    return Object.freeze(Array.from(uniqueOffsets).toSorted((left, right) => left - right));
 }
 
 export function createRequireArgumentSeparatorsRule(definition: GmlRuleDefinition): Rule.RuleModule {

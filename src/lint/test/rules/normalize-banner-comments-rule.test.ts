@@ -164,3 +164,12 @@ void test("normalize-banner-comments normalizes method-list triple-slash lines i
         ].join("\n")
     );
 });
+
+void test("normalize-banner-comments ignores empty triple-slash separators between method-list entries", () => {
+    const input = ["/// .__Destroy()", "///", "///", "/// .__GetBuffer()", "function __Batch() constructor {}"].join(
+        "\n"
+    );
+    const output = runNormalizeBannerCommentsRule(input);
+
+    assertEquals(output, ["// .__Destroy()", "// .__GetBuffer()", "function __Batch() constructor {}"].join("\n"));
+});

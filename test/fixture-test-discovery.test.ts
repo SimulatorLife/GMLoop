@@ -78,12 +78,29 @@ void test("root test discovery includes formatter, lint, refactor, and cross-mod
 void test("global test discovery includes the shared root fixture registry runner", async () => {
     const packageManifest = await readRootPackageManifest();
 
-    assert.match(packageManifest.scripts["test:files"], /test\/dist\/fixture-suites\.js/u);
-    assert.match(packageManifest.scripts["test:ci"], /pnpm -s test:files/u);
-    assert.match(packageManifest.scripts["test:coverage"], /pnpm -s test:files/u);
+    // The test:fixtures script runs the fixture-suites.js file. This script exists
+    // and is included in the test: CI pipeline (test: CI → test:compiled → test:fixtures).
+    // The script references fixture-suites.js directly rather than through an
+    // intermediate test:fixtures:files alias.
+    assert.ok(
+        typeof packageManifest.scripts["test:fixtures"] === "string" &&
+            packageManifest.scripts["test:fixtures"].includes("fixture-suites.js"),
+        "test:fixtures must run fixture-suites.js as the root fixture registry runner"
+    );
+    assert.match(
+        packageManifest.scripts.test ?? "",
+        /test:fixtures/u,
+        "The main test pipeline must include test:fixtures for fixture runs"
+    );
 });
 
 void test("fixture-only aggregate command points at the shared root registry runner", async () => {
     const packageManifest = await readRootPackageManifest();
-    assert.equal(packageManifest.scripts["test:fixtures:files"], "echo test/dist/fixture-suites.js");
+
+    // The fixture-only test script is test:fixtures, which directly runs test/dist/fixture-suites.js.
+    assert.ok(typeof packageManifest.scripts["test:fixtures"] === "string", "test:fixtures script must exist");
+    assert.ok(
+        packageManifest.scripts["test:fixtures"].includes("test/dist/fixture-suites.js"),
+        "test:fixtures must target test/dist/fixture-suites.js as the root fixture registry runner"
+    );
 });

@@ -13,27 +13,20 @@ import { wrapNormalizedPathSpy } from "./scope-tracker-helpers.js";
  * needs refreshing.
  */
 void describe("ScopeTracker.getFilePathsDeclaringSymbol", () => {
-    void it("returns empty set for null or undefined name", () => {
+    void it("returns empty set for null, undefined, or unknown symbol names", () => {
         const tracker = new ScopeTracker({ enabled: true });
         tracker.enterScope("program", { path: "/project/foo.gml" });
         tracker.declare("x", { name: "x" });
 
         assert.equal(tracker.getFilePathsDeclaringSymbol(null).size, 0);
         assert.equal(tracker.getFilePathsDeclaringSymbol(undefined).size, 0);
+        assert.equal(tracker.getFilePathsDeclaringSymbol("unknown").size, 0);
     });
 
     void it("returns empty set when tracker is disabled", () => {
         const tracker = new ScopeTracker({ enabled: false });
 
         assert.equal(tracker.getFilePathsDeclaringSymbol("x").size, 0);
-    });
-
-    void it("returns empty set for an unknown symbol", () => {
-        const tracker = new ScopeTracker({ enabled: true });
-        tracker.enterScope("program", { path: "/project/foo.gml" });
-        tracker.declare("y", { name: "y" });
-
-        assert.equal(tracker.getFilePathsDeclaringSymbol("unknown").size, 0);
     });
 
     void it("returns the path of the scope that declares the symbol", () => {

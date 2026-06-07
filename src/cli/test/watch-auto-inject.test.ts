@@ -14,6 +14,7 @@ import { describe, it } from "node:test";
 import { setTimeout as setTimeoutPromise } from "node:timers/promises";
 
 import { runWatchCommand } from "../src/commands/watch.js";
+import { LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH } from "../src/modules/live-reload/config.js";
 
 const AUTO_INJECT_WAIT_TIMEOUT_MS = 5000;
 const AUTO_INJECT_POLL_INTERVAL_MS = 25;
@@ -37,6 +38,25 @@ async function waitForIndexContentMatch(
     throw new Error(`Timed out waiting for index.html content update after ${timeoutMs} ms`);
 }
 
+async function waitForFileContentMatch(
+    filePath: string,
+    matcher: (contents: string) => boolean,
+    timeoutMs = AUTO_INJECT_WAIT_TIMEOUT_MS
+): Promise<string> {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+        const contents = await readFile(filePath, "utf8").catch(() => null);
+        if (contents !== null && matcher(contents)) {
+            return contents;
+        }
+
+        await setTimeoutPromise(AUTO_INJECT_POLL_INTERVAL_MS);
+    }
+
+    throw new Error(`Timed out waiting for file content update after ${timeoutMs} ms: ${filePath}`);
+}
+
 void describe("Watch command auto-inject flag", () => {
     void it("should inject hot-reload runtime when --auto-inject is enabled", async () => {
         const testDir = path.join("/tmp", `watch-auto-inject-${Date.now()}-${randomUUID()}`);
@@ -51,6 +71,7 @@ void describe("Watch command auto-inject flag", () => {
         );
 
         const abortController = new AbortController();
+        const configPath = path.join(html5OutputDir, ".gml-hot-reload", LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH);
 
         const watchPromise = runWatchCommand(testDir, {
             extensions: [".gml"],
@@ -74,10 +95,19 @@ void describe("Watch command auto-inject flag", () => {
             const indexContent = await waitForIndexContentMatch(indexHtmlPath, (content) =>
                 content.includes("gml-hot-reload:start")
             );
+            const configContent = await waitForFileContentMatch(configPath, (content) =>
+                content.includes("ws://127.0.0.1:17890")
+            );
             assert.ok(indexContent.includes("gml-hot-reload:start"), "Should contain hot-reload marker start");
             assert.ok(indexContent.includes("gml-hot-reload:end"), "Should contain hot-reload marker end");
-            assert.ok(indexContent.includes("createRuntimeWrapper"), "Should contain runtime wrapper initialization");
-            assert.ok(indexContent.includes("ws://127.0.0.1:17890"), "Should contain default WebSocket URL");
+            assert.ok(
+                indexContent.includes("runtime-wrapper/browser/index.js"),
+                "Should reference the browser bootstrap entry"
+            );
+            assert.ok(
+                configContent.includes("ws://127.0.0.1:17890"),
+                "Should write the default WebSocket URL to config"
+            );
         } finally {
             abortController.abort();
             await watchPromise;
@@ -100,6 +130,7 @@ void describe("Watch command auto-inject flag", () => {
         const abortController = new AbortController();
         const customPort = 18_000;
         const customHost = "localhost";
+        const configPath = path.join(html5OutputDir, ".gml-hot-reload", LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH);
 
         const watchPromise = runWatchCommand(testDir, {
             extensions: [".gml"],
@@ -122,11 +153,11 @@ void describe("Watch command auto-inject flag", () => {
         });
 
         try {
-            const indexContent = await waitForIndexContentMatch(indexHtmlPath, (content) =>
+            const configContent = await waitForFileContentMatch(configPath, (content) =>
                 content.includes(`ws://${customHost}:${customPort}`)
             );
             assert.ok(
-                indexContent.includes(`ws://${customHost}:${customPort}`),
+                configContent.includes(`ws://${customHost}:${customPort}`),
                 `Should contain custom WebSocket URL ws://${customHost}:${customPort}`
             );
         } finally {

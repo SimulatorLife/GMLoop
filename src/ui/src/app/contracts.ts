@@ -1,10 +1,31 @@
 import type {
     GraphVisualizationData,
     GraphVisualizationDocumentationCatalogs,
+    GraphVisualizationLastFixRun,
+    GraphVisualizationLiveReloadModel,
     GraphVisualizationLoadedTarget,
+    GraphVisualizationMcpServerStatus,
     GraphVisualizationProjectConfigurationCatalog,
-    GraphVisualizationRenderOptions
+    GraphVisualizationRenderOptions,
+    GraphVisualizationStartupState
 } from "../graph/types.js";
+
+export type GraphVisualizationFixRunResult = Readonly<{
+    logLines: ReadonlyArray<string>;
+    status: "success";
+}>;
+
+export type GraphVisualizationFixProgressSnapshot = Readonly<{
+    logLines: ReadonlyArray<string>;
+}>;
+
+export type GraphVisualizationFixRunOptions = Readonly<{
+    onProgress: (progress: GraphVisualizationFixProgressSnapshot) => void;
+}>;
+
+export type GraphVisualizationHostMutationResult = Readonly<{
+    changed: boolean;
+}>;
 
 /**
  * Normalized model consumed by the Lit graph visualization UI shell.
@@ -13,8 +34,12 @@ export type GraphVisualizationUiModel = Readonly<{
     data: GraphVisualizationData;
     documentationCatalogs: GraphVisualizationDocumentationCatalogs | null;
     isServerMode: boolean;
+    lastFixRun: GraphVisualizationLastFixRun | null;
     loadedTarget: GraphVisualizationLoadedTarget | null;
+    liveReload: GraphVisualizationLiveReloadModel | null;
+    mcpServerStatus: GraphVisualizationMcpServerStatus;
     projectConfigurationCatalog: GraphVisualizationProjectConfigurationCatalog | null;
+    startupState: GraphVisualizationStartupState | null;
     title: string;
 }>;
 
@@ -23,7 +48,20 @@ export type GraphVisualizationUiModel = Readonly<{
  */
 export type GraphVisualizationUiCallbacks = Readonly<{
     onOpenProject: () => void | Promise<void>;
-    onRegenerate: () => void | Promise<void>;
+    onRegenerate: () =>
+        | GraphVisualizationHostMutationResult
+        | void
+        | Promise<GraphVisualizationHostMutationResult | void>;
+    onCreateConfig?: () => void | Promise<void>;
+    onSaveConfig: (config: Readonly<Record<string, unknown>>) => void | Promise<void>;
+    onRunFix: (
+        options?: GraphVisualizationFixRunOptions
+    ) => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
+    onStartLiveReload: () =>
+        | GraphVisualizationLiveReloadModel
+        | null
+        | Promise<GraphVisualizationLiveReloadModel | null>;
+    onStopLiveReload: () => void | Promise<void>;
 }>;
 
 /**
@@ -37,8 +75,12 @@ export function createGraphVisualizationUiModel(
         data,
         documentationCatalogs: options.documentationCatalogs ?? null,
         isServerMode: options.isServerMode ?? false,
+        lastFixRun: options.lastFixRun ?? null,
         loadedTarget: options.loadedTarget ?? null,
+        liveReload: options.liveReload ?? null,
+        mcpServerStatus: options.mcpServerStatus ?? "not-started",
         projectConfigurationCatalog: options.projectConfigurationCatalog ?? null,
+        startupState: options.startupState ?? null,
         title: options.title
     };
 }
@@ -49,6 +91,32 @@ export function createGraphVisualizationUiModel(
 export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiCallbacks {
     return {
         onOpenProject: () => {},
-        onRegenerate: () => {}
+        onRegenerate: () => {},
+        onCreateConfig: () => {},
+        onSaveConfig: () => {},
+        onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
+        onStartLiveReload: () => null,
+        onStopLiveReload: () => {}
     };
+}
+
+/**
+ * Return whether the current UI model includes graph data that can be explored.
+ */
+export function hasLoadedGraphIndex(model: GraphVisualizationUiModel): boolean {
+    return model.data.nodes.length > 0;
+}
+
+/**
+ * Return whether the current UI model includes graph edges that can be visualised.
+ */
+export function hasGraphEdges(model: GraphVisualizationUiModel): boolean {
+    return model.data.edges.length > 0;
+}
+
+/**
+ * Return whether the current UI model is associated with a loaded project target.
+ */
+export function hasLoadedGraphProject(model: GraphVisualizationUiModel): boolean {
+    return model.loadedTarget !== null;
 }

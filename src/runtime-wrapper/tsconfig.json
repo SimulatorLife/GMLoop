@@ -4,7 +4,6 @@
     "rootDir": ".",
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "baseUrl": ".",
     "paths": {
       "@gmloop/cli": ["../cli/index.ts"],
       "@gmloop/core": ["../core/index.ts"],
@@ -17,6 +16,6 @@
     }
   },
   "references": [{ "path": "../core" }],
-  "include": ["*.ts", "src/**/*.ts", "test/**/*.ts"],
+  "include": ["*.ts", "browser/**/*.ts", "src/**/*.ts", "test/**/*.ts"],
   "exclude": ["dist"]
 }

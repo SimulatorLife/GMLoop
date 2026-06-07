@@ -14,6 +14,17 @@ void test("resolveProjectPath resolves relative and preserves absolute paths", (
     assert.equal(resolveProjectPath(projectRoot, "/tmp/example.gml"), "/tmp/example.gml");
 });
 
+void test("resolveProjectPath preserves Windows absolute paths on non-Windows hosts", () => {
+    assert.equal(
+        resolveProjectPath("/workspace/project", String.raw`C:\Project\scripts\player.gml`),
+        String.raw`C:\Project\scripts\player.gml`
+    );
+    assert.equal(
+        resolveProjectPath("/workspace/project", String.raw`\\server\share\scripts\player.gml`),
+        String.raw`\\server\share\scripts\player.gml`
+    );
+});
+
 void test("createPathSelectionMatcher allows all paths when allow list is empty", () => {
     const isSelected = createPathSelectionMatcher("/workspace/project", [], []);
     assert.equal(isSelected("scripts/player.gml"), true);

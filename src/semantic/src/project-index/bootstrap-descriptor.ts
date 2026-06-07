@@ -5,24 +5,26 @@ type ProjectIndexConcurrencySettings = {
     gmlParsing: number;
 };
 
+export type { ProjectIndexConcurrencySettings };
+
 type ProjectIndexBuildOptions = {
     logger?: { debug?: (message?: string, payload?: unknown) => void } | null;
     logMetrics?: boolean;
-    // Historical option names accepted by some callers. Keep both names so we
-    // can accept either legacy or current option shapes passed by callers.
     concurrency?: ProjectIndexConcurrencySettings | null;
-    projectIndexConcurrency?: number | ProjectIndexConcurrencySettings | null;
-    parserOverride?: {
-        parse?: (text: string, filePath?: string) => unknown;
-    } | null;
     parseGml?: (text: string, filePath?: string) => unknown;
 };
+
+export type { ProjectIndexBuildOptions };
+
+function isPositiveInteger(value: unknown): value is number {
+    return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
 
 export function createProjectIndexBuildOptions({
     logger = null,
     logMetrics = false,
-    projectIndexConcurrency,
-    parserOverride = null
+    concurrency,
+    parseGml
 }: ProjectIndexBuildOptions = {}) {
     const buildOptions: ProjectIndexBuildOptions = {
         logger,
@@ -30,35 +32,37 @@ export function createProjectIndexBuildOptions({
     };
 
     Core.withDefinedValue(
-        projectIndexConcurrency,
+        concurrency,
         (value) => {
             if (value === null) {
                 return;
             }
 
-            if (typeof value === "number") {
-                buildOptions.concurrency = {
-                    gml: value,
-                    gmlParsing: value
-                };
+            if (!Core.isObjectLike(value)) {
+                return;
+            }
+
+            const rawGml = (value as Record<string, unknown>).gml;
+            const rawGmlParsing = (value as Record<string, unknown>).gmlParsing;
+
+            if (!isPositiveInteger(rawGml) || !isPositiveInteger(rawGmlParsing)) {
                 return;
             }
 
             buildOptions.concurrency = {
-                gml: value.gml,
-                gmlParsing: value.gmlParsing
+                gml: rawGml,
+                gmlParsing: rawGmlParsing
             };
         },
         () => {}
     );
 
-    if (!parserOverride) {
-        return buildOptions;
-    }
-
-    const { parse } = parserOverride;
-
-    buildOptions.parseGml = parse as ((text: string, filePath?: string) => unknown) | null;
+    Core.withDefinedValue(parseGml, (fn) => {
+        if (typeof fn !== "function") {
+            return;
+        }
+        buildOptions.parseGml = fn;
+    });
 
     return buildOptions;
 }
@@ -70,6 +74,8 @@ type ProjectIndexDescriptor = {
     formatterVersion?: string | null;
     pluginVersion?: string | null;
     buildOptions?: ProjectIndexBuildOptions | null;
+    manifestMtimes?: Record<string, unknown> | null;
+    sourceMtimes?: Record<string, unknown> | null;
 };
 
 export function createProjectIndexDescriptor({
@@ -78,14 +84,18 @@ export function createProjectIndexDescriptor({
     cacheFilePath = null,
     formatterVersion,
     pluginVersion,
-    buildOptions
+    buildOptions,
+    manifestMtimes,
+    sourceMtimes
 }: ProjectIndexDescriptor = {}) {
     const descriptor: ProjectIndexDescriptor = {
         projectRoot,
         cacheFilePath,
         formatterVersion,
         pluginVersion,
-        buildOptions
+        buildOptions: Core.isObjectLike(buildOptions) ? buildOptions : undefined,
+        manifestMtimes: Core.isObjectLike(manifestMtimes) ? manifestMtimes : undefined,
+        sourceMtimes: Core.isObjectLike(sourceMtimes) ? sourceMtimes : undefined
     };
 
     Core.withDefinedValue(

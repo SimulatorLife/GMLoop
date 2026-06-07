@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, isAstNodeRecord } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 const { unwrapParenthesizedExpression } = Core;
 
@@ -12,10 +12,23 @@ function isUndefinedIdentifier(expression: unknown): boolean {
     }
 
     if (expression.type === "Identifier") {
-        return expression.name === "undefined";
+        return typeof expression.name === "string" && expression.name.toLowerCase() === "undefined";
     }
 
-    return expression.type === "Literal" && expression.value === "undefined";
+    if (expression.type === "Literal" && typeof expression.value === "string") {
+        return expression.value.toLowerCase() === "undefined";
+    }
+
+    return false;
+}
+
+function resolveImmediateNegatedWrapperRange(sourceText: string, start: number, end: number): [number, number] | null {
+    const wrapperStart = start - 2;
+    if (wrapperStart < 0 || end >= sourceText.length) {
+        return null;
+    }
+
+    return sourceText.slice(wrapperStart, start) === "!(" && sourceText[end] === ")" ? [wrapperStart, end + 1] : null;
 }
 
 export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition): Rule.RuleModule {
@@ -42,15 +55,22 @@ export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition):
                             typeof otherEnd === "number"
                         ) {
                             const otherExprText = context.sourceCode.text.slice(otherStart, otherEnd);
+                            const negatedWrapperRange = resolveImmediateNegatedWrapperRange(
+                                context.sourceCode.text,
+                                start,
+                                end
+                            );
+                            const isNegated = negatedWrapperRange !== null;
                             const replacement =
-                                node.operator === "=="
+                                (node.operator === "==") === !isNegated
                                     ? `is_undefined(${otherExprText})`
                                     : `!is_undefined(${otherExprText})`;
+                            const replacementRange = negatedWrapperRange ?? [start, end];
 
                             context.report({
                                 node,
                                 messageId: definition.messageId,
-                                fix: (fixer) => fixer.replaceTextRange([start, end], replacement)
+                                fix: (fixer) => fixer.replaceTextRange(replacementRange, replacement)
                             });
                         }
                     }

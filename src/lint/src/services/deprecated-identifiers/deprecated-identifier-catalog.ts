@@ -60,7 +60,7 @@ export function loadDeprecatedIdentifierCatalog(): DeprecatedIdentifierCatalog {
     }
 
     cachedDeprecatedIdentifierCatalog = Object.freeze({
-        byNormalizedName: byNormalizedName as ReadonlyMap<string, DeprecatedIdentifierCatalogEntry>
+        byNormalizedName
     });
     return cachedDeprecatedIdentifierCatalog;
 }

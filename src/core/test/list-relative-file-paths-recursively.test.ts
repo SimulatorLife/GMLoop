@@ -32,6 +32,28 @@ void test("listRelativeFilePathsRecursively applies includeFile filters", async 
     assert.deepEqual(relativePaths, ["scripts/keep.gml"]);
 });
 
+void test("listRelativeFilePathsRecursively prunes excluded directories before descending", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "core-recursive-files-prune-"));
+    await mkdir(path.join(rootPath, "scripts"), { recursive: true });
+    await mkdir(path.join(rootPath, "node_modules", "pkg"), { recursive: true });
+    await writeFile(path.join(rootPath, "scripts", "keep.gml"), "keep", "utf8");
+    await writeFile(path.join(rootPath, "node_modules", "pkg", "skip.gml"), "skip", "utf8");
+
+    const visitedDirectories: Array<string> = [];
+    const relativePaths = await Core.listRelativeFilePathsRecursively(rootPath, {
+        shouldEnterDirectory: ({ entryName, relativePath }) => {
+            visitedDirectories.push(relativePath);
+            return entryName !== "node_modules";
+        }
+    });
+
+    assert.deepEqual(relativePaths, ["scripts/keep.gml"]);
+    assert.deepEqual(
+        visitedDirectories.toSorted((left, right) => left.localeCompare(right)),
+        ["node_modules", "scripts"]
+    );
+});
+
 void test("listRelativeFilePathsRecursively ignores non-file entries", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "core-recursive-files-non-file-"));
     await mkdir(path.join(rootPath, "scripts"), { recursive: true });

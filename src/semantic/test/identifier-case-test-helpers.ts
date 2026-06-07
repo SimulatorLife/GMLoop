@@ -89,7 +89,10 @@ export async function createIdentifierCaseProject({
     const scriptPaths: string[] = [];
     const scriptSources: string[] = [];
 
-    for (const [index, config] of scriptFixtures.entries()) {
+    const processScript = async (
+        config: ScriptFixtureConfig,
+        index: number
+    ): Promise<IdentifierCaseProject["scripts"][number]> => {
         const scriptName = typeof config === "string" ? `script_${index}` : (config.name ?? `script_${index}`);
         const fixtureName = typeof config === "string" ? config : config.fixture;
 
@@ -102,15 +105,19 @@ export async function createIdentifierCaseProject({
         const scriptSource = await fs.readFile(scriptFixturePath, "utf8");
         const scriptPath = await writeProjectFile(`scripts/${scriptName}/${scriptName}.gml`, scriptSource);
 
-        const scriptRecord = {
+        return {
             name: scriptName,
             fixture: String(fixtureName),
             path: scriptPath,
             source: scriptSource
         };
-        scripts.push(scriptRecord);
-        scriptPaths.push(scriptPath);
-        scriptSources.push(scriptSource);
+    };
+
+    const scriptResults = await Promise.all(scriptFixtures.map(async (config, index) => processScript(config, index)));
+    for (const result of scriptResults) {
+        scripts.push(result);
+        scriptPaths.push(result.path);
+        scriptSources.push(result.source);
     }
 
     let eventPath: string | null = null;

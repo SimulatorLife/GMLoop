@@ -68,7 +68,7 @@ async function resolveTranspileTarget(command: CommanderCommandLike): Promise<Re
     try {
         targetStats = await stat(configuredPath);
     } catch (error) {
-        const message = Core.isErrorLike(error) ? error.message : String(error);
+        const message = Core.getErrorMessage(error);
         throw createUsageError(
             `Target path does not exist or cannot be accessed: ${configuredPath} (${message})`,
             command
@@ -152,7 +152,8 @@ function createTranspilationContext(): TranspilationContext {
         transpiler: new Transpiler.GmlTranspiler(),
         patches: [],
         lastSuccessfulPatches: new Map(),
-        maxPatchHistory: 1,
+        sourcePathToPatchIds: new Map(),
+        bounds: { maxEntries: 1 },
         totalPatchCount: 0,
         metrics: [],
         errors: [],
@@ -190,6 +191,7 @@ function emitDryRunOutput(parameters: { outputs: Array<{ sourcePath: string; jsB
 export function createTranspileCommand(): Command {
     return applyStandardCommandOptions(
         new Command("transpile")
+            .usage("[options]")
             .description("Transpile GameMaker Language files to JavaScript using @gmloop/transpiler")
             .addOption(createPathOption())
             .addOption(createWriteOption())

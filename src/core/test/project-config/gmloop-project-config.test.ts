@@ -63,3 +63,36 @@ void test("loadGmloopProjectConfig surfaces source-aware parse errors", async ()
         await rm(path.dirname(configPath), { recursive: true, force: true });
     }
 });
+
+void test("parseGmloopProjectConfig tolerates unknown top-level properties", () => {
+    const config = Core.parseGmloopProjectConfig(
+        JSON.stringify({
+            // Known sections
+            printWidth: 120,
+            lintRules: { "gml/no-globalvar": "warn" },
+            // Unknown properties — generic loader must ignore/tolerate, not strip
+            unknownToolSection: { nested: true },
+            totallyUnknownProperty: 42,
+            anotherUnknown: "preserve-me"
+        }),
+        "/tmp/gmloop.json"
+    );
+
+    // Known sections must be present
+    assert.equal(config.printWidth, 120);
+    assert.deepEqual(config.lintRules, { "gml/no-globalvar": "warn" });
+
+    // Unknown top-level properties must be preserved, not dropped
+    assert.deepEqual(config.unknownToolSection, { nested: true });
+    assert.equal(config.totallyUnknownProperty, 42);
+    assert.equal(config.anotherUnknown, "preserve-me");
+
+    // Verify all 5 keys are present (no stripping occurred)
+    assert.deepEqual(Object.keys(config).sort(), [
+        "anotherUnknown",
+        "lintRules",
+        "printWidth",
+        "totallyUnknownProperty",
+        "unknownToolSection"
+    ]);
+});

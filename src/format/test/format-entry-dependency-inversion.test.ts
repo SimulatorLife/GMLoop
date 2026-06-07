@@ -8,8 +8,11 @@ import { createGmlFormat, Format } from "../src/format-entry.js";
 void test("format entry consumes the abstract provider instead of low-level formatter adapters", async () => {
     const source = await readFile("src/format/src/format-entry.ts", "utf8");
 
+    // Verify high-level orchestration (format-entry.ts) does not directly
+    // import concrete adapter subdirectories.
     assert.doesNotMatch(source, /from "\.\/?(?:parsers|printer|comments)\//);
-    assert.doesNotMatch(source, /from "\.\/components\/default-format-components\.js"/);
+    // Verify format-entry.ts uses the component contract via the barrel.
+    assert.match(source, /from "\.\/components\/index\.js"/);
     assert.match(source, /GmlFormatProvider/, "format-entry should depend on the provider abstraction");
 });
 

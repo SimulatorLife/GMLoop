@@ -6,7 +6,14 @@ import { performance } from "node:perf_hooks";
 import { Core } from "@gmloop/core";
 
 import { isProjectManifestPath } from "../project-index/constants.js";
-import { buildProjectIndex } from "../project-index/index.js";
+import {
+    buildProjectIndex,
+    createProjectIndexCoordinator,
+    createProjectIndexDescriptor,
+    createTolerantProjectIndexParser,
+    getDefaultProjectIndexParser,
+    scanProjectTree
+} from "../project-index/index.js";
 import { resolveGraphIndexConfig } from "./config.js";
 import {
     GRAPH_INDEX_SCHEMA_VERSION,
@@ -94,9 +101,18 @@ type ProjectIndexSnapshot = {
     >;
     identifiers?: Record<string, Record<string, ProjectIndexIdentifierEntry>>;
     relationships?: {
-        assetReferences?: Array<{ fromResourcePath?: string; targetPath?: string }>;
+        assetReferences?: Array<{ fromResourcePath?: string; propertyPath?: string; targetPath?: string }>;
     };
-    resources?: Record<string, { gmlFiles?: Array<string>; name?: string; path?: string; resourceType?: string }>;
+    resources?: Record<
+        string,
+        {
+            gmlFiles?: Array<string>;
+            layers?: Array<Record<string, unknown>>;
+            name?: string;
+            path?: string;
+            resourceType?: string;
+        }
+    >;
     scopes?: Record<string, ProjectIndexScopeRecord>;
 };
 
@@ -144,7 +160,6 @@ const GRAPH_RESOURCE_NODE_KINDS = new Set<GraphNodeKind>([
     "particle_system",
     "path",
     "project",
-    "resource",
     "room",
     "script",
     "sequence",
@@ -180,7 +195,7 @@ function readLocationIndex(location: Record<string, unknown> | null): number | n
 }
 
 function readFirstDeclaration(entry: ProjectIndexIdentifierEntry): Record<string, unknown> | null {
-    const declarations = Array.isArray(entry.declarations) ? entry.declarations : [];
+    const declarations = Core.toArray(entry.declarations);
     return declarations.length > 0 && Core.isObjectLike(declarations[0]) ? declarations[0] : null;
 }
 
@@ -215,11 +230,18 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "struct_variable": {
             return `gml/var/struct::${entry.scopeId ?? entry.key ?? name}`;
         }
+        case "struct": {
+            return `gml/struct/${identifierId ?? entry.key ?? entry.scopeId ?? name}`;
+        }
+        case "script": {
+            return `gml/script/${name}`;
+        }
+        case "file": {
+            return `gml/file/${entry.filePath ?? entry.key ?? name}`;
+        }
         case "anim_curve":
-        case "constructor":
         case "data_file":
         case "extension":
-        case "file":
         case "font":
         case "note":
         case "object":
@@ -227,18 +249,14 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "particle_system":
         case "path":
         case "project":
-        case "resource":
         case "room":
-        case "script":
+        case "room_layer":
         case "sequence":
         case "shader":
         case "sound":
         case "sprite":
         case "tileset":
         case "timeline":
-        case "struct": {
-            return `gml/script/${name}`;
-        }
     }
 }
 
@@ -373,7 +391,7 @@ function findPrimaryFunctionNodeForFile(
 function resolveScopedFileOwnerNodeId(
     context: ProjectionContext,
     filePath: string | null,
-    fallbackFileNodeId: string,
+    fallbackOwnerNodeId: string,
     scopeId: string | null,
     locationLine: number | null
 ): string {
@@ -398,13 +416,13 @@ function resolveScopedFileOwnerNodeId(
         }
     }
 
-    return resolveFileSemanticOwnerNodeId(context, filePath) ?? fallbackFileNodeId;
+    return resolveFileSemanticOwnerNodeId(context, filePath) ?? fallbackOwnerNodeId;
 }
 
 function resolveCallerNodeId(
     context: ProjectionContext,
     relativePath: string,
-    callerFileNodeId: string,
+    callerOwnerNodeId: string,
     callRecord: Record<string, unknown>,
     fallbackScopeId: string | null
 ): string {
@@ -429,7 +447,7 @@ function resolveCallerNodeId(
             return primaryFunctionNodeId;
         }
     }
-    return resolveScopedFileOwnerNodeId(context, callerFilePath, callerFileNodeId, callerScopeId, callLocationLine);
+    return resolveScopedFileOwnerNodeId(context, callerFilePath, callerOwnerNodeId, callerScopeId, callLocationLine);
 }
 
 function resolveCallTargetNodeId(
@@ -490,7 +508,38 @@ function resolveResourcePathForFile(context: ProjectionContext, filePath: string
         return null;
     }
 
-    return context.resourcePathByGmlFile.get(filePath) ?? null;
+    const indexedResourcePath = context.resourcePathByGmlFile.get(filePath);
+    if (indexedResourcePath) {
+        return indexedResourcePath;
+    }
+
+    return inferResourcePathFromSiblingDirectory(context, filePath);
+}
+
+function inferResourcePathFromSiblingDirectory(context: ProjectionContext, filePath: string): string | null {
+    const resources = asRecord(context.projectIndex.resources);
+    if (filePath in resources) {
+        return filePath;
+    }
+
+    const fileDirectory = path.posix.dirname(filePath);
+    const fileDirectoryName = path.posix.basename(fileDirectory);
+    const siblingResourcePaths = Object.keys(resources).filter(
+        (resourcePath) => path.posix.dirname(resourcePath) === fileDirectory
+    );
+    if (siblingResourcePaths.length === 0) {
+        return null;
+    }
+
+    if (siblingResourcePaths.length === 1) {
+        return siblingResourcePaths[0] ?? null;
+    }
+
+    return (
+        siblingResourcePaths.find(
+            (resourcePath) => path.posix.basename(resourcePath, path.posix.extname(resourcePath)) === fileDirectoryName
+        ) ?? null
+    );
 }
 
 function resolveEnumOwnerNodeId(context: ProjectionContext, entry: ProjectIndexIdentifierEntry): string | null {
@@ -503,6 +552,58 @@ function resolveEnumOwnerNodeId(context: ProjectionContext, entry: ProjectIndexI
     return enumName ? lookupUniqueNodeByNameAndKind(context, enumName, "enum") : null;
 }
 
+function findNearestPrecedingStructNodeId(
+    context: ProjectionContext,
+    filePath: string | null,
+    declarationLine: number | null
+): string | null {
+    if (!filePath || declarationLine === null) {
+        return null;
+    }
+
+    const candidates = context.nodeRecords.filter(
+        (node) =>
+            node.kind === "struct" &&
+            node.filePath === filePath &&
+            node.lineStart !== null &&
+            node.lineStart <= declarationLine
+    );
+
+    candidates.sort((left, right) => (right.lineStart ?? 0) - (left.lineStart ?? 0));
+    return candidates[0]?.id ?? null;
+}
+
+function resolveStructOwnerNodeId(
+    context: ProjectionContext,
+    entry: ProjectIndexIdentifierEntry,
+    declaration: Record<string, unknown> | null
+): string | null {
+    const scopeId = getString(entry.scopeId);
+    const ownerNodeId = scopeId ? (context.nodeIdsByScopeId.get(scopeId) ?? null) : null;
+    const ownerNode = ownerNodeId ? (context.nodeRecords.find((node) => node.id === ownerNodeId) ?? null) : null;
+    if (ownerNode?.kind === "struct") {
+        return ownerNode.id;
+    }
+
+    const filePath = getString(declaration?.filePath) ?? getString(entry.filePath);
+    return findNearestPrecedingStructNodeId(context, filePath, readLocationLine(asRecord(declaration?.start)));
+}
+
+function projectStructVariableOwnershipEdge(
+    context: ProjectionContext,
+    node: GraphNodeRecord,
+    entry: ProjectIndexIdentifierEntry
+): void {
+    const structNodeId = resolveStructOwnerNodeId(context, entry, readFirstDeclaration(entry));
+    if (structNodeId && structNodeId !== node.id) {
+        context.edgeRecords.push({
+            fromId: structNodeId,
+            toId: node.id,
+            type: "defines"
+        });
+    }
+}
+
 function resolveFileSemanticOwnerNodeId(context: ProjectionContext, filePath: string | null): string | null {
     const resourcePath = resolveResourcePathForFile(context, filePath);
     if (!resourcePath) {
@@ -513,6 +614,10 @@ function resolveFileSemanticOwnerNodeId(context: ProjectionContext, filePath: st
         (node) => node.kind === "script" && node.resourcePath === resourcePath && node.scipSymbol !== null
     );
     return scriptNode?.id ?? createGraphNodeId(context.graphId, "resource", resourcePath);
+}
+
+function resolveProjectRootNodeId(context: ProjectionContext): string | null {
+    return context.nodeRecords.find((node) => node.kind === "project")?.id ?? null;
 }
 
 function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKind | null {
@@ -553,7 +658,7 @@ function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKin
     }
 }
 
-function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
+function normalizeResourceKind(resourceType: string | null): GraphNodeKind | null {
     switch (resourceType) {
         case "GMAnimCurve": {
             return "anim_curve";
@@ -585,6 +690,12 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
         case "GMRoom": {
             return "room";
         }
+        case "GMRInstanceLayer": {
+            return "room_layer";
+        }
+        case "GMRBackgroundLayer": {
+            return "room_layer";
+        }
         case "GMScript": {
             return "script";
         }
@@ -607,9 +718,22 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind {
             return "timeline";
         }
         default: {
-            return "resource";
+            return null;
         }
     }
+}
+
+function isGraphResourceProjectionEligible(resourcePath: string, resourceRecord: Record<string, unknown>): boolean {
+    if (resourcePath.split("/")[0] === "options") {
+        return false;
+    }
+
+    const resourceType = getString(resourceRecord.resourceType);
+    if (resourceType === "GMIncludedFile" && !resourcePath.startsWith("datafiles/")) {
+        return false;
+    }
+
+    return resourceType === null || !/^GM[A-Za-z0-9]*Options$/u.test(resourceType);
 }
 
 function readSourceText(rootPath: string, relativePath: string | null): string | null {
@@ -810,18 +934,32 @@ function projectResources(context: ProjectionContext): void {
 
     for (const [resourcePath, rawRecord] of Object.entries(resources)) {
         const resourceRecord = asRecord(rawRecord);
+        if (!isGraphResourceProjectionEligible(resourcePath, resourceRecord)) {
+            continue;
+        }
+
         const name =
             getString(resourceRecord.name) ?? path.posix.basename(resourcePath, path.posix.extname(resourcePath));
         const kind = normalizeResourceKind(getString(resourceRecord.resourceType));
+        if (!kind) {
+            continue;
+        }
+        const gmlFiles = Core.toArray(resourceRecord.gmlFiles);
+        const primaryGmlFile = gmlFiles.find(
+            (gmlFile): gmlFile is string => typeof gmlFile === "string" && gmlFile.trim().length > 0
+        );
         const nodeId = createGraphNodeId(context.graphId, "resource", resourcePath);
         const node = createNodeRecord({
             displayName: name,
+            filePath: kind === "script" ? (primaryGmlFile ?? null) : null,
             graphId: context.graphId,
             id: nodeId,
             kind,
             name,
             resourcePath,
+            scipSymbol: kind === "script" ? `gml/script/${name}` : null,
             summary: createGraphNodeSummary({
+                filePath: kind === "script" ? (primaryGmlFile ?? null) : null,
                 kind,
                 name,
                 resourcePath
@@ -837,15 +975,12 @@ function projectResources(context: ProjectionContext): void {
             containedResourceNodeIds.add(node.id);
         }
 
-        const gmlFiles = Array.isArray(resourceRecord.gmlFiles) ? resourceRecord.gmlFiles : [];
         for (const gmlFile of gmlFiles) {
             if (typeof gmlFile !== "string") {
                 continue;
             }
 
             context.resourcePathByGmlFile.set(gmlFile, resourcePath);
-            const fileNodeId = createGraphNodeId(context.graphId, "file", gmlFile);
-            context.edgeRecords.push({ fromId: node.id, toId: fileNodeId, type: "contains" });
         }
     }
 
@@ -863,6 +998,53 @@ function createObjectEventDisplayName(scopeRecord: ProjectIndexScopeRecord): str
     }
 
     return getString(scopeRecord.name);
+}
+
+function shouldProjectObjectEventFileNode(scopeRecord: ProjectIndexScopeRecord, firstFilePath: string | null): boolean {
+    if (!firstFilePath) {
+        return false;
+    }
+
+    const eventRecord = asRecord(scopeRecord.event);
+    const eventName = getString(eventRecord.name);
+    if (!eventName) {
+        return false;
+    }
+
+    return path.posix.basename(firstFilePath, path.posix.extname(firstFilePath)) === eventName;
+}
+
+function projectObjectEventFileNode(context: ProjectionContext, resourcePath: string, firstFilePath: string): void {
+    const fileName = path.posix.basename(firstFilePath);
+    const fileNodeId = createGraphNodeId(context.graphId, "file", firstFilePath);
+    const existingFileNode = context.nodeRecords.some((node) => node.id === fileNodeId);
+    if (existingFileNode) {
+        return;
+    }
+
+    const node = createNodeRecord({
+        displayName: firstFilePath,
+        filePath: firstFilePath,
+        graphId: context.graphId,
+        id: fileNodeId,
+        kind: "file",
+        name: fileName,
+        resourcePath,
+        summary: createGraphNodeSummary({
+            filePath: firstFilePath,
+            kind: "file",
+            name: fileName,
+            resourcePath
+        })
+    });
+
+    context.nodeRecords.push(node);
+    registerNodeIndexes(context, node);
+    context.edgeRecords.push({
+        fromId: createGraphNodeId(context.graphId, "resource", resourcePath),
+        toId: node.id,
+        type: "contains"
+    });
 }
 
 function createObjectEventName(scopeRecord: ProjectIndexScopeRecord, firstFilePath: string | null): string | null {
@@ -895,10 +1077,10 @@ function projectObjectEventScopes(context: ProjectionContext): void {
 
         const scopeId = getString(scopeRecord.id);
         const resourcePath = getString(scopeRecord.resourcePath);
-        const filePaths = (Array.isArray(scopeRecord.filePaths) ? scopeRecord.filePaths : []).filter(
+        const filePath_ = Core.toArray(scopeRecord.filePaths).find(
             (filePath): filePath is string => typeof filePath === "string" && filePath.trim().length > 0
         );
-        const firstFilePath = filePaths[0] ?? null;
+        const firstFilePath = filePath_ ?? null;
         const name = createObjectEventName(scopeRecord, firstFilePath);
         if (!scopeId || !resourcePath || !name) {
             continue;
@@ -930,37 +1112,80 @@ function projectObjectEventScopes(context: ProjectionContext): void {
             type: "contains"
         });
 
-        for (const filePath of filePaths) {
+        if (shouldProjectObjectEventFileNode(scopeRecord, firstFilePath)) {
+            projectObjectEventFileNode(context, resourcePath, firstFilePath);
+        }
+    }
+}
+
+function projectRoomLayerScopes(context: ProjectionContext): void {
+    const resources = asRecord(context.projectIndex.resources);
+
+    for (const [resourcePath, rawRecord] of Object.entries(resources)) {
+        const resourceRecord = asRecord(rawRecord);
+        const resourceType = getString(resourceRecord.resourceType);
+
+        if (resourceType !== "GMRoom") {
+            continue;
+        }
+
+        const roomNodeId = createGraphNodeId(context.graphId, "resource", resourcePath);
+        const layers = asRecord(resourceRecord.layers);
+        if (!Array.isArray(layers)) {
+            continue;
+        }
+
+        for (const rawLayer of layers) {
+            const layer = asRecord(rawLayer);
+            const layerResourceType = getString(layer.resourceType);
+            const layerName = getString(layer.name);
+
+            if (!isGraphRoomLayerResourceType(layerResourceType) || !layerName) {
+                continue;
+            }
+
+            const scopeId = `scope:room-layer:${resourcePath}:${layerName}`;
+            const node = createNodeRecord({
+                displayName: createRoomLayerDisplayName(layerName, layerResourceType),
+                filePath: null,
+                graphId: context.graphId,
+                id: createGraphNodeId(context.graphId, "scope", scopeId),
+                kind: "room_layer",
+                name: layerName,
+                resourcePath,
+                scopeId,
+                summary: createGraphNodeSummary({
+                    filePath: null,
+                    kind: "room_layer",
+                    name: layerName,
+                    resourcePath
+                })
+            });
+
+            context.nodeRecords.push(node);
+            registerNodeIndexes(context, node);
             context.edgeRecords.push({
-                fromId: node.id,
-                toId: createGraphNodeId(context.graphId, "file", filePath),
+                fromId: roomNodeId,
+                toId: node.id,
                 type: "contains"
             });
         }
     }
 }
 
-function projectFiles(context: ProjectionContext): void {
+function isGraphRoomLayerResourceType(resourceType: string | null): resourceType is string {
+    return typeof resourceType === "string" && /^GMR[A-Za-z0-9]+Layer$/u.test(resourceType);
+}
+
+function createRoomLayerDisplayName(layerName: string, layerResourceType: string): string {
+    const layerTypeLabel = layerResourceType.replace(/^GMR/u, "").replace(/Layer$/u, " Layer");
+    return `${layerName} (${layerTypeLabel})`;
+}
+
+function projectFileRecords(context: ProjectionContext): void {
     const files = asRecord(context.projectIndex.files);
     for (const relativePath of Object.keys(files)) {
         context.fileRecords.push(createFileRecord(context.rootPath, relativePath));
-        const nodeId = createGraphNodeId(context.graphId, "file", relativePath);
-        const node = createNodeRecord({
-            displayName: relativePath,
-            filePath: relativePath,
-            graphId: context.graphId,
-            id: nodeId,
-            kind: "file",
-            name: path.posix.basename(relativePath),
-            summary: createGraphNodeSummary({
-                filePath: relativePath,
-                kind: "file",
-                name: path.posix.basename(relativePath)
-            }),
-            snippet: ""
-        });
-        context.nodeRecords.push(node);
-        registerNodeIndexes(context, node);
     }
 }
 
@@ -1013,13 +1238,6 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                     summary
                 })
             ) {
-                if (filePath) {
-                    context.edgeRecords.push({
-                        fromId: createGraphNodeId(context.graphId, "file", filePath),
-                        toId: createGraphNodeId(context.graphId, "resource", resourcePath),
-                        type: "defines"
-                    });
-                }
                 continue;
             }
             const node = createNodeRecord({
@@ -1049,14 +1267,6 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 });
             }
 
-            if (filePath) {
-                context.edgeRecords.push({
-                    fromId: createGraphNodeId(context.graphId, "file", filePath),
-                    toId: node.id,
-                    type: "defines"
-                });
-            }
-
             if (kind === "enum_member") {
                 const enumNodeId = resolveEnumOwnerNodeId(context, entry);
                 if (enumNodeId) {
@@ -1066,6 +1276,10 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                         type: "defines"
                     });
                 }
+            }
+
+            if (kind === "struct_variable") {
+                projectStructVariableOwnershipEdge(context, node, entry);
             }
         }
     }
@@ -1097,7 +1311,7 @@ function projectIdentifierOwnershipEdges(
             continue;
         }
 
-        const declarations = Array.isArray(entry.declarations) ? entry.declarations : [];
+        const declarations = Core.toArray(entry.declarations);
         for (const rawDeclaration of declarations) {
             const declaration = asRecord(rawDeclaration);
             const filePath = getString(declaration.filePath) ?? getString(entry.filePath);
@@ -1105,10 +1319,15 @@ function projectIdentifierOwnershipEdges(
                 continue;
             }
 
-            const fileNodeId = createGraphNodeId(context.graphId, "file", filePath);
             const scopeId = getString(declaration.scopeId) ?? getString(entry.scopeId);
             const locationLine = readLocationLine(asRecord(declaration.start));
-            const sourceNodeId = resolveScopedFileOwnerNodeId(context, filePath, fileNodeId, scopeId, locationLine);
+            const sourceNodeId = resolveScopedFileOwnerNodeId(
+                context,
+                filePath,
+                resolveProjectRootNodeId(context) ?? targetNodeId,
+                scopeId,
+                locationLine
+            );
             context.edgeRecords.push({
                 fromId: sourceNodeId,
                 toId: targetNodeId,
@@ -1116,7 +1335,7 @@ function projectIdentifierOwnershipEdges(
             });
         }
 
-        const references = Array.isArray(entry.references) ? entry.references : [];
+        const references = Core.toArray(entry.references);
         for (const rawReference of references) {
             const reference = asRecord(rawReference);
             const filePath = getString(reference.filePath) ?? getString(entry.filePath);
@@ -1124,10 +1343,15 @@ function projectIdentifierOwnershipEdges(
                 continue;
             }
 
-            const fileNodeId = createGraphNodeId(context.graphId, "file", filePath);
             const scopeId = getString(reference.scopeId) ?? getString(entry.scopeId);
             const locationLine = readLocationLine(asRecord(reference.start));
-            const sourceNodeId = resolveScopedFileOwnerNodeId(context, filePath, fileNodeId, scopeId, locationLine);
+            const sourceNodeId = resolveScopedFileOwnerNodeId(
+                context,
+                filePath,
+                resolveProjectRootNodeId(context) ?? targetNodeId,
+                scopeId,
+                locationLine
+            );
             context.edgeRecords.push({
                 fromId: sourceNodeId,
                 toId: targetNodeId,
@@ -1141,8 +1365,12 @@ function projectRelationshipEdges(context: ProjectionContext): void {
     const files = asRecord(context.projectIndex.files);
     for (const [relativePath, rawFileRecord] of Object.entries(files)) {
         const fileRecord = asRecord(rawFileRecord);
-        const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
-        const callerFileNodeId = createGraphNodeId(context.graphId, "file", relativePath);
+        const scriptCalls = Core.toArray(fileRecord.scriptCalls);
+        const callerOwnerNodeId =
+            resolveFileSemanticOwnerNodeId(context, relativePath) ?? resolveProjectRootNodeId(context);
+        if (!callerOwnerNodeId) {
+            continue;
+        }
 
         for (const rawCall of scriptCalls) {
             const callRecord = asRecord(rawCall);
@@ -1154,7 +1382,7 @@ function projectRelationshipEdges(context: ProjectionContext): void {
             const callerNodeId = resolveCallerNodeId(
                 context,
                 relativePath,
-                callerFileNodeId,
+                callerOwnerNodeId,
                 callRecord,
                 getString(fileRecord.scopeId)
             );
@@ -1177,14 +1405,76 @@ function projectRelationshipEdges(context: ProjectionContext): void {
             continue;
         }
 
+        const edgeType = classifyAssetReferenceEdgeType(reference);
         context.edgeRecords.push({
-            fromId: createGraphNodeId(context.graphId, "resource", fromResourcePath),
+            fromId: resolveAssetReferenceSourceNodeId(context, reference, fromResourcePath, edgeType),
             toId: createGraphNodeId(context.graphId, "resource", targetPath),
-            type: isProjectManifestPath(fromResourcePath) ? "contains" : "references"
+            type: edgeType
         });
     }
 
     projectGlobalVariableReferenceEdges(context);
+}
+
+function resolveAssetReferenceSourceNodeId(
+    context: ProjectionContext,
+    reference: Record<string, unknown>,
+    fromResourcePath: string,
+    edgeType: GraphEdgeType
+): string {
+    if (edgeType !== "placed_in_room") {
+        return createGraphNodeId(context.graphId, "resource", fromResourcePath);
+    }
+
+    const roomLayerNodeId = resolveRoomLayerNodeIdFromAssetReference(context, reference, fromResourcePath);
+    return roomLayerNodeId ?? createGraphNodeId(context.graphId, "resource", fromResourcePath);
+}
+
+function resolveRoomLayerNodeIdFromAssetReference(
+    context: ProjectionContext,
+    reference: Record<string, unknown>,
+    roomResourcePath: string
+): string | null {
+    const propertyPath = getString(reference.propertyPath);
+    if (!propertyPath) {
+        return null;
+    }
+
+    const layerMatch = /^layers\.(\d+)\./u.exec(propertyPath);
+    const layerIndex = Number(layerMatch?.[1]);
+    if (!Number.isInteger(layerIndex) || layerIndex < 0) {
+        return null;
+    }
+
+    const roomRecord = asRecord(asRecord(context.projectIndex.resources)[roomResourcePath]);
+    const layers = roomRecord.layers;
+    if (!Array.isArray(layers) || layerIndex >= layers.length) {
+        return null;
+    }
+
+    const layerRecord = asRecord(layers[layerIndex]);
+    const layerName = getString(layerRecord.name);
+    const layerResourceType = getString(layerRecord.resourceType);
+    if (!layerName || !isGraphRoomLayerResourceType(layerResourceType)) {
+        return null;
+    }
+
+    return createGraphNodeId(context.graphId, "scope", `scope:room-layer:${roomResourcePath}:${layerName}`);
+}
+
+function classifyAssetReferenceEdgeType(reference: Record<string, unknown>): GraphEdgeType {
+    const propertyPath = getString(reference.propertyPath);
+    if (propertyPath?.endsWith("parentObjectId")) {
+        return "inherits";
+    }
+
+    const fromResourcePath = getString(reference.fromResourcePath);
+    const targetPath = getString(reference.targetPath);
+    if (fromResourcePath?.startsWith("rooms/") && targetPath?.startsWith("objects/")) {
+        return "placed_in_room";
+    }
+
+    return fromResourcePath && isProjectManifestPath(fromResourcePath) ? "contains" : "references";
 }
 
 function addCrossGraphEdges(
@@ -1197,12 +1487,16 @@ function addCrossGraphEdges(
     }
 
     const crossEdges: Array<GraphEdgeRecord> = [];
-    const projectFileRecords = asRecord(projectContext.projectIndex.files);
+    const projectIndexedFiles = asRecord(projectContext.projectIndex.files);
 
-    for (const [relativePath, rawFileRecord] of Object.entries(projectFileRecords)) {
+    for (const [relativePath, rawFileRecord] of Object.entries(projectIndexedFiles)) {
         const fileRecord = asRecord(rawFileRecord);
-        const scriptCalls = Array.isArray(fileRecord.scriptCalls) ? fileRecord.scriptCalls : [];
-        const projectCallerFileNodeId = createGraphNodeId("project", "file", relativePath);
+        const scriptCalls = Core.toArray(fileRecord.scriptCalls);
+        const projectCallerOwnerNodeId =
+            resolveFileSemanticOwnerNodeId(projectContext, relativePath) ?? resolveProjectRootNodeId(projectContext);
+        if (!projectCallerOwnerNodeId) {
+            continue;
+        }
 
         for (const rawCall of scriptCalls) {
             const callRecord = asRecord(rawCall);
@@ -1219,7 +1513,7 @@ function addCrossGraphEdges(
             const projectCallerNodeId = resolveCallerNodeId(
                 projectContext,
                 relativePath,
-                projectCallerFileNodeId,
+                projectCallerOwnerNodeId,
                 callRecord,
                 getString(fileRecord.scopeId)
             );
@@ -1452,6 +1746,18 @@ function rankSemanticMatches(
     }
 }
 
+function calculateExactGraphSearchMatchScore(row: {
+    kind: string;
+    resourcePath: string | null;
+    scipSymbol: string | null;
+}): number {
+    if (row.kind === "script" && row.resourcePath !== null) {
+        return 8;
+    }
+
+    return row.scipSymbol ? 7 : 5;
+}
+
 function applyGraphProximityBoost(database: GraphDatabase, candidateScores: Map<string, number>): void {
     const highConfidenceNodeIds = [...candidateScores.entries()]
         .filter(([, score]) => score >= 5)
@@ -1572,6 +1878,49 @@ function readGraphDatabaseIntegrityStatus(database: GraphDatabase): GraphDatabas
     });
 }
 
+async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndexSnapshot> {
+    const { yyFiles, gmlFiles } = await scanProjectTree(projectRoot);
+    const manifestMtimes: Record<string, number> = {};
+    const sourceMtimes: Record<string, number> = {};
+    for (const file of yyFiles) {
+        if (file.mtimeMs !== null) {
+            manifestMtimes[file.relativePath] = file.mtimeMs;
+        }
+    }
+    for (const file of gmlFiles) {
+        if (file.mtimeMs !== null) {
+            sourceMtimes[file.relativePath] = file.mtimeMs;
+        }
+    }
+
+    const baseParser = getDefaultProjectIndexParser();
+    const tolerantParser = createTolerantProjectIndexParser(baseParser);
+
+    const coordinator = createProjectIndexCoordinator({
+        buildIndex: async (resolvedRoot, fsFacade, options) => {
+            return await buildProjectIndex(resolvedRoot, fsFacade, {
+                ...options,
+                parseGml: tolerantParser
+            });
+        }
+    });
+    try {
+        const descriptor = createProjectIndexDescriptor({
+            projectRoot,
+            manifestMtimes,
+            sourceMtimes
+        });
+
+        const ready = await coordinator.ensureReady({
+            ...descriptor,
+            projectRoot
+        });
+        return ready.projectIndex as ProjectIndexSnapshot;
+    } finally {
+        coordinator.dispose();
+    }
+}
+
 /**
  * Build or rebuild the SQLite-backed graph index.
  */
@@ -1594,22 +1943,24 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
             ensureGraphEmbeddingModelAssets(config.embeddings);
         }
         const buildStart = performance.now();
-        const projectIndex = (await buildProjectIndex(config.projectRoot)) as ProjectIndexSnapshot;
+        const projectIndex = await getOrBuildProjectIndex(config.projectRoot);
         const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
-        projectFiles(projectContext);
         projectResources(projectContext);
         projectObjectEventScopes(projectContext);
+        projectRoomLayerScopes(projectContext);
+        projectFileRecords(projectContext);
         projectIdentifierCollections(projectContext);
         projectRelationshipEdges(projectContext);
         removeDanglingEdges(projectContext);
 
         let toolsetContext: ProjectionContext | null = null;
         if (config.toolsetRoot) {
-            const toolsetIndex = (await buildProjectIndex(config.toolsetRoot)) as ProjectIndexSnapshot;
+            const toolsetIndex = await getOrBuildProjectIndex(config.toolsetRoot);
             toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
-            projectFiles(toolsetContext);
             projectResources(toolsetContext);
             projectObjectEventScopes(toolsetContext);
+            projectRoomLayerScopes(toolsetContext);
+            projectFileRecords(toolsetContext);
             projectIdentifierCollections(toolsetContext);
             projectRelationshipEdges(toolsetContext);
             removeDanglingEdges(toolsetContext);
@@ -1714,10 +2065,17 @@ export function searchGraphIndex(
         }
 
         const exactRows = database
-            .prepare("SELECT id, scip_symbol AS scipSymbol FROM nodes WHERE name = ? OR scip_symbol = ?")
-            .all(normalizedQuery, normalizedQuery) as Array<{ id: string; scipSymbol: string | null }>;
+            .prepare(
+                "SELECT id, kind, resource_path AS resourcePath, scip_symbol AS scipSymbol FROM nodes WHERE name = ? OR scip_symbol = ?"
+            )
+            .all(normalizedQuery, normalizedQuery) as Array<{
+            id: string;
+            kind: string;
+            resourcePath: string | null;
+            scipSymbol: string | null;
+        }>;
         for (const row of exactRows) {
-            candidateScores.set(row.id, (candidateScores.get(row.id) ?? 0) + (row.scipSymbol ? 7 : 5));
+            candidateScores.set(row.id, (candidateScores.get(row.id) ?? 0) + calculateExactGraphSearchMatchScore(row));
         }
 
         const aliasRows = database

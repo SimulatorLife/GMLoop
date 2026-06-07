@@ -322,7 +322,7 @@ Then implement the UI with:
 
 - The canonical base class is [light-dom-lit-element.ts](../../../src/ui/src/app/components/light-dom-lit-element.ts).
 - The app-shell composition pattern lives in [gm-app-shell.ts](../../../src/ui/src/app/components/gm-app-shell.ts).
-- Toolbar interaction and event emission patterns live in [gm-graph-toolbar.ts](../../../src/ui/src/app/components/gm-graph-toolbar.ts).
+- Toolbar interaction and event emission patterns live in [gm-page-toolbar.ts](../../../src/ui/src/app/components/gm-page-toolbar.ts).
 - Existing custom events currently use `bubbles: true` and may also use `composed: true`; do not add new shadow-DOM-oriented rationale around that. Match the repo's integration needs rather than generic custom-element advice.
 
 ## Implementation Checklist

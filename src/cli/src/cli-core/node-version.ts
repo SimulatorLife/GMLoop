@@ -28,7 +28,7 @@ interface NodeEnvironment {
 }
 
 function parseVersionPart(part: string): number {
-    return Number.parseInt(part);
+    return Number.parseInt(part, 10);
 }
 
 function buildUnsupportedVersionError(label?: string): Error {

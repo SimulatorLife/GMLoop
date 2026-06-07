@@ -1,5 +1,3 @@
-import "./components/index.js";
-
 import type { GraphVisualizationData, GraphVisualizationRenderOptions } from "../graph/types.js";
 import {
     createGraphVisualizationUiModel,
@@ -12,8 +10,13 @@ import {
  */
 export type GraphVisualizationAppBootstrapDependencies = Readonly<{
     callbacks?: Readonly<{
-        onOpenProject?: () => void | Promise<void>;
-        onRegenerate?: () => void | Promise<void>;
+        onOpenProject?: GraphVisualizationUiCallbacks["onOpenProject"];
+        onRegenerate?: GraphVisualizationUiCallbacks["onRegenerate"];
+        onCreateConfig?: GraphVisualizationUiCallbacks["onCreateConfig"];
+        onSaveConfig?: GraphVisualizationUiCallbacks["onSaveConfig"];
+        onRunFix?: GraphVisualizationUiCallbacks["onRunFix"];
+        onStartLiveReload?: GraphVisualizationUiCallbacks["onStartLiveReload"];
+        onStopLiveReload?: GraphVisualizationUiCallbacks["onStopLiveReload"];
     }>;
     data: GraphVisualizationData;
     options: GraphVisualizationRenderOptions;
@@ -29,7 +32,12 @@ export function bootstrapGraphVisualizationLitApp(dependencies: GraphVisualizati
     const defaultCallbacks = createNoopGraphVisualizationUiCallbacks();
     const callbacks: GraphVisualizationUiCallbacks = {
         onOpenProject: dependencies.callbacks?.onOpenProject ?? defaultCallbacks.onOpenProject,
-        onRegenerate: dependencies.callbacks?.onRegenerate ?? defaultCallbacks.onRegenerate
+        onRegenerate: dependencies.callbacks?.onRegenerate ?? defaultCallbacks.onRegenerate,
+        onCreateConfig: dependencies.callbacks?.onCreateConfig ?? defaultCallbacks.onCreateConfig,
+        onSaveConfig: dependencies.callbacks?.onSaveConfig ?? defaultCallbacks.onSaveConfig,
+        onRunFix: dependencies.callbacks?.onRunFix ?? defaultCallbacks.onRunFix,
+        onStartLiveReload: dependencies.callbacks?.onStartLiveReload ?? defaultCallbacks.onStartLiveReload,
+        onStopLiveReload: dependencies.callbacks?.onStopLiveReload ?? defaultCallbacks.onStopLiveReload
     };
 
     Reflect.set(appElement, "model", model);

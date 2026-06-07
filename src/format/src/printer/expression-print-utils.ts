@@ -176,10 +176,6 @@ export function shouldOmitSyntheticParens(path: any, _options: any): boolean {
         return shouldFlattenMultiplicationChain(parent, expression, path);
     }
 
-    if (parent.type === "CallExpression") {
-        return shouldFlattenSyntheticCall(parent, expression, path);
-    }
-
     if (parent.type !== "BinaryExpression") {
         return false;
     }
@@ -313,7 +309,7 @@ export function printEmptyBlock(path: any, options: any): any {
     }
 
     const comments = Core.getCommentArray(node);
-    const hasPrintableComments = comments.some(Core.isCommentNode as any);
+    const hasPrintableComments = comments.some(Core.isCommentNode);
 
     if (hasPrintableComments) {
         const sourceMetadata = resolvePrinterSourceMetadata(options);
@@ -323,7 +319,7 @@ export function printEmptyBlock(path: any, options: any): any {
 
         const trailingDocs = [hardline, "}"];
         if (shouldAddTrailingBlankLine) {
-            trailingDocs.unshift(lineSuffixBoundary as any, hardline as any);
+            trailingDocs.unshift(lineSuffixBoundary as any, hardline);
         }
 
         const inlineDangling = printDanglingComments(path, options, (comment: any) => comment.attachToBrace);
@@ -343,11 +339,13 @@ export function printEmptyBlock(path: any, options: any): any {
 // Private helpers – parenthesis-flattening decision tree
 // ---------------------------------------------------------------------------
 
-function getBinaryOperatorInfo(operator: any): any {
-    if (operator === undefined) {
-        return;
-    }
-    return Core.BINARY_OPERATORS[operator];
+// Inline operator lookup: direct Map access avoids wrapper call overhead.
+// Called on the hot path for every ParenthesizedExpression during formatting.
+// Accepts `unknown` to match all call-site argument types (AST node properties
+// come in as `any`). The undefined guard preserves the original early-exit
+// contract so callers that pass `undefined` still get a clean undefined return.
+function getBinaryOperatorInfo(operator: unknown) {
+    return operator === undefined ? undefined : Core.BINARY_OPERATORS[operator as string];
 }
 
 // For ternary expressions, omit unnecessary parentheses around simple identifiers
@@ -510,13 +508,20 @@ function shouldFlattenSyntheticBinary(parent: any, expression: any, _path: any):
         return false;
     }
 
-    // Flatten additive synthetic parentheses when associativity is preserved.
-    // Safe: (a + b) - c, (a - b) + c, a + (b - c), a + (b + c)
-    // Unsafe: a - (b + c), a - (b - c)
+    // Flatten additive synthetic parentheses only when left-to-right associativity
+    // guarantees the result is unchanged. This relies on precedence (all additive ops
+    // share prec 12) and associativity: a - b + c == (a - b) + c, but a - (b + c) !=
+    // a - b + c, and a - (b - c) != (a - b) - c. The comment below enumerates the
+    // safe cases so future readers can verify the guard before extending the logic.
+    // Safe (associativity preserved): (a + b) - c, (a - b) + c, a + (b - c), a + (b + c)
+    // Unsafe (changes result): a - (b + c), a - (b - c)
     if (parentKey === "left") {
         return true;
     }
 
+    // For the right operand, only flatten when the parent operator is "+" — subtraction
+    // on the right is non-associative and would change the result. For example,
+    // a - (b + c) should NOT flatten to a - b + c since subtraction is not commutative.
     return parentKey === "right" && parent.operator === "+";
 }
 
@@ -539,10 +544,6 @@ function shouldFlattenMultiplicationChain(parent: any, expression: any, _path: a
         (parent.operator === "*" || parent.operator === "/") &&
         (expression.operator === "*" || expression.operator === "/")
     );
-}
-
-function shouldFlattenSyntheticCall(_parent: any, _expression: any, _path: any): boolean {
-    return false;
 }
 
 function shouldFlattenComparisonLogicalTest(parent: any, expression: any, _path: any): boolean {
@@ -610,13 +611,9 @@ function maybePrintInlineEmptyBlockComment(path: any, options: any): any {
 
     const comment = comments[inlineIndex];
     const commentLeadingWS =
-        typeof comment === "object" && comment !== null && "leadingWS" in comment
-            ? (comment as { leadingWS: unknown }).leadingWS
-            : undefined;
+        typeof comment === "object" && comment !== null && "leadingWS" in comment ? comment.leadingWS : undefined;
     const commentTrailingWS =
-        typeof comment === "object" && comment !== null && "trailingWS" in comment
-            ? (comment as { trailingWS: unknown }).trailingWS
-            : undefined;
+        typeof comment === "object" && comment !== null && "trailingWS" in comment ? comment.trailingWS : undefined;
     const leadingSpacing = getInlineBlockCommentSpacing(commentLeadingWS, " ");
     const trailingSpacing = getInlineBlockCommentSpacing(commentTrailingWS, " ");
 
@@ -656,5 +653,5 @@ function getInlineBlockCommentSpacing(text: unknown, fallback: string): string {
         return fallback;
     }
 
-    return hasLineBreak(text as string) ? fallback : (text as string);
+    return hasLineBreak(text) ? fallback : (text as string);
 }

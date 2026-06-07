@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { BinaryExpressionNode, TernaryExpressionNode, UnaryExpressionNode } from "../src/emitter/ast.js";
 import {
     tryFoldConstantExpression,
     tryFoldConstantTernaryExpression,
@@ -104,45 +105,37 @@ void test("constant folding: power", () => {
 // String operations
 // ---------------------------------------------------------------------------
 
-// Unquoted strings (hand-crafted AST without parser quoting).
+// String equality and inequality: both unquoted (hand-crafted) and parser-quoted
+// ASTs (as produced by the GML parser, where value includes surrounding quotes)
+// must fold identically. A single table-driven test covers all variants.
 
-void test("constant folding: string concatenation", () => {
+void test("constant folding: string equality and inequality for all quoting styles", () => {
+    // (operator, left, right, expected)
+    const cases: Array<[string, string, string, boolean | string]> = [
+        // Unquoted strings
+        ["==", "player", "player", true],
+        ["!=", "hello", "world", true],
+        // Parser-quoted strings (value includes surrounding double-quote chars)
+        ["==", '"player"', '"player"', true],
+        ["!=", '"hello"', '"world"', true],
+        // Mixed quoting: parser-quoted left operand, unquoted right
+        ["+", '"hello"', " suffix", "hello suffix"],
+        // Same-string inequality is false
+        ["==", '"hello"', '"world"', false]
+    ];
+
+    for (const [op, left, right, expected] of cases) {
+        assert.strictEqual(tryFoldConstantExpression(binary(op, left, right)), expected);
+    }
+});
+
+// Unquoted string concatenation is verified with the general table above.
+// This standalone test documents the "unquoted" pattern explicitly for clarity
+// in the arithmetic section, which is the primary focus of the test file.
+
+void test("constant folding: string concatenation (unquoted)", () => {
     const ast = binary("+", "hello", " world");
     assert.strictEqual(tryFoldConstantExpression(ast), "hello world");
-});
-
-void test("constant folding: string equality", () => {
-    const ast = binary("==", "player", "player");
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: string inequality", () => {
-    const ast = binary("!==", "hello", "world");
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-// Parser-quoted strings (value includes surrounding double-quote characters,
-// as produced by the GML parser).
-
-void test("constant folding: parser-quoted string concatenation", () => {
-    // verify that parser quotes are stripped before concatenating.
-    const ast = binary("+", '"hello"', '" world"');
-    assert.strictEqual(tryFoldConstantExpression(ast), "hello world");
-});
-
-void test("constant folding: parser-quoted string equality", () => {
-    const ast = binary("==", '"player"', '"player"');
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: parser-quoted string inequality", () => {
-    const ast = binary("!=", '"hello"', '"world"');
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: mixed parser-quoted and unquoted concatenation", () => {
-    const ast = binary("+", '"hello"', " suffix");
-    assert.strictEqual(tryFoldConstantExpression(ast), "hello suffix");
 });
 
 // ---------------------------------------------------------------------------
@@ -201,6 +194,56 @@ void test("constant folding: strict comparison not equal", () => {
 void test("constant folding: comparison not equal", () => {
     const ast = binary("!=", 5, 3);
     assert.strictEqual(tryFoldConstantExpression(ast), true);
+});
+
+// ---------------------------------------------------------------------------
+// Mixed-type boolean comparisons (GML loose equality semantics)
+// All boolean-normalisation cases (boolean ↔ number, boolean ↔ string boolean)
+// are driven by a single table so every value variant is exercised without
+// separate one-off tests. Each row covers a distinct operator/value combination.
+// ---------------------------------------------------------------------------
+
+void test("constant folding: mixed-type boolean comparisons via table", () => {
+    // (operator, left, right, expected)
+    const cases: Array<[string, boolean | string | number, boolean | string | number, boolean | null]> = [
+        // Loose equality: boolean vs number
+        ["==", true, 1, true],
+        ["==", false, 0, true],
+        ["!=", true, 0, true],
+        ["!=", false, 1, true],
+        // Strict equality: boolean vs number (type identity preserved)
+        ["===", true, 1, false],
+        ["===", false, 0, false],
+        ["!==", true, 1, true],
+        ["!==", false, 0, true],
+        // Loose equality: string boolean ("true"/"false") vs boolean literal
+        ["==", "true", true, true],
+        ["==", "false", false, true],
+        ["==", true, "true", true],
+        ["!=", "true", false, true],
+        // Loose equality: string boolean vs number (string is not a number → no fold)
+        ["==", "true", 1, null],
+        // String that is not a boolean does not fold
+        ["==", "maybe", true, null]
+    ];
+
+    for (const [op, left, right, expected] of cases) {
+        assert.strictEqual(
+            tryFoldConstantExpression(binary(op, left, right)),
+            expected,
+            `failed for ${op} ${String(left)} ${String(right)}`
+        );
+    }
+});
+
+void test("constant folding: strict equality for identical floats", () => {
+    const ast = binary("===", 42, 42);
+    assert.strictEqual(tryFoldConstantExpression(ast), true);
+});
+
+void test("constant folding: strict inequality for identical floats", () => {
+    const ast = binary("!==", 42, 42);
+    assert.strictEqual(tryFoldConstantExpression(ast), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -347,7 +390,7 @@ void test("constant folding: does not fold mixed types", () => {
     const ast: ReturnType<typeof binary> = {
         type: "BinaryExpression" as const,
         left: { type: "Literal" as const, value: 5 },
-        right: { type: "Literal" as const, value: "hello" as string | number | boolean },
+        right: { type: "Literal" as const, value: "hello" },
         operator: "+"
     };
     assert.strictEqual(tryFoldConstantExpression(ast), null);
@@ -505,4 +548,65 @@ void test("ternary constant folding: guards against both branches missing", () =
         // both consequent and alternate intentionally omitted
     });
     assert.strictEqual(tryFoldConstantTernaryExpression(ast), null);
+});
+
+// ---------------------------------------------------------------------------
+// Regression: malformed AST guard-clause tests
+// ---------------------------------------------------------------------------
+
+// These tests verify that the folding functions do not crash on edge-case
+// ASTs where the parser guarantees a type field but not structural properties.
+
+void test("tryFoldConstantExpression: malformed BinaryExpression with missing left returns null", () => {
+    const malformed = { type: "BinaryExpression", operator: "+" } as unknown as BinaryExpressionNode;
+    // Before the guard, this would throw: Cannot read properties of undefined (reading 'type')
+    assert.strictEqual(tryFoldConstantExpression(malformed), null);
+});
+
+void test("tryFoldConstantExpression: malformed BinaryExpression with missing right returns null", () => {
+    const malformed = {
+        type: "BinaryExpression",
+        operator: "+",
+        left: { type: "Literal", value: 1 }
+    } as unknown as BinaryExpressionNode;
+    // Before the guard, this would throw: Cannot read properties of undefined (reading 'type')
+    assert.strictEqual(tryFoldConstantExpression(malformed), null);
+});
+
+void test("tryFoldConstantUnaryExpression: malformed UnaryExpression with missing argument returns null", () => {
+    const malformed = { type: "UnaryExpression", operator: "!" } as unknown as UnaryExpressionNode;
+    // Before the guard, this would throw: Cannot read properties of undefined (reading 'type')
+    assert.strictEqual(tryFoldConstantUnaryExpression(malformed), null);
+});
+
+void test("tryFoldConstantUnaryExpression: Literal argument with missing value property returns null", () => {
+    const malformed = {
+        type: "UnaryExpression",
+        operator: "-",
+        argument: { type: "Literal" } // value is missing/undefined
+    } as unknown as UnaryExpressionNode;
+    // Before the guard, this would throw: Cannot read properties of undefined (reading 'value')
+    assert.strictEqual(tryFoldConstantUnaryExpression(malformed), null);
+});
+
+void test("tryFoldConstantTernaryExpression: malformed TernaryExpression with missing test returns null", () => {
+    const malformed = {
+        type: "TernaryExpression",
+        consequent: { type: "Identifier", name: "a" },
+        alternate: { type: "Identifier", name: "b" }
+    } as unknown as TernaryExpressionNode;
+    // Before the guard, accessing test.type would throw: Cannot read properties of undefined (reading 'type')
+    assert.strictEqual(tryFoldConstantTernaryExpression(malformed), null);
+});
+
+void test("tryFoldConstantTernaryExpression: Literal test with missing value property returns null", () => {
+    const malformed = {
+        type: "TernaryExpression",
+        test: { type: "Literal" }, // value is missing/undefined
+        consequent: { type: "Identifier", name: "a" },
+        alternate: { type: "Identifier", name: "b" }
+    } as unknown as TernaryExpressionNode;
+    // Before the guard, toBooleanLiteral(undefined) returns null, so folding is skipped.
+    // The consequent/alternate guard also protects against empty branches.
+    assert.strictEqual(tryFoldConstantTernaryExpression(malformed), null);
 });

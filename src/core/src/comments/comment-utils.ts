@@ -611,19 +611,21 @@ export function hasCommentImmediatelyBefore(text: unknown, index: unknown) {
     const first = normalizedText.charCodeAt(lineStart);
     const second = lineStart + 1 <= lineEnd ? normalizedText.charCodeAt(lineStart + 1) : -1;
 
+    // Line comment: // or /-
     if (first === 47) {
-        if (second === 47 || second === 42) {
-            return true;
-        }
-    } else if (first === 42) {
-        return true;
+        return second === 47 || second === 42;
     }
 
-    return (
-        lineEnd >= lineStart + 1 &&
-        normalizedText.charCodeAt(lineEnd) === 47 &&
-        normalizedText.charCodeAt(lineEnd - 1) === 42
-    );
+    // Block comment start: /*
+    if (first === 42) {
+        return (
+            lineEnd >= lineStart + 1 &&
+            normalizedText.charCodeAt(lineEnd) === 47 &&
+            normalizedText.charCodeAt(lineEnd - 1) === 42
+        );
+    }
+
+    return false;
 }
 
 /**

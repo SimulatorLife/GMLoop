@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { type FSWatcher, type PathLike, promises as fs, type WatchListener, type WatchOptions } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { createGraphCommand } from "../src/commands/graph.js";
+import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
 
 const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
 const SKIP_CLI_ENV_VALUE = "1";
@@ -78,6 +78,37 @@ async function createDualRootFixture(): Promise<{
     };
 }
 
+async function waitForCondition(predicate: () => boolean, failureMessage: string): Promise<void> {
+    const deadline = Date.now() + 1000;
+    while (Date.now() < deadline) {
+        if (predicate()) {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    assert.fail(failureMessage);
+}
+
+function createLiveReloadStatusSnapshot() {
+    return {
+        avgHotReloadLatencyMs: null,
+        errorCount: 0,
+        maxPatchHistory: 50,
+        patchCount: 0,
+        patchHistorySize: 0,
+        p95HotReloadLatencyMs: null,
+        recentErrors: [],
+        recentPatches: [],
+        runtimeUrl: null,
+        scanComplete: true,
+        totalPatchCount: 0,
+        uptimeMs: 10,
+        watcherStatus: "running" as const,
+        websocketClients: 0
+    };
+}
+
 void test("CLI command catalog includes graph leaf commands", async () => {
     const cliModule = await loadCliModule();
     const catalog = cliModule.getCliCommandCatalog();
@@ -95,6 +126,79 @@ void test("CLI command catalog includes graph leaf commands", async () => {
     assert.ok(catalog.some((entry) => entry.displayName === "symbol neighbors"));
     assert.ok(catalog.some((entry) => entry.displayName === "symbol usages"));
     assert.ok(!catalog.some((entry) => entry.displayName === "performance"));
+});
+
+void test("graph live-reload ready model requires a runtime URL", () => {
+    const snapshot = createLiveReloadStatusSnapshot();
+    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
+        {
+            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel(null)
+        },
+        snapshot
+    );
+
+    assert.equal(model, null);
+});
+
+void test("graph live-reload ready model preserves runtime URL and status snapshot", () => {
+    const snapshot = createLiveReloadStatusSnapshot();
+    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
+        {
+            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/")
+        },
+        snapshot
+    );
+
+    assert.equal(model?.endpoints.runtimeUrl, "http://127.0.0.1:51264/");
+    assert.equal(model?.statusSnapshot, snapshot);
+});
+
+void test("graph live-reload ready model can adopt runtime URL from status snapshot", () => {
+    const snapshot = {
+        ...createLiveReloadStatusSnapshot(),
+        runtimeUrl: "http://127.0.0.1:51264/"
+    };
+    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
+        {
+            model: null
+        },
+        snapshot
+    );
+
+    assert.equal(model?.endpoints.runtimeUrl, "http://127.0.0.1:51264/");
+    assert.equal(model?.statusSnapshot, snapshot);
+});
+
+void test("graph live-reload startup readiness requires a reachable runtime URL", async () => {
+    const snapshot = createLiveReloadStatusSnapshot();
+    const model = await __graphCommandTest__.createReachableGraphVisualizationLiveReloadModel(
+        {
+            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/")
+        },
+        snapshot
+    );
+
+    assert.equal(model, null);
+});
+
+void test("graph live-reload runtime URL reachability accepts successful HEAD responses", async () => {
+    const isReachable = await __graphCommandTest__.isGraphVisualizationLiveReloadRuntimeUrlReachable(
+        "http://127.0.0.1:51264/",
+        async () => new Response(null, { status: 200 })
+    );
+
+    assert.equal(isReachable, true);
+});
+
+void test("graph live-reload runtime URL reachability rejects failed probes", async () => {
+    const isReachable = await __graphCommandTest__.isGraphVisualizationLiveReloadRuntimeUrlReachable(
+        "http://127.0.0.1:51264/",
+        async () => {
+            throw new Error("Connection refused");
+        }
+    );
+
+    assert.equal(isReachable, false);
 });
 
 void test("graph command rejects removed symbol-centric subcommands", async () => {
@@ -267,19 +371,21 @@ void test("graph visualize builds a missing database before exporting an HTML+as
         assert.equal(payload.payload.outputDirectory, outputDirectory);
         assert.equal(payload.payload.entryHtmlPath, "index.html");
         await fs.access(databasePath);
-        await fs.access(path.join(outputDirectory, "assets", "graph-visualization.css"));
-        await fs.access(path.join(outputDirectory, "assets", "graph-visualization.js"));
-        await fs.access(path.join(outputDirectory, "assets", "vendor", "d3.min.js"));
-        await fs.access(path.join(outputDirectory, "assets", "vendor", "browser-fs-access.js"));
+        const assetNames = await fs.readdir(path.join(outputDirectory, "assets"));
+        const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
+        const styleAsset = assetNames.find((assetName) => assetName.endsWith(".css"));
+        assert.ok(scriptAsset);
+        assert.ok(styleAsset);
         const html = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
-        const script = await fs.readFile(path.join(outputDirectory, "assets", "graph-visualization.js"), "utf8");
-        assert.match(script, /shared_toolset_fn/u);
-        assert.match(script, /gmloop_format/u);
-        assert.match(script, /Format GameMaker Language files using the prettier plugin\./u);
+        const script = await fs.readFile(path.join(outputDirectory, "assets", scriptAsset), "utf8");
+        assert.match(script, /gm-app-shell/u);
+        assert.match(html, /shared_toolset_fn/u);
+        assert.match(html, /gmloop_format/u);
+        assert.match(html, /Format GameMaker Language files using the prettier plugin\./u);
         assert.doesNotMatch(html, /id="regenerate"/u);
-        assert.match(html, /assets\/graph-visualization\.js/u);
-        assert.match(html, /assets\/graph-visualization\.css/u);
-        assert.match(html, /assets\/vendor\/d3\.min\.js/u);
+        assert.match(html, /assets\/.+\.js/u);
+        assert.match(html, /assets\/.+\.css/u);
+        assert.doesNotMatch(html, /assets\/vendor\//u);
         assert.doesNotMatch(html, /cdn\./u);
     } finally {
         await fixture.cleanup();
@@ -320,9 +426,12 @@ void test("graph visualize reuses an existing graph index instead of rebuilding 
         });
 
         assert.equal(visualizeResult.exitCode, 0);
-        const script = await fs.readFile(path.join(outputDirectory, "assets", "graph-visualization.js"), "utf8");
-        assert.match(script, /return 42;/u);
-        assert.doesNotMatch(script, /return 999;/u);
+        const assetNames = await fs.readdir(path.join(outputDirectory, "assets"));
+        const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
+        assert.ok(scriptAsset);
+        const indexHtml = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
+        assert.match(indexHtml, /return 42;/u);
+        assert.doesNotMatch(indexHtml, /return 999;/u);
     } finally {
         await fixture.cleanup();
     }
@@ -335,7 +444,15 @@ void test("graph visualize --serve boots without a project path and waits for UI
     try {
         serveProcess = spawn(
             process.execPath,
-            [path.resolve(REPO_ROOT, "src/cli/dist/index.js"), "graph", "visualize", "--serve", "--json", "--no-open"],
+            [
+                "--disable-warning=ExperimentalWarning",
+                path.resolve(REPO_ROOT, "src/cli/dist/index.js"),
+                "graph",
+                "visualize",
+                "--serve",
+                "--json",
+                "--no-open"
+            ],
             {
                 cwd: emptyWorkingDirectory,
                 stdio: ["ignore", "pipe", "pipe"]
@@ -419,6 +536,206 @@ void test("graph visualize --serve boots without a project path and waits for UI
     }
 });
 
+void test("graph visualize UI source reload candidate includes Lit web source assets", () => {
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("gm-graph-panel.ts"), true);
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph.css"), true);
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("index.html"), true);
+    assert.equal(
+        __graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate("graph-visualization-bundle.gml"),
+        false
+    );
+    assert.equal(__graphCommandTest__.isGraphVisualizationUiSourceReloadCandidate(null), false);
+});
+
+void test("graph visualize UI source watcher resolves the repository source tree independently of cwd", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-ui-watch-root-"));
+    const previousWorkingDirectory = process.cwd();
+
+    try {
+        process.chdir(temporaryDirectory);
+        assert.equal(
+            __graphCommandTest__.resolveGraphVisualizationUiSourceWatchRoot(),
+            path.join(REPO_ROOT, "src", "ui", "src")
+        );
+    } finally {
+        process.chdir(previousWorkingDirectory);
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("graph visualize UI source watcher reports watcher errors without throwing", () => {
+    let closeCount = 0;
+    const receivedErrors: Array<string> = [];
+    let errorListener: ((error: Error) => void) | null = null;
+    const fakeWatcher = {
+        close() {
+            closeCount += 1;
+        },
+        on(eventName: string, listener: (error: Error) => void) {
+            if (eventName === "error") {
+                errorListener = listener;
+            }
+            return fakeWatcher;
+        },
+        ref() {
+            return fakeWatcher;
+        },
+        unref() {
+            return fakeWatcher;
+        }
+    } as unknown as FSWatcher;
+
+    const watchFactory = (
+        _path: PathLike,
+        _options?: WatchOptions | BufferEncoding | "buffer",
+        _listener?: WatchListener<string>
+    ): FSWatcher => {
+        void _path;
+        void _options;
+        void _listener;
+        return fakeWatcher;
+    };
+
+    const watcher = __graphCommandTest__.startGraphVisualizationUiSourceWatcher({
+        onError: (error: unknown) => {
+            receivedErrors.push(error instanceof Error ? error.message : "Unknown watcher error");
+        },
+        onReloadCandidate: () => {},
+        watchFactory,
+        watchRoot: REPO_ROOT
+    });
+
+    assert.equal(watcher, fakeWatcher);
+    errorListener?.(new Error("synthetic watcher failure"));
+
+    assert.deepEqual(receivedErrors, ["synthetic watcher failure"]);
+    assert.equal(closeCount, 1);
+});
+
+void test("graph visualize active-project watcher opens current and changed gm-cli state paths", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-active-project-watch-"));
+    const statePath = path.join(temporaryDirectory, "gm-cli-active-project.json");
+    const initialProjectPath = path.join(temporaryDirectory, "Initial.yyp");
+    const nextProjectPath = path.join(temporaryDirectory, "Next.yyp");
+    const openedProjectPaths = new Array<string>();
+    const observedErrors = new Array<string>();
+
+    await fs.writeFile(statePath, `${JSON.stringify({ projectPath: initialProjectPath })}\n`, "utf8");
+
+    const watcher = __graphCommandTest__.startGraphVisualizationActiveProjectStateWatcher({
+        env: { GMLOOP_GM_CLI_PROJECT_STATE_PATH: statePath },
+        intervalMs: 10,
+        onError: (error) => {
+            observedErrors.push(error instanceof Error ? error.message : "Unknown active-project watcher error");
+        },
+        onProjectPathChanged: (projectPath) => {
+            openedProjectPaths.push(projectPath);
+        }
+    });
+
+    try {
+        await waitForCondition(
+            () => openedProjectPaths.includes(initialProjectPath),
+            "Expected active-project watcher to emit the current project path."
+        );
+
+        await fs.writeFile(statePath, `${JSON.stringify({ projectPath: nextProjectPath })}\n`, "utf8");
+        await waitForCondition(
+            () => openedProjectPaths.includes(nextProjectPath),
+            "Expected active-project watcher to emit the changed project path."
+        );
+        assert.deepEqual(observedErrors, []);
+    } finally {
+        watcher.stop();
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("graph visualize live-reload startup options default to GameMaker temp-root autodetection", () => {
+    const startupOptions = __graphCommandTest__.resolveGraphVisualizationLiveReloadStartupOptions("/tmp/project", {});
+
+    assert.equal(startupOptions.hasBuildConfiguration, false);
+    assert.equal(startupOptions.html5OutputRoot, null);
+    assert.equal(startupOptions.gmTempRoot, "/private/tmp/GameMakerStudio2/GMS2TEMP");
+    assert.equal(startupOptions.statusHost, "127.0.0.1");
+    assert.equal(startupOptions.statusPort, 17_891);
+    assert.equal(startupOptions.websocketHost, "127.0.0.1");
+    assert.equal(startupOptions.websocketPort, 17_890);
+});
+
+void test("graph visualize live-reload startup options honor runtime.liveReload config", () => {
+    const startupOptions = __graphCommandTest__.resolveGraphVisualizationLiveReloadStartupOptions("/tmp/project", {
+        runtime: {
+            liveReload: {
+                build: {
+                    backend: "igor"
+                },
+                gmTempRoot: ".gm-temp/html5",
+                html5Output: "dist/html5"
+            }
+        }
+    });
+
+    assert.equal(startupOptions.hasBuildConfiguration, true);
+    assert.equal(startupOptions.html5OutputRoot, path.resolve("/tmp/project", "dist/html5"));
+    assert.equal(startupOptions.gmTempRoot, path.resolve("/tmp/project", ".gm-temp/html5"));
+    assert.equal(startupOptions.statusHost, "127.0.0.1");
+    assert.equal(startupOptions.statusPort, 17_891);
+    assert.equal(startupOptions.websocketHost, "127.0.0.1");
+    assert.equal(startupOptions.websocketPort, 17_890);
+});
+
+void test("graph visualize live-reload startup timeout allows long build-first startup", () => {
+    assert.equal(__graphCommandTest__.GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS, 600_000);
+});
+
+void test("graph visualize live-reload dev args include configured startup paths", () => {
+    const args = __graphCommandTest__.createGraphVisualizationLiveReloadDevCommandArgs("/tmp/project", {
+        gmTempRoot: "/tmp/project/.gm-temp/html5",
+        hasBuildConfiguration: true,
+        html5OutputRoot: "/tmp/project/dist/html5",
+        statusHost: "127.0.0.1",
+        statusPort: 47_911,
+        websocketHost: "127.0.0.1",
+        websocketPort: 47_910
+    });
+
+    assert.deepEqual(args, [
+        "live-reload",
+        "dev",
+        "/tmp/project",
+        "--html5-output",
+        "/tmp/project/dist/html5",
+        "--gm-temp-root",
+        "/tmp/project/.gm-temp/html5",
+        "--websocket-port",
+        "47910",
+        "--websocket-host",
+        "127.0.0.1",
+        "--status-port",
+        "47911",
+        "--status-host",
+        "127.0.0.1",
+        "--quiet"
+    ]);
+});
+
+void test("graph visualize serve defaults to the bundled 3DSpider demo from the repository root", () => {
+    const demoProjectRoot = __graphCommandTest__.resolveDefaultGraphVisualizationServeTargetPath(REPO_ROOT);
+
+    assert.equal(demoProjectRoot, path.join(REPO_ROOT, "vendor", "3DSpider"));
+});
+
+void test("graph visualize serve has no bundled demo fallback outside the repository tree", async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-demo-fallback-"));
+
+    try {
+        assert.equal(__graphCommandTest__.resolveDefaultGraphVisualizationServeTargetPath(temporaryDirectory), null);
+    } finally {
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
+});
+
 void test("graph command options validate minimum values for depth and limit", async () => {
     const cliModule = await loadCliModule();
     const fixture = await createDualRootFixture();
@@ -461,4 +778,110 @@ void test("graph subcommands expose the force flag consistently", async () => {
     assert.ok(doctorCommand);
     const doctorOptionFlags = new Set(doctorCommand.options.flatMap((option) => option.long ?? []));
     assert.ok(!doctorOptionFlags.has("--force"));
+});
+
+void test("streamProcessOutputByLine removes all listeners from stream after settling", async () => {
+    const emittedLines = new Array<string>();
+
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+
+    const mockStream = {
+        setEncoding(_encoding: BufferEncoding): void {},
+        on(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            bucket.push(handler);
+            listeners.set(event, bucket);
+            return mockStream;
+        },
+        removeListener(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            listeners.set(
+                event,
+                bucket.filter((h) => h !== handler)
+            );
+            return mockStream;
+        },
+        emit(event: string, ...args: unknown[]): void {
+            const bucket = listeners.get(event) ?? [];
+            for (const h of bucket) {
+                h(...args);
+            }
+        },
+        listenerCount(event: string): number {
+            return (listeners.get(event) ?? []).length;
+        }
+    } as unknown as NodeJS.ReadableStream;
+
+    void __graphCommandTest__.streamProcessOutputByLine(mockStream, (line) => {
+        emittedLines.push(line);
+    });
+
+    assert.equal(mockStream.listenerCount("data"), 1, "Expected exactly one 'data' listener before completion.");
+
+    mockStream.emit("data", "line one\n");
+    mockStream.emit("end");
+
+    assert.equal(
+        mockStream.listenerCount("data"),
+        0,
+        "Expected zero 'data' listeners after stream ends (listener leak — removeListener not called)."
+    );
+    assert.equal(mockStream.listenerCount("error"), 0, "Expected zero 'error' listeners after stream ends.");
+    assert.equal(mockStream.listenerCount("end"), 0, "Expected zero 'end' listeners after stream ends.");
+    assert.deepEqual(emittedLines, ["line one"]);
+});
+
+void test("streamProcessOutputByLine removes all listeners on error", async () => {
+    const error = new Error("stream error");
+
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+
+    const mockStream = {
+        setEncoding(_encoding: BufferEncoding): void {},
+        on(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            bucket.push(handler);
+            listeners.set(event, bucket);
+            return mockStream;
+        },
+        removeListener(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            listeners.set(
+                event,
+                bucket.filter((h) => h !== handler)
+            );
+            return mockStream;
+        },
+        emit(event: string, ...args: unknown[]): void {
+            const bucket = listeners.get(event) ?? [];
+            for (const h of bucket) {
+                h(...args);
+            }
+        },
+        listenerCount(event: string): number {
+            return (listeners.get(event) ?? []).length;
+        }
+    } as unknown as NodeJS.ReadableStream;
+
+    const promise = __graphCommandTest__.streamProcessOutputByLine(mockStream, () => {});
+
+    assert.equal(mockStream.listenerCount("data"), 1, "Expected exactly one 'data' listener before error.");
+
+    mockStream.emit("error", error);
+
+    let caughtError: unknown;
+    try {
+        await promise;
+    } catch (error_) {
+        caughtError = error_;
+    }
+
+    assert.ok(caughtError instanceof Error);
+    assert.equal(
+        mockStream.listenerCount("data"),
+        0,
+        "Expected zero 'data' listeners after error (listener leak — removeListener not called)."
+    );
+    assert.equal(mockStream.listenerCount("error"), 0, "Expected zero 'error' listeners after error.");
+    assert.equal(mockStream.listenerCount("end"), 0, "Expected zero 'end' listeners after error.");
 });

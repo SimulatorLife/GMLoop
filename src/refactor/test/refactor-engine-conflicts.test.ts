@@ -11,7 +11,7 @@ void test("detectRenameConflicts validates oldName parameter", async () => {
     await assert.rejects(
         () =>
             engine.detectRenameConflicts({
-                oldName: null as unknown as string,
+                oldName: null,
                 newName: "newVar",
                 occurrences: []
             }),

@@ -10,25 +10,20 @@ import { createHash } from "node:crypto";
 
 import type { Options as PrettierOptions } from "prettier";
 
-/**
- * Internal cache storing formatted output keyed by content hash and options.
- * Uses LRU eviction when the cache exceeds MAX_FORMATTING_CACHE_ENTRIES.
- */
-const formattingCache = new Map<string, string>();
+import { getDefaultMaxFormattingCacheEntries } from "../../runtime-options/format-memory-cache.js";
 
 /**
- * Maximum number of entries to retain in the formatting cache.
- * Reduced from 100 to 10 since cache keys now use hashes instead of full file content,
- * and we perform more frequent periodic cleanups.
+ * Internal cache storing formatted output keyed by content hash and options.
+ * Uses LRU eviction when the cache exceeds the configured max-entry cap.
  */
-const MAX_FORMATTING_CACHE_ENTRIES = 10;
+const formattingCache = new Map<string, string>();
 
 /**
  * Trims the formatting cache to the specified limit using LRU eviction.
  * If limit is not finite, the cache is left unchanged.
  * If limit is 0 or negative, the cache is cleared entirely.
  */
-export function trimFormattingCache(limit = MAX_FORMATTING_CACHE_ENTRIES): void {
+export function trimFormattingCache(limit = getDefaultMaxFormattingCacheEntries()): void {
     if (!Number.isFinite(limit)) {
         return;
     }
@@ -133,10 +128,11 @@ export function getFormattingCacheStats(): {
     estimatedBytes: number;
     maxEntries: number;
 } {
+    const maxEntries = getDefaultMaxFormattingCacheEntries();
     return {
         size: formattingCache.size,
         estimatedBytes: estimateFormattingCacheBytes(),
-        maxEntries: MAX_FORMATTING_CACHE_ENTRIES
+        maxEntries
     };
 }
 

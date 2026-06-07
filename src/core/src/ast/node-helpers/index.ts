@@ -1,3 +1,4 @@
+export { getNodeSourceText } from "../../text/source-text.js";
 export * from "./basics.js";
 export * from "./identifiers.js";
 export * from "./literals-and-operators.js";

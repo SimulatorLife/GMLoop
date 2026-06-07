@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import WebSocket, { type WebSocket as WebSocketType } from "ws";
+import WebSocket, { type RawData, type WebSocket as WebSocketType } from "ws";
 
 import { startPatchWebSocketServer } from "../src/modules/websocket/server.js";
 
@@ -20,6 +20,42 @@ function waitForOpen(client: WebSocketType): Promise<void> {
             reject(error);
         };
         client.on("open", handleOpen);
+        client.on("error", handleError);
+    });
+}
+
+function waitForMessage(client: WebSocketType): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => {
+            client.off("message", handleMessage);
+            client.off("error", handleError);
+        };
+        const rejectOnce = (error: Error) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            cleanup();
+            reject(error);
+        };
+        const handleMessage = (data: RawData) => {
+            if (settled) {
+                return;
+            }
+            try {
+                const payload = JSON.parse(data.toString());
+                settled = true;
+                cleanup();
+                resolve(payload);
+            } catch (error) {
+                rejectOnce(error instanceof Error ? error : new Error(String(error)));
+            }
+        };
+        const handleError = (error: Error) => {
+            rejectOnce(error);
+        };
+        client.on("message", handleMessage);
         client.on("error", handleError);
     });
 }
@@ -76,6 +112,31 @@ void describe("patch websocket server client cleanup", () => {
             await disconnectSignal.done;
 
             assert.equal(disconnectCount, 1, "expected disconnect cleanup to run once");
+        } finally {
+            client.terminate();
+            await server.stop();
+        }
+    });
+
+    void it("sends queued replay patches as one ordered batch when clients connect", async () => {
+        const replayPatches = [
+            { kind: "script", id: "gml/script/first", js_body: "return 1;" },
+            { kind: "script", id: "gml/script/second", js_body: "return 2;" },
+            { kind: "script", id: "gml/script/third", js_body: "return 3;" }
+        ];
+        const server = await startPatchWebSocketServer({
+            host: "127.0.0.1",
+            port: 0,
+            prepareInitialMessages: () => replayPatches
+        });
+        const client = new WebSocket(server.url);
+
+        try {
+            const replayPayloadPromise = waitForMessage(client);
+
+            await waitForOpen(client);
+
+            assert.deepEqual(await replayPayloadPromise, replayPatches);
         } finally {
             client.terminate();
             await server.stop();

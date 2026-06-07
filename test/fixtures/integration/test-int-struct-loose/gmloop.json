@@ -5,9 +5,14 @@
     "gml/normalize-doc-comments": "error",
     "gml/prefer-struct-literal-assignments": "off"
   },
+  "refactor": {
+    "codemods": {
+      "docCommentAlignment": {}
+    }
+  },
   "fixture": {
     "kind": "integration",
     "assertion": "transform",
-    "comparison": "trimmed-strip-doc-comment-annotations"
+    "comparison": "exact"
   }
 }

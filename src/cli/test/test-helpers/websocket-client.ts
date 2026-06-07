@@ -117,11 +117,13 @@ export async function connectToHotReloadWebSocket(
         (client) => {
             client.on("message", (data) => {
                 try {
-                    const patch = JSON.parse(data.toString());
-                    if (filter(patch)) {
-                        receivedPatches.push(patch);
-                        for (const listener of patchListeners) {
-                            listener(patch);
+                    const payload = JSON.parse(data.toString());
+                    for (const patch of Core.toArray(payload)) {
+                        if (filter(patch)) {
+                            receivedPatches.push(patch);
+                            for (const listener of patchListeners) {
+                                listener(patch);
+                            }
                         }
                     }
                 } catch (error) {

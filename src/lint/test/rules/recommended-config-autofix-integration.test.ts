@@ -85,10 +85,10 @@ void test("recommended config auto-fixes gm1051 across multiline macro continuat
         result.output,
         [
             `${String.raw`#macro __SCRIBBLE_PARSER_WRITE_NEWLINE _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__UNICODE      ] = 0x0A`}${backslash} //ASCII line break (dec = 10)`,
-            `${String.raw`                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__BIDI         ] = e__ScribbleBidi.ISOLATED`}${backslash}`,
-            `${String.raw`                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__CONTROL_COUNT] = _control_count`}${backslash}`,
-            `                                        ${backslash}`,
-            `                                        ++_glyph_count${backslash}`,
+            `${String.raw`                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__BIDI         ] = e__ScribbleBidi.ISOLATED;`}${backslash}`,
+            `${String.raw`                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__CONTROL_COUNT] = _control_count;`}${backslash}`,
+            `                                        ;${backslash}`,
+            `                                        ++_glyph_count;${backslash}`,
             "                                        _glyph_prev = 0x0A",
             ""
         ].join("\n")
@@ -192,8 +192,8 @@ void test("recommended config applies the conservative feather safe subset", asy
             "}",
             "var flags = fa_readonly | fa_archive;",
             "var nextRoom = room_next(room);",
-            "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count\\",
-            "                                     _glyph_prev_prev = _glyph_prev\\",
+            "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count;\\",
+            "                                     _glyph_prev_prev = _glyph_prev;\\",
             "                                     _glyph_prev = _glyph_write",
             'var actor = instance_create_layer(0, 0, "Instances", obj_player);',
             "var counter;",

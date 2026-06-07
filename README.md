@@ -44,7 +44,7 @@ Lint (`lint --write`) does single-file-scoped semantic/content rewrites (rule-ow
 
 ### 1) Prerequisites
 
-- Node.js `>=22.5.0` (workspace default in `.nvmrc` is `25.0.0`)
+- Node.js `>=25.0.0` (matches the pinned workspace default in `.nvmrc`)
 - pnpm (`corepack enable pnpm`)
 
 ### 2) Clone and install
@@ -52,24 +52,35 @@ Lint (`lint --write`) does single-file-scoped semantic/content rewrites (rule-ow
 ```bash
 git clone https://github.com/SimulatorLife/GMLoop.git
 cd GMLoop
+git submodule update --init --recursive
 nvm use
 pnpm install
 pnpm run cli -- --help
 ```
 
+### 3) Run baseline validation
+
+```bash
+pnpm run build:ts
+pnpm run lint:quiet
+```
+
 Need contributor-focused setup and validation expectations? Continue with [`docs/contributor-onboarding.md`](docs/contributor-onboarding.md).
-If vendor submodules are missing in your local clone, run `git submodule update --init --recursive`.
+For a guided docs tour, start with the [documentation index](docs/README.md).
+
+If you're planning architecture or boundary changes, read [`docs/target-state.md`](docs/target-state.md) before implementing so parser/core/format ownership remains aligned.
 
 ### Format from a local clone
 
 Use the repo CLI wrapper to format any GameMaker project path:
 
 ```bash
-# format writes changes
-pnpm run format:gml -- /absolute/path/to/MyGame
+# format writes changes (positional path or --path option)
+pnpm run cli -- format /absolute/path/to/MyGame
+pnpm run cli -- format --path /absolute/path/to/MyGame
 
 # check mode (no writes)
-pnpm run format:gml -- /absolute/path/to/MyGame --check
+pnpm run cli -- format /absolute/path/to/MyGame --check
 ```
 
 `format:gml` now targets `.gml` files only. The old `--extensions` option and
@@ -133,6 +144,7 @@ pnpm run cli -- transpile --write --path /absolute/path/to/MyGame
 | `@gmloop/core` | `src/core/` | Shared AST/types/helpers |
 | `@gmloop/cli` | `src/cli/` | Unified command-line entrypoints |
 | `@gmloop/mcp` | `src/mcp/` | MCP server surface for AI tooling integrations |
+| `@gmloop/ui` | `src/ui/` | Cross-project UI surfaces (graph, docs, fix, live-reload, playground) |
 
 ## Everyday commands
 
@@ -161,6 +173,24 @@ pnpm run cli -- lint /path/to/project --write
 # refactor
 pnpm run cli -- refactor --old-name old_name --new-name newName
 
+# refactor codemod (list configured codemods)
+pnpm run cli -- refactor codemod --list
+
+# fix (project-wide: refactor codemods + lint autofixes + format)
+pnpm run cli -- fix --path /path/to/project
+pnpm run cli -- fix --path /path/to/project --write
+
+# graph index (build dual-root semantic graph index)
+pnpm run cli -- graph index
+pnpm run cli -- graph index --path /path/to/project --force
+
+# graph search (query the graph index)
+pnpm run cli -- graph search "player"
+pnpm run cli -- graph search "player" --path /path/to/project
+
+# graph doctor (validate graph index health)
+pnpm run cli -- graph doctor --path /path/to/project
+
 # transpile
 pnpm run cli -- transpile --write --path /path/to/project
 
@@ -168,8 +198,8 @@ pnpm run cli -- transpile --write --path /path/to/project
 pnpm run cli -- watch /path/to/project --verbose
 
 # query the watch status server (--status-port and --status-host mirror watch's flags)
-pnpm run cli -- watch-status
-pnpm run cli -- watch-status --status-port 18000 --endpoint health
+pnpm run cli -- live-reload status
+pnpm run cli -- live-reload status --status-port 18000 --endpoint health
 ```
 
 ## CLI wrapper environment knobs
@@ -185,7 +215,7 @@ These are the most commonly used CLI environment overrides.
 | `PRETTIER_PLUGIN_GML_IGNORED_FILE_SAMPLE_LIMIT` | Cap ignored-file samples in formatter summary output. |
 | `PRETTIER_PLUGIN_GML_SKIPPED_DIRECTORY_SAMPLE_LIMIT` | Cap skipped-directory samples in formatter summary output. |
 | `PRETTIER_PLUGIN_GML_UNSUPPORTED_EXTENSION_SAMPLE_LIMIT` | Cap unsupported-extension samples in formatter summary output. |
-| `WATCH_STATUS_HOST` / `WATCH_STATUS_PORT` | Defaults for `watch-status --status-host` / `watch-status --status-port` (mirrors `watch --status-host` / `watch --status-port`). |
+| `WATCH_STATUS_HOST` / `WATCH_STATUS_PORT` | Defaults for `live-reload status --status-host` / `live-reload status --status-port` (mirrors `watch --status-host` / `watch --status-port`). |
 
 Use `pnpm run cli -- <command> --help` for full option details.
 
@@ -300,6 +330,7 @@ Start here for deeper context and plans:
 - [`src/refactor/README.md`](src/refactor/README.md)
 - [`src/lint/README.md`](src/lint/README.md)
 - [`src/mcp/README.md`](src/mcp/README.md)
+- [GitHub Releases](https://github.com/SimulatorLife/GMLoop/releases) (project changelog and release notes)
 
 ## References / Tools / Docs
 
@@ -307,3 +338,5 @@ Start here for deeper context and plans:
 - [GML Support (VS Code)](https://marketplace.visualstudio.com/items?itemName=electrobrains.gml-support)
 - [Prettier (VS Code)](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
 - [jscpd CLI](https://github.com/kucherenko/jscpd/tree/master/apps/jscpd)
+- [GameMaker Igor CI Building](https://manual.gamemaker.io/lts/en/Settings/Building_via_Command_Line.htm)
+- [GameMaker CLI](https://github.com/YoYoGames/gm-cli)

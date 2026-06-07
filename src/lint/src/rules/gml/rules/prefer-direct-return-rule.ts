@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeRecord,
     type AstNodeWithType,
@@ -12,7 +13,6 @@ import {
     isIdentifierNode,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import type { GmlRuleDefinition } from "../rule-definition.js";
 
 type VariableDeclaratorNode = AstNodeRecord &
     Readonly<{
@@ -137,7 +137,11 @@ function buildDirectReturnCandidate(
     bodyContainerNode: BodyContainerNode,
     declarationIndex: number
 ): DirectReturnCandidate | null {
-    if (Core.toNormalizedLowerCaseString(variableDeclarationNode.kind) !== "var") {
+    const declarationKind = Core.toNormalizedLowerCaseString(variableDeclarationNode.kind);
+    // Only accept `var` declarations. Collapsing `static` declarations into a direct return
+    // is invalid because static variables are evaluated once and persist across calls (e.g. for singletons/caching).
+    // Collapsing them would re-evaluate the initializer expression and return a new instance on every call.
+    if (declarationKind !== "var") {
         return null;
     }
 

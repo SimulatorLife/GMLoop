@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
@@ -149,6 +150,18 @@ async function validateFixCommandOptions(command: CommanderCommandLike): Promise
     const options = (command.opts() ?? {}) as FixCommandOptions;
     const explicitTargetPath = resolveExplicitWorkflowTargetPath(options.path);
 
+    // Validate that the path exists before attempting project root discovery.
+    // This avoids a confusing error when the explicit path does not exist:
+    // the code would otherwise try to load gmloop.json from the path's
+    // parent directory, fail, and produce a misleading "Could not find
+    // gmloop config file" message instead of a clear "path does not exist"
+    // signal that matches the pattern used by other commands (format, parse,
+    // lint, transpile).
+    if (explicitTargetPath && !existsSync(explicitTargetPath)) {
+        const usage = getFixCommandUsage(command);
+        throw new CliUsageError(`Target path does not exist or cannot be accessed: ${explicitTargetPath}`, { usage });
+    }
+
     const projectRoot = await discoverProjectRoot({
         explicitProjectPath: options.path,
         configPath: options.config
@@ -256,7 +269,12 @@ async function runRefactorCodemodSubprocess(options: ValidatedFixCommandOptions)
 
     const cliEntryPath = fileURLToPath(new URL("../../index.js", import.meta.url));
 
-    const subprocessArgs = ["--max-old-space-size=16384", cliEntryPath, ...createRefactorCodemodArgs(options)];
+    const subprocessArgs = [
+        "--disable-warning=ExperimentalWarning",
+        "--max-old-space-size=16384",
+        cliEntryPath,
+        ...createRefactorCodemodArgs(options)
+    ];
 
     await new Promise<void>((resolve, reject) => {
         const subprocessEnv = {

@@ -1,4 +1,9 @@
 {
+  "refactor": {
+    "codemods": {
+      "docCommentAlignment": {}
+    }
+  },
   "fixture": {
     "kind": "integration",
     "assertion": "parse-error"

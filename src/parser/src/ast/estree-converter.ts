@@ -161,15 +161,15 @@ function buildLocationMetadata(source: Record<string, unknown>, state: Conversio
     const metadata: Record<string, unknown> = {};
 
     if (state.includeLocations) {
-        const loc = buildLoc(source.start as AstBoundary, source.end as AstBoundary);
+        const loc = buildLoc(source.start, source.end);
         if (loc) {
             metadata.loc = loc;
         }
     }
 
     if (state.includeRange) {
-        const startIndex = normalizeBoundary(source.start as AstBoundary);
-        const endIndex = normalizeBoundary(source.end as AstBoundary);
+        const startIndex = normalizeBoundary(source.start);
+        const endIndex = normalizeBoundary(source.end);
 
         if (startIndex !== null && endIndex !== null) {
             metadata.start = startIndex;

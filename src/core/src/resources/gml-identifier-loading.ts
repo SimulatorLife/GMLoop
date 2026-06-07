@@ -123,7 +123,7 @@ export function normalizeIdentifierMetadataEntries(metadata) {
             return entries;
         }
 
-        const normalizedDescriptor = normalizeIdentifierDescriptor(normalizedName, descriptor);
+        const normalizedDescriptor = normalizeIdentifierDescriptor(descriptor);
         if (!normalizedDescriptor) {
             return entries;
         }
@@ -227,7 +227,7 @@ function normalizeDeprecatedDiagnosticOwner(
     return diagnosticOwner === "gml" || diagnosticOwner === "feather" ? diagnosticOwner : null;
 }
 
-function normalizeIdentifierDescriptor(name: string, descriptor: unknown): IdentifierMetadataDescriptor | null {
+function normalizeIdentifierDescriptor(descriptor: unknown): IdentifierMetadataDescriptor | null {
     if (!isPlainObject(descriptor)) {
         return null;
     }

@@ -12,13 +12,13 @@ void test("isDiagnosticErrorMessage returns false for empty input", () => {
 });
 
 void test("isDiagnosticErrorMessage returns false for null/undefined", () => {
-    assert.strictEqual(isDiagnosticErrorMessage(null as unknown as string), false);
+    assert.strictEqual(isDiagnosticErrorMessage(null), false);
     assert.strictEqual(isDiagnosticErrorMessage(undefined as unknown as string), false);
 });
 
 void test("isDiagnosticErrorMessage returns false for non-string values", () => {
-    assert.strictEqual(isDiagnosticErrorMessage(123 as unknown as string), false);
-    assert.strictEqual(isDiagnosticErrorMessage({} as unknown as string), false);
+    assert.strictEqual(isDiagnosticErrorMessage(123), false);
+    assert.strictEqual(isDiagnosticErrorMessage({}), false);
 });
 
 void test("isDiagnosticErrorMessage returns true for [feather:diagnostic] prefix", () => {
@@ -53,13 +53,13 @@ void test("isDiagnosticStdoutMessage returns false for empty input", () => {
 });
 
 void test("isDiagnosticStdoutMessage returns false for null/undefined", () => {
-    assert.strictEqual(isDiagnosticStdoutMessage(null as unknown as string), false);
+    assert.strictEqual(isDiagnosticStdoutMessage(null), false);
     assert.strictEqual(isDiagnosticStdoutMessage(undefined as unknown as string), false);
 });
 
 void test("isDiagnosticStdoutMessage returns false for non-string values", () => {
-    assert.strictEqual(isDiagnosticStdoutMessage(123 as unknown as string), false);
-    assert.strictEqual(isDiagnosticStdoutMessage({} as unknown as string), false);
+    assert.strictEqual(isDiagnosticStdoutMessage(123), false);
+    assert.strictEqual(isDiagnosticStdoutMessage({}), false);
 });
 
 void test("isDiagnosticStdoutMessage returns true for functionName: pattern", () => {

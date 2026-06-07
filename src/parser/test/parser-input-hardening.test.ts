@@ -38,7 +38,7 @@ function test() {
     void describe("invalid input types", () => {
         void it("should reject null input", () => {
             assert.throws(
-                () => new GMLParser(null as unknown as string),
+                () => new GMLParser(null),
                 (error: unknown) => {
                     return (
                         error instanceof TypeError &&
@@ -51,7 +51,7 @@ function test() {
 
         void it("should reject undefined input", () => {
             assert.throws(
-                () => new GMLParser(undefined as unknown as string),
+                () => new GMLParser(undefined),
                 (error: unknown) => {
                     return (
                         error instanceof TypeError &&
@@ -129,7 +129,7 @@ function test() {
     void describe("static parse method validation", () => {
         void it("should validate input before parsing", () => {
             assert.throws(
-                () => GMLParser.parse(null as unknown as string),
+                () => GMLParser.parse(null),
                 (error: unknown) => {
                     return (
                         error instanceof TypeError &&
@@ -162,7 +162,7 @@ function test() {
     void describe("error message clarity", () => {
         void it("should provide actionable error for null", () => {
             try {
-                new GMLParser(null as unknown as string);
+                new GMLParser(null);
                 assert.fail("Should have thrown");
             } catch (error) {
                 assert.ok(error instanceof Error);

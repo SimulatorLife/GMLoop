@@ -5,6 +5,16 @@ import path from "node:path";
 
 import { Parser } from "@gmloop/parser";
 
+type SyntheticScriptResource = Readonly<{
+    scriptName: string;
+    sourceText: string;
+}>;
+
+type SyntheticProjectResource = Readonly<{
+    resourceName: string;
+    resourcePath: string;
+}>;
+
 /**
  * Write a UTF-8 file inside a temporary synthetic GameMaker project.
  */
@@ -37,6 +47,36 @@ export async function registerProjectResource(
     await writeProjectFile(projectRoot, "MyGame.yyp", `${JSON.stringify(projectDocument, null, 4)}\n`);
 }
 
+async function writeProjectFilesInBatches(fileWrites: ReadonlyArray<() => Promise<void>>): Promise<void> {
+    const batchSize = 32;
+    for (let startIndex = 0; startIndex < fileWrites.length; startIndex += batchSize) {
+        await Promise.all(
+            fileWrites.slice(startIndex, startIndex + batchSize).map((writeFileEntry) => writeFileEntry())
+        );
+    }
+}
+
+async function appendProjectResources(
+    projectRoot: string,
+    resourceEntriesToAdd: ReadonlyArray<SyntheticProjectResource>
+): Promise<void> {
+    const projectFilePath = path.join(projectRoot, "MyGame.yyp");
+    const projectDocument = JSON.parse(await readFile(projectFilePath, "utf8")) as Record<string, unknown>;
+    const resourceEntries = Array.isArray(projectDocument.resources) ? [...projectDocument.resources] : [];
+
+    for (const resourceEntry of resourceEntriesToAdd) {
+        resourceEntries.push({
+            id: {
+                name: resourceEntry.resourceName,
+                path: resourceEntry.resourcePath
+            }
+        });
+    }
+
+    projectDocument.resources = resourceEntries;
+    await writeProjectFile(projectRoot, "MyGame.yyp", `${JSON.stringify(projectDocument, null, 4)}\n`);
+}
+
 /**
  * Create a script resource with its metadata and source file.
  */
@@ -57,6 +97,51 @@ export async function writeScriptResource(projectRoot: string, scriptName: strin
     );
     await writeProjectFile(projectRoot, `scripts/${scriptName}/${scriptName}.gml`, sourceText);
     await registerProjectResource(projectRoot, scriptName, resourcePath);
+}
+
+/**
+ * Create many script resources while updating the GameMaker manifest once.
+ */
+export async function writeScriptResourcesBatch(
+    projectRoot: string,
+    scripts: ReadonlyArray<SyntheticScriptResource>,
+    extraResources: ReadonlyArray<SyntheticProjectResource> = []
+): Promise<void> {
+    const resourceEntries: SyntheticProjectResource[] = [];
+    const fileWrites: Array<() => Promise<void>> = [];
+
+    for (const script of scripts) {
+        const resourcePath = `scripts/${script.scriptName}/${script.scriptName}.yy`;
+        resourceEntries.push({
+            resourceName: script.scriptName,
+            resourcePath
+        });
+        fileWrites.push(
+            () =>
+                writeProjectFile(
+                    projectRoot,
+                    resourcePath,
+                    `${JSON.stringify(
+                        {
+                            resourceType: "GMScript",
+                            resourcePath,
+                            name: script.scriptName
+                        },
+                        null,
+                        4
+                    )}\n`
+                ),
+            () =>
+                writeProjectFile(
+                    projectRoot,
+                    `scripts/${script.scriptName}/${script.scriptName}.gml`,
+                    script.sourceText
+                )
+        );
+    }
+
+    await writeProjectFilesInBatches(fileWrites);
+    await appendProjectResources(projectRoot, [...resourceEntries, ...extraResources]);
 }
 
 /**

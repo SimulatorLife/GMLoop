@@ -2,32 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import ScopeTracker from "../src/scopes/scope-tracker.js";
-import { createRange } from "./scope-tracker-helpers.js";
-
-/**
- * Replaces wall-clock sleeps with a deterministic timestamp sequence so the
- * modification-cutoff assertions do not depend on scheduler delays or clock
- * granularity.
- */
-function withDeterministicDateNow(
-    callback: (advanceTimestamp: () => number) => void | Promise<void>
-): Promise<void> | void {
-    const originalDateNow = Date.now;
-    let currentTimestamp = 1000;
-
-    Date.now = () => currentTimestamp;
-
-    const advanceTimestamp = (): number => {
-        currentTimestamp += 1;
-        return currentTimestamp;
-    };
-
-    try {
-        return callback(advanceTimestamp);
-    } finally {
-        Date.now = originalDateNow;
-    }
-}
+import { createRange, withDeterministicDateNow } from "./scope-tracker-helpers.js";
 
 void test("getScopeModificationMetadata returns modification info for a scope", () => {
     const tracker = new ScopeTracker({ enabled: true });

@@ -1,89 +1,409 @@
 .config-stack {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--gm-space-lg);
 }
 
-.config-toggle-row {
+.config-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: var(--gm-space-lg);
+  align-items: start;
+}
+
+.config-editor-layout--raw {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+}
+
+.config-builder-main {
   display: flex;
-  gap: 10px;
-  margin-bottom: 18px;
+  flex-direction: column;
+  gap: var(--gm-space-lg);
+  min-width: 0;
+}
+
+.config-builder-section,
+.config-save-panel,
+.config-tool-metadata {
+  padding: var(--gm-space-lg);
+  border: 1px solid var(--gm-border);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-surface-elevated);
+  box-shadow: var(--gm-shadow);
+}
+
+.config-save-panel {
+  position: sticky;
+  top: var(--gm-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-md);
+}
+
+.config-save-panel-header {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.config-section-heading,
+.config-section-heading--split {
+  display: flex;
+  gap: var(--gm-space-md);
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--gm-space-md);
+}
+
+.config-section-heading h3 {
+  margin: 0;
+  color: var(--gm-text);
+  font-size: var(--gm-text-lg);
+}
+
+.config-section-heading p,
+.config-tool-group p,
+.config-tool-details p {
+  margin: 4px 0 0;
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
+.config-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--gm-space-md);
+}
+
+.config-field,
+.config-inline-field,
+.config-filter-field,
+.config-json-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-sm);
+  min-width: 0;
+}
+
+.config-field {
+  padding: var(--gm-space-md);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-sm);
+  background: var(--gm-surface-inset);
+}
+
+.config-field--toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.config-field strong,
+.config-rule-main strong,
+.config-toggle-label strong {
+  color: var(--gm-text);
+  font-size: var(--gm-text-sm);
+}
+
+.config-field small,
+.config-toggle-label small {
+  display: block;
+  margin-top: 3px;
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+}
+
+.config-field input,
+.config-field select,
+.config-inline-field select,
+.config-filter-field input,
+.config-filter-field select,
+.config-json-field textarea,
+.config-raw-textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--gm-border);
+  border-radius: var(--gm-radius-sm);
+  background: var(--gm-surface-inset);
+  color: var(--gm-text);
+  font: inherit;
+}
+
+.config-field input,
+.config-field select,
+.config-inline-field select,
+.config-filter-field input,
+.config-filter-field select {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.config-field input[type="checkbox"],
+.config-toggle-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+}
+
+.config-filter-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.7fr) minmax(130px, 0.6fr) auto;
+  gap: var(--gm-space-sm);
+  align-items: end;
+  margin-bottom: var(--gm-space-md);
+}
+
+.config-filter-field span,
+.config-inline-field span,
+.config-json-field span {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.config-rule-table,
+.config-codemod-table,
+.config-tool-metadata {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-sm);
+}
+
+.config-rule-table-header,
+.config-rule-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, auto);
+  gap: var(--gm-space-md);
+  align-items: center;
+}
+
+.config-rule-table-header {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.config-rule-row,
+.config-codemod-row,
+.config-tool-group,
+.config-tool-details {
+  padding: var(--gm-space-md);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-sm);
+  background: var(--gm-surface-inset);
+}
+
+.config-rule-main {
+  min-width: 0;
+}
+
+.config-rule-title {
+  display: flex;
+  gap: var(--gm-space-sm);
+  align-items: center;
   flex-wrap: wrap;
 }
 
-.config-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 18px;
+.config-rule-description {
+  display: block;
+  margin-top: 3px;
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
 }
 
-.config-card h3 {
-  margin: 0 0 10px;
-  font-size: 16px;
+.config-rule-fixable-badge .gm-badge {
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.config-badge-row {
+  display: inline-flex;
+  gap: var(--gm-space-sm);
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 7px;
+}
+
+.config-rule-level-selector {
+  justify-self: end;
+}
+
+.config-rule-level-selector > .config-rule-level-error[aria-pressed="true"] {
+  background: var(--gm-severity-error-bg);
+  color: var(--gm-severity-error-text);
+}
+
+.config-rule-level-selector > .config-rule-level-warn[aria-pressed="true"] {
+  background: var(--gm-warning-surface);
+  color: var(--gm-warning-text);
+}
+
+.config-inline-json,
+.config-code-block,
+.config-json-preview {
+  margin: var(--gm-space-sm) 0 0;
+  padding: var(--gm-space-sm);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-sm);
+  background: var(--gm-surface-inset);
+  color: var(--gm-text-secondary);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.config-json-preview {
+  max-height: 540px;
+}
+
+.config-codemod-row summary,
+.config-tool-group summary,
+.config-tool-details summary {
+  display: flex;
+  gap: var(--gm-space-md);
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.config-toggle-label {
+  display: flex;
+  gap: var(--gm-space-sm);
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.config-json-field {
+  margin-top: var(--gm-space-md);
+}
+
+.config-json-field textarea,
+.config-raw-textarea {
+  min-height: 150px;
+  padding: var(--gm-space-md);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-relaxed);
+  resize: vertical;
+}
+
+.config-raw-textarea {
+  min-height: 560px;
+}
+
+.config-save-actions {
+  display: flex;
+  gap: var(--gm-space-sm);
+  flex-wrap: wrap;
+}
+
+.config-validation {
+  margin: 0;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
+.config-validation.is-valid {
+  color: var(--gm-success-text);
+}
+
+.config-validation.is-invalid {
+  color: var(--gm-error-text);
+}
+
+.config-setup-banner {
+  padding: var(--gm-space-lg);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-surface-elevated);
+  border: 1px dashed var(--gm-border-strong);
+  display: flex;
+  gap: var(--gm-space-md);
+  justify-content: space-between;
+  align-items: center;
+}
+
+.config-setup-banner h3 {
+  margin: 0;
+  font-size: var(--gm-text-lg);
   color: var(--gm-text);
 }
 
-.config-card p {
-  margin: 0 0 12px;
-  font-size: 13px;
-  line-height: 1.5;
+.config-setup-banner p {
+  margin: 4px 0 0;
   color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
 }
 
-.config-list {
+.config-tool-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 0;
+  gap: var(--gm-space-sm);
+  margin: var(--gm-space-sm) 0 0;
   padding: 0;
   list-style: none;
 }
 
-.config-item {
-  padding: 13px 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(143, 181, 255, 0.12);
+.config-tool-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.5fr) minmax(0, 1fr);
+  gap: var(--gm-space-sm);
+  padding-top: var(--gm-space-sm);
+  border-top: 1px solid var(--gm-border-subtle);
 }
 
-.config-item strong {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 13px;
+.config-tool-name {
   color: var(--gm-text);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-sm);
 }
 
-.config-item span {
-  display: block;
-  font-size: 12px;
-  line-height: 1.5;
+.config-tool-description {
   color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
 }
 
-.config-value {
-  margin-top: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: var(--gm-accent-strong);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.config-badge-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-}
-
-.config-raw {
+.config-empty {
   margin: 0;
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(143, 181, 255, 0.12);
-  background: rgba(5, 10, 19, 0.9);
+  padding: var(--gm-space-md);
   color: var(--gm-text-secondary);
-  font-size: 12px;
-  line-height: 1.55;
-  overflow: auto;
+  font-size: var(--gm-text-sm);
+}
+
+@media (max-width: 1080px) {
+  .config-editor-layout,
+  .config-editor-layout--raw {
+    grid-template-columns: 1fr;
+  }
+
+  .config-save-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .config-filter-row,
+  .config-rule-table-header,
+  .config-rule-row,
+  .config-tool-row {
+    grid-template-columns: 1fr;
+  }
+
+  .config-section-heading,
+  .config-section-heading--split,
+  .config-setup-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .config-rule-level-selector {
+    width: 100%;
+  }
 }

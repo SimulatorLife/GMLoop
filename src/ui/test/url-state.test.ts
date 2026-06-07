@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import {
     parseGraphVisualizationUiStateFromUrlSearch,
+    resetProjectScopedGraphVisualizationUiState,
     serializeGraphVisualizationUiStateToUrlSearch
 } from "../src/app/state/url-state.js";
 
@@ -32,21 +34,46 @@ void test("parseGraphVisualizationUiStateFromUrlSearch rejects invalid values an
 
 void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported navigation state", () => {
     const search = serializeGraphVisualizationUiStateToUrlSearch({
+        ...createInitialGraphVisualizationUiState(),
+        activeConfigView: "rendered",
         activeDocsView: "rules",
         activeGraphView: "json",
         activePage: "config",
-        errorMessage: null,
-        isOpenProjectPending: false,
-        isRegeneratePending: false,
         labelMode: "always",
         searchQuery: "enemy ship"
     });
 
-    assert.equal(search, "?page=config&docs=rules&view=json&labels=always&q=enemy+ship");
+    assert.equal(search, "?page=config&docs=rules&view=json&labels=always&config=rendered&q=enemy+ship");
     const parsed = parseGraphVisualizationUiStateFromUrlSearch(search);
     assert.equal(parsed.activePage, "config");
     assert.equal(parsed.activeDocsView, "rules");
     assert.equal(parsed.activeGraphView, "json");
     assert.equal(parsed.labelMode, "always");
+    assert.equal(parsed.activeConfigView, "rendered");
     assert.equal(parsed.searchQuery, "enemy ship");
+});
+
+void test("parseGraphVisualizationUiStateFromUrlSearch accepts the mcp top-level page", () => {
+    const state = parseGraphVisualizationUiStateFromUrlSearch("?page=mcp&docs=mcp");
+
+    assert.equal(state.activePage, "mcp");
+    assert.equal(state.activeDocsView, "mcp");
+});
+
+void test("resetProjectScopedGraphVisualizationUiState removes project search from serialized URL state", () => {
+    const state = parseGraphVisualizationUiStateFromUrlSearch(
+        "?page=fix&docs=rules&view=json&labels=always&q=old%20project"
+    );
+
+    const reset = resetProjectScopedGraphVisualizationUiState({
+        ...state,
+        fixLogLines: ["Old project fix log"],
+        fixStatus: "success",
+        liveReloadErrorMessage: "Old project live reload error."
+    });
+
+    assert.equal(
+        serializeGraphVisualizationUiStateToUrlSearch(reset),
+        "?page=fix&docs=rules&view=json&labels=always&config=rendered"
+    );
 });

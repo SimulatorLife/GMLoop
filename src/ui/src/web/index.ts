@@ -1,12 +1,196 @@
 import { bootstrapGraphVisualizationLitApp } from "../app/bootstrap.js";
+import type { GraphVisualizationFixRunOptions } from "../app/contracts.js";
+import {
+    LIVE_RELOAD_RUNTIME_TAB_TARGET,
+    type LiveReloadRuntimeTab,
+    openLiveReloadRuntimeTab,
+    resolveLiveReloadRuntimeUrl
+} from "../app/live-reload-runtime-tab.js";
+import { resetProjectScopedGraphVisualizationUiStateInCurrentUrl } from "../app/state/url-state.js";
 import type {
     GraphVisualizationData,
-    GraphVisualizationDocumentationCatalogs,
-    GraphVisualizationLoadedTarget,
-    GraphVisualizationProjectConfigurationCatalog,
+    GraphVisualizationLiveReloadModel,
     GraphVisualizationRenderOptions
 } from "../graph/types.js";
 import { registerGraphVisualizationCustomElements } from "./register-components.js";
+
+type FixApiResponse = Readonly<{
+    error?: string;
+    logLines?: ReadonlyArray<string>;
+    ok?: boolean;
+}>;
+
+type FixProgressApiResponse = Readonly<{
+    isRunning?: boolean;
+    logLines?: ReadonlyArray<string>;
+    ok?: boolean;
+}>;
+
+type MutationApiResponse = Readonly<{
+    changed?: boolean;
+    error?: string;
+    ok?: boolean;
+    projectChanged?: boolean;
+}>;
+
+type LiveReloadStartApiResponse = Readonly<{
+    error?: string;
+    liveReload?: GraphVisualizationLiveReloadModel;
+    ok?: boolean;
+}>;
+
+type LiveReloadStopApiResponse = Readonly<{
+    error?: string;
+    ok?: boolean;
+}>;
+
+type UiRevisionApiResponse = Readonly<{
+    revision?: number;
+}>;
+
+const SERVER_UI_REVISION_POLL_INTERVAL_MS = 1000;
+const LIVE_RELOAD_START_REQUEST_BODY = JSON.stringify({ restart: false });
+const LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR =
+    "Live reload startup completed without a runtime URL. The host must finish the build, watcher, status server, and runtime static server setup before reporting startup success.";
+
+async function readJsonResponse<TResponse>(response: Response): Promise<TResponse> {
+    return (await response.json()) as TResponse;
+}
+
+function reloadWhenChanged(result: MutationApiResponse): void {
+    if (result.changed === true) {
+        globalThis.location.reload();
+    }
+}
+
+function synchronizeLiveReloadBootstrapState(liveReload: GraphVisualizationLiveReloadModel | null): void {
+    const currentOptions = globalThis.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__;
+    if (currentOptions === undefined) {
+        return;
+    }
+
+    // Vite can remount/re-execute the UI without asking the CLI host for a
+    // freshly rendered bootstrap document. Keep the host-owned Live Reload
+    // session mirrored into the bootstrap payload so UI HMR cannot resurrect a
+    // stale "not running" client state while the watcher process is active.
+    globalThis.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__ = {
+        ...currentOptions,
+        liveReload: liveReload ?? undefined
+    };
+}
+
+export function startServerUiRevisionPolling(isServerMode: boolean): void {
+    if (!isServerMode) {
+        return;
+    }
+
+    let observedRevision: number | null = null;
+    let activeRevisionRequest: Promise<void> | null = null;
+
+    const readRevision = async (): Promise<void> => {
+        try {
+            const response = await fetch("/api/ui-revision", {
+                cache: "no-store",
+                headers: { Accept: "application/json" }
+            });
+            if (!response.ok) {
+                return;
+            }
+
+            const payload = await readJsonResponse<UiRevisionApiResponse>(response);
+            if (typeof payload.revision !== "number") {
+                return;
+            }
+
+            if (observedRevision === null) {
+                observedRevision = payload.revision;
+                return;
+            }
+
+            if (payload.revision !== observedRevision) {
+                globalThis.location.reload();
+            }
+        } catch {
+            // Revision polling is opportunistic; transient server restarts should not break the UI.
+        } finally {
+            activeRevisionRequest = null;
+        }
+    };
+
+    const pollRevision = (): void => {
+        activeRevisionRequest ??= readRevision();
+    };
+
+    pollRevision();
+    const pollTimer = globalThis.setInterval(() => {
+        pollRevision();
+    }, SERVER_UI_REVISION_POLL_INTERVAL_MS);
+    // Expose timer reference for testability and programmatic teardown.
+    // Uses a Symbol key so this is not a public API surface.
+    const timerKey = Symbol.for("gmloop.ui.pollTimer");
+    Object.defineProperty(globalThis, timerKey, {
+        configurable: true,
+        enumerable: false,
+        value: pollTimer,
+        writable: true
+    });
+}
+
+/**
+ * Stops the UI revision polling timer and removes it from globalThis.
+ * Idempotent: calling when no timer exists is a no-op.
+ */
+export function stopServerUiRevisionPolling(): void {
+    const timerKey = Symbol.for("gmloop.ui.pollTimer");
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, timerKey);
+    if (descriptor?.value !== undefined) {
+        globalThis.clearInterval(descriptor.value as Parameters<typeof globalThis.clearInterval>[0]);
+        delete (globalThis as unknown as Record<symbol, unknown>)[timerKey];
+    }
+}
+
+async function startLiveReloadFromServer(
+    fetchLiveReload: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
+    openRuntimeTab: ((url: string, target: string) => LiveReloadRuntimeTab | null) | null = typeof globalThis.open ===
+    "function"
+        ? globalThis.open.bind(globalThis)
+        : null
+): Promise<GraphVisualizationLiveReloadModel> {
+    const response = await fetchLiveReload("/api/live-reload/start", {
+        body: LIVE_RELOAD_START_REQUEST_BODY,
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+    });
+    const result = await readJsonResponse<LiveReloadStartApiResponse>(response);
+    if (!response.ok || result.ok !== true) {
+        throw new Error(result.error ?? "Live reload startup failed.");
+    }
+
+    const liveReload = result.liveReload ?? null;
+    const runtimeUrl = resolveLiveReloadRuntimeUrl(liveReload);
+    if (liveReload === null || runtimeUrl === null) {
+        throw new Error(LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR);
+    }
+
+    synchronizeLiveReloadBootstrapState(liveReload);
+    // Open only after the host reports a fully reachable runtime URL. The
+    // toolbar also exposes this URL after state updates, so popup blockers do
+    // not require a pre-opened about:blank fallback.
+    openLiveReloadRuntimeTab(runtimeUrl, openRuntimeTab);
+    return liveReload;
+}
+
+async function stopLiveReloadFromServer(
+    fetchLiveReload: typeof globalThis.fetch = globalThis.fetch.bind(globalThis)
+): Promise<void> {
+    const response = await fetchLiveReload("/api/live-reload/stop", { method: "POST" });
+    const result = await readJsonResponse<LiveReloadStopApiResponse>(response);
+    if (!response.ok || result.ok !== true) {
+        throw new Error(result.error ?? "Live reload stop failed.");
+    }
+
+    synchronizeLiveReloadBootstrapState(null);
+}
 
 /**
  * Serialized payload consumed by the web bootstrap entry.
@@ -18,11 +202,8 @@ export type GraphVisualizationWebBootstrapPayload = Readonly<{
 
 declare global {
     interface Window {
-        __GMLOOP_DOCUMENTATION_CATALOGS__?: GraphVisualizationDocumentationCatalogs;
         __GMLOOP_GRAPH_VISUALIZATION_DATA__?: GraphVisualizationData;
         __GMLOOP_GRAPH_VISUALIZATION_OPTIONS__?: GraphVisualizationRenderOptions;
-        __GMLOOP_LOADED_TARGET__?: GraphVisualizationLoadedTarget;
-        __GMLOOP_PROJECT_CONFIGURATION__?: GraphVisualizationProjectConfigurationCatalog;
     }
 }
 
@@ -39,13 +220,7 @@ function readGraphVisualizationWebBootstrapPayload(): GraphVisualizationWebBoots
 
     return {
         data: graphData,
-        options: {
-            ...optionPayload,
-            documentationCatalogs: optionPayload.documentationCatalogs ?? globalThis.__GMLOOP_DOCUMENTATION_CATALOGS__,
-            loadedTarget: optionPayload.loadedTarget ?? globalThis.__GMLOOP_LOADED_TARGET__,
-            projectConfigurationCatalog:
-                optionPayload.projectConfigurationCatalog ?? globalThis.__GMLOOP_PROJECT_CONFIGURATION__
-        }
+        options: optionPayload
     };
 }
 
@@ -55,9 +230,100 @@ function readGraphVisualizationWebBootstrapPayload(): GraphVisualizationWebBoots
 export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
     registerGraphVisualizationCustomElements();
     const payload = readGraphVisualizationWebBootstrapPayload();
+    startServerUiRevisionPolling(payload.options.isServerMode === true);
     bootstrapGraphVisualizationLitApp({
+        callbacks: {
+            onOpenProject: async () => {
+                const response = await fetch("/api/open", { method: "POST" });
+                const result = await readJsonResponse<MutationApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Project open failed.");
+                }
+                if (result.projectChanged === true) {
+                    resetProjectScopedGraphVisualizationUiStateInCurrentUrl();
+                }
+                reloadWhenChanged(result);
+            },
+            onRegenerate: async () => {
+                const response = await fetch("/api/reindex", { method: "POST" });
+                const result = await readJsonResponse<MutationApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Regeneration failed.");
+                }
+                reloadWhenChanged(result);
+                return { changed: result.changed === true };
+            },
+            onCreateConfig: async () => {
+                const response = await fetch("/api/config/create", { method: "POST" });
+                const result = await readJsonResponse<MutationApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Configuration creation failed.");
+                }
+                reloadWhenChanged(result);
+            },
+            onSaveConfig: async (config) => {
+                const response = await fetch("/api/config/save", {
+                    body: JSON.stringify({ config }),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST"
+                });
+                const result = await readJsonResponse<MutationApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Configuration save failed.");
+                }
+                reloadWhenChanged(result);
+            },
+            onRunFix: async (options?: GraphVisualizationFixRunOptions) => {
+                const pollFixProgress = async (): Promise<void> => {
+                    const progressResponse = await fetch("/api/fix/progress", {
+                        cache: "no-store",
+                        headers: { Accept: "application/json" }
+                    });
+                    if (!progressResponse.ok) {
+                        return;
+                    }
+                    const progressResult = await readJsonResponse<FixProgressApiResponse>(progressResponse);
+                    if (progressResult.ok !== true || !options?.onProgress) {
+                        return;
+                    }
+                    options.onProgress({ logLines: progressResult.logLines ?? [] });
+                };
+
+                const progressPollInterval = globalThis.setInterval(() => {
+                    void pollFixProgress();
+                }, 1000);
+
+                try {
+                    const response = await fetch("/api/fix", { method: "POST" });
+                    const result = await readJsonResponse<FixApiResponse>(response);
+                    if (!response.ok || result.ok !== true) {
+                        throw new Error(result.error ?? "Fix workflow failed.");
+                    }
+
+                    return {
+                        logLines: result.logLines ?? [],
+                        status: "success"
+                    };
+                } finally {
+                    globalThis.clearInterval(progressPollInterval);
+                    await pollFixProgress();
+                }
+            },
+            onStartLiveReload: () => startLiveReloadFromServer(),
+            onStopLiveReload: () => stopLiveReloadFromServer()
+        },
         data: payload.data,
         options: payload.options,
         rootElement
     });
 }
+
+export const __test__ = Object.freeze({
+    LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR,
+    LIVE_RELOAD_RUNTIME_TAB_TARGET,
+    LIVE_RELOAD_START_REQUEST_BODY,
+    openLiveReloadRuntimeTab,
+    startLiveReloadFromServer,
+    stopLiveReloadFromServer,
+    synchronizeLiveReloadBootstrapState
+});

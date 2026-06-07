@@ -96,7 +96,7 @@ export function cloneDeclarationMetadata(metadata: ScopeSymbolMetadata | null | 
         classifications: Core.toMutableArray(metadata.classifications, { clone: true }),
         start: Core.cloneLocation(metadata.start),
         end: Core.cloneLocation(metadata.end)
-    } as ScopeSymbolMetadata;
+    };
 }
 
 /**
@@ -124,7 +124,7 @@ export function cloneOccurrence(occurrence: Occurrence | null | undefined): Occu
         usageContext: usageContextClone,
         start: Core.cloneLocation(occurrence.start),
         end: Core.cloneLocation(occurrence.end)
-    } as Occurrence;
+    };
 }
 
 /**

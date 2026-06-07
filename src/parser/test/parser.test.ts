@@ -220,6 +220,136 @@ void describe("GameMaker parser fixtures", () => {
         assert.doesNotThrow(() => parseFixture(source));
     });
 
+    void it("parses lowercase GML keyword operators", () => {
+        const source = [
+            "function test_operators(left, right, extra) {",
+            "    value = not left or right and extra xor left;",
+            "    amount = total div 2 mod 3;",
+            "}",
+            ""
+        ].join("\n");
+
+        assert.doesNotThrow(() => parseFixture(source));
+    });
+
+    void it("rejects uppercase GML keyword operators", () => {
+        const sources = [
+            "function test_not(left) {\n    if (NOT left) {}\n}\n",
+            "function test_and(left, right) {\n    if (left AND right) {}\n}\n",
+            "function test_or(left, right) {\n    if (left OR right) {}\n}\n",
+            "function test_xor(left, right) {\n    if (left XOR right) {}\n}\n",
+            "function test_div(left, right) {\n    if (left DIV right) {}\n}\n",
+            "function test_mod(left, right) {\n    if (left MOD right) {}\n}\n"
+        ];
+
+        for (const source of sources) {
+            assert.throws(() => parseFixture(source, { suppressErrors: true }), GameMakerSyntaxError);
+        }
+    });
+
+    void it("rejects symbolic operators recovered as identifier statements", () => {
+        assert.throws(() => parseFixture("invalid %%%%", { suppressErrors: true }), {
+            name: "GameMakerSyntaxError",
+            message: /unexpected symbol '%'.*identifier/
+        });
+    });
+
+    void it("allows uppercase operator-looking names as identifiers", () => {
+        const source = [
+            "#macro NOT 1",
+            "#macro AND 2",
+            "function OR(XOR, DIV = 1) {",
+            "    var NOT = DIV;",
+            "    var AND = OR;",
+            "    var MOD = NOT + AND;",
+            "    return XOR + DIV + MOD;",
+            "}",
+            "function use_operator_names() {",
+            "    var NOT = 1;",
+            "    var AND = 2;",
+            "    var OR = 3;",
+            "    var XOR = OR(NOT, AND);",
+            "    var DIV = {",
+            "        NOT: NOT,",
+            "        AND: AND,",
+            "        OR: OR,",
+            "        XOR: XOR",
+            "    };",
+            "    enum MOD {",
+            "        NOT = 1,",
+            "        AND,",
+            "        OR,",
+            "        XOR",
+            "    }",
+            "    return DIV.NOT + MOD.XOR;",
+            "}",
+            ""
+        ].join("\n");
+
+        assert.doesNotThrow(() => parseFixture(source));
+    });
+
+    void it("allows lowercase operator-looking names as identifiers outside operator positions", () => {
+        const source = [
+            "#macro not 1",
+            "#macro and 2",
+            "function not(and, or = 1) {",
+            "    var xor = or;",
+            "    var div = xor;",
+            "    var mod = div;",
+            "    return and + or + xor + div + mod;",
+            "}",
+            "function use_operator_names() {",
+            "    var not = 1;",
+            "    var and = 2;",
+            "    var or = 3;",
+            "    var xor = not(and, or);",
+            "    var div = {",
+            "        not: not,",
+            "        and: and,",
+            "        or: or,",
+            "        xor: xor",
+            "    };",
+            "    enum mod {",
+            "        not = 1,",
+            "        and,",
+            "        or,",
+            "        xor",
+            "    }",
+            "    return div.not + mod.xor;",
+            "}",
+            ""
+        ].join("\n");
+
+        assert.doesNotThrow(() => parseFixture(source));
+    });
+
+    void it("distinguishes lowercase not calls from unary not expressions", () => {
+        const source = [
+            "function not(value) {",
+            "    return value;",
+            "}",
+            "function use_not(value) {",
+            "    var called = not(value);",
+            "    var negated = not value;",
+            "}",
+            ""
+        ].join("\n");
+
+        const ast = parseFixture(source);
+        const calls = collectNodesByType(ast, "CallExpression");
+        const unaryExpressions = collectNodesByType(ast, "UnaryExpression");
+
+        assert.ok(
+            calls.some((call) => call.object?.type === "Identifier" && call.object.name === "not"),
+            "Expected not(value) to parse as a call expression."
+        );
+        assert.ok(
+            unaryExpressions.some((expression) => expression.operator === "!"),
+            "Expected 'not value' to parse as unary negation."
+        );
+    });
+
     void it("omits location metadata when disabled", async () => {
         const fixtureName = successfulFixture;
 
@@ -288,10 +418,10 @@ void describe("GameMaker parser fixtures", () => {
         assert.equal(GMLParser.optionDefaults.getComments, true);
     });
 
-    void it("allows tuning SLL prediction threshold via parser options", () => {
+    void it("treats an SLL prediction threshold of 0 as unset and uses the default", () => {
         const parser = new GMLParser("x = 1;", { sllPredictionMaxSourceLength: 0 });
 
-        assert.equal(parser.options.sllPredictionMaxSourceLength, 0);
+        assert.equal(parser.options.sllPredictionMaxSourceLength, defaultParserOptions.sllPredictionMaxSourceLength);
     });
 
     void it("falls back to defaults when SLL prediction threshold override is invalid", () => {
@@ -635,6 +765,28 @@ void describe("GameMaker parser fixtures", () => {
             Core.getNodeStartIndex(callExpression),
             expectedStart,
             "Leading-dot call statement should start at the dot token."
+        );
+    });
+
+    void it("parses keyword-like names after member dots", () => {
+        const source = "function demo(vector, amount) {\n  return vector.Div(amount);\n}\n";
+        const ast = parseFixture(source, {
+            options: { getLocations: true, simplifyLocations: false }
+        });
+
+        const memberExpressions = collectNodesByType(ast, "MemberDotExpression");
+        const divMemberExpression = memberExpressions.find(
+            (memberExpression) => memberExpression.property?.name === "Div"
+        );
+
+        assert.ok(divMemberExpression, "Expected .Div to parse as a member-dot expression.");
+
+        const sourceOffset = source.indexOf(".Div");
+        assert.ok(sourceOffset !== -1, "Unable to locate .Div in source.");
+        assert.strictEqual(
+            Core.getNodeStartIndex(divMemberExpression.property),
+            sourceOffset + 1,
+            "Keyword-like member property should keep the property token location."
         );
     });
 
