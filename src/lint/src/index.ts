@@ -1,6 +1,7 @@
+import { Core } from "@gmloop/core";
+
 import { normalizeDocParamName } from "./doc-comment/normalize-param-name.js";
 import { gmlLanguage } from "./language/gml-language.js";
-import { forEachScientificNotationToken, toPlainDecimalFromScientificLiteral } from "./malformed/index.js";
 import { configs, featherPlugin, plugin } from "./plugin.js";
 import { services } from "./services/index.js";
 
@@ -29,9 +30,9 @@ export const Lint = Object.freeze({
     // Shared utilities (from doc-comment)
     normalizeDocParamName,
 
-    // Malformed-source helpers (from malformed — avoids deep "../.." imports)
-    forEachScientificNotationToken,
-    toPlainDecimalFromScientificLiteral
+    // Malformed-source helpers (from core — avoids deep "../.." imports)
+    forEachScientificNotationToken: Core.forEachScientificNotationToken,
+    toPlainDecimalFromScientificLiteral: Core.toPlainDecimalFromScientificLiteral
 });
 
 // Direct exports of rule catalog functions for consumers who prefer explicit
