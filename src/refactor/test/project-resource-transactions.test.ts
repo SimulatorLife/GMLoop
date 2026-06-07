@@ -14,8 +14,10 @@ import {
     duplicateProjectResource,
     moveProjectResource,
     ProjectResourceKind,
+    readProjectMetadataDocument,
     removeProjectResource,
     renameProjectResource,
+    resolveProjectManifestFile,
     updateRoomInstance
 } from "../src/project-resources/index.js";
 
@@ -443,6 +445,61 @@ void test("addRoomInstance appends an object instance to a room with dry-run saf
         ).document;
         assert.deepEqual(deletedMetadata.instanceCreationOrder, []);
         assert.deepEqual(deletedMetadata.layers[0].instances, []);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("resolveProjectManifestFile locates the single .yyp manifest and reports its descriptor", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        const manifest = await resolveProjectManifestFile(projectRoot);
+
+        assert.equal(manifest.absolutePath, path.join(projectRoot, "MyGame.yyp"));
+        assert.equal(manifest.relativePath, "MyGame.yyp");
+        assert.equal(manifest.projectName, "MyGame");
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("resolveProjectManifestFile throws when the project root has no .yyp manifest", async () => {
+    const projectRoot = await fsMkdtemp("gmloop-missing-manifest-");
+
+    try {
+        await assert.rejects(resolveProjectManifestFile(projectRoot), /Could not locate a \.yyp manifest/u);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("resolveProjectManifestFile throws when the project root has multiple .yyp manifests", async () => {
+    const projectRoot = await fsMkdtemp("gmloop-duplicate-manifest-");
+
+    try {
+        await writeProjectFile(projectRoot, "First.yyp", '{"name":"First"}\n');
+        await writeProjectFile(projectRoot, "Second.yyp", '{"name":"Second"}\n');
+
+        await assert.rejects(
+            resolveProjectManifestFile(projectRoot),
+            /multiple \.yyp manifests.*Project operations require exactly one project manifest/u
+        );
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("readProjectMetadataDocument parses a manifest into its underlying record", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        const manifestPath = path.join(projectRoot, "MyGame.yyp");
+        const document = await readProjectMetadataDocument(manifestPath);
+
+        assert.equal(document.name, "MyGame");
+        assert.equal(document.resourceType, "GMProject");
+        assert.deepEqual(document.resources, []);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }
