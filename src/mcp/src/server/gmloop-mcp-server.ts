@@ -1,4 +1,5 @@
 import { CLI } from "@gmloop/cli";
+import { Core } from "@gmloop/core";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -183,6 +184,25 @@ function readCliFailureSummary(result: { exitCode: number; stderr: string; stdou
     return `CLI command exited with code ${result.exitCode}.`;
 }
 
+/**
+ * Parse the JSON payload that the CLI emitted on stdout for a particular
+ * command. The shared {@link Core.parseJsonWithContext} helper is used so that
+ * any syntax error is reported with the originating command description and
+ * a `JsonParseError` instance instead of an opaque `SyntaxError` whose message
+ * only mentions the unexpected token. Keeping this in a small, exported helper
+ * lets tests exercise the failure mode directly without having to spin up a
+ * captured CLI subprocess.
+ *
+ * @param stdout Raw stdout text emitted by the CLI.
+ * @param argv Command argv that produced the stdout (used as the parse
+ *              `description` so the error names the failing command).
+ * @returns Parsed JSON value, narrowed to the caller's `TPayload` type.
+ */
+export function parseCliJsonStdout<TPayload>(stdout: string, argv: ReadonlyArray<string>): TPayload {
+    const description = `CLI JSON output for ${argv.join(" ")}`;
+    return Core.parseJsonWithContext(stdout, { description }) as TPayload;
+}
+
 async function runCliJsonCommand<TPayload>(
     argv: Array<string>,
     cwd = process.cwd()
@@ -196,7 +216,7 @@ async function runCliJsonCommand<TPayload>(
     }
 
     return {
-        payload: JSON.parse(result.stdout) as TPayload,
+        payload: parseCliJsonStdout<TPayload>(result.stdout, argv),
         stdout: result.stdout
     };
 }

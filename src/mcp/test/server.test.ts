@@ -8,7 +8,8 @@ import {
     createGmloopMcpServer,
     extractGraphById,
     listGmloopMcpToolCatalogEntries,
-    listGmloopMcpToolNames
+    listGmloopMcpToolNames,
+    parseCliJsonStdout
 } from "../src/server/index.js";
 
 const WORKSPACE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -216,4 +217,34 @@ void test("extractGraphById collapses the 3-segment chain into a single call", (
 
     // Empty graphs array returns null.
     assert.equal(extractGraphById({ payload: { graphs: [] } }, "project"), null);
+});
+
+void test("parseCliJsonStdout returns the parsed payload for valid JSON", () => {
+    const payload = parseCliJsonStdout<{ ok: true }>('{"ok":true}\n', ["graph", "doctor", "--json"]);
+
+    assert.deepEqual(payload, { ok: true });
+});
+
+void test("parseCliJsonStdout decorates syntax errors with the originating command", () => {
+    assert.throws(
+        () => parseCliJsonStdout("not-json", ["graph", "doctor", "--json"]),
+        (error: unknown) => {
+            assert.ok(error instanceof SyntaxError);
+            assert.equal(error.name, "JsonParseError");
+            assert.match(error.message, /CLI JSON output for graph doctor --json/u);
+            return true;
+        }
+    );
+});
+
+void test("parseCliJsonStdout throws when the CLI emits an empty stdout", () => {
+    assert.throws(
+        () => parseCliJsonStdout("", ["graph", "doctor", "--json"]),
+        (error: unknown) => {
+            assert.ok(error instanceof SyntaxError);
+            assert.equal(error.name, "JsonParseError");
+            assert.match(error.message, /CLI JSON output for graph doctor --json/u);
+            return true;
+        }
+    );
 });
