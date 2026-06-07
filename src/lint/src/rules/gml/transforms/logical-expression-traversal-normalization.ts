@@ -1,6 +1,6 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
-import { replaceNode } from "./math-ast-builders.js";
+import { replaceNode } from "../math/math-ast-builders.js";
 
 const { isObjectLike, unwrapParenthesizedExpression } = Core;
 

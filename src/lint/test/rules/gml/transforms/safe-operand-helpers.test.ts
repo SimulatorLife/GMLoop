@@ -5,7 +5,7 @@ import {
     areAllSafeOperands,
     isSafeOperand,
     isSafeReciprocalCancellationOperand
-} from "../../../../src/rules/gml/transforms/math-lengthdir-transforms.js";
+} from "../../../../src/rules/gml/math/math-lengthdir-transforms.js";
 
 void describe("isSafeOperand", () => {
     void it("returns true for Identifier", () => {
