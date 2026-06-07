@@ -10,7 +10,7 @@
 
 import { Core } from "@gmloop/core";
 
-import { safeGetParentNode } from "./path-utils.js";
+import { findAncestorNode, safeGetParentNode } from "./path-utils.js";
 
 // Re-export type constants for convenience
 const STRING_TYPE = "string";
@@ -270,7 +270,11 @@ export function isNumericComputationNode(node: any): boolean {
  * Determines if the current node is inside a constructor function.
  *
  * Used to detect when formatting code that appears within a constructor declaration
- * body, where certain formatting rules may apply differently.
+ * body, where certain formatting rules may apply differently. Returns `true` only
+ * when an enclosing `ConstructorDeclaration` is reachable *and* the chain between
+ * the current node and that constructor passes through a `FunctionDeclaration`
+ * whose parent is a `BlockStatement` (a function expression nested in a block,
+ * not a top-level function declaration).
  *
  * @param path - The AST path for traversal.
  * @returns `true` if the current node is inside a constructor function, `false` otherwise.
@@ -280,26 +284,19 @@ export function isInsideConstructorFunction(path: any): boolean {
         return false;
     }
 
-    let foundEnclosingFunctionDeclaration = false;
+    const constructorAncestor = findAncestorNode(path, "ConstructorDeclaration");
+    if (!constructorAncestor) {
+        return false;
+    }
 
     for (let depth = 0; ; depth += 1) {
         const ancestor = safeGetParentNode(path, depth);
-        if (!ancestor || ancestor.type === "Program") {
+        if (!ancestor || ancestor === constructorAncestor) {
             return false;
         }
 
-        if (ancestor.type === "FunctionDeclaration") {
-            const functionParent = safeGetParentNode(path, depth + 1);
-            if (!functionParent || functionParent.type !== "BlockStatement") {
-                return false;
-            }
-
-            foundEnclosingFunctionDeclaration = true;
-            continue;
-        }
-
-        if (ancestor.type === "ConstructorDeclaration") {
-            return foundEnclosingFunctionDeclaration;
+        if (ancestor.type === "FunctionDeclaration" && safeGetParentNode(path, depth + 1)?.type === "BlockStatement") {
+            return true;
         }
     }
 }
