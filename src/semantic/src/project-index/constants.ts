@@ -92,5 +92,3 @@ export function isProjectManifestPath(candidate) {
 
     return candidate.toLowerCase().endsWith(PROJECT_MANIFEST_EXTENSION_LOWER);
 }
-
-export { DEFAULT_RESOURCE_METADATA_EXTENSIONS as PROJECT_RESOURCE_METADATA_DEFAULTS };
