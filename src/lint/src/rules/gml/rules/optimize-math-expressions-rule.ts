@@ -3,6 +3,17 @@ import type { Rule } from "eslint";
 
 import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
+import { applyDivisionToMultiplication } from "../math/math-division-to-multiplication.js";
+import { cleanupMultiplicativeIdentityParentheses } from "../math/math-parentheses-cleanup.js";
+// manual-transforms provide a comprehensive suite of normalization helpers that
+// the linter rule previously replicated only incompletely. We now invoke them
+// directly and print the resulting AST fragment ourselves so the rule can keep
+// its existing text-edit infrastructure and remain synchronous.
+import {
+    applyManualMathNormalization,
+    applyScalarCondensing,
+    simplifyZeroDivisionNumerators
+} from "../math/math-traversal-normalization.js";
 import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,
@@ -14,17 +25,6 @@ import {
     type SourceTextEdit,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import { applyDivisionToMultiplication } from "../transforms/math-division-to-multiplication.js";
-import { cleanupMultiplicativeIdentityParentheses } from "../transforms/math-parentheses-cleanup.js";
-// manual-transforms provide a comprehensive suite of normalization helpers that
-// the linter rule previously replicated only incompletely. We now invoke them
-// directly and print the resulting AST fragment ourselves so the rule can keep
-// its existing text-edit infrastructure and remain synchronous.
-import {
-    applyManualMathNormalization,
-    applyScalarCondensing,
-    simplifyZeroDivisionNumerators
-} from "../transforms/math-traversal-normalization.js";
 import { evaluateSkipDecision } from "./optimize-math-skip-evaluator.js";
 
 const {

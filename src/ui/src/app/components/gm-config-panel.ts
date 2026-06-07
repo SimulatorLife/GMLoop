@@ -7,6 +7,7 @@ import type {
     GraphVisualizationProjectConfigurationRefactorCodemodEntry
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import { getUiErrorMessage } from "../error-message.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
@@ -46,7 +47,7 @@ function parseDraftConfig(text: string): DraftParseResult {
         }
         return { config: parsed, error: null, ok: true };
     } catch (error) {
-        return { config: null, error: error instanceof Error ? error.message : "Invalid JSON.", ok: false };
+        return { config: null, error: getUiErrorMessage(error, "Invalid JSON."), ok: false };
     }
 }
 
