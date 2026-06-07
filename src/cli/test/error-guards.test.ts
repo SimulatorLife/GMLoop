@@ -35,4 +35,44 @@ void describe("isRecord", () => {
         assert.equal(isRecord("text"), false);
         assert.equal(isRecord(123), false);
     });
+
+    void it("rejects undefined, booleans, bigints, symbols, and functions", () => {
+        assert.equal(isRecord(undefined), false);
+        assert.equal(isRecord(true), false);
+        assert.equal(isRecord(false), false);
+        assert.equal(isRecord(0n), false);
+        assert.equal(isRecord(Symbol("s")), false);
+        assert.equal(
+            isRecord(() => {}),
+            false
+        );
+    });
+
+    void it("accepts null-prototype and class instances", () => {
+        // The shared `Core.isPlainObject` predicate accepts null-prototype
+        // objects and class instances, matching the historical bespoke
+        // implementation. The type predicate still narrows to
+        // `Record<string, unknown>` so downstream property access is
+        // permitted.
+        const nullPrototype = Object.create(null) as Record<string, unknown>;
+        assert.equal(isRecord(nullPrototype), true);
+
+        class CustomExample {
+            public readonly name = "instance";
+        }
+        const instance = new CustomExample();
+        assert.equal(isRecord(instance), true);
+    });
+
+    void it("narrows the type predicate for property access", () => {
+        const candidate: unknown = { hello: "world" };
+        if (isRecord(candidate)) {
+            // This assignment would fail to type-check if `isRecord` did not
+            // narrow to `Record<string, unknown>`.
+            const value: unknown = candidate.hello;
+            assert.equal(value, "world");
+        } else {
+            assert.fail("Expected isRecord to return true for a plain object");
+        }
+    });
 });
