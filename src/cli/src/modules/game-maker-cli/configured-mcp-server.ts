@@ -1,6 +1,8 @@
 import { access, constants, readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { isRecord } from "../../shared/error-guards.js";
+
 type ConfiguredMcpServerEntry = {
     args: Array<string>;
     command: string | null;
@@ -318,8 +320,4 @@ function isPackagedGameMakerCliMcpCommand(args: ReadonlyArray<string>, packageIn
         args[packageIndex + 1] === "resourcetool" &&
         args[packageIndex + 2] === "mcp"
     );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object" && Array.isArray(value) === false;
 }
