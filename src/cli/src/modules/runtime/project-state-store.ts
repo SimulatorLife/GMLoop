@@ -5,7 +5,7 @@ import { Core } from "@gmloop/core";
 
 import { isRecord } from "../../shared/error-guards.js";
 
-const { sortObjectKeys } = Core;
+const { sortObjectKeys, stringifyJsonForFile } = Core;
 
 /**
  * Persisted runtime log entry scoped to one project.
@@ -112,5 +112,5 @@ export function writeRuntimeProjectState(projectRoot: string, state: RuntimeProj
         )
     };
 
-    writeFileSync(statePath, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+    writeFileSync(statePath, stringifyJsonForFile(normalized, { space: 2 }), "utf8");
 }
