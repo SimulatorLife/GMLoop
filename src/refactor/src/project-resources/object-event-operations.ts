@@ -1,8 +1,15 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
+
+import {
+    getManifestResources,
+    type ProjectManifestEntry,
+    readProjectMetadataDocument,
+    resolveProjectManifestFile
+} from "./project-resource-operations.js";
 
 const OBJECT_RESOURCE_DIRECTORY = "objects";
 
@@ -28,13 +35,6 @@ const OBJECT_EVENT_NUMBERS = Object.freeze({
     draw: Object.freeze({ begin: 72, draw: 0, end: 73, gui: 64, guibegin: 65, guiend: 66, pre: 76, post: 77 }),
     step: Object.freeze({ begin: 1, end: 2, normal: 0, step: 0 })
 });
-
-type ProjectManifestEntry = Readonly<{
-    id: Readonly<{
-        name: string;
-        path: string;
-    }>;
-}>;
 
 type ResourceReference = Readonly<{
     name: string;
@@ -95,60 +95,6 @@ export interface ObjectEventMutationResult {
     objectPath: string;
     warnings: Array<string>;
     writtenPaths: Array<string>;
-}
-
-async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
-    const rawContent = await readFile(absolutePath, "utf8");
-    return Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
-}
-
-async function resolveProjectManifestPath(projectRoot: string): Promise<string> {
-    const directoryEntries = await readdir(projectRoot, { withFileTypes: true });
-    const manifestFileNames = directoryEntries
-        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".yyp"))
-        .map((entry) => entry.name)
-        .toSorted((left, right) => left.localeCompare(right));
-
-    if (manifestFileNames.length === 0) {
-        throw new Error(`Could not locate a .yyp manifest inside '${projectRoot}'.`);
-    }
-    if (manifestFileNames.length > 1) {
-        throw new Error(
-            `Found multiple .yyp manifests in '${projectRoot}'. Object event operations require exactly one project manifest.`
-        );
-    }
-
-    return path.join(projectRoot, manifestFileNames[0]);
-}
-
-function getManifestResources(document: Record<string, unknown>): Array<ProjectManifestEntry> {
-    const resources: Array<ProjectManifestEntry> = [];
-    for (const resourceEntry of Core.asArray(document.resources)) {
-        if (!Core.isObjectLike(resourceEntry)) {
-            continue;
-        }
-
-        const identifier = (resourceEntry as { id?: unknown }).id;
-        if (!Core.isObjectLike(identifier)) {
-            continue;
-        }
-
-        const name = Core.getNonEmptyString((identifier as { name?: unknown }).name);
-        const resourcePath = Core.getNonEmptyString((identifier as { path?: unknown }).path);
-        if (!name || !resourcePath) {
-            continue;
-        }
-
-        resources.push(
-            Object.freeze({
-                id: Object.freeze({
-                    name,
-                    path: resourcePath
-                })
-            })
-        );
-    }
-    return resources;
 }
 
 function locateObjectReference(
@@ -339,8 +285,8 @@ async function resolveObjectEventMutationContext(
     objectName: string,
     descriptor: ObjectEventDescriptor
 ): Promise<ObjectEventMutationContext> {
-    const manifestPath = await resolveProjectManifestPath(projectRoot);
-    const manifestDocument = await readProjectMetadataDocument(manifestPath);
+    const manifest = await resolveProjectManifestFile(projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
     const objectReference = locateObjectReference(getManifestResources(manifestDocument), objectName);
     const objectAbsolutePath = path.join(projectRoot, Core.fromPosixPath(objectReference.path));
     const objectDocument = await readProjectMetadataDocument(objectAbsolutePath);
@@ -384,8 +330,8 @@ export async function addObjectEvent(request: AddObjectEventRequest): Promise<Ob
     const normalizedHandlerSource = normalizeHandlerSource(request.handlerSource);
     Parser.GMLParser.parse(normalizedHandlerSource);
 
-    const manifestPath = await resolveProjectManifestPath(request.projectRoot);
-    const manifestDocument = await readProjectMetadataDocument(manifestPath);
+    const manifest = await resolveProjectManifestFile(request.projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
     const objectReference = locateObjectReference(getManifestResources(manifestDocument), request.objectName);
     const objectAbsolutePath = path.join(request.projectRoot, Core.fromPosixPath(objectReference.path));
     const objectDocument = await readProjectMetadataDocument(objectAbsolutePath);

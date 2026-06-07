@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { getManifestResources, type ProjectManifestEntry } from "./project-resource-operations.js";
+import {
+    getManifestResources,
+    type ProjectManifestEntry,
+    readProjectMetadataDocument,
+    resolveProjectManifestFile
+} from "./project-resource-operations.js";
 
 const ROOM_RESOURCE_DIRECTORY = "rooms";
 const OBJECT_RESOURCE_DIRECTORY = "objects";
@@ -86,30 +91,6 @@ export interface RoomInstanceMutationResult {
     writtenPaths: Array<string>;
     x: number;
     y: number;
-}
-
-async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
-    const rawContent = await readFile(absolutePath, "utf8");
-    return Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
-}
-
-async function resolveProjectManifestPath(projectRoot: string): Promise<string> {
-    const directoryEntries = await readdir(projectRoot, { withFileTypes: true });
-    const manifestFileNames = directoryEntries
-        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".yyp"))
-        .map((entry) => entry.name)
-        .toSorted((left, right) => left.localeCompare(right));
-
-    if (manifestFileNames.length === 0) {
-        throw new Error(`Could not locate a .yyp manifest inside '${projectRoot}'.`);
-    }
-    if (manifestFileNames.length > 1) {
-        throw new Error(
-            `Found multiple .yyp manifests in '${projectRoot}'. Room instance operations require exactly one project manifest.`
-        );
-    }
-
-    return path.join(projectRoot, manifestFileNames[0]);
 }
 
 function locateResourceReference(
@@ -268,8 +249,8 @@ async function resolveRoomInstanceMutationContext(
     roomName: string
 ): Promise<RoomInstanceMutationContext> {
     const projectRoot = path.resolve(projectRootInput);
-    const manifestPath = await resolveProjectManifestPath(projectRoot);
-    const manifestDocument = await readProjectMetadataDocument(manifestPath);
+    const manifest = await resolveProjectManifestFile(projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
     const manifestResources = getManifestResources(manifestDocument);
     const roomReference = locateResourceReference(manifestResources, ROOM_RESOURCE_DIRECTORY, roomName);
     const roomAbsolutePath = path.join(projectRoot, Core.fromPosixPath(roomReference.path));
