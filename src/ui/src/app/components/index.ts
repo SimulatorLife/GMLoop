@@ -13,4 +13,5 @@ export * from "./gm-playground-panel.js";
 export * from "./lifecycle-participants-controller.js";
 export * from "./light-dom-lit-element.js";
 export * from "./live-reload-polling-controller.js";
+export * from "./playground-session-controller.js";
 export * from "./primitives/index.js";
