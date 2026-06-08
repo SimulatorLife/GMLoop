@@ -1,16 +1,24 @@
-import { html, type PropertyValues } from "lit";
+import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
-import { DEFAULT_PLAYGROUND_GML_SOURCE, resolveInitialPlaygroundGmlSource } from "../playground-default-gml.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { highlightGml } from "../syntax-highlight-gml.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+import { PlaygroundSessionController } from "./playground-session-controller.js";
 
 /**
  * Interactive playground for GML parsing, formatting, and rule application.
+ *
+ * The class deliberately limits its `LitElement` overrides to `render` and the
+ * `connectedCallback`/`disconnectedCallback` shims needed to wire the
+ * `EventBusManager`. All the "react to property changes" and
+ * "persist input + debounce" logic lives in an injected
+ * `PlaygroundSessionController` so the host class stays shallow and focused
+ * on presentation.
  */
 export class GmPlaygroundPanel extends LightDomLitElement {
     public static properties = {
@@ -22,6 +30,27 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
+    public constructor() {
+        super();
+        if ("matchMedia" in globalThis && globalThis.matchMedia("(max-width: 920px)").matches) {
+            this.#controlsPanelOpen = false;
+        }
+    }
+
+    // The session controller is declared before the callbacks it references
+    // so the arrow-function callbacks close over `this` and resolve their
+    // target members lazily (the methods themselves are defined further
+    // below).
+    #sessionController = new PlaygroundSessionController(this, {
+        callbacks: {
+            onInputChanged: () => this.requestUpdate(),
+            onModelChanged: () => this.#onModelChange(),
+            onProcessInput: () => this.#processInput()
+        },
+        getModel: () => this.model,
+        getState: () => this.state
+    });
+
     #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
@@ -32,19 +61,17 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         );
     };
 
+    #eventBus = new EventBusManager(this, [{ event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }]);
+
     public connectedCallback(): void {
         super.connectedCallback();
-        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+        this.#eventBus.connect();
     }
 
-    public constructor() {
-        super();
-        if ("matchMedia" in globalThis && globalThis.matchMedia("(max-width: 920px)").matches) {
-            this.#controlsPanelOpen = false;
-        }
+    public disconnectedCallback(): void {
+        this.#eventBus.disconnect();
+        super.disconnectedCallback();
     }
-
-    #gmlInput = DEFAULT_PLAYGROUND_GML_SOURCE;
 
     #gmlOutput = "";
 
@@ -57,8 +84,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     #controlsPanelOpen = true;
 
     #error: string | null = null;
-
-    #debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
     #enabledLintRules = new Map<string, boolean>();
 
@@ -97,6 +122,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.#syncEnabledFormatOptionsFromModel(this.model);
         this.#syncEnabledLintRulesFromModel(this.model);
         this.#syncEnabledCodemodsFromModel(this.model);
+        this.requestUpdate();
     };
 
     #showFormatDetails = false;
@@ -129,41 +155,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             return html`<div class="playground-output" aria-live="polite">${unsafeHTML(highlighted)}</div>`;
         }
         return html`<pre class="playground-output" aria-live="polite">${astJson}</pre>`;
-    }
-
-    public disconnectedCallback(): void {
-        if (this.#debounceTimer !== null) {
-            globalThis.clearTimeout(this.#debounceTimer);
-            this.#debounceTimer = null;
-        }
-
-        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-        super.disconnectedCallback();
-    }
-
-    protected firstUpdated(): void {
-        const savedInput = localStorage.getItem("gmloop-playground-input");
-        this.#gmlInput = resolveInitialPlaygroundGmlSource(savedInput);
-        if (savedInput !== this.#gmlInput) {
-            localStorage.setItem("gmloop-playground-input", this.#gmlInput);
-        }
-        if (this.state?.activePage === "playground") {
-            void this.#processInput();
-        }
-    }
-
-    protected willUpdate(changedProperties: PropertyValues): void {
-        super.willUpdate(changedProperties);
-        if (changedProperties.has("model")) {
-            this.#onModelChange();
-        }
-    }
-
-    protected updated(changedProperties: PropertyValues): void {
-        super.updated(changedProperties);
-        if (changedProperties.has("state") && this.state?.activePage === "playground") {
-            void this.#processInput();
-        }
     }
 
     #toggleFormatOption(optionName: string): void {
@@ -243,19 +234,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     readonly #onInputChange = (e: Event): void => {
         const target = e.target as HTMLTextAreaElement;
-        this.#gmlInput = target.value;
-        localStorage.setItem("gmloop-playground-input", this.#gmlInput);
-
-        if (this.#debounceTimer !== null) {
-            globalThis.clearTimeout(this.#debounceTimer);
-        }
-
-        this.#debounceTimer = globalThis.setTimeout(() => {
-            void this.#processInput();
-            this.requestUpdate();
-        }, 300);
-
-        this.requestUpdate();
+        this.#sessionController.setInput(target.value);
     };
 
     readonly #onInputScroll = (e: Event): void => {
@@ -269,7 +248,8 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     async #processInput(): Promise<void> {
         this.#error = null;
-        if (!this.#gmlInput.trim()) {
+        const currentInput = this.#sessionController.input;
+        if (!currentInput.trim()) {
             this.#gmlOutput = "";
             this.#astJson = "";
             return;
@@ -290,7 +270,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    gml: this.#gmlInput,
+                    gml: currentInput,
                     format: enabledFormatOptionNames.length > 0,
                     formatOptionNames: enabledFormatOptionNames,
                     lint: enabledLintRuleIds.length > 0,
@@ -692,13 +672,13 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                             </div>
                             <div class="playground-input-surface">
                                 <pre class="playground-input-highlight" aria-hidden="true">
-${unsafeHTML(highlightGml(this.#gmlInput))}</pre
+${unsafeHTML(highlightGml(this.#sessionController.input))}</pre
                                 >
                                 <textarea
                                     class="playground-input"
                                     aria-label="Playground input GML"
                                     placeholder="Paste or write GML code here..."
-                                    .value=${this.#gmlInput}
+                                    .value=${this.#sessionController.input}
                                     @input=${this.#onInputChange}
                                     @scroll=${this.#onInputScroll}
                                     spellcheck="false"
