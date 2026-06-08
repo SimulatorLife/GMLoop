@@ -21,13 +21,13 @@
 import { Core } from "@gmloop/core";
 import { util } from "prettier";
 
-import { printDanglingComments, printDanglingCommentsAsGroup } from "../comments/comment-printer.js";
 import {
     LogicalOperatorsStyle,
     normalizeLogicalOperatorsStyle,
     ObjectWrapOption,
     resolveObjectWrapOption
 } from "../options/index.js";
+import { printDanglingComments, printDanglingCommentsAsGroup } from "./comment-print-boundary.js";
 import { NUMBER_TYPE, OBJECT_TYPE, STRING_TYPE, UNDEFINED_TYPE } from "./constants.js";
 import {
     buildCallArgumentsDocs,

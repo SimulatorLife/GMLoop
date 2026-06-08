@@ -23,7 +23,9 @@ void test("dependency bundle is frozen and exposes expected contract keys", () =
             "gmlParserAdapter",
             "handleComments",
             "print",
-            "printComment"
+            "printComment",
+            "printDanglingComments",
+            "printDanglingCommentsAsGroup"
         ].toSorted()
     );
 });
