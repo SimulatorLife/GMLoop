@@ -22,7 +22,6 @@ import { buildPrintableDocCommentLines as buildPrintableDocCommentLinesFromComme
 import { DOC_COMMENT_OUTPUT_FLAG, NUMBER_TYPE } from "./constants.js";
 import { safeGetParentNode } from "./path-utils.js";
 import { concat, hardline, join } from "./prettier-doc-builders.js";
-import { resolveNodeIndexRangeWithSource, resolvePrinterSourceMetadata } from "./source-text.js";
 
 /**
  * Resolves the buildPrintableDocCommentLines function for doc-comment rendering.
@@ -53,9 +52,9 @@ function resolveBuildPrintableDocCommentLines(options: any) {
  * concrete adapter in `../comments/description-doc.js`.
  */
 export function printNodeDocComments(node: any, path: any, options: any): any {
-    const sourceMetadata = resolvePrinterSourceMetadata(options);
+    const sourceMetadata = Core.resolvePrinterSourceMetadata(options);
     const { originalText } = sourceMetadata;
-    const { startIndex: nodeStartIndex } = resolveNodeIndexRangeWithSource(node, sourceMetadata);
+    const { startIndex: nodeStartIndex } = Core.resolveNodeIndexRangeWithSource(node, sourceMetadata);
 
     // Resolve buildPrintableDocCommentLines from options.gml (injected by
     // format-entry.ts) with a fallback to the canonical comments subsystem
