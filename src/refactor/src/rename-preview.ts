@@ -8,7 +8,13 @@ import { Core } from "@gmloop/core";
 
 import { groupOccurrencesByFile } from "./occurrence-analysis.js";
 import { extractSymbolName } from "./rename/index.js";
-import type { BatchRenamePlanSummary, RenamePlanSummary, SymbolOccurrence } from "./types.js";
+import type {
+    BatchRenamePlanSummary,
+    BatchRenameValidation,
+    HotReloadCascadeResult,
+    RenamePlanSummary,
+    SymbolOccurrence
+} from "./types.js";
 import type { WorkspaceEdit } from "./workspace-edit.js";
 
 /**
@@ -96,6 +102,120 @@ export function buildHotReloadReport(
         return null;
     }
     return validation.hotReload;
+}
+
+/**
+ * Structured view of a batch plan's `BatchRenameValidation`.
+ *
+ * Exists to break the Law-of-Demeter violation where callers navigate
+ * `plan.batchValidation.{valid,errors,warnings,conflictingSets}`
+ * repeatedly inside the batch preview formatter. Wrapping the sub-object
+ * in a dedicated type gives downstream code a single immediate neighbour
+ * to talk to and keeps the formatter focused on presentation.
+ */
+export type BatchValidationReport = Readonly<{
+    valid: boolean;
+    errors: ReadonlyArray<string>;
+    warnings: ReadonlyArray<string>;
+    conflictingSets: ReadonlyArray<ReadonlyArray<string>>;
+}>;
+
+/**
+ * Build a structured view of the `BatchRenameValidation` attached to a
+ * batch rename plan.
+ *
+ * The returned value mirrors the shape of `plan.batchValidation` but is
+ * exposed as a named, frozen projection so callers do not have to
+ * reach through `plan.batchValidation.*` chains. The helper intentionally
+ * does no validation work of its own: it is a structural adapter that
+ * preserves the existing batch-validation contract verbatim.
+ *
+ * @param plan - Batch rename plan whose batch-validation should be exposed
+ * @returns Structured view of the plan's `BatchRenameValidation`
+ *
+ * @example
+ * const batchValidation = buildBatchValidationReport(plan);
+ * if (!batchValidation.valid) {
+ *     for (const error of batchValidation.errors) {
+ *         console.error(error);
+ *     }
+ * }
+ */
+export function buildBatchValidationReport(plan: BatchRenamePlanSummary): BatchValidationReport {
+    return {
+        valid: plan.batchValidation.valid,
+        errors: plan.batchValidation.errors,
+        warnings: plan.batchValidation.warnings,
+        conflictingSets: plan.batchValidation.conflictingSets
+    };
+}
+
+/**
+ * Build a hot-reload dependency cascade view for a batch rename plan.
+ *
+ * Returns `null` when the plan has no cascade result (e.g., the batch
+ * did not request hot-reload cascade analysis), allowing callers to
+ * handle the absent case explicitly rather than navigating the
+ * `plan.cascadeResult` chain repeatedly.
+ *
+ * The returned value is the existing `HotReloadCascadeResult` — that
+ * type already promotes its convenience fields (`totalSymbols`,
+ * `maxDistance`, `hasCircular`) to the top level, so downstream code
+ * avoids the historical `plan.cascadeResult.metadata.totalSymbols`
+ * four-segment chain.
+ *
+ * @param plan - Batch rename plan that may carry a cascade result
+ * @returns The cascade result, or null when no cascade exists
+ *
+ * @example
+ * const cascade = buildCascadeReport(plan);
+ * if (cascade !== null) {
+ *     console.log(`Symbols to reload: ${cascade.totalSymbols}`);
+ * }
+ */
+export function buildCascadeReport(plan: BatchRenamePlanSummary): HotReloadCascadeResult | null {
+    return plan.cascadeResult;
+}
+
+/**
+ * Structured view of a batch plan's hot-reload validation summary.
+ *
+ * Mirrors the fields `formatBatchRenamePlanReport` previously reached
+ * through `plan.hotReload.{valid,errors,warnings}` chains. Exists as a
+ * dedicated type so the formatter can talk to a single immediate
+ * neighbour instead of repeatedly walking through `plan.hotReload`.
+ */
+export type BatchHotReloadReport = Readonly<{
+    valid: boolean;
+    errors: ReadonlyArray<string>;
+    warnings: ReadonlyArray<string>;
+}>;
+
+/**
+ * Build a structured view of a batch plan's hot-reload validation.
+ *
+ * Returns `null` when the plan has no hot-reload validation attached
+ * (i.e., `plan.hotReload === null`), letting callers branch on the
+ * absent case explicitly rather than walking `plan.hotReload` chains.
+ *
+ * @param plan - Batch rename plan that may carry hot-reload data
+ * @returns Structured hot-reload report, or null when not present
+ *
+ * @example
+ * const hotReload = buildBatchHotReloadReport(plan);
+ * if (hotReload !== null) {
+ *     console.log(`Status: ${hotReload.valid ? "SAFE" : "UNSAFE"}`);
+ * }
+ */
+export function buildBatchHotReloadReport(plan: BatchRenamePlanSummary): BatchHotReloadReport | null {
+    if (plan.hotReload === null) {
+        return null;
+    }
+    return {
+        valid: plan.hotReload.valid,
+        errors: plan.hotReload.errors,
+        warnings: plan.hotReload.warnings
+    };
 }
 
 /**
@@ -340,35 +460,44 @@ export function formatRenamePlanReport(plan: RenamePlanSummary): string {
  * console.log(report);
  */
 export function formatBatchRenamePlanReport(plan: BatchRenamePlanSummary): string {
+    // Talk to the plan's sub-objects through their dedicated facade helpers
+    // so this function only ever addresses one immediate neighbour at a
+    // time. The helpers also normalize nullable sub-objects (cascade and
+    // hot-reload) into explicit `null` returns, letting the formatter
+    // branch on the absent case without repeated `plan.?.?.?` walks.
+    const batchValidation = buildBatchValidationReport(plan);
+    const cascade = buildCascadeReport(plan);
+    const hotReload = buildBatchHotReloadReport(plan);
+
     const title = "Batch Rename Plan Report";
     const lines: Array<string> = [
         title,
         "=".repeat(title.length),
         "",
-        `Status: ${plan.batchValidation.valid ? "VALID" : "INVALID"}`,
+        `Status: ${batchValidation.valid ? "VALID" : "INVALID"}`,
         `Total Renames: ${plan.impactAnalyses.size}`,
         ""
     ];
 
-    if (!plan.batchValidation.valid) {
+    if (!batchValidation.valid) {
         lines.push("Batch Validation Errors:");
-        for (const error of plan.batchValidation.errors) {
+        for (const error of batchValidation.errors) {
             lines.push(`  ✗ ${error}`);
         }
         lines.push("");
     }
 
-    if (plan.batchValidation.warnings.length > 0) {
+    if (batchValidation.warnings.length > 0) {
         lines.push("Batch Validation Warnings:");
-        for (const warning of plan.batchValidation.warnings) {
+        for (const warning of batchValidation.warnings) {
             lines.push(`  ⚠ ${warning}`);
         }
         lines.push("");
     }
 
-    if (plan.batchValidation.conflictingSets.length > 0) {
+    if (batchValidation.conflictingSets.length > 0) {
         lines.push("Conflicting Symbol Sets:");
-        for (const set of plan.batchValidation.conflictingSets) {
+        for (const set of batchValidation.conflictingSets) {
             lines.push(`  ✗ ${set.join(", ")}`);
         }
         lines.push("");
@@ -408,31 +537,33 @@ export function formatBatchRenamePlanReport(plan: BatchRenamePlanSummary): strin
         ""
     );
 
-    if (plan.cascadeResult) {
-        // Use top-level aliases on HotReloadCascadeResult to avoid the
-        // `plan.cascadeResult.metadata.totalSymbols` four-segment chain.
+    if (cascade !== null) {
+        // `HotReloadCascadeResult` exposes top-level convenience aliases
+        // (`totalSymbols`, `maxDistance`, `hasCircular`) so callers avoid
+        // the historical `cascade.metadata.totalSymbols` four-segment
+        // chain.
         lines.push(
             "Hot Reload Dependency Cascade:",
-            `  Total Symbols to Reload: ${plan.cascadeResult.totalSymbols}`,
-            `  Max Dependency Distance: ${plan.cascadeResult.maxDistance}`,
-            `  Has Circular Dependencies: ${plan.cascadeResult.hasCircular ? "Yes" : "No"}`
+            `  Total Symbols to Reload: ${cascade.totalSymbols}`,
+            `  Max Dependency Distance: ${cascade.maxDistance}`,
+            `  Has Circular Dependencies: ${cascade.hasCircular ? "Yes" : "No"}`
         );
 
-        if (plan.cascadeResult.circular.length > 0) {
+        if (cascade.circular.length > 0) {
             lines.push("  Circular Dependency Chains:");
-            for (const cycle of plan.cascadeResult.circular) {
+            for (const cycle of cascade.circular) {
                 const formattedCycle = cycle.map((id) => extractSymbolName(id)).join(" → ");
                 lines.push(`    ⚠ ${formattedCycle}`);
             }
         }
 
-        lines.push(`  Reload Order: ${plan.cascadeResult.order.length} symbols`, "");
+        lines.push(`  Reload Order: ${cascade.order.length} symbols`, "");
     }
 
-    if (plan.hotReload) {
-        lines.push(`Hot Reload Status: ${plan.hotReload.valid ? "SAFE" : "UNSAFE"}`);
+    if (hotReload !== null) {
+        lines.push(`Hot Reload Status: ${hotReload.valid ? "SAFE" : "UNSAFE"}`);
 
-        appendErrorsAndWarnings(lines, plan.hotReload.errors, plan.hotReload.warnings);
+        appendErrorsAndWarnings(lines, hotReload.errors, hotReload.warnings);
     }
 
     return lines.join("\n");

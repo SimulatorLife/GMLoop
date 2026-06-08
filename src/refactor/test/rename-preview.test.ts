@@ -6,6 +6,9 @@ import * as assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+    buildBatchHotReloadReport,
+    buildBatchValidationReport,
+    buildCascadeReport,
     buildHotReloadReport,
     formatBatchRenamePlanReport,
     formatOccurrencePreview,
@@ -673,5 +676,186 @@ void describe("buildHotReloadReport", () => {
         const result = buildHotReloadReport(validation);
         assert.ok(result !== null);
         assert.deepEqual(result.suggestions, suggestions);
+    });
+});
+
+void describe("buildBatchValidationReport", () => {
+    void it("returns the underlying batch validation fields", () => {
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: false,
+                errors: ["Multiple symbols renamed to same name"],
+                warnings: ["Some warnings"],
+                renameValidations: new Map(),
+                conflictingSets: [["gml/script/scr_a", "gml/script/scr_b"]]
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        const report = buildBatchValidationReport(plan);
+
+        assert.equal(report.valid, false);
+        assert.deepEqual(report.errors, ["Multiple symbols renamed to same name"]);
+        assert.deepEqual(report.warnings, ["Some warnings"]);
+        assert.deepEqual(report.conflictingSets, [["gml/script/scr_a", "gml/script/scr_b"]]);
+    });
+
+    void it("returns empty collections when the batch has none", () => {
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        const report = buildBatchValidationReport(plan);
+
+        assert.equal(report.valid, true);
+        assert.equal(report.errors.length, 0);
+        assert.equal(report.warnings.length, 0);
+        assert.equal(report.conflictingSets.length, 0);
+    });
+
+    void it("exposes the structured report without callers reaching into plan.batchValidation", () => {
+        // The helper exists precisely to give callers a single immediate
+        // neighbour; verify the returned shape is the adapter, not the
+        // original `BatchRenameValidation` (which would still require
+        // callers to reach into `plan.batchValidation.*`).
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        const report = buildBatchValidationReport(plan);
+
+        // Only the four documented fields should be surfaced; the
+        // adapter deliberately hides `renameValidations` because the
+        // formatter does not consume it.
+        assert.deepEqual(Object.keys(report).sort(), ["conflictingSets", "errors", "valid", "warnings"]);
+    });
+});
+
+void describe("buildCascadeReport", () => {
+    void it("returns null when the plan has no cascade result", () => {
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        assert.equal(buildCascadeReport(plan), null);
+    });
+
+    void it("returns the cascade result when present", () => {
+        const cascade = {
+            cascade: [],
+            order: ["gml/script/scr_a"],
+            circular: [],
+            metadata: { totalSymbols: 1, maxDistance: 0, hasCircular: false },
+            totalSymbols: 1,
+            maxDistance: 0,
+            hasCircular: false
+        };
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: cascade
+        };
+
+        const result = buildCascadeReport(plan);
+
+        assert.ok(result !== null);
+        assert.equal(result.totalSymbols, 1);
+        assert.equal(result.maxDistance, 0);
+        assert.equal(result.hasCircular, false);
+    });
+});
+
+void describe("buildBatchHotReloadReport", () => {
+    void it("returns null when the plan has no hot-reload data", () => {
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        assert.equal(buildBatchHotReloadReport(plan), null);
+    });
+
+    void it("exposes valid, errors, and warnings without navigating plan.hotReload", () => {
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: {
+                valid: false,
+                errors: ["Hot reload blocked"],
+                warnings: ["Restart required"]
+            },
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        const report = buildBatchHotReloadReport(plan);
+
+        assert.ok(report !== null);
+        assert.equal(report.valid, false);
+        assert.deepEqual(report.errors, ["Hot reload blocked"]);
+        assert.deepEqual(report.warnings, ["Restart required"]);
     });
 });
