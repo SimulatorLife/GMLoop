@@ -66,13 +66,6 @@ import {
 } from "./prettier-doc-builders.js";
 import { isLastStatement, isSkippableSemicolonWhitespace, optionalSemicolon } from "./semicolons.js";
 import { buildClauseGroup, printSingleClauseStatement } from "./single-clause-statement.js";
-import {
-    getOriginalTextFromOptions,
-    resolveNodeIndexRangeWithSource,
-    resolvePrinterSourceMetadata,
-    sliceOriginalText,
-    stripTrailingLineTerminators
-} from "./source-text.js";
 import { shouldAddNewlinesAroundStatement } from "./statement-spacing-policy.js";
 import { handleIntermediateTrailingSpacing, handleTerminalTrailingSpacing } from "./statement-traversal-spacing.js";
 import { isComplexArgumentNode, isInLValueChain } from "./type-guards.js";
@@ -812,7 +805,7 @@ function tryPrintDeclarationNode(node, path, options, print) {
                 const normalized = Core.isNonEmptyString(valueBody)
                     ? `#macro ${macroName} ${valueBody}`
                     : `#macro ${macroName}`;
-                return concat(stripTrailingLineTerminators(normalized));
+                return concat(Core.stripTrailingLineTerminators(normalized));
             }
 
             // Fallback: use original text with name substitution when indices are
@@ -835,7 +828,7 @@ function tryPrintDeclarationNode(node, path, options, print) {
                 text = text.slice(0, relativeStart) + macroName + text.slice(relativeEnd);
             }
 
-            return concat(stripTrailingLineTerminators(text));
+            return concat(Core.stripTrailingLineTerminators(text));
         }
         case "RegionStatement": {
             return concat(["#region", print("name")]);
@@ -1176,14 +1169,14 @@ function shouldForceInlineFunctionParameters(path, options) {
         return false;
     }
 
-    const originalText = getOriginalTextFromOptions(options);
+    const originalText = Core.getOriginalTextFromOptions(options);
 
     const firstParam = node.params[0];
     const lastParam = node.params.at(-1);
     const startIndex = Core.getNodeStartIndex(firstParam);
     const endIndex = Core.getNodeEndIndex(lastParam);
 
-    const parameterSource = sliceOriginalText(originalText, startIndex, endIndex);
+    const parameterSource = Core.sliceOriginalText(originalText, startIndex, endIndex);
 
     if (parameterSource === null) {
         return false;
@@ -1318,7 +1311,7 @@ function hasLineBreakBetweenArguments(previousArgument, argument, options) {
         return false;
     }
 
-    const originalText = getOriginalTextFromOptions(options);
+    const originalText = Core.getOriginalTextFromOptions(options);
     if (typeof originalText !== STRING_TYPE) {
         return false;
     }
@@ -1393,7 +1386,7 @@ function printStatements(path, options, print, childrenAttribute) {
     const statements =
         parentNode && Array.isArray(parentNode[childrenAttribute]) ? parentNode[childrenAttribute] : null;
     // Cache frequently used option lookups to avoid re-evaluating them in the tight map loop.
-    const sourceMetadata = resolvePrinterSourceMetadata(options);
+    const sourceMetadata = Core.resolvePrinterSourceMetadata(options);
     const originalTextCache = sourceMetadata.originalText ?? options?.originalText ?? null;
 
     return path.map((childPath, index) => {
@@ -1437,7 +1430,7 @@ function buildStatementPartsForPrinter({
     }
 
     let semi = optionalSemicolon(node.type);
-    const { startIndex: nodeStartIndex, endIndex: nodeEndIndex } = resolveNodeIndexRangeWithSource(
+    const { startIndex: nodeStartIndex, endIndex: nodeEndIndex } = Core.resolveNodeIndexRangeWithSource(
         node,
         sourceMetadata
     );
@@ -1699,7 +1692,7 @@ function getSourceTextForNode(node, options) {
         return null;
     }
 
-    const { originalText, locStart, locEnd } = resolvePrinterSourceMetadata(options);
+    const { originalText, locStart, locEnd } = Core.resolvePrinterSourceMetadata(options);
 
     if (originalText === null) {
         return null;
@@ -1724,14 +1717,14 @@ function structLiteralHasLeadingLineBreak(node, options) {
         return false;
     }
 
-    const originalText = getOriginalTextFromOptions(options);
+    const originalText = Core.getOriginalTextFromOptions(options);
 
     if (!Core.isNonEmptyArray(node.properties)) {
         return false;
     }
 
     const { start, end } = Core.getNodeRangeIndices(node);
-    const source = sliceOriginalText(originalText, start, end);
+    const source = Core.sliceOriginalText(originalText, start, end);
     if (source === null) {
         return false;
     }
