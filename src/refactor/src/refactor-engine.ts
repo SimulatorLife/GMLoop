@@ -48,10 +48,14 @@ import {
     type ExecuteGlobalvarToGlobalCodemodResult,
     type ExecuteRenameRequest,
     type ExecuteRenameResult,
+    type FeatherRenamePlanner,
+    type GlobalVarRewriteAssessor,
     type HotReloadCascadeResult,
     type HotReloadSafetySummary,
     type HotReloadUpdate,
     type HotReloadValidationOptions,
+    type IdentifierOccupancyChecker,
+    type LoopHoistIdentifierResolver,
     type NamingConventionCodemodPlan,
     OccurrenceKind,
     type ParserBridge,
@@ -282,6 +286,18 @@ export class RefactorEngine {
     private readonly renameValidationCache: RenameValidationCache;
     private readonly semanticCache: SemanticQueryCache;
 
+    /**
+     * Narrow role-scoped view onto {@link projectAnalysisProvider} for
+     * identifier-occupancy lookups. The composite provider is downcast
+     * here to the minimum contract needed by the overlap-query methods,
+     * which keeps the seam between the engine and the provider at the
+     * role level required by the call site.
+     */
+    private readonly identifierOccupancyChecker: IdentifierOccupancyChecker;
+    private readonly featherRenamePlanner: FeatherRenamePlanner;
+    private readonly globalVarRewriteAssessor: GlobalVarRewriteAssessor;
+    private readonly loopHoistIdentifierResolver: LoopHoistIdentifierResolver;
+
     constructor({
         parser = null,
         semantic = null,
@@ -293,6 +309,12 @@ export class RefactorEngine {
         this.semantic = semantic ?? null;
         this.formatter = formatter ?? null;
         this.projectAnalysisProvider = projectAnalysisProvider ?? DEFAULT_PROJECT_ANALYSIS_PROVIDER;
+        // Role-scoped views onto the composite provider so that each
+        // call site depends only on the role interface it needs.
+        this.identifierOccupancyChecker = this.projectAnalysisProvider;
+        this.featherRenamePlanner = this.projectAnalysisProvider;
+        this.globalVarRewriteAssessor = this.projectAnalysisProvider;
+        this.loopHoistIdentifierResolver = this.projectAnalysisProvider;
         this.hotReloadCoordinator = hotReloadCoordinator ?? DEFAULT_HOT_RELOAD_COORDINATOR;
         this.renameValidationCache = new RenameValidationCache({
             maxSize: RENAME_VALIDATION_CACHE_MAX_SIZE
@@ -393,7 +415,7 @@ export class RefactorEngine {
      * determine if a proposed variable name or identifier is safe to use.
      */
     async isIdentifierOccupied(identifierName: string): Promise<boolean> {
-        return await this.projectAnalysisProvider.isIdentifierOccupied(identifierName, {
+        return await this.identifierOccupancyChecker.isIdentifierOccupied(identifierName, {
             semantic: this.semantic,
             prepareRenamePlan: async (request, options) => await this.prepareRenamePlan(request, options)
         });
@@ -405,7 +427,7 @@ export class RefactorEngine {
      * determine if a rename or refactor would affect multiple files.
      */
     async listIdentifierOccurrences(identifierName: string): Promise<Set<string>> {
-        return await this.projectAnalysisProvider.listIdentifierOccurrences(identifierName, {
+        return await this.identifierOccupancyChecker.listIdentifierOccurrences(identifierName, {
             semantic: this.semantic,
             prepareRenamePlan: async (request, options) => await this.prepareRenamePlan(request, options)
         });
@@ -2487,7 +2509,7 @@ export class RefactorEngine {
             skipReason?: string;
         }>
     > {
-        return await this.projectAnalysisProvider.planFeatherRenames(requests, filePath, projectRoot, {
+        return await this.featherRenamePlanner.planFeatherRenames(requests, filePath, projectRoot, {
             semantic: this.semantic,
             prepareRenamePlan: async (request, options) => await this.prepareRenamePlan(request, options)
         });
@@ -2504,7 +2526,7 @@ export class RefactorEngine {
         initializerMode: "existing" | "undefined";
         mode: "project-aware";
     } {
-        return this.projectAnalysisProvider.assessGlobalVarRewrite(filePath, hasInitializer);
+        return this.globalVarRewriteAssessor.assessGlobalVarRewrite(filePath, hasInitializer);
     }
 
     /**
@@ -2514,7 +2536,7 @@ export class RefactorEngine {
         identifierName: string;
         mode: "project-aware";
     } {
-        return this.projectAnalysisProvider.resolveLoopHoistIdentifier(preferredName);
+        return this.loopHoistIdentifierResolver.resolveLoopHoistIdentifier(preferredName);
     }
 
     /**
