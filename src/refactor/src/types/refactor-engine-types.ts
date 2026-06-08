@@ -377,38 +377,54 @@ export interface ConflictEntry {
 export type WorkspaceReadFile = (path: string) => MaybePromise<string>;
 export type WorkspaceWriteFile = (path: string, content: string) => MaybePromise<void>;
 
-export interface RefactorProjectAnalysisProvider {
-    isIdentifierOccupied(
-        identifierName: string,
-        context: {
-            semantic: PartialSemanticAnalyzer | null;
-            prepareRenamePlan: (
-                request: { symbolId: string; newName: string },
-                options: { validateHotReload: boolean }
-            ) => Promise<RenamePlanSummary>;
-        }
-    ): Promise<boolean>;
-    listIdentifierOccurrences(
-        identifierName: string,
-        context: {
-            semantic: PartialSemanticAnalyzer | null;
-            prepareRenamePlan: (
-                request: { symbolId: string; newName: string },
-                options: { validateHotReload: boolean }
-            ) => Promise<RenamePlanSummary>;
-        }
-    ): Promise<Set<string>>;
+/**
+ * Project-aware context shared by identifier-overlap queries and Feather
+ * rename planning.
+ *
+ * Both `IdentifierOccupancyChecker` and `FeatherRenamePlanner` need a handle
+ * onto the semantic analyzer and a callback that can re-run the rename
+ * planner with a candidate name. Keeping the shape in a single alias stops
+ * those role interfaces from drifting apart on the same context payload.
+ */
+export type RefactorProjectAnalysisContext = {
+    semantic: PartialSemanticAnalyzer | null;
+    prepareRenamePlan: (
+        request: { symbolId: string; newName: string },
+        options: { validateHotReload: boolean }
+    ) => Promise<RenamePlanSummary>;
+};
+
+/**
+ * Identifier occupancy and cross-file occurrence enumeration.
+ *
+ * Used by lint and refactor to detect naming conflicts before introducing a
+ * new identifier, and to enumerate the files a rename would touch. Splitting
+ * this from the broader project-analysis surface keeps consumers (which
+ * only need to ask "is this name taken?" or "where does this name appear?")
+ * from depending on Feather, globalvar, or loop-hoist collaborators they
+ * never invoke.
+ */
+export interface IdentifierOccupancyChecker {
+    isIdentifierOccupied(identifierName: string, context: RefactorProjectAnalysisContext): Promise<boolean>;
+    listIdentifierOccurrences(identifierName: string, context: RefactorProjectAnalysisContext): Promise<Set<string>>;
+}
+
+/**
+ * Feather debugger metadata-driven rename planning.
+ *
+ * Used by the Feather metadata codemod to find a safe replacement name for
+ * an identifier that would otherwise be flagged as a Feather style
+ * violation. The seam is intentionally narrow so that test doubles (and
+ * any future codemod that needs a different planning strategy) can
+ * override rename planning without also providing identifier, globalvar,
+ * or loop-hoist collaborators.
+ */
+export interface FeatherRenamePlanner {
     planFeatherRenames(
         requests: ReadonlyArray<{ identifierName: string; preferredReplacementName: string }>,
         filePath: string | null,
         projectRoot: string,
-        context: {
-            semantic: PartialSemanticAnalyzer | null;
-            prepareRenamePlan: (
-                request: { symbolId: string; newName: string },
-                options: { validateHotReload: boolean }
-            ) => Promise<RenamePlanSummary>;
-        }
+        context: RefactorProjectAnalysisContext
     ): Promise<
         Array<{
             identifierName: string;
@@ -418,6 +434,17 @@ export interface RefactorProjectAnalysisProvider {
             skipReason?: string;
         }>
     >;
+}
+
+/**
+ * Global-var to `global.` rewrite assessment.
+ *
+ * Used by the globalvar-to-global codemod to decide whether rewriting a
+ * declaration is safe in the current file. The assessor is intentionally
+ * synchronous and free of any semantic or rename-plan context because the
+ * decision is a local, structural check.
+ */
+export interface GlobalVarRewriteAssessor {
     assessGlobalVarRewrite(
         filePath: string | null,
         hasInitializer: boolean
@@ -426,11 +453,35 @@ export interface RefactorProjectAnalysisProvider {
         initializerMode: "existing" | "undefined";
         mode: "project-aware";
     };
+}
+
+/**
+ * Loop hoist identifier resolution.
+ *
+ * Used by the optimize-logical-flow codemod to pick a non-colliding name
+ * for a hoisted loop-control identifier. Like the globalvar assessor this
+ * is a pure, synchronous operation that does not need the semantic
+ * analyzer or rename-planner context.
+ */
+export interface LoopHoistIdentifierResolver {
     resolveLoopHoistIdentifier(preferredName: string): {
         identifierName: string;
         mode: "project-aware";
     };
 }
+
+/**
+ * Complete project-analysis provider.
+ *
+ * Composes the four role-focused interfaces above for consumers that need
+ * the full surface (e.g. {@link RefactorEngine}). Consumers that only
+ * need one slice of behavior should depend on the matching role interface
+ * directly — see {@link IdentifierOccupancyChecker},
+ * {@link FeatherRenamePlanner}, {@link GlobalVarRewriteAssessor}, and
+ * {@link LoopHoistIdentifierResolver}.
+ */
+export interface RefactorProjectAnalysisProvider
+    extends IdentifierOccupancyChecker, FeatherRenamePlanner, GlobalVarRewriteAssessor, LoopHoistIdentifierResolver {}
 
 /**
  * Hot reload coordination entry points consumed by {@link RefactorEngine}.
