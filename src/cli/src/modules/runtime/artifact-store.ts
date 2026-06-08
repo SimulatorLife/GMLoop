@@ -44,6 +44,11 @@ export async function writeArtifactJson(filePath: string, payload: unknown): Pro
 
 /**
  * Read JSON from disk. Returns `null` when file is missing or invalid JSON.
+ *
+ * The caller is responsible for narrowing the parsed value before treating it
+ * as a specific shape — use {@link readValidatedArtifactJson} when a schema
+ * predicate is available so malformed payloads are rejected early instead of
+ * silently propagating through the call site.
  */
 export async function readArtifactJson<T>(filePath: string): Promise<T | null> {
     try {
@@ -52,6 +57,57 @@ export async function readArtifactJson<T>(filePath: string): Promise<T | null> {
     } catch {
         return null;
     }
+}
+
+export type ReadValidatedArtifactJsonOptions<T> = Readonly<{
+    /**
+     * Type guard that confirms the parsed JSON value matches the expected
+     * artifact shape. Returning `false` causes the helper to resolve to
+     * `null`, mirroring the missing-file case so callers do not have to
+     * distinguish "absent" from "malformed" at every read site.
+     */
+    validate: (value: unknown) => value is T;
+}>;
+
+/**
+ * Read JSON from disk and validate the parsed payload against a schema
+ * predicate.
+ *
+ * Returns `null` when the file is missing, the JSON cannot be parsed, or the
+ * parsed value does not satisfy the supplied validator. This guards against
+ * hand-edited, truncated, or version-mismatched artifact files whose contents
+ * parse as JSON but do not match the runtime contract — without this layer
+ * the call site would receive a value typed as `T` that is actually a
+ * structurally invalid object, which can crash downstream consumers that
+ * dereference nested properties.
+ *
+ * The helper deliberately keeps the success path to `T` (not `T | undefined`)
+ * so callers can compose it with the same `?? defaultValue` patterns they use
+ * with {@link readArtifactJson}.
+ */
+export async function readValidatedArtifactJson<T>(
+    filePath: string,
+    { validate }: ReadValidatedArtifactJsonOptions<T>
+): Promise<T | null> {
+    let raw: string;
+    try {
+        raw = await readFile(filePath, "utf8");
+    } catch {
+        return null;
+    }
+
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return null;
+    }
+
+    if (!validate(parsed)) {
+        return null;
+    }
+
+    return parsed;
 }
 
 export async function fileExists(filePath: string): Promise<boolean> {

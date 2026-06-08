@@ -7,11 +7,14 @@ import { createPathOption } from "../cli-core/shared-command-options.js";
 import {
     createDeterministicArtifactId,
     ensureArtifactDirectory,
+    fileExists,
     listJsonBasenames,
     readArtifactJson,
+    readValidatedArtifactJson,
     resolveArtifactDirectory,
     writeArtifactJson
 } from "../modules/runtime/index.js";
+import { isRecord } from "../shared/error-guards.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type ReplayOptions = Readonly<{
@@ -24,6 +27,8 @@ type ReplayOptions = Readonly<{
     path?: string;
 }>;
 
+type ReplayEvent = Readonly<{ payload: string; step: number; type: string }>;
+
 type ReplayArtifact = Readonly<{
     artifactId: string;
     checksum: string;
@@ -32,9 +37,17 @@ type ReplayArtifact = Readonly<{
     name: string;
     projectRoot: string;
     trace: {
-        events: ReadonlyArray<{ payload: string; step: number; type: string }>;
+        events: ReadonlyArray<ReplayEvent>;
     };
 }>;
+
+/**
+ * Reasons a `replay run` / `replay assert` action can fail to load an
+ * artifact. Surfaced on the JSON `payload.reason` field so callers can
+ * distinguish "absent" from "structurally invalid" without needing to inspect
+ * the on-disk file directly.
+ */
+type ReplayArtifactLookupFailureReason = "artifact_invalid" | "artifact_not_found";
 
 function printReplayPayload(payload: unknown, asJson: boolean): void {
     if (asJson) {
@@ -52,9 +65,86 @@ async function resolveReplayProjectRoot(options: ReplayOptions): Promise<string>
     return await discoverProjectRoot({ explicitProjectPath: options.path });
 }
 
-async function resolveReplayArtifact(projectRoot: string, artifactId: string): Promise<ReplayArtifact | null> {
+/**
+ * Structural validator for a {@link ReplayEvent} entry inside an artifact's
+ * `trace.events` array.
+ *
+ * The predicate intentionally checks every property a downstream consumer
+ * reads (`payload`, `step`, `type`) so that the run/compare/assert code paths
+ * can dereference them without conditional guards.
+ */
+function isReplayEvent(value: unknown): value is ReplayEvent {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    return (
+        typeof value.payload === "string" &&
+        typeof value.type === "string" &&
+        typeof value.step === "number" &&
+        Number.isFinite(value.step)
+    );
+}
+
+/**
+ * Structural validator for a {@link ReplayArtifact} JSON payload.
+ *
+ * Without this guard, a hand-edited, truncated, or version-mismatched
+ * artifact file would survive `readArtifactJson` (it returns whatever the
+ * file contains) and only crash later when the run/compare/assert paths
+ * attempted to read `artifact.trace.events[i].type` or compute arithmetic on
+ * `trace.events.length`. Returning `false` causes
+ * {@link readValidatedArtifactJson} to resolve to `null` so the failure is
+ * reported via the structured `reason` field rather than as an unhandled
+ * `TypeError`.
+ */
+function isReplayArtifact(value: unknown): value is ReplayArtifact {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    if (
+        typeof value.artifactId !== "string" ||
+        typeof value.checksum !== "string" ||
+        typeof value.createdAt !== "string" ||
+        typeof value.input !== "string" ||
+        typeof value.name !== "string" ||
+        typeof value.projectRoot !== "string"
+    ) {
+        return false;
+    }
+
+    const trace = value.trace;
+    if (!isRecord(trace) || !Array.isArray(trace.events)) {
+        return false;
+    }
+
+    return trace.events.every(isReplayEvent);
+}
+
+function resolveReplayArtifactFilePath(projectRoot: string, artifactId: string): string {
     const artifactsDirectory = resolveArtifactDirectory(projectRoot, path.join("replay", "artifacts"));
-    return await readArtifactJson<ReplayArtifact>(path.join(artifactsDirectory, `${artifactId}.json`));
+    return path.join(artifactsDirectory, `${artifactId}.json`);
+}
+
+async function resolveReplayArtifact(projectRoot: string, artifactId: string): Promise<ReplayArtifact | null> {
+    return await readValidatedArtifactJson<ReplayArtifact>(resolveReplayArtifactFilePath(projectRoot, artifactId), {
+        validate: isReplayArtifact
+    });
+}
+
+/**
+ * Classify a failed artifact lookup so the action handlers can emit a
+ * structured `reason` instead of conflating "missing" and "malformed".
+ */
+async function classifyReplayArtifactLookupFailure(
+    projectRoot: string,
+    artifactId: string
+): Promise<ReplayArtifactLookupFailureReason> {
+    if (await fileExists(resolveReplayArtifactFilePath(projectRoot, artifactId))) {
+        return "artifact_invalid";
+    }
+    return "artifact_not_found";
 }
 
 async function listReplayArtifactIds(projectRoot: string): Promise<Array<string>> {
@@ -148,8 +238,9 @@ async function runReplayRunAction(options: ReplayOptions): Promise<void> {
 
     const artifact = await resolveReplayArtifact(projectRoot, resolvedId);
     if (!artifact) {
+        const reason = await classifyReplayArtifactLookupFailure(projectRoot, resolvedId);
         printReplayPayload(
-            { command: "replay run", payload: { artifactId: resolvedId, ok: false, reason: "artifact_not_found" } },
+            { command: "replay run", payload: { artifactId: resolvedId, ok: false, reason } },
             options.json === true
         );
         return;
@@ -192,10 +283,25 @@ async function runReplayCompareAction(options: ReplayOptions): Promise<void> {
     const candidate = candidateId.length > 0 ? await resolveReplayArtifact(projectRoot, candidateId) : null;
 
     if (!baseline || !candidate) {
+        const baselineReason =
+            baselineId.length > 0 && !baseline
+                ? await classifyReplayArtifactLookupFailure(projectRoot, baselineId)
+                : null;
+        const candidateReason =
+            candidateId.length > 0 && !candidate
+                ? await classifyReplayArtifactLookupFailure(projectRoot, candidateId)
+                : null;
+
         printReplayPayload(
             {
                 command: "replay compare",
-                payload: { availableArtifactIds: ids, ok: false, reason: "missing_artifacts" }
+                payload: {
+                    availableArtifactIds: ids,
+                    baselineReason,
+                    candidateReason,
+                    ok: false,
+                    reason: "missing_artifacts"
+                }
             },
             options.json === true
         );
@@ -232,8 +338,9 @@ async function runReplayAssertAction(options: ReplayOptions): Promise<void> {
 
     const artifact = await resolveReplayArtifact(projectRoot, resolvedId);
     if (!artifact) {
+        const reason = await classifyReplayArtifactLookupFailure(projectRoot, resolvedId);
         printReplayPayload(
-            { command: "replay assert", payload: { artifactId: resolvedId, ok: false, reason: "artifact_not_found" } },
+            { command: "replay assert", payload: { artifactId: resolvedId, ok: false, reason } },
             options.json === true
         );
         return;
