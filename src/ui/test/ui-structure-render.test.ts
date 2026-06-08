@@ -171,7 +171,10 @@ void test("Docs toolbar owns subcategory controls and catalog search", () => {
     assert.match(rendered, /id="docs-controls"[\s\S]*class="gm-view-selector"/u);
     assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-cli"/u);
     assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-mcp"/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-rules"/u);
+    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-linting"/u);
+    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-formatting"/u);
+    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-codemods"/u);
+    assert.doesNotMatch(rendered, /id="docs-view-rules"/u);
     assert.match(rendered, /id="docs-view-cli"[\s\S]*class=gm-btn--chip active/u);
     assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-search-input"/u);
     assert.match(rendered, /id="docs-search-input"[\s\S]*aria-describedby="toolbar-subheading docs-search-summary"/u);

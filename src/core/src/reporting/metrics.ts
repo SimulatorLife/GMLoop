@@ -2,14 +2,14 @@ import { toArrayFromIterable } from "../utils/array.js";
 import { getOrCreateMapEntry, incrementMapValue } from "../utils/object.js";
 import { getNonEmptyString, normalizeStringList } from "../utils/string.js";
 
-const hasHrtime = typeof process?.hrtime?.bigint === "function";
+const hasHrtime = typeof globalThis.process?.hrtime?.bigint === "function";
 
 const DEFAULT_CACHE_KEYS = Object.freeze(["hits", "misses", "stale"]);
 const SUMMARY_SECTIONS = Object.freeze(["timings", "counters", "caches", "metadata"]);
 
 function nowMs() {
     if (hasHrtime) {
-        const ns = process.hrtime.bigint();
+        const ns = globalThis.process.hrtime.bigint();
         return Number(ns / 1_000_000n);
     }
     return Date.now();

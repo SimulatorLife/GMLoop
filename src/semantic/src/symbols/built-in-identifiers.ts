@@ -12,7 +12,7 @@ export interface MetricsCacheTools {
     };
 }
 
-const GML_IDENTIFIER_FILE_PATH = Core.GML_IDENTIFIER_METADATA_PATH;
+const GML_IDENTIFIER_FILE_PATH = Core.getGmlIdentifierMetadataPath();
 
 let cachedBuiltInIdentifiers = null;
 

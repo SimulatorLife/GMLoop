@@ -4,9 +4,32 @@ import { isObjectLike, isPlainObject } from "../utils/object.js";
 import { getNonEmptyString } from "../utils/string.js";
 import { resolveBundledResourcePath, resolveBundledResourceUrl } from "./resource-locator.js";
 
-export const GML_IDENTIFIER_METADATA_URL = resolveBundledResourceUrl("gml-identifiers.json");
+// The metadata URL/path constants are exposed as lazy accessors rather
+// than top-level `const` bindings. Resolving them at module load would
+// touch Node-only APIs (`node:url`, `node:path`, `node:fs`) that are
+// externalized to empty stubs in the browser bundle, which would crash
+// any non-Node consumer that imports `@gmloop/core` for its AST/utility
+// surface. Deferring the resolution to first access keeps module load
+// safe in browser contexts while preserving eager access for Node-side
+// callers (which invoke the accessor at module load, the same instant
+// the previous `const` would have evaluated).
 
-export const GML_IDENTIFIER_METADATA_PATH = resolveBundledResourcePath("gml-identifiers.json");
+let cachedGmlIdentifierMetadataUrl: URL | null = null;
+let cachedGmlIdentifierMetadataPath: string | null = null;
+
+export function getGmlIdentifierMetadataUrl(): URL {
+    if (cachedGmlIdentifierMetadataUrl === null) {
+        cachedGmlIdentifierMetadataUrl = resolveBundledResourceUrl("gml-identifiers.json");
+    }
+    return cachedGmlIdentifierMetadataUrl;
+}
+
+export function getGmlIdentifierMetadataPath(): string {
+    if (cachedGmlIdentifierMetadataPath === null) {
+        cachedGmlIdentifierMetadataPath = resolveBundledResourcePath("gml-identifiers.json");
+    }
+    return cachedGmlIdentifierMetadataPath;
+}
 
 /**
  * Replacement semantics for a deprecated built-in GML identifier.
@@ -49,7 +72,7 @@ export type DeprecatedIdentifierMetadataEntry = Readonly<{
  * @returns {unknown} Raw identifier metadata payload bundled with the package.
  */
 export function loadBundledIdentifierMetadata() {
-    const contents = readTextFileSync(GML_IDENTIFIER_METADATA_PATH);
+    const contents = readTextFileSync(getGmlIdentifierMetadataPath());
     return JSON.parse(contents);
 }
 

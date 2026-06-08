@@ -87,7 +87,7 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - graph/docs/config tabs are rendered from live workspace-fed catalogs
 - the Fix tab delegates configured refactor, lint, and format mutation to the CLI host, renders status/log output, and shows elapsed-time progress updates while runs are pending
 - the Live Reload surface renders watcher, WebSocket, patch, latency, error, and optional runtime-wrapper health snapshots from UI-owned DTOs
-- the Docs surface includes `CLI`, `MCP`, and `Rules` subviews for command, tool, and workspace rule catalogs
+- the Docs surface includes `CLI`, `MCP`, `Linting`, `Formatting`, and `Codemods` subviews for command, tool, and workspace rule catalogs
 - loaded project state is shown in one canonical header location and reflects the active graph/config context
 - graph/docs/config/fix/playground/MCP/live-reload page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
 
@@ -174,7 +174,7 @@ That separation is intentional and should be preserved as more UI surfaces are a
 
 `gm-status-chip` is the shared status badge for feature-page health and lifecycle state. Feature pages must select one of the component's supported statuses instead of passing arbitrary label text, so copy and styling remain consistent across surfaces.
 
-Each tab has one top-level page toolbar. That toolbar owns the page title, subtitle, page-level status badge, and any main controls for the current tab. Do not add a second hero/header toolbar inside a page body for the same title or controls. MCP and Live Reload status badges belong in the shared page toolbar title row, Live Reload start/open/stop controls belong in that same toolbar, and Docs subview/search controls belong in the shared toolbar instead of the Docs panel body. Docs subview tabs use the shared `gm-view-selector` tab control so CLI, MCP, Rules, Playground, and Config selectors keep one visual treatment.
+Each tab has one top-level page toolbar. That toolbar owns the page title, subtitle, page-level status badge, and any main controls for the current tab. Do not add a second hero/header toolbar inside a page body for the same title or controls. MCP and Live Reload status badges belong in the shared page toolbar title row, Live Reload start/open/stop controls belong in that same toolbar, and Docs subview/search controls belong in the shared toolbar instead of the Docs panel body. Docs subview tabs use the shared `gm-view-selector` tab control so CLI, MCP, Linting, Formatting, Codemods, Playground, and Config selectors keep one visual treatment.
 
 ## Live Reload Surface
 
@@ -240,7 +240,6 @@ New top-level UI additions should:
 ## TODO
 - **BUG**: Selecting *any* format option in the `Playground` tab/page for the format settings seems to enable the whole/default format settings too, not *just* that one control. Also not sure if the select-options are actually hooked up to live-update the playground's output view?
 - **FEAT**: For the playground tab/page, user should be able to select *any* of the 'golden' fixture .gml files to preview/test. Or, maybe this is only true if np project is opened in the UI. If a GameMaker project *is* opened in the UI, then the user could be able to select on of the .gml files from that project and test applying rules to those instead.
-- **FEAT**: For the "Docs" page/tab, split the "Rules" subview into three separate: "Linting", "Formatting", and "Codemods" subviews, so the user can more easily find the rules they want to test or learn about. So, the result will have 5 same-level subviews: "CLI", "MCP", "Linting", "Formatting", and "Codemods".
 - **FEAT**: For all raw-JSON displayed in the UI, add a "copy to clipboard" button (single, reusable component) that copies the raw JSON string to the clipboard for easy external use.
 - **FEAT**: For all raw-JSON displayed in the UI, allow for collapsing/expanding nested objects and arrays for easier readability.
 - **BUG**: On the "Docs" page/tab, the search bar and its subtitle "Search current docs view" are misaligned from the toolbar's subtabs-component (CLI, MCP, etc.). The search bar should be visually aligned vertically with that subtab component.

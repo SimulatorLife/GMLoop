@@ -8,9 +8,9 @@ import { createGraphVisualizationDocsPanelContent } from "./docs-panel-content.j
 import {
     createSearchResultSummary,
     normalizeCatalogSearchQuery,
+    searchCatalogEntries,
     searchCliEntries,
-    searchMcpEntries,
-    searchRulesSections
+    searchMcpEntries
 } from "./docs-search.js";
 import {
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
@@ -125,11 +125,19 @@ function resolveFixStatusSummary(state: GraphVisualizationUiState): string {
 
 function resolveDocsStatusSummary(model: GraphVisualizationUiModel, state: GraphVisualizationUiState): string {
     const docsPanelContent = createGraphVisualizationDocsPanelContent(model.documentationCatalogs);
-    return state.activeDocsView === "cli"
-        ? docsPanelContent.cliMetaText
-        : state.activeDocsView === "mcp"
-          ? docsPanelContent.mcpMetaText
-          : docsPanelContent.rulesMetaText;
+    if (state.activeDocsView === "cli") {
+        return docsPanelContent.cliMetaText;
+    }
+    if (state.activeDocsView === "mcp") {
+        return docsPanelContent.mcpMetaText;
+    }
+    if (state.activeDocsView === "linting") {
+        return docsPanelContent.lintingMetaText;
+    }
+    if (state.activeDocsView === "formatting") {
+        return docsPanelContent.formattingMetaText;
+    }
+    return docsPanelContent.codemodsMetaText;
 }
 
 function resolveConfigStatusSummary(model: GraphVisualizationUiModel): string {
@@ -447,13 +455,19 @@ export class GmGraphToolbar extends LightDomLitElement {
         const searchQuery = normalizeCatalogSearchQuery(this.state.searchQuery);
         const cliSearchResult = searchCliEntries(docsPanelContent.cliEntries, searchQuery);
         const mcpSearchResult = searchMcpEntries(docsPanelContent.mcpEntries, searchQuery);
-        const rulesSearchResult = searchRulesSections(docsPanelContent.rulesSections, searchQuery);
+        const lintingSearchResult = searchCatalogEntries(docsPanelContent.lintingEntries, searchQuery);
+        const formattingSearchResult = searchCatalogEntries(docsPanelContent.formattingEntries, searchQuery);
+        const codemodsSearchResult = searchCatalogEntries(docsPanelContent.codemodsEntries, searchQuery);
         const totalCount =
             this.state.activeDocsView === "cli"
                 ? cliSearchResult.totalCount
                 : this.state.activeDocsView === "mcp"
                   ? mcpSearchResult.totalCount
-                  : rulesSearchResult.totalCount;
+                  : this.state.activeDocsView === "linting"
+                    ? lintingSearchResult.totalCount
+                    : this.state.activeDocsView === "formatting"
+                      ? formattingSearchResult.totalCount
+                      : codemodsSearchResult.totalCount;
         const searchResultSummary = createSearchResultSummary(searchQuery, this.state.activeDocsView, totalCount);
 
         // Docs subview and catalog search controls stay in the shared page toolbar
@@ -477,12 +491,28 @@ export class GmGraphToolbar extends LightDomLitElement {
                     MCP
                 </button>
                 <button
-                    id="docs-view-rules"
-                    aria-pressed=${this.state.activeDocsView === "rules"}
-                    class=${this.state.activeDocsView === "rules" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitDocsView("rules")}
+                    id="docs-view-linting"
+                    aria-pressed=${this.state.activeDocsView === "linting"}
+                    class=${this.state.activeDocsView === "linting" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
+                    @click=${() => this.#emitDocsView("linting")}
                 >
-                    Rules
+                    Linting
+                </button>
+                <button
+                    id="docs-view-formatting"
+                    aria-pressed=${this.state.activeDocsView === "formatting"}
+                    class=${this.state.activeDocsView === "formatting" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
+                    @click=${() => this.#emitDocsView("formatting")}
+                >
+                    Formatting
+                </button>
+                <button
+                    id="docs-view-codemods"
+                    aria-pressed=${this.state.activeDocsView === "codemods"}
+                    class=${this.state.activeDocsView === "codemods" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
+                    @click=${() => this.#emitDocsView("codemods")}
+                >
+                    Codemods
                 </button>
             </div>
             <div class="docs-search-panel" role="search" aria-label="Filter documentation catalog">
