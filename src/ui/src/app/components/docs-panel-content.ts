@@ -5,9 +5,9 @@ import type {
 } from "../../graph/types.js";
 import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
 
-export type GraphVisualizationDocsPanelRulesSection = Readonly<{
+export type GraphVisualizationDocsPanelCatalogEntry = Readonly<{
+    badges: ReadonlyArray<string>;
     description: string;
-    items: ReadonlyArray<Readonly<{ badges: ReadonlyArray<string>; detail: string; title: string }>>;
     title: string;
 }>;
 
@@ -16,25 +16,59 @@ export type GraphVisualizationDocsPanelContent = Readonly<{
     cliMetaText: string;
     mcpEntries: ReadonlyArray<GraphVisualizationMcpToolCatalogEntry>;
     mcpMetaText: string;
-    rulesEmptyMessage: string | null;
-    rulesMetaText: string;
-    rulesSections: ReadonlyArray<GraphVisualizationDocsPanelRulesSection>;
+    lintingEntries: ReadonlyArray<GraphVisualizationDocsPanelCatalogEntry>;
+    lintingMetaText: string;
+    lintingEmptyMessage: string | null;
+    formattingEntries: ReadonlyArray<GraphVisualizationDocsPanelCatalogEntry>;
+    formattingMetaText: string;
+    formattingEmptyMessage: string | null;
+    codemodsEntries: ReadonlyArray<GraphVisualizationDocsPanelCatalogEntry>;
+    codemodsMetaText: string;
+    codemodsEmptyMessage: string | null;
 }>;
 
-function createRulesSectionItem(
-    title: string,
-    detail: string,
-    badges: ReadonlyArray<string>
-): Readonly<{ badges: ReadonlyArray<string>; detail: string; title: string }> {
+const LINTING_EMPTY_MESSAGE = "Linting rules are not available right now.";
+const FORMATTING_EMPTY_MESSAGE = "Formatting options are not available right now.";
+const CODEMODS_EMPTY_MESSAGE = "Refactor codemods are not available right now.";
+
+function createLintEntry(
+    ruleId: string,
+    description: string,
+    fixable: "code" | "whitespace" | null
+): GraphVisualizationDocsPanelCatalogEntry {
     return Object.freeze({
-        badges,
-        detail,
-        title
+        badges: [getLintFixableBadgeLabel(fixable) ?? "not-fixable"],
+        description,
+        title: ruleId
+    });
+}
+
+function createFormattingEntry(
+    name: string,
+    description: string,
+    defaultValue: unknown
+): GraphVisualizationDocsPanelCatalogEntry {
+    return Object.freeze({
+        badges: [`default:${JSON.stringify(defaultValue)}`],
+        description: `${description} Default: ${JSON.stringify(defaultValue)}.`,
+        title: name
+    });
+}
+
+function createCodemodEntry(
+    id: string,
+    description: string,
+    requiresSemanticProjectIndex: boolean
+): GraphVisualizationDocsPanelCatalogEntry {
+    return Object.freeze({
+        badges: [requiresSemanticProjectIndex ? "needs-semantic" : "semantic-optional"],
+        description,
+        title: id
     });
 }
 
 /**
- * Create the documentation and rules content rendered by the Lit docs panel.
+ * Create the documentation content rendered by the Lit docs panel.
  */
 export function createGraphVisualizationDocsPanelContent(
     catalogs: GraphVisualizationDocumentationCatalogs | null
@@ -45,56 +79,42 @@ export function createGraphVisualizationDocsPanelContent(
             cliMetaText: "Command help is not available right now.",
             mcpEntries: [],
             mcpMetaText: "Tool details are not available right now.",
-            rulesEmptyMessage: "Rules and code actions are not available right now.",
-            rulesMetaText: "Rules and code actions are not available right now.",
-            rulesSections: []
+            lintingEntries: [],
+            lintingMetaText: "Linting rules are not available right now.",
+            lintingEmptyMessage: LINTING_EMPTY_MESSAGE,
+            formattingEntries: [],
+            formattingMetaText: "Formatting options are not available right now.",
+            formattingEmptyMessage: FORMATTING_EMPTY_MESSAGE,
+            codemodsEntries: [],
+            codemodsMetaText: "Refactor codemods are not available right now.",
+            codemodsEmptyMessage: CODEMODS_EMPTY_MESSAGE
         });
     }
 
     const rulesCatalog = catalogs.workspaceRules;
-    const rulesSections = [
-        Object.freeze({
-            description: "Formatting options that shape how GMLoop rewrites code layout.",
-            items: rulesCatalog.formatOptions.map((entry) =>
-                createRulesSectionItem(
-                    entry.name,
-                    `${entry.description} Default: ${JSON.stringify(entry.defaultValue)}.`,
-                    [`default:${JSON.stringify(entry.defaultValue)}`]
-                )
-            ),
-            title: "Format Options"
-        }),
-        Object.freeze({
-            description: "Checks that spot common issues and can often fix them for you.",
-            items: rulesCatalog.lintRules.map((entry) =>
-                createRulesSectionItem(entry.ruleId, entry.description, [
-                    getLintFixableBadgeLabel(entry.fixable) ?? "not-fixable"
-                ])
-            ),
-            title: "Lint Rules"
-        }),
-        Object.freeze({
-            description: "Project-wide refactors for larger cleanup and migration tasks.",
-            items: rulesCatalog.refactorCodemods.map((entry) =>
-                createRulesSectionItem(entry.id, entry.description, [
-                    entry.requiresSemanticProjectIndex ? "needs-semantic" : "semantic-optional"
-                ])
-            ),
-            title: "Refactor Codemods"
-        })
-    ] satisfies ReadonlyArray<GraphVisualizationDocsPanelRulesSection>;
+    const lintingEntries = rulesCatalog.lintRules.map((entry) =>
+        createLintEntry(entry.ruleId, entry.description, entry.fixable)
+    );
+    const formattingEntries = rulesCatalog.formatOptions.map((entry) =>
+        createFormattingEntry(entry.name, entry.description, entry.defaultValue)
+    );
+    const codemodsEntries = rulesCatalog.refactorCodemods.map((entry) =>
+        createCodemodEntry(entry.id, entry.description, entry.requiresSemanticProjectIndex)
+    );
 
     return Object.freeze({
         cliEntries: catalogs.cliCommands,
         cliMetaText: `${String(catalogs.cliCommands.length)} command${catalogs.cliCommands.length === 1 ? "" : "s"} available for working with your project.`,
         mcpEntries: catalogs.mcpTools,
         mcpMetaText: `${String(catalogs.mcpTools.length)} tool${catalogs.mcpTools.length === 1 ? "" : "s"} available for connected workflows.`,
-        rulesEmptyMessage: rulesSections.every((section) => section.items.length === 0)
-            ? "Rules and code actions are not available right now."
-            : null,
-        rulesMetaText: `${String(rulesCatalog.formatOptions.length)} format options, ${String(
-            rulesCatalog.lintRules.length
-        )} lint rules, and ${String(rulesCatalog.refactorCodemods.length)} refactor tools available for this project.`,
-        rulesSections
+        lintingEntries,
+        lintingMetaText: `${String(lintingEntries.length)} lint rule${lintingEntries.length === 1 ? "" : "s"} available for this project.`,
+        lintingEmptyMessage: lintingEntries.length === 0 ? LINTING_EMPTY_MESSAGE : null,
+        formattingEntries,
+        formattingMetaText: `${String(formattingEntries.length)} formatting option${formattingEntries.length === 1 ? "" : "s"} available for this project.`,
+        formattingEmptyMessage: formattingEntries.length === 0 ? FORMATTING_EMPTY_MESSAGE : null,
+        codemodsEntries,
+        codemodsMetaText: `${String(codemodsEntries.length)} refactor codemod${codemodsEntries.length === 1 ? "" : "s"} available for this project.`,
+        codemodsEmptyMessage: codemodsEntries.length === 0 ? CODEMODS_EMPTY_MESSAGE : null
     });
 }

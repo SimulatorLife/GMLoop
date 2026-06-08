@@ -27,11 +27,25 @@ void test("reset-defaults restores visual view, auto labels, and clears search q
     assert.equal(state.errorMessage, "something went wrong");
 });
 
-void test("reduceGraphVisualizationUiState with set-docs-view accepts the rules catalog subview", () => {
+void test("reduceGraphVisualizationUiState with set-docs-view accepts the linting subview", () => {
     const state = createInitialGraphVisualizationUiState();
-    const updated = reduceGraphVisualizationUiState(state, { docsView: "rules", type: "set-docs-view" });
+    const updated = reduceGraphVisualizationUiState(state, { docsView: "linting", type: "set-docs-view" });
 
-    assert.equal(updated.activeDocsView, "rules");
+    assert.equal(updated.activeDocsView, "linting");
+});
+
+void test("reduceGraphVisualizationUiState with set-docs-view accepts the formatting subview", () => {
+    const state = createInitialGraphVisualizationUiState();
+    const updated = reduceGraphVisualizationUiState(state, { docsView: "formatting", type: "set-docs-view" });
+
+    assert.equal(updated.activeDocsView, "formatting");
+});
+
+void test("reduceGraphVisualizationUiState with set-docs-view accepts the codemods subview", () => {
+    const state = createInitialGraphVisualizationUiState();
+    const updated = reduceGraphVisualizationUiState(state, { docsView: "codemods", type: "set-docs-view" });
+
+    assert.equal(updated.activeDocsView, "codemods");
 });
 
 void test("reset-defaults does not change other state fields beyond the targeted reset values", () => {
@@ -39,12 +53,12 @@ void test("reset-defaults does not change other state fields beyond the targeted
         page: "docs",
         type: "navigate-page"
     });
-    const docsState = reduceGraphVisualizationUiState(initialState, { docsView: "rules", type: "set-docs-view" });
+    const docsState = reduceGraphVisualizationUiState(initialState, { docsView: "linting", type: "set-docs-view" });
 
     const afterReset = reduceGraphVisualizationUiState(docsState, { type: "reset-defaults" });
 
     assert.equal(afterReset.activePage, "docs");
-    assert.equal(afterReset.activeDocsView, "rules");
+    assert.equal(afterReset.activeDocsView, "linting");
 });
 
 void test("reset-defaults on a state already at defaults is a no-op identity", () => {
@@ -84,7 +98,7 @@ void test("reset-project-scoped-state clears project-specific workflow and filte
     const initial = createInitialGraphVisualizationUiState();
     const state: GraphVisualizationUiState = {
         ...initial,
-        activeDocsView: "rules",
+        activeDocsView: "linting",
         activeGraphView: "json",
         activePage: "fix",
         fixErrorMessage: "Fix failed.",
@@ -98,7 +112,7 @@ void test("reset-project-scoped-state clears project-specific workflow and filte
     const reset = reduceGraphVisualizationUiState(state, { type: "reset-project-scoped-state" });
 
     assert.equal(reset.activePage, "fix");
-    assert.equal(reset.activeDocsView, "rules");
+    assert.equal(reset.activeDocsView, "linting");
     assert.equal(reset.activeGraphView, "json");
     assert.equal(reset.labelMode, "always");
     assert.equal(reset.fixErrorMessage, null);

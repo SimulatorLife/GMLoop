@@ -1,14 +1,9 @@
 import type { GraphVisualizationCliCatalogEntry, GraphVisualizationMcpToolCatalogEntry } from "../../graph/types.js";
 import type { GraphVisualizationUiDocsView } from "../state/types.js";
-import type { GraphVisualizationDocsPanelRulesSection } from "./docs-panel-content.js";
+import type { GraphVisualizationDocsPanelCatalogEntry } from "./docs-panel-content.js";
 
 export type CatalogSearchResult<TEntry> = Readonly<{
     entries: ReadonlyArray<TEntry>;
-    totalCount: number;
-}>;
-
-export type RulesCatalogSearchResult = Readonly<{
-    sections: ReadonlyArray<GraphVisualizationDocsPanelRulesSection>;
     totalCount: number;
 }>;
 
@@ -68,34 +63,19 @@ export function searchMcpEntries(
     return { entries: filteredEntries, totalCount: filteredEntries.length };
 }
 
-export function searchRulesSections(
-    sections: ReadonlyArray<GraphVisualizationDocsPanelRulesSection>,
+export function searchCatalogEntries(
+    entries: ReadonlyArray<GraphVisualizationDocsPanelCatalogEntry>,
     query: string
-): RulesCatalogSearchResult {
+): CatalogSearchResult<GraphVisualizationDocsPanelCatalogEntry> {
     if (query.length === 0) {
-        return {
-            sections,
-            totalCount: sections.reduce((total, section) => total + section.items.length, 0)
-        };
+        return { entries, totalCount: entries.length };
     }
 
-    const filteredSections = sections.flatMap((section) => {
-        const sectionMatches = fieldsMatchSearchQuery(query, [section.description, section.title]);
-        const items = sectionMatches
-            ? section.items
-            : section.items.filter((item) => fieldsMatchSearchQuery(query, [item.detail, item.title, ...item.badges]));
+    const filteredEntries = entries.filter((entry) =>
+        fieldsMatchSearchQuery(query, [entry.title, entry.description, ...entry.badges])
+    );
 
-        if (items.length === 0) {
-            return [];
-        }
-
-        return [{ ...section, items }];
-    });
-
-    return {
-        sections: filteredSections,
-        totalCount: filteredSections.reduce((total, section) => total + section.items.length, 0)
-    };
+    return { entries: filteredEntries, totalCount: filteredEntries.length };
 }
 
 export function createSearchResultSummary(
@@ -107,18 +87,33 @@ export function createSearchResultSummary(
         return "";
     }
 
-    const itemLabel =
-        activeDocsView === "cli"
-            ? totalCount === 1
-                ? "command"
-                : "commands"
-            : activeDocsView === "mcp"
-              ? totalCount === 1
-                  ? "tool"
-                  : "tools"
-              : totalCount === 1
-                ? "rule or option"
-                : "rules or options";
+    const itemLabel = createItemLabel(activeDocsView, totalCount);
 
     return `Showing ${String(totalCount)} ${itemLabel} matching "${query}".`;
+}
+
+function createItemLabel(activeDocsView: GraphVisualizationUiDocsView, totalCount: number): string {
+    if (activeDocsView === "cli") {
+        return totalCount === 1 ? "command" : "commands";
+    }
+    if (activeDocsView === "mcp") {
+        return totalCount === 1 ? "tool" : "tools";
+    }
+    if (activeDocsView === "linting") {
+        return totalCount === 1 ? "lint rule" : "lint rules";
+    }
+    if (activeDocsView === "formatting") {
+        return totalCount === 1 ? "formatting option" : "formatting options";
+    }
+    return totalCount === 1 ? "refactor codemod" : "refactor codemods";
+}
+
+export function createNoSearchResultsMessage(query: string, activeDocsView: GraphVisualizationUiDocsView): string {
+    if (query.length === 0) {
+        return "";
+    }
+
+    const itemLabel = createItemLabel(activeDocsView, 0);
+
+    return `No ${itemLabel} match “${query}”.`;
 }

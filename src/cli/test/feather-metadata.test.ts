@@ -8,7 +8,7 @@ import { REPO_ROOT } from "../src/shared/workspace-paths.js";
 
 void test("feather metadata loader resolves bundled snapshot", () => {
     const expectedPath = path.resolve(REPO_ROOT, "resources", "feather-metadata.json");
-    assert.equal(Core.FEATHER_METADATA_PATH, expectedPath);
+    assert.equal(Core.getFeatherMetadataPath(), expectedPath);
 
     const metadata = Core.loadBundledFeatherMetadata();
     assert.ok(metadata && typeof metadata === "object");

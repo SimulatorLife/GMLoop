@@ -8,7 +8,7 @@ import type {
     GraphVisualizationUiState
 } from "./types.js";
 
-const VALID_DOCS_VIEWS = new Set<GraphVisualizationUiDocsView>(["cli", "mcp", "rules"]);
+const VALID_DOCS_VIEWS = new Set<GraphVisualizationUiDocsView>(["cli", "mcp", "linting", "formatting", "codemods"]);
 const VALID_GRAPH_VIEWS = new Set<GraphVisualizationUiGraphView>(["visual", "json"]);
 const VALID_LABEL_MODES = new Set<GraphVisualizationUiLabelMode>(["auto", "always", "hidden"]);
 const VALID_CONFIG_VIEWS = new Set<GraphVisualizationUiConfigView>(["rendered", "raw"]);

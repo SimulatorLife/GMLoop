@@ -16,7 +16,7 @@ export type GraphVisualizationUiLabelMode = "auto" | "always" | "hidden";
 /**
  * Documentation sub-views in the docs surface.
  */
-export type GraphVisualizationUiDocsView = "cli" | "mcp" | "rules";
+export type GraphVisualizationUiDocsView = "cli" | "mcp" | "linting" | "formatting" | "codemods";
 
 /**
  * Configuration presentation modes in the config surface.

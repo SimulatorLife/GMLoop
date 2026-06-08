@@ -2,11 +2,11 @@ export type { FeatherDiagnostic, FeatherMetadata } from "./feather-metadata.js";
 export {
     __normalizeFeatherMetadataForTests,
     clearFeatherMetadataCache,
-    FEATHER_METADATA_PATH,
-    FEATHER_METADATA_URL,
     getFeatherDiagnosticById,
     getFeatherDiagnostics,
     getFeatherMetadata,
+    getFeatherMetadataPath,
+    getFeatherMetadataUrl,
     loadBundledFeatherMetadata
 } from "./feather-metadata.js";
 export type {
@@ -17,9 +17,9 @@ export type {
 } from "./gml-identifier-loading.js";
 export {
     clearIdentifierMetadataCache,
+    getGmlIdentifierMetadataPath,
+    getGmlIdentifierMetadataUrl,
     getIdentifierMetadata,
-    GML_IDENTIFIER_METADATA_PATH,
-    GML_IDENTIFIER_METADATA_URL,
     loadBundledIdentifierMetadata,
     loadDeprecatedIdentifierEntries,
     loadManualFunctionNames,

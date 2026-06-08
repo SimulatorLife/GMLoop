@@ -87,6 +87,11 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
                     defaultValue: 100,
                     description: "Preferred print width.",
                     name: "printWidth"
+                },
+                {
+                    defaultValue: "always",
+                    description: "Trailing comma strategy.",
+                    name: "trailingComma"
                 }
             ],
             lintRules: [
@@ -94,6 +99,11 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
                     description: "Normalize legacy operator aliases.",
                     fixable: "code",
                     ruleId: "gml/normalize-operators"
+                },
+                {
+                    description: "Disallow globalvar declarations.",
+                    fixable: null,
+                    ruleId: "gml/no-globalvar"
                 }
             ],
             refactorCodemods: [
@@ -101,24 +111,31 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
                     description: "Rename globalvar references.",
                     id: "refactor/globalvar-to-global",
                     requiresSemanticProjectIndex: true
+                },
+                {
+                    description: "Convert legacy event numbers to event constants.",
+                    id: "refactor/event-numbers-to-constants",
+                    requiresSemanticProjectIndex: false
                 }
             ]
         }
     };
 }
 
-function createDocsPanelState(): GraphVisualizationUiState {
+function createDocsPanelState(
+    activeDocsView: GraphVisualizationUiState["activeDocsView"] = "linting"
+): GraphVisualizationUiState {
     return {
         ...createInitialGraphVisualizationUiState(),
         activeConfigView: "rendered",
-        activeDocsView: "rules",
+        activeDocsView,
         activeGraphView: "visual",
         activePage: "docs",
         labelMode: "auto"
     };
 }
 
-void test("GmDocsPanel renders the Rules subview and project-facing rule content", () => {
+void test("GmDocsPanel renders the Linting subview and project-facing rule content", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
         data: {
@@ -138,24 +155,85 @@ void test("GmDocsPanel renders the Rules subview and project-facing rule content
         startupState: null,
         title: "Rules Catalog"
     };
-    panel.state = createDocsPanelState();
+    panel.state = createDocsPanelState("linting");
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="docs-page"[\s\S]*class=page content-page docs-page active/u);
-    assert.doesNotMatch(rendered, /docs-view-rules/u);
-    assert.doesNotMatch(rendered, /docs-search-input/u);
-    assert.match(rendered, /Format Options/u);
-    assert.match(rendered, /Lint Rules/u);
-    assert.match(rendered, /Refactor Codemods/u);
-    assert.match(rendered, /printWidth/u);
+    assert.doesNotMatch(rendered, /id=docs-view-linting/u);
+    assert.doesNotMatch(rendered, /id=docs-search-input/u);
+    assert.match(rendered, /id=linting-page[\s\S]*?class=docs-subpage>/u);
+    assert.match(rendered, /id=formatting-page[\s\S]*?class=docs-subpage hidden>/u);
+    assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage hidden>/u);
     assert.match(rendered, /gml\/normalize-operators/u);
-    assert.match(rendered, /refactor\/globalvar-to-global/u);
+    assert.match(rendered, /gml\/no-globalvar/u);
     assert.match(rendered, /<gm-badge[^>]*\.label=fixable/u);
     assert.doesNotMatch(rendered, /fixable:code/u);
 });
 
-void test("GmDocsPanel renders an empty rules state when rule data is unavailable", () => {
+void test("GmDocsPanel renders the Formatting subview and option entries", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = {
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/project"
+        },
+        documentationCatalogs: createDocumentationCatalogs(),
+        isServerMode: false,
+        lastFixRun: null,
+        loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
+        projectConfigurationCatalog: null,
+        startupState: null,
+        title: "Rules Catalog"
+    };
+    panel.state = createDocsPanelState("formatting");
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id=formatting-page[\s\S]*?class=docs-subpage>/u);
+    assert.match(rendered, /id=linting-page[\s\S]*?class=docs-subpage hidden>/u);
+    assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage hidden>/u);
+    assert.match(rendered, /printWidth/u);
+    assert.match(rendered, /trailingComma/u);
+});
+
+void test("GmDocsPanel renders the Codemods subview and refactor entries", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = {
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/project"
+        },
+        documentationCatalogs: createDocumentationCatalogs(),
+        isServerMode: false,
+        lastFixRun: null,
+        loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
+        projectConfigurationCatalog: null,
+        startupState: null,
+        title: "Rules Catalog"
+    };
+    panel.state = createDocsPanelState("codemods");
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage>/u);
+    assert.match(rendered, /id=linting-page[\s\S]*?class=docs-subpage hidden>/u);
+    assert.match(rendered, /id=formatting-page[\s\S]*?class=docs-subpage hidden>/u);
+    assert.match(rendered, /refactor\/globalvar-to-global/u);
+    assert.match(rendered, /refactor\/event-numbers-to-constants/u);
+});
+
+void test("GmDocsPanel renders per-subview empty states when rule data is unavailable", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
         data: {
@@ -175,12 +253,11 @@ void test("GmDocsPanel renders an empty rules state when rule data is unavailabl
         startupState: null,
         title: "Rules Empty State"
     };
-    panel.state = createDocsPanelState();
+    panel.state = createDocsPanelState("linting");
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.doesNotMatch(rendered, /docs-view-rules/u);
-    assert.match(rendered, /Rules and code actions are not available right now\./u);
+    assert.match(rendered, /Linting rules are not available right now\./u);
 });
 
 void test("GmDocsPanel leaves docs controls to the shared page toolbar", () => {
@@ -203,16 +280,16 @@ void test("GmDocsPanel leaves docs controls to the shared page toolbar", () => {
         startupState: null,
         title: "Docs Search"
     };
-    panel.state = { ...createDocsPanelState(), activeDocsView: "cli" };
+    panel.state = createDocsPanelState("cli");
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.doesNotMatch(rendered, /role="search" aria-label="Filter documentation catalog"/u);
-    assert.doesNotMatch(rendered, /id="docs-search-input"/u);
+    assert.doesNotMatch(rendered, /id=docs-search-input/u);
     assert.doesNotMatch(rendered, /Documentation view selector/u);
 });
 
-void test("GmDocsPanel filters rules catalog entries by the current search query", () => {
+void test("GmDocsPanel filters the Linting subview by the current search query", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
         data: {
@@ -232,16 +309,15 @@ void test("GmDocsPanel filters rules catalog entries by the current search query
         startupState: null,
         title: "Rules Search"
     };
-    panel.state = { ...createDocsPanelState(), searchQuery: "normalize" };
+    panel.state = { ...createDocsPanelState("linting"), searchQuery: "normalize" };
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /gml\/normalize-operators/u);
-    assert.doesNotMatch(rendered, /printWidth/u);
-    assert.doesNotMatch(rendered, /refactor\/globalvar-to-global/u);
+    assert.doesNotMatch(rendered, /gml\/no-globalvar/u);
 });
 
-void test("GmDocsPanel shows an active-view empty state when search has no matches", () => {
+void test("GmDocsPanel shows a per-subview empty state when search has no matches", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
         data: {
@@ -261,12 +337,40 @@ void test("GmDocsPanel shows an active-view empty state when search has no match
         startupState: null,
         title: "CLI Search"
     };
-    panel.state = { ...createDocsPanelState(), activeDocsView: "cli", searchQuery: "does-not-exist" };
+    panel.state = { ...createDocsPanelState("cli"), searchQuery: "does-not-exist" };
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /No commands match “does-not-exist”\./u);
     assert.doesNotMatch(rendered, /graph visualize/u);
+});
+
+void test("GmDocsPanel shows a per-subview empty state when linting search has no matches", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = {
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/project"
+        },
+        documentationCatalogs: createDocumentationCatalogs(),
+        isServerMode: false,
+        lastFixRun: null,
+        loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
+        projectConfigurationCatalog: null,
+        startupState: null,
+        title: "Linting Search"
+    };
+    panel.state = { ...createDocsPanelState("linting"), searchQuery: "does-not-exist" };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /No lint rules match “does-not-exist”\./u);
+    assert.doesNotMatch(rendered, /gml\/normalize-operators/u);
 });
 
 void test("GmDocsPanel renders the MCP tools subview and tool metadata when selected", () => {
@@ -289,7 +393,7 @@ void test("GmDocsPanel renders the MCP tools subview and tool metadata when sele
         startupState: null,
         title: "Docs MCP View"
     };
-    panel.state = { ...createDocsPanelState(), activeDocsView: "mcp" };
+    panel.state = createDocsPanelState("mcp");
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
