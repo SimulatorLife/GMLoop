@@ -1,7 +1,12 @@
 import type { GameMakerAstNode } from "@gmloop/core";
 
 import { buildPrintableDocCommentLines } from "../comments/description-doc.js";
-import { handleComments, printComment } from "../comments/index.js";
+import {
+    handleComments,
+    printComment,
+    printDanglingComments,
+    printDanglingCommentsAsGroup
+} from "../comments/index.js";
 import { LogicalOperatorsStyle } from "../options/logical-operators-style.js";
 import { gmlParserAdapter } from "../parsers/index.js";
 import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "../printer/constants.js";
@@ -22,6 +27,8 @@ export const defaultGmlFormatComponentImplementations: GmlFormatComponentContrac
     print,
     handleComments,
     printComment,
+    printDanglingComments,
+    printDanglingCommentsAsGroup,
     buildPrintableDocCommentLines,
     countTrailingBlankLines,
     getNextNonWhitespaceCharacter,
