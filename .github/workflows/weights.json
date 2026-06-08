@@ -2,13 +2,13 @@
   "agents": [
     {
       "name": "copilot",
-      "weight": 1,
+      "weight": 0,
       "cadenceTicks": 4,
       "category": ["code", "merging", "regressions"]
     },
     {
       "name": "codex",
-      "weight": 1,
+      "weight": 0,
       "cadenceTicks": 3,
       "category": ["code"],
       "minComplexity": 3
