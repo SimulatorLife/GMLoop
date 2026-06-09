@@ -6,9 +6,10 @@ import { Command } from "commander";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createPathOption } from "../cli-core/shared-command-options.js";
-import { getRunnerController, getRunnerStateStore } from "../modules/runtime/index.js";
+import { getRunnerController } from "../modules/runtime/index.js";
 import { isRecord } from "../shared/error-guards.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
+import { followRunnerLogs, type FollowRunnerLogsReadOptions, resolveBoundRunnerState } from "./runner-context.js";
 
 type RunnerOptions = Readonly<{
     debug?: boolean;
@@ -116,12 +117,22 @@ async function resolveRunnerLaunchConfiguration(options: RunnerOptions): Promise
     };
 }
 
+/**
+ * Normalise the read options shared by the `runner logs` and
+ * `runner logs --follow` actions. Pulled out so the two orchestrators stay
+ * byte-for-byte consistent and the orchestrator bodies remain free of
+ * inline defaults like `options.kind ?? "all"`.
+ */
+function resolveRunnerLogsReadOptions(options: RunnerOptions): FollowRunnerLogsReadOptions {
+    return {
+        errorsOnly: options.errorsOnly === true,
+        filter: options.filter,
+        kind: options.kind ?? "all"
+    };
+}
+
 async function runRunnerStatusAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const { projectRoot, runnerStateStore } = await resolveBoundRunnerState(options);
     const snapshot = runnerStateStore.readSnapshot();
     const processStatus = getRunnerController().status(projectRoot);
     printRunnerPayload({
@@ -134,16 +145,8 @@ async function runRunnerStatusAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerLogsAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
-    const logs = runnerStateStore.readLogs({
-        errorsOnly: options.errorsOnly === true,
-        filter: options.filter,
-        kind: options.kind ?? "all"
-    });
+    const { runnerStateStore } = await resolveBoundRunnerState(options);
+    const logs = runnerStateStore.readLogs(resolveRunnerLogsReadOptions(options));
     printRunnerPayload({
         command: "runner logs",
         payload: logs
@@ -151,52 +154,26 @@ async function runRunnerLogsAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerLogsFollowAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
-    const startTimestamp = Date.now();
-    const followWindowMs = 750;
-    let lastTimestamp = startTimestamp - 1;
+    const { projectRoot, runnerStateStore } = await resolveBoundRunnerState(options);
+    const readOptions = resolveRunnerLogsReadOptions(options);
 
-    await new Promise<void>((resolve) => {
-        const interval = setInterval(() => {
+    await followRunnerLogs({
+        emit: (entries) => {
+            printRunnerPayload({
+                command: "runner logs",
+                follow: true,
+                payload: entries
+            });
+        },
+        readLogs: () => runnerStateStore.readLogs(readOptions),
+        rebind: () => {
             runnerStateStore.bindProjectRoot(projectRoot);
-            const entries = runnerStateStore
-                .readLogs({
-                    errorsOnly: options.errorsOnly === true,
-                    filter: options.filter,
-                    kind: options.kind ?? "all"
-                })
-                .filter((entry) => entry.timestamp > lastTimestamp);
-
-            if (entries.length > 0) {
-                const nextLast = entries.at(-1);
-                if (nextLast) {
-                    lastTimestamp = nextLast.timestamp;
-                }
-                printRunnerPayload({
-                    command: "runner logs",
-                    follow: true,
-                    payload: entries
-                });
-            }
-
-            if (Date.now() - startTimestamp >= followWindowMs) {
-                clearInterval(interval);
-                resolve();
-            }
-        }, 100);
+        }
     });
 }
 
 async function runRunnerClearLogsAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const { runnerStateStore } = await resolveBoundRunnerState(options);
     runnerStateStore.clearLogs();
     printRunnerPayload({
         command: "runner clear-logs",
@@ -205,11 +182,7 @@ async function runRunnerClearLogsAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerPauseAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const { runnerStateStore } = await resolveBoundRunnerState(options);
     runnerStateStore.setState("paused");
     printRunnerPayload({
         command: "runner pause",
@@ -218,11 +191,7 @@ async function runRunnerPauseAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerResumeAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const { runnerStateStore } = await resolveBoundRunnerState(options);
     runnerStateStore.setState("running");
     printRunnerPayload({
         command: "runner resume",
@@ -231,11 +200,7 @@ async function runRunnerResumeAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerRoomSetAction(roomName: string, options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const { runnerStateStore } = await resolveBoundRunnerState(options);
     runnerStateStore.setRoom(roomName);
     printRunnerPayload({
         command: "runner room set",
@@ -244,11 +209,7 @@ async function runRunnerRoomSetAction(roomName: string, options: RunnerOptions):
 }
 
 async function runRunnerRoomCurrentAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const { runnerStateStore } = await resolveBoundRunnerState(options);
     const snapshot = runnerStateStore.readSnapshot();
     printRunnerPayload({
         command: "runner room current",
