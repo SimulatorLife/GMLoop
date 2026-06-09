@@ -35,7 +35,7 @@ export const PROJECT_FORMAT_OPTION_CATALOG: ReadonlyArray<ProjectFormatOptionCat
         name: "objectWrap"
     }),
     Object.freeze({
-        defaultValue: 100,
+        defaultValue: 120,
         description: "Preferred maximum line width for formatting decisions.",
         name: "printWidth"
     }),
