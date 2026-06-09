@@ -1,13 +1,14 @@
 import type { Rule } from "eslint";
 
-import { normalizeDocParamName } from "../../doc-comment/normalize-param-name.js";
-import { gmlRuleDeprecatedIdentifierServices } from "../gml/gml-rule-services.js";
+import { gmlRuleDeprecatedIdentifierServices, gmlRuleDocCommentServices } from "../gml/gml-rule-services.js";
 import { findMatchingBraceEndIndex, resolveLocFromIndex } from "../gml/rule-base-helpers.js";
 import type { FeatherManifestEntry } from "./manifest.js";
 
-// Consume deprecated-identifier metadata through the shared rule-services
-// contract so rule callers stay stable if the backing catalog module moves.
+// Consume rule-services contracts so this file does not reach two directory
+// levels into the shared doc-comment layer; the abstraction is the only
+// surface that rule implementations are allowed to depend on.
 const { getDeprecatedIdentifierCatalogEntry } = gmlRuleDeprecatedIdentifierServices;
+const { normalizeDocParamName } = gmlRuleDocCommentServices;
 
 type EnumBlockMatch = {
     start: number;
