@@ -4,19 +4,7 @@ import type { Rule } from "eslint";
 import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, isAstNodeRecord } from "../rule-base-helpers.js";
 
-/**
- * Unwraps chains of `ParenthesizedExpression` nodes to retrieve the innermost
- * expression. Returns the original node when no wrapping is present.
- */
-function unwrapParenthesizedExpression(node: unknown): unknown {
-    let current = node;
-
-    while (isAstNodeRecord(current) && current.type === "ParenthesizedExpression") {
-        current = current.expression;
-    }
-
-    return current;
-}
+const { unwrapParenthesizedExpression } = Core;
 
 /**
  * Reports and autofixes unary `+` applied directly to an identifier such as
