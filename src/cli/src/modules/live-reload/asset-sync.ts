@@ -193,12 +193,35 @@ function renderLiveReloadBootstrapConfigModule(config: LiveReloadBootstrapConfig
     ].join("");
 }
 
+/**
+ * Write the live-reload bootstrap config module to disk only when its contents
+ * have actually changed. The hot-reload dev pipeline re-invokes
+ * `syncLiveReloadAssets` on every session start, and the bootstrap config is
+ * typically stable across restarts. Skipping the redundant `fs.writeFile`
+ * syscall avoids an unnecessary disk write (and any subsequent file-watcher
+ * invalidation downstream) in the steady state.
+ */
 async function writeLiveReloadBootstrapConfig(
     targetRoot: string,
     bootstrapConfig: LiveReloadBootstrapConfig
 ): Promise<void> {
     const targetConfigPath = path.join(targetRoot, "browser", "config.js");
-    await fs.writeFile(targetConfigPath, `${renderLiveReloadBootstrapConfigModule(bootstrapConfig)}\n`, "utf8");
+    const rendered = `${renderLiveReloadBootstrapConfigModule(bootstrapConfig)}\n`;
+
+    const existingContents = await fs.readFile(targetConfigPath, "utf8").catch((error) => {
+        const maybeFsError = error as NodeJS.ErrnoException;
+        if (maybeFsError.code === "ENOENT") {
+            return null;
+        }
+
+        throw error;
+    });
+
+    if (existingContents === rendered) {
+        return;
+    }
+
+    await fs.writeFile(targetConfigPath, rendered, "utf8");
 }
 
 export async function syncLiveReloadAssets({
@@ -269,5 +292,6 @@ export const __test__ = Object.freeze({
     HOT_RELOAD_ASSET_MANIFEST_VERSION,
     LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH,
     parseRuntimeWrapperAssetManifest,
-    collectRuntimeWrapperAssetManifestEntries
+    collectRuntimeWrapperAssetManifestEntries,
+    renderLiveReloadBootstrapConfigModule
 });
