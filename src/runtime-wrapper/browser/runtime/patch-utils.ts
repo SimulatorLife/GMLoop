@@ -15,6 +15,7 @@ import type {
     ClosurePatch,
     EventPatch,
     Patch,
+    PatchKind,
     PatchSnapshot,
     RuntimeFunction,
     RuntimeRegistry,
@@ -1165,33 +1166,81 @@ export function createRegistry(overrides?: RuntimeRegistryOverrides): RuntimeReg
     };
 }
 
+/**
+ * Structural contract for any value that participates in patch application.
+ *
+ * Patches coming from the wire (WebSocket payloads), test doubles, or
+ * third-party transpilers can take many shapes but all share the same
+ * discriminator (`kind`) and primary identifier (`id`) used by the runtime
+ * wrapper to route them through the right registry collection. Documenting the
+ * minimum required shape here lets call sites depend on a stable contract
+ * instead of `instanceof Patch` checks, which would otherwise couple them to
+ * the concrete `Patch` discriminated union defined in `./types.js`.
+ *
+ * Any object whose `kind` field is one of {@link PatchKind} and whose `id`
+ * field is a non-empty string satisfies this contract; subclasses, structural
+ * copies, and cross-realm objects all qualify equally.
+ *
+ * @example
+ * ```ts
+ * import { isPatchLike, type PatchLike } from "./patch-utils.js";
+ *
+ * function dispatch(value: unknown) {
+ *     if (!isPatchLike(value)) {
+ *         throw new TypeError("not a patch");
+ *     }
+ *     // value is now PatchLike: indexable by `kind` and `id`.
+ *     switch (value.kind) {
+ *         case "script": return applyScriptPatch(value);
+ *         case "event": return applyEventPatch(value);
+ *         case "closure": return applyClosurePatch(value);
+ *     }
+ * }
+ * ```
+ */
+export interface PatchLike {
+    /**
+     * Discriminator that routes the patch into the correct registry
+     * collection (`scripts`, `events`, or `closures`).
+     */
+    readonly kind: PatchKind;
+    /**
+     * Stable identifier of the patched symbol. Must be a non-empty string so
+     * the runtime wrapper can use it as a registry key.
+     */
+    readonly id: string;
+}
+
+/**
+ * Capability probe that reports whether a value satisfies the
+ * {@link PatchLike} contract.
+ *
+ * This is the non-throwing counterpart of {@link validatePatch}: it returns a
+ * boolean instead of raising `TypeError`, enabling consumers to branch on
+ * the shape without try/catch scaffolding. The probe performs the same
+ * structural checks as the validator, so `validatePatch(value)` succeeds if and
+ * only if `isPatchLike(value)` returns `true`.
+ *
+ * The check intentionally accepts plain objects, structural copies, and
+ * cross-realm patches alike, so any object that exposes the required `kind`
+ * and `id` fields (regardless of prototype chain) qualifies. This is the
+ * substitution-safety guarantee advertised by the {@link PatchLike} contract.
+ *
+ * @param value - Candidate value to inspect.
+ * @returns `true` when the value satisfies the `PatchLike` contract.
+ */
+export function isPatchLike(value: unknown): value is PatchLike {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return isSupportedPatchKind(candidate.kind as string) && isNonEmptyString(candidate.id);
+}
+
 export function validatePatch(patch: unknown): asserts patch is Patch {
-    if (!patch || typeof patch !== "object") {
-        throw new TypeError("applyPatch expects a patch object");
-    }
-
-    const candidate = patch as Record<string, unknown>;
-
-    if (!("kind" in candidate)) {
-        throw new TypeError("Patch must have a 'kind' field");
-    }
-
-    if (!("id" in candidate)) {
-        throw new TypeError("Patch must have an 'id' field");
-    }
-
-    const kindValue = candidate.kind;
-    if (typeof kindValue !== "string") {
-        throw new TypeError("Patch 'kind' must be a string");
-    }
-    const kind = kindValue;
-    if (!isSupportedPatchKind(kind)) {
-        throw new TypeError(`Unsupported patch kind: ${kind}`);
-    }
-
-    const idValue = candidate.id;
-    if (!idValue || typeof idValue !== "string") {
-        throw new TypeError("Patch must specify an 'id' string");
+    if (!isPatchLike(patch)) {
+        throw new TypeError("applyPatch expects a patch with a supported 'kind' and a non-empty 'id' string");
     }
 }
 
