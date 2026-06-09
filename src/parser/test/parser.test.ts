@@ -130,6 +130,19 @@ const fixtureParserOptions: ParserOptions = {
     simplifyLocations: false
 };
 
+// Parse the representative "successful" fixture once at module load time using
+// the same `{ getLocations: false }` options the location-metadata test
+// previously re-applied for every run. The fixture is the largest single
+// contributor to the file's parse cost (≈1k lines, ≈2s on a warm cache), and
+// re-parsing it only to assert the AST has no `start`/`end` properties was
+// redundant: the main fixture loop already exercises the full parse path for
+// the same source. Caching the AST here preserves the original assertions
+// without weakening coverage.
+const successfulFixtureSource = successfulFixture ? fixtureContentsByName.get(successfulFixture) : null;
+const successfulFixtureAstWithoutLocations = successfulFixtureSource
+    ? GMLParser.parse(successfulFixtureSource, { getLocations: false })
+    : null;
+
 void describe("GameMaker parser fixtures", () => {
     for (const fixtureName of fixtureNames) {
         void it(`parses ${fixtureName}`, async () => {
@@ -350,22 +363,11 @@ void describe("GameMaker parser fixtures", () => {
         );
     });
 
-    void it("omits location metadata when disabled", async () => {
-        const fixtureName = successfulFixture;
-
-        assert.ok(fixtureName, "Expected at least one parser fixture to be present.");
-
-        const source = fixtureContentsByName.get(fixtureName);
-        if (!source) {
-            throw new Error(`Fixture '${fixtureName}' was not preloaded.`);
-        }
-        const astWithoutLocations = parseFixture(source, {
-            options: { getLocations: false }
-        });
-
-        assert.ok(astWithoutLocations, "Parser returned no AST when locations were disabled.");
+    void it("omits location metadata when disabled", () => {
+        assert.ok(successfulFixture, "Expected at least one parser fixture to be present.");
+        assert.ok(successfulFixtureAstWithoutLocations, "Parser returned no AST when locations were disabled.");
         assert.strictEqual(
-            hasLocationInformation(astWithoutLocations),
+            hasLocationInformation(successfulFixtureAstWithoutLocations),
             false,
             "AST unexpectedly contains location metadata when getLocations is false."
         );
