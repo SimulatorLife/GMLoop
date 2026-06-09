@@ -157,6 +157,78 @@ void describe("prepareLiveReload", () => {
         assert.equal(secondManifestContents, firstManifestContents);
     });
 
+    void it("skips rewriting the bootstrap config when its rendered contents are unchanged", async () => {
+        const root = await createTempDir("gml-live-reload-skip-config-write-");
+        const outputRoot = path.join(root, "output");
+        const runtimeWrapperRoot = await createRuntimeWrapperRoot(root);
+        await fs.mkdir(outputRoot, { recursive: true });
+        await fs.writeFile(path.join(outputRoot, "index.html"), "<html><body><h1>Demo</h1></body></html>", "utf8");
+
+        const bootstrapConfig = {
+            websocketUrl: "ws://127.0.0.1:9999",
+            statusUrl: "http://127.0.0.1:17991/status",
+            logLevel: "debug"
+        } as const;
+
+        await prepareLiveReload({
+            html5OutputRoot: outputRoot,
+            runtimeWrapperDistRoot: runtimeWrapperRoot,
+            bootstrapConfig
+        });
+
+        const configPath = path.join(outputRoot, ".gml-hot-reload", LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH);
+        const firstStats = await fs.stat(configPath);
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        await prepareLiveReload({
+            html5OutputRoot: outputRoot,
+            runtimeWrapperDistRoot: runtimeWrapperRoot,
+            bootstrapConfig
+        });
+
+        const secondStats = await fs.stat(configPath);
+        assert.equal(
+            secondStats.mtimeMs,
+            firstStats.mtimeMs,
+            "Bootstrap config should be skipped when its rendered contents are unchanged"
+        );
+    });
+
+    void it("rewrites the bootstrap config when its contents actually change", async () => {
+        const root = await createTempDir("gml-live-reload-rewrite-config-");
+        const outputRoot = path.join(root, "output");
+        const runtimeWrapperRoot = await createRuntimeWrapperRoot(root);
+        await fs.mkdir(outputRoot, { recursive: true });
+        await fs.writeFile(path.join(outputRoot, "index.html"), "<html><body><h1>Demo</h1></body></html>", "utf8");
+
+        await prepareLiveReload({
+            html5OutputRoot: outputRoot,
+            runtimeWrapperDistRoot: runtimeWrapperRoot,
+            bootstrapConfig: {
+                websocketUrl: "ws://127.0.0.1:9999"
+            }
+        });
+
+        const configPath = path.join(outputRoot, ".gml-hot-reload", LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH);
+        const firstStats = await fs.stat(configPath);
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        await prepareLiveReload({
+            html5OutputRoot: outputRoot,
+            runtimeWrapperDistRoot: runtimeWrapperRoot,
+            bootstrapConfig: {
+                websocketUrl: "ws://127.0.0.1:8888"
+            }
+        });
+
+        const secondStats = await fs.stat(configPath);
+        const secondContents = await fs.readFile(configPath, "utf8");
+        assert.notEqual(secondStats.mtimeMs, firstStats.mtimeMs);
+        assert.match(secondContents, /ws:\/\/127\.0\.0\.1:8888/u);
+    });
+
     void it("auto-detects the newest HTML5 output directory", async () => {
         const root = await createTempDir("gml-live-reload-root-");
         const older = path.join(root, "older");
