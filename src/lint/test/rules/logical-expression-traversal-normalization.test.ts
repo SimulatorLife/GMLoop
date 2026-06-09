@@ -271,3 +271,97 @@ void test("simplifyStatementList guards unwrapBlock(current.consequent) with con
     assert.equal(normalizedBody[0]?.type, "IfStatement");
     assert.equal(normalizedBody[1]?.type, "ReturnStatement");
 });
+
+void test("traversal wires up parent pointers on every visited child before it descends", () => {
+    // The post-order walker must write the current node into each child's
+    // `parent` slot *before* invoking the visitor, so descendants can read
+    // their own ancestry during their own recursive walk. Build a Program
+    // with two independent statements and confirm both end up with a
+    // non-null `parent` pointer to the Program after normalization runs.
+    const ast: MutableGameMakerAstNode = {
+        type: "Program",
+        body: [
+            { type: "ExpressionStatement", expression: { type: "Identifier", name: "a" } },
+            { type: "ExpressionStatement", expression: { type: "Identifier", name: "b" } }
+        ]
+    };
+
+    applyLogicalNormalizationWithChangeMetadata(ast);
+
+    const body = ast.body as Array<MutableRecord>;
+    for (const statement of body) {
+        assert.equal((statement as { parent: unknown }).parent, ast, "Every statement should point at the Program");
+        const expression = (statement as { expression: { parent: unknown } }).expression;
+        assert.equal(expression.parent, statement, "The expression's parent pointer should be the enclosing statement");
+    }
+});
+
+void test("traversal does not follow the existing parent pointer of the root node", () => {
+    // The walker must skip the "parent" key, otherwise it would recurse back
+    // up to the root's previous parent and could either loop forever or
+    // corrupt unrelated subtrees. We pre-seed a sentinel `parent` on the root
+    // and assert the sentinel is *not* treated as a child (its `parent` slot
+    // must remain untouched, proving the walker never visited it).
+    const sentinelParent: MutableRecord = { type: "Sentinel" };
+    const ast: MutableGameMakerAstNode = {
+        type: "Program",
+        body: [],
+        parent: sentinelParent
+    };
+
+    applyLogicalNormalizationWithChangeMetadata(ast);
+
+    assert.equal(
+        ast.parent,
+        sentinelParent,
+        "Root's existing parent pointer must not be overwritten or followed by the walker"
+    );
+});
+
+void test("traversal reaches array elements even when earlier visits splice the underlying array", () => {
+    // The post-order walker snapshots arrays before iterating, so a visitor
+    // that mutates the array during traversal must not cause the walker to
+    // skip later siblings. We construct a Program whose body splices itself
+    // while a deeply-nested grandchild is still waiting to be visited; if
+    // the snapshot were missing, the grandchild would be silently dropped
+    // and the test would observe an empty body.
+    const grandchild: MutableRecord = {
+        type: "UnaryExpression",
+        operator: "!",
+        argument: {
+            type: "UnaryExpression",
+            operator: "!",
+            argument: { type: "Identifier", name: "flag" }
+        }
+    };
+
+    const mutator: MutableRecord = {
+        type: "ExpressionStatement",
+        expression: { type: "Identifier", name: "trigger" },
+        get trigger(): null {
+            // Splice the body to remove the first (self) entry during walk.
+            const body = (ast as { body: Array<MutableRecord> }).body;
+            const selfIndex = body.indexOf(mutator);
+            if (selfIndex !== -1) {
+                body.splice(selfIndex, 1);
+            }
+            return null;
+        }
+    };
+
+    const ast: MutableGameMakerAstNode = {
+        type: "Program",
+        body: [mutator, grandchild]
+    };
+
+    applyLogicalNormalizationWithChangeMetadata(ast);
+
+    const body = ast.body as Array<MutableRecord>;
+    // The grandchild is a double-negation; the simplifier should have collapsed
+    // it down to just the inner Identifier. If the walker failed to visit it
+    // (snapshot regression), the body would still contain a UnaryExpression
+    // chain and this assertion would fail.
+    assert.equal(body.length, 1, "Grandchild should have been visited despite the mutator splicing the body");
+    assert.equal(body[0]?.type, "Identifier");
+    assert.equal((body[0] as { name?: string }).name, "flag");
+});

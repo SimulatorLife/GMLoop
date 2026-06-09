@@ -32,17 +32,28 @@ export function applyLogicalNormalizationWithChangeMetadata(
     return Object.freeze({ ast, changed: changedAtLeastOnce });
 }
 
-function traverseAndSimplify(node: any): boolean {
-    if (!isObjectLike(node)) {
-        return false;
-    }
-
+/**
+ * Walk every object-valued child of `node` in post-order, invoking
+ * `visit(child)` on each one and returning `true` if any call returned
+ * `true`. The helper owns the traversal mechanics so the orchestrator above
+ * can stay focused on simplification:
+ *
+ *   - The "parent" key is always skipped, so the helper is safe to invoke
+ *     before parent pointers are wired up.
+ *   - Arrays are snapshotted before iteration, so a visitor that splices
+ *     into the underlying list will not skip the next sibling.
+ *   - Each child has `node` written into its `parent` slot before `visit`
+ *     is called, so descendants can resolve their ancestry during their
+ *     own recursive walks.
+ */
+function visitChildNodesPostOrder(node: any, visit: (child: any) => boolean): boolean {
+    const keys = Object.keys(node);
     let changed = false;
 
-    // Post-order traversal: simplify children first
-    const keys = Object.keys(node);
     for (const key of keys) {
-        if (key === "parent") continue;
+        if (key === "parent") {
+            continue;
+        }
 
         const child = node[key];
         if (Array.isArray(child)) {
@@ -50,19 +61,29 @@ function traverseAndSimplify(node: any): boolean {
             for (const element of childSnapshot) {
                 if (isObjectLike(element)) {
                     (element as { parent?: unknown }).parent = node;
-                    changed ||= traverseAndSimplify(element);
+                    changed ||= visit(element);
                 }
             }
         } else if (isObjectLike(child)) {
             (child as { parent?: unknown }).parent = node;
-            changed ||= traverseAndSimplify(child);
+            changed ||= visit(child);
         }
     }
 
-    // Now try to simplify the current node
-    changed ||= simplifyNode(node);
-
     return changed;
+}
+
+function traverseAndSimplify(node: any): boolean {
+    if (!isObjectLike(node)) {
+        return false;
+    }
+
+    // Post-order: simplify every descendant first, then attempt to simplify
+    // the current node. The traversal mechanics live in
+    // `visitChildNodesPostOrder`; this function only owns the orchestration
+    // of "walk children, then simplify self".
+    const changedInChildren = visitChildNodesPostOrder(node, traverseAndSimplify);
+    return changedInChildren || simplifyNode(node);
 }
 
 function simplifyNode(node: any): boolean {
