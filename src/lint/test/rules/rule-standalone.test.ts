@@ -1000,6 +1000,25 @@ void test("prefer-epsilon-comparisons rewrites positive zero checks for math-sen
     assertEquals(result.output, expected);
 });
 
+void test("prefer-epsilon-comparisons treats trig-builtin variables as math-sensitive", () => {
+    // Trigonometric builtins (sin, cos, tan, etc.) are floating-point math
+    // operations whose results can carry rounding error. A direct `== 0` or
+    // `> 0` check on such a value should be rewritten to use `math_get_epsilon`
+    // for the same reason `sqr()`/`dot_product_3d()` results are rewritten.
+    const input = ["var sine = sin(angle);", "if (sine == 0) {", "    return false;", "}", ""].join("\n");
+    const expected = [
+        "var sine = sin(angle);",
+        "var eps = math_get_epsilon();",
+        "if (sine <= eps) {",
+        "    return false;",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-epsilon-comparisons", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("no-assignment-in-condition does not rewrite grouped multiline conditions without assignments", () => {
     const input = [
         "if ((_index == undefined)",
