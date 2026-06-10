@@ -34,7 +34,6 @@
     "eslint": "catalog:",
     "ws": "catalog:",
     "commander": "^14.0.3",
-    "eslint-formatter-checkstyle": "^9.0.1",
     "fast-xml-parser": "^5.8.0",
     "linkedom": "^0.18.12"
   },
