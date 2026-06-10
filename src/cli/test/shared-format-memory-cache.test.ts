@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 
 import {
-    applyMaxFormattingCacheEntriesEnvOverride,
-    getDefaultMaxFormattingCacheEntries,
-    setDefaultMaxFormattingCacheEntries
-} from "../src/runtime-options/format-memory-cache.js";
-import {
     DEFAULT_MAX_FORMATTING_CACHE_ENTRIES,
     MAX_FORMATTING_CACHE_ENTRIES_ENV_VAR
 } from "../src/runtime-options/format-memory-constants.js";
+import {
+    applyMaxFormattingCacheEntriesEnvOverride,
+    getDefaultMaxFormattingCacheEntries,
+    setDefaultMaxFormattingCacheEntries
+} from "../src/runtime-options/format-memory-options.js";
 
 const originalEnvValue = process.env[MAX_FORMATTING_CACHE_ENTRIES_ENV_VAR];
 

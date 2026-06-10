@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 
 import type { Options as PrettierOptions } from "prettier";
 
-import { getDefaultMaxFormattingCacheEntries } from "../../runtime-options/format-memory-cache.js";
+import { getDefaultMaxFormattingCacheEntries } from "../../runtime-options/format-memory-options.js";
 
 /**
  * Internal cache storing formatted output keyed by content hash and options.

@@ -9,7 +9,7 @@ import {
     applyMaxInMemorySnapshotsEnvOverride,
     getDefaultMaxInMemorySnapshots,
     setDefaultMaxInMemorySnapshots
-} from "../src/runtime-options/format-memory-snapshots.js";
+} from "../src/runtime-options/format-memory-options.js";
 
 const originalEnvValue = process.env[MAX_IN_MEMORY_SNAPSHOTS_ENV_VAR];
 

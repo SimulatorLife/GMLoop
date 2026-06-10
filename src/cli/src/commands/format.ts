@@ -61,7 +61,7 @@ import {
 import {
     getDefaultMaxInMemorySnapshots,
     setDefaultMaxInMemorySnapshots
-} from "../runtime-options/format-memory-snapshots.js";
+} from "../runtime-options/format-memory-options.js";
 import {
     getDefaultIgnoredFileSampleLimit,
     getDefaultSkippedDirectorySampleLimit,
