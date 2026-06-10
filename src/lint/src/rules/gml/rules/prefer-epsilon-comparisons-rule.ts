@@ -4,16 +4,74 @@ import type { Rule } from "eslint";
 import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, reportFullTextRewrite } from "../rule-base-helpers.js";
 
+// GML built-in functions whose result is a floating-point value subject to
+// rounding error. Any variable whose initializer calls one of these functions
+// (directly or transitively through a sub-expression) is considered
+// "math-sensitive": a direct `== 0` or `> 0` check on such a value can produce
+// incorrect branch decisions when the true result is a tiny non-zero number
+// produced by floating-point arithmetic.
+//
+// This set is deliberately aligned with the comprehensive
+// `MATH_CALL_NAMES` catalog used by `optimize-math-expressions` so that both
+// rules agree on what counts as a math call, and the same coverage is offered
+// to every floating-point math builtin in the language.
+const MATH_SENSITIVE_FUNCTION_NAMES: ReadonlySet<string> = new Set([
+    "arccos",
+    "arcsin",
+    "arctan",
+    "arctan2",
+    "cos",
+    "darccos",
+    "darcsin",
+    "darctan",
+    "darctan2",
+    "dcos",
+    "degtorad",
+    "dot_product",
+    "dot_product_3d",
+    "dot_product_3d_normalize",
+    "dot_product_normalize",
+    "dsin",
+    "dtan",
+    "exp",
+    "lengthdir_x",
+    "lengthdir_y",
+    "ln",
+    "log2",
+    "log10",
+    "mean",
+    "point_direction",
+    "point_distance",
+    "point_distance_3d",
+    "power",
+    "radtodeg",
+    "sin",
+    "sqr",
+    "sqrt",
+    "tan"
+]);
+
+const FUNCTION_CALL_NAME_PATTERN = /[A-Za-z_][A-Za-z0-9_]*/gu;
+
 function expressionLooksMathSensitive(expression: string): boolean {
+    // Scan the initializer for any identifier immediately followed by `(` so
+    // we only treat actual function-call forms as math-sensitive. The previous
+    // substring-based check missed several categories of math builtins
+    // (trig, exp/log, degree conversions, etc.) and produced false positives
+    // for any identifier that happened to begin with the searched prefix.
     const normalized = expression.toLowerCase();
-    return (
-        normalized.includes("sqr(") ||
-        normalized.includes("sqrt(") ||
-        normalized.includes("point_distance") ||
-        normalized.includes("dot_product_") ||
-        normalized.includes("lengthdir_") ||
-        normalized.includes("math_")
-    );
+    for (const match of normalized.matchAll(FUNCTION_CALL_NAME_PATTERN)) {
+        const nextIndex = match.index + match[0].length;
+        if (
+            nextIndex < normalized.length &&
+            normalized[nextIndex] === "(" &&
+            MATH_SENSITIVE_FUNCTION_NAMES.has(match[0])
+        ) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 type ZeroComparisonOperator = "==" | ">";
