@@ -415,7 +415,7 @@ Allowed variation:
 
 #### 5.8.2 Performance and Memory Validation
 
-1. `pnpm run test:fixtures:profile`
+1. `pnpm run test:performance`
 2. `pnpm run test:fixtures:profile:deep-cpu`
 3. `pnpm run cli -- fix --path GameMakerStudio2/InterplanetaryFootball`
 
@@ -532,7 +532,7 @@ Pre-flight:
 Profiling suites:
 
 1. Standard fixture profile.
-   - `pnpm run test:fixtures:profile`
+   - `pnpm run test:performance`
 2. Deep CPU fixture profile.
    - `pnpm run test:fixtures:profile:deep-cpu`
 

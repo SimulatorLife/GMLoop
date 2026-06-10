@@ -58,9 +58,14 @@ Use the fixture profiling commands when performance work touches fixture runners
 or adapters:
 
 ```bash
-pnpm run test:fixtures:profile
+pnpm run test:performance
 pnpm run test:fixtures:profile:deep-cpu
 ```
+
+`pnpm run test:performance` is the standard fixture profile run; it already
+loads the `fixture-profile-report` harness alongside the per-workspace
+`performance`/`perf` test suites, so the previous `test:fixtures:profile`
+script is no longer a separate entry point.
 
 Fixture profiling owns memory diagnostics. The generated `reports/fixture-profile.json`
 now includes per-fixture memory summaries alongside stage-level metrics, so there is
