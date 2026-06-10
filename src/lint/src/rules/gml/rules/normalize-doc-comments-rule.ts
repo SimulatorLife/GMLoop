@@ -19,9 +19,7 @@ const {
     resolveParameterName
 } = gmlRuleDocCommentServices;
 
-const { applyJsDocTagAliasReplacements } = Core;
-
-const { getNodeStartIndex } = Core;
+const { applyJsDocTagAliasReplacements, getNodeStartIndex } = Core;
 
 function normalizeDocCommentPrefixLine(line: string): string {
     // support the "// /" notation used by some fixtures code
