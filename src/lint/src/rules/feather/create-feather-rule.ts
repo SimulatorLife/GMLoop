@@ -67,8 +67,8 @@ const DUPLICATE_GPU_POP_STATE_PATTERN = new RegExp(
     "g"
 );
 
-function createFeatherRuleMeta(entry: FeatherManifestEntry, fixable: "code" | null = "code"): Rule.RuleMetaData {
-    const baseMeta: Rule.RuleMetaData = {
+function createFeatherRuleMeta(entry: FeatherManifestEntry): Rule.RuleMetaData {
+    return Object.freeze({
         type: "suggestion",
         docs: Object.freeze({
             description: `Rule for ${entry.ruleId}.`,
@@ -78,17 +78,9 @@ function createFeatherRuleMeta(entry: FeatherManifestEntry, fixable: "code" | nu
         schema: Object.freeze([]),
         messages: Object.freeze({
             diagnostic: `${entry.ruleId} diagnostic.`
-        })
-    };
-
-    if (fixable === "code") {
-        return Object.freeze({
-            ...baseMeta,
-            fixable: "code"
-        });
-    }
-
-    return Object.freeze(baseMeta);
+        }),
+        fixable: "code"
+    });
 }
 
 function appendLineIfMissing(sourceText: string, lineToAppend: string): string {
