@@ -30,7 +30,6 @@ import {
 } from "./math-numeric-utils.js";
 
 export * from "./math-ast-mutation.js";
-export { findParentEntry, unwrapEnclosingParentheses } from "./math-lengthdir-transforms.js";
 
 const {
     BINARY_EXPRESSION,

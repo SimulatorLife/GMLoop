@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { isSafeOperand } from "../../../../src/rules/gml/math/math-ast-mutation.js";
 import {
     areAllSafeOperands,
-    isSafeOperand,
     isSafeReciprocalCancellationOperand
 } from "../../../../src/rules/gml/math/math-lengthdir-transforms.js";
 
