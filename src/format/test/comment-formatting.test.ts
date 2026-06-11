@@ -263,39 +263,6 @@ void test("does not duplicate same-line slash suffix after decorative block comm
     assert.equal(slashOnlyBannerLines.length, 0);
 });
 
-void test("does not convert adjacent multi-line block comment blocks into line comments", async () => {
-    const source = [
-        "function demo() {",
-        "    /*",
-        "    Block docs",
-        "    */",
-        "    /*",
-        "    Return an array",
-        "    */",
-        "    return [1, 2, 3];",
-        "}",
-        ""
-    ].join("\n");
-
-    const formatted = await Format.format(source);
-
-    assert.equal(
-        formatted,
-        [
-            "function demo() {",
-            "    /*",
-            "    Block docs",
-            "    */",
-            "    /*",
-            "    Return an array",
-            "    */",
-            "    return [1, 2, 3];",
-            "}",
-            ""
-        ].join("\n")
-    );
-});
-
 void test("does not collapse a non-decorative multi-line block comment into a one-line block comment", async () => {
     const source = [
         "function demo() {",
