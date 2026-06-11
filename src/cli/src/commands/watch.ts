@@ -31,7 +31,7 @@ import { Command, Option } from "commander";
 
 import { createMinimumValueValidator, portValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
-import { formatCliError } from "../cli-core/errors.js";
+import { formatCliError, handleCliError } from "../cli-core/errors.js";
 import { createStatusUrl, createWebSocketUrl, DEFAULT_GM_TEMP_ROOT } from "../modules/live-reload/config.js";
 import { prepareLiveReload } from "../modules/live-reload/session.js";
 import {
@@ -400,9 +400,7 @@ async function runAutoInjectHotReload(
         const message = getErrorMessage(error, {
             fallback: "Unknown hot-reload injection error"
         });
-        const formattedError = formatCliError(new Error(`Failed to prepare hot-reload injection: ${message}`));
-        console.error(formattedError);
-        process.exit(1);
+        handleCliError(new Error(`Failed to prepare hot-reload injection: ${message}`));
     }
 }
 
@@ -666,16 +664,13 @@ async function validateTargetPath(targetPath: string): Promise<string> {
     try {
         const stats = await stat(normalizedPath);
         if (!stats.isDirectory()) {
-            console.error(`${normalizedPath} is not a directory`);
-            process.exit(1);
+            handleCliError(`${normalizedPath} is not a directory`);
         }
     } catch (error) {
         const message = getErrorMessage(error, {
             fallback: "Cannot access path"
         });
-        const formattedError = formatCliError(new Error(`Cannot access ${normalizedPath}: ${message}`));
-        console.error(formattedError);
-        process.exit(1);
+        handleCliError(new Error(`Cannot access ${normalizedPath}: ${message}`));
     }
 
     return normalizedPath;
@@ -767,8 +762,6 @@ async function startWatchRuntimeServerAfterPatchServers({
         const message = getErrorMessage(error, {
             fallback: "Unknown runtime server error"
         });
-        const formattedError = formatCliError(new Error(`Failed to start runtime static server: ${message}`));
-        console.error(formattedError);
 
         await stopServerAfterStartupFailure(
             "WebSocket server",
@@ -777,7 +770,7 @@ async function startWatchRuntimeServerAfterPatchServers({
         );
         await stopServerAfterStartupFailure("status server", statusServerController, unknownServerStopErrorMessage);
 
-        process.exit(1);
+        handleCliError(new Error(`Failed to start runtime static server: ${message}`));
     }
 }
 
@@ -833,8 +826,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
     // Validate that verbose and quiet are not both enabled
     if (verbose && quiet) {
-        console.error("Error: --verbose and --quiet cannot be used together");
-        process.exit(1);
+        handleCliError("Error: --verbose and --quiet cannot be used together");
     }
 
     const normalizedPath = await validateTargetPath(targetPath);
@@ -947,10 +939,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
             const message = getErrorMessage(error, {
                 fallback: "Unknown WebSocket server error"
             });
-            const formattedError = formatCliError(new Error(`Failed to start WebSocket server: ${message}`));
-            console.error(formattedError);
-
-            process.exit(1);
+            handleCliError(new Error(`Failed to start WebSocket server: ${message}`));
         }
     } else if (verbose && !quiet) {
         console.log("WebSocket patch server disabled.");
@@ -999,8 +988,6 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
             const message = getErrorMessage(error, {
                 fallback: "Unknown status server error"
             });
-            const formattedError = formatCliError(new Error(`Failed to start status server: ${message}`));
-            console.error(formattedError);
 
             if (websocketServerController) {
                 try {
@@ -1013,7 +1000,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                 }
             }
 
-            process.exit(1);
+            handleCliError(new Error(`Failed to start status server: ${message}`));
         }
     } else if (verbose && !quiet) {
         console.log("Status server disabled.");
@@ -1197,8 +1184,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                 const message = getErrorMessage(error, {
                     fallback: "Unknown cleanup error"
                 });
-                console.error(`Error during watch cleanup: ${message}`);
-                process.exit(1);
+                handleCliError(`Error during watch cleanup: ${message}`);
             });
         };
 
