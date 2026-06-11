@@ -85,10 +85,13 @@ void describe("printer/comment-print-boundary dependency inversion", () => {
             defaultGmlFormatComponentImplementations.printComment,
             "injected printComment should be the contract implementation"
         );
-        assert.strictEqual(
-            gmlBag?.buildPrintableDocCommentLines,
-            defaultGmlFormatComponentImplementations.buildPrintableDocCommentLines,
-            "injected buildPrintableDocCommentLines should be the contract implementation"
+        // `buildPrintableDocCommentLines` is intentionally NOT injected: the
+        // doc-comment printer now imports the canonical implementation
+        // directly, so the backward-compat read-side shim and its
+        // `defaultOptions.gml` injection have been retired together.
+        assert.ok(
+            !("buildPrintableDocCommentLines" in (gmlBag ?? {})),
+            "buildPrintableDocCommentLines should not be injected; the doc-comment printer imports the canonical helper directly"
         );
     });
 

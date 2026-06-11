@@ -57,13 +57,11 @@ function createDefaultOptions(provider: GmlFormatProvider): GmlFormatDefaultOpti
  * a provider to verify the high-level plugin only depends on the abstraction.
  */
 export function createGmlFormat(provider: GmlFormatProvider = defaultGmlFormatProvider): GmlFormat {
-    // Inject comment-subsystem helpers into the plugin options so the printer
-    // can retrieve them via `options.gml.<helper>` without directly importing
-    // from `../comments/comment-printer.js` or `../comments/description-doc.js`.
-    // This keeps the printer decoupled from the comment subsystem boundary
-    // (target-state.md §2.3) and aligns the printer with the dependency
-    // inversion pattern already used for `buildPrintableDocCommentLines`.
-    const { buildPrintableDocCommentLines, printDanglingComments, printDanglingCommentsAsGroup, printComment } =
+    // Inject comment-subsystem helpers into the plugin options so the
+    // `printer/comment-print-boundary.ts` boundary can retrieve them via
+    // `options.gml.<helper>` without directly importing the comments
+    // adapter. (target-state.md §2.3)
+    const { printDanglingComments, printDanglingCommentsAsGroup, printComment } =
         defaultGmlFormatComponentImplementations;
 
     const rawDefaultOptions = createDefaultOptions(provider);
@@ -71,12 +69,10 @@ export function createGmlFormat(provider: GmlFormatProvider = defaultGmlFormatPr
         ...rawDefaultOptions,
         // Canonical injectables for the printer's comment subsystems. These
         // are part of the GmlFormatComponentContract and are retrieved by
-        // `src/format/src/printer/doc-comment-output.ts` (already) and the
-        // new `src/format/src/printer/comment-print-boundary.ts` boundary
-        // from `options.gml`, keeping those modules free of direct
+        // `src/format/src/printer/comment-print-boundary.ts` from
+        // `options.gml`, keeping that module free of direct
         // cross-subsystem imports.
         gml: Object.freeze({
-            buildPrintableDocCommentLines,
             printDanglingComments,
             printDanglingCommentsAsGroup,
             printComment

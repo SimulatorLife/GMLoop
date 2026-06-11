@@ -9,57 +9,30 @@
  *  - Mark comment objects as printed so Prettier does not re-emit them as
  *    dangling comments.
  *
- * Dependency inversion: `buildPrintableDocCommentLines` is retrieved from
- * `options` so this module does not directly import the concrete adapter from
- * `../comments/description-doc.js`. The canonical implementation is injected by
- * `default-format-components.ts` via the `GmlFormatComponentContract` and reaches
- * this module through the Prettier options pipeline. (target-state.md §2.3)
+ * `buildPrintableDocCommentLines` is imported directly from the comments
+ * subsystem. The previous indirection through `options.gml` (with a fallback
+ * to the canonical implementation for callers that bypassed `createGmlFormat`)
+ * was a backward-compatibility shim; the printer always runs through
+ * `createGmlFormat`, so the read-side indirection served no callers and the
+ * canonical import is the single source of truth.
  */
 import { Core, type MutableDocCommentLines } from "@gmloop/core";
 import { util } from "prettier";
 
-import { buildPrintableDocCommentLines as buildPrintableDocCommentLinesFromComments } from "../comments/description-doc.js";
+import { buildPrintableDocCommentLines } from "../comments/description-doc.js";
 import { DOC_COMMENT_OUTPUT_FLAG, NUMBER_TYPE } from "./constants.js";
 import { safeGetParentNode } from "./path-utils.js";
 import { concat, hardline, join } from "./prettier-doc-builders.js";
 
 /**
- * Resolves the buildPrintableDocCommentLines function for doc-comment rendering.
- *
- * This module avoids a direct cross-subsystem import by retrieving the function
- * from options.gml when available (injected by format-entry.ts via the
- * GmlFormatComponentContract). When running in test or standalone contexts
- * where options.gml is not populated, the canonical implementation from the
- * comments subsystem is used as a fallback. This keeps the dependency graph
- * clean for dependency-inversion tests while preserving backward compatibility
- * for callers that bypass createGmlFormat. (target-state.md §2.3)
- */
-function resolveBuildPrintableDocCommentLines(options: any) {
-    const injected = options?.gml?.buildPrintableDocCommentLines;
-    if (typeof injected === "function") {
-        return injected;
-    }
-    return buildPrintableDocCommentLinesFromComments;
-}
-
-/**
  * Builds and returns the formatted doc-comment block for `node`, ready to be
  * prepended to the node's own printed output. Returns an empty `concat("")`
  * when the node has no printable doc comments.
- *
- * The `buildPrintableDocCommentLines` function is retrieved from `options`
- * rather than imported directly, keeping this function decoupled from the
- * concrete adapter in `../comments/description-doc.js`.
  */
 export function printNodeDocComments(node: any, path: any, options: any): any {
     const sourceMetadata = Core.resolvePrinterSourceMetadata(options);
     const { originalText } = sourceMetadata;
     const { startIndex: nodeStartIndex } = Core.resolveNodeIndexRangeWithSource(node, sourceMetadata);
-
-    // Resolve buildPrintableDocCommentLines from options.gml (injected by
-    // format-entry.ts) with a fallback to the canonical comments subsystem
-    // implementation for backward compatibility. (target-state.md §2.3)
-    const buildPrintableDocCommentLines = resolveBuildPrintableDocCommentLines(options);
 
     const docCommentDocs: MutableDocCommentLines = Array.isArray(node.docComments)
         ? Core.toMutableArray(node.docComments as string[], { clone: true })
