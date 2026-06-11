@@ -33,6 +33,7 @@ import {
     buildCallArgumentsDocs,
     buildFunctionParameterDocs,
     countLeadingSimpleCallArguments,
+    joinDeclaratorPartsWithCommas,
     printCommaSeparatedList,
     shouldAllowTrailingComma
 } from "./delimited-list.js";
@@ -69,7 +70,6 @@ import { buildClauseGroup, printSingleClauseStatement } from "./single-clause-st
 import { shouldAddNewlinesAroundStatement } from "./statement-spacing-policy.js";
 import { handleIntermediateTrailingSpacing, handleTerminalTrailingSpacing } from "./statement-traversal-spacing.js";
 import { isComplexArgumentNode, isInLValueChain } from "./type-guards.js";
-import { joinDeclaratorPartsWithCommas } from "./variable-declarator-layout.js";
 
 // Module-level cache keyed on struct argument AST nodes.
 // See clearStructArgumentBreakCache for the memory-management rationale.

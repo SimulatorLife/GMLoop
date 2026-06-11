@@ -36,6 +36,35 @@ export function shouldAllowTrailingComma(options: any): boolean {
     return options?.trailingComma === TRAILING_COMMA.ALL;
 }
 
+/**
+ * Joins an array of declarator doc fragments with comma separators.
+ *
+ * Inserts ", " between each pair of elements to produce a comma-separated
+ * list suitable for variable declarations. The result is a flat array so
+ * callers can spread the joined fragments directly into a `concat([...])`
+ * builder without the additional wrapping that `prettier-doc-builders.join`
+ * would introduce. The helper intentionally lives in `delimited-list.ts`
+ * next to the other comma-separated list utilities because it is a
+ * specialised variant of the same delimiter-joining concern.
+ *
+ * @param parts - Array of doc fragments to join.
+ * @returns Flat array with ", " inserted between adjacent parts.
+ */
+export function joinDeclaratorPartsWithCommas(parts: unknown[]): unknown[] {
+    const joined: unknown[] = [];
+    const count = parts.length;
+
+    for (let i = 0; i < count; i += 1) {
+        joined.push(parts[i]);
+
+        if (i < count - 1) {
+            joined.push(", ");
+        }
+    }
+
+    return joined;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
