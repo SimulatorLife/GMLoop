@@ -579,26 +579,7 @@ function createGm1014Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 function createGm1016Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return Object.freeze({
-        meta: createFeatherRuleMeta(entry),
-        create(context) {
-            return Object.freeze({
-                Program() {
-                    const sourceText = context.sourceCode.text;
-                    const rewritten = sourceText.replaceAll(/^\s*(?:true|false)\s*;\s*/gm, "");
-                    if (rewritten === sourceText) {
-                        return;
-                    }
-
-                    context.report({
-                        loc: resolveLocFromIndex(context, context.sourceCode.text, 0),
-                        messageId: "diagnostic",
-                        fix: (fixer) => fixer.replaceTextRange([0, sourceText.length], rewritten)
-                    });
-                }
-            });
-        }
-    });
+    return createFullTextRewriteRule(entry, (sourceText) => sourceText.replaceAll(/^\s*(?:true|false)\s*;\s*/gm, ""));
 }
 
 function createGm1017Rule(entry: FeatherManifestEntry): Rule.RuleModule {
