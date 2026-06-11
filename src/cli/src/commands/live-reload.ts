@@ -5,7 +5,7 @@ import { Command, Option } from "commander";
 
 import { createMinimumValueValidator, portValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
-import { formatCliError } from "../cli-core/errors.js";
+import { handleCliError } from "../cli-core/errors.js";
 import {
     createStatusUrl,
     createWebSocketUrl,
@@ -151,8 +151,7 @@ export async function runLiveReloadPrepareCommand(options: LiveReloadPrepareComm
         const message = Core.getErrorMessage(error, {
             fallback: "Failed to prepare live-reload bootstrap."
         });
-        console.error(formatCliError(new Error(message)));
-        process.exit(1);
+        handleCliError(new Error(message));
     }
 }
 
@@ -172,8 +171,7 @@ export async function runLiveReloadBuildCommand(
         const message = Core.getErrorMessage(error, {
             fallback: "Failed to build GameMaker HTML5 output."
         });
-        console.error(formatCliError(new Error(message)));
-        process.exit(1);
+        handleCliError(new Error(message));
     }
 }
 
