@@ -401,6 +401,14 @@ export class GmConfigPanel extends LightDomLitElement {
                 <p class=${draft.ok ? "config-validation is-valid" : "config-validation is-invalid"} aria-live="polite">
                     ${draft.ok ? "JSON is valid and ready to save." : draft.error}
                 </p>
+                <div class="config-json-preview-header">
+                    <span class="config-json-preview-title">JSON draft</span>
+                    <gm-copy-button
+                        class="config-json-copy"
+                        .value=${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}
+                        label="Copy config JSON"
+                    ></gm-copy-button>
+                </div>
                 <pre class="config-json-preview">
 ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                 >

@@ -259,6 +259,22 @@
   white-space: pre-wrap;
 }
 
+.config-json-preview-header {
+  display: flex;
+  gap: var(--gm-space-sm);
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--gm-space-sm);
+}
+
+.config-json-preview-title {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .config-json-preview {
   max-height: 540px;
 }
