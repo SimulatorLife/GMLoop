@@ -94,6 +94,14 @@ export function createDefaultGmlFormatComponents(): GmlFormatComponentBundle {
                 description:
                     "Allow short, comment-free braced control-flow blocks to stay on one line when the complete statement fits within printWidth (for example, 'if (condition) { return; }'). When disabled, control-flow blocks always expand across multiple lines."
             },
+            inlineControlFlowBlockMargin: {
+                since: "0.0.0",
+                type: "int",
+                category: "gml",
+                default: 0,
+                description:
+                    "Buffer (in characters) added to the inline-length estimate for control-flow blocks before it is compared to `printWidth`. Positive values make the formatter more conservative (require additional headroom before a block is kept inline); negative values make it more aggressive (allow the inline form to exceed `printWidth` by the configured amount). Has no effect when `allowInlineControlFlowBlocks` is `false`."
+            },
             logicalOperatorsStyle: {
                 since: "0.0.0",
                 type: "choice",

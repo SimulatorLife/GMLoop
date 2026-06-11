@@ -4,6 +4,7 @@ const FORMATTER_OWNED_CONFIG_KEYS = new Set([
     "allowInlineControlFlowBlocks",
     "bracketSpacing",
     "endOfLine",
+    "inlineControlFlowBlockMargin",
     "logicalOperatorsStyle",
     "objectWrap",
     "printWidth",
