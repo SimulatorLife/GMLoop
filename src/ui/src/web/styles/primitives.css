@@ -62,3 +62,103 @@ button:disabled {
   border-color: var(--gm-border-teal-subtle);
   color: #a8edf2;
 }
+
+/* ─── Copy-to-clipboard primitive ───────────────────────────── */
+gm-copy-button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.gm-copy-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gm-space-control-gap-tight);
+  min-height: var(--gm-height-xl);
+  padding: 0 var(--gm-space-md);
+  border: 1px solid var(--gm-border-accent);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-surface-active);
+  color: var(--gm-text);
+  font: inherit;
+  font-size: var(--gm-text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
+  transition:
+    background var(--gm-transition),
+    border-color var(--gm-transition),
+    color var(--gm-transition),
+    box-shadow var(--gm-transition),
+    transform var(--gm-transition);
+}
+
+.gm-copy-button:hover:not(:disabled) {
+  background: var(--gm-bg-hover);
+  border-color: var(--gm-border-strong);
+  color: var(--gm-text);
+  transform: translateY(-1px);
+}
+
+.gm-copy-button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px #060c16f5,
+    0 0 0 4px var(--gm-focus-ring);
+}
+
+.gm-copy-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.gm-copy-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.gm-copy-button__icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.gm-copy-button--success {
+  background: var(--gm-success-surface);
+  border-color: var(--gm-success-border);
+  color: var(--gm-success-text);
+}
+
+.gm-copy-button--success:hover:not(:disabled) {
+  background: var(--gm-success-surface);
+  border-color: var(--gm-success-border);
+  color: var(--gm-success-text);
+}
+
+.gm-copy-button--error {
+  background: var(--gm-error-surface);
+  border-color: var(--gm-error-border);
+  color: var(--gm-error-text);
+}
+
+.gm-copy-button--error:hover:not(:disabled) {
+  background: var(--gm-error-surface);
+  border-color: var(--gm-error-border);
+  color: var(--gm-error-text);
+}
+
+.gm-copy-button__feedback {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
