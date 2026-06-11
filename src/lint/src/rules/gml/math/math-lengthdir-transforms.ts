@@ -15,10 +15,15 @@ import {
     createMultiplicationNode,
     createNumericLiteral,
     mutateToCallExpression,
-    replaceNode,
-    replaceNodeWith as replaceNodeByMutation
+    replaceNode
 } from "./math-ast-builders.js";
-import type { ConvertManualMathTransformOptions } from "./math-ast-mutation.js";
+import {
+    type ConvertManualMathTransformOptions,
+    isSafeOperand,
+    markPreviousSiblingForBlankLine,
+    removeNodeFromAst,
+    unwrapEnclosingParentheses
+} from "./math-ast-mutation.js";
 import { computeNumericTolerance, normalizeNumericCoefficient, parseNumericFactor } from "./math-numeric-utils.js";
 import {
     attemptCollectDistributedScalars,
@@ -41,109 +46,12 @@ const {
     isObjectLike
 } = Core;
 
-export function unwrapEnclosingParentheses(node: any, context: ConvertManualMathTransformOptions | null) {
-    if (!isObjectLike(node)) {
-        return;
-    }
-
-    const root = context?.astRoot;
-    if (!isObjectLike(root)) {
-        return;
-    }
-
-    let current = node;
-    while (true) {
-        const parentInfo = findParentEntry(root, current);
-        if (!parentInfo) {
-            break;
-        }
-
-        const { parent } = parentInfo;
-        if (!isObjectLike(parent)) {
-            break;
-        }
-
-        if (parent.type !== PARENTHESIZED_EXPRESSION) {
-            break;
-        }
-
-        const expression = parent.expression;
-        if (!expression) {
-            break;
-        }
-
-        if (Core.hasComment(parent) || Core.hasComment(expression)) {
-            break;
-        }
-
-        if (!isSafeOperand(parent) && expression.type !== CALL_EXPRESSION) {
-            break;
-        }
-
-        replaceNodeByMutation(parent, current);
-        current = parent;
-    }
-}
-
-export function findParentEntry(root: any, target: any) {
-    const stack = [{ parent: null, key: null, node: root }];
-    const visited = new Set();
-
-    while (stack.length > 0) {
-        const { parent, key, node } = stack.pop();
-        if (node === target) {
-            return { parent, key };
-        }
-
-        if (!isObjectLike(node) || visited.has(node)) {
-            continue;
-        }
-        visited.add(node);
-
-        if (Array.isArray(node)) {
-            for (let index = node.length - 1; index >= 0; index -= 1) {
-                const element = node[index];
-                stack.push({ parent: node, key: index, node: element });
-            }
-            continue;
-        }
-
-        for (const [childKey, childValue] of Object.entries(node)) {
-            if (childKey === "parent") {
-                continue;
-            }
-
-            stack.push({ parent: node, key: childKey, node: childValue });
-        }
-    }
-
-    return null;
-}
-
-export function isSafeOperand(node: any): boolean {
-    if (!isObjectLike(node)) {
-        return false;
-    }
-
-    if (Core.hasComment(node)) {
-        return false;
-    }
-
-    switch (node.type) {
-        case IDENTIFIER:
-        case LITERAL:
-        case MEMBER_DOT_EXPRESSION:
-        case MEMBER_INDEX_EXPRESSION: {
-            return true;
-        }
-        case PARENTHESIZED_EXPRESSION: {
-            return isSafeOperand(node.expression);
-        }
-        default: {
-            return false;
-        }
-    }
-}
+// Re-export the consolidated AST helpers and the AST-builders rewriters so
+// existing callers that import them from this module keep working. The
+// canonical implementations live in `math-ast-mutation.ts` and
+// `math-ast-builders.ts`; this module no longer carries its own copies.
+export { replaceNode, replaceNodeWith } from "./math-ast-builders.js";
+export { findParentEntry, unwrapEnclosingParentheses } from "./math-ast-mutation.js";
 
 /**
  * True when `node` represents an operand that can be safely used in reciprocal-cancellation
@@ -865,107 +773,3 @@ function findVariableDeclarationByName(root: any, identifierName: string): any {
 
     return null;
 }
-
-type TargetArraySearchDirection = "forward" | "backward";
-type TargetArrayEntry = { nodeArray: Array<any>; targetIndex: number };
-
-function findTargetArrayEntry(root: any, target: any, _direction: TargetArraySearchDirection): TargetArrayEntry | null {
-    const stack = [{ parent: null, key: null, node: root }];
-    const visited = new Set();
-
-    while (stack.length > 0) {
-        const { parent, key, node } = stack.pop();
-        if (node === target) {
-            if (Array.isArray(parent) && typeof key === "number") {
-                return { nodeArray: parent, targetIndex: key };
-            }
-            return null;
-        }
-
-        if (!isObjectLike(node) || visited.has(node)) {
-            continue;
-        }
-        visited.add(node);
-
-        if (Array.isArray(node)) {
-            for (let index = node.length - 1; index >= 0; index -= 1) {
-                const element = node[index];
-                stack.push({ parent: node, key: index, node: element });
-            }
-            continue;
-        }
-
-        for (const [childKey, childValue] of Object.entries(node)) {
-            if (childKey === "parent") {
-                continue;
-            }
-
-            stack.push({ parent: node, key: childKey, node: childValue });
-        }
-    }
-
-    return null;
-}
-
-function removeNodeFromAst(root: any, target: any): boolean {
-    if (!root || !target) {
-        return false;
-    }
-
-    const entry = findTargetArrayEntry(root, target, "forward");
-    if (!entry) {
-        return false;
-    }
-
-    entry.nodeArray.splice(entry.targetIndex, 1);
-    return true;
-}
-
-function markPreviousSiblingForBlankLine(root: any, target: any, context: ConvertManualMathTransformOptions | null) {
-    if (!isObjectLike(root) || !target) {
-        return null;
-    }
-
-    const sourceText =
-        context && typeof context === "object" && typeof context.sourceText === "string" ? context.sourceText : null;
-    const targetEntry = findTargetArrayEntry(root, target, "forward");
-    if (!targetEntry) {
-        return null;
-    }
-
-    return preserveBlankLineIfNeeded(targetEntry.nodeArray, targetEntry.targetIndex, target, sourceText);
-}
-
-function preserveBlankLineIfNeeded(nodeArray: Array<any>, index: number, target: any, sourceText: string | null) {
-    const previous = nodeArray[index - 1];
-    const next = nodeArray[index + 1];
-
-    if (previous && typeof previous === "object" && shouldPreserveRemovedBlankLine(target, next, sourceText)) {
-        (previous as Record<string, unknown>)._gmlForceFollowingEmptyLine = true;
-        return previous;
-    }
-
-    return null;
-}
-
-function shouldPreserveRemovedBlankLine(removedNode: any, nextNode: any, sourceText: string | null): boolean {
-    if (!isObjectLike(nextNode)) {
-        return false;
-    }
-
-    if (typeof sourceText !== "string" || sourceText.length === 0) {
-        return false;
-    }
-
-    const removedEnd = Core.getNodeEndIndex(removedNode);
-    const nextStart = Core.getNodeStartIndex(nextNode);
-
-    if (removedEnd == undefined || nextStart == undefined || nextStart <= removedEnd || nextStart > sourceText.length) {
-        return false;
-    }
-
-    const between = sourceText.slice(removedEnd, nextStart);
-    return /^\s*\n\s*\n/.test(between);
-}
-
-export { replaceNode, replaceNodeWith } from "./math-ast-builders.js";
