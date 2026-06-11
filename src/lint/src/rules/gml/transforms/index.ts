@@ -95,7 +95,11 @@ export {
     sanitizeConditionalAssignments
 } from "./conditional-assignment-sanitizer.js";
 export { stripCommentsTransform };
-export { CommentTracker } from "./comment-tracker.js";
+// `CommentTracker` is intentionally not re-exported here. No production
+// consumer in the lint workspace (or elsewhere) imports it; the class
+// remains accessible via its source module for its dedicated test suite
+// and any future integration. Keeping the barrel free of orphan re-exports
+// makes the public surface of the transforms directory honest.
 export {
     evaluateTruthTablePolicy,
     SIMPLIFICATION_POLICY_BASELINE,
