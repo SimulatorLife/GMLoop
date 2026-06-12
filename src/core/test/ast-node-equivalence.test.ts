@@ -163,6 +163,21 @@ void describe("areAstValuesEquivalentIgnoringParentheses", () => {
         assert.ok(areAstValuesEquivalentIgnoringParentheses(large + 1e-4, large));
     });
 
+    void it("never treats non-finite numbers as equivalent", () => {
+        // The shared `areNumbersApproximatelyEqual` helper explicitly rejects
+        // non-finite inputs so the equivalence check can never incorrectly
+        // collapse two distinct NaN/Infinity values into a match. These cases
+        // exercise the helper path that the previous local duplicate did not
+        // cover, ensuring the delegation remains observable through the
+        // public AST equivalence surface.
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses(Number.NaN, 1));
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses(1, Number.NaN));
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses(Number.NaN, Number.NaN));
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses(Number.POSITIVE_INFINITY, 1));
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses(1, Number.POSITIVE_INFINITY));
+        assert.ok(!areAstValuesEquivalentIgnoringParentheses(Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY));
+    });
+
     void it("compares numeric literals inside AST nodes with epsilon tolerance", () => {
         const left = {
             type: "BinaryExpression",

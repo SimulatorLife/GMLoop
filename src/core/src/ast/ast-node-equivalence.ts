@@ -17,17 +17,8 @@
  * on `unwrapParenthesizedExpression` from Core's own node helpers.
  */
 
-import { ZERO_CHECK_EPSILON } from "../utils/number.js";
+import { areNumbersApproximatelyEqual } from "../utils/number.js";
 import { unwrapParenthesizedExpression } from "./node-helpers/index.js";
-
-/**
- * Return `true` when two numbers are within floating-point tolerance of each other,
- * accounting for relative error that grows with magnitude.
- */
-function areNumericValuesApproximatelyEqual(left: number, right: number): boolean {
-    const magnitude = Math.max(1, Math.abs(left), Math.abs(right));
-    return Math.abs(left - right) <= ZERO_CHECK_EPSILON * magnitude;
-}
 
 /**
  * AST metadata keys that carry position/token data and should be excluded
@@ -79,9 +70,12 @@ export function areAstValuesEquivalentIgnoringParentheses(left: unknown, right: 
 
     if (typeof left !== "object" || typeof right !== "object") {
         // Use epsilon-tolerant comparison for numeric values to handle floating-point
-        // rounding (e.g., 0.1 + 0.2 vs 0.3 in IEEE 754 binary).
+        // rounding (e.g., 0.1 + 0.2 vs 0.3 in IEEE 754 binary). Delegates to the
+        // shared `areNumbersApproximatelyEqual` helper from `utils/number` so the
+        // magnitude-scaled tolerance, non-finite guard, and the test coverage for
+        // the helper all stay in a single place.
         if (typeof left === "number" && typeof right === "number") {
-            return areNumericValuesApproximatelyEqual(left, right);
+            return areNumbersApproximatelyEqual(left, right);
         }
         // All other non-object types (string, boolean, undefined, symbol) are
         // compared by strict equality — matching the existing behaviour for
