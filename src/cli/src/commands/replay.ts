@@ -61,8 +61,8 @@ function addReplaySharedOptions(command: Command): Command {
     return command.addOption(createPathOption()).option("--json", "Emit JSON output.");
 }
 
-async function resolveReplayProjectRoot(options: ReplayOptions): Promise<string> {
-    return await discoverProjectRoot({ explicitProjectPath: options.path });
+function resolveReplayProjectRoot(options: ReplayOptions): Promise<string> {
+    return discoverProjectRoot({ explicitProjectPath: options.path });
 }
 
 /**
@@ -127,8 +127,8 @@ function resolveReplayArtifactFilePath(projectRoot: string, artifactId: string):
     return path.join(artifactsDirectory, `${artifactId}.json`);
 }
 
-async function resolveReplayArtifact(projectRoot: string, artifactId: string): Promise<ReplayArtifact | null> {
-    return await readValidatedArtifactJson<ReplayArtifact>(resolveReplayArtifactFilePath(projectRoot, artifactId), {
+function resolveReplayArtifact(projectRoot: string, artifactId: string): Promise<ReplayArtifact | null> {
+    return readValidatedArtifactJson<ReplayArtifact>(resolveReplayArtifactFilePath(projectRoot, artifactId), {
         validate: isReplayArtifact
     });
 }
