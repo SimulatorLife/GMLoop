@@ -34,6 +34,75 @@ export async function disposeWatchTestFixture(dir: string): Promise<void> {
     await rm(dir, { recursive: true, force: true });
 }
 
+export interface MockFsWatcherHooks {
+    onClose?: () => void;
+    onListener?: (eventName: string | symbol, listener: (...args: Array<unknown>) => void) => void;
+}
+
+/**
+ * Create a minimal inert FSWatcher test double with optional hooks for watcher lifecycle assertions.
+ */
+export function createMockFsWatcher(hooks: MockFsWatcherHooks = {}): FSWatcher {
+    return {
+        close() {
+            hooks.onClose?.();
+            return undefined;
+        },
+        ref() {
+            return this;
+        },
+        unref() {
+            return this;
+        },
+        addListener() {
+            return this;
+        },
+        on(eventName: string | symbol, listener: (...args: Array<unknown>) => void) {
+            hooks.onListener?.(eventName, listener);
+            return this;
+        },
+        once() {
+            return this;
+        },
+        removeListener() {
+            return this;
+        },
+        off() {
+            return this;
+        },
+        removeAllListeners() {
+            return this;
+        },
+        setMaxListeners() {
+            return this;
+        },
+        getMaxListeners() {
+            return 0;
+        },
+        listeners() {
+            return [];
+        },
+        rawListeners() {
+            return [];
+        },
+        emit() {
+            return false;
+        },
+        listenerCount() {
+            return 0;
+        },
+        prependListener() {
+            return this;
+        },
+        prependOnceListener() {
+            return this;
+        },
+        eventNames() {
+            return [];
+        }
+    };
+}
+
 export function createMockWatchFactory(listenerCapture?: {
     listener: WatchListener<string> | undefined;
 }): (
@@ -54,64 +123,7 @@ export function createMockWatchFactory(listenerCapture?: {
             capturedListener.listener = listener;
         }
 
-        const watcher: FSWatcher = {
-            close() {
-                return undefined;
-            },
-            ref() {
-                return this;
-            },
-            unref() {
-                return this;
-            },
-            addListener() {
-                return this;
-            },
-            on() {
-                return this;
-            },
-            once() {
-                return this;
-            },
-            removeListener() {
-                return this;
-            },
-            off() {
-                return this;
-            },
-            removeAllListeners() {
-                return this;
-            },
-            setMaxListeners() {
-                return this;
-            },
-            getMaxListeners() {
-                return 0;
-            },
-            listeners() {
-                return [];
-            },
-            rawListeners() {
-                return [];
-            },
-            emit() {
-                return false;
-            },
-            listenerCount() {
-                return 0;
-            },
-            prependListener() {
-                return this;
-            },
-            prependOnceListener() {
-                return this;
-            },
-            eventNames() {
-                return [];
-            }
-        };
-
-        return watcher;
+        return createMockFsWatcher();
     };
 }
 
