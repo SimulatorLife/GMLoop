@@ -49,11 +49,7 @@ type ReplayArtifact = Readonly<{
  */
 type ReplayArtifactLookupFailureReason = "artifact_invalid" | "artifact_not_found";
 
-function printReplayPayload(payload: unknown, asJson: boolean): void {
-    if (asJson) {
-        console.log(JSON.stringify(payload, null, 2));
-        return;
-    }
+function printReplayPayload(payload: unknown): void {
     console.log(JSON.stringify(payload, null, 2));
 }
 
@@ -219,30 +215,30 @@ async function runReplayRecordAction(options: ReplayOptions): Promise<void> {
     const projectRoot = await resolveReplayProjectRoot(options);
     const artifact = createReplayArtifact(projectRoot, options);
     const artifactPath = await persistReplayArtifact(projectRoot, artifact);
-    printReplayPayload(
-        { command: "replay record", payload: { artifact, artifactPath, ok: true, projectRoot } },
-        options.json === true
-    );
+    printReplayPayload({
+        command: "replay record",
+        payload: { artifact, artifactPath, ok: true, projectRoot }
+    });
 }
 
 async function runReplayRunAction(options: ReplayOptions): Promise<void> {
     const projectRoot = await resolveReplayProjectRoot(options);
     const resolvedId = options.id ?? (await resolveLatestReplayArtifactId(projectRoot));
     if (!resolvedId) {
-        printReplayPayload(
-            { command: "replay run", payload: { ok: false, reason: "artifact_not_found" } },
-            options.json === true
-        );
+        printReplayPayload({
+            command: "replay run",
+            payload: { ok: false, reason: "artifact_not_found" }
+        });
         return;
     }
 
     const artifact = await resolveReplayArtifact(projectRoot, resolvedId);
     if (!artifact) {
         const reason = await classifyReplayArtifactLookupFailure(projectRoot, resolvedId);
-        printReplayPayload(
-            { command: "replay run", payload: { artifactId: resolvedId, ok: false, reason } },
-            options.json === true
-        );
+        printReplayPayload({
+            command: "replay run",
+            payload: { artifactId: resolvedId, ok: false, reason }
+        });
         return;
     }
 
@@ -252,13 +248,10 @@ async function runReplayRunAction(options: ReplayOptions): Promise<void> {
         finalPayload: artifact.trace.events.at(-1)?.payload ?? ""
     };
 
-    printReplayPayload(
-        {
-            command: "replay run",
-            payload: { artifact, artifactId: artifact.artifactId, ok: true, output, projectRoot }
-        },
-        options.json === true
-    );
+    printReplayPayload({
+        command: "replay run",
+        payload: { artifact, artifactId: artifact.artifactId, ok: true, output, projectRoot }
+    });
 }
 
 function createReplayDiff(
@@ -292,76 +285,67 @@ async function runReplayCompareAction(options: ReplayOptions): Promise<void> {
                 ? await classifyReplayArtifactLookupFailure(projectRoot, candidateId)
                 : null;
 
-        printReplayPayload(
-            {
-                command: "replay compare",
-                payload: {
-                    availableArtifactIds: ids,
-                    baselineReason,
-                    candidateReason,
-                    ok: false,
-                    reason: "missing_artifacts"
-                }
-            },
-            options.json === true
-        );
+        printReplayPayload({
+            command: "replay compare",
+            payload: {
+                availableArtifactIds: ids,
+                baselineReason,
+                candidateReason,
+                ok: false,
+                reason: "missing_artifacts"
+            }
+        });
         return;
     }
 
-    printReplayPayload(
-        {
-            command: "replay compare",
-            payload: {
-                baseline,
-                baselineId,
-                candidate,
-                candidateId,
-                diff: createReplayDiff(baseline, candidate),
-                ok: true,
-                projectRoot
-            }
-        },
-        options.json === true
-    );
+    printReplayPayload({
+        command: "replay compare",
+        payload: {
+            baseline,
+            baselineId,
+            candidate,
+            candidateId,
+            diff: createReplayDiff(baseline, candidate),
+            ok: true,
+            projectRoot
+        }
+    });
 }
 
 async function runReplayAssertAction(options: ReplayOptions): Promise<void> {
     const projectRoot = await resolveReplayProjectRoot(options);
     const resolvedId = options.id ?? (await resolveLatestReplayArtifactId(projectRoot));
     if (!resolvedId) {
-        printReplayPayload(
-            { command: "replay assert", payload: { ok: false, reason: "artifact_not_found" } },
-            options.json === true
-        );
+        printReplayPayload({
+            command: "replay assert",
+            payload: { ok: false, reason: "artifact_not_found" }
+        });
         return;
     }
 
     const artifact = await resolveReplayArtifact(projectRoot, resolvedId);
     if (!artifact) {
         const reason = await classifyReplayArtifactLookupFailure(projectRoot, resolvedId);
-        printReplayPayload(
-            { command: "replay assert", payload: { artifactId: resolvedId, ok: false, reason } },
-            options.json === true
-        );
+        printReplayPayload({
+            command: "replay assert",
+            payload: { artifactId: resolvedId, ok: false, reason }
+        });
         return;
     }
 
     const passed = artifact.trace.events.length >= 3 && artifact.trace.events[0]?.type === "start";
-    printReplayPayload(
-        {
-            command: "replay assert",
-            payload: {
-                artifactId: artifact.artifactId,
-                assertions: {
-                    hasDeterministicEventFlow: passed,
-                    minimumEventCount: artifact.trace.events.length >= 3
-                },
-                ok: passed,
-                projectRoot
-            }
-        },
-        options.json === true
-    );
+    printReplayPayload({
+        command: "replay assert",
+        payload: {
+            artifactId: artifact.artifactId,
+            assertions: {
+                hasDeterministicEventFlow: passed,
+                minimumEventCount: artifact.trace.events.length >= 3
+            },
+            ok: passed,
+            projectRoot
+        }
+    });
 }
 
 export function createReplayCommand(): Command {
