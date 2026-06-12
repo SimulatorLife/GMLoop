@@ -129,6 +129,29 @@ void describe("GmlToJsEmitter.getDependencies()", () => {
         assert.ok(emitter.getDependencies().has("gml/script/scr_on_hit"));
     });
 
+    void it("collects script constructor dependencies without wrapping constructor output", () => {
+        const sem = Transpiler.createSemanticOracle({ scriptNames: new Set(["ScrProjectile"]) });
+        const ast = Parser.GMLParser.parse("var projectile = new ScrProjectile(x, y);");
+        const emitter = new Transpiler.GmlToJsEmitter(sem);
+
+        const js = emitter.emit(ast);
+
+        assert.match(js, /new ScrProjectile\(x, y\)/);
+        assert.ok(!js.includes("__call_script"), "Constructor output should remain lean and direct");
+        assert.deepEqual([...emitter.getDependencies()], ["gml/script/ScrProjectile"]);
+    });
+
+    void it("collects parent constructor dependencies from constructor declarations", () => {
+        const sem = Transpiler.createSemanticOracle({ scriptNames: new Set(["ParentThing"]) });
+        const ast = Parser.GMLParser.parse("function ChildThing() : ParentThing() constructor {}");
+        const emitter = new Transpiler.GmlToJsEmitter(sem);
+
+        const js = emitter.emit(ast);
+
+        assert.match(js, /ParentThing\.call\(this\)/);
+        assert.deepEqual([...emitter.getDependencies()], ["gml/script/ParentThing"]);
+    });
+
     void it("resets dependencies between top-level emit calls on a reused emitter", () => {
         const sem = makeScriptOracle(new Set(["scr_first", "scr_second"]));
         const emitter = new Transpiler.GmlToJsEmitter(sem);

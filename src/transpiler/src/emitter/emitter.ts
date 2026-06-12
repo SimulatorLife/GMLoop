@@ -481,6 +481,7 @@ export class GmlToJsEmitter {
     }
 
     private visitNewExpression(ast: NewExpressionNode): string {
+        this.recordScriptIdentifierDependency(ast.expression);
         const expression = this.visit(ast.expression);
         const argsList = this.joinArguments(ast.arguments ?? []);
         return `new ${expression}(${argsList})`;
@@ -893,6 +894,7 @@ export class GmlToJsEmitter {
             return "";
         }
 
+        this.recordScriptIdentifierDependency(parentClause.id);
         const parentConstructorName =
             typeof parentClause.id === "string" ? parentClause.id : this.visit(parentClause.id);
         if (!parentConstructorName) {
@@ -909,6 +911,31 @@ export class GmlToJsEmitter {
 
     private joinTruthy(lines: Array<string | undefined | null | false>): string {
         return Core.compactArray(lines).join("\n");
+    }
+
+    private recordScriptIdentifierDependency(node: GmlNode | string | IdentifierMetadata | null | undefined): void {
+        const identifier = this.resolveIdentifierMetadata(node);
+        if (!identifier || this.semantic.kindOfIdent(identifier) !== "script") {
+            return;
+        }
+
+        const symbol = this.semantic.qualifiedSymbol(identifier);
+        this.scriptRefs.add(symbol ?? this.semantic.nameOfIdent(identifier));
+    }
+
+    private resolveIdentifierMetadata(
+        node: GmlNode | string | IdentifierMetadata | null | undefined
+    ): IdentifierMetadata | null {
+        if (!node) {
+            return null;
+        }
+        if (typeof node === "string") {
+            return { name: node };
+        }
+        if (typeof (node as IdentifierMetadata).name === "string") {
+            return node as IdentifierMetadata;
+        }
+        return null;
     }
 
     private resolveIdentifierName(node: GmlNode | IdentifierMetadata | null | undefined): string | null {
