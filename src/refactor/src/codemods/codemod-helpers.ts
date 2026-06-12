@@ -13,13 +13,35 @@
  */
 export type CodemodSourceTextEdit = Readonly<{ start: number; end: number; text: string }>;
 
+function assertSourceTextEditRange(sourceText: string, edit: CodemodSourceTextEdit): void {
+    if (!Number.isInteger(edit.start) || edit.start < 0) {
+        throw new RangeError(`Codemod edit start offset must be a non-negative integer: ${edit.start}`);
+    }
+
+    if (!Number.isInteger(edit.end) || edit.end < 0) {
+        throw new RangeError(`Codemod edit end offset must be a non-negative integer: ${edit.end}`);
+    }
+
+    if (edit.end < edit.start) {
+        throw new RangeError(`Codemod edit end offset ${edit.end} must not be before start offset ${edit.start}`);
+    }
+
+    if (edit.end > sourceText.length) {
+        throw new RangeError(`Codemod edit range ${edit.start}-${edit.end} exceeds source length ${sourceText.length}`);
+    }
+}
+
 /**
- * Apply a sorted list of non-overlapping edits to `sourceText` in a single
- * forward pass.
+ * Apply a list of non-overlapping edits to `sourceText` in a single forward pass.
  *
- * Edits must already be non-overlapping.  They are sorted by start position
- * (ascending) so that string slicing proceeds left-to-right without any
- * back-tracking or intermediate string copies.
+ * Edits may arrive in any order. The helper validates every range, sorts edits
+ * by start position, and rejects overlaps before producing output so a codemod
+ * bug cannot silently corrupt source text during project-wide transformations.
+ *
+ * @param sourceText - Source text to transform.
+ * @param edits - Non-overlapping source edits to apply.
+ * @returns Source text with all edits applied.
+ * @throws RangeError when an edit has an invalid range or overlaps a previous edit.
  */
 export function applySourceTextEdits<T extends CodemodSourceTextEdit>(
     sourceText: string,
@@ -34,6 +56,12 @@ export function applySourceTextEdits<T extends CodemodSourceTextEdit>(
     let cursor = 0;
 
     for (const edit of sorted) {
+        assertSourceTextEditRange(sourceText, edit);
+
+        if (edit.start < cursor) {
+            throw new RangeError(`Codemod edits overlap at offsets ${edit.start}-${edit.end}`);
+        }
+
         result += sourceText.slice(cursor, edit.start);
         result += edit.text;
         cursor = edit.end;
