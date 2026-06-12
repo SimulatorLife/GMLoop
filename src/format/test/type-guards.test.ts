@@ -3,7 +3,12 @@ import { describe, it } from "node:test";
 
 import type { AstPath } from "prettier";
 
-import { hasLineBreak, isInlineEmptyBlockComment, isInsideConstructorFunction } from "../src/printer/type-guards.js";
+import {
+    hasLineBreak,
+    isInlineEmptyBlockComment,
+    isInsideConstructorFunction,
+    isSimpleCallArgument
+} from "../src/printer/type-guards.js";
 
 function makePath(ancestors: Array<{ type: string } | null>): AstPath<any> {
     return {
@@ -121,6 +126,71 @@ void describe("isInlineEmptyBlockComment", () => {
                 trailingWS: "",
                 lineCount: 1,
                 value: "empty"
+            }),
+            false
+        );
+    });
+});
+
+// ---------------------------------------------------------------------------
+// isSimpleCallArgument
+// ---------------------------------------------------------------------------
+
+void describe("isSimpleCallArgument", () => {
+    void it("returns false for non-object inputs", () => {
+        assert.equal(isSimpleCallArgument(null), false);
+        assert.equal(isSimpleCallArgument(undefined), false);
+        assert.equal(isSimpleCallArgument("foo"), false);
+        assert.equal(isSimpleCallArgument(42), false);
+        assert.equal(isSimpleCallArgument(true), false);
+    });
+
+    void it("returns false for objects without a string type", () => {
+        assert.equal(isSimpleCallArgument({}), false);
+        assert.equal(isSimpleCallArgument({ type: 7 }), false);
+    });
+
+    void it("returns true for leaf value types in SIMPLE_CALL_ARGUMENT_TYPES", () => {
+        assert.equal(isSimpleCallArgument({ type: "Identifier", name: "x" }), true);
+        assert.equal(isSimpleCallArgument({ type: "Literal", value: "42" }), true);
+        assert.equal(isSimpleCallArgument({ type: "Literal", value: '"hello"' }), true);
+        assert.equal(isSimpleCallArgument({ type: "MemberDotExpression" }), true);
+        assert.equal(isSimpleCallArgument({ type: "MemberIndexExpression" }), true);
+        assert.equal(isSimpleCallArgument({ type: "ThisExpression" }), true);
+        assert.equal(isSimpleCallArgument({ type: "BooleanLiteral", value: true }), true);
+        assert.equal(isSimpleCallArgument({ type: "UndefinedLiteral" }), true);
+    });
+
+    void it("returns true for string-literal values that look like undefined/noone", () => {
+        // The old code carried an explicit branch for these values; Literal is
+        // already in SIMPLE_CALL_ARGUMENT_TYPES so the simple-set check covers
+        // them. The new code preserves the same observable behavior.
+        assert.equal(isSimpleCallArgument({ type: "Literal", value: "undefined" }), true);
+        assert.equal(isSimpleCallArgument({ type: "Literal", value: "noone" }), true);
+        assert.equal(isSimpleCallArgument({ type: "Literal", value: "UNDEFINED" }), true);
+    });
+
+    void it("returns false for complex-argument node types", () => {
+        assert.equal(isSimpleCallArgument({ type: "FunctionDeclaration" }), false);
+        assert.equal(isSimpleCallArgument({ type: "FunctionExpression" }), false);
+        assert.equal(isSimpleCallArgument({ type: "ConstructorDeclaration" }), false);
+        assert.equal(isSimpleCallArgument({ type: "StructExpression" }), false);
+    });
+
+    void it("returns false for CallExpression nodes (not classified as simple arguments)", () => {
+        // Both simple and complex call expressions return false here; the
+        // formatter's layout heuristics intentionally exclude CallExpression
+        // from the simple-argument prefix to avoid grouping decisions that
+        // would otherwise vary based on the callee's internals.
+        assert.equal(
+            isSimpleCallArgument({ type: "CallExpression", object: { type: "Identifier" }, arguments: [] }),
+            false
+        );
+        assert.equal(
+            isSimpleCallArgument({
+                type: "CallExpression",
+                object: { type: "Identifier" },
+                arguments: [{ type: "Literal", value: "1" }]
             }),
             false
         );
