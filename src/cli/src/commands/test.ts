@@ -7,7 +7,13 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
-import { readArtifactJson, resolveArtifactDirectory, writeArtifactJson } from "../modules/runtime/index.js";
+import {
+    readArtifactJson,
+    readValidatedArtifactJson,
+    resolveArtifactDirectory,
+    writeArtifactJson
+} from "../modules/runtime/index.js";
+import { isRecord } from "../shared/error-guards.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type TestOptions = Readonly<{
@@ -44,6 +50,71 @@ type TestCaseManifestEntry = Readonly<{
     name: string;
     target: string;
 }>;
+
+const TEST_CASE_MANIFEST_VERSION = "1" as const;
+const EMPTY_TEST_CASE_MANIFEST: TestCaseManifest = Object.freeze({
+    cases: Object.freeze([]) as ReadonlyArray<TestCaseManifestEntry>,
+    version: TEST_CASE_MANIFEST_VERSION
+});
+
+/**
+ * Type guard that confirms a parsed JSON value matches the
+ * {@link TestCaseManifestEntry} contract.
+ *
+ * The guard rejects every shape that {@link sortTestCaseEntries} cannot
+ * safely consume (non-string `target`/`name`, missing keys, `null` or array
+ * entries) so the downstream sorter never observes a value that would throw
+ * on `String.prototype.localeCompare`. The `expected` field is validated
+ * loosely: it is allowed to be absent and, when present, must be a
+ * non-blank string.
+ */
+function isValidTestCaseManifestEntry(value: unknown): value is TestCaseManifestEntry {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    if (!Core.isNonEmptyString(value.target)) {
+        return false;
+    }
+
+    if (!Core.isNonEmptyString(value.name)) {
+        return false;
+    }
+
+    if (value.expected !== undefined && typeof value.expected !== "string") {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Type guard for the full {@link TestCaseManifest} shape.
+ *
+ * The guard is intentionally stricter than the legacy `Array.isArray` check:
+ * it requires the top-level value to be a plain object, the schema version
+ * to equal `"1"` (so a future, incompatible manifest is not silently accepted
+ * under the current contract), and every entry to satisfy
+ * {@link isValidTestCaseManifestEntry}. Failures bubble up to
+ * {@link readTestCaseManifest} as `null` and the call site falls back to an
+ * empty manifest, preventing tampered or truncated files from crashing the
+ * CLI when a user later runs `test case create` or `test case update`.
+ */
+function isValidTestCaseManifest(value: unknown): value is TestCaseManifest {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    if (value.version !== TEST_CASE_MANIFEST_VERSION) {
+        return false;
+    }
+
+    if (!Array.isArray(value.cases)) {
+        return false;
+    }
+
+    return value.cases.every(isValidTestCaseManifestEntry);
+}
 
 function printTestPayload(payload: unknown, asJson: boolean): void {
     if (asJson) {
@@ -149,9 +220,11 @@ function createTestCaseManifest(entries: ReadonlyArray<TestCaseManifestEntry>): 
 
 async function readTestCaseManifest(projectRoot: string): Promise<TestCaseManifest> {
     const manifestPath = getTestCaseManifestPath(projectRoot);
-    const manifest = await readArtifactJson<TestCaseManifest>(manifestPath);
-    if (!manifest || !Array.isArray(manifest.cases)) {
-        return createTestCaseManifest([]);
+    const manifest = await readValidatedArtifactJson<TestCaseManifest>(manifestPath, {
+        validate: isValidTestCaseManifest
+    });
+    if (manifest === null) {
+        return EMPTY_TEST_CASE_MANIFEST;
     }
     return createTestCaseManifest(manifest.cases);
 }
@@ -403,3 +476,14 @@ export function createTestCommand(): Command {
     command.addCommand(testCase);
     return command;
 }
+
+/**
+ * Test-only entry point exposing the manifest validators so unit tests can
+ * exercise the schema guard directly. Kept under a frozen `__private__` bag
+ * to mirror the convention used elsewhere in the CLI (e.g. `runtime.ts`) and
+ * discourage accidental consumption by runtime callers.
+ */
+export const __testCommandTestHelpers__ = Object.freeze({
+    isValidTestCaseManifest,
+    isValidTestCaseManifestEntry
+});
