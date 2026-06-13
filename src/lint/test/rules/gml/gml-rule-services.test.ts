@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -12,10 +12,32 @@ import {
     gmlRuleMalformedServices
 } from "../../../src/rules/gml/gml-rule-services.js";
 
-const FEATHER_RULE_SOURCE_PATH = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../../../../src/rules/feather/create-feather-rule.ts"
-);
+const FEATHER_DIRECTORY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../src/rules/feather");
+
+/**
+ * Reads every TypeScript file under the feather rules directory so contract
+ * assertions can cover the helpers, pattern module, and individual rule
+ * factory files rather than only the registry entry point.
+ */
+async function readFeatherSourceFiles(): Promise<ReadonlyMap<string, string>> {
+    const topLevelEntries = await readdir(FEATHER_DIRECTORY, { withFileTypes: true });
+    const rulesEntries = await readdir(path.join(FEATHER_DIRECTORY, "rules"), { withFileTypes: true });
+    const candidatePaths: Array<string> = [];
+    for (const entry of topLevelEntries) {
+        if (entry.isFile() && entry.name.endsWith(".ts")) {
+            candidatePaths.push(path.join(FEATHER_DIRECTORY, entry.name));
+        }
+    }
+    for (const entry of rulesEntries) {
+        if (entry.isFile() && entry.name.endsWith(".ts")) {
+            candidatePaths.push(path.join(FEATHER_DIRECTORY, "rules", entry.name));
+        }
+    }
+    const sources = await Promise.all(
+        candidatePaths.map(async (absolutePath) => [absolutePath, await readFile(absolutePath, "utf8")] as const)
+    );
+    return new Map(sources);
+}
 
 void test("gmlRuleDocCommentServices exposes the doc-comment contract needed by rules", () => {
     assert.equal(typeof gmlRuleDocCommentServices.convertLegacyReturnsDescriptionLinesToMetadata, "function");
@@ -52,15 +74,16 @@ void test("gml-rule-services gmlRuleAutofixServices is frozen and cannot be muta
     assert.ok(Object.isFrozen(gmlRuleAutofixServices));
 });
 
-void test("create-feather-rule depends on the doc-comment rule-services contract, not deep relative imports", async () => {
-    const source = await readFile(FEATHER_RULE_SOURCE_PATH, "utf8");
+void test("feather rules depend on the doc-comment rule-services contract, not deep relative imports", async () => {
+    const sources = await readFeatherSourceFiles();
+    const aggregated = [...sources.values()].join("\n");
 
     assert.ok(
-        source.includes("gmlRuleDocCommentServices"),
-        "create-feather-rule.ts must consume gmlRuleDocCommentServices from the shared rule-services facade."
+        aggregated.includes("gmlRuleDocCommentServices"),
+        "Feather rule sources must consume gmlRuleDocCommentServices from the shared rule-services facade."
     );
     assert.ok(
-        !/from\s+["']\.\.\/\.\.\/doc-comment\/normalize-param-name\.js["']/.test(source),
-        "create-feather-rule.ts must not reach two directory levels into src/lint/src/doc-comment/ for normalizeDocParamName."
+        !/from\s+["']\.\.\/\.\.\/doc-comment\/normalize-param-name\.js["']/.test(aggregated),
+        "Feather rule sources must not reach two directory levels into src/lint/src/doc-comment/ for normalizeDocParamName."
     );
 });
