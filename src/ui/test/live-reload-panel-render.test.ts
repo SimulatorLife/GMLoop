@@ -5,6 +5,7 @@ import {
     GmAppShell,
     GmGraphToolbar,
     GmLiveReloadPanel,
+    GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
@@ -518,4 +519,75 @@ void test("GmAppShell forwards live fix progress snapshots while a fix run is pe
     resolveFixRun({ logLines: ["Success!"], status: "success" });
     await Promise.resolve();
     shell.disconnectedCallback();
+});
+
+void test("GmLiveReloadPanel no longer overrides connectedCallback, disconnectedCallback, or updated", () => {
+    // The panel used to override all three Lit lifecycle hooks to wire up the
+    // gm-error-banner-dismiss listener and the polling controller. The
+    // composition refactor moved that wiring into an EventBusManager and the
+    // LiveReloadPollingController's hostUpdate() hook. Verify the host no
+    // longer declares its own overrides so future contributors do not
+    // reintroduce the duplication. Reading own properties (not the prototype
+    // chain) keeps this assertion stable against inherited LitElement hooks.
+    const prototype = GmLiveReloadPanel.prototype as unknown as Record<string, unknown>;
+    const hasOwn = Object.prototype.hasOwnProperty;
+
+    assert.equal(
+        hasOwn.call(prototype, "connectedCallback"),
+        false,
+        "Expected GmLiveReloadPanel to drop its connectedCallback override."
+    );
+    assert.equal(
+        hasOwn.call(prototype, "disconnectedCallback"),
+        false,
+        "Expected GmLiveReloadPanel to drop its disconnectedCallback override."
+    );
+    assert.equal(hasOwn.call(prototype, "updated"), false, "Expected GmLiveReloadPanel to drop its updated override.");
+});
+
+void test("GmLiveReloadPanel still propagates gm-error-banner-dismiss without overriding lifecycle hooks", () => {
+    // With the composition refactor the EventBusManager registered in the
+    // constructor is responsible for wiring the gm-error-banner-dismiss
+    // listener. The panel must still translate the dismissed event into a
+    // GRAPH_UI_EVENT_CLEAR_PAGE_ERROR custom event so the surrounding app
+    // shell can clear the live-reload error state. Invoking the inherited
+    // LitElement connectedCallback/disconnectedCallback drives the
+    // LifecycleParticipantsController in the same way the DOM would, so the
+    // event bus subscriptions are installed and torn down without the host
+    // declaring its own overrides. The test installs a minimal `document`
+    // stub so the polling controller's `visibilitychange` hook can run
+    // without a real DOM.
+    const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+    const stubDocument = {
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined
+    };
+    Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        value: stubDocument
+    });
+
+    try {
+        const panel = new GmLiveReloadPanel();
+        let observedPage: string | null = null;
+        const listener = (event: Event): void => {
+            const customEvent = event as CustomEvent<{ page: string }>;
+            if (customEvent.detail?.page !== undefined) {
+                observedPage = customEvent.detail.page;
+            }
+        };
+        panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss", { bubbles: true }));
+        panel.disconnectedCallback();
+        panel.removeEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+
+        assert.equal(observedPage, "live-reload");
+    } finally {
+        if (originalDocumentDescriptor === undefined) {
+            Reflect.deleteProperty(globalThis, "document");
+        } else {
+            Object.defineProperty(globalThis, "document", originalDocumentDescriptor);
+        }
+    }
 });

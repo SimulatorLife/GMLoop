@@ -108,6 +108,18 @@ function normalizeStatusSnapshot(
 
 interface LiveReloadPollingControllerOptions {
     pollIntervalMs?: number;
+    /**
+     * Optional callback that returns the polling configuration from the host.
+     * Read lazily on every Lit host update so the controller can restart
+     * polling when the relevant properties change without the host having
+     * to override `updated()` to forward the values.
+     */
+    getStatusConfig?: () => LiveReloadPollingStatusConfig | null;
+}
+
+interface LiveReloadPollingStatusConfig {
+    statusUrl: string | null;
+    pollIntervalMs?: number;
 }
 
 export interface LiveReloadPollingControllerState {
@@ -130,6 +142,7 @@ export class LiveReloadPollingController implements ReactiveController {
         polledStatus: null
     };
     #pollIntervalMs: number;
+    #getStatusConfig: (() => LiveReloadPollingStatusConfig | null) | null;
 
     public constructor(
         host: ReactiveControllerHost,
@@ -138,6 +151,7 @@ export class LiveReloadPollingController implements ReactiveController {
     ) {
         this.#callbacks = callbacks;
         this.#pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+        this.#getStatusConfig = options.getStatusConfig ?? null;
         host.addController(this);
     }
 
@@ -152,6 +166,28 @@ export class LiveReloadPollingController implements ReactiveController {
     public hostDisconnected(): void {
         this.stopPolling();
         document.removeEventListener("visibilitychange", this.#onVisibilityChange);
+    }
+
+    /**
+     * Called by Lit on every render. When the host supplied a
+     * {@link LiveReloadPollingControllerOptions.getStatusConfig} callback,
+     * this forwards any status-URL or interval change into the existing
+     * short-circuited {@link restartPollingIfNeeded} helper. Hosts that
+     * drive polling from outside the controller can simply omit the
+     * callback and keep using the imperative method directly.
+     */
+    public hostUpdate(): void {
+        const getStatusConfig = this.#getStatusConfig;
+        if (getStatusConfig === null) {
+            return;
+        }
+
+        const statusConfig = getStatusConfig();
+        if (statusConfig === null) {
+            return;
+        }
+
+        this.restartPollingIfNeeded(statusConfig.statusUrl, statusConfig.pollIntervalMs);
     }
 
     public stopPolling(): void {
