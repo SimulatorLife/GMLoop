@@ -2,6 +2,7 @@ import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
 import type { GlobalvarToGlobalCodemodOptions, GlobalvarToGlobalEdit, GlobalvarToGlobalResult } from "../../types.js";
+import { applySourceTextEdits } from "../codemod-helpers.js";
 
 /**
  * Represents a `GlobalVarStatement` node extracted from the AST.
@@ -207,32 +208,6 @@ function buildDeletionEdit(sourceText: string, stmt: GlobalVarStatementInfo): Gl
 }
 
 /**
- * Apply a list of non-overlapping edits to `sourceText` using a left-to-right
- * string builder.  Edits are sorted in **ascending** order by `start` so the
- * result can be assembled in a single forward pass without intermediate string
- * copies — approximately 6-7× faster than the previous descending-sort +
- * repeated-slice approach on files with many edits.
- */
-function applyEdits(sourceText: string, edits: ReadonlyArray<GlobalvarToGlobalEdit>): string {
-    if (edits.length === 0) {
-        return sourceText;
-    }
-
-    const sorted = [...edits].sort((a, b) => a.start - b.start || a.end - b.end);
-    let result = "";
-    let cursor = 0;
-
-    for (const edit of sorted) {
-        result += sourceText.slice(cursor, edit.start);
-        result += edit.text;
-        cursor = edit.end;
-    }
-
-    result += sourceText.slice(cursor);
-    return result;
-}
-
-/**
  * Check whether `sourceText` contains content relevant to the globalvar-to-global
  * codemod — either the `globalvar` keyword (indicating possible declarations) or
  * any of the `knownNames` as a substring (indicating possible references).
@@ -421,7 +396,7 @@ export function applyGlobalvarToGlobalCodemod(
         });
     }
 
-    const outputText = applyEdits(sourceText, edits);
+    const outputText = applySourceTextEdits(sourceText, edits);
     // migratedNames reflects names whose references were actually rewritten.
     const migratedNames = [...workingNames].filter((n) => !excludeSet.has(n)).sort();
 

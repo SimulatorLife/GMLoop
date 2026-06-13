@@ -130,6 +130,41 @@ void test("applyGlobalvarToGlobalCodemod replaces references in if-test expressi
     assert.ok(!result.outputText.includes("globalvar"));
 });
 
+void test("applyGlobalvarToGlobalCodemod produces well-formed edits for interleaved declarations and references", () => {
+    // Two declarations interleaved with multiple reference sites exercises the
+    // shared edit-application helper with a mix of deletions and replacements
+    // at arbitrary source positions.
+    const input = [
+        "globalvar score;",
+        "var total = score + score;",
+        "globalvar lives;",
+        "if (lives > 0) {",
+        "    lives = lives - 1;",
+        "}",
+        ""
+    ].join("\n");
+    const result = applyGlobalvarToGlobalCodemod(input);
+
+    assert.equal(result.changed, true);
+    assert.equal(
+        result.outputText,
+        [
+            "var total = global.score + global.score;",
+            "if (global.lives > 0) {",
+            "    global.lives = global.lives - 1;",
+            "}",
+            ""
+        ].join("\n")
+    );
+
+    // All reported edits should be non-overlapping and within the source bounds.
+    for (const edit of result.appliedEdits) {
+        assert.ok(edit.start >= 0, `start must be non-negative: ${edit.start}`);
+        assert.ok(edit.end > edit.start, `end (${edit.end}) must exceed start (${edit.start})`);
+        assert.ok(edit.end <= input.length, `edit range must be within source length`);
+    }
+});
+
 // ---------------------------------------------------------------------------
 // applyGlobalvarToGlobalCodemod — cross-file reference migration
 // ---------------------------------------------------------------------------
