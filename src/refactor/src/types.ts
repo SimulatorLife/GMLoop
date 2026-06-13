@@ -140,9 +140,89 @@ export type Range = { start: number; end: number };
 const { createEnumeratedOptionHelpers } = Core;
 
 /**
- * Allowed naming case styles for naming-convention policy rules.
+ * Enumerated constants for naming case styles accepted by
+ * naming-convention policy rules.
+ *
+ * Naming case styles are the canonical identifier casing used by the refactor
+ * engine's naming policy. Centralising the valid values as a frozen constant
+ * object removes raw string literals (e.g. `"camel"`, `"lower_snake"`) from
+ * the dispatch logic in `formatNamingCaseStyle` and gives callers a single
+ * source of truth for runtime validation. The string values are deliberately
+ * preserved as the wire format used in user-authored config so existing
+ * policies keep working without translation.
+ *
+ * @example
+ * // Use typed constants instead of raw strings
+ * if (rule.caseStyle === NamingCaseStyle.LOWER_SNAKE) { ... }
+ *
+ * // Validate runtime strings
+ * const style = requireNamingCaseStyle(rawInput, "naming rule");
  */
-export type NamingCaseStyle = "lower" | "upper" | "camel" | "lower_snake" | "upper_snake" | "pascal";
+export const NamingCaseStyle = Object.freeze({
+    LOWER: "lower",
+    UPPER: "upper",
+    CAMEL: "camel",
+    LOWER_SNAKE: "lower_snake",
+    UPPER_SNAKE: "upper_snake",
+    PASCAL: "pascal"
+} as const);
+
+/**
+ * Allowed naming case styles for naming-convention policy rules.
+ *
+ * Derived from {@link NamingCaseStyle} so the union stays in lock-step with
+ * the runtime constant map; adding a new style only requires updating the
+ * `NamingCaseStyle` object.
+ */
+export type NamingCaseStyle = (typeof NamingCaseStyle)[keyof typeof NamingCaseStyle];
+
+const namingCaseStyleHelpers = createEnumHelpers(NamingCaseStyle, "naming case style");
+
+/**
+ * Check whether a value is a valid naming case style.
+ *
+ * @param value - Candidate value to test
+ * @returns True if value matches a known NamingCaseStyle constant
+ *
+ * @example
+ * if (isNamingCaseStyle(rawString)) {
+ *   // Safe to use as NamingCaseStyle
+ * }
+ */
+export function isNamingCaseStyle(value: unknown): value is NamingCaseStyle {
+    return namingCaseStyleHelpers.is(value);
+}
+
+/**
+ * Parse and validate a naming case style string.
+ *
+ * @param value - Raw string to parse
+ * @returns Valid NamingCaseStyle or null if invalid
+ *
+ * @example
+ * const style = parseNamingCaseStyle(rawInput);
+ * if (style === null) {
+ *   // Handle invalid style
+ * }
+ */
+export function parseNamingCaseStyle(value: unknown): NamingCaseStyle | null {
+    return namingCaseStyleHelpers.parse(value);
+}
+
+/**
+ * Parse and validate a naming case style string, throwing on invalid input.
+ *
+ * @param value - Raw string to parse
+ * @param context - Optional context for error message
+ * @returns Valid NamingCaseStyle
+ * @throws {TypeError} If value is not a valid naming case style
+ *
+ * @example
+ * const style = requireNamingCaseStyle(rawInput, "naming rule caseStyle");
+ */
+export function requireNamingCaseStyle(value: unknown, context?: string): NamingCaseStyle {
+    return namingCaseStyleHelpers.require(value, context);
+}
 
 /**
  * Category keys that can be targeted by naming-convention policy rules.

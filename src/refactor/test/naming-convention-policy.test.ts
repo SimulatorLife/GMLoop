@@ -442,3 +442,97 @@ void test("resolveNamingConventionRules supports sequence, tileset, particle, no
     assert.equal(resolved.noteResourceName?.caseStyle, "lower");
     assert.equal(resolved.extensionResourceName?.caseStyle, "lower");
 });
+
+// --- Typed enum / fail-fast regression tests ---
+
+void test("NamingCaseStyle constant object exposes every supported literal", () => {
+    assert.deepEqual(Refactor.NAMING_CASE_STYLES, ["lower", "upper", "camel", "lower_snake", "upper_snake", "pascal"]);
+    assert.equal(Refactor.NamingCaseStyle.CAMEL, "camel");
+    assert.equal(Refactor.NamingCaseStyle.LOWER_SNAKE, "lower_snake");
+    assert.equal(Refactor.NamingCaseStyle.UPPER_SNAKE, "upper_snake");
+    assert.equal(Refactor.NamingCaseStyle.PASCAL, "pascal");
+    assert.equal(Refactor.NamingCaseStyle.LOWER, "lower");
+    assert.equal(Refactor.NamingCaseStyle.UPPER, "upper");
+});
+
+void test("isNamingCaseStyle accepts every documented style and rejects unknown values", () => {
+    for (const style of Refactor.NAMING_CASE_STYLES) {
+        assert.equal(Refactor.isNamingCaseStyle(style), true, `expected ${style} to be valid`);
+    }
+    assert.equal(Refactor.isNamingCaseStyle("garbage"), false);
+    assert.equal(Refactor.isNamingCaseStyle(""), false);
+    assert.equal(Refactor.isNamingCaseStyle("CAMEL"), false);
+    assert.equal(Refactor.isNamingCaseStyle(undefined), false);
+    assert.equal(Refactor.isNamingCaseStyle(null), false);
+    assert.equal(Refactor.isNamingCaseStyle(42), false);
+});
+
+void test("parseNamingCaseStyle returns the canonical value or null", () => {
+    assert.equal(Refactor.parseNamingCaseStyle("camel"), "camel");
+    assert.equal(Refactor.parseNamingCaseStyle("lower_snake"), "lower_snake");
+    assert.equal(Refactor.parseNamingCaseStyle("nonsense"), null);
+});
+
+void test("requireNamingCaseStyle throws on invalid input and returns the value otherwise", () => {
+    assert.equal(Refactor.requireNamingCaseStyle("camel"), "camel");
+    assert.equal(Refactor.requireNamingCaseStyle("upper_snake"), "upper_snake");
+    assert.throws(
+        () => Refactor.requireNamingCaseStyle("unknown", "naming rule caseStyle"),
+        (error: Error) => {
+            assert.ok(error instanceof TypeError, "expected TypeError");
+            assert.match(error.message, /Invalid naming case style/);
+            assert.match(error.message, /"unknown"/);
+            assert.match(error.message, /\(in naming rule caseStyle\)/);
+            return true;
+        }
+    );
+    assert.throws(
+        () => Refactor.requireNamingCaseStyle(42),
+        (error: Error) => error instanceof TypeError
+    );
+});
+
+void test("formatNamingCaseStyle keeps producing the same output for every supported style", () => {
+    // Acts as a regression test: the new typed dispatch table must yield
+    // the same outputs the previous nested-ternary implementation did.
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "lower"), "helloworld");
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "upper"), "HELLOWORLD");
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "camel"), "helloWorld");
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "pascal"), "HelloWorld");
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "lower_snake"), "hello_world");
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "upper_snake"), "HELLO_WORLD");
+    // Fast path for already-conforming simple-lower-snake cores.
+    assert.equal(Refactor.formatNamingCaseStyle("already_snake_case", "lower_snake"), "already_snake_case");
+});
+
+void test("formatNamingCaseStyle fails fast on unknown case styles instead of silently producing a fallback", () => {
+    // The previous nested-ternary implementation silently fell through to an
+    // implicit "upper snake" branch for any unrecognised string. The new
+    // dispatch validates the input at the public boundary and throws so
+    // misconfiguration is caught immediately at the call site.
+    assert.throws(
+        () =>
+            Refactor.formatNamingCaseStyle(
+                "helloWorld",
+                // Force a runtime invalid value past the type checker.
+                "garbage" as unknown as NamingCaseStyle
+            ),
+        (error: Error) => {
+            assert.ok(error instanceof TypeError, "expected TypeError");
+            assert.match(error.message, /Invalid naming case style/);
+            assert.match(error.message, /"garbage"/);
+            assert.match(error.message, /formatNamingCaseStyle/);
+            return true;
+        }
+    );
+});
+
+void test("NamingCaseStyle is the source of truth for the dispatched formatters", () => {
+    // Exhaustively cover the new typed dispatch table. If a new style is
+    // added to the const object, this test forces the implementer to
+    // register a formatter entry as well.
+    for (const style of Refactor.NAMING_CASE_STYLES) {
+        const formatted = Refactor.formatNamingCaseStyle("hello_world", style);
+        assert.ok(formatted.length > 0, `expected ${style} to produce a non-empty string`);
+    }
+});
