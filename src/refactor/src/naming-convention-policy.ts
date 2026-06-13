@@ -4,23 +4,26 @@ import {
     assertRefactorConfigPlainObject,
     assertRefactorConfigPlainObjectWithAllowedKeys
 } from "./refactor-config-assertions.js";
-import type {
+import {
+    isNamingCaseStyle,
     NamingCaseStyle,
-    NamingCategory,
-    NamingConventionPolicy,
-    NamingRuleConfig,
-    ResolvedNamingConventionRules,
-    ResolvedNamingRule
+    type NamingCategory,
+    type NamingConventionPolicy,
+    type NamingRuleConfig,
+    requireNamingCaseStyle,
+    type ResolvedNamingConventionRules,
+    type ResolvedNamingRule
 } from "./types.js";
 
-export const NAMING_CASE_STYLES: ReadonlyArray<NamingCaseStyle> = Object.freeze([
-    "lower",
-    "upper",
-    "camel",
-    "lower_snake",
-    "upper_snake",
-    "pascal"
-]);
+/**
+ * Frozen list of every supported naming case style.
+ *
+ * Re-exposes `Object.values(NamingCaseStyle)` so callers that need to iterate
+ * the canonical list (e.g. to format error messages or build a choice list)
+ * can keep doing so without re-listing the values. The single source of truth
+ * for the values themselves is the {@link NamingCaseStyle} constant object.
+ */
+export const NAMING_CASE_STYLES: ReadonlyArray<NamingCaseStyle> = Object.freeze(Object.values(NamingCaseStyle));
 
 export const NAMING_CATEGORY_PARENTS: Readonly<Record<NamingCategory, NamingCategory | null>> = Object.freeze({
     resource: null,
@@ -64,7 +67,6 @@ type RuntimeResolvedNamingRule = ResolvedNamingRule & {
 };
 
 const NAMING_CATEGORY_SET = new Set(Object.keys(NAMING_CATEGORY_PARENTS));
-const NAMING_CASE_STYLE_SET: ReadonlySet<string> = new Set(NAMING_CASE_STYLES);
 
 const NAMING_RULE_CONFIG_ALLOWED_KEYS = new Set([
     "caseStyle",
@@ -80,10 +82,6 @@ const NAMING_CONVENTION_POLICY_ALLOWED_KEYS = new Set(["rules", "exclusivePrefix
 
 function isNamingCategory(value: unknown): value is NamingCategory {
     return typeof value === "string" && NAMING_CATEGORY_SET.has(value);
-}
-
-function isNamingCaseStyle(value: unknown): value is NamingCaseStyle {
-    return typeof value === "string" && NAMING_CASE_STYLE_SET.has(value);
 }
 
 function normalizeStringArray(value: unknown, context: string): Array<string> {
@@ -257,7 +255,7 @@ export function resolveNamingConventionRules(policy: NamingConventionPolicy): Re
         const runtimeRule: RuntimeResolvedNamingRule = {
             prefix: "",
             suffix: "",
-            caseStyle: "camel",
+            caseStyle: NamingCaseStyle.CAMEL,
             enforceCaseStyle: false,
             minChars: null,
             maxChars: null,
@@ -508,20 +506,50 @@ function splitIdentifierUnderscoreAffixes(value: string): IdentifierUnderscoreAf
 }
 
 /**
+ * Per-style formatter functions keyed by {@link NamingCaseStyle}.
+ *
+ * Replacing the previous nested ternary with a typed dispatch table keeps
+ * the dispatch logic declarative: each entry maps a `NamingCaseStyle`
+ * constant to a function that converts an array of identifier words into the
+ * matching case. Adding a new style is a one-line change here and the
+ * compiler will refuse to build until the new constant is registered.
+ */
+const NAMING_CASE_STYLE_FORMATTERS: Readonly<Record<NamingCaseStyle, (words: ReadonlyArray<string>) => string>> =
+    Object.freeze({
+        [NamingCaseStyle.LOWER]: (words) => words.join(""),
+        [NamingCaseStyle.UPPER]: (words) => words.join("").toUpperCase(),
+        [NamingCaseStyle.CAMEL]: (words) => toCamelCase(words),
+        [NamingCaseStyle.PASCAL]: (words) => toPascalCase(words),
+        [NamingCaseStyle.LOWER_SNAKE]: (words) => words.join("_"),
+        [NamingCaseStyle.UPPER_SNAKE]: (words) => words.join("_").toUpperCase()
+    });
+
+/**
  * Rewrite an identifier core into the requested naming case style.
+ *
+ * Validates `caseStyle` at the entry point so callers passing raw strings
+ * from configuration files or external tools get a `TypeError` immediately
+ * with the list of valid values, instead of silently producing a
+ * `formatNamingCaseStyle` output (the previous nested ternary fell through
+ * to an implicit "upper snake" branch for any unknown string).
  */
 export function formatNamingCaseStyle(value: string, caseStyle: NamingCaseStyle): string {
+    // Fail fast on invalid input even though the type system normally
+    // constrains callers: the public `formatNamingCaseStyle` is exported and
+    // can be invoked from JavaScript or with values that bypass type checks.
+    requireNamingCaseStyle(caseStyle, "formatNamingCaseStyle");
+
     const underscoreAffixes = splitIdentifierUnderscoreAffixes(value);
     if (underscoreAffixes.core.length === 0) {
         return `${underscoreAffixes.leading}${underscoreAffixes.trailing}`;
     }
 
     if (isSimpleLowerSnakeCore(underscoreAffixes.core)) {
-        if (caseStyle === "camel") {
+        if (caseStyle === NamingCaseStyle.CAMEL) {
             return `${underscoreAffixes.leading}${toCamelCaseFromLowerSnakeCore(underscoreAffixes.core)}${underscoreAffixes.trailing}`;
         }
 
-        if (caseStyle === "lower_snake") {
+        if (caseStyle === NamingCaseStyle.LOWER_SNAKE) {
             return `${underscoreAffixes.leading}${underscoreAffixes.core}${underscoreAffixes.trailing}`;
         }
     }
@@ -532,18 +560,8 @@ export function formatNamingCaseStyle(value: string, caseStyle: NamingCaseStyle)
         return `${underscoreAffixes.leading}${underscoreAffixes.core}${underscoreAffixes.trailing}`;
     }
 
-    const formattedCore =
-        caseStyle === "lower"
-            ? words.join("")
-            : caseStyle === "upper"
-              ? words.join("").toUpperCase()
-              : caseStyle === "camel"
-                ? toCamelCase(words)
-                : caseStyle === "pascal"
-                  ? toPascalCase(words)
-                  : caseStyle === "lower_snake"
-                    ? words.join("_")
-                    : words.join("_").toUpperCase();
+    const formatter = NAMING_CASE_STYLE_FORMATTERS[caseStyle];
+    const formattedCore = formatter(words);
 
     return `${underscoreAffixes.leading}${formattedCore}${underscoreAffixes.trailing}`;
 }
@@ -553,8 +571,8 @@ function attachesDirectlyToIdentifierCore(affix: string): boolean {
 }
 
 function formatCoreNameForRule(coreName: string, rule: RuntimeResolvedNamingRule): string {
-    if (rule.caseStyle === "camel" && attachesDirectlyToIdentifierCore(rule.prefix)) {
-        return formatNamingCaseStyle(coreName, "pascal");
+    if (rule.caseStyle === NamingCaseStyle.CAMEL && attachesDirectlyToIdentifierCore(rule.prefix)) {
+        return formatNamingCaseStyle(coreName, NamingCaseStyle.PASCAL);
     }
 
     return formatNamingCaseStyle(coreName, rule.caseStyle);

@@ -24,15 +24,19 @@ import {
     ConflictType,
     isConflictSeverity,
     isConflictType,
+    isNamingCaseStyle,
     isOccurrenceKind,
     isSymbolKind,
+    NamingCaseStyle,
     OccurrenceKind,
     parseConflictSeverity,
     parseConflictType,
+    parseNamingCaseStyle,
     parseOccurrenceKind,
     parseSymbolKind,
     requireConflictSeverity,
     requireConflictType,
+    requireNamingCaseStyle,
     requireOccurrenceKind,
     requireSymbolKind,
     SymbolKind
@@ -63,6 +67,10 @@ export const Refactor = Object.freeze({
     isConflictSeverity,
     parseConflictSeverity,
     requireConflictSeverity,
+    NamingCaseStyle,
+    isNamingCaseStyle,
+    parseNamingCaseStyle,
+    requireNamingCaseStyle,
     OccurrenceKind,
     isOccurrenceKind,
     parseOccurrenceKind,
@@ -225,7 +233,6 @@ export type {
     MacroExpansionDependency,
     MacroExpansionDependencyProvider,
     MaybePromise,
-    NamingCaseStyle,
     NamingCategory,
     NamingConventionCodemodPlan,
     NamingConventionPolicy,
@@ -275,6 +282,7 @@ export type {
 export { isSymbolKind, parseSymbolKind, requireSymbolKind, SymbolKind } from "./types.js";
 export { ConflictType, isConflictType, parseConflictType, requireConflictType } from "./types.js";
 export { ConflictSeverity, isConflictSeverity, parseConflictSeverity, requireConflictSeverity } from "./types.js";
+export { isNamingCaseStyle, NamingCaseStyle, parseNamingCaseStyle, requireNamingCaseStyle } from "./types.js";
 export { isOccurrenceKind, OccurrenceKind, parseOccurrenceKind, requireOccurrenceKind } from "./types.js";
 export type { WorkspaceRevisionProvider } from "./workspace-edit.js";
 export type {
