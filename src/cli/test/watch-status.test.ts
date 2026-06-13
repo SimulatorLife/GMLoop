@@ -140,6 +140,110 @@ void describe("live-reload status command", () => {
         assert.deepStrictEqual(logMessages, ['{\n  "status": "ok"\n}']);
     });
 
+    /**
+     * Regression coverage for a nullability hazard in `displayPretty`.
+     *
+     * Before the guard was added, the live-reload status server returning a
+     * `null` body (for example, when an upstream proxy stripped the response)
+     * caused `displayPretty` to throw `TypeError: Cannot read properties of
+     * null (reading 'ready' | 'status' | 'uptime')` because each endpoint
+     * branch accessed fields on the unverified `data` value. The fix adds an
+     * object-like guard up front, so the CLI now prints a deterministic
+     * diagnostic and exits successfully instead of crashing.
+     */
+    void it("does not throw when the structured ready endpoint returns a null body", async () => {
+        const logMessages: Array<string> = [];
+
+        await withTemporaryProperty(
+            globalThis,
+            "fetch",
+            async () => Response.json(null, { status: 200 }),
+            () =>
+                withTemporaryProperty(
+                    console,
+                    "log",
+                    (...args: Array<unknown>) => {
+                        logMessages.push(args.map(String).join(" "));
+                    },
+                    async () => {
+                        await runWatchStatusCommand({
+                            endpoint: "ready"
+                        });
+                    }
+                )
+        );
+
+        assert.equal(
+            logMessages.some((message) =>
+                message.includes('Live-reload status server returned an unexpected response for the "ready" endpoint.')
+            ),
+            true,
+            "Expected a deterministic diagnostic for the null ready body"
+        );
+    });
+
+    void it("does not throw when the structured health endpoint returns a null body", async () => {
+        const logMessages: Array<string> = [];
+
+        await withTemporaryProperty(
+            globalThis,
+            "fetch",
+            async () => Response.json(null, { status: 200 }),
+            () =>
+                withTemporaryProperty(
+                    console,
+                    "log",
+                    (...args: Array<unknown>) => {
+                        logMessages.push(args.map(String).join(" "));
+                    },
+                    async () => {
+                        await runWatchStatusCommand({
+                            endpoint: "health"
+                        });
+                    }
+                )
+        );
+
+        assert.equal(
+            logMessages.some((message) =>
+                message.includes('Live-reload status server returned an unexpected response for the "health" endpoint.')
+            ),
+            true,
+            "Expected a deterministic diagnostic for the null health body"
+        );
+    });
+
+    void it("does not throw when the default status endpoint returns a null body", async () => {
+        const logMessages: Array<string> = [];
+
+        await withTemporaryProperty(
+            globalThis,
+            "fetch",
+            async () => Response.json(null, { status: 200 }),
+            () =>
+                withTemporaryProperty(
+                    console,
+                    "log",
+                    (...args: Array<unknown>) => {
+                        logMessages.push(args.map(String).join(" "));
+                    },
+                    async () => {
+                        await runWatchStatusCommand({
+                            endpoint: "status"
+                        });
+                    }
+                )
+        );
+
+        assert.equal(
+            logMessages.some((message) =>
+                message.includes('Live-reload status server returned an unexpected response for the "status" endpoint.')
+            ),
+            true,
+            "Expected a deterministic diagnostic for the null status body"
+        );
+    });
+
     void it("should accept endpoint option", () => {
         const command = createLiveReloadStatusCommand();
         const endpointOption = command.options.find((opt) => opt.long === "--endpoint");

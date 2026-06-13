@@ -8,7 +8,7 @@
 
 import { Core } from "@gmloop/core";
 
-const { getErrorMessage } = Core;
+const { getErrorMessage, isObjectLike } = Core;
 
 export const WATCH_STATUS_OUTPUT_FORMATS = Object.freeze({
     PRETTY: "pretty",
@@ -124,6 +124,22 @@ async function fetchStatus(host: string, port: number, endpoint: string): Promis
 function displayPretty(data: unknown, endpoint: string): void {
     if (endpoint === "ping") {
         console.log("✓ Live-reload dev session is running");
+        return;
+    }
+
+    // The structured endpoints (`ready`, `health`, and the default `status`
+    // view) all assume the status server returned a JSON object describing
+    // the live-reload session. When the response is `null` (or otherwise not
+    // object-like — e.g. an upstream proxy stripped the body), accessing
+    // fields like `data.ready` would throw `TypeError: Cannot read
+    // properties of null (reading 'ready')`. Surface a deterministic
+    // human-readable message in that case so the CLI never crashes for a
+    // recoverable server-shape mismatch.
+    if (!isObjectLike(data)) {
+        console.log(
+            `Live-reload status server returned an unexpected response for the "${endpoint}" endpoint. ` +
+                "Expected a JSON object describing the live-reload session state."
+        );
         return;
     }
 
