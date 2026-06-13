@@ -28,6 +28,7 @@ import {
     resolveBoundRunnerState
 } from "../src/commands/runner-context.js";
 import { getRunnerStateStore, type RunnerLogEntry } from "../src/modules/runtime/index.js";
+import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 
 /**
  * Per-test scratch directory. Each test gets its own tmpdir so concurrent
@@ -191,6 +192,130 @@ void test("followRunnerLogs rejects malformed parameter bags", async () => {
             followRunnerLogs({ emit: stub.emit, readLogs: stub.readLogs } as unknown as FollowRunnerLogsParameters),
             /rebind function/
         );
+    });
+});
+
+/**
+ * Wrap `setInterval`/`clearInterval` for the duration of `action` so tests
+ * can observe how many polling handles a helper owns at any point. A handle
+ * is recorded when `setInterval` returns it and removed when the matching
+ * `clearInterval` runs, mirroring the lifecycle the runtime actually
+ * maintains.
+ */
+async function withTrackedIntervals<Result>(
+    action: (tracker: { activeCount: () => number }) => Promise<Result>
+): Promise<Result> {
+    // `setInterval` returns either a `number` (DOM typings) or a
+    // `NodeJS.Timeout` depending on which lib is active, so the tracker
+    // stores handles as `unknown` and bridges the two type signatures via
+    // casts at the wrapper boundary.
+    const activeHandles = new Set<unknown>();
+
+    const originalSetInterval = globalThis.setInterval;
+    const replacementSetInterval = ((handler: () => void, ms?: number, ...args: Array<unknown>) => {
+        const handle = originalSetInterval(handler, ms, ...args);
+        activeHandles.add(handle);
+        return handle;
+    }) as typeof setInterval;
+
+    const originalClearInterval = globalThis.clearInterval;
+    const replacementClearInterval = ((handle: ReturnType<typeof setInterval>) => {
+        activeHandles.delete(handle);
+        return originalClearInterval(handle);
+    }) as typeof clearInterval;
+
+    return withTemporaryProperty(globalThis, "setInterval", replacementSetInterval, () =>
+        withTemporaryProperty(globalThis, "clearInterval", replacementClearInterval, () =>
+            action({ activeCount: () => activeHandles.size })
+        )
+    );
+}
+
+void test("followRunnerLogs clears its interval and rejects when rebind throws", async () => {
+    await withFreshRunnerState(async () => {
+        const boom = new Error("rebind blew up");
+        const parameters: FollowRunnerLogsParameters = {
+            emit: () => {},
+            intervalMs: 5,
+            // readLogs is never reached; rebind is the first callback invoked on
+            // every tick and is therefore the cheapest way to short-circuit.
+            readLogs: () => [],
+            rebind: () => {
+                throw boom;
+            },
+            // The window must be longer than the time we wait for the first
+            // tick so the test exercises the error path, not the happy-path
+            // window-exit branch. The interval fires every 5 ms so 500 ms is
+            // ample headroom to observe the throw.
+            windowMs: 500
+        };
+
+        await withTrackedIntervals(async (tracker) => {
+            // Sanity: no interval is alive before the call starts.
+            assert.equal(tracker.activeCount(), 0, "No interval should be active before the call");
+
+            await assert.rejects(followRunnerLogs(parameters), (error: unknown) => error === boom);
+
+            // The follow loop must clear its interval even when a callback
+            // throws; otherwise the timer would pin the Node process and
+            // leak the handle across the rest of the program lifetime.
+            assert.equal(
+                tracker.activeCount(),
+                0,
+                "followRunnerLogs must clear its setInterval handle when a callback throws"
+            );
+        });
+    });
+});
+
+void test("followRunnerLogs clears its interval and rejects when readLogs throws", async () => {
+    await withFreshRunnerState(async () => {
+        const boom = new Error("readLogs blew up");
+        const parameters: FollowRunnerLogsParameters = {
+            emit: () => {},
+            intervalMs: 5,
+            readLogs: () => {
+                throw boom;
+            },
+            rebind: () => {},
+            windowMs: 500
+        };
+
+        await withTrackedIntervals(async (tracker) => {
+            await assert.rejects(followRunnerLogs(parameters), (error: unknown) => error === boom);
+            assert.equal(
+                tracker.activeCount(),
+                0,
+                "followRunnerLogs must clear its setInterval handle when readLogs throws"
+            );
+        });
+    });
+});
+
+void test("followRunnerLogs clears its interval and rejects when emit throws", async () => {
+    await withFreshRunnerState(async () => {
+        const baseline = Date.now();
+        const boom = new Error("emit blew up");
+        const parameters: FollowRunnerLogsParameters = {
+            emit: () => {
+                throw boom;
+            },
+            intervalMs: 5,
+            // readLogs always returns a non-empty batch so the emit callback
+            // is reached on the first tick.
+            readLogs: () => [buildEntry(baseline + 1, "boom")],
+            rebind: () => {},
+            windowMs: 500
+        };
+
+        await withTrackedIntervals(async (tracker) => {
+            await assert.rejects(followRunnerLogs(parameters), (error: unknown) => error === boom);
+            assert.equal(
+                tracker.activeCount(),
+                0,
+                "followRunnerLogs must clear its setInterval handle when emit throws"
+            );
+        });
     });
 });
 

@@ -26,6 +26,8 @@
  * the newest entry's timestamp, and the loop still resolves after the
  * configured window elapses.
  */
+import { Core } from "@gmloop/core";
+
 import { getRunnerStateStore, type RunnerLogEntry, type RunnerLogKind } from "../modules/runtime/index.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
@@ -136,7 +138,12 @@ export interface FollowRunnerLogsParameters {
  *   `setInterval` handle.
  *
  * The helper resolves after the window elapses, regardless of how many (or
- * how few) entries were observed.
+ * how few) entries were observed. If any of the caller-supplied callbacks
+ * (`rebind`, `readLogs`, or `emit`) throws, the helper clears the polling
+ * interval and rejects with the original error so the timer is never left
+ * dangling — without that cleanup the interval would keep the Node
+ * process alive and the outer promise would never settle, leaving the
+ * caller blocked indefinitely.
  */
 export async function followRunnerLogs(parameters: FollowRunnerLogsParameters): Promise<void> {
     const { emit, readLogs, rebind } = parameters;
@@ -155,21 +162,32 @@ export async function followRunnerLogs(parameters: FollowRunnerLogsParameters): 
     const startedAt = Date.now();
     let lastTimestamp = startedAt - 1;
 
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
         const interval = setInterval(() => {
-            rebind();
-            const freshEntries = readLogs({}).filter((entry) => entry.timestamp > lastTimestamp);
-            if (freshEntries.length > 0) {
-                const newestEntry = freshEntries.at(-1);
-                if (newestEntry) {
-                    lastTimestamp = newestEntry.timestamp;
+            // The try/catch is the only thing standing between a throwing
+            // callback and a leaked timer: if any of `rebind`, `readLogs`,
+            // or `emit` throws, the clearInterval call further down would
+            // be skipped and the interval would keep the process alive.
+            try {
+                rebind();
+                const freshEntries = readLogs({}).filter((entry) => entry.timestamp > lastTimestamp);
+                if (freshEntries.length > 0) {
+                    const newestEntry = freshEntries.at(-1);
+                    if (newestEntry) {
+                        lastTimestamp = newestEntry.timestamp;
+                    }
+                    emit(freshEntries);
                 }
-                emit(freshEntries);
-            }
 
-            if (Date.now() - startedAt >= windowMs) {
+                if (Date.now() - startedAt >= windowMs) {
+                    clearInterval(interval);
+                    resolve();
+                }
+            } catch (error) {
                 clearInterval(interval);
-                resolve();
+                reject(
+                    Core.isErrorLike(error) ? error : new Error(`followRunnerLogs callback threw: ${String(error)}`)
+                );
             }
         }, intervalMs);
     });
