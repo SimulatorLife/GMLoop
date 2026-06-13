@@ -12,7 +12,7 @@
  *      globalvar name are skipped before the expensive AST parse, eliminating
  *      parse overhead for the majority of files in a typical project.
  *
- *   2. **Left-to-right string builder** (`applyEdits`):
+ *   2. **Left-to-right string builder** (`applySourceTextEdits`):
  *      Edits are sorted ascending and assembled in a single forward pass
  *      instead of the previous descending-sort + repeated-slice pattern,
  *      avoiding O(n·m) intermediate string copies (~6-7× faster on files
