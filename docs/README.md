@@ -39,6 +39,11 @@ then return here for deeper context.
 - [CLI command guide](../src/cli/README.md) — Full command catalog and
   project-config behavior for parser, lint, refactor, transpile, watch, and
   graph workflows.
+- [Formatter workspace reference](../src/format/README.md) — Formatter
+  ownership boundaries, deprecated options, and layout conventions for
+  `@gmloop/format`.
+- [Runtime wrapper reference](../src/runtime-wrapper/README.md) — HTML5
+  hot-reload bridge, patch application, and live function swapping.
 
 ## Contributor workflow
 
