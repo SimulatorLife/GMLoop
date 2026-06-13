@@ -8,7 +8,9 @@ import type {
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { LiveReloadPollingController } from "./live-reload-polling-controller.js";
 
@@ -42,6 +44,22 @@ function resolveEndpointLabel(value: string | null | undefined): string {
 
 /**
  * Live-reload observability surface for watcher, patch stream, and runtime-wrapper status.
+ *
+ * The panel no longer overrides `connectedCallback`, `disconnectedCallback`,
+ * or `updated()`. Lifecycle wiring is delegated to two injected
+ * collaborators:
+ *
+ * - {@link EventBusManager} owns the `gm-error-banner-dismiss` subscription
+ *   so the panel does not have to manage its own `addEventListener` /
+ *   `removeEventListener` calls.
+ * - {@link LiveReloadPollingController} owns the polling lifecycle and, via
+ *   its new `getStatusConfig` callback, reacts to model changes through
+ *   Lit's `hostUpdate()` hook instead of the host having to forward
+ *   `updated()` invocations.
+ *
+ * Both collaborators are wired up through a single
+ * {@link LifecycleParticipantsController} so connect/disconnect ordering
+ * stays explicit and the host stays a thin presentational shell.
  */
 export class GmLiveReloadPanel extends LightDomLitElement {
     public static properties = {
@@ -68,31 +86,32 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         );
     };
 
-    #pollingController = new LiveReloadPollingController(this, {
-        onErrorMessageChange: (message: string | null): void => {
-            this.#pollErrorMessage = message;
-        },
-        onStatusChange: (status: GraphVisualizationLiveReloadStatusSnapshot | null): void => {
-            this.#polledStatus = status;
-        },
-        requestUpdate: (): void => {
-            this.requestUpdate();
-        }
-    });
-
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-    }
-
-    public disconnectedCallback(): void {
-        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-        super.disconnectedCallback();
-    }
-
-    protected updated(): void {
-        const statusUrl = this.model?.liveReload?.endpoints.statusUrl ?? null;
-        this.#pollingController.restartPollingIfNeeded(statusUrl, this.model?.liveReload?.pollIntervalMs);
+    public constructor() {
+        super();
+        const eventBus = new EventBusManager(this, [
+            { event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }
+        ]);
+        new LiveReloadPollingController(
+            this,
+            {
+                onErrorMessageChange: (message: string | null): void => {
+                    this.#pollErrorMessage = message;
+                },
+                onStatusChange: (status: GraphVisualizationLiveReloadStatusSnapshot | null): void => {
+                    this.#polledStatus = status;
+                },
+                requestUpdate: (): void => {
+                    this.requestUpdate();
+                }
+            },
+            {
+                getStatusConfig: () => ({
+                    pollIntervalMs: this.model?.liveReload?.pollIntervalMs,
+                    statusUrl: this.model?.liveReload?.endpoints.statusUrl ?? null
+                })
+            }
+        );
+        new LifecycleParticipantsController(this, [eventBus]);
     }
 
     #resolveStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot | null {

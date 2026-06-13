@@ -1,3 +1,5 @@
+import type { LifecycleParticipant } from "./lifecycle-participants-controller.js";
+
 /**
  * A single registered event subscription managed by `EventBusManager`.
  */
@@ -10,8 +12,11 @@ interface EventSubscription {
  * Collaborator that auto-registers and unregisters an array of event
  * subscriptions when the host element is connected/disconnected.
  *
- * Subscriptions are torn down in reverse registration order so that nested
- * or overlapping subscriptions unwind predictably.
+ * The `connect`/`disconnect` pair satisfies the {@link LifecycleParticipant}
+ * contract so it can be handed to {@link LifecycleParticipantsController}
+ * alongside other lifecycle collaborators. Subscriptions are torn down in
+ * reverse registration order so that nested or overlapping subscriptions
+ * unwind predictably.
  *
  * @example
  * ```ts
@@ -22,7 +27,7 @@ interface EventSubscription {
  * // On disconnected: busManager.disconnect()
  * ```
  */
-export class EventBusManager {
+export class EventBusManager implements LifecycleParticipant {
     #element: EventTarget;
     #subscriptions: EventSubscription[] = [];
     #isConnected = false;
