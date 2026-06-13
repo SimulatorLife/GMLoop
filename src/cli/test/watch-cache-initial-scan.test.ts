@@ -7,7 +7,12 @@
  * during the initial scan without being delivered as runtime hot-reload edits.
  */
 
-import assert from "node:assert";
+// Node.js deprecated the loose equality helpers (e.g. `assert.equal`) in the
+// `node:assert` module. This test suite migrates to the /strict subpath and
+// the strict helpers (`assert.strictEqual`, `assert.deepStrictEqual`) for
+// value- and type-exact comparisons. Behaviour parity with the original calls
+// is validated via: pnpm test src/cli/dist/test/watch-cache-initial-scan.test.js
+import assert from "node:assert/strict";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -93,12 +98,20 @@ void describe("Cache-based initial scan", () => {
             await waitForScanComplete(statusBaseUrl, 8000, 25);
 
             const status = await fetchStatusPayload(statusBaseUrl);
-            assert.equal(status.patchCount, 3, "Initial scan should still transpile all pre-existing files");
-            assert.equal(status.totalPatchCount, 0, "Initial scan patches should not count as delivered live edits");
-            assert.equal(status.patchHistorySize, 0, "Initial scan patches should not be retained for replay");
+            assert.strictEqual(status.patchCount, 3, "Initial scan should still transpile all pre-existing files");
+            assert.strictEqual(
+                status.totalPatchCount,
+                0,
+                "Initial scan patches should not count as delivered live edits"
+            );
+            assert.strictEqual(status.patchHistorySize, 0, "Initial scan patches should not be retained for replay");
 
             await delay(150);
-            assert.deepEqual(client.receivedPatches, [], "Initial scan patches should not be broadcast to clients");
+            assert.deepStrictEqual(
+                client.receivedPatches,
+                [],
+                "Initial scan patches should not be broadcast to clients"
+            );
         } finally {
             abortController.abort();
             await client.disconnect();
