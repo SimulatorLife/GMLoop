@@ -1,5 +1,4 @@
 import { html } from "lit";
-import { ref } from "lit/directives/ref.js";
 
 import { type GraphVisualizationUiModel, hasLoadedGraphIndex, hasLoadedGraphProject } from "../contracts.js";
 import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
@@ -140,6 +139,33 @@ function resolveDocsStatusSummary(model: GraphVisualizationUiModel, state: Graph
     return docsPanelContent.codemodsMetaText;
 }
 
+/**
+ * Return true when toolbar keyboard shortcuts should yield to native text entry.
+ */
+export function isToolbarKeyboardShortcutTextEntryTarget(target: EventTarget | null): boolean {
+    if (typeof Element !== "undefined" && target instanceof Element) {
+        if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+            return true;
+        }
+
+        if (target instanceof HTMLInputElement) {
+            const inputType = target.type.toLowerCase();
+            return !["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"].includes(
+                inputType
+            );
+        }
+
+        return typeof HTMLElement !== "undefined" && target instanceof HTMLElement && target.isContentEditable;
+    }
+
+    return false;
+}
+
+function resolveKeyboardShortcutTarget(event: KeyboardEvent): EventTarget | null {
+    const eventPath = event.composedPath();
+    return eventPath.length > 0 ? (eventPath[0] ?? event.target) : event.target;
+}
+
 function resolveConfigStatusSummary(model: GraphVisualizationUiModel): string {
     const configPath = model.projectConfigurationCatalog?.gmloop.configPath;
     return configPath ? `Config path: ${configPath}` : "Config path: Not found";
@@ -157,8 +183,6 @@ export class GmGraphToolbar extends LightDomLitElement {
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
-
-    #searchInput: HTMLInputElement | null = null;
 
     #canUseGraphControls(): boolean {
         return this.model !== null && hasLoadedGraphIndex(this.model);
@@ -179,11 +203,12 @@ export class GmGraphToolbar extends LightDomLitElement {
             return;
         }
 
+        if (isToolbarKeyboardShortcutTextEntryTarget(resolveKeyboardShortcutTarget(event))) {
+            return;
+        }
+
         switch (event.key.toLowerCase()) {
             case "g": {
-                if (document.activeElement === this.#searchInput) {
-                    return;
-                }
                 if (!this.#canUseGraphControls()) {
                     return;
                 }
@@ -192,9 +217,6 @@ export class GmGraphToolbar extends LightDomLitElement {
                 break;
             }
             case "l": {
-                if (document.activeElement === this.#searchInput) {
-                    return;
-                }
                 if (!this.#canUseGraphControls()) {
                     return;
                 }
@@ -203,9 +225,6 @@ export class GmGraphToolbar extends LightDomLitElement {
                 break;
             }
             case "r": {
-                if (document.activeElement === this.#searchInput) {
-                    return;
-                }
                 if (!this.#canUseGraphControls()) {
                     return;
                 }
@@ -270,7 +289,6 @@ export class GmGraphToolbar extends LightDomLitElement {
     public disconnectedCallback(): void {
         super.disconnectedCallback();
         this.removeEventListener("keydown", this.#onKeyDown);
-        this.#searchInput = null;
     }
 
     #emitSearchQuery(searchQuery: string): void {
@@ -777,9 +795,6 @@ export class GmGraphToolbar extends LightDomLitElement {
                             .value=${this.state.searchQuery}
                             placeholder="Search nodes…"
                             ?disabled=${!hasLoadedIndex}
-                            ${ref((element) => {
-                                this.#searchInput = element as HTMLInputElement | null;
-                            })}
                             @input=${this.#onSearchInput}
                         />
                     </div>

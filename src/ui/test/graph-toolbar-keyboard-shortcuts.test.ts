@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { isToolbarKeyboardShortcutTextEntryTarget } from "../src/app/components/gm-graph-toolbar.js";
 import { createInitialGraphVisualizationUiState, reduceGraphVisualizationUiState } from "../src/app/state/reducer.js";
+
+type ConstructorDescriptor = PropertyDescriptor | undefined;
+
+function restoreGlobalConstructor(name: string, descriptor: ConstructorDescriptor): void {
+    if (descriptor === undefined) {
+        Reflect.deleteProperty(globalThis, name);
+        return;
+    }
+
+    Object.defineProperty(globalThis, name, descriptor);
+}
 
 void test("reduceGraphVisualizationUiState with toggle-graph-view alternates between visual and json", () => {
     const state = createInitialGraphVisualizationUiState();
@@ -74,4 +86,97 @@ void test("reduceGraphVisualizationUiState preserves non-reset fields on reset-d
     assert.equal(reset.activeGraphView, "visual");
     assert.equal(reset.labelMode, "auto");
     assert.equal(reset.searchQuery, "");
+});
+
+void test("isToolbarKeyboardShortcutTextEntryTarget returns true for text-entry controls", () => {
+    const originalElement = Object.getOwnPropertyDescriptor(globalThis, "Element");
+    const originalHTMLElement = Object.getOwnPropertyDescriptor(globalThis, "HTMLElement");
+    const originalInput = Object.getOwnPropertyDescriptor(globalThis, "HTMLInputElement");
+    const originalTextArea = Object.getOwnPropertyDescriptor(globalThis, "HTMLTextAreaElement");
+    const originalSelect = Object.getOwnPropertyDescriptor(globalThis, "HTMLSelectElement");
+
+    class MockElement extends EventTarget {
+        public readonly isContentEditable: boolean;
+
+        public constructor(isContentEditable = false) {
+            super();
+            this.isContentEditable = isContentEditable;
+        }
+    }
+
+    class MockInputElement extends MockElement {
+        public readonly type: string;
+
+        public constructor(type: string) {
+            super();
+            this.type = type;
+        }
+    }
+
+    class MockTextAreaElement extends MockElement {}
+    class MockSelectElement extends MockElement {}
+
+    Object.defineProperty(globalThis, "Element", { configurable: true, value: MockElement });
+    Object.defineProperty(globalThis, "HTMLElement", { configurable: true, value: MockElement });
+    Object.defineProperty(globalThis, "HTMLInputElement", { configurable: true, value: MockInputElement });
+    Object.defineProperty(globalThis, "HTMLTextAreaElement", { configurable: true, value: MockTextAreaElement });
+    Object.defineProperty(globalThis, "HTMLSelectElement", { configurable: true, value: MockSelectElement });
+
+    try {
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(new MockInputElement("search")), true);
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(new MockInputElement("text")), true);
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(new MockTextAreaElement()), true);
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(new MockSelectElement()), true);
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(new MockElement(true)), true);
+    } finally {
+        restoreGlobalConstructor("Element", originalElement);
+        restoreGlobalConstructor("HTMLElement", originalHTMLElement);
+        restoreGlobalConstructor("HTMLInputElement", originalInput);
+        restoreGlobalConstructor("HTMLTextAreaElement", originalTextArea);
+        restoreGlobalConstructor("HTMLSelectElement", originalSelect);
+    }
+});
+
+void test("isToolbarKeyboardShortcutTextEntryTarget returns false for non-text controls", () => {
+    const originalElement = Object.getOwnPropertyDescriptor(globalThis, "Element");
+    const originalHTMLElement = Object.getOwnPropertyDescriptor(globalThis, "HTMLElement");
+    const originalInput = Object.getOwnPropertyDescriptor(globalThis, "HTMLInputElement");
+    const originalTextArea = Object.getOwnPropertyDescriptor(globalThis, "HTMLTextAreaElement");
+    const originalSelect = Object.getOwnPropertyDescriptor(globalThis, "HTMLSelectElement");
+
+    class MockElement extends EventTarget {
+        public readonly isContentEditable = false;
+    }
+
+    class MockInputElement extends MockElement {
+        public readonly type: string;
+
+        public constructor(type: string) {
+            super();
+            this.type = type;
+        }
+    }
+
+    class MockTextAreaElement extends MockElement {}
+    class MockSelectElement extends MockElement {}
+
+    Object.defineProperty(globalThis, "Element", { configurable: true, value: MockElement });
+    Object.defineProperty(globalThis, "HTMLElement", { configurable: true, value: MockElement });
+    Object.defineProperty(globalThis, "HTMLInputElement", { configurable: true, value: MockInputElement });
+    Object.defineProperty(globalThis, "HTMLTextAreaElement", { configurable: true, value: MockTextAreaElement });
+    Object.defineProperty(globalThis, "HTMLSelectElement", { configurable: true, value: MockSelectElement });
+
+    try {
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(new MockInputElement("button")), false);
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(new MockInputElement("checkbox")), false);
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(new MockElement()), false);
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(new EventTarget()), false);
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(null), false);
+    } finally {
+        restoreGlobalConstructor("Element", originalElement);
+        restoreGlobalConstructor("HTMLElement", originalHTMLElement);
+        restoreGlobalConstructor("HTMLInputElement", originalInput);
+        restoreGlobalConstructor("HTMLTextAreaElement", originalTextArea);
+        restoreGlobalConstructor("HTMLSelectElement", originalSelect);
+    }
 });
