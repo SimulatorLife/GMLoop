@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { startRuntimeStaticServer } from "../src/modules/runtime/server.js";
 import { createHttpSocketAndWaitForResponse } from "./test-helpers/http-socket-utils.js";
+import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 
 /**
  * Maximum variance in file descriptor count allowed after operations.
@@ -270,6 +271,81 @@ void describe("runtime static server", () => {
                 await server.stop();
             }
             await rm(tempDir, { recursive: true, force: true });
+        }
+    });
+
+    void it("logs server errors as a single formatted string instead of dumping the raw error object", async () => {
+        // Establishes that runtime server logging follows the same
+        // `getErrorMessage` formatting pattern used elsewhere in the
+        // codebase, so operators see a clean message on stderr rather than
+        // the auto-stringified representation of the thrown value.
+        const tempDir = await mkdtemp(path.join(os.tmpdir(), "gml-runtime-server-log-format-"));
+        const testFile = path.join(tempDir, "test.txt");
+        await writeFile(testFile, "test content");
+
+        const captured: Array<ReadonlyArray<unknown>> = [];
+        const capturingConsoleError = (...args: ReadonlyArray<unknown>) => {
+            captured.push(args);
+        };
+
+        let server;
+        await withTemporaryProperty(console, "error", capturingConsoleError, async () => {
+            try {
+                server = await startRuntimeStaticServer({
+                    runtimeRoot: tempDir,
+                    host: "127.0.0.1",
+                    port: 0,
+                    verbose: false
+                });
+
+                // Strip read permissions so the server surfaces a 500 (not
+                // a 404 for the missing file). The catch handler in
+                // `sendFileResponse` will run and emit a `console.error`
+                // log line for the operator.
+                await chmod(testFile, 0o000);
+                const response = await fetch(`${server.url}test.txt`);
+                assert.equal(response.status, 500);
+
+                // Wait a bit for the async error handler to log.
+                await new Promise((resolve) => setTimeout(resolve, CLEANUP_WAIT_TIME_MS));
+            } finally {
+                if (server) {
+                    await server.stop();
+                }
+                // Restore permissions so cleanup can remove the temp dir.
+                try {
+                    await chmod(testFile, 0o644);
+                } catch {
+                    // Ignore errors during cleanup.
+                }
+                await rm(tempDir, { recursive: true, force: true });
+            }
+        });
+
+        const errorLogs = captured.filter((args) =>
+            args.some((arg) => typeof arg === "string" && arg.startsWith("Runtime static server"))
+        );
+
+        assert.ok(errorLogs.length > 0, "Expected runtime server to log the 500 error to console.error");
+
+        for (const args of errorLogs) {
+            assert.equal(
+                args.length,
+                1,
+                "Expected a single formatted log message, not a tuple of label + error object"
+            );
+            const message = args[0];
+            assert.ok(
+                typeof message === "string" && message.length > 0,
+                "Expected the log message to be a non-empty string"
+            );
+            // The legacy pattern printed "Runtime static server ... error:" with a
+            // trailing colon and a raw error object as a second argument. The
+            // refactored pattern folds the reason into the single string.
+            assert.ok(
+                !message.endsWith(":"),
+                "Expected the log message to include the error reason inline, not as a separate argument"
+            );
         }
     });
 });

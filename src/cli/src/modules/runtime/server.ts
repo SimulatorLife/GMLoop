@@ -269,7 +269,9 @@ export async function startRuntimeStaticServer({
             const statusCode = getRuntimeHttpErrorStatus(error) ?? 500;
             const message = formatRuntimeHttpErrorMessage(error, statusCode, "Internal Server Error");
             if (statusCode >= 500) {
-                console.error("Runtime static server request error:", error);
+                console.error(
+                    `Runtime static server request error: ${getErrorMessage(error, { fallback: "Unknown error" })}`
+                );
             }
             writeError(res, statusCode, message);
             return;
@@ -287,7 +289,9 @@ export async function startRuntimeStaticServer({
                     : `Failed to read runtime asset: ${getErrorMessage(error, { fallback: "Unknown error" })}`;
             const message = formatRuntimeHttpErrorMessage(error, statusCode, fallbackMessage);
             if (statusCode >= 500) {
-                console.error("Runtime static server failed to read asset:", error);
+                console.error(
+                    `Runtime static server failed to read asset: ${getErrorMessage(error, { fallback: "Unknown error" })}`
+                );
             }
             writeError(res, statusCode, message);
         });
