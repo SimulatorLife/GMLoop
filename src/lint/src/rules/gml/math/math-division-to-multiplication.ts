@@ -108,45 +108,48 @@ function formatMultiplierLiteral(multiplier: number): string | null {
 }
 
 function flattenMultiplicativeOperand(node: MutableGameMakerAstNode) {
+    // Walk down the paren chain looking for the innermost expression. We
+    // can only strip the redundant wrappers when:
+    //   - every wrapper is comment-free, and
+    //   - the innermost expression is a `*` BINARY_EXPRESSION (removing
+    //     parentheses around `+` or other lower-precedence operators
+    //     would change the meaning of the rewritten expression).
     const leftOperand = node.left as ParenthesizedExpressionNode | null;
-    if (!leftOperand || leftOperand.type !== PARENTHESIZED_EXPRESSION) {
-        return;
-    }
-
-    const wrappers: ParenthesizedExpressionNode[] = [];
-    let cursor = leftOperand;
-
-    while (cursor && cursor.type === PARENTHESIZED_EXPRESSION) {
-        wrappers.push(cursor);
-
-        const nested = cursor.expression;
-        if (!nested || nested.type !== PARENTHESIZED_EXPRESSION) {
-            break;
+    let innermost: GameMakerAstNode | null = null;
+    let current: ParenthesizedExpressionNode | null = leftOperand;
+    while (current && current.type === PARENTHESIZED_EXPRESSION) {
+        if (Core.hasComment(current)) {
+            return;
         }
-
-        cursor = nested;
+        const nested = current.expression;
+        if (nested?.type === PARENTHESIZED_EXPRESSION) {
+            current = nested;
+            continue;
+        }
+        if (!nested) {
+            return;
+        }
+        innermost = nested;
+        break;
     }
 
-    if (wrappers.length === 0 || !cursor) {
+    if (
+        !innermost ||
+        innermost.type !== BINARY_EXPRESSION ||
+        innermost.operator !== "*" ||
+        Core.hasComment(innermost)
+    ) {
         return;
     }
 
-    const innermost = cursor.expression;
-    if (!innermost || innermost.type !== BINARY_EXPRESSION || innermost.operator !== "*") {
-        return;
-    }
-
-    if (wrappers.some((wrapper) => Core.hasComment(wrapper)) || Core.hasComment(innermost)) {
-        return;
-    }
-
-    let current = node.left as ParenthesizedExpressionNode | null;
+    // Validation passed: walk the chain a second time, replacing each
+    // paren wrapper with its inner expression in place.
+    current = leftOperand;
     while (current && current.type === PARENTHESIZED_EXPRESSION) {
         const expression = current.expression;
         if (!expression || !replaceNodeWith(current, expression)) {
             break;
         }
-
         current = expression;
     }
 }
@@ -206,24 +209,12 @@ export function applyDivisionToMultiplication(
         return;
     }
 
-    // Apply transform
+    // Apply transform to this node first, then descend into its children.
+    // Visiting the parent before its children matters when a division
+    // expression contains nested divisions (e.g., `(x / 2) / 3` should
+    // become `x * 0.5 * 0.333...` rather than `x / 2 * 0.333...`).
     attemptConvertDivisionToMultiplication(node, policy);
-
-    // Recursively descend through the AST to find and transform all division
-    // operations. The depth-first traversal ensures child nodes are optimized
-    // before their parents, which is critical when a division expression contains
-    // nested divisions (e.g., `(x / 2) / 3` should become `x * 0.5 * 0.333...`).
-    for (const key of Object.keys(node)) {
-        // Skip parent references to avoid cycles
-        if (key === "parent") continue;
-
-        const child = (node as any)[key];
-        if (Array.isArray(child)) {
-            for (const item of child) {
-                applyDivisionToMultiplication(item, policy);
-            }
-        } else if (child && typeof child === "object") {
-            applyDivisionToMultiplication(child, policy);
-        }
-    }
+    Core.visitNonTraversalChildValues(node, (child) =>
+        applyDivisionToMultiplication(child as MutableGameMakerAstNode, policy)
+    );
 }

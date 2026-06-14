@@ -183,3 +183,87 @@ void test("applyDivisionToMultiplication rejects divisors below the configured m
     assert.strictEqual(ast.operator, "/");
     assert.strictEqual(ast.right.value, "1e-11");
 });
+
+void test("applyDivisionToMultiplication flattens redundant parens around a multiplicative left operand", () => {
+    // After the divide-by-constant rewrite, `((x * 2)) / 4` should become
+    // `x * 2 * 0.25`. The flatten pass strips the redundant parens around
+    // the multiplicative operand so the output reads as a flat multiplication
+    // chain rather than `((x * 2)) * 0.25`.
+    const ast: any = {
+        type: "BinaryExpression",
+        operator: "/",
+        left: {
+            type: "ParenthesizedExpression",
+            expression: {
+                type: "BinaryExpression",
+                operator: "*",
+                left: { type: "Identifier", name: "x" },
+                right: { type: "Literal", value: "2" }
+            }
+        },
+        right: { type: "Literal", value: "4" }
+    };
+
+    applyDivisionToMultiplication(ast);
+
+    assert.strictEqual(ast.operator, "*");
+    assert.strictEqual(ast.left.type, "BinaryExpression");
+    assert.strictEqual(ast.left.operator, "*");
+    assert.strictEqual(ast.left.left.name, "x");
+    assert.strictEqual(ast.left.right.value, "2");
+    assert.strictEqual(ast.right.value, "0.25");
+});
+
+void test("applyDivisionToMultiplication preserves parens around a non-multiplicative left operand", () => {
+    // The flatten pass must only strip wrappers whose innermost expression
+    // is a `*` BINARY_EXPRESSION. Removing parens around `+` would change
+    // precedence, so `(x + 2) / 4` must keep its parens.
+    const ast: any = {
+        type: "BinaryExpression",
+        operator: "/",
+        left: {
+            type: "ParenthesizedExpression",
+            expression: {
+                type: "BinaryExpression",
+                operator: "+",
+                left: { type: "Identifier", name: "x" },
+                right: { type: "Literal", value: "2" }
+            }
+        },
+        right: { type: "Literal", value: "4" }
+    };
+
+    applyDivisionToMultiplication(ast);
+
+    assert.strictEqual(ast.operator, "*");
+    assert.strictEqual(ast.left.type, "ParenthesizedExpression");
+    assert.strictEqual(ast.left.expression.operator, "+");
+    assert.strictEqual(ast.right.value, "0.25");
+});
+
+void test("applyDivisionToMultiplication recurses into nested divisions", () => {
+    // The depth-first recursion must visit children before their parents so
+    // nested divisions like `(x / 2) / 4` collapse to `x * 0.5 * 0.25`
+    // (i.e., each `* 0.5` rewrite happens before the outer `* 0.25`
+    // rewrite is attempted).
+    const ast: any = {
+        type: "BinaryExpression",
+        operator: "/",
+        left: {
+            type: "BinaryExpression",
+            operator: "/",
+            left: { type: "Identifier", name: "x" },
+            right: { type: "Literal", value: "2" }
+        },
+        right: { type: "Literal", value: "4" }
+    };
+
+    applyDivisionToMultiplication(ast);
+
+    assert.strictEqual(ast.operator, "*");
+    assert.strictEqual(ast.left.type, "BinaryExpression");
+    assert.strictEqual(ast.left.operator, "*");
+    assert.strictEqual(ast.left.left.name, "x");
+    assert.strictEqual(ast.left.right.value, "0.5");
+    assert.strictEqual(ast.right.value, "0.25");
+});
