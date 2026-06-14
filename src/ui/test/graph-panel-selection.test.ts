@@ -310,6 +310,7 @@ void test("graph panel legend renders the full node-kind catalog even when kinds
         "Particle System",
         "Path",
         "Resource",
+        "Room Instance",
         "Room Layer",
         "Sequence",
         "Shader",

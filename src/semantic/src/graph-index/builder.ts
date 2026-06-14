@@ -251,6 +251,7 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "project":
         case "room":
         case "room_layer":
+        case "room_instance":
         case "sequence":
         case "shader":
         case "sound":
@@ -695,6 +696,9 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind | nul
         }
         case "GMRBackgroundLayer": {
             return "room_layer";
+        }
+        case "GMRInstance": {
+            return "room_instance";
         }
         case "GMScript": {
             return "script";
@@ -1169,7 +1173,64 @@ function projectRoomLayerScopes(context: ProjectionContext): void {
                 toId: node.id,
                 type: "contains"
             });
+
+            projectRoomInstanceNodes(context, {
+                layer,
+                layerNodeId: node.id,
+                layerName,
+                resourcePath
+            });
         }
+    }
+}
+
+function projectRoomInstanceNodes(
+    context: ProjectionContext,
+    parameters: Readonly<{
+        layer: Record<string, unknown>;
+        layerName: string;
+        layerNodeId: string;
+        resourcePath: string;
+    }>
+): void {
+    const instances = Core.toArray(parameters.layer.instances);
+    for (const [instanceIndex, rawInstance] of instances.entries()) {
+        const instance = asRecord(rawInstance);
+        const instanceName = getString(instance.name);
+        if (!instanceName || getString(instance.resourceType) !== "GMRInstance") {
+            continue;
+        }
+
+        const scopeId = createRoomInstanceScopeId(
+            parameters.resourcePath,
+            parameters.layerName,
+            instanceIndex,
+            instanceName
+        );
+        const node = createNodeRecord({
+            displayName: `${instanceName} (${parameters.layerName})`,
+            filePath: null,
+            graphId: context.graphId,
+            id: createGraphNodeId(context.graphId, "scope", scopeId),
+            kind: "room_instance",
+            name: instanceName,
+            resourcePath: parameters.resourcePath,
+            scopeId,
+            summary: createGraphNodeSummary({
+                filePath: null,
+                kind: "room_instance",
+                name: instanceName,
+                resourcePath: parameters.resourcePath
+            })
+        });
+
+        context.nodeRecords.push(node);
+        registerNodeIndexes(context, node);
+        context.edgeRecords.push({
+            fromId: parameters.layerNodeId,
+            toId: node.id,
+            type: "contains"
+        });
     }
 }
 
@@ -1180,6 +1241,15 @@ function isGraphRoomLayerResourceType(resourceType: string | null): resourceType
 function createRoomLayerDisplayName(layerName: string, layerResourceType: string): string {
     const layerTypeLabel = layerResourceType.replace(/^GMR/u, "").replace(/Layer$/u, " Layer");
     return `${layerName} (${layerTypeLabel})`;
+}
+
+function createRoomInstanceScopeId(
+    roomResourcePath: string,
+    layerName: string,
+    instanceIndex: number,
+    instanceName: string
+): string {
+    return `scope:room-instance:${roomResourcePath}:${layerName}:${instanceIndex}:${instanceName}`;
 }
 
 function projectFileRecords(context: ProjectionContext): void {
@@ -1427,7 +1497,59 @@ function resolveAssetReferenceSourceNodeId(
     }
 
     const roomLayerNodeId = resolveRoomLayerNodeIdFromAssetReference(context, reference, fromResourcePath);
+    const roomInstanceNodeId = resolveRoomInstanceNodeIdFromAssetReference(context, reference, fromResourcePath);
+    if (roomInstanceNodeId) {
+        return roomInstanceNodeId;
+    }
+
     return roomLayerNodeId ?? createGraphNodeId(context.graphId, "resource", fromResourcePath);
+}
+
+function resolveRoomInstanceNodeIdFromAssetReference(
+    context: ProjectionContext,
+    reference: Record<string, unknown>,
+    roomResourcePath: string
+): string | null {
+    const propertyPath = getString(reference.propertyPath);
+    if (!propertyPath) {
+        return null;
+    }
+
+    const instanceMatch = /^layers\.(\d+)\.instances\.(\d+)\./u.exec(propertyPath);
+    const layerIndex = Number(instanceMatch?.[1]);
+    const instanceIndex = Number(instanceMatch?.[2]);
+    if (!Number.isInteger(layerIndex) || layerIndex < 0 || !Number.isInteger(instanceIndex) || instanceIndex < 0) {
+        return null;
+    }
+
+    const roomRecord = asRecord(asRecord(context.projectIndex.resources)[roomResourcePath]);
+    const layers = roomRecord.layers;
+    if (!Array.isArray(layers) || layerIndex >= layers.length) {
+        return null;
+    }
+
+    const layerRecord = asRecord(layers[layerIndex]);
+    const layerName = getString(layerRecord.name);
+    if (!layerName || getString(layerRecord.resourceType) !== "GMRInstanceLayer") {
+        return null;
+    }
+
+    const instances = Core.toArray(layerRecord.instances);
+    if (instanceIndex >= instances.length) {
+        return null;
+    }
+
+    const instanceRecord = asRecord(instances[instanceIndex]);
+    const instanceName = getString(instanceRecord.name);
+    if (!instanceName || getString(instanceRecord.resourceType) !== "GMRInstance") {
+        return null;
+    }
+
+    return createGraphNodeId(
+        context.graphId,
+        "scope",
+        createRoomInstanceScopeId(roomResourcePath, layerName, instanceIndex, instanceName)
+    );
 }
 
 function resolveRoomLayerNodeIdFromAssetReference(

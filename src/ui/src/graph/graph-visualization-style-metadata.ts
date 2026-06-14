@@ -117,6 +117,7 @@ export const NODE_VISUAL_STYLES: ReadonlyArray<NodeVisualStyle> = Object.freeze(
     { color: "#3a86ff", kind: "sound" },
     { color: "#e63946", kind: "room" },
     { color: "#c77dff", kind: "room_layer" },
+    { color: "#ff6b6b", kind: "room_instance" },
     { color: "#8ac926", kind: "tileset" },
     { color: "#cdb4db", kind: "timeline" },
     { color: "#bcbd22", kind: "object_event" },
