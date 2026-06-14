@@ -358,9 +358,6 @@ importers:
       lit:
         specifier: ^3.3.3
         version: 3.3.3
-      vite:
-        specifier: ^8.0.13
-        version: 8.0.13(@types/node@25.8.0)
     devDependencies:
       '@gmloop/core':
         specifier: workspace:*
@@ -371,6 +368,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
+      vite:
+        specifier: ^8.0.13
+        version: 8.0.13(@types/node@25.8.0)
 
 packages:
 

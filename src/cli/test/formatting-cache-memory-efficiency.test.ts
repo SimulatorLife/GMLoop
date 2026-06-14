@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 
-import type { Options as PrettierOptions } from "prettier";
-
 import { __formatTest__ } from "../src/commands/format.js";
 
 const { createFormattingCacheKeyForTests, clearFormattingCacheForTests } = __formatTest__;
@@ -23,7 +21,7 @@ void describe("formatting cache memory efficiency", () => {
             semi: true,
             useTabs: false,
             plugins: []
-        } as PrettierOptions;
+        };
 
         const cacheKey = createFormattingCacheKeyForTests(largeContent, formattingOptions);
 
@@ -56,7 +54,7 @@ void describe("formatting cache memory efficiency", () => {
             semi: true,
             useTabs: false,
             plugins: []
-        } as PrettierOptions;
+        };
 
         const key1 = createFormattingCacheKeyForTests(content1, formattingOptions);
         const key2 = createFormattingCacheKeyForTests(content2, formattingOptions);
@@ -79,7 +77,7 @@ void describe("formatting cache memory efficiency", () => {
             semi: true,
             useTabs: false,
             plugins: []
-        } as PrettierOptions;
+        };
 
         const key1 = createFormattingCacheKeyForTests(content, formattingOptions);
         const key2 = createFormattingCacheKeyForTests(content, formattingOptions);
@@ -98,7 +96,7 @@ void describe("formatting cache memory efficiency", () => {
             semi: true,
             useTabs: false,
             plugins: []
-        } as PrettierOptions;
+        };
 
         const options2 = {
             parser: "gml",
@@ -107,7 +105,7 @@ void describe("formatting cache memory efficiency", () => {
             semi: true,
             useTabs: false,
             plugins: []
-        } as PrettierOptions;
+        };
 
         const key1 = createFormattingCacheKeyForTests(content, options1);
         const key2 = createFormattingCacheKeyForTests(content, options2);
@@ -124,7 +122,7 @@ void describe("formatting cache memory efficiency", () => {
             semi: true,
             useTabs: false,
             plugins: []
-        } as PrettierOptions;
+        };
 
         // Test with various file sizes
         const smallContent = "x = 1;";

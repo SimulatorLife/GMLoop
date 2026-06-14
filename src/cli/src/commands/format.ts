@@ -14,7 +14,6 @@ import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
 import { Command, InvalidArgumentError, Option } from "commander";
-import type { Options as PrettierOptions } from "prettier";
 
 import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
@@ -254,21 +253,29 @@ let formatOutputNormalizerPromise: Promise<null | ((formatted: string, source: s
 
 function resolvePrettier() {
     if (!prettierModulePromise) {
-        prettierModulePromise = import(PRETTIER_MODULE_ID).then(resolveModuleDefaultExport).catch((error) => {
-            if (isMissingPrettierDependency(error)) {
-                const instructions = [
-                    "Prettier v3 must be installed alongside gmloop.",
-                    "Install it with:",
-                    "  pnpm add -D prettier@^3"
-                ].join("\n");
-                const cliError = new CliUsageError(instructions);
-                if (isErrorLike(error)) {
-                    cliError.cause = error;
+        prettierModulePromise = import(PRETTIER_MODULE_ID)
+            .then(resolveModuleDefaultExport)
+            .then((moduleValue) => {
+                if (!isCliPrettierModule(moduleValue)) {
+                    throw new CliUsageError("Resolved Prettier module does not provide the required format APIs.");
                 }
-                throw cliError;
-            }
-            throw error;
-        });
+                return moduleValue;
+            })
+            .catch((error) => {
+                if (isMissingPrettierDependency(error)) {
+                    const instructions = [
+                        "Prettier v3 must be installed alongside gmloop.",
+                        "Install it with:",
+                        "  pnpm add -D prettier@^3"
+                    ].join("\n");
+                    const cliError = new CliUsageError(instructions);
+                    if (isErrorLike(error)) {
+                        cliError.cause = error;
+                    }
+                    throw cliError;
+                }
+                throw error;
+            });
     }
 
     return prettierModulePromise;
@@ -513,6 +520,35 @@ const options = {
     ignorePath: IGNORE_PATH,
     noErrorOnUnmatchedPattern: true
 };
+
+interface CliPrettierOptions {
+    parser: string;
+    plugins: unknown[];
+    logLevel: string;
+    ignorePath: string;
+    noErrorOnUnmatchedPattern: boolean;
+    filepath: string;
+}
+
+interface CliPrettierModule {
+    format(data: string, options: CliPrettierOptions): Promise<string>;
+    getFileInfo(
+        filePath: string,
+        options: { ignorePath: string | readonly string[]; plugins: readonly unknown[]; resolveConfig: boolean }
+    ): Promise<{ ignored: boolean }>;
+    resolveConfig(filePath: string, options: { editorconfig: boolean }): Promise<Partial<CliPrettierOptions> | null>;
+}
+
+function isCliPrettierModule(value: unknown): value is CliPrettierModule {
+    return withObjectLike(
+        value,
+        (candidate) =>
+            typeof candidate.format === "function" &&
+            typeof candidate.getFileInfo === "function" &&
+            typeof candidate.resolveConfig === "function",
+        false
+    );
+}
 
 function configurePrettierOptions({
     logLevel
@@ -1355,7 +1391,7 @@ async function formatDirectoryRecursively(directory, inheritedIgnorePaths = []) 
     await formatAllDirectoryEntries(directory, files, effectiveIgnorePaths);
 }
 
-async function resolveFormattingOptions(filePath): Promise<PrettierOptions> {
+async function resolveFormattingOptions(filePath): Promise<CliPrettierOptions> {
     const prettier = await resolvePrettier();
     let resolvedConfig = null;
 
@@ -1368,18 +1404,18 @@ async function resolveFormattingOptions(filePath): Promise<PrettierOptions> {
         console.warn(`Unable to resolve Prettier config for ${filePath}: ${message}`);
     }
 
-    const mergedOptions: PrettierOptions = {
+    const mergedOptions = {
         ...options,
         ...resolvedConfig,
         filepath: filePath
-    } as PrettierOptions;
+    } satisfies CliPrettierOptions;
 
     const basePlugins = toArray(options.plugins);
     const resolvedPlugins = toArray(resolvedConfig?.plugins);
     const combinedPlugins = uniqueArray([...basePlugins, ...resolvedPlugins]);
 
     if (combinedPlugins.length > 0) {
-        mergedOptions.plugins = combinedPlugins as PrettierOptions["plugins"];
+        mergedOptions.plugins = combinedPlugins;
     }
 
     mergedOptions.parser = options.parser;
