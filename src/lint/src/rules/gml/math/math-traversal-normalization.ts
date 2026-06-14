@@ -29,6 +29,7 @@ import {
     isIdentityReplacementSafeExpression,
     matchScaledOperand
 } from "./math-lengthdir-transforms.js";
+import { DEFAULT_MATH_NUMERIC_POLICY } from "./math-numeric-policy.js";
 import {
     collectProductOperands,
     computeNumericTolerance,
@@ -79,8 +80,8 @@ const {
     isObjectLike
 } = Core;
 
-const MIN_SAFE_DIVISOR = 1e-10;
-const MAX_SAFE_RECIPROCAL = 1e10;
+const MIN_SAFE_DIVISOR = DEFAULT_MATH_NUMERIC_POLICY.minSafeDivisor;
+const MAX_SAFE_RECIPROCAL = DEFAULT_MATH_NUMERIC_POLICY.maxSafeReciprocal;
 
 export function applyManualMathNormalization(ast: any, context: ConvertManualMathTransformOptions | null = null) {
     if (!isObjectLike(ast)) {
@@ -607,11 +608,16 @@ function attemptSimplifyDivisionByReciprocal(node, context) {
             return false;
         }
 
-        if (Math.abs(reciprocalNumericValue) > MAX_SAFE_RECIPROCAL) {
+        const maxSafeReciprocal =
+            context && context.mathNumericPolicy ? context.mathNumericPolicy.maxSafeReciprocal : MAX_SAFE_RECIPROCAL;
+        const minSafeDivisor =
+            context && context.mathNumericPolicy ? context.mathNumericPolicy.minSafeDivisor : MIN_SAFE_DIVISOR;
+
+        if (Math.abs(reciprocalNumericValue) > maxSafeReciprocal) {
             return false;
         }
 
-        if (Math.abs(1 / reciprocalNumericValue) < MIN_SAFE_DIVISOR) {
+        if (Math.abs(1 / reciprocalNumericValue) < minSafeDivisor) {
             return false;
         }
     }

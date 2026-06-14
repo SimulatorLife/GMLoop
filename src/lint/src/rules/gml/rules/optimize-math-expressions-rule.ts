@@ -25,7 +25,7 @@ import {
     type SourceTextEdit,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import { evaluateSkipDecision } from "./optimize-math-skip-evaluator.js";
+import { evaluateSkipDecision, resolveMathNumericPolicy } from "./optimize-math-skip-evaluator.js";
 
 const {
     getNodeStartIndex,
@@ -1252,15 +1252,25 @@ function performDeadCodeElimination(bodyStatements: any[], sourceText: string, e
 /**
  * Attempt to run the full manual-math normalization pipeline on a single
  * expression node and return the resulting source text if it changed.
+ *
+ * @param sourceText - Full source text being linted; used as the working
+ *   buffer for cloned expressions and as context for downstream helpers.
+ * @param node - The AST node to attempt to normalize.
+ * @param policyOverride - Optional partial {@link MathNumericPolicy} override.
+ *   When supplied, the reciprocal/divisor thresholds used by the math
+ *   transforms are tightened or relaxed accordingly. This lets the rule
+ *   caller (or a future ESLint schema option) tune the precision
+ *   sensitivity of the rewrite without modifying the transform modules.
  */
-function attemptManualNormalization(sourceText: string, node: any): string | null {
+function attemptManualNormalization(sourceText: string, node: any, policyOverride?: unknown): string | null {
     const clone = Core.cloneAstNode(node) as MutableGameMakerAstNode;
     if (!clone) {
         return null;
     }
 
-    const context = { sourceText };
-    applyDivisionToMultiplication(clone);
+    const policy = resolveMathNumericPolicy(policyOverride);
+    const context = { sourceText, mathNumericPolicy: policy };
+    applyDivisionToMultiplication(clone, policy);
     applyManualMathNormalization(clone, context);
     applyScalarCondensing(clone, context);
     simplifyZeroDivisionNumerators(clone, context as any);
