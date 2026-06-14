@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Transpiler, TranspilerError, TranspilerErrorCode } from "@gmloop/transpiler";
+import { Transpiler } from "@gmloop/transpiler";
 
 type TranspilerInstance = InstanceType<typeof Transpiler.GmlTranspiler>;
 type TranspileScriptArgs = Parameters<TranspilerInstance["transpileScript"]>[0];
@@ -13,7 +13,7 @@ void test("transpileScript validates inputs", () => {
             transpiler.transpileScript({
                 symbolId: "gml/script/foo"
             } as unknown as TranspileScriptArgs),
-        { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
+        { name: "TranspilerError", code: Transpiler.TranspilerErrorCode.REQUEST_ERROR }
     );
 });
 
@@ -101,7 +101,7 @@ void test("transpileScript rejects empty source paths", () => {
                 symbolId: "gml/script/test",
                 sourcePath: ""
             }),
-        { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
+        { name: "TranspilerError", code: Transpiler.TranspilerErrorCode.REQUEST_ERROR }
     );
 });
 
@@ -195,10 +195,10 @@ void test("transpileScript throws TranspilerError with INTERNAL_ERROR code on pa
     if (!(caughtError instanceof Error)) {
         assert.fail("Expected transpileScript to throw an Error");
     }
-    if (!(caughtError instanceof TranspilerError)) {
+    if (!(caughtError instanceof Transpiler.TranspilerError)) {
         assert.fail(`Expected error to be a TranspilerError, got: ${caughtError.constructor.name}`);
     }
-    assert.equal(caughtError.code, TranspilerErrorCode.INTERNAL_ERROR, "Should have INTERNAL_ERROR code");
+    assert.equal(caughtError.code, Transpiler.TranspilerErrorCode.INTERNAL_ERROR, "Should have INTERNAL_ERROR code");
     assert.ok(caughtError.cause instanceof Error, "Should preserve the original error as cause");
     assert.ok(caughtError.message.includes("Failed to transpile script"), "Message should include context");
 });
@@ -213,10 +213,10 @@ void test("transpileExpression throws TranspilerError with INTERNAL_ERROR code o
         caughtError = error;
     }
 
-    if (!(caughtError instanceof TranspilerError)) {
+    if (!(caughtError instanceof Transpiler.TranspilerError)) {
         assert.fail(`Expected error to be a TranspilerError, got: ${caughtError.constructor.name}`);
     }
-    assert.equal(caughtError.code, TranspilerErrorCode.INTERNAL_ERROR);
+    assert.equal(caughtError.code, Transpiler.TranspilerErrorCode.INTERNAL_ERROR);
     assert.ok(caughtError.message.includes("Failed to transpile expression"));
 });
 
@@ -233,8 +233,8 @@ void test("transpileEvent throws TranspilerError with INTERNAL_ERROR code on par
         caughtError = error;
     }
 
-    assert.ok(caughtError instanceof TranspilerError, "Should be a TranspilerError");
-    assert.equal(caughtError.code, TranspilerErrorCode.INTERNAL_ERROR);
+    assert.ok(caughtError instanceof Transpiler.TranspilerError, "Should be a TranspilerError");
+    assert.equal(caughtError.code, Transpiler.TranspilerErrorCode.INTERNAL_ERROR);
     assert.ok(caughtError.message.includes("Failed to transpile event"));
 });
 
@@ -251,33 +251,37 @@ void test("transpileClosure throws TranspilerError with INTERNAL_ERROR code on p
         caughtError = error;
     }
 
-    assert.ok(caughtError instanceof TranspilerError, "Should be a TranspilerError");
-    assert.equal(caughtError.code, TranspilerErrorCode.INTERNAL_ERROR);
+    assert.ok(caughtError instanceof Transpiler.TranspilerError, "Should be a TranspilerError");
+    assert.equal(caughtError.code, Transpiler.TranspilerErrorCode.INTERNAL_ERROR);
     assert.ok(caughtError.message.includes("Failed to transpile closure"));
 });
 
 void test("TranspilerError has correct properties", () => {
-    const error = new TranspilerError("Test error message", TranspilerErrorCode.VALIDATION_ERROR, {
-        cause: new Error("Original cause")
-    });
+    const error = new Transpiler.TranspilerError(
+        "Test error message",
+        Transpiler.TranspilerErrorCode.VALIDATION_ERROR,
+        {
+            cause: new Error("Original cause")
+        }
+    );
 
     assert.equal(error.name, "TranspilerError");
     assert.equal(error.message, "Test error message");
-    assert.equal(error.code, TranspilerErrorCode.VALIDATION_ERROR);
+    assert.equal(error.code, Transpiler.TranspilerErrorCode.VALIDATION_ERROR);
     assert.ok(error.cause instanceof Error);
     assert.ok(error.cause?.message.includes("Original cause"));
 });
 
 void test("TranspilerErrorCode enum has all expected values", () => {
-    assert.equal(typeof TranspilerErrorCode.PARSE_ERROR, "string");
-    assert.equal(TranspilerErrorCode.PARSE_ERROR, "PARSE_ERROR");
+    assert.equal(typeof Transpiler.TranspilerErrorCode.PARSE_ERROR, "string");
+    assert.equal(Transpiler.TranspilerErrorCode.PARSE_ERROR, "PARSE_ERROR");
 
-    assert.equal(typeof TranspilerErrorCode.VALIDATION_ERROR, "string");
-    assert.equal(TranspilerErrorCode.VALIDATION_ERROR, "VALIDATION_ERROR");
+    assert.equal(typeof Transpiler.TranspilerErrorCode.VALIDATION_ERROR, "string");
+    assert.equal(Transpiler.TranspilerErrorCode.VALIDATION_ERROR, "VALIDATION_ERROR");
 
-    assert.equal(typeof TranspilerErrorCode.REQUEST_ERROR, "string");
-    assert.equal(TranspilerErrorCode.REQUEST_ERROR, "REQUEST_ERROR");
+    assert.equal(typeof Transpiler.TranspilerErrorCode.REQUEST_ERROR, "string");
+    assert.equal(Transpiler.TranspilerErrorCode.REQUEST_ERROR, "REQUEST_ERROR");
 
-    assert.equal(typeof TranspilerErrorCode.INTERNAL_ERROR, "string");
-    assert.equal(TranspilerErrorCode.INTERNAL_ERROR, "INTERNAL_ERROR");
+    assert.equal(typeof Transpiler.TranspilerErrorCode.INTERNAL_ERROR, "string");
+    assert.equal(Transpiler.TranspilerErrorCode.INTERNAL_ERROR, "INTERNAL_ERROR");
 });
