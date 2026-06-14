@@ -54,8 +54,13 @@ void test("gmlRuleLanguageServices exposes the language contract needed by rules
     assert.equal(typeof gmlRuleLanguageServices.createLimitedRecoveryProjection, "function");
 });
 
-void test("gmlRuleMalformedServices exposes the malformed contract needed by rules", () => {
+void test("gmlRuleMalformedServices exposes only token-level malformed contracts needed by rules", () => {
     assert.equal(typeof gmlRuleMalformedServices.forEachScientificNotationToken, "function");
+    assert.equal(
+        Object.hasOwn(gmlRuleMalformedServices, "recoverParseSourceFromMissingBrace"),
+        false,
+        "structural parse recovery must stay inside lint language parsing, not the rule-facing malformed service"
+    );
 });
 
 void test("gml-rule-services contracts are frozen and cannot be mutated at runtime", () => {
