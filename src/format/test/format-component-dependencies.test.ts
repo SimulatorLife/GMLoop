@@ -13,13 +13,17 @@ void test("dependency bundle is frozen and exposes expected contract keys", () =
 
     assert.ok(Object.isFrozen(dependencyBundle), "dependency bundle should be frozen");
 
+    // The contract only lists fields the printer boundary actually consumes
+    // through `options.gml`. Direct-import helpers (buildPrintableDocCommentLines,
+    // countTrailingBlankLines, getNextNonWhitespaceCharacter) used to be
+    // re-exposed here, but no consumer ever resolved them through the
+    // injection path — they were dead weight that implied configurable
+    // behavior that did not exist. Keeping them out of the contract keeps
+    // the dependency-injection surface honest.
     assert.deepStrictEqual(
         Object.keys(dependencyBundle).toSorted(),
         [
             "LogicalOperatorsStyle",
-            "buildPrintableDocCommentLines",
-            "countTrailingBlankLines",
-            "getNextNonWhitespaceCharacter",
             "gmlParserAdapter",
             "handleComments",
             "print",

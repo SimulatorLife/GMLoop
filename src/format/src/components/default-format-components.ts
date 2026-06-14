@@ -1,6 +1,5 @@
 import type { GameMakerAstNode } from "@gmloop/core";
 
-import { buildPrintableDocCommentLines } from "../comments/description-doc.js";
 import {
     handleComments,
     printComment,
@@ -12,7 +11,6 @@ import { gmlParserAdapter } from "../parsers/index.js";
 import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "../printer/constants.js";
 import { print } from "../printer/index.js";
 import { normalizeFormattedOutput } from "../printer/normalize-formatted-output.js";
-import { countTrailingBlankLines, getNextNonWhitespaceCharacter } from "../shared/layout-helpers.js";
 import { normalizeGmlFormatComponents } from "./format-component-normalizer.js";
 import type { GmlFormatProvider } from "./format-provider.js";
 import type { GmlFormatComponentBundle, GmlFormatComponentContract } from "./format-types.js";
@@ -21,6 +19,14 @@ import type { GmlFormatComponentBundle, GmlFormatComponentContract } from "./for
  * Default implementation bundle wiring the canonical parser, printer, and
  * comment handlers. This is the single point where concrete adapters are
  * assembled into the component contract.
+ *
+ * Only helpers that the printer workspace actively resolves through the
+ * dependency-injection boundary (see `printer/comment-print-boundary.ts`)
+ * are wired here. Helpers that the printer imports directly from the
+ * canonical modules — `buildPrintableDocCommentLines`,
+ * `countTrailingBlankLines`, `getNextNonWhitespaceCharacter` — are not
+ * exposed on the contract, so the contract reflects only what the boundary
+ * actually consumes.
  */
 export const defaultGmlFormatComponentImplementations: GmlFormatComponentContract = Object.freeze({
     gmlParserAdapter,
@@ -29,9 +35,6 @@ export const defaultGmlFormatComponentImplementations: GmlFormatComponentContrac
     printComment,
     printDanglingComments,
     printDanglingCommentsAsGroup,
-    buildPrintableDocCommentLines,
-    countTrailingBlankLines,
-    getNextNonWhitespaceCharacter,
     LogicalOperatorsStyle
 });
 
