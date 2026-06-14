@@ -42,6 +42,28 @@ export class GmlParserBridge implements Refactor.ParserBridge {
 
     /**
      * Recursively adapts parser nodes to the refactor engine's AST interface.
+     *
+     * The refactor engine works with a deliberately small, position-keyed node
+     * shape (`{ type, name, start, end, children }`) that intentionally
+     * flattens the richer GML parser AST into a uniform child list. The
+     * mapping below is the authoritative source of truth for which parser
+     * fields contribute children — keep it in sync with the parser workspace
+     * if new node shapes are introduced there.
+     *
+     * Source location handling: parser nodes expose `start`/`end` as
+     * `{ index, line, column }` records, but the refactor engine only needs
+     * the file-offset `index` for range checks, so we project to that single
+     * number. Missing offsets (e.g., synthetic nodes inserted during
+     * normalization) become `0` rather than `undefined` so downstream
+     * arithmetic stays well-typed.
+     *
+     * Field mapping (each branch corresponds to a documented parser shape):
+     *  - `body` / `declarations` cover statements, blocks, and declaration
+     *    lists (functions, enums, structs, etc.).
+     *  - The fixed `prop` list covers the binary/unary/ternary/member
+     *    expression shapes the refactor engine needs to descend into.
+     *  - `arguments` / `elements` cover call sites and array/struct
+     *    literals, both of which are variadic in GML.
      */
     private adaptNode(node: any): Refactor.AstNode {
         if (!node || typeof node !== "object") {
@@ -70,7 +92,6 @@ export class GmlParserBridge implements Refactor.ParserBridge {
             adapted.children.push(...node.declarations.map((n) => this.adaptNode(n)));
         }
 
-        // Handle common expression properties
         for (const prop of [
             "init",
             "left",
@@ -88,7 +109,6 @@ export class GmlParserBridge implements Refactor.ParserBridge {
             }
         }
 
-        // Handle arrays of arguments or elements
         if (Array.isArray(node.arguments)) {
             adapted.children.push(...node.arguments.map((n) => this.adaptNode(n)));
         }

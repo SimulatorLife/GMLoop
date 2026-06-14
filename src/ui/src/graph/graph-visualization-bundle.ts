@@ -170,7 +170,14 @@ function resolvePrebuiltWebDirectory(): string | null {
             return pathC;
         }
     } catch {
-        // ignore
+        // Swallow the workspace-resolution failure: the published bundle can be
+        // consumed by callers (e.g., the static UI export) that mount this
+        // module outside the monorepo, where the upward search in
+        // `resolveUiWorkspaceRoot` exhausts the filesystem and throws. Falling
+        // through to `return null` is the documented contract — the caller
+        // then decides whether to fall back to a Vite build or to surface a
+        // "prebuilt bundle missing" error. Do not turn this into a rethrow or
+        // downstream consumers outside the source tree will break.
     }
 
     return null;
