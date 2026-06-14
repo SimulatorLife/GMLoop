@@ -8,8 +8,6 @@
 
 import { createHash } from "node:crypto";
 
-import type { Options as PrettierOptions } from "prettier";
-
 import { getDefaultMaxFormattingCacheEntries } from "../../runtime-options/format-memory-options.js";
 
 /**
@@ -97,12 +95,24 @@ function stringifyCacheComponent(value: unknown): string {
 }
 
 /**
- * Creates a cache key from file content and Prettier options.
+ * Minimal formatting options that contribute to CLI cache identity.
+ */
+export interface FormattingCacheOptions {
+    parser: unknown;
+    tabWidth?: unknown;
+    printWidth?: unknown;
+    semi?: unknown;
+    useTabs?: unknown;
+    plugins: unknown;
+}
+
+/**
+ * Creates a cache key from file content and formatting options.
  * Uses SHA-256 hashing of file content to prevent memory bloat while ensuring
  * uniqueness. The cache key includes formatting options to ensure that changes
  * to options invalidate cached results.
  */
-export function createFormattingCacheKey(data: string, formattingOptions: PrettierOptions): string {
+export function createFormattingCacheKey(data: string, formattingOptions: FormattingCacheOptions): string {
     const { parser, tabWidth, printWidth, semi, useTabs, plugins } = formattingOptions;
     const pluginKey = Array.isArray(plugins) ? plugins.map(String).toSorted().join(",") : "";
     // Use a hash of the file content instead of the full content to prevent memory bloat.

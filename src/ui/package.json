@@ -20,10 +20,10 @@
     "test": "pnpm run build:types && node --test-force-exit --test \"dist/test/*.test.js\""
   },
   "dependencies": {
-    "lit": "^3.3.3",
-    "vite": "^8.0.13"
+    "lit": "^3.3.3"
   },
   "devDependencies": {
+    "vite": "^8.0.13",
     "@gmloop/core": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:"
