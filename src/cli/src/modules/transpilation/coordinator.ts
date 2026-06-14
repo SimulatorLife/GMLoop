@@ -9,11 +9,11 @@
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
-import { type Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
+import { TranspilerErrorCode } from "@gmloop/transpiler";
 
 import { formatCliError } from "../../cli-core/index.js";
 import type { PatchBroadcaster } from "../websocket/server.js";
+import { createGmlParserAdapter, createGmlTranspilerAdapter, type GmlParserAdapter } from "./adapters.js";
 import {
     getRuntimePathSegments,
     resolveObjectEventPartsFromSegments,
@@ -21,10 +21,22 @@ import {
 } from "./runtime-identifiers.js";
 import { extractReferencesFromAst, extractSymbolsFromAst } from "./symbol-extraction.js";
 
-type RuntimeTranspiler = InstanceType<typeof Transpiler.GmlTranspiler>;
+/**
+ * Default parser adapter used by the coordinator when no override is supplied.
+ *
+ * The adapter is built once at module load time and re-used for every
+ * `parseAstAndExtractMetadata` call. Centralising the construction here keeps
+ * the rest of the coordinator from importing the concrete `Parser.GMLParser`
+ * class, which is the dependency-inversion boundary this module is
+ * responsible for.
+ */
+const defaultParserAdapter: GmlParserAdapter = createGmlParserAdapter();
+
+type RuntimeTranspiler = GmlTranspilerInstance;
+type GmlTranspilerInstance = ReturnType<typeof createGmlTranspilerAdapter>;
 export type RuntimeTranspilerPatch =
-    | ReturnType<RuntimeTranspiler["transpileScript"]>
-    | ReturnType<RuntimeTranspiler["transpileEvent"]>;
+    | ReturnType<GmlTranspilerInstance["transpileScript"]>
+    | ReturnType<GmlTranspilerInstance["transpileEvent"]>;
 
 export interface TranspilationMetrics {
     timestamp: number;
@@ -467,24 +479,21 @@ function extractMetadataFromAst(
  *
  * Accepts pre-parsed AST and pre-extracted values to skip redundant work
  * when the caller has already produced them (e.g., during the initial
- * startup scan).
+ * startup scan). The `parseAdapter` parameter is the dependency-inversion
+ * seam — by default it delegates to `createGmlParserAdapter` from
+ * `./adapters.js`, but tests can pass a stub that returns a pre-baked AST
+ * without instantiating the concrete `Parser.GMLParser`.
  */
 function parseAstAndExtractMetadata(
     content: string,
     filePath: string,
     preParseAst?: unknown,
     preExtractedSymbols?: ReadonlyArray<string>,
-    preExtractedReferences?: ReadonlyArray<string>
+    preExtractedReferences?: ReadonlyArray<string>,
+    parseAdapter: GmlParserAdapter = defaultParserAdapter
 ): ParsedAstExtractionResult {
     try {
-        const ast =
-            preParseAst ??
-            new Parser.GMLParser(content, {
-                getComments: false,
-                getLocations: true,
-                simplifyLocations: true,
-                attachFunctionDocComments: false
-            }).parse();
+        const ast = preParseAst ?? parseAdapter(content);
         const { parsedSymbols, parsedReferences } = extractMetadataFromAst(
             ast,
             filePath,
