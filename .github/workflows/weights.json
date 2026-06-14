@@ -8,8 +8,8 @@
     },
     {
       "name": "codex",
-      "weight": 1,
-      "cadenceTicks": 3,
+      "weight": 2,
+      "cadenceTicks": 2,
       "category": ["code"],
       "minComplexity": 3
     },
