@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { Parser } from "@gmloop/parser";
-import { Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
+import { Transpiler } from "@gmloop/transpiler";
 
 void describe("GmlTranspiler.transpileEvent", () => {
     void describe("patch shape", () => {
@@ -201,7 +201,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(() => transpiler.transpileEvent(null), {
                 name: "TranspilerError",
-                code: TranspilerErrorCode.REQUEST_ERROR,
+                code: Transpiler.TranspilerErrorCode.REQUEST_ERROR,
                 message: /transpileEvent requires a request object/
             });
         });
@@ -210,7 +210,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(() => transpiler.transpileEvent({ sourceText: "", symbolId: "gml/event/x" }), {
                 name: "TranspilerError",
-                code: TranspilerErrorCode.REQUEST_ERROR,
+                code: Transpiler.TranspilerErrorCode.REQUEST_ERROR,
                 message: /transpileEvent requires a sourceText string/
             });
         });
@@ -219,7 +219,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(() => transpiler.transpileEvent({ sourceText: "x = 1;", symbolId: "" }), {
                 name: "TranspilerError",
-                code: TranspilerErrorCode.REQUEST_ERROR,
+                code: Transpiler.TranspilerErrorCode.REQUEST_ERROR,
                 message: /transpileEvent requires a symbolId string/
             });
         });
@@ -235,7 +235,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
                     }),
                 {
                     name: "TranspilerError",
-                    code: TranspilerErrorCode.REQUEST_ERROR,
+                    code: Transpiler.TranspilerErrorCode.REQUEST_ERROR,
                     message: /sourcePath to be a non-empty string/
                 }
             );
@@ -252,7 +252,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
                     }),
                 {
                     name: "TranspilerError",
-                    code: TranspilerErrorCode.REQUEST_ERROR,
+                    code: Transpiler.TranspilerErrorCode.REQUEST_ERROR,
                     message: /thisName to be a non-empty string/
                 }
             );
