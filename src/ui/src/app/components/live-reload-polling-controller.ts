@@ -36,13 +36,15 @@ function readRecentPatches(value: unknown): ReadonlyArray<GraphVisualizationLive
         return [];
     }
 
-    return value.filter(isUnknownRecord).map((entry) => ({
-        durationMs: readNumber(entry, "durationMs") ?? 0,
-        filePath: readString(entry, "filePath") ?? "unknown",
-        hotReloadLatencyMs: readNumber(entry, "hotReloadLatencyMs"),
-        id: readString(entry, "id") ?? "unknown",
-        timestamp: readNumber(entry, "timestamp") ?? 0
-    }));
+    return value
+        .filter((entry): entry is UnknownRecord => isUnknownRecord(entry))
+        .map((entry) => ({
+            durationMs: readNumber(entry, "durationMs") ?? 0,
+            filePath: readString(entry, "filePath") ?? "unknown",
+            hotReloadLatencyMs: readNumber(entry, "hotReloadLatencyMs"),
+            id: readString(entry, "id") ?? "unknown",
+            timestamp: readNumber(entry, "timestamp") ?? 0
+        }));
 }
 
 function readRecentErrors(value: unknown): ReadonlyArray<GraphVisualizationLiveReloadRecentError> {
@@ -50,12 +52,14 @@ function readRecentErrors(value: unknown): ReadonlyArray<GraphVisualizationLiveR
         return [];
     }
 
-    return value.filter(isUnknownRecord).map((entry) => ({
-        error: readString(entry, "error") ?? "Unknown error",
-        filePath: readString(entry, "filePath") ?? "unknown",
-        recoveryHint: readString(entry, "recoveryHint"),
-        timestamp: readNumber(entry, "timestamp") ?? 0
-    }));
+    return value
+        .filter((entry): entry is UnknownRecord => isUnknownRecord(entry))
+        .map((entry) => ({
+            error: readString(entry, "error") ?? "Unknown error",
+            filePath: readString(entry, "filePath") ?? "unknown",
+            recoveryHint: readString(entry, "recoveryHint"),
+            timestamp: readNumber(entry, "timestamp") ?? 0
+        }));
 }
 
 function resolveWatcherStatus(

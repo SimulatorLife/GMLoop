@@ -639,29 +639,27 @@ export function attemptCondenseSimpleScalarProduct(
 // attemptCondenseScalarProduct
 // ---------------------------------------------------------------------------
 
-export function attemptCondenseScalarProduct(node, context): boolean {
-    if (!node) {
-        return false;
-    }
+type ScalarProductChainSummary = {
+    nonNumericTerms: any[];
+    coefficient: number;
+    hasNumericContribution: boolean;
+    meaningfulNumericFactorCount: number;
+    numericNumeratorProduct: number;
+    numericDenominatorProduct: number;
+    hasNumericNumeratorFactor: boolean;
+    hasNumericDenominatorFactor: boolean;
+    numericDenominatorCount: number;
+    unitTolerance: number;
+};
 
-    if (AST.hasOriginalComment(node, context)) {
-        return false;
-    }
-
-    if (!Core.isBinaryOperator(node, "*") && !Core.isBinaryOperator(node, "/")) {
-        return false;
-    }
-
-    const chain = {
-        numerators: [],
-        denominators: []
-    };
-
-    if (!collectMultiplicativeChain(node, chain, false, context)) {
-        return false;
-    }
-
-    const nonNumericTerms = [];
+/**
+ * Walks a multiplicative chain and computes a summary describing how the
+ * numeric and non-numeric terms combine. Returns `null` when the chain
+ * cannot be summarised (e.g. a term carries a comment, there is nothing but
+ * numeric factors, or a denominator is a non-numeric term).
+ */
+function summarizeScalarProductChain(chain: MultiplicativeChain): ScalarProductChainSummary | null {
+    const nonNumericTerms: any[] = [];
     let coefficient = 1;
     let hasNumericContribution = false;
     let meaningfulNumericFactorCount = 0;
@@ -674,7 +672,7 @@ export function attemptCondenseScalarProduct(node, context): boolean {
 
     for (const term of chain.numerators) {
         if (Core.hasComment(term.expression) || (term.raw && Core.hasComment(term.raw))) {
-            return false;
+            return null;
         }
 
         const numericValue = parseNumericFactor(term.expression);
@@ -694,17 +692,17 @@ export function attemptCondenseScalarProduct(node, context): boolean {
     }
 
     if (nonNumericTerms.length === 0) {
-        return false;
+        return null;
     }
 
     for (const term of chain.denominators) {
         if (Core.hasComment(term.expression) || (term.raw && Core.hasComment(term.raw))) {
-            return false;
+            return null;
         }
 
         const numericValue = parseNumericFactor(term.expression);
         if (numericValue === null || Math.abs(numericValue) <= computeNumericTolerance(0)) {
-            return false;
+            return null;
         }
 
         hasNumericContribution = true;
@@ -718,60 +716,104 @@ export function attemptCondenseScalarProduct(node, context): boolean {
         }
     }
 
-    if (!hasNumericContribution) {
+    return {
+        nonNumericTerms,
+        coefficient,
+        hasNumericContribution,
+        meaningfulNumericFactorCount,
+        numericNumeratorProduct,
+        numericDenominatorProduct,
+        hasNumericNumeratorFactor,
+        hasNumericDenominatorFactor,
+        numericDenominatorCount,
+        unitTolerance
+    };
+}
+
+/**
+ * Decides whether the chain summary corresponds to a multiplicative identity
+ * (±1) that can be collapsed into the non-numeric operand. Captures the
+ * sign of the identity so the caller can produce a unary-negation node when
+ * the coefficient is exactly -1.
+ */
+function resolveScalarProductIdentityCollapse(
+    summary: ScalarProductChainSummary
+): { collapsed: true; negated: boolean } | { collapsed: false } {
+    if (summary.nonNumericTerms.length === 0) {
+        return { collapsed: false };
+    }
+
+    const positiveIdentity = Math.abs(summary.coefficient - 1) <= summary.unitTolerance;
+    const negativeIdentity = Math.abs(summary.coefficient + 1) <= summary.unitTolerance;
+
+    if (!positiveIdentity && !negativeIdentity) {
+        return { collapsed: false };
+    }
+
+    return { collapsed: true, negated: negativeIdentity };
+}
+
+/**
+ * Replaces the multiplication node with the condensed non-numeric operand,
+ * wrapping it in a unary negation when the identity coefficient is -1.
+ * Owns the identity-collapse rewrite path only.
+ */
+function applyScalarProductIdentityCollapse(
+    node: any,
+    summary: ScalarProductChainSummary,
+    context: ConvertManualMathTransformOptions | null
+): boolean {
+    const collapse = resolveScalarProductIdentityCollapse(summary);
+    if (!collapse.collapsed) {
         return false;
     }
 
-    if (!Number.isFinite(coefficient)) {
+    const condensedOperand = cloneMultiplicativeTerms(summary.nonNumericTerms, node);
+    if (!condensedOperand) {
         return false;
     }
 
-    const zeroTolerance = computeNumericTolerance(0);
-    const coefficientIsPositiveIdentity = Math.abs(coefficient - 1) <= unitTolerance;
-    const coefficientIsNegativeIdentity = Math.abs(coefficient + 1) <= unitTolerance;
+    const replacement = collapse.negated ? createUnaryNegationNode(condensedOperand, node) : condensedOperand;
 
-    if ((coefficientIsPositiveIdentity || coefficientIsNegativeIdentity) && nonNumericTerms.length > 0) {
-        const condensedOperand = cloneMultiplicativeTerms(nonNumericTerms, node);
-        if (!condensedOperand) {
-            return false;
-        }
-
-        const replacement = coefficientIsNegativeIdentity
-            ? createUnaryNegationNode(condensedOperand, node)
-            : condensedOperand;
-
-        if (!replacement || !replaceNodeByMutation(node, replacement)) {
-            return false;
-        }
-
-        unwrapEnclosingParentheses(node, context);
-
-        return true;
-    }
-
-    if (Math.abs(coefficient) <= zeroTolerance) {
+    if (!replacement || !replaceNodeByMutation(node, replacement)) {
         return false;
     }
 
-    if (meaningfulNumericFactorCount < 2) {
+    unwrapEnclosingParentheses(node, context);
+
+    return true;
+}
+
+/**
+ * Rewrites the multiplication node as `nonNumericTerms * normalizedCoefficient`
+ * using the chain summary. Owns the literal-coefficient rewrite path only:
+ * validation of the summary, ratio-metadata selection, and the final
+ * AST mutation.
+ */
+function applyScalarProductCoefficientRewrite(node: any, summary: ScalarProductChainSummary): boolean {
+    if (Math.abs(summary.coefficient) <= computeNumericTolerance(0)) {
+        return false;
+    }
+
+    if (summary.meaningfulNumericFactorCount < 2) {
         return false;
     }
 
     const ratioMetadata =
-        hasNumericDenominatorFactor && numericDenominatorCount >= 2
+        summary.hasNumericDenominatorFactor && summary.numericDenominatorCount >= 2
             ? computeScalarRatioMetadata(
-                  coefficient,
-                  hasNumericNumeratorFactor ? numericNumeratorProduct : 1,
-                  numericDenominatorProduct
+                  summary.coefficient,
+                  summary.hasNumericNumeratorFactor ? summary.numericNumeratorProduct : 1,
+                  summary.numericDenominatorProduct
               )
             : null;
 
-    const normalizedCoefficient = normalizeNumericCoefficient(coefficient, ratioMetadata?.precision);
+    const normalizedCoefficient = normalizeNumericCoefficient(summary.coefficient, ratioMetadata?.precision);
     if (normalizedCoefficient === null) {
         return false;
     }
 
-    const clonedOperand = cloneMultiplicativeTerms(nonNumericTerms, node);
+    const clonedOperand = cloneMultiplicativeTerms(summary.nonNumericTerms, node);
     const literal = createNumericLiteral(normalizedCoefficient, node) as any;
 
     if (!clonedOperand || !literal) {
@@ -783,6 +825,41 @@ export function attemptCondenseScalarProduct(node, context): boolean {
     node.right = literal;
 
     return true;
+}
+
+export function attemptCondenseScalarProduct(node, context): boolean {
+    if (!node) {
+        return false;
+    }
+
+    if (AST.hasOriginalComment(node, context)) {
+        return false;
+    }
+
+    if (!Core.isBinaryOperator(node, "*") && !Core.isBinaryOperator(node, "/")) {
+        return false;
+    }
+
+    const chain: MultiplicativeChain = { numerators: [], denominators: [] };
+
+    if (!collectMultiplicativeChain(node, chain, false, context)) {
+        return false;
+    }
+
+    const summary = summarizeScalarProductChain(chain);
+    if (!summary) {
+        return false;
+    }
+
+    if (!summary.hasNumericContribution || !Number.isFinite(summary.coefficient)) {
+        return false;
+    }
+
+    if (resolveScalarProductIdentityCollapse(summary).collapsed) {
+        return applyScalarProductIdentityCollapse(node, summary, context);
+    }
+
+    return applyScalarProductCoefficientRewrite(node, summary);
 }
 
 // ---------------------------------------------------------------------------
