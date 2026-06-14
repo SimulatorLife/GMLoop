@@ -37,7 +37,7 @@ function getNormalizedParameterName(paramNode: any) {
     return getNonEmptyString(normalizedName);
 }
 
-export function getIdentifierFromParameterNode(param: any) {
+export function getIdentifierFromParameterNode(param: any): { name?: unknown } | null {
     if (!param || typeof param !== "object") {
         return null;
     }
@@ -46,11 +46,17 @@ export function getIdentifierFromParameterNode(param: any) {
         return param;
     }
 
-    if (
-        (param.type === "DefaultParameter" || param.type === "AssignmentPattern") &&
-        param.left?.type === "Identifier"
-    ) {
-        return param.left;
+    if (param.type === "DefaultParameter" || param.type === "AssignmentPattern") {
+        if (param.left?.type === "Identifier") {
+            return param.left;
+        }
+        // Some unusual parser outputs nest the identifier under `left.id` instead
+        // of placing it directly on `left`. Return the inner id so callers can
+        // read its `name` property consistently with the Identifier branch.
+        if (param.left?.id) {
+            return param.left.id;
+        }
+        return null;
     }
 
     return null;
@@ -59,10 +65,11 @@ export function getIdentifierFromParameterNode(param: any) {
 /**
  * Resolves the declared name of a function parameter AST node.
  *
- * Handles three parameter shapes produced by the GML parser:
+ * Handles the parameter shapes produced by the GML parser:
  * - `Identifier` → returns `param.name`
- * - `DefaultParameter` / `AssignmentPattern` → returns the name from
- *   `param.left.name` (or `param.left.id.name` as fallback)
+ * - `DefaultParameter` / `AssignmentPattern` → returns the name from the
+ *   `Identifier` referenced by `param.left` (or `param.left.id` when the
+ *   identifier is nested one level deeper)
  * - Any other node with a string `.name` property (fallback)
  *
  * @param param A function parameter AST node (may be `null`/`undefined`).
@@ -70,22 +77,19 @@ export function getIdentifierFromParameterNode(param: any) {
  *   extracted.
  */
 export function resolveParameterName(param: any): string | undefined {
-    if (!param?.type) {
+    if (!param || typeof param !== "object" || !param.type) {
         return undefined;
     }
 
-    switch (param.type) {
-        case "Identifier": {
-            return typeof param.name === "string" ? param.name : undefined;
-        }
-        case "DefaultParameter":
-        case "AssignmentPattern": {
-            return param.left?.name ?? param.left?.id?.name;
-        }
-        default: {
-            return typeof param.name === "string" ? param.name : undefined;
-        }
+    const identifier = getIdentifierFromParameterNode(param);
+    if (identifier) {
+        return typeof identifier.name === "string" ? identifier.name : undefined;
     }
+
+    // Fallback for unknown parameter shapes: some parser outputs (e.g.
+    // `RestElement`) attach the name directly to the parameter node via
+    // `.name` rather than nesting it under an Identifier child.
+    return typeof param.name === "string" ? param.name : undefined;
 }
 
 export function getArgumentIndexFromIdentifier(name: unknown) {
@@ -100,7 +104,18 @@ export function getArgumentIndexFromIdentifier(name: unknown) {
     return null;
 }
 
-function getArgumentIndexFromNode(node: any) {
+/**
+ * Resolve an implicit `argumentN` reference index from a node.
+ *
+ * Supports the three parser shapes used across lint transforms:
+ * - `Identifier` (`argument0`)
+ * - `MemberIndexExpression` (`argument[0]`)
+ * - `MemberExpression` (`argument.0`)
+ *
+ * @param {any} node Candidate AST node.
+ * @returns {number | null} Zero-based argument index when recognized.
+ */
+export function getArgumentIndexFromReferenceNode(node: any): number | null {
     if (!node) {
         return null;
     }
@@ -133,21 +148,6 @@ function getArgumentIndexFromNode(node: any) {
     }
 
     return null;
-}
-
-/**
- * Resolve an implicit `argumentN` reference index from a node.
- *
- * Supports the three parser shapes used across lint transforms:
- * - `Identifier` (`argument0`)
- * - `MemberIndexExpression` (`argument[0]`)
- * - `MemberExpression` (`argument.0`)
- *
- * @param {any} node Candidate AST node.
- * @returns {number | null} Zero-based argument index when recognized.
- */
-export function getArgumentIndexFromReferenceNode(node: any): number | null {
-    return getArgumentIndexFromNode(node);
 }
 
 export function getSourceTextForNode(node: any, options: SyntheticDocGenerationOptions) {
@@ -311,7 +311,7 @@ export function gatherImplicitArgumentReferences(functionNode: any) {
         }
 
         if (node.type === "VariableDeclarator") {
-            const aliasIndex = getArgumentIndexFromNode(node.init);
+            const aliasIndex = getArgumentIndexFromReferenceNode(node.init);
             if (aliasIndex !== null && node.id?.type === "Identifier" && !aliasByIndex.has(aliasIndex)) {
                 const aliasName = normalizeDocMetadataName(node.id.name);
                 if (isNonEmptyTrimmedString(aliasName)) {
@@ -321,7 +321,7 @@ export function gatherImplicitArgumentReferences(functionNode: any) {
             }
         }
 
-        const directIndex = getArgumentIndexFromNode(node);
+        const directIndex = getArgumentIndexFromReferenceNode(node);
         if (directIndex !== null) {
             referencedIndices.add(directIndex);
             if (parent?.type === "VariableDeclarator" && parent.init === node && aliasByIndex.has(directIndex)) {
