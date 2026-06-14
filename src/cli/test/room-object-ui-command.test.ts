@@ -319,39 +319,102 @@ void test("room layer update planned leaf emits apply mode when write is request
     assert.equal(updatePayload.payload.state, "not_available");
 });
 
-void test("room camera update planned leaf emits write-aware payload details", async () => {
-    const updateResult = await runCliTestCommand({
-        argv: ["room", "camera", "update", "rm_main", "camera_0", "32", "64", "1280", "720", "--json", "--write"]
-    });
+void test("room camera update supports dry-run and write modes", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+    const roomMetadataPath = path.join(projectRoot, "rooms/rm_main/rm_main.yy");
 
-    assert.equal(updateResult.exitCode, 0);
-    const updatePayload = JSON.parse(updateResult.stdout) as {
-        command: string;
-        payload: {
-            capability: string;
-            details: {
+    try {
+        const dryRunResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "camera",
+                "update",
+                "rm_main",
+                "camera_0",
+                "32",
+                "64",
+                "1280",
+                "720",
+                "--path",
+                projectRoot,
+                "--json"
+            ]
+        });
+
+        assert.equal(dryRunResult.exitCode, 0);
+        const dryRunPayload = JSON.parse(dryRunResult.stdout) as {
+            command: string;
+            payload: {
+                action: string;
                 cameraId: string;
-                height: string;
-                room: string;
-                width: string;
-                x: string;
-                y: string;
+                dryRun: boolean;
+                roomPath: string;
+                writtenPaths: Array<string>;
+                x: number;
             };
-            mode: string;
-            state: string;
         };
-    };
+        assert.equal(dryRunPayload.command, "room camera update");
+        assert.equal(dryRunPayload.payload.action, "update");
+        assert.equal(dryRunPayload.payload.cameraId, "camera_0");
+        assert.equal(dryRunPayload.payload.dryRun, true);
+        assert.equal(dryRunPayload.payload.roomPath, "rooms/rm_main/rm_main.yy");
+        assert.deepEqual(dryRunPayload.payload.writtenPaths, ["rooms/rm_main/rm_main.yy"]);
+        assert.equal(dryRunPayload.payload.x, 32);
 
-    assert.equal(updatePayload.command, "room camera update");
-    assert.equal(updatePayload.payload.capability, "room_camera_mutation");
-    assert.equal(updatePayload.payload.mode, "apply");
-    assert.equal(updatePayload.payload.state, "not_available");
-    assert.equal(updatePayload.payload.details.room, "rm_main");
-    assert.equal(updatePayload.payload.details.cameraId, "camera_0");
-    assert.equal(updatePayload.payload.details.x, "32");
-    assert.equal(updatePayload.payload.details.y, "64");
-    assert.equal(updatePayload.payload.details.width, "1280");
-    assert.equal(updatePayload.payload.details.height, "720");
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const dryRunViewSettings = dryRunRoomMetadata.viewSettings as Record<string, unknown>;
+        const dryRunViews = dryRunRoomMetadata.views as Array<Record<string, unknown>>;
+        assert.equal(dryRunViewSettings.enableViews, false);
+        assert.equal(dryRunViews[0].xview, 0);
+
+        const writeResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "camera",
+                "update",
+                "rm_main",
+                "camera_0",
+                "32",
+                "64",
+                "1280",
+                "720",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+
+        assert.equal(writeResult.exitCode, 0);
+        const writePayload = JSON.parse(writeResult.stdout) as {
+            payload: { dryRun: boolean; height: number; roomName: string; width: number; y: number };
+        };
+        assert.equal(writePayload.payload.dryRun, false);
+        assert.equal(writePayload.payload.roomName, "rm_main");
+        assert.equal(writePayload.payload.width, 1280);
+        assert.equal(writePayload.payload.height, 720);
+        assert.equal(writePayload.payload.y, 64);
+
+        const updatedRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const updatedViewSettings = updatedRoomMetadata.viewSettings as Record<string, unknown>;
+        const updatedViews = updatedRoomMetadata.views as Array<Record<string, unknown>>;
+        assert.equal(updatedViewSettings.enableViews, true);
+        assert.equal(updatedViews[0].visible, true);
+        assert.equal(updatedViews[0].xview, 32);
+        assert.equal(updatedViews[0].yview, 64);
+        assert.equal(updatedViews[0].wview, 1280);
+        assert.equal(updatedViews[0].hview, 720);
+        assert.equal(updatedViews[0].wport, 1280);
+        assert.equal(updatedViews[0].hport, 720);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
 });
 
 void test("ui planned leaves emit concrete payloads without unsupported backend state", async () => {
