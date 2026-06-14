@@ -13,6 +13,7 @@ import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
 import { findFirstAstNodeBy } from "../rule-base-helpers.js";
 import { createNumericLiteral, replaceNode, replaceNodeWith } from "./math-ast-builders.js";
+import type { MathNumericPolicy } from "./math-numeric-policy.js";
 import { computeNumericTolerance, evaluateNumericExpression } from "./math-numeric-utils.js";
 import {
     attemptCancelReciprocalRatios,
@@ -82,6 +83,15 @@ export type ConvertManualMathTransformOptions = {
     sourceText?: string;
     originalText?: string;
     astRoot?: MutableGameMakerAstNode;
+
+    /**
+     * Optional numeric-safety policy that overrides the default reciprocal
+     * thresholds. When omitted, the values from {@link DEFAULT_MATH_NUMERIC_POLICY}
+     * are used. Forwarded through the traversal so individual simplification
+     * passes (e.g. division-by-reciprocal elimination) can consult a single
+     * source of truth rather than consulting their own module-level constants.
+     */
+    mathNumericPolicy?: MathNumericPolicy;
 };
 
 /**

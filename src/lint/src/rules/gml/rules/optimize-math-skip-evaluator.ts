@@ -433,3 +433,11 @@ export const MATH_OPTIMIZATION_POLICY_CONSTANTS = Object.freeze({
     /** Maximum source-text length for manual normalization pass */
     MAX_MANUAL_NORMALIZATION_LENGTH: DEFAULT_TEXT_LENGTH_POLICY.maxManualNormalizationLength
 });
+
+// Re-export the numeric-safety policy helpers so rule consumers can configure
+// the reciprocal/divisor thresholds through a single canonical entry point
+// (the math transform policy module) instead of having to import the math
+// workspace directly. The wrapper preserves the rule-layer boundary while
+// letting the optimize-math rule opt into stricter or more permissive limits.
+export type { MathNumericPolicy } from "../math/math-numeric-policy.js";
+export { DEFAULT_MATH_NUMERIC_POLICY, resolveMathNumericPolicy } from "../math/math-numeric-policy.js";
