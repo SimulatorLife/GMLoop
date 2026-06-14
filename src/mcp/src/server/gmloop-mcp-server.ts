@@ -203,6 +203,29 @@ export function parseCliJsonStdout<TPayload>(stdout: string, argv: ReadonlyArray
     return Core.parseJsonWithContext(stdout, { description }) as TPayload;
 }
 
+/**
+ * Parse CLI stdout as JSON when a CLI-backed MCP tool emits a structured
+ * payload.
+ *
+ * Returns `null` for commands that produce human text or no stdout so MCP
+ * callers can rely on a stable `jsonPayload` field without parsing stdout.
+ * Syntax errors still use {@link parseCliJsonStdout} once the output looks
+ * JSON-shaped, which preserves contextual parse-error messages for malformed
+ * command contracts.
+ *
+ * @param stdout Raw stdout text emitted by the CLI invocation.
+ * @param argv Command argv that produced the stdout.
+ * @returns Parsed JSON payload, or `null` when stdout is not JSON-shaped.
+ */
+export function parseOptionalCliJsonStdout(stdout: string, argv: ReadonlyArray<string>): unknown {
+    const trimmedStdout = stdout.trim();
+    if (trimmedStdout.length === 0 || (!trimmedStdout.startsWith("{") && !trimmedStdout.startsWith("["))) {
+        return null;
+    }
+
+    return parseCliJsonStdout<unknown>(trimmedStdout, argv);
+}
+
 async function runCliJsonCommand<TPayload>(
     argv: Array<string>,
     cwd = process.cwd()
@@ -299,6 +322,7 @@ function registerCliTools(server: McpServer): void {
                         command: entry.displayName,
                         cwd,
                         exitCode: result.exitCode,
+                        jsonPayload: parseOptionalCliJsonStdout(result.stdout, argv),
                         stderr: result.stderr,
                         stdout: result.stdout
                     }
