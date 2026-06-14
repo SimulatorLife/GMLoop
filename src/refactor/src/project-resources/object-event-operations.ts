@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -43,6 +43,7 @@ type ResourceReference = Readonly<{
 
 type ObjectEventMutationContext = Readonly<{
     event: Record<string, unknown>;
+    eventIndex: number;
     eventFilePath: string;
     eventType: number;
     eventNumber: number;
@@ -83,10 +84,21 @@ export interface UpdateObjectEventRequest {
 }
 
 /**
+ * Parameters for deleting an existing GameMaker object event and its GML source file.
+ */
+export interface DeleteObjectEventRequest {
+    descriptor: ObjectEventDescriptor;
+    dryRun?: boolean;
+    objectName: string;
+    projectRoot: string;
+}
+
+/**
  * Summary returned after an object event source mutation.
  */
 export interface ObjectEventMutationResult {
-    action: "add" | "update";
+    action: "add" | "update" | "delete";
+    deletedPaths: Array<string>;
     dryRun: boolean;
     eventFilePath: string;
     eventNumber: number;
@@ -174,12 +186,9 @@ function readNumericEventField(event: Record<string, unknown>, fieldNames: Reado
     return null;
 }
 
-function findObjectEvent(
-    objectDocument: Record<string, unknown>,
-    eventType: number,
-    eventNumber: number
-): Record<string, unknown> | null {
-    for (const eventEntry of Core.asArray(objectDocument.eventList)) {
+function findObjectEventIndex(objectDocument: Record<string, unknown>, eventType: number, eventNumber: number): number {
+    const eventList = Core.asArray(objectDocument.eventList);
+    for (const [eventIndex, eventEntry] of eventList.entries()) {
         if (!Core.isObjectLike(eventEntry)) {
             continue;
         }
@@ -188,11 +197,25 @@ function findObjectEvent(
         const candidateEventType = readNumericEventField(event, ["eventType", "eventtype"]);
         const candidateEventNumber = readNumericEventField(event, ["eventNum", "enumb"]);
         if (candidateEventType === eventType && candidateEventNumber === eventNumber) {
-            return event;
+            return eventIndex;
         }
     }
 
-    return null;
+    return -1;
+}
+
+function findObjectEvent(
+    objectDocument: Record<string, unknown>,
+    eventType: number,
+    eventNumber: number
+): Record<string, unknown> | null {
+    const eventIndex = findObjectEventIndex(objectDocument, eventType, eventNumber);
+    if (eventIndex < 0) {
+        return null;
+    }
+
+    const event = Core.asArray(objectDocument.eventList)[eventIndex];
+    return Core.isObjectLike(event) ? (event as Record<string, unknown>) : null;
 }
 
 function locateObjectEvent(
@@ -292,11 +315,16 @@ async function resolveObjectEventMutationContext(
     const objectDocument = await readProjectMetadataDocument(objectAbsolutePath);
     const eventType = resolveObjectEventType(descriptor.category);
     const eventNumber = resolveObjectEventNumber(descriptor.category, descriptor.descriptor);
+    const eventIndex = findObjectEventIndex(objectDocument, eventType, eventNumber);
+    if (eventIndex < 0) {
+        throw new Error(`Could not find object event ${eventType}:${eventNumber} on object '${objectReference.name}'.`);
+    }
     const event = locateObjectEvent(objectDocument, objectReference.name, eventType, eventNumber);
     const eventFilePath = resolveEventFilePath(event, objectReference, eventType, eventNumber);
 
     return Object.freeze({
         event,
+        eventIndex,
         eventFilePath,
         eventNumber,
         eventType,
@@ -352,6 +380,7 @@ export async function addObjectEvent(request: AddObjectEventRequest): Promise<Ob
 
     return {
         action: "add",
+        deletedPaths: [],
         dryRun,
         eventFilePath,
         eventNumber,
@@ -383,6 +412,7 @@ export async function updateObjectEvent(request: UpdateObjectEventRequest): Prom
 
     return {
         action: "update",
+        deletedPaths: [],
         dryRun,
         eventFilePath: context.eventFilePath,
         eventNumber: context.eventNumber,
@@ -391,5 +421,40 @@ export async function updateObjectEvent(request: UpdateObjectEventRequest): Prom
         objectPath: context.objectReference.path,
         warnings: [],
         writtenPaths: [context.eventFilePath]
+    };
+}
+
+/**
+ * Delete an existing GameMaker object event and its associated GML source file.
+ *
+ * @param request - Object event deletion request.
+ * @returns Summary of the planned or applied object event metadata and source deletion.
+ */
+export async function deleteObjectEvent(request: DeleteObjectEventRequest): Promise<ObjectEventMutationResult> {
+    const context = await resolveObjectEventMutationContext(
+        request.projectRoot,
+        request.objectName,
+        request.descriptor
+    );
+    const eventList = getObjectEventListForMutation(context.objectDocument, context.objectReference.name);
+    eventList.splice(context.eventIndex, 1);
+
+    const dryRun = request.dryRun !== false;
+    await writeObjectMetadataIfApplying(dryRun, context.objectAbsolutePath, context.objectDocument);
+    if (!dryRun) {
+        await rm(path.join(context.projectRoot, Core.fromPosixPath(context.eventFilePath)), { force: true });
+    }
+
+    return {
+        action: "delete",
+        deletedPaths: [context.eventFilePath],
+        dryRun,
+        eventFilePath: context.eventFilePath,
+        eventNumber: context.eventNumber,
+        eventType: context.eventType,
+        objectName: context.objectReference.name,
+        objectPath: context.objectReference.path,
+        warnings: [],
+        writtenPaths: [context.objectReference.path]
     };
 }

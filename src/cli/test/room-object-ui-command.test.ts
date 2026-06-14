@@ -130,7 +130,7 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
     assert.equal(eventListPayload.payload.state, "not_available");
 });
 
-void test("object event add and update support dry-run and write modes", async () => {
+void test("object event add, update, and delete support dry-run and write modes", async () => {
     const projectRoot = await createTemporaryObjectEventCliProject();
     const eventSourcePath = path.join(projectRoot, "objects/obj_player/0_0.gml");
     const addedEventSourcePath = path.join(projectRoot, "objects/obj_player/3_1.gml");
@@ -146,6 +146,7 @@ void test("object event add and update support dry-run and write modes", async (
             command: string;
             payload: {
                 action: string;
+                deletedPaths: Array<string>;
                 dryRun: boolean;
                 eventFilePath: string;
                 eventNumber: number;
@@ -155,6 +156,7 @@ void test("object event add and update support dry-run and write modes", async (
         };
         assert.equal(addDryRunPayload.command, "object event add");
         assert.equal(addDryRunPayload.payload.action, "add");
+        assert.deepEqual(addDryRunPayload.payload.deletedPaths, []);
         assert.equal(addDryRunPayload.payload.dryRun, true);
         assert.equal(addDryRunPayload.payload.eventType, 3);
         assert.equal(addDryRunPayload.payload.eventNumber, 1);
@@ -246,6 +248,42 @@ void test("object event add and update support dry-run and write modes", async (
         assert.equal(writePayload.payload.objectName, "obj_player");
         assert.equal(writePayload.payload.objectPath, "objects/obj_player/obj_player.yy");
         assert.equal(await readFile(eventSourcePath, "utf8"), "x = 3;\n");
+
+        const deleteDryRunResult = await runCliTestCommand({
+            argv: ["object", "event", "delete", "obj_player", "Step:Begin", "--path", projectRoot, "--json"]
+        });
+        assert.equal(deleteDryRunResult.exitCode, 0);
+        const deleteDryRunPayload = JSON.parse(deleteDryRunResult.stdout) as {
+            command: string;
+            payload: {
+                action: string;
+                deletedPaths: Array<string>;
+                dryRun: boolean;
+                eventFilePath: string;
+                writtenPaths: Array<string>;
+            };
+        };
+        assert.equal(deleteDryRunPayload.command, "object event delete");
+        assert.equal(deleteDryRunPayload.payload.action, "delete");
+        assert.equal(deleteDryRunPayload.payload.dryRun, true);
+        assert.equal(deleteDryRunPayload.payload.eventFilePath, "objects/obj_player/3_1.gml");
+        assert.deepEqual(deleteDryRunPayload.payload.deletedPaths, ["objects/obj_player/3_1.gml"]);
+        assert.deepEqual(deleteDryRunPayload.payload.writtenPaths, ["objects/obj_player/obj_player.yy"]);
+        assert.equal(await readFile(addedEventSourcePath, "utf8"), "x += 2;\n");
+
+        const deleteWriteResult = await runCliTestCommand({
+            argv: ["object", "event", "delete", "obj_player", "Step:Begin", "--path", projectRoot, "--json", "--write"]
+        });
+        assert.equal(deleteWriteResult.exitCode, 0);
+        const deleteWritePayload = JSON.parse(deleteWriteResult.stdout) as { payload: { dryRun: boolean } };
+        assert.equal(deleteWritePayload.payload.dryRun, false);
+        await assert.rejects(readFile(addedEventSourcePath, "utf8"));
+
+        const deletedEventMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(objectMetadataPath, "utf8"),
+            objectMetadataPath
+        ).document;
+        assert.equal(Core.asArray(deletedEventMetadata.eventList).length, 1);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

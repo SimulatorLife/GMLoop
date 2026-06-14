@@ -44,6 +44,7 @@ type ObjectMutationOptions = SharedProjectContextOptions &
 function toObjectEventMutationPayload(result: Awaited<ReturnType<typeof Refactor.addObjectEvent>>) {
     return {
         action: result.action,
+        deletedPaths: result.deletedPaths,
         dryRun: result.dryRun,
         eventFilePath: result.eventFilePath,
         eventNumber: result.eventNumber,
@@ -94,6 +95,26 @@ async function runObjectEventUpdateAction(
 
     printObjectPayload({
         command: "object event update",
+        ok: true,
+        payload: toObjectEventMutationPayload(result)
+    });
+}
+
+async function runObjectEventDeleteAction(
+    objectName: string,
+    eventDescriptor: ObjectEventDescriptor,
+    options: ObjectMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.deleteObjectEvent({
+        descriptor: eventDescriptor,
+        dryRun: options.write !== true,
+        objectName,
+        projectRoot: context.projectRoot
+    });
+
+    printObjectPayload({
+        command: "object event delete",
         ok: true,
         payload: toObjectEventMutationPayload(result)
     });
@@ -295,13 +316,14 @@ export function createObjectCommand(): Command {
             .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
             .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
     ).addOption(createWriteOption());
-    eventDelete.action(function objectEventDeleteAction(objectName: string, eventDescriptor: string) {
-        const options = this.opts<ObjectMutationOptions>();
-        const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
-        emitObjectUnavailableLeaf("object event delete", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
-            event: parsedDescriptor,
-            object: objectName
-        });
+    eventDelete.action(async function objectEventDeleteAction(objectName: string, eventDescriptor: string) {
+        try {
+            const options = this.opts<ObjectMutationOptions>();
+            const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
+            await runObjectEventDeleteAction(objectName, parsedDescriptor, options);
+        } catch (error) {
+            handleCliError(error);
+        }
     });
 
     event.addCommand(eventList);
