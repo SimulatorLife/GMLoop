@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
+import { Transpiler } from "@gmloop/transpiler";
 
 type TranspilerInstance = InstanceType<typeof Transpiler.GmlTranspiler>;
 type TranspileClosureArgs = Parameters<TranspilerInstance["transpileClosure"]>[0];
@@ -233,7 +233,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(() => transpiler.transpileClosure(null), {
                 name: "TranspilerError",
-                code: TranspilerErrorCode.REQUEST_ERROR
+                code: Transpiler.TranspilerErrorCode.REQUEST_ERROR
             });
         });
 
@@ -244,7 +244,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
                     transpiler.transpileClosure({
                         symbolId: "gml/closure/scr/f"
                     } as unknown as TranspileClosureArgs),
-                { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
+                { name: "TranspilerError", code: Transpiler.TranspilerErrorCode.REQUEST_ERROR }
             );
         });
 
@@ -256,7 +256,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
                         sourceText: "",
                         symbolId: "gml/closure/scr/f"
                     }),
-                { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
+                { name: "TranspilerError", code: Transpiler.TranspilerErrorCode.REQUEST_ERROR }
             );
         });
 
@@ -268,7 +268,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
                         sourceText: "function f() {}",
                         symbolId: ""
                     }),
-                { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
+                { name: "TranspilerError", code: Transpiler.TranspilerErrorCode.REQUEST_ERROR }
             );
         });
 
@@ -281,7 +281,7 @@ void describe("GmlTranspiler.transpileClosure", () => {
                         symbolId: "gml/closure/scr/f",
                         sourcePath: ""
                     }),
-                { name: "TranspilerError", code: TranspilerErrorCode.REQUEST_ERROR }
+                { name: "TranspilerError", code: Transpiler.TranspilerErrorCode.REQUEST_ERROR }
             );
         });
 
