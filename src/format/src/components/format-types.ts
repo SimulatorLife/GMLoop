@@ -1,5 +1,5 @@
-import type { MutableDocCommentLines, MutableGameMakerAstNode } from "@gmloop/core";
-import type { Doc, Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
+import type { MutableGameMakerAstNode } from "@gmloop/core";
+import type { Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
 
 export type GmlAst = MutableGameMakerAstNode;
 
@@ -26,6 +26,16 @@ export type LogicalOperatorsStyleMap = Readonly<{
     SYMBOLS: string;
 }>;
 
+/**
+ * Minimal dependency-injection contract for the formatter's comment-printer
+ * boundary. Only the comment helpers that the printer actively resolves
+ * from `options.gml` (see `printer/comment-print-boundary.ts`) belong here.
+ * Helpers that the printer imports directly — `buildPrintableDocCommentLines`,
+ * `countTrailingBlankLines`, `getNextNonWhitespaceCharacter` — are not
+ * listed: they were previously exposed on the contract but no consumer ever
+ * resolved them through the injection path, so listing them implied
+ * configurable behavior that did not exist.
+ */
 export type GmlFormatComponentContract = Readonly<{
     gmlParserAdapter: GmlParserAdapter;
     print: GmlPrintFunction;
@@ -45,9 +55,6 @@ export type GmlFormatComponentContract = Readonly<{
      * comments adapter. (target-state.md §2.3)
      */
     printDanglingCommentsAsGroup: GmlPrintDanglingCommentsAsGroupFunction;
-    buildPrintableDocCommentLines: (docCommentDocs: MutableDocCommentLines, originalText: string | null) => Doc[];
-    countTrailingBlankLines: (text: string | null | undefined, startIndex: number) => number;
-    getNextNonWhitespaceCharacter: (text: string | null | undefined, startIndex: number) => string | null;
     LogicalOperatorsStyle: LogicalOperatorsStyleMap;
 }>;
 
