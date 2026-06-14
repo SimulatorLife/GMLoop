@@ -9,7 +9,7 @@
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { TranspilerErrorCode } from "@gmloop/transpiler";
+import { Transpiler } from "@gmloop/transpiler";
 
 import { formatCliError } from "../../cli-core/index.js";
 import type { PatchBroadcaster } from "../websocket/server.js";
@@ -136,7 +136,7 @@ function classifyTranspilationError(error: unknown): {
     // Classify using structured error codes when available.
     // This avoids fragile string matching and provides reliable categorization
     // for errors thrown by the transpiler workspace.
-    if (Core.isErrorWithCode(error, TranspilerErrorCode.PARSE_ERROR)) {
+    if (Core.isErrorWithCode(error, Transpiler.TranspilerErrorCode.PARSE_ERROR)) {
         // Extract line/column from the cause if it's a GML parse error.
         if (Core.isGmlParseError(targetError)) {
             return {
@@ -155,7 +155,7 @@ function classifyTranspilationError(error: unknown): {
         };
     }
 
-    if (Core.isErrorWithCode(error, TranspilerErrorCode.VALIDATION_ERROR)) {
+    if (Core.isErrorWithCode(error, Transpiler.TranspilerErrorCode.VALIDATION_ERROR)) {
         return {
             category: "validation",
             message: Core.getErrorMessage(error),
@@ -164,7 +164,7 @@ function classifyTranspilationError(error: unknown): {
         };
     }
 
-    if (Core.isErrorWithCode(error, TranspilerErrorCode.REQUEST_ERROR)) {
+    if (Core.isErrorWithCode(error, Transpiler.TranspilerErrorCode.REQUEST_ERROR)) {
         return {
             category: "validation",
             message: Core.getErrorMessage(error),
@@ -172,7 +172,7 @@ function classifyTranspilationError(error: unknown): {
         };
     }
 
-    if (Core.isErrorWithCode(error, TranspilerErrorCode.INTERNAL_ERROR)) {
+    if (Core.isErrorWithCode(error, Transpiler.TranspilerErrorCode.INTERNAL_ERROR)) {
         // If the cause is a GML parse error, classify as syntax error.
         // This handles the common case where the transpiler wraps a parse error.
         if (Core.isGmlParseError(targetError)) {
