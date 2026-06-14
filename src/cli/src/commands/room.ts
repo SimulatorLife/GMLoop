@@ -1,4 +1,4 @@
-import { Refactor, type RoomInstanceMutationResult } from "@gmloop/refactor";
+import { Refactor, type RoomCameraMutationResult, type RoomInstanceMutationResult } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
@@ -42,6 +42,14 @@ function parseCoordinateArgument(value: string, argumentName: "x" | "y"): number
     return parsed;
 }
 
+function parsePositiveDimensionArgument(value: string, argumentName: "height" | "width"): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new TypeError(`Invalid ${argumentName} dimension "${value}". Expected a positive finite numeric value.`);
+    }
+    return parsed;
+}
+
 function toRoomInstanceMutationPayload(result: RoomInstanceMutationResult) {
     return {
         action: result.action,
@@ -58,6 +66,47 @@ function toRoomInstanceMutationPayload(result: RoomInstanceMutationResult) {
         x: result.x,
         y: result.y
     };
+}
+
+function toRoomCameraMutationPayload(result: RoomCameraMutationResult) {
+    return {
+        action: result.action,
+        cameraId: result.cameraId,
+        deletedPaths: result.deletedPaths,
+        dryRun: result.dryRun,
+        height: result.height,
+        roomName: result.roomName,
+        roomPath: result.roomPath,
+        warnings: result.warnings,
+        width: result.width,
+        writtenPaths: result.writtenPaths,
+        x: result.x,
+        y: result.y
+    };
+}
+
+async function runRoomCameraUpdateAction(
+    roomName: string,
+    cameraId: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.updateRoomCamera({
+        cameraId,
+        dryRun: options.write !== true,
+        height,
+        projectRoot: context.projectRoot,
+        roomName,
+        width,
+        x,
+        y
+    });
+
+    printRoomPayload({ command: "room camera update", ok: true, payload: toRoomCameraMutationPayload(result) });
 }
 
 async function runRoomInstanceAddAction(
@@ -401,7 +450,7 @@ export function createRoomCommand(): Command {
                 .argument("<y>", "Camera y coordinate")
                 .argument("<width>", "Camera width")
                 .argument("<height>", "Camera height");
-            nested.action(function roomCameraUpdateAction(
+            nested.action(async function roomCameraUpdateAction(
                 roomName: string,
                 cameraId: string,
                 x: string,
@@ -409,15 +458,24 @@ export function createRoomCommand(): Command {
                 width: string,
                 height: string
             ) {
-                const options = this.opts<RoomMutationOptions>();
-                emitRoomUnavailableLeaf("room camera update", options, "room_camera_mutation", {
-                    cameraId,
-                    height,
-                    room: roomName,
-                    width,
-                    x,
-                    y
-                });
+                try {
+                    const options = this.opts<RoomMutationOptions>();
+                    const parsedX = parseCoordinateArgument(x, "x");
+                    const parsedY = parseCoordinateArgument(y, "y");
+                    const parsedWidth = parsePositiveDimensionArgument(width, "width");
+                    const parsedHeight = parsePositiveDimensionArgument(height, "height");
+                    await runRoomCameraUpdateAction(
+                        roomName,
+                        cameraId,
+                        parsedX,
+                        parsedY,
+                        parsedWidth,
+                        parsedHeight,
+                        options
+                    );
+                } catch (error) {
+                    handleCliError(error);
+                }
             });
             camera.addCommand(nested);
             continue;

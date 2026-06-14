@@ -127,6 +127,30 @@ void test("MCP tool catalog exposes object event update from the CLI command cat
     assert.equal(writeField.valueType, "boolean");
 });
 
+void test("MCP tool catalog exposes room camera update from the CLI command catalog", () => {
+    const catalog = listGmloopMcpToolCatalogEntries();
+    const updateTool = catalog.find((entry) => entry.toolName === "gmloop_room_camera_update");
+    assert.ok(updateTool, "gmloop_room_camera_update must appear in the MCP tool catalog");
+    assert.equal(updateTool.commandDisplayName, "room camera update");
+
+    const fieldNames = new Set(updateTool.fields.map((field) => field.name));
+    assert.ok(fieldNames.has("cwd"), "room camera update must include cwd field");
+    assert.ok(fieldNames.has("room"), "room camera update must include room argument");
+    assert.ok(fieldNames.has("camera-id"), "room camera update must include camera-id argument");
+    assert.ok(fieldNames.has("x"), "room camera update must include x argument");
+    assert.ok(fieldNames.has("y"), "room camera update must include y argument");
+    assert.ok(fieldNames.has("width"), "room camera update must include width argument");
+    assert.ok(fieldNames.has("height"), "room camera update must include height argument");
+    assert.ok(fieldNames.has("--write"), "room camera update must include --write option");
+    assert.ok(fieldNames.has("--path"), "room camera update must include --path option");
+    assert.ok(fieldNames.has("--json"), "room camera update must include --json option");
+
+    const writeField = updateTool.fields.find((field) => field.name === "--write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+});
+
 void test("MCP tool catalog exposes object event delete from the CLI command catalog", () => {
     const catalog = listGmloopMcpToolCatalogEntries();
     const deleteTool = catalog.find((entry) => entry.toolName === "gmloop_object_event_delete");

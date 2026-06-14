@@ -32,6 +32,8 @@ export {
     renameProjectResource,
     resolveProjectManifestFile
 } from "./project-resource-operations.js";
+export type { RoomCameraMutationResult, UpdateRoomCameraRequest } from "./room-camera-operations.js";
+export { updateRoomCamera } from "./room-camera-operations.js";
 export type {
     AddRoomInstanceRequest,
     DeleteRoomInstanceRequest,

@@ -135,8 +135,10 @@ export type {
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
     RenameProjectResourceRequest,
+    RoomCameraMutationResult,
     RoomInstanceMutationResult,
     UpdateObjectEventRequest,
+    UpdateRoomCameraRequest,
     UpdateRoomInstanceRequest
 } from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
@@ -151,6 +153,7 @@ export {
     removeProjectResource,
     renameProjectResource,
     updateObjectEvent,
+    updateRoomCamera,
     updateRoomInstance
 } from "./project-resources/index.js";
 export {
