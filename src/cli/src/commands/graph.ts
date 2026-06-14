@@ -8,10 +8,8 @@ import { fileURLToPath } from "node:url";
 import { Core } from "@gmloop/core";
 import { Format } from "@gmloop/format";
 import { Lint, listLintRuleCatalogEntries } from "@gmloop/lint";
-import { Parser } from "@gmloop/parser";
 import { Refactor, type RefactorCodemodId } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
-import { Transpiler } from "@gmloop/transpiler";
 import { UI } from "@gmloop/ui";
 import { Command, Option } from "commander";
 import { ESLint } from "eslint";
@@ -35,6 +33,7 @@ import {
     openUrlInDefaultBrowser,
     startGraphVisualizationServer
 } from "../modules/server/graph-visualization-server.js";
+import { createGmlParserAdapter, createGmlTranspilerAdapter } from "../modules/transpilation/adapters.js";
 import {
     createDefaultGmloopProjectConfig,
     createGraphVisualizationProjectConfigurationCatalog
@@ -1769,8 +1768,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 let error: string | null = null;
 
                 try {
-                    const gmlParser = new Parser.GMLParser(gml);
-                    const program = gmlParser.parse();
+                    const parseAdapter = createGmlParserAdapter();
+                    const program = parseAdapter(gml);
                     ast = JSON.stringify(
                         program,
                         (key, value) => {
@@ -1809,14 +1808,14 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     }
 
                     if (transpileMode === "patch") {
-                        const transpiler = new Transpiler.GmlTranspiler();
+                        const transpiler = createGmlTranspilerAdapter();
                         const patch = transpiler.transpileScript({
                             sourceText: output,
                             symbolId: "playground-script"
                         });
                         output = patch.js_body;
                     } else if (transpileMode === "expression") {
-                        const transpiler = new Transpiler.GmlTranspiler();
+                        const transpiler = createGmlTranspilerAdapter();
                         output = transpiler.transpileExpression(output);
                     }
                 } catch (error_) {

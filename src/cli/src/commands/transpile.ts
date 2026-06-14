@@ -3,7 +3,6 @@ import path from "node:path";
 import process from "node:process";
 
 import { Core } from "@gmloop/core";
-import { Transpiler } from "@gmloop/transpiler";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
@@ -15,7 +14,11 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
-import { type TranspilationContext, transpileFile } from "../modules/transpilation/index.js";
+import {
+    createGmlTranspilerAdapter,
+    type TranspilationContext,
+    transpileFile
+} from "../modules/transpilation/index.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 
 const TRANSPILE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop transpile --path path/to/script.gml";
@@ -149,7 +152,7 @@ function countLines(sourceText: string): number {
 
 function createTranspilationContext(): TranspilationContext {
     return {
-        transpiler: new Transpiler.GmlTranspiler(),
+        transpiler: createGmlTranspilerAdapter(),
         patches: [],
         lastSuccessfulPatches: new Map(),
         sourcePathToPatchIds: new Map(),

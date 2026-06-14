@@ -25,7 +25,6 @@ import path from "node:path";
 import process from "node:process";
 
 import { Core, type DebouncedFunction } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
 import { Transpiler } from "@gmloop/transpiler";
 import { Command, Option } from "commander";
 
@@ -49,8 +48,11 @@ import {
 import { startStatusServer, type StatusServerHandle, type StatusServerLifecycle } from "../modules/status/server.js";
 import { DependencyTracker } from "../modules/transpilation/dependency-tracker.js";
 import {
+    createGmlParserAdapter,
+    createGmlTranspilerAdapter,
     displayTranspilationStatistics,
     type ErrorCollector,
+    type GmlParserAdapter,
     type MetricsCollector,
     orderPatchesForReplay,
     type PatchBroadcastService,
@@ -848,7 +850,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     const shouldServeRuntime = hydrateRuntime === undefined ? runtimeServer !== false : Boolean(hydrateRuntime);
 
     const semanticOracle = Transpiler.createSemanticOracle({ scriptNames });
-    const transpiler = new Transpiler.GmlTranspiler({
+    const transpiler = createGmlTranspilerAdapter({
         semantic: semanticOracle
     });
     const dependencyTracker = new DependencyTracker();
@@ -2099,19 +2101,17 @@ async function collectWatchedFilePaths(
 async function addScriptNamesFromFile(
     filePath: string,
     scriptNames: Set<string>,
-    fileDataCache: Map<string, InitialFileData>
+    fileDataCache: Map<string, InitialFileData>,
+    parseAdapter: GmlParserAdapter = createGmlParserAdapter()
 ): Promise<void> {
     const beforeSize = scriptNames.size;
 
     try {
         const content = await readFile(filePath, "utf8");
-        const parser = new Parser.GMLParser(content, {
-            getComments: false,
-            getLocations: true,
-            simplifyLocations: true,
-            attachFunctionDocComments: false
-        });
-        const ast = parser.parse();
+        // Use the dependency-inverted parser adapter seam rather than
+        // `new Parser.GMLParser(...)` so tests/embedders can swap in a stub
+        // parser without monkey-patching the @gmloop/parser namespace.
+        const ast = parseAdapter(content);
         // Extract both symbols and references from the AST in a single traversal.
         // This saves a second walk during transpileFile when the cache is reused.
         const symbols = extractSymbolsFromAst(ast, filePath);
