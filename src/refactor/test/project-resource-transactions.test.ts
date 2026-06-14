@@ -10,6 +10,7 @@ import {
     addObjectEvent,
     addProjectResource,
     addRoomInstance,
+    deleteObjectEvent,
     deleteRoomInstance,
     duplicateProjectResource,
     moveProjectResource,
@@ -272,6 +273,7 @@ void test("addObjectEvent appends event metadata and source with dry-run safety"
             projectRoot
         });
         assert.equal(dryRun.action, "add");
+        assert.deepEqual(dryRun.deletedPaths, []);
         assert.equal(dryRun.dryRun, true);
         assert.equal(dryRun.eventFilePath, "objects/obj_player/0_0.gml");
         assert.deepEqual(dryRun.writtenPaths, ["objects/obj_player/obj_player.yy", "objects/obj_player/0_0.gml"]);
@@ -285,6 +287,7 @@ void test("addObjectEvent appends event metadata and source with dry-run safety"
             projectRoot
         });
         assert.equal(writeResult.dryRun, false);
+        assert.deepEqual(writeResult.deletedPaths, []);
         assert.equal(writeResult.eventType, 0);
         assert.equal(writeResult.eventNumber, 0);
 
@@ -308,6 +311,34 @@ void test("addObjectEvent appends event metadata and source with dry-run safety"
             }),
             /already has event 0:0/u
         );
+
+        const deleteDryRun = await deleteObjectEvent({
+            descriptor: { category: "Create", descriptor: "0" },
+            dryRun: true,
+            objectName: "obj_player",
+            projectRoot
+        });
+        assert.equal(deleteDryRun.action, "delete");
+        assert.equal(deleteDryRun.dryRun, true);
+        assert.deepEqual(deleteDryRun.deletedPaths, ["objects/obj_player/0_0.gml"]);
+        assert.deepEqual(deleteDryRun.writtenPaths, ["objects/obj_player/obj_player.yy"]);
+        await assert.doesNotReject(access(path.join(projectRoot, "objects/obj_player/0_0.gml")));
+
+        const deleteWrite = await deleteObjectEvent({
+            descriptor: { category: "Create", descriptor: "0" },
+            dryRun: false,
+            objectName: "obj_player",
+            projectRoot
+        });
+        assert.equal(deleteWrite.dryRun, false);
+        assert.deepEqual(deleteWrite.deletedPaths, ["objects/obj_player/0_0.gml"]);
+        await assert.rejects(access(path.join(projectRoot, "objects/obj_player/0_0.gml")));
+
+        const deletedObjectMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(objectMetadataPath, "utf8"),
+            objectMetadataPath
+        ).document;
+        assert.deepEqual(deletedObjectMetadata.eventList, []);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }
@@ -339,6 +370,7 @@ void test("addRoomInstance appends an object instance to a room with dry-run saf
             y: 64
         });
         assert.equal(dryRun.action, "add");
+        assert.deepEqual(dryRun.deletedPaths, []);
         assert.equal(dryRun.dryRun, true);
         assert.equal(dryRun.objectPath, "objects/obj_player/obj_player.yy");
         assert.equal(dryRun.roomPath, "rooms/rm_main/rm_main.yy");

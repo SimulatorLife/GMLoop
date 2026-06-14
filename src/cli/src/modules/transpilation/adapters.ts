@@ -25,7 +25,7 @@
  */
 
 import { Parser, type ParserOptions } from "@gmloop/parser";
-import { Transpiler, type TranspilerDependencies } from "@gmloop/transpiler";
+import { Transpiler } from "@gmloop/transpiler";
 
 /**
  * Concrete transpiler instance shape produced by the canonical factory.
@@ -108,7 +108,9 @@ export const createGmlParserAdapter: GmlParserAdapterFactory = (options) => {
  * narrower surface can wrap the returned instance; the abstraction is
  * intentionally the boundary, not the implementation contract.
  */
-export type GmlTranspilerAdapterFactory = (dependencies?: Readonly<TranspilerDependencies>) => GmlTranspilerInstance;
+export type GmlTranspilerAdapterFactory = (
+    dependencies?: Readonly<ConstructorParameters<typeof Transpiler.GmlTranspiler>[0]>
+) => GmlTranspilerInstance;
 
 /**
  * Default factory: instantiates the canonical `Transpiler.GmlTranspiler`.

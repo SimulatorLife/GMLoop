@@ -127,6 +127,26 @@ void test("MCP tool catalog exposes object event update from the CLI command cat
     assert.equal(writeField.valueType, "boolean");
 });
 
+void test("MCP tool catalog exposes object event delete from the CLI command catalog", () => {
+    const catalog = listGmloopMcpToolCatalogEntries();
+    const deleteTool = catalog.find((entry) => entry.toolName === "gmloop_object_event_delete");
+    assert.ok(deleteTool, "gmloop_object_event_delete must appear in the MCP tool catalog");
+    assert.equal(deleteTool.commandDisplayName, "object event delete");
+
+    const fieldNames = new Set(deleteTool.fields.map((field) => field.name));
+    assert.ok(fieldNames.has("cwd"), "object event delete must include cwd field");
+    assert.ok(fieldNames.has("object"), "object event delete must include object argument");
+    assert.ok(fieldNames.has("event"), "object event delete must include event argument");
+    assert.ok(fieldNames.has("--write"), "object event delete must include --write option");
+    assert.ok(fieldNames.has("--path"), "object event delete must include --path option");
+    assert.ok(fieldNames.has("--json"), "object event delete must include --json option");
+
+    const writeField = deleteTool.fields.find((field) => field.name === "--write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+});
+
 void test("MCP tool catalog exposes test case create with correct arguments and options", () => {
     const catalog = listGmloopMcpToolCatalogEntries();
     const createTool = catalog.find((entry) => entry.toolName === "gmloop_test_case_create");
