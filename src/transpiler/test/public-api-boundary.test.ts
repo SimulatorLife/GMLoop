@@ -1,27 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Transpiler, TranspilerError, TranspilerErrorCode } from "@gmloop/transpiler";
+import * as TranspilerPackage from "@gmloop/transpiler";
+import { Transpiler } from "@gmloop/transpiler";
 
 /**
- * Verifies the transpiler package public API contract:
+ * Verifies the transpiler package public API contract.
  *
- * TranspilerError and TranspilerErrorCode are accessible both through the
- * flattened Transpiler namespace (Transpiler.TranspilerError) and as
- * named exports from the package root.
- *
- * This test guards against the API re-export boundary being violated — the
- * entry-point (src/index.ts) must expose these symbols, and callers must be
- * able to import them directly from @gmloop/transpiler rather than from
- * internal paths (e.g. ../src/api/errors.js).
+ * The package root exposes one canonical namespace, `Transpiler`. Error classes
+ * and error codes remain available through that namespace while avoiding the old
+ * flattened named-export compatibility path.
  */
-void test("TranspilerError and TranspilerErrorCode are named exports from package root", () => {
-    assert.equal(typeof TranspilerError, "function", "TranspilerError should be a constructor export");
-    assert.equal(typeof TranspilerErrorCode, "object", "TranspilerErrorCode should be an object export");
-
-    const error = new TranspilerError("test", TranspilerErrorCode.REQUEST_ERROR);
-    assert.equal(error.name, "TranspilerError");
-    assert.equal(error.code, "REQUEST_ERROR");
+void test("transpiler package root exposes only the canonical namespace", () => {
+    assert.deepEqual(Object.keys(TranspilerPackage).sort(), ["Transpiler"]);
 });
 
 void test("Transpiler namespace exposes TranspilerError and TranspilerErrorCode via flattening", () => {
@@ -38,8 +29,8 @@ void test("Transpiler namespace exposes TranspilerError and TranspilerErrorCode 
 });
 
 void test("TranspilerErrorCode enum has all expected members", () => {
-    assert.equal(TranspilerErrorCode.PARSE_ERROR, "PARSE_ERROR");
-    assert.equal(TranspilerErrorCode.VALIDATION_ERROR, "VALIDATION_ERROR");
-    assert.equal(TranspilerErrorCode.REQUEST_ERROR, "REQUEST_ERROR");
-    assert.equal(TranspilerErrorCode.INTERNAL_ERROR, "INTERNAL_ERROR");
+    assert.equal(Transpiler.TranspilerErrorCode.PARSE_ERROR, "PARSE_ERROR");
+    assert.equal(Transpiler.TranspilerErrorCode.VALIDATION_ERROR, "VALIDATION_ERROR");
+    assert.equal(Transpiler.TranspilerErrorCode.REQUEST_ERROR, "REQUEST_ERROR");
+    assert.equal(Transpiler.TranspilerErrorCode.INTERNAL_ERROR, "INTERNAL_ERROR");
 });
