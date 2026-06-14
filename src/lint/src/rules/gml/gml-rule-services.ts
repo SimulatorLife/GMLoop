@@ -9,6 +9,7 @@ import {
 } from "../../doc-comment/index.js";
 import { createLimitedRecoveryProjection } from "../../language/index.js";
 import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
+import { findMatchingBraceEndIndex, resolveLocFromIndex } from "./rule-base-helpers.js";
 
 /**
  * Stable doc-comment contract for GML rule implementations.
@@ -79,4 +80,26 @@ export const gmlRuleAutofixServices = Object.freeze({
     printExpression,
     printNodeForAutofix,
     readNodeText
+});
+
+/**
+ * Stable base-helper contract for cross-domain rule implementations.
+ *
+ * Rules implemented outside the `src/lint/src/rules/gml/` directory (for
+ * example the feather rule factories under `rules/feather/rules/`) need a
+ * narrow, stable surface for the most commonly-shared parsing helpers
+ * (resolving a source offset to a 1-based line/column location, locating the
+ * end of the brace block that opens at a given index, …). Reaching two
+ * directory levels into the gml/ rules folder for those helpers would couple
+ * consumers to the internal layout of the gml/ domain; this facade keeps
+ * that coupling isolated to this file so the gml/ rule subtree can be
+ * reorganised without churning every feather rule import.
+ *
+ * Only helpers whose consumers cross the gml/ domain boundary belong here;
+ * helpers used exclusively inside the gml/ rules folder should continue to
+ * be imported from `./rule-base-helpers.js` directly.
+ */
+export const gmlRuleBaseHelpersServices = Object.freeze({
+    findMatchingBraceEndIndex,
+    resolveLocFromIndex
 });

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
     gmlRuleAutofixServices,
+    gmlRuleBaseHelpersServices,
     gmlRuleDeprecatedIdentifierServices,
     gmlRuleDocCommentServices,
     gmlRuleLanguageServices,
@@ -62,6 +63,7 @@ void test("gml-rule-services contracts are frozen and cannot be mutated at runti
     assert.ok(Object.isFrozen(gmlRuleDeprecatedIdentifierServices));
     assert.ok(Object.isFrozen(gmlRuleLanguageServices));
     assert.ok(Object.isFrozen(gmlRuleMalformedServices));
+    assert.ok(Object.isFrozen(gmlRuleBaseHelpersServices));
 });
 
 void test("gmlRuleAutofixServices exposes the autofix-printing contract needed by rules", () => {
@@ -72,6 +74,15 @@ void test("gmlRuleAutofixServices exposes the autofix-printing contract needed b
 
 void test("gml-rule-services gmlRuleAutofixServices is frozen and cannot be mutated at runtime", () => {
     assert.ok(Object.isFrozen(gmlRuleAutofixServices));
+});
+
+void test("gmlRuleBaseHelpersServices exposes the cross-domain helper contract needed by rules", () => {
+    assert.equal(typeof gmlRuleBaseHelpersServices.findMatchingBraceEndIndex, "function");
+    assert.equal(typeof gmlRuleBaseHelpersServices.resolveLocFromIndex, "function");
+});
+
+void test("gml-rule-services gmlRuleBaseHelpersServices is frozen and cannot be mutated at runtime", () => {
+    assert.ok(Object.isFrozen(gmlRuleBaseHelpersServices));
 });
 
 void test("feather rules depend on the doc-comment rule-services contract, not deep relative imports", async () => {
@@ -85,5 +96,19 @@ void test("feather rules depend on the doc-comment rule-services contract, not d
     assert.ok(
         !/from\s+["']\.\.\/\.\.\/doc-comment\/normalize-param-name\.js["']/.test(aggregated),
         "Feather rule sources must not reach two directory levels into src/lint/src/doc-comment/ for normalizeDocParamName."
+    );
+});
+
+void test("feather rules depend on the base-helper rule-services contract, not deep relative imports", async () => {
+    const sources = await readFeatherSourceFiles();
+    const aggregated = [...sources.values()].join("\n");
+
+    assert.ok(
+        aggregated.includes("gmlRuleBaseHelpersServices"),
+        "Feather rule sources must consume gmlRuleBaseHelpersServices from the shared rule-services facade."
+    );
+    assert.ok(
+        !/from\s+["']\.\.\/\.\.\/gml\/rule-base-helpers\.js["']/.test(aggregated),
+        "Feather rule sources must not reach two directory levels into src/lint/src/rules/gml/ for rule-base-helpers."
     );
 });

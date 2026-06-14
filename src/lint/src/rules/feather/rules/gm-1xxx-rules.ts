@@ -1,7 +1,6 @@
 import type { Rule } from "eslint";
 
-import { gmlRuleDocCommentServices } from "../../gml/gml-rule-services.js";
-import { resolveLocFromIndex } from "../../gml/rule-base-helpers.js";
+import { gmlRuleBaseHelpersServices, gmlRuleDocCommentServices } from "../../gml/gml-rule-services.js";
 import {
     collapseAdjacentDuplicateParamDocs,
     createFeatherRuleMeta,
@@ -27,6 +26,11 @@ import type { FeatherManifestEntry } from "../manifest.js";
 // the doc-comment layer directly; the abstraction is the only surface that
 // rule implementations are allowed to depend on.
 const { normalizeDocParamName } = gmlRuleDocCommentServices;
+
+// Consume the base-helper service contract so this feather rule does not
+// reach two directory levels into the gml/ rules folder for
+// `resolveLocFromIndex`. The facade keeps the gml/ layout encapsulated.
+const { resolveLocFromIndex } = gmlRuleBaseHelpersServices;
 
 export function createGm1003Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return Object.freeze({
