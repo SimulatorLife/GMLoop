@@ -28,6 +28,11 @@ import {
     type GraphUiSetDocsViewDetail,
     type GraphUiSetSearchQueryDetail
 } from "./events.js";
+import {
+    evaluateToolbarKeyboardShortcut,
+    resolveKeyboardShortcutTarget,
+    type ToolbarKeyboardShortcutAction
+} from "./keyboard-shortcut-policy.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import type { GmStatusChipStatus } from "./primitives/gm-status-chip.js";
 
@@ -161,11 +166,6 @@ export function isToolbarKeyboardShortcutTextEntryTarget(target: EventTarget | n
     return false;
 }
 
-function resolveKeyboardShortcutTarget(event: KeyboardEvent): EventTarget | null {
-    const eventPath = event.composedPath();
-    return eventPath.length > 0 ? (eventPath[0] ?? event.target) : event.target;
-}
-
 function resolveConfigStatusSummary(model: GraphVisualizationUiModel): string {
     const configPath = model.projectConfigurationCatalog?.gmloop.configPath;
     return configPath ? `Config path: ${configPath}` : "Config path: Not found";
@@ -193,85 +193,46 @@ export class GmGraphToolbar extends LightDomLitElement {
             return;
         }
 
-        if (event.key === "Escape" && this.state.searchQuery) {
-            event.preventDefault();
-            this.#emitSearchQuery("");
-            return;
-        }
+        const action = evaluateToolbarKeyboardShortcut({
+            canUseGraphControls: this.#canUseGraphControls(),
+            hasModifier: event.altKey || event.metaKey || event.ctrlKey,
+            hasSearchQuery: this.state.searchQuery.length > 0,
+            isTextEntryTarget: isToolbarKeyboardShortcutTextEntryTarget(resolveKeyboardShortcutTarget(event)),
+            key: event.key
+        });
 
-        if (event.altKey || event.metaKey || event.ctrlKey) {
-            return;
-        }
-
-        if (isToolbarKeyboardShortcutTextEntryTarget(resolveKeyboardShortcutTarget(event))) {
-            return;
-        }
-
-        switch (event.key.toLowerCase()) {
-            case "g": {
-                if (!this.#canUseGraphControls()) {
-                    return;
-                }
-                event.preventDefault();
-                this.#emitToggleGraphView();
-                break;
-            }
-            case "l": {
-                if (!this.#canUseGraphControls()) {
-                    return;
-                }
-                event.preventDefault();
-                this.#emitCycleLabelMode();
-                break;
-            }
-            case "r": {
-                if (!this.#canUseGraphControls()) {
-                    return;
-                }
-                event.preventDefault();
-                this.#emitResetDefaults();
-                break;
-            }
-            case "1": {
-                if (!this.#canUseGraphControls()) {
-                    return;
-                }
-                event.preventDefault();
-                this.#emitNavigatePage("graph");
-                break;
-            }
-            case "2": {
-                event.preventDefault();
-                this.#emitNavigatePage("docs");
-                break;
-            }
-            case "3": {
-                event.preventDefault();
-                this.#emitNavigatePage("config");
-                break;
-            }
-            case "4": {
-                event.preventDefault();
-                this.#emitNavigatePage("fix");
-                break;
-            }
-            case "5": {
-                event.preventDefault();
-                this.#emitNavigatePage("playground");
-                break;
-            }
-            case "6": {
-                event.preventDefault();
-                this.#emitNavigatePage("mcp");
-                break;
-            }
-            case "7": {
-                event.preventDefault();
-                this.#emitNavigatePage(LIVE_RELOAD_PAGE);
-                break;
-            }
-        }
+        this.#applyToolbarKeyboardShortcut(event, action);
     };
+
+    #applyToolbarKeyboardShortcut(event: KeyboardEvent, action: ToolbarKeyboardShortcutAction): void {
+        if (action.kind === "none") {
+            return;
+        }
+
+        event.preventDefault();
+
+        switch (action.kind) {
+            case "clear-search": {
+                this.#emitSearchQuery("");
+                return;
+            }
+            case "toggle-graph-view": {
+                this.#emitToggleGraphView();
+                return;
+            }
+            case "cycle-label-mode": {
+                this.#emitCycleLabelMode();
+                return;
+            }
+            case "reset-defaults": {
+                this.#emitResetDefaults();
+                return;
+            }
+            case "navigate-page": {
+                this.#emitNavigatePage(action.page);
+            }
+        }
+    }
 
     #onSearchInput = (eventValue: Event): void => {
         const target = eventValue.target;
