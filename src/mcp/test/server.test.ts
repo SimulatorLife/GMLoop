@@ -9,7 +9,8 @@ import {
     extractGraphById,
     listGmloopMcpToolCatalogEntries,
     listGmloopMcpToolNames,
-    parseCliJsonStdout
+    parseCliJsonStdout,
+    parseOptionalCliJsonStdout
 } from "../src/server/index.js";
 
 const WORKSPACE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -233,6 +234,22 @@ void test("MCP tool catalog exports live tool fields derived from the CLI catalo
     assert.match(formatTool.description, /Format GameMaker Language files/u);
     assert.ok(formatTool.fields.some((field) => field.name === "cwd"));
     assert.ok(formatTool.fields.some((field) => field.name === "--path"));
+});
+
+void test("parseOptionalCliJsonStdout gives MCP tools a stable parsed JSON payload", () => {
+    const payload = parseOptionalCliJsonStdout(
+        '{"command":"object event update","ok":true,"payload":{"dryRun":true}}\n',
+        ["object", "event", "update", "obj_player", "Create:0", "x = 1;", "--json"]
+    ) as { command: string; ok: boolean; payload: { dryRun: boolean } };
+
+    assert.equal(payload.command, "object event update");
+    assert.equal(payload.ok, true);
+    assert.equal(payload.payload.dryRun, true);
+    assert.equal(
+        parseOptionalCliJsonStdout("object event update exited with code 0\n", ["object", "event", "update"]),
+        null
+    );
+    assert.equal(parseOptionalCliJsonStdout("\n", ["object", "event", "update"]), null);
 });
 
 void test("extractGraphById collapses the 3-segment chain into a single call", () => {

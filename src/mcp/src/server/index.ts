@@ -6,5 +6,6 @@ export {
     listGmloopMcpToolCatalogEntries,
     listGmloopMcpToolNames,
     parseCliJsonStdout,
+    parseOptionalCliJsonStdout,
     runGmloopMcpStdioServer
 } from "./gmloop-mcp-server.js";
