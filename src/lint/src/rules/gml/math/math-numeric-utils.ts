@@ -5,7 +5,8 @@
  */
 import { Core } from "@gmloop/core";
 
-const { BINARY_EXPRESSION, CALL_EXPRESSION, IDENTIFIER, LITERAL, UNARY_EXPRESSION, isObjectLike } = Core;
+const { BINARY_EXPRESSION, CALL_EXPRESSION, IDENTIFIER, LITERAL, UNARY_EXPRESSION, isApproximatelyZero, isObjectLike } =
+    Core;
 
 /**
  * Return an epsilon-scaled tolerance for the given expected magnitude.
@@ -80,12 +81,6 @@ export function computeIntegerGcd(a: number, b: number): number {
     }
 
     return left;
-}
-
-/** True when `left` and `right` are within mutual floating-point tolerance. */
-export function areLiteralNumbersApproximatelyEqual(left: number, right: number): boolean {
-    const tolerance = Math.max(computeNumericTolerance(left), computeNumericTolerance(right));
-    return Math.abs(left - right) <= tolerance;
 }
 
 /**
@@ -190,7 +185,7 @@ export function evaluateNumericExpression(node: unknown): number | null {
                 return left * right;
             }
 
-            if (Math.abs(right) <= computeNumericTolerance(0)) {
+            if (isApproximatelyZero(right)) {
                 return null;
             }
 
@@ -208,7 +203,7 @@ export function isNegativeOneFactor(node: unknown): boolean {
         return false;
     }
 
-    return Math.abs(value + 1) <= computeNumericTolerance(1);
+    return isApproximatelyZero(value + 1);
 }
 
 /**
@@ -232,8 +227,7 @@ export function evaluateOneMinusNumeric(node: unknown): number | null {
         return null;
     }
 
-    const tolerance = computeNumericTolerance(1);
-    if (Math.abs(leftValue - 1) > tolerance) {
+    if (!isApproximatelyZero(leftValue - 1)) {
         return null;
     }
 
@@ -270,7 +264,7 @@ export function parseNumericFactor(node: unknown): number | null {
                 return leftValue * rightValue;
             }
 
-            if (Math.abs(rightValue) <= computeNumericTolerance(0)) {
+            if (isApproximatelyZero(rightValue)) {
                 return null;
             }
 
@@ -317,7 +311,7 @@ export function isNumericZeroLiteral(node: unknown): boolean {
         return false;
     }
 
-    return Math.abs(literalValue) <= computeNumericTolerance(0);
+    return isApproximatelyZero(literalValue);
 }
 
 /** True when `node` is a call to `ln(…)` with exactly one argument. */
