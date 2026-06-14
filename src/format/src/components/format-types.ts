@@ -1,6 +1,10 @@
 import type { MutableGameMakerAstNode } from "@gmloop/core";
 import type { Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
 
+import type { ProjectFormatOptionCatalogEntry } from "../options/project-config-catalog.js";
+
+export type { ProjectFormatOptionCatalogEntry } from "../options/project-config-catalog.js";
+
 export type GmlAst = MutableGameMakerAstNode;
 
 export type GmlParserAdapter = Parser<GmlAst>;
@@ -65,12 +69,6 @@ export type GmlFormatComponentBundle = Readonly<{
 }>;
 
 export type GmlFormatDefaultOptions = Record<string, unknown>;
-
-export type ProjectFormatOptionCatalogEntry = Readonly<{
-    defaultValue: boolean | number | string;
-    description: string;
-    name: string;
-}>;
 
 export type GmlFormat = Omit<PrettierPlugin<GmlAst>, "defaultOptions"> & {
     defaultOptions?: GmlFormatDefaultOptions;
