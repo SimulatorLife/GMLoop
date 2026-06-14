@@ -4,9 +4,11 @@ import { describe, it } from "node:test";
 import type { AstPath } from "prettier";
 
 import {
+    expressionIsStringLike,
     hasLineBreak,
     isInlineEmptyBlockComment,
     isInsideConstructorFunction,
+    isNumericComputationNode,
     isSimpleCallArgument
 } from "../src/printer/type-guards.js";
 
@@ -194,6 +196,230 @@ void describe("isSimpleCallArgument", () => {
             }),
             false
         );
+    });
+});
+
+// ---------------------------------------------------------------------------
+// isNumericComputationNode
+// ---------------------------------------------------------------------------
+
+void describe("isNumericComputationNode", () => {
+    void it("returns false for non-object inputs", () => {
+        assert.equal(isNumericComputationNode(null), false);
+        assert.equal(isNumericComputationNode(undefined), false);
+        assert.equal(isNumericComputationNode(42), false);
+        assert.equal(isNumericComputationNode("1"), false);
+    });
+
+    void it("returns false for unknown node types", () => {
+        assert.equal(isNumericComputationNode({ type: "Identifier", name: "x" }), false);
+        assert.equal(isNumericComputationNode({ type: "BlockStatement" }), false);
+    });
+
+    void it("returns true for numeric literals (number value)", () => {
+        assert.equal(isNumericComputationNode({ type: "Literal", value: 0 }), true);
+        assert.equal(isNumericComputationNode({ type: "Literal", value: 42 }), true);
+        assert.equal(isNumericComputationNode({ type: "Literal", value: -1 }), true);
+        assert.equal(isNumericComputationNode({ type: "Literal", value: 3.14 }), true);
+    });
+
+    void it("returns true for string literals that match the numeric pattern", () => {
+        assert.equal(isNumericComputationNode({ type: "Literal", value: "0" }), true);
+        assert.equal(isNumericComputationNode({ type: "Literal", value: "123" }), true);
+        assert.equal(isNumericComputationNode({ type: "Literal", value: "-1.5" }), true);
+        assert.equal(isNumericComputationNode({ type: "Literal", value: "0.5" }), true);
+    });
+
+    void it("returns false for string literals that are not numeric", () => {
+        assert.equal(isNumericComputationNode({ type: "Literal", value: "abc" }), false);
+        assert.equal(isNumericComputationNode({ type: "Literal", value: '"hello"' }), false);
+        assert.equal(isNumericComputationNode({ type: "Literal", value: "1abc" }), false);
+    });
+
+    void it("returns true for arithmetic binary expressions over numeric operands", () => {
+        const plus = {
+            type: "BinaryExpression",
+            operator: "+",
+            left: { type: "Literal", value: 1 },
+            right: { type: "Literal", value: 2 }
+        };
+        const mul = {
+            type: "BinaryExpression",
+            operator: "*",
+            left: { type: "Literal", value: 1 },
+            right: { type: "Literal", value: 2 }
+        };
+        const div = {
+            type: "BinaryExpression",
+            operator: "div",
+            left: { type: "Literal", value: 1 },
+            right: { type: "Literal", value: 2 }
+        };
+        assert.equal(isNumericComputationNode(plus), true);
+        assert.equal(isNumericComputationNode(mul), true);
+        assert.equal(isNumericComputationNode(div), true);
+    });
+
+    void it("returns false for non-arithmetic binary expressions", () => {
+        const and = {
+            type: "BinaryExpression",
+            operator: "&&",
+            left: { type: "Literal", value: 1 },
+            right: { type: "Literal", value: 2 }
+        };
+        const eq = {
+            type: "BinaryExpression",
+            operator: "==",
+            left: { type: "Literal", value: 1 },
+            right: { type: "Literal", value: 2 }
+        };
+        assert.equal(isNumericComputationNode(and), false);
+        assert.equal(isNumericComputationNode(eq), false);
+    });
+
+    void it("returns false when either operand of an arithmetic expression is non-numeric", () => {
+        const nonNumeric = {
+            type: "BinaryExpression",
+            operator: "+",
+            left: { type: "Literal", value: 1 },
+            right: { type: "Identifier", name: "x" }
+        };
+        assert.equal(isNumericComputationNode(nonNumeric), false);
+    });
+
+    void it("handles UnaryExpression +/- recursively", () => {
+        const neg = { type: "UnaryExpression", operator: "-", argument: { type: "Literal", value: 5 } };
+        const pos = { type: "UnaryExpression", operator: "+", argument: { type: "Literal", value: 5 } };
+        const not = { type: "UnaryExpression", operator: "!", argument: { type: "Literal", value: 5 } };
+        assert.equal(isNumericComputationNode(neg), true);
+        assert.equal(isNumericComputationNode(pos), true);
+        assert.equal(isNumericComputationNode(not), false);
+    });
+
+    void it("unwraps ParenthesizedExpression recursively", () => {
+        const wrapped = { type: "ParenthesizedExpression", expression: { type: "Literal", value: 7 } };
+        assert.equal(isNumericComputationNode(wrapped), true);
+    });
+
+    void it("treats numeric-returning CallExpressions as numeric", () => {
+        const call = {
+            type: "CallExpression",
+            object: { type: "Identifier", name: "sqrt" },
+            arguments: [{ type: "Literal", value: 2 }]
+        };
+        assert.equal(isNumericComputationNode(call), true);
+    });
+
+    void it("excludes string-producing CallExpressions from numeric computations", () => {
+        const call = {
+            type: "CallExpression",
+            object: { type: "Identifier", name: "string" },
+            arguments: [{ type: "Literal", value: 2 }]
+        };
+        assert.equal(isNumericComputationNode(call), false);
+        const fmtCall = {
+            type: "CallExpression",
+            object: { type: "Identifier", name: "string_format" },
+            arguments: []
+        };
+        assert.equal(isNumericComputationNode(fmtCall), false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// expressionIsStringLike
+// ---------------------------------------------------------------------------
+
+void describe("expressionIsStringLike", () => {
+    void it("returns false for non-object inputs", () => {
+        assert.equal(expressionIsStringLike(null), false);
+        assert.equal(expressionIsStringLike(undefined), false);
+        assert.equal(expressionIsStringLike(42), false);
+        assert.equal(expressionIsStringLike('"x"'), false);
+    });
+
+    void it("returns true for string literals (quoted form)", () => {
+        assert.equal(expressionIsStringLike({ type: "Literal", value: '"hello"' }), true);
+        assert.equal(expressionIsStringLike({ type: "Literal", value: '""' }), true);
+        assert.equal(expressionIsStringLike({ type: "Literal", value: '"a"' }), true);
+    });
+
+    void it("returns false for non-string literals", () => {
+        assert.equal(expressionIsStringLike({ type: "Literal", value: 42 }), false);
+        assert.equal(expressionIsStringLike({ type: "Literal", value: true }), false);
+        assert.equal(expressionIsStringLike({ type: "Literal", value: "unquoted" }), false);
+        assert.equal(expressionIsStringLike({ type: "Literal", value: null }), false);
+    });
+
+    void it("unwraps ParenthesizedExpression recursively", () => {
+        const wrapped = { type: "ParenthesizedExpression", expression: { type: "Literal", value: '"a"' } };
+        assert.equal(expressionIsStringLike(wrapped), true);
+        const notString = { type: "ParenthesizedExpression", expression: { type: "Literal", value: 42 } };
+        assert.equal(expressionIsStringLike(notString), false);
+    });
+
+    void it("returns true for + concatenation when either operand is string-like", () => {
+        const left = {
+            type: "BinaryExpression",
+            operator: "+",
+            left: { type: "Literal", value: '"a"' },
+            right: { type: "Literal", value: 1 }
+        };
+        const right = {
+            type: "BinaryExpression",
+            operator: "+",
+            left: { type: "Literal", value: 1 },
+            right: { type: "Literal", value: '"a"' }
+        };
+        assert.equal(expressionIsStringLike(left), true);
+        assert.equal(expressionIsStringLike(right), true);
+    });
+
+    void it("returns false for + concatenation when neither operand is string-like", () => {
+        const both = {
+            type: "BinaryExpression",
+            operator: "+",
+            left: { type: "Literal", value: 1 },
+            right: { type: "Literal", value: 2 }
+        };
+        assert.equal(expressionIsStringLike(both), false);
+    });
+
+    void it("returns false for non-+ binary expressions even with string operands", () => {
+        const sub = {
+            type: "BinaryExpression",
+            operator: "-",
+            left: { type: "Literal", value: '"a"' },
+            right: { type: "Literal", value: 1 }
+        };
+        assert.equal(expressionIsStringLike(sub), false);
+    });
+
+    void it("returns true for string-conversion call expressions", () => {
+        const stringCall = { type: "CallExpression", object: { type: "Identifier", name: "string" }, arguments: [] };
+        const stringFormat = {
+            type: "CallExpression",
+            object: { type: "Identifier", name: "string_format" },
+            arguments: []
+        };
+        const stringUpper = {
+            type: "CallExpression",
+            object: { type: "Identifier", name: "string_upper" },
+            arguments: []
+        };
+        assert.equal(expressionIsStringLike(stringCall), true);
+        assert.equal(expressionIsStringLike(stringFormat), true);
+        assert.equal(expressionIsStringLike(stringUpper), true);
+    });
+
+    void it("returns false for non-string call expressions", () => {
+        const sqrt = { type: "CallExpression", object: { type: "Identifier", name: "sqrt" }, arguments: [] };
+        assert.equal(expressionIsStringLike(sqrt), false);
+    });
+
+    void it("returns false for unknown node types", () => {
+        assert.equal(expressionIsStringLike({ type: "Identifier", name: "x" }), false);
+        assert.equal(expressionIsStringLike({ type: "BlockStatement" }), false);
     });
 });
 
