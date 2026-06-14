@@ -1,13 +1,11 @@
 import { Core, type GameMakerAstNode, type MutableGameMakerAstNode } from "@gmloop/core";
 
 import { replaceNodeWith } from "./math-ast-builders.js";
+import { DEFAULT_MATH_NUMERIC_POLICY, type MathNumericPolicy } from "./math-numeric-policy.js";
 import { computeNumericTolerance } from "./math-numeric-utils.js";
 import { matchDegreesToRadians } from "./math-trig-conversions.js";
 
 const { BINARY_EXPRESSION, LITERAL, PARENTHESIZED_EXPRESSION } = Core;
-
-const MIN_SAFE_DIVISOR = 1e-10;
-const MAX_SAFE_RECIPROCAL = 1e10;
 
 type ParenthesizedExpressionNode = GameMakerAstNode & {
     expression?: GameMakerAstNode | null;
@@ -52,7 +50,7 @@ function extractReciprocalScalar(node: GameMakerAstNode | null | undefined): num
     return denominatorValue;
 }
 
-function getMultiplicationFactor(node: GameMakerAstNode | null | undefined): number | null {
+function getMultiplicationFactor(node: GameMakerAstNode | null | undefined, policy: MathNumericPolicy): number | null {
     if (Core.shouldSkipTraversal(node)) {
         return null;
     }
@@ -62,12 +60,12 @@ function getMultiplicationFactor(node: GameMakerAstNode | null | undefined): num
         // Use tolerance-aware comparison to detect values extremely close to zero
         // that might arise from floating-point rounding errors
         const tolerance = computeNumericTolerance(literalValue);
-        if (Math.abs(literalValue) <= Math.max(tolerance, MIN_SAFE_DIVISOR)) {
+        if (Math.abs(literalValue) <= Math.max(tolerance, policy.minSafeDivisor)) {
             return null;
         }
 
         const reciprocal = 1 / literalValue;
-        if (!Number.isFinite(reciprocal) || Math.abs(reciprocal) > MAX_SAFE_RECIPROCAL) {
+        if (!Number.isFinite(reciprocal) || Math.abs(reciprocal) > policy.maxSafeReciprocal) {
             return null;
         }
 
@@ -82,7 +80,7 @@ function getMultiplicationFactor(node: GameMakerAstNode | null | undefined): num
             return null;
         }
 
-        if (Math.abs(reciprocalScalar) > MAX_SAFE_RECIPROCAL) {
+        if (Math.abs(reciprocalScalar) > policy.maxSafeReciprocal) {
             return null;
         }
 
@@ -157,7 +155,7 @@ function flattenMultiplicativeOperand(node: MutableGameMakerAstNode) {
  * Converts division by a constant literal into multiplication by its reciprocal.
  * Example: `x / 2` -> `x * 0.5`
  */
-function attemptConvertDivisionToMultiplication(node: MutableGameMakerAstNode): boolean {
+function attemptConvertDivisionToMultiplication(node: MutableGameMakerAstNode, policy: MathNumericPolicy): boolean {
     if (node.type !== BINARY_EXPRESSION || node.operator !== "/") {
         return false;
     }
@@ -167,7 +165,7 @@ function attemptConvertDivisionToMultiplication(node: MutableGameMakerAstNode): 
     }
 
     const right = node.right;
-    const multiplier = getMultiplicationFactor(right);
+    const multiplier = getMultiplicationFactor(right, policy);
     if (multiplier === null) {
         return false;
     }
@@ -193,14 +191,23 @@ function attemptConvertDivisionToMultiplication(node: MutableGameMakerAstNode): 
 
 /**
  * Walk the AST and turn division-by-constant patterns into multiplications by the reciprocal.
+ *
+ * @param node - AST root (or subtree) to rewrite in place.
+ * @param policy - Optional numeric-safety policy override. When omitted, the
+ *   default thresholds from {@link DEFAULT_MATH_NUMERIC_POLICY} are used.
+ *   Supplying a tighter policy is useful in tests that exercise boundary
+ *   conditions; the lint rule and most consumers should rely on the default.
  */
-export function applyDivisionToMultiplication(node: MutableGameMakerAstNode) {
+export function applyDivisionToMultiplication(
+    node: MutableGameMakerAstNode,
+    policy: MathNumericPolicy = DEFAULT_MATH_NUMERIC_POLICY
+) {
     if (Core.shouldSkipTraversal(node)) {
         return;
     }
 
     // Apply transform
-    attemptConvertDivisionToMultiplication(node);
+    attemptConvertDivisionToMultiplication(node, policy);
 
     // Recursively descend through the AST to find and transform all division
     // operations. The depth-first traversal ensures child nodes are optimized
@@ -213,10 +220,10 @@ export function applyDivisionToMultiplication(node: MutableGameMakerAstNode) {
         const child = (node as any)[key];
         if (Array.isArray(child)) {
             for (const item of child) {
-                applyDivisionToMultiplication(item);
+                applyDivisionToMultiplication(item, policy);
             }
         } else if (child && typeof child === "object") {
-            applyDivisionToMultiplication(child);
+            applyDivisionToMultiplication(child, policy);
         }
     }
 }
