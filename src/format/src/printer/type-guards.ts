@@ -39,6 +39,18 @@ const SIMPLE_CALL_ARGUMENT_TYPES = new Set([
     "UndefinedLiteral"
 ]);
 
+// Pre-compiled regexes for the literal classifiers in this file.
+// The previous implementation re-evaluated these regex literals on every
+// invocation of `isNumericComputationNode` and `expressionIsStringLike`,
+// which both run on the ParenthesizedExpression hot path. Hoisting the
+// patterns to module scope lets V8 reuse the compiled RegExp objects and
+// avoids the per-call allocation of a fresh matcher state on every
+// `Literal` branch. The `u` flag keeps the patterns consistent with
+// `NUMERIC_STRING_LITERAL_PATTERN` in `./constants.js` and silences
+// `security/detect-unsafe-regex`.
+const NUMERIC_LITERAL_REGEX = /^-?\d+(\.\d+)?$/u;
+const STRING_LITERAL_REGEX = /^".*"$/u;
+
 // ============================================================================
 // Comment Type Guards
 // ============================================================================
@@ -231,7 +243,7 @@ export function isNumericComputationNode(node: any): boolean {
 
     switch (node.type) {
         case "Literal": {
-            return typeof node.value === NUMBER_TYPE || /^-?\d+(\.\d+)?$/.test(node.value);
+            return typeof node.value === NUMBER_TYPE || NUMERIC_LITERAL_REGEX.test(node.value);
         }
         case "UnaryExpression": {
             if (node.operator === "-" || node.operator === "+") {
@@ -420,7 +432,7 @@ export function expressionIsStringLike(node: any): boolean {
     }
 
     if (node.type === "Literal") {
-        if (typeof node.value === STRING_TYPE && /^".*"$/.test(node.value)) {
+        if (typeof node.value === STRING_TYPE && STRING_LITERAL_REGEX.test(node.value)) {
             return true;
         }
 
