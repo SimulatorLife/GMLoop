@@ -4,16 +4,25 @@ import { describe, it } from "node:test";
 
 import { EndpointRegistry, startStatusServer, type StatusSnapshot } from "../src/modules/status/server.js";
 
+// Stand-in `StatusEndpointHandler` used as the "first" registration in tests
+// that only need a single placeholder value to compare against (lookup,
+// iteration, listing). The signature is satisfied but the body is empty —
+// the registry tests never invoke it, they only assert that the same function
+// reference round-trips through register/get.
 const mockHandler = (_req: IncomingMessage, _res: ServerResponse, _getSnapshot: () => StatusSnapshot) => {
-    // Mock handler
+    // Body intentionally empty: registry tests assert reference identity,
+    // not behavior.
 };
 
 const handler1 = (_req: IncomingMessage, _res: ServerResponse, _getSnapshot: () => StatusSnapshot) => {
-    // Handler 1
+    // Distinct placeholder so the override test can confirm a later
+    // registration replaces the earlier one for the same path.
 };
 
 const handler2 = (_req: IncomingMessage, _res: ServerResponse, _getSnapshot: () => StatusSnapshot) => {
-    // Handler 2
+    // Distinct placeholder that the override test expects to "win" the
+    // lookup for the shared `/test` path; iteration tests also use it as the
+    // second registered entry to verify ordering.
 };
 
 void describe("EndpointRegistry", () => {

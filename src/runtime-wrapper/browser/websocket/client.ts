@@ -28,6 +28,18 @@ import { DEFAULT_READINESS_POLL_INTERVAL_MS } from "./websocket-constants.js";
 
 const DEFAULT_MAX_QUEUE_SIZE = 100;
 const DEFAULT_FLUSH_INTERVAL_MS = 50;
+/**
+ * Sentinel no-op used as the initial value for `detachWebSocketListeners` so
+ * that disconnect/cleanup paths can always invoke it unconditionally. A real
+ * teardown is assigned in `connect()` after `attachWebSocketEventListeners`
+ * returns, and the slot is reset to this sentinel whenever the active socket
+ * goes away (after `close()` returns, or when reconnecting on top of an
+ * existing socket). Reusing this no-op means the cleanup branch never has to
+ * ask "did we register listeners on the current socket?" — calling it on a
+ * socket that never had listeners is the safe path. Do not replace this with
+ * a function that dereferences state, or it will be invoked before
+ * `connect()` ever assigned a real value.
+ */
 const noopListenerTeardown = (): void => {};
 const MIN_PATCH_QUEUE_SIZE = 1;
 const MIN_PATCH_QUEUE_FLUSH_INTERVAL_MS = 1;

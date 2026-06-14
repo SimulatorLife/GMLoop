@@ -104,6 +104,20 @@ type WatchFactory = (
     listener?: WatchListener<string>
 ) => FSWatcher;
 
+/**
+ * Sentinel no-op used as the initial value for `removeAbortListener` in the
+ * watch command's teardown path. The watch loop always invokes
+ * `removeAbortListener()` during shutdown to detach the optional
+ * caller-supplied `AbortSignal` listener, but that listener only exists when
+ * `abortSignal` was provided. Using this sentinel means the teardown code
+ * never needs to branch on "was a listener registered?" — the slot is always
+ * safely callable. Replacing the variable with the real teardown (in the
+ * `abortSignal` branch) hands the cleanup path a function that actually
+ * detaches the listener; resetting it back to this sentinel after detachment
+ * keeps subsequent calls safe if teardown ever runs twice. Do not delete this
+ * declaration without also reworking the teardown branch in the abort-handler
+ * block, or every shutdown that lacks an abort signal will throw.
+ */
 const noopAbortListener = () => {};
 
 /**
