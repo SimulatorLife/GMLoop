@@ -60,6 +60,7 @@ const GRAPH_NODE_KIND_LEGEND_CATALOG: ReadonlyArray<GraphVisualizationNodeKind> 
     "path",
     "room",
     "room_layer",
+    "room_instance",
     "script",
     "sequence",
     "shader",
@@ -94,6 +95,7 @@ const LEGEND_PARENT_KIND_BY_CHILD_KIND = new Map<GraphVisualizationNodeKind, Gra
     ["instance_variable", "object"],
     ["object_event", "object"],
     ["room_layer", "room"],
+    ["room_instance", "room_layer"],
     ["struct_variable", "struct"]
 ]);
 

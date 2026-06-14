@@ -2030,23 +2030,54 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
             );
             const knightObjectNodeId = "project::resource::objects/oKnight/oKnight.yy";
             const dragonObjectNodeId = "project::resource::objects/oDragon/oDragon.yy";
+            const roomInstanceNodes = database
+                .prepare(
+                    "SELECT id, kind, name, display_name AS displayName, resource_path AS resourcePath FROM nodes WHERE kind = 'room_instance' ORDER BY name"
+                )
+                .all() as Array<{
+                displayName: string;
+                id: string;
+                kind: string;
+                name: string;
+                resourcePath: string | null;
+            }>;
+            assert.equal(roomInstanceNodes.length, 2, "expected two room_instance nodes for placed instances");
+            assert.deepEqual(
+                roomInstanceNodes.map((node) => node.name),
+                ["inst_1", "inst_2"]
+            );
+            assert.deepEqual(
+                roomInstanceNodes.map((node) => node.displayName),
+                ["inst_1 (Instances)", "inst_2 (Instances)"]
+            );
+            const knightInstanceNodeId = roomInstanceNodes.find((node) => node.name === "inst_1")?.id;
+            const dragonInstanceNodeId = roomInstanceNodes.find((node) => node.name === "inst_2")?.id;
             assert.ok(
                 edgeRows.some(
                     (edge) =>
                         edge.fromId === instancesLayerNodeId &&
-                        edge.toId === knightObjectNodeId &&
-                        edge.type === "placed_in_room"
+                        edge.toId === knightInstanceNodeId &&
+                        edge.type === "contains"
                 ),
-                "expected placed_in_room edges to originate from the owning instance layer node"
+                "expected instance layer node to contain each concrete room instance"
             );
             assert.ok(
                 edgeRows.some(
                     (edge) =>
-                        edge.fromId === instancesLayerNodeId &&
+                        edge.fromId === knightInstanceNodeId &&
+                        edge.toId === knightObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected placed_in_room edges to originate from each concrete room instance node"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) =>
+                        edge.fromId === dragonInstanceNodeId &&
                         edge.toId === dragonObjectNodeId &&
                         edge.type === "placed_in_room"
                 ),
-                "expected instance layer node to place every referenced room instance object"
+                "expected every room instance node to place its referenced object"
             );
             assert.ok(
                 !edgeRows.some(
@@ -2055,10 +2086,25 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                 ),
                 "expected room-level placed_in_room edges to be replaced by layer-level placement edges"
             );
+            assert.ok(
+                !edgeRows.some(
+                    (edge) =>
+                        edge.fromId === instancesLayerNodeId &&
+                        edge.toId === knightObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected layer-level placed_in_room edges to be replaced by instance-level placement edges"
+            );
 
             const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
             const vizRoomLayerNodes = visualizationData.nodes.filter((node) => node.kind === "room_layer");
+            const vizRoomInstanceNodes = visualizationData.nodes.filter((node) => node.kind === "room_instance");
             assert.equal(vizRoomLayerNodes.length, 4, "expected visualization export to include all room_layer nodes");
+            assert.equal(
+                vizRoomInstanceNodes.length,
+                2,
+                "expected visualization export to include concrete room_instance nodes"
+            );
             assert.ok(
                 vizRoomLayerNodes.every(
                     (node) =>
@@ -2074,10 +2120,12 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
             const vizInstancesNode = vizRoomLayerNodes.find((node) => node.name === "Instances");
             const vizDecorNode = vizRoomLayerNodes.find((node) => node.name === "Decor");
             const vizTilesNode = vizRoomLayerNodes.find((node) => node.name === "Tiles");
+            const vizKnightInstanceNode = vizRoomInstanceNodes.find((node) => node.name === "inst_1");
             assert.ok(vizBackgroundNode, "expected Background room_layer in visualization");
             assert.ok(vizInstancesNode, "expected Instances room_layer in visualization");
             assert.ok(vizDecorNode, "expected Decor room_layer in visualization");
             assert.ok(vizTilesNode, "expected Tiles room_layer in visualization");
+            assert.ok(vizKnightInstanceNode, "expected inst_1 room_instance in visualization");
 
             assert.ok(
                 visualizationData.edges.some(
@@ -2109,10 +2157,19 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                 visualizationData.edges.some(
                     (edge) =>
                         edge.source === vizInstancesNode?.id &&
+                        edge.target === vizKnightInstanceNode?.id &&
+                        edge.type === "contains"
+                ),
+                "expected visualization to expose instance-layer→room-instance containment"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === vizKnightInstanceNode?.id &&
                         edge.target === knightObjectNodeId &&
                         edge.type === "placed_in_room"
                 ),
-                "expected visualization to expose placed_in_room edges from instance layers"
+                "expected visualization to expose room-instance→object placement"
             );
             assert.ok(
                 !visualizationData.edges.some(
