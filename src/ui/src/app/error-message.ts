@@ -25,5 +25,5 @@ import { Core } from "@gmloop/core";
 export function getUiErrorMessage(error: unknown, fallback: string): string {
     const message = Core.getErrorMessageOrFallback(error, { fallback });
     const trimmed = message.trim();
-    return trimmed.length > 0 ? message : fallback;
+    return trimmed.length > 0 ? trimmed : fallback;
 }

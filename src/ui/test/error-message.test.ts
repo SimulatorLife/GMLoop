@@ -17,7 +17,7 @@ void test("getUiErrorMessage returns the message of a custom Error subclass", ()
 });
 
 void test("getUiErrorMessage returns trimmed string errors verbatim", () => {
-    assert.equal(getUiErrorMessage("something went wrong", FALLBACK), "something went wrong");
+    assert.equal(getUiErrorMessage("  something went wrong  ", FALLBACK), "something went wrong");
 });
 
 void test("getUiErrorMessage falls back when string error is whitespace only", () => {
