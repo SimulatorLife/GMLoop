@@ -15,6 +15,8 @@
  * editor integrations directly.
  */
 
+import { realpathSync } from "node:fs";
+import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
@@ -54,7 +56,39 @@ function isCliEntrypointModule(
     entrypointPath: string | undefined = process.argv[1],
     moduleUrl = import.meta.url
 ): boolean {
-    return normalizeEntrypointPath(entrypointPath) === fileURLToPath(moduleUrl);
+    if (!entrypointPath) {
+        return false;
+    }
+    const safeRealpath = (p: string): string | null => {
+        try {
+            return realpathSync(p);
+        } catch {
+            return null;
+        }
+    };
+
+    const resolvedEntrypoint = safeRealpath(entrypointPath) ?? path.resolve(entrypointPath);
+    const resolvedModule = safeRealpath(fileURLToPath(moduleUrl)) ?? fileURLToPath(moduleUrl);
+
+    if (resolvedEntrypoint === resolvedModule) {
+        return true;
+    }
+
+    const resolvedIndexJs =
+        safeRealpath(path.resolve(path.dirname(resolvedModule), "../index.js")) ??
+        path.resolve(path.dirname(resolvedModule), "../index.js");
+    if (resolvedEntrypoint === resolvedIndexJs) {
+        return true;
+    }
+
+    const resolvedIndexTs =
+        safeRealpath(path.resolve(path.dirname(resolvedModule), "../index.ts")) ??
+        path.resolve(path.dirname(resolvedModule), "../index.ts");
+    if (resolvedEntrypoint === resolvedIndexTs) {
+        return true;
+    }
+
+    return false;
 }
 
 function shouldAutoRunCliProcess(

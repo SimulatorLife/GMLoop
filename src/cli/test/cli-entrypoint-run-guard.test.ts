@@ -15,11 +15,15 @@ void test("isNodeTestRunnerProcess identifies node --test execution flags", () =
     assert.equal(isNodeTestRunnerProcess(["--inspect"]), false);
 });
 
-void test("isCliEntrypointModule only accepts the active module file as the entrypoint", () => {
+void test("isCliEntrypointModule only accepts the active module file or its package entrypoint as the entrypoint", () => {
     const moduleUrl = new URL("../src/cli.ts", import.meta.url).href;
     const modulePath = new URL("../src/cli.ts", import.meta.url).pathname;
+    const indexPathJs = new URL("../index.js", import.meta.url).pathname;
+    const indexPathTs = new URL("../index.ts", import.meta.url).pathname;
 
     assert.equal(isCliEntrypointModule(modulePath, moduleUrl), true);
+    assert.equal(isCliEntrypointModule(indexPathJs, moduleUrl), true);
+    assert.equal(isCliEntrypointModule(indexPathTs, moduleUrl), true);
     assert.equal(isCliEntrypointModule("/tmp/other-entrypoint.js", moduleUrl), false);
     assert.equal(isCliEntrypointModule(undefined, moduleUrl), false);
 });
