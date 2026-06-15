@@ -48,8 +48,12 @@ function isNodeTestRunnerProcess(execArguments: ReadonlyArray<string> = process.
     );
 }
 
-function normalizeEntrypointPath(entrypointPath: string | undefined): string {
-    return entrypointPath ?? "";
+function safeRealpath(p: string): string | null {
+    try {
+        return realpathSync(p);
+    } catch {
+        return null;
+    }
 }
 
 function isCliEntrypointModule(
@@ -59,13 +63,6 @@ function isCliEntrypointModule(
     if (!entrypointPath) {
         return false;
     }
-    const safeRealpath = (p: string): string | null => {
-        try {
-            return realpathSync(p);
-        } catch {
-            return null;
-        }
-    };
 
     const resolvedEntrypoint = safeRealpath(entrypointPath) ?? path.resolve(entrypointPath);
     const resolvedModule = safeRealpath(fileURLToPath(moduleUrl)) ?? fileURLToPath(moduleUrl);
