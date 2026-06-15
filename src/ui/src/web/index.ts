@@ -10,6 +10,7 @@ import { resetProjectScopedGraphVisualizationUiStateInCurrentUrl } from "../app/
 import type {
     GraphVisualizationData,
     GraphVisualizationLiveReloadModel,
+    GraphVisualizationProjectWorkflow,
     GraphVisualizationRenderOptions
 } from "../graph/types.js";
 import { registerGraphVisualizationCustomElements } from "./register-components.js";
@@ -61,6 +62,10 @@ function reloadWhenChanged(result: MutationApiResponse): void {
     if (result.changed === true) {
         globalThis.location.reload();
     }
+}
+
+function createProjectWorkflowRequestBody(workflow: GraphVisualizationProjectWorkflow): string {
+    return JSON.stringify({ workflow });
 }
 
 function synchronizeLiveReloadBootstrapState(liveReload: GraphVisualizationLiveReloadModel | null): void {
@@ -273,7 +278,7 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 }
                 reloadWhenChanged(result);
             },
-            onRunFix: async (options?: GraphVisualizationFixRunOptions) => {
+            onRunFix: async (options: GraphVisualizationFixRunOptions) => {
                 const pollFixProgress = async (): Promise<void> => {
                     const progressResponse = await fetch("/api/fix/progress", {
                         cache: "no-store",
@@ -283,7 +288,7 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                         return;
                     }
                     const progressResult = await readJsonResponse<FixProgressApiResponse>(progressResponse);
-                    if (progressResult.ok !== true || !options?.onProgress) {
+                    if (progressResult.ok !== true) {
                         return;
                     }
                     options.onProgress({ logLines: progressResult.logLines ?? [] });
@@ -295,7 +300,7 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
 
                 try {
                     const response = await fetch("/api/fix", {
-                        body: JSON.stringify({ workflow: options?.workflow ?? "fix" }),
+                        body: createProjectWorkflowRequestBody(options.workflow),
                         headers: { "Content-Type": "application/json" },
                         method: "POST"
                     });
@@ -326,6 +331,7 @@ export const __test__ = Object.freeze({
     LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR,
     LIVE_RELOAD_RUNTIME_TAB_TARGET,
     LIVE_RELOAD_START_REQUEST_BODY,
+    createProjectWorkflowRequestBody,
     openLiveReloadRuntimeTab,
     startLiveReloadFromServer,
     stopLiveReloadFromServer,

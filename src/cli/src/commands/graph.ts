@@ -2115,6 +2115,7 @@ export function createGraphCommand(): Command {
 
 export const __graphCommandTest__ = Object.freeze({
     GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS,
+    createGraphVisualizationWorkflowArguments,
     createGraphVisualizationLiveReloadDevCommandArgs,
     createGraphVisualizationLiveReloadModel,
     createReachableGraphVisualizationLiveReloadModel,
