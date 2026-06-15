@@ -16,6 +16,7 @@
  */
 
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import { Command } from "commander";
 
@@ -45,11 +46,28 @@ function isNodeTestRunnerProcess(execArguments: ReadonlyArray<string> = process.
     );
 }
 
+function normalizeEntrypointPath(entrypointPath: string | undefined): string {
+    return entrypointPath ?? "";
+}
+
+function isCliEntrypointModule(
+    entrypointPath: string | undefined = process.argv[1],
+    moduleUrl = import.meta.url
+): boolean {
+    return normalizeEntrypointPath(entrypointPath) === fileURLToPath(moduleUrl);
+}
+
 function shouldAutoRunCliProcess(
     env: NodeJS.ProcessEnv = process.env,
-    execArguments: ReadonlyArray<string> = process.execArgv
+    execArguments: ReadonlyArray<string> = process.execArgv,
+    entrypointPath: string | undefined = process.argv[1],
+    moduleUrl = import.meta.url
 ): boolean {
-    return !isCliRunSkipped(env) && !isNodeTestRunnerProcess(execArguments);
+    return (
+        isCliEntrypointModule(entrypointPath, moduleUrl) &&
+        !isCliRunSkipped(env) &&
+        !isNodeTestRunnerProcess(execArguments)
+    );
 }
 
 const program = applyStandardCommandOptions(new Command())
@@ -282,6 +300,7 @@ export const __test__ = Object.freeze({
     ...__runtimeTest__,
     getMcpToolCatalogEntries,
     getCliCommandCatalog,
+    isCliEntrypointModule,
     isNodeTestRunnerProcess,
     normalizeCommandLineArguments,
     parseRuntimeValue,
