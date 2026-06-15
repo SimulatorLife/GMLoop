@@ -57,7 +57,7 @@ export type GraphVisualizationUiCallbacks = Readonly<{
     onCreateConfig?: () => void | Promise<void>;
     onSaveConfig: (config: Readonly<Record<string, unknown>>) => void | Promise<void>;
     onRunFix: (
-        options?: GraphVisualizationFixRunOptions
+        options: GraphVisualizationFixRunOptions
     ) => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
     onStartLiveReload: () =>
         | GraphVisualizationLiveReloadModel

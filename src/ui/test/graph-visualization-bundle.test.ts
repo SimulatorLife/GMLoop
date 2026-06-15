@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
-import { renderGraphVisualizationBundle } from "../src/graph/graph-visualization-bundle.js";
+import {
+    __graphVisualizationBundleTest__,
+    renderGraphVisualizationBundle
+} from "../src/graph/graph-visualization-bundle.js";
 
 function createBaseData() {
     return {
@@ -28,6 +34,56 @@ function readBundleFileText(bundle: GraphVisualizationBundle, relativePath: stri
 function countTextOccurrences(text: string, pattern: RegExp): number {
     return Array.from(text.matchAll(pattern)).length;
 }
+
+void test("workspace UI bundle freshness rejects browser assets older than source inputs", async () => {
+    const rootDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-ui-freshness-"));
+    const webDirectory = path.join(rootDirectory, "dist/web");
+    const sourceDirectories = ["src/app", "src/graph", "src/web"];
+
+    try {
+        await mkdir(webDirectory, { recursive: true });
+        await Promise.all(
+            sourceDirectories.map(async (sourceDirectory) => {
+                await mkdir(path.join(rootDirectory, sourceDirectory), { recursive: true });
+                await writeFile(path.join(rootDirectory, sourceDirectory, "source.ts"), "export {};\n", "utf8");
+            })
+        );
+        await writeFile(path.join(rootDirectory, "vite.config.ts"), "export default {};\n", "utf8");
+        await writeFile(path.join(webDirectory, "index.html"), "<!doctype html>\n", "utf8");
+
+        const olderTime = new Date("2026-01-01T00:00:00.000Z");
+        const newerTime = new Date("2026-01-01T00:01:00.000Z");
+        await Promise.all(
+            sourceDirectories.map(async (sourceDirectory) => {
+                await utimes(path.join(rootDirectory, sourceDirectory, "source.ts"), olderTime, olderTime);
+            })
+        );
+        await utimes(path.join(rootDirectory, "vite.config.ts"), olderTime, olderTime);
+        await utimes(path.join(webDirectory, "index.html"), olderTime, olderTime);
+        await utimes(path.join(rootDirectory, "src/app/source.ts"), newerTime, newerTime);
+
+        assert.equal(
+            await __graphVisualizationBundleTest__.isWorkspaceWebBundleFresh(rootDirectory, webDirectory),
+            false
+        );
+
+        await utimes(path.join(webDirectory, "index.html"), newerTime, newerTime);
+        assert.equal(
+            await __graphVisualizationBundleTest__.isWorkspaceWebBundleFresh(rootDirectory, webDirectory),
+            true
+        );
+    } finally {
+        await rm(rootDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("monorepo prebuilt UI assets remain subject to workspace freshness checks", () => {
+    const prebuiltWebDirectory = __graphVisualizationBundleTest__.resolvePrebuiltWebDirectory();
+
+    assert.ok(prebuiltWebDirectory);
+    assert.ok(prebuiltWebDirectory.workspaceRoot);
+    assert.equal(prebuiltWebDirectory.path, path.join(prebuiltWebDirectory.workspaceRoot, "dist/web"));
+});
 
 void test("graph visualization bundle emits entry html plus local runtime assets", async () => {
     const bundle = await renderGraphVisualizationBundle(createBaseData(), { title: "Test Graph" });

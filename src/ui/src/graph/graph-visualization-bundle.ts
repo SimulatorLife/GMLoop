@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -150,38 +150,81 @@ async function createViteWebBundle(outDirectory: string): Promise<void> {
     });
 }
 
-function resolvePrebuiltWebDirectory(): string | null {
+type PrebuiltWebDirectory = Readonly<{
+    path: string;
+    workspaceRoot: string | null;
+}>;
+
+function resolvePrebuiltWebDirectory(): PrebuiltWebDirectory | null {
     const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+    let workspaceRoot: string | null = null;
+    try {
+        workspaceRoot = resolveUiWorkspaceRoot();
+    } catch {
+        // Published packages only include dist output, so no source workspace
+        // exists for freshness checks.
+    }
+    const workspaceWebDirectory = workspaceRoot === null ? null : path.join(workspaceRoot, "dist/web");
 
     const pathA = path.resolve(moduleDirectory, "../../web");
     if (existsSync(path.join(pathA, GRAPH_VISUALIZATION_ENTRY_HTML_PATH))) {
-        return pathA;
+        return Object.freeze({
+            path: pathA,
+            workspaceRoot: workspaceWebDirectory === pathA ? workspaceRoot : null
+        });
     }
 
     const pathB = path.resolve(moduleDirectory, "../web");
     if (existsSync(path.join(pathB, GRAPH_VISUALIZATION_ENTRY_HTML_PATH))) {
-        return pathB;
+        return Object.freeze({
+            path: pathB,
+            workspaceRoot: workspaceWebDirectory === pathB ? workspaceRoot : null
+        });
     }
 
-    try {
-        const workspaceRoot = resolveUiWorkspaceRoot();
-        const pathC = path.join(workspaceRoot, "dist/web");
-        if (existsSync(path.join(pathC, GRAPH_VISUALIZATION_ENTRY_HTML_PATH))) {
-            return pathC;
-        }
-    } catch {
-        // Swallow the workspace-resolution failure: the published bundle can be
-        // consumed by callers (e.g., the static UI export) that mount this
-        // module outside the monorepo, where the upward search in
-        // `resolveUiWorkspaceRoot` exhausts the filesystem and throws. Falling
-        // through to `return null` is the documented contract — the caller
-        // then decides whether to fall back to a Vite build or to surface a
-        // "prebuilt bundle missing" error. Do not turn this into a rethrow or
-        // downstream consumers outside the source tree will break.
+    if (
+        workspaceWebDirectory !== null &&
+        existsSync(path.join(workspaceWebDirectory, GRAPH_VISUALIZATION_ENTRY_HTML_PATH))
+    ) {
+        return Object.freeze({ path: workspaceWebDirectory, workspaceRoot });
     }
 
     return null;
 }
+
+async function readNewestModificationTime(directoryPath: string): Promise<number> {
+    const entries = await readdir(directoryPath, { withFileTypes: true });
+    const modificationTimes = await Promise.all(
+        entries.map(async (entry) => {
+            const entryPath = path.join(directoryPath, entry.name);
+            if (entry.isDirectory()) {
+                return await readNewestModificationTime(entryPath);
+            }
+            const entryStats = await stat(entryPath);
+            return entryStats.mtimeMs;
+        })
+    );
+    return Math.max(0, ...modificationTimes);
+}
+
+async function isWorkspaceWebBundleFresh(workspaceRoot: string, webDirectory: string): Promise<boolean> {
+    const buildStats = await stat(path.join(webDirectory, GRAPH_VISUALIZATION_ENTRY_HTML_PATH));
+    const viteConfigStats = await stat(path.join(workspaceRoot, "vite.config.ts"));
+    const buildTime = buildStats.mtimeMs;
+    const sourceTime = Math.max(
+        await readNewestModificationTime(path.join(workspaceRoot, "src")),
+        viteConfigStats.mtimeMs
+    );
+    return buildTime >= sourceTime;
+}
+
+/**
+ * Test-only access to graph visualization bundle freshness checks.
+ */
+export const __graphVisualizationBundleTest__ = Object.freeze({
+    isWorkspaceWebBundleFresh,
+    resolvePrebuiltWebDirectory
+});
 
 async function loadPrebuiltWebBundleFiles(webDir: string): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
     const relativePaths = await listBundleFiles(webDir);
@@ -198,9 +241,13 @@ async function loadPrebuiltWebBundleFiles(webDir: string): Promise<ReadonlyArray
 }
 
 async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
-    const prebuiltWebDir = resolvePrebuiltWebDirectory();
-    if (prebuiltWebDir !== null) {
-        return await loadPrebuiltWebBundleFiles(prebuiltWebDir);
+    const prebuiltWebDirectory = resolvePrebuiltWebDirectory();
+    if (
+        prebuiltWebDirectory !== null &&
+        (prebuiltWebDirectory.workspaceRoot === null ||
+            (await isWorkspaceWebBundleFresh(prebuiltWebDirectory.workspaceRoot, prebuiltWebDirectory.path)))
+    ) {
+        return await loadPrebuiltWebBundleFiles(prebuiltWebDirectory.path);
     }
 
     const isTest =
