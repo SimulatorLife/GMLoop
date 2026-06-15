@@ -5,8 +5,8 @@
 .mcp-server-status-chip {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 7px 11px;
+    gap: var(--gm-space-sm);
+    padding: var(--gm-space-sm) var(--gm-space-md);
     border: 1px solid var(--gm-border);
     border-radius: var(--gm-radius-full);
     background: var(--gm-bg-muted);
@@ -49,14 +49,14 @@
 .mcp-tool-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--gm-space-sm);
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
 .mcp-tool-item {
-    padding: 12px 13px;
+    padding: var(--gm-space-md) var(--gm-space-md);
     border: 1px solid var(--gm-border-subtle);
     border-radius: var(--gm-radius-lg);
     background: var(--gm-bg-subtle);
@@ -64,7 +64,7 @@
 
 .mcp-tool-item strong {
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: var(--gm-space-xs);
     color: var(--gm-text);
     font-size: var(--gm-text-sm);
     overflow-wrap: anywhere;
@@ -79,7 +79,7 @@
 }
 
 .mcp-activity-empty {
-    padding: 14px;
+    padding: var(--gm-space-lg);
     border: 1px dashed var(--gm-border);
     border-radius: var(--gm-radius-sm);
     color: var(--gm-text-subdued);

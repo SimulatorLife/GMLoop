@@ -63,7 +63,7 @@
 .config-section-heading p,
 .config-tool-group p,
 .config-tool-details p {
-  margin: 4px 0 0;
+  margin: var(--gm-space-xs) 0 0;
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
   line-height: var(--gm-leading-normal);
@@ -108,7 +108,7 @@
 .config-field small,
 .config-toggle-label small {
   display: block;
-  margin-top: 3px;
+  margin-top: var(--gm-space-xs);
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-xs);
   line-height: var(--gm-leading-normal);
@@ -136,7 +136,7 @@
 .config-filter-field input,
 .config-filter-field select {
   min-height: 38px;
-  padding: 8px 10px;
+  padding: var(--gm-space-sm) var(--gm-space-sm);
 }
 
 .config-field input[type="checkbox"],
@@ -209,14 +209,14 @@
 
 .config-rule-description {
   display: block;
-  margin-top: 3px;
+  margin-top: var(--gm-space-xs);
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
   line-height: var(--gm-leading-normal);
 }
 
 .config-rule-fixable-badge .gm-badge {
-  padding: 2px 6px;
+  padding: 2px var(--gm-space-xs);
   font-size: 10px;
   line-height: 1;
 }
@@ -226,7 +226,7 @@
   gap: var(--gm-space-sm);
   flex-wrap: wrap;
   align-items: center;
-  margin-top: 7px;
+  margin-top: var(--gm-space-sm);
 }
 
 .config-rule-level-selector {
@@ -352,7 +352,7 @@
 }
 
 .config-setup-banner p {
-  margin: 4px 0 0;
+  margin: var(--gm-space-xs) 0 0;
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
 }

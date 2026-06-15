@@ -40,7 +40,7 @@
     min-width: 0;
     flex: 1 1 auto;
     min-height: var(--gm-height-xl);
-    padding: 10px 14px;
+    padding: var(--gm-space-sm) var(--gm-space-lg);
     border: 1px solid var(--gm-border-accent);
     border-radius: var(--gm-radius-md);
     background: var(--gm-surface-inset);
@@ -98,13 +98,13 @@
 }
 
 .catalog-card h3 {
-    margin: 0 0 10px;
+    margin: 0 0 var(--gm-space-sm);
     color: var(--gm-text);
     font-size: var(--gm-text-xl);
 }
 
 .catalog-card p {
-    margin: 0 0 12px;
+    margin: 0 0 var(--gm-space-md);
     color: var(--gm-text-secondary);
     font-size: var(--gm-text-sm);
     line-height: var(--gm-leading-normal);
@@ -112,8 +112,8 @@
 
 .catalog-usage {
     display: block;
-    margin-bottom: 12px;
-    padding: 10px 12px;
+    margin-bottom: var(--gm-space-md);
+    padding: var(--gm-space-sm) var(--gm-space-md);
     border-radius: var(--gm-radius-md);
     background: var(--gm-surface-inset);
     border: 1px solid var(--gm-border-subtle);
@@ -126,14 +126,14 @@
 .catalog-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--gm-space-sm);
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
 .catalog-item {
-    padding: 10px 12px;
+    padding: var(--gm-space-sm) var(--gm-space-md);
     border-radius: var(--gm-radius-md);
     border: 1px solid var(--gm-border-subtle);
     background: var(--gm-bg-subtle);

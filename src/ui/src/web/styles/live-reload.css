@@ -32,9 +32,7 @@
 
 .live-reload-btn:focus-visible {
   outline: none;
-  box-shadow:
-    0 0 0 1px #060c16f5,
-    0 0 0 4px var(--gm-focus-ring);
+  box-shadow: var(--gm-shadow-focus);
 }
 
 .live-reload-btn-icon {
@@ -83,7 +81,7 @@
   display: inline-block;
   width: var(--gm-icon-sm);
   height: var(--gm-icon-sm);
-  border: 2px solid #10182047;
+  border: 2px solid var(--gm-spinner-track-dark);
   border-top-color: var(--gm-action-primary-text);
   border-radius: 50%;
   animation: live-reload-btn-spin 600ms linear infinite;
@@ -119,7 +117,7 @@
 .live-reload-panel-card p,
 .live-reload-overview-card p,
 .live-reload-setup-card p {
-  margin: 10px 0 0;
+  margin: var(--gm-space-sm) 0 0;
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
   line-height: var(--gm-leading-normal);
@@ -153,7 +151,7 @@
 
 .live-reload-metric-item strong {
   display: block;
-  margin: 8px 0 5px;
+  margin: var(--gm-space-sm) 0 var(--gm-space-xs);
   color: var(--gm-text);
   font-size: var(--gm-text-2xl);
   line-height: 1;
@@ -164,7 +162,7 @@
 .live-reload-pipeline {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--gm-space-sm);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -189,8 +187,8 @@
   display: flex;
   min-height: var(--gm-height-xl);
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--gm-space-sm);
+  padding: var(--gm-space-sm) var(--gm-space-sm);
   border: 1px solid var(--gm-border-accent-subtle);
   border-radius: var(--gm-radius-md);
   background: var(--gm-surface-accent-subtle);
@@ -216,14 +214,14 @@
 .live-reload-event-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--gm-space-sm);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .live-reload-event-list li {
-  padding: 12px 13px;
+  padding: var(--gm-space-md) var(--gm-space-md);
   border: 1px solid var(--gm-border-subtle);
   border-radius: var(--gm-radius-lg);
   background: var(--gm-bg-subtle);
@@ -235,7 +233,7 @@
 }
 
 .live-reload-event-list strong {
-  margin-bottom: 4px;
+  margin-bottom: var(--gm-space-xs);
   color: var(--gm-text);
   font-size: var(--gm-text-sm);
   overflow-wrap: anywhere;
@@ -265,7 +263,7 @@
   display: grid;
   grid-template-columns: minmax(120px, 0.55fr) minmax(0, 1fr);
   gap: var(--gm-space-md);
-  padding: 10px 0;
+  padding: var(--gm-space-sm) 0;
   border-bottom: 1px solid var(--gm-border-subtle);
 }
 
@@ -299,7 +297,7 @@
 .live-reload-detail-list code {
   display: block;
   max-width: 100%;
-  padding: 7px 9px;
+  padding: var(--gm-space-xs) var(--gm-space-sm);
   border: 1px solid var(--gm-border-subtle);
   border-radius: var(--gm-radius-sm);
   background: var(--gm-surface-inset);

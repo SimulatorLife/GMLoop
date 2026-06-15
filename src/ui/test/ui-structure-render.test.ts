@@ -273,17 +273,14 @@ void test("toolbar stylesheet keeps graph toolbar controls in a full-width horiz
     const source = readFileSync(new URL("../../src/web/styles/toolbar.css", import.meta.url), "utf8");
 
     assert.match(source, /\.page-toolbar\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/u);
-    assert.match(source, /\.page-toolbar\s*\{[\s\S]*gap:\s*var\(--gm-space-control-gap\);/u);
+    assert.match(source, /\.page-toolbar\s*\{[\s\S]*gap:\s*var\(--gm-space-md\);/u);
+    assert.match(source, /\.page-toolbar\s*\{[\s\S]*margin:\s*var\(--gm-space-lg\)\s+var\(--gm-space-xl\)\s+0;/u);
     assert.match(
         source,
-        /\.page-toolbar\s*\{[\s\S]*margin:\s*var\(--gm-page-toolbar-gap\)\s+var\(--gm-page-gutter\)\s+0;/u
+        /\.toolbar-controls\s*\{[\s\S]*gap:\s*var\(--gm-space-xl\);[\s\S]*align-items:\s*center;[\s\S]*justify-content:\s*flex-start;[\s\S]*width:\s*100%;/u
     );
-    assert.match(
-        source,
-        /\.toolbar-controls\s*\{[\s\S]*gap:\s*var\(--gm-space-section-gap\);[\s\S]*align-items:\s*center;[\s\S]*justify-content:\s*flex-start;[\s\S]*width:\s*100%;/u
-    );
-    assert.match(source, /\.toolbar-heading-row\s*\{[\s\S]*gap:\s*var\(--gm-space-section-gap\);/u);
-    assert.match(source, /\.toolbar-control-group\s*\{[\s\S]*gap:\s*var\(--gm-space-control-gap\);/u);
+    assert.match(source, /\.toolbar-heading-row\s*\{[\s\S]*gap:\s*var\(--gm-space-xl\);/u);
+    assert.match(source, /\.toolbar-control-group\s*\{[\s\S]*gap:\s*var\(--gm-space-md\);/u);
     assert.match(source, /\.toolbar-control-group\s*\{[\s\S]*flex-wrap:\s*nowrap;/u);
     assert.match(source, /\.toolbar-search-group\s*\{[\s\S]*flex:\s*1 1 220px;[\s\S]*max-width:\s*360px;/u);
 });
@@ -293,21 +290,22 @@ void test("spacing tokens define shared page and toolbar rhythm", () => {
     const layoutSource = readFileSync(new URL("../../src/web/styles/layout.css", import.meta.url), "utf8");
     const responsiveSource = readFileSync(new URL("../../src/web/styles/responsive.css", import.meta.url), "utf8");
 
-    assert.match(tokensSource, /--gm-space-control-gap:\s*var\(--gm-space-md\);/u);
-    assert.match(tokensSource, /--gm-space-section-gap:\s*var\(--gm-space-xl\);/u);
-    assert.match(tokensSource, /--gm-page-gutter:\s*var\(--gm-space-xl\);/u);
-    assert.match(tokensSource, /--gm-page-toolbar-gap:\s*var\(--gm-space-lg\);/u);
+    assert.match(tokensSource, /--gm-space-xs:\s*4px;/u);
+    assert.match(tokensSource, /--gm-space-sm:\s*8px;/u);
+    assert.match(tokensSource, /--gm-space-md:\s*12px;/u);
+    assert.match(tokensSource, /--gm-space-lg:\s*16px;/u);
+    assert.match(tokensSource, /--gm-space-xl:\s*24px;/u);
     assert.match(
         layoutSource,
-        /main\s*\{[\s\S]*padding:\s*var\(--gm-page-toolbar-gap\)\s+var\(--gm-page-gutter\)\s+var\(--gm-page-gutter\);/u
+        /main\s*\{[\s\S]*padding:\s*var\(--gm-space-lg\)\s+var\(--gm-space-xl\)\s+var\(--gm-space-xl\);/u
     );
     assert.match(
         responsiveSource,
-        /main\s*\{[\s\S]*padding:\s*var\(--gm-page-toolbar-gap\)\s+var\(--gm-page-gutter-compact\)\s+var\(--gm-page-gutter-compact\);/u
+        /main\s*\{[\s\S]*padding:\s*var\(--gm-space-lg\)\s+var\(--gm-space-lg\)\s+var\(--gm-space-lg\);/u
     );
     assert.match(
         responsiveSource,
-        /\.playground-toolbar\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*gap:\s*var\(--gm-space-control-gap\);/u
+        /\.playground-toolbar\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*gap:\s*var\(--gm-space-md\);/u
     );
 });
 

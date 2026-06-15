@@ -3,14 +3,14 @@
 }
 
 .fix-log-section h2 {
-  margin: 0 0 10px;
+  margin: 0 0 var(--gm-space-sm);
   color: var(--gm-text);
   font-size: var(--gm-text-lg);
   line-height: var(--gm-leading-tight);
 }
 
 .fix-log-card .gm-card {
-  padding: 10px;
+  padding: var(--gm-space-sm);
 }
 
 .fix-log {

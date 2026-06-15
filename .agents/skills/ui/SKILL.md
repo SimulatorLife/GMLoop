@@ -69,13 +69,15 @@ Then implement the UI with:
 ### Color and Theme
 
 - Use a cohesive palette with a dominant direction and controlled accents.
-- Define colors through CSS variables or equivalent tokens.
+- Define colors through global CSS variables. Do not use hardcoded color values (hex, rgb, or rgba) in individual component or page CSS files.
+- Keep color formats consistent (e.g. lowercase hex format) for all color token definitions in the global stylesheet.
+- Map status-related styles to global semantic status tokens (representing success, warning, and danger states) rather than introducing ad-hoc status colors.
 - Avoid timid, evenly distributed palettes with no hierarchy.
 - Support both readability and state clarity in all themes.
 
 ### Layout and Rhythm
 
-- Use a consistent spacing system.
+- Use a consistent spacing system. Rely exclusively on the standard global spacing variables (which define a limited, unified set of sizing increments) for all margins, paddings, gaps, and layout offsets. Do not use ad-hoc pixel values or spacing aliases.
 - Apply the Gestalt principle of proximity so related controls and information are visually grouped and unrelated elements are clearly separated.
 - Keep alignment intentional to a grid, baseline, edge, or optical center.
 - Maintain predictable content widths by breakpoint.
@@ -85,7 +87,7 @@ Then implement the UI with:
 ### Motion
 
 - Use animation only when it improves understanding or delight.
-- Keep micro-interactions around 150 to 300 ms with appropriate easing.
+- Keep micro-interactions around 150 to 300 ms with appropriate easing. All hover, active, and focus transitions must use the standard global transition variable for project-wide visual consistency.
 - Avoid gratuitous motion, sluggish transitions, and layout-jitter effects.
 
 ## Visual System Rules
@@ -290,6 +292,7 @@ Then implement the UI with:
 - Ensure display rules respect the `hidden` attribute.
 - Represent component-owned states consistently through attributes, classes, or host selectors as appropriate for the chosen rendering mode.
 - Expose CSS custom properties for supported theming hooks, with sensible defaults.
+- Use standard box-shadow variables: use standard global shadow variables for cards, dialogs, and elevated panels. Use the standard global focus shadow variable for all focus-visible borders and rings.
 
 ## Performance Expectations
 

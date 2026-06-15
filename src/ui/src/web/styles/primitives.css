@@ -30,38 +30,6 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* ─── Rule toggles (playground-specific) ───────────────────── */
-.rule-toggles {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-
-.rule-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 8px 12px;
-  border-radius: var(--gm-radius-md);
-  background: var(--gm-bg-subtle);
-  border: 1px solid var(--gm-border-subtle);
-  font-size: var(--gm-text-sm);
-  color: var(--gm-text-secondary);
-  cursor: pointer;
-  user-select: none;
-}
-
-.rule-toggle:hover {
-  background: var(--gm-bg-hover);
-}
-
-.rule-toggle.active {
-  background: var(--gm-surface-teal-subtle);
-  border-color: var(--gm-border-teal-subtle);
-  color: #a8edf2;
-}
 
 /* ─── Copy-to-clipboard primitive ───────────────────────────── */
 gm-copy-button {
@@ -102,9 +70,7 @@ gm-copy-button {
 
 .gm-copy-button:focus-visible {
   outline: none;
-  box-shadow:
-    0 0 0 1px #060c16f5,
-    0 0 0 4px var(--gm-focus-ring);
+  box-shadow: var(--gm-shadow-focus);
 }
 
 .gm-copy-button:disabled {

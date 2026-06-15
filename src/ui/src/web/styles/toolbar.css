@@ -1,10 +1,10 @@
 .page-toolbar {
   display: flex;
   flex-direction: column;
-  gap: var(--gm-space-control-gap);
+  gap: var(--gm-space-md);
   align-items: stretch;
   padding: var(--gm-space-lg) var(--gm-space-xl);
-  margin: var(--gm-page-toolbar-gap) var(--gm-page-gutter) 0;
+  margin: var(--gm-space-lg) var(--gm-space-xl) 0;
   border: 1px solid var(--gm-border);
   border-radius: 20px;
   background: linear-gradient(180deg, var(--gm-surface-elevated), var(--gm-surface-elevated-strong));
@@ -26,7 +26,7 @@
 
 .toolbar-heading-row {
   display: flex;
-  gap: var(--gm-space-section-gap);
+  gap: var(--gm-space-xl);
   align-items: flex-start;
   justify-content: space-between;
 }
@@ -41,7 +41,7 @@
 
 .toolbar-live-reload-controls {
   display: flex;
-  gap: var(--gm-space-control-gap);
+  gap: var(--gm-space-md);
   align-items: flex-start;
   flex-wrap: wrap;
   flex-shrink: 0;
@@ -49,7 +49,7 @@
 
 .toolbar-fix-controls {
   display: flex;
-  gap: var(--gm-space-control-gap);
+  gap: var(--gm-space-md);
   align-items: flex-start;
   flex-wrap: wrap;
   flex-shrink: 0;
@@ -68,7 +68,7 @@
 
 .toolbar-controls {
   display: flex;
-  gap: var(--gm-space-section-gap);
+  gap: var(--gm-space-xl);
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-start;
@@ -77,7 +77,7 @@
 
 .toolbar-control-group {
   display: flex;
-  gap: var(--gm-space-control-gap);
+  gap: var(--gm-space-md);
   align-items: center;
   flex-wrap: nowrap;
 }

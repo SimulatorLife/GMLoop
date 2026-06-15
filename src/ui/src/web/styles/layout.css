@@ -11,7 +11,7 @@ main {
   position: relative;
   flex: 1;
   min-height: calc(100vh - 260px);
-  padding: var(--gm-page-toolbar-gap) var(--gm-page-gutter) var(--gm-page-gutter);
+  padding: var(--gm-space-lg) var(--gm-space-xl) var(--gm-space-xl);
 }
 
 .page {

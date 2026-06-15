@@ -9,22 +9,25 @@
   /* ─── Accent colors ─────────────────────────────────────── */
   --gm-accent: #8ee0f0;
   --gm-accent-strong: #73c8ff;
-  --gm-accent-rgb: 142, 224, 240;
+  --gm-brand-teal: #59c3c3;
+  --gm-brand-purple: #8b5cf6;
+  --gm-brand-teal-hover: #59c3c34d;
+  --gm-brand-purple-hover: #8b5cf64d;
 
   /* ─── Surfaces ──────────────────────────────────────────── */
   --gm-surface-app-top: #08101b;
   --gm-surface-app-bottom: #0e1726;
   --gm-surface-elevated: #101c2ef0;
   --gm-surface-elevated-strong: #0b1422f9;
-  --gm-surface-muted: #ffffff0e;
+  --gm-surface-muted: var(--gm-bg-muted);
   --gm-surface-inset: #050c1680;
   --gm-surface-overlay: #0a121ef5;
   --gm-surface-highlight: #8ee0f01f;
 
   /* ─── Background surfaces ─────────────────────────────── */
   --gm-bg-subtle: #ffffff08;
-  --gm-bg-muted: #ffffff0a;
-  --gm-bg-light: #ffffff0d;
+  --gm-bg-muted: #ffffff0d;
+  --gm-bg-light: var(--gm-bg-muted);
   --gm-bg-hover: #ffffff14;
   --gm-bg-active: #ffffff17;
   --gm-bg-overlay: #050a1382;
@@ -34,8 +37,8 @@
   --gm-border: #8fb5ff2e;
   --gm-border-strong: #8fb5ff4d;
   --gm-border-subtle: #8fb5ff1a;
-  --gm-border-muted: #8fb5ff1a;
-  --gm-border-accent: #8fb5ff2e;
+  --gm-border-muted: var(--gm-border-subtle);
+  --gm-border-accent: var(--gm-border);
   --gm-border-interactive: #8ee0f073;
   --gm-focus-ring: #8ee0f0a6;
 
@@ -50,15 +53,19 @@
   --gm-warning-surface: #f7d0811f;
   --gm-warning-dot: #f6c46d;
 
-  --gm-danger-text: #ff7070;
-  --gm-danger-border: #ff505066;
+  --gm-danger-text: #ffd6d6;
+  --gm-danger-border: #ff89896b;
   --gm-danger-surface: #ff505026;
   --gm-danger-surface-hover: #ff505040;
   --gm-danger-dot: #ff8989;
 
-  --gm-error-text: #ffd6d6;
-  --gm-error-border: #ff89896b;
-  --gm-error-surface: #761f2966;
+  --gm-error-text: var(--gm-danger-text);
+  --gm-error-border: var(--gm-danger-border);
+  --gm-error-surface: var(--gm-danger-surface);
+
+  --gm-severity-error-text: var(--gm-danger-text);
+  --gm-severity-error-border: var(--gm-danger-border);
+  --gm-severity-error-bg: var(--gm-danger-surface);
 
   /* ─── Translucent surfaces ──────────────────────────────── */
   --gm-surface-app-top-translucent: #08101bf5;
@@ -92,7 +99,8 @@
   /* ─── Shadows ────────────────────────────────────────────── */
   --gm-shadow: 0 20px 44px #00000052;
   --gm-shadow-sm: 0 10px 22px #00000033;
-  --gm-shadow-overlay: 0 20px 48px #00000052;
+  --gm-shadow-overlay: var(--gm-shadow);
+  --gm-shadow-focus: 0 0 0 1px #060c16f5, 0 0 0 4px var(--gm-focus-ring);
 
   /* ─── Spacing ───────────────────────────────────────────── */
   --gm-space-xs: 4px;
@@ -100,14 +108,6 @@
   --gm-space-md: 12px;
   --gm-space-lg: 16px;
   --gm-space-xl: 24px;
-  --gm-space-related: var(--gm-space-sm);
-  --gm-space-far: var(--gm-space-lg);
-  --gm-space-control-gap: var(--gm-space-md);
-  --gm-space-control-gap-tight: var(--gm-space-sm);
-  --gm-space-section-gap: var(--gm-space-xl);
-  --gm-page-gutter: var(--gm-space-xl);
-  --gm-page-gutter-compact: var(--gm-space-lg);
-  --gm-page-toolbar-gap: var(--gm-space-lg);
 
   /* ─── Border radius ─────────────────────────────────────── */
   --gm-radius-sm: 8px;
@@ -144,6 +144,10 @@
   --gm-icon-sm: 16px;
   --gm-icon-lg: 20px;
 
+  /* ─── Spinners ──────────────────────────────────────────── */
+  --gm-spinner-track-dark: #10182047;
+  --gm-spinner-track-light: #ffffff4d;
+
   /* ─── Log/output colors ────────────────────────────────── */
   --gm-log-bg: #071019;
   --gm-log-text: #d9f7e7;
@@ -155,6 +159,7 @@
   --gm-graph-text: #f1f6fc;
   --gm-graph-arrow: #80c8ff;
   --gm-graph-highlight-stroke: #ffffff;
+  --gm-graph-text-shadow: #060a12f2;
 
   /* ─── Code syntax highlighting colors ────────────────────── */
   --gm-syntax-keyword: #c792ea;
@@ -168,19 +173,6 @@
   --gm-syntax-type: #4ec9b0;
   --gm-syntax-string-alt: #ce9178;
   --gm-syntax-parameter: #f7d081;
-
-  /* ─── Severity badge colors ──────────────────────────────── */
-  --gm-severity-error-text: #fecaca;
-  --gm-severity-error-border: #f871716b;
-  --gm-severity-error-bg: #7f1d1d6b;
-
-  --gm-severity-warn-text: #fed7aa;
-  --gm-severity-warn-border: #fb923c6b;
-  --gm-severity-warn-bg: #7c2d126b;
-
-  --gm-severity-off-text: #cbd5e1;
-  --gm-severity-off-border: #94a3b847;
-  --gm-severity-off-bg: #3341555c;
 
   /* ─── Blur / overlay effects ─────────────────────────────── */
   --gm-blur-sm: blur(6px);

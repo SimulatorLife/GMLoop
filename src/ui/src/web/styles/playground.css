@@ -129,7 +129,7 @@
   content: "Controls";
   align-self: start;
   justify-self: center;
-  margin-top: 18px;
+  margin-top: var(--gm-space-lg);
   writing-mode: vertical-rl;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -364,10 +364,10 @@
 
 .rule-details-list {
   display: grid;
-  gap: 6px;
+  gap: var(--gm-space-sm);
   max-height: min(42vh, 360px);
   overflow: auto;
-  padding-right: 4px;
+  padding-right: var(--gm-space-xs);
 }
 
 .rule-details-item {
@@ -375,7 +375,7 @@
   grid-template-columns: auto minmax(0, 1fr);
   gap: var(--gm-space-sm);
   align-items: start;
-  padding: 8px;
+  padding: var(--gm-space-sm);
   border-radius: var(--gm-radius-sm);
   background: var(--gm-bg-subtle);
   border: 1px solid var(--gm-border-muted);
@@ -418,7 +418,7 @@
 }
 
 .ast-node {
-  margin-left: 12px;
+  margin-left: var(--gm-space-md);
   border-left: 1px solid var(--gm-border-subtle);
   padding-left: var(--gm-space-sm);
 }
