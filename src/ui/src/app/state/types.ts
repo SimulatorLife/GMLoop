@@ -1,3 +1,5 @@
+import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
+
 /**
  * Top-level page surfaces in the graph visualization UI.
  */
@@ -40,6 +42,7 @@ export type GraphVisualizationUiState = Readonly<{
     fixErrorMessage: string | null;
     fixLogLines: ReadonlyArray<string>;
     fixStatus: "idle" | "running" | "success" | "error";
+    fixWorkflow: GraphVisualizationProjectWorkflow | null;
     isLiveReloadStartPending: boolean;
     isConfigSavePending: boolean;
     isFixPending: boolean;
@@ -70,7 +73,11 @@ export type GraphVisualizationUiAction =
     | Readonly<{ type: "cycle-label-mode" }>
     | Readonly<{ pending: boolean; type: "set-regenerate-pending" }>
     | Readonly<{ pending: boolean; type: "set-config-save-pending" }>
-    | Readonly<{ pending: boolean; type: "set-fix-pending" }>
+    | Readonly<{
+          pending: boolean;
+          type: "set-fix-pending";
+          workflow: GraphVisualizationProjectWorkflow;
+      }>
     | Readonly<{ errorMessage: string | null; type: "set-fix-error" }>
     | Readonly<{ logLines: ReadonlyArray<string>; type: "set-fix-log-lines" }>
     | Readonly<{ status: GraphVisualizationUiState["fixStatus"]; type: "set-fix-status" }>

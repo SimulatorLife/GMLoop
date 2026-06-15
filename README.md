@@ -262,12 +262,12 @@ Common composition:
 ```ts
 import { Lint } from "@gmloop/lint";
 
-export default [
-    ...Lint.configs.recommended,
-    ...Lint.configs.feather,
-    ...Lint.configs.performance
-];
+export default [...Lint.configs.all];
 ```
+
+`Lint.configs.all` enables every `gml/*` and `feather/*` rule at its recommended
+`"warn"` or `"error"` level. The narrower `recommended`, `feather`, and
+`performance` presets remain available for custom composition.
 
 `gmloop.json` also supports lint preset selection for fixture/integration and
 project-config-driven lint flows via `lintRuleset`:
@@ -281,7 +281,7 @@ project-config-driven lint flows via `lintRuleset`:
 }
 ```
 
-Supported `lintRuleset` values are `"recommended"`, `"feather"`, and
+Supported `lintRuleset` values are `"all"`, `"recommended"`, `"feather"`, and
 `"performance"`. `lintRules` remains optional and overrides rules from the
 selected ruleset when both are present.
 

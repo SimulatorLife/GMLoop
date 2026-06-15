@@ -5,7 +5,8 @@ import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiDocsView, GraphVisualizationUiState } from "../state/types.js";
 import {
     createGraphVisualizationDocsPanelContent,
-    type GraphVisualizationDocsPanelCatalogEntry} from "./docs-panel-content.js";
+    type GraphVisualizationDocsPanelCatalogEntry
+} from "./docs-panel-content.js";
 import {
     createNoSearchResultsMessage,
     normalizeCatalogSearchQuery,
@@ -116,10 +117,10 @@ export class GmDocsPanel extends LightDomLitElement {
                 <div id=${contentId} class="docs-grid">
                     ${emptyMessage === null
                         ? searchResult.entries.length === 0
-                          ? html`<p class="catalog-empty">
-                                ${createNoSearchResultsMessage(searchQuery, activeDocsView)}
-                            </p>`
-                          : searchResult.entries.map((entry) => this.#renderCatalogCard(entry))
+                            ? html`<p class="catalog-empty">
+                                  ${createNoSearchResultsMessage(searchQuery, activeDocsView)}
+                              </p>`
+                            : searchResult.entries.map((entry) => this.#renderCatalogCard(entry))
                         : html`<p class="catalog-empty">${emptyMessage}</p>`}
                 </div>
             </div>

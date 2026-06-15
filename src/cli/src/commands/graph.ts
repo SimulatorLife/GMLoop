@@ -80,20 +80,20 @@ type GraphVisualizationExportResult = Readonly<{
     outputDirectory: string;
 }>;
 
-async function runGraphVisualizationFixWorkflow(
+type GraphVisualizationProjectWorkflow = (typeof UI.PROJECT_WORKFLOWS)[number];
+
+async function runGraphVisualizationProjectWorkflow(
     context: GraphResolutionContext,
     configPath: string | undefined,
+    workflow: GraphVisualizationProjectWorkflow,
     onLogLine: ((logLine: string) => void) | null = null
 ): Promise<Readonly<{ logLines: ReadonlyArray<string> }>> {
     const cliEntryPath = fileURLToPath(new URL("../../index.js", import.meta.url));
-    const args = [
-        "--disable-warning=ExperimentalWarning",
-        cliEntryPath,
-        "fix",
-        "--write",
-        "--path",
-        context.projectRoot
-    ];
+    const args = ["--disable-warning=ExperimentalWarning"];
+    if (workflow === "refactor") {
+        args.push("--max-old-space-size=16384");
+    }
+    args.push(cliEntryPath, ...createGraphVisualizationWorkflowArguments(workflow, context.projectRoot));
     if (configPath) {
         args.push("--config", configPath);
     }
@@ -128,6 +128,26 @@ async function runGraphVisualizationFixWorkflow(
     }
 
     return Object.freeze({ logLines: Object.freeze([...logLines]) });
+}
+
+function createGraphVisualizationWorkflowArguments(
+    workflow: GraphVisualizationProjectWorkflow,
+    projectRoot: string
+): ReadonlyArray<string> {
+    switch (workflow) {
+        case "fix": {
+            return ["fix", "--write", "--path", projectRoot];
+        }
+        case "format": {
+            return ["format", "--write", "--path", projectRoot, "--on-parse-error", "skip"];
+        }
+        case "lint": {
+            return ["lint", projectRoot, "--write", "--path", projectRoot, "--project-strict"];
+        }
+        case "refactor": {
+            return ["refactor", "codemod", projectRoot, "--write", "--path", projectRoot];
+        }
+    }
 }
 
 /**
@@ -1721,7 +1741,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 }
                 return await openProjectTargetPath(nextPathFromPicker, "finder-open");
             },
-            runFix: async () => {
+            runFix: async ({ workflow }) => {
                 if (!activeContext) {
                     throw new Error("Open a GameMaker project before running fixes.");
                 }
@@ -1729,9 +1749,14 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 activeFixProgressLogLines = [];
                 isFixWorkflowRunning = true;
                 try {
-                    const result = await runGraphVisualizationFixWorkflow(activeContext, options.config, (logLine) => {
-                        activeFixProgressLogLines.push(logLine);
-                    });
+                    const result = await runGraphVisualizationProjectWorkflow(
+                        activeContext,
+                        options.config,
+                        workflow,
+                        (logLine) => {
+                            activeFixProgressLogLines.push(logLine);
+                        }
+                    );
                     activeLastFixRun = Object.freeze({
                         logLines: result.logLines,
                         projectRoot: activeContext.projectRoot,

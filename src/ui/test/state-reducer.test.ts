@@ -104,6 +104,7 @@ void test("reset-project-scoped-state clears project-specific workflow and filte
         fixErrorMessage: "Fix failed.",
         fixLogLines: ["Previous project fix log"],
         fixStatus: "success" as const,
+        fixWorkflow: "lint",
         labelMode: "always" as const,
         liveReloadErrorMessage: "Previous project live-reload error.",
         searchQuery: "previous project"
@@ -118,6 +119,7 @@ void test("reset-project-scoped-state clears project-specific workflow and filte
     assert.equal(reset.fixErrorMessage, null);
     assert.deepEqual(reset.fixLogLines, []);
     assert.equal(reset.fixStatus, "idle");
+    assert.equal(reset.fixWorkflow, null);
     assert.equal(reset.liveReloadErrorMessage, null);
     assert.equal(reset.searchQuery, "");
 });

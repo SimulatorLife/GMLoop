@@ -159,6 +159,35 @@ void test("Live Reload toolbar owns page title, status, subtitle, and controls",
     assert.match(rendered, /id="live-reload-controls"[\s\S]*id="stop-live-reload"/u);
 });
 
+void test("Fix toolbar renders combined and individual project workflow buttons", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = createMockState("fix");
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id=run-fix[\s\S]*Fix/u);
+    assert.match(rendered, /id=run-format[\s\S]*Format/u);
+    assert.match(rendered, /id=run-refactor[\s\S]*Refactor \/ Codemods/u);
+    assert.match(rendered, /id=run-lint[\s\S]*Lint/u);
+});
+
+void test("Fix toolbar identifies the active workflow and disables concurrent project writes", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = {
+        ...createMockState("fix"),
+        fixWorkflow: "format",
+        isFixPending: true
+    };
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id=run-format[\s\S]*\?disabled=true[\s\S]*Formatting\.\.\./u);
+    assert.equal(Array.from(rendered.matchAll(/\?disabled=true/gu)).length, 4);
+    assert.equal(Array.from(rendered.matchAll(/button-spinner/gu)).length, 1);
+});
+
 void test("Docs toolbar owns subcategory controls and catalog search", () => {
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();

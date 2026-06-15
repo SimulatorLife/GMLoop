@@ -1,5 +1,6 @@
 import { html } from "lit";
 
+import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
 import {
     createNoopGraphVisualizationUiCallbacks,
     type GraphVisualizationUiCallbacks,
@@ -38,7 +39,8 @@ import {
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
     type GraphUiClearPageErrorDetail,
     type GraphUiSaveConfigDetail,
-    type GraphUiSetConfigViewDetail
+    type GraphUiSetConfigViewDetail,
+    type GraphUiTriggerFixDetail
 } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -186,12 +188,13 @@ export class GmAppShell extends LightDomLitElement {
         );
     };
 
-    #onTriggerFix = (): void => {
+    #onTriggerFix = (eventValue: Event): void => {
         if (!this.model || !hasLoadedGraphProject(this.model)) {
             return;
         }
 
-        void this.#runFixWorkflow();
+        const workflow = (eventValue as CustomEvent<GraphUiTriggerFixDetail>).detail.workflow;
+        void this.#runFixWorkflow(workflow);
     };
 
     #onTriggerStartLiveReload = (): void => {
@@ -312,7 +315,7 @@ export class GmAppShell extends LightDomLitElement {
         }
     }
 
-    async #runFixWorkflow(): Promise<void> {
+    async #runFixWorkflow(workflow: GraphVisualizationProjectWorkflow): Promise<void> {
         const fixWorkflowStartedAt = Date.now();
         let hasReceivedFixProgress = false;
         const fixWorkflowProgressTimer = setInterval(() => {
@@ -320,16 +323,20 @@ export class GmAppShell extends LightDomLitElement {
                 return;
             }
             this.#store.dispatch({
-                logLines: createRunningFixWorkflowLogLines(Date.now() - fixWorkflowStartedAt),
+                logLines: createRunningFixWorkflowLogLines(Date.now() - fixWorkflowStartedAt, workflow),
                 type: FIX_LOG_LINES_ACTION_TYPE
             });
         }, 1000);
 
         try {
-            this.#store.dispatch({ pending: true, type: "set-fix-pending" });
+            this.#store.dispatch({ pending: true, type: "set-fix-pending", workflow });
             this.#store.dispatch({ errorMessage: null, type: "set-fix-error" });
-            this.#store.dispatch({ logLines: createInitialFixWorkflowLogLines(), type: FIX_LOG_LINES_ACTION_TYPE });
+            this.#store.dispatch({
+                logLines: createInitialFixWorkflowLogLines(workflow),
+                type: FIX_LOG_LINES_ACTION_TYPE
+            });
             const result = await this.callbacks.onRunFix({
+                workflow,
                 onProgress: (progress) => {
                     if (progress.logLines.length === 0) {
                         return;
@@ -349,7 +356,7 @@ export class GmAppShell extends LightDomLitElement {
             this.#store.dispatch({ status: "error", type: "set-fix-status" });
         } finally {
             clearInterval(fixWorkflowProgressTimer);
-            this.#store.dispatch({ pending: false, type: "set-fix-pending" });
+            this.#store.dispatch({ pending: false, type: "set-fix-pending", workflow });
         }
     }
 

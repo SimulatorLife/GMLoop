@@ -1,5 +1,6 @@
 import { html } from "lit";
 
+import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
 import { type GraphVisualizationUiModel, hasLoadedGraphIndex, hasLoadedGraphProject } from "../contracts.js";
 import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
 import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
@@ -26,7 +27,8 @@ import {
     type GraphUiNavigatePageDetail,
     type GraphUiSetConfigViewDetail,
     type GraphUiSetDocsViewDetail,
-    type GraphUiSetSearchQueryDetail
+    type GraphUiSetSearchQueryDetail,
+    type GraphUiTriggerFixDetail
 } from "./events.js";
 import {
     evaluateToolbarKeyboardShortcut,
@@ -112,16 +114,35 @@ function resolveFixStatusChipStatus(
 }
 
 function resolveFixStatusSummary(state: GraphVisualizationUiState): string {
+    const workflowLabel =
+        state.fixWorkflow === "format"
+            ? "Formatting"
+            : state.fixWorkflow === "lint"
+              ? "Linting"
+              : state.fixWorkflow === "refactor"
+                ? "Refactoring"
+                : "Applying fixes";
+    const completedWorkflowLabel =
+        state.fixWorkflow === "format"
+            ? "Formatting"
+            : state.fixWorkflow === "lint"
+              ? "Linting"
+              : state.fixWorkflow === "refactor"
+                ? "Refactoring"
+                : "All fixes";
+
     if (state.isFixPending) {
-        return "Applying fixes to your project (this may take a while).";
+        return `${workflowLabel} your project (this may take a while).`;
     }
 
     if (state.fixStatus === "success") {
-        return "All fixes have been applied successfully.";
+        return `${completedWorkflowLabel} completed successfully.`;
     }
 
     if (state.fixStatus === "error") {
-        return "Fixes encountered errors. Review the run log for details.";
+        return state.fixWorkflow === "fix"
+            ? "Fixes encountered errors. Review the run log for details."
+            : `${workflowLabel} encountered errors. Review the run log for details.`;
     }
 
     return "Run the opened project's gmloop-configured repair workflow.";
@@ -370,15 +391,16 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
-    #emitFix(): void {
+    #emitFix(workflow: GraphVisualizationProjectWorkflow): void {
         if (!this.model || !hasLoadedGraphProject(this.model)) {
             return;
         }
 
         this.dispatchEvent(
-            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_FIX, {
+            new CustomEvent<GraphUiTriggerFixDetail>(GRAPH_UI_EVENT_TRIGGER_FIX, {
                 bubbles: true,
-                composed: true
+                composed: true,
+                detail: { workflow }
             })
         );
     }
@@ -555,21 +577,41 @@ export class GmGraphToolbar extends LightDomLitElement {
         }
 
         const isPending = this.state?.isFixPending === true;
+        const activeWorkflow = isPending ? (this.state?.fixWorkflow ?? null) : null;
+        const workflows = [
+            { id: "run-fix", label: "Fix", pendingLabel: "Fixing...", workflow: "fix" },
+            { id: "run-format", label: "Format", pendingLabel: "Formatting...", workflow: "format" },
+            {
+                id: "run-refactor",
+                label: "Refactor / Codemods",
+                pendingLabel: "Refactoring...",
+                workflow: "refactor"
+            },
+            { id: "run-lint", label: "Lint", pendingLabel: "Linting...", workflow: "lint" }
+        ] as const;
 
         return html`
             <div class="toolbar-control-group toolbar-fix-controls">
-                <button
-                    id="run-fix"
-                    type="button"
-                    class="gm-btn gm-btn--primary"
-                    ?disabled=${isPending}
-                    @click=${() => this.#emitFix()}
-                >
-                    <span class="button-content">
-                        ${isPending ? html`<span class="button-spinner" aria-hidden="true"></span>` : null}
-                        <span class="button-label">${isPending ? "Applying Fixes..." : "Apply Fixes"}</span>
-                    </span>
-                </button>
+                ${workflows.map(
+                    (entry, index) => html`
+                        <button
+                            id=${entry.id}
+                            type="button"
+                            class=${index === 0 ? "gm-btn gm-btn--primary" : "gm-btn"}
+                            ?disabled=${isPending}
+                            @click=${() => this.#emitFix(entry.workflow)}
+                        >
+                            <span class="button-content">
+                                ${activeWorkflow === entry.workflow
+                                    ? html`<span class="button-spinner" aria-hidden="true"></span>`
+                                    : null}
+                                <span class="button-label"
+                                    >${activeWorkflow === entry.workflow ? entry.pendingLabel : entry.label}</span
+                                >
+                            </span>
+                        </button>
+                    `
+                )}
             </div>
         `;
     }

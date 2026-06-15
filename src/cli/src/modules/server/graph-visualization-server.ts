@@ -3,6 +3,7 @@ import * as http from "node:http";
 import type { Socket } from "node:net";
 
 import { Core } from "@gmloop/core";
+import { UI } from "@gmloop/ui";
 
 import { tryParseJsonPayload } from "../../shared/error-guards.js";
 import type { ServerEndpoint, ServerLifecycle } from "./server-contracts.js";
@@ -42,7 +43,10 @@ type GraphVisualizationServerStartLiveReload = (
 
 type GraphVisualizationServerStopLiveReload = () => Promise<unknown>;
 
-type GraphVisualizationServerRunFix = () => Promise<Readonly<{ logLines: ReadonlyArray<string> }>>;
+type GraphVisualizationProjectWorkflow = (typeof UI.PROJECT_WORKFLOWS)[number];
+type GraphVisualizationServerRunFix = (
+    input: Readonly<{ workflow: GraphVisualizationProjectWorkflow }>
+) => Promise<Readonly<{ logLines: ReadonlyArray<string> }>>;
 type GraphVisualizationServerFixProgress = Readonly<{
     isRunning: boolean;
     logLines: ReadonlyArray<string>;
@@ -174,7 +178,7 @@ async function routeGraphVisualizationServerRequest(
     }
 
     if (request.method === "POST" && request.url === "/api/fix" && options.runFix) {
-        await handleRunFixRequest(options.runFix, options.clearFixProgress, response);
+        await handleRunFixRequest(options.runFix, options.clearFixProgress, request, response);
         return;
     }
 
@@ -258,16 +262,31 @@ async function handleRegenerateRequest(
 async function handleRunFixRequest(
     runFix: GraphVisualizationServerRunFix,
     clearFixProgress: GraphVisualizationServerClearFixProgress | undefined,
+    request: http.IncomingMessage,
     response: http.ServerResponse<http.IncomingMessage>
 ): Promise<void> {
     try {
-        const fixResult = await runFix();
+        const parsedBody = await readOptionalJsonObjectRequestBody(request);
+        if (parsedBody === null) {
+            writeInvalidJsonPayloadResponse(response);
+            return;
+        }
+        const workflow = readProjectWorkflow(parsedBody.workflow);
+        if (workflow === null) {
+            writeJsonResponse(response, 400, { error: "Unknown project workflow." });
+            return;
+        }
+        const fixResult = await runFix({ workflow });
         writeJsonResponse(response, 200, { logLines: fixResult.logLines, ok: true });
         clearFixProgress?.();
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
         clearFixProgress?.();
     }
+}
+
+function readProjectWorkflow(value: unknown): GraphVisualizationProjectWorkflow | null {
+    return UI.PROJECT_WORKFLOWS.find((workflow) => workflow === value) ?? null;
 }
 
 async function handleOpenProjectTargetsRequest(

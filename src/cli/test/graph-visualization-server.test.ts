@@ -93,12 +93,14 @@ async function withGraphVisualizationServer(
 
 void test("graph visualization server serves UI-rendered HTML and exposes regeneration JSON", async (testContext) => {
     let openedPath: string | null = null;
+    let requestedWorkflow: string | null = null;
     let fixProgressLogLines: ReadonlyArray<string> = ["[1/3 Refactor Codemods]"];
     let handle;
     try {
         handle = await startGraphVisualizationServer({
             regenerate: async () => ({ changed: true }),
-            runFix: async () => {
+            runFix: async ({ workflow }) => {
+                requestedWorkflow = workflow;
                 fixProgressLogLines = ["Project root: /tmp/project", "Success!"];
                 return { logLines: fixProgressLogLines };
             },
@@ -159,10 +161,15 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
             ok: true
         });
 
-        const fixResponse = await fetch(`${handle.url}/api/fix`, { method: "POST" });
+        const fixResponse = await fetch(`${handle.url}/api/fix`, {
+            body: JSON.stringify({ workflow: "format" }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
         assert.equal(fixResponse.status, 200);
         const fixPayload = (await fixResponse.json()) as { logLines: ReadonlyArray<string>; ok: boolean };
         assert.deepEqual(fixPayload, { logLines: ["Project root: /tmp/project", "Success!"], ok: true });
+        assert.equal(requestedWorkflow, "format");
 
         const fixProgressAfterRunResponse = await fetch(`${handle.url}/api/fix/progress`);
         assert.equal(fixProgressAfterRunResponse.status, 200);
@@ -202,6 +209,31 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
     } finally {
         await handle.stop();
     }
+});
+
+void test("graph visualization server rejects unknown project workflows", async (testContext) => {
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            regenerate: async () => ({ changed: false }),
+            runFix: async () => ({ logLines: [] }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        },
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/fix`, {
+                body: JSON.stringify({ workflow: "unknown" }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+
+            assert.equal(response.status, 400);
+            assert.deepEqual(await response.json(), { error: "Unknown project workflow." });
+        }
+    );
 });
 
 void test("graph visualization server keeps the current view accessible while regeneration is pending", async (testContext) => {

@@ -30,3 +30,14 @@ void test("createRunningFixWorkflowLogLines reports elapsed seconds while the fi
         "Fix workflow is still running (3 seconds elapsed)..."
     ]);
 });
+
+void test("fix workflow progress names the selected individual workflow", () => {
+    assert.deepEqual(createInitialFixWorkflowLogLines("format"), [
+        "Starting project format workflow...",
+        "Project format workflow is still running..."
+    ]);
+    assert.deepEqual(createRunningFixWorkflowLogLines(2100, "lint"), [
+        "Starting project lint workflow...",
+        "Project lint workflow is still running (2 seconds elapsed)..."
+    ]);
+});

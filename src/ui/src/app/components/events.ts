@@ -1,3 +1,4 @@
+import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
 import type {
     GraphVisualizationUiConfigView,
     GraphVisualizationUiDocsView,
@@ -26,3 +27,4 @@ export type GraphUiSetConfigViewDetail = Readonly<{ configView: GraphVisualizati
 export type GraphUiSaveConfigDetail = Readonly<{ config: Readonly<Record<string, unknown>> }>;
 export type GraphUiSetSearchQueryDetail = Readonly<{ searchQuery: string }>;
 export type GraphUiClearPageErrorDetail = Readonly<{ page: GraphVisualizationUiPage }>;
+export type GraphUiTriggerFixDetail = Readonly<{ workflow: GraphVisualizationProjectWorkflow }>;

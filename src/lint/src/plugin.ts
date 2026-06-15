@@ -29,7 +29,7 @@ const lintConfigs = createLintConfigsWithPlugins({
 
 /**
  * Flattened lint config namespace that exposes project configuration helpers
- * directly alongside the config sets (recommended, feather, performance).
+ * directly alongside the config sets (all, recommended, feather, performance).
  *
  * This flattens the hierarchy by placing helpers like `normalizeLintRulesConfig`
  * and `createLintRuleEntriesFromProjectConfig` directly on `Lint.configs` rather

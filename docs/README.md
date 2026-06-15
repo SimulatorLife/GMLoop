@@ -17,7 +17,7 @@ then return here for deeper context.
   Flat ESLint config that composes the `@gmloop/lint` presets (without TypeScript
   requirement).
 - [`examples/example.eslint.all-rules.config.js`](examples/example.eslint.all-rules.config.js) —
-  Flat ESLint config with all available `@gmloop/lint` rules.
+  Flat ESLint config using the preset with all available `@gmloop/lint` rules.
 - [`examples/example.mcp.json`](examples/example.mcp.json) — MCP client config
   example that starts the MCP stdio server via the `gmloop mcp` CLI command
   through `pnpm`.

@@ -39,6 +39,17 @@ void test("normalizeLintRulesConfig supports lintRuleset preset names", () => {
     assert.equal(rules["feather/gm1003"], "warn");
 });
 
+void test("normalizeLintRulesConfig supports the all ruleset", () => {
+    const rules = normalizeLintRulesConfig({
+        lintRuleset: "all"
+    });
+
+    assert.equal(rules["gml/no-scientific-notation"], "error");
+    assert.equal(rules["gml/prefer-hoistable-loop-accessors"], "warn");
+    assert.equal(rules["feather/gm1000"], "warn");
+    assert.equal(rules["feather/gm2031"], "warn");
+});
+
 void test("normalizeLintRulesConfig merges lintRuleset with explicit lintRules overrides", () => {
     const rules = normalizeLintRulesConfig({
         lintRuleset: "recommended",
@@ -54,16 +65,16 @@ void test("normalizeLintRulesConfig merges lintRuleset with explicit lintRules o
 });
 
 void test("normalizeLintRulesConfig rejects invalid lintRuleset values", () => {
-    assert.throws(() => normalizeLintRulesConfig({ lintRuleset: "all" }), {
+    assert.throws(() => normalizeLintRulesConfig({ lintRuleset: "unknown" }), {
         name: "TypeError",
-        message: "gmloop.json lintRuleset must be one of recommended, feather, performance."
+        message: "gmloop.json lintRuleset must be one of recommended, all, feather, performance."
     });
 });
 
 void test("normalizeLintRulesConfig rejects non-string lintRuleset values", () => {
     assert.throws(() => normalizeLintRulesConfig({ lintRuleset: 123 }), {
         name: "TypeError",
-        message: "gmloop.json lintRuleset must be one of recommended, feather, performance."
+        message: "gmloop.json lintRuleset must be one of recommended, all, feather, performance."
     });
 });
 
@@ -132,7 +143,7 @@ void test("normalizeLintRulesConfigOrNull returns null for malformed lintRules",
 });
 
 void test("normalizeLintRulesConfigOrNull returns null for invalid lintRuleset", () => {
-    const result = normalizeLintRulesConfigOrNull({ lintRuleset: "all" });
+    const result = normalizeLintRulesConfigOrNull({ lintRuleset: "unknown" });
     assert.equal(result, null);
 });
 
@@ -158,7 +169,7 @@ void test("createLintRuleEntriesFromProjectConfigOrNull returns null for malform
 });
 
 void test("createLintRuleEntriesFromProjectConfigOrNull returns null for invalid lintRuleset", () => {
-    const result = createLintRuleEntriesFromProjectConfigOrNull({ lintRuleset: "all" });
+    const result = createLintRuleEntriesFromProjectConfigOrNull({ lintRuleset: "unknown" });
     assert.equal(result, null);
 });
 

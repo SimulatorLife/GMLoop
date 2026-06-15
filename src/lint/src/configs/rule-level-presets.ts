@@ -9,7 +9,7 @@ export const PERFORMANCE_OVERRIDE_RULE_IDS = Object.freeze([
     "gml/prefer-string-interpolation"
 ]);
 
-export type LintRulesetName = "recommended" | "feather" | "performance";
+export type LintRulesetName = "all" | "recommended" | "feather" | "performance";
 
 const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze({
     "gml/prefer-hoistable-loop-accessors": "warn",
@@ -26,6 +26,7 @@ const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze
     "gml/no-empty-comments": "warn",
     "gml/no-legacy-api": "warn",
     "gml/no-scientific-notation": "error",
+    "gml/no-unary-plus-on-identifier": "warn",
     "gml/no-unnecessary-string-interpolation": "warn",
     "gml/remove-default-comments": "warn",
     "gml/normalize-doc-comments": "warn",
@@ -63,6 +64,11 @@ const FEATHER_RULES: Readonly<Record<`feather/${string}`, LintRuleLevel>> = Obje
     >
 );
 
+const ALL_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze({
+    ...RECOMMENDED_RULES,
+    ...FEATHER_RULES
+});
+
 function createPerformanceRuleSet(): Readonly<Record<string, LintRuleLevel>> {
     const rules: Record<string, LintRuleLevel> = {
         "gml/prefer-hoistable-loop-accessors": "off",
@@ -85,6 +91,7 @@ const PERFORMANCE_RULES = createPerformanceRuleSet();
 
 export const LINT_RULESET_NAMES: ReadonlyArray<LintRulesetName> = Object.freeze([
     "recommended",
+    "all",
     "feather",
     "performance"
 ]);
@@ -95,10 +102,12 @@ export const LINT_RULESET_RULE_LEVELS: Readonly<Record<LintRulesetName, Readonly
             ...RECOMMENDED_RULES,
             ...RECOMMENDED_SAFE_FEATHER_RULES
         }),
+        all: ALL_RULES,
         feather: FEATHER_RULES,
         performance: PERFORMANCE_RULES
     });
 
+export const ALL_RULE_LEVELS = ALL_RULES;
 export const RECOMMENDED_GML_RULE_LEVELS = RECOMMENDED_RULES;
 export const RECOMMENDED_SAFE_FEATHER_RULE_LEVELS = RECOMMENDED_SAFE_FEATHER_RULES;
 export const FEATHER_RULE_LEVELS = FEATHER_RULES;

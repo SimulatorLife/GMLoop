@@ -13,6 +13,7 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         fixErrorMessage: null,
         fixLogLines: [],
         fixStatus: "idle",
+        fixWorkflow: null,
         isConfigSavePending: false,
         isFixPending: false,
         isLiveReloadStartPending: false,
@@ -125,6 +126,7 @@ export function reduceGraphVisualizationUiState(
                 ...state,
                 isFixPending: action.pending,
                 fixStatus: action.pending ? "running" : state.fixStatus,
+                fixWorkflow: action.workflow,
                 pendingActionCount: computePendingActionCount({ ...state, isFixPending: action.pending })
             };
         }
@@ -241,6 +243,7 @@ export function reduceGraphVisualizationUiState(
                 fixErrorMessage: null,
                 fixLogLines: [],
                 fixStatus: "idle",
+                fixWorkflow: null,
                 liveReloadErrorMessage: null,
                 searchQuery: "",
                 graphErrorMessage: null,

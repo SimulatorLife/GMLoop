@@ -61,7 +61,7 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
     const expectedGlob = Object.freeze(["**/*.gml"]);
     assert.deepEqual(expectedGlob, ["**/*.gml"]);
 
-    const sets = [Lint.configs.recommended, Lint.configs.feather, Lint.configs.performance];
+    const sets = [Lint.configs.all, Lint.configs.recommended, Lint.configs.feather, Lint.configs.performance];
     for (const configSet of sets) {
         assert.ok(Array.isArray(configSet));
         assertEquals(Object.isFrozen(configSet), true);
@@ -104,6 +104,29 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
 
     const [featherOverlay] = Lint.configs.feather;
     assertEquals(featherOverlay.plugins?.feather, Lint.featherPlugin);
+});
+
+void test("all config enables every registered rule at its recommended level", () => {
+    const [allRulesConfig] = Lint.configs.all;
+    const gmlRuleIds = Object.keys(Lint.plugin.rules).map((ruleName) => `gml/${ruleName}`);
+    const featherSeverityByRuleId = new Map(
+        Lint.services.featherManifest.entries.map((entry) => [entry.ruleId, entry.defaultSeverity])
+    );
+    const expectedRuleIds = [...gmlRuleIds, ...featherSeverityByRuleId.keys()].sort();
+
+    assertEquals(Lint.configs.all.length, 1);
+    assertEquals(allRulesConfig.language, "gml/gml");
+    assert.deepEqual(allRulesConfig.languageOptions, { recovery: "limited" });
+    assertEquals(allRulesConfig.plugins?.gml, Lint.plugin);
+    assertEquals(allRulesConfig.plugins?.feather, Lint.featherPlugin);
+    assert.deepEqual(Object.keys(allRulesConfig.rules).sort(), expectedRuleIds);
+
+    for (const ruleId of gmlRuleIds) {
+        assert.match(allRulesConfig.rules[ruleId] ?? "", /^(?:warn|error)$/u, `${ruleId} should be enabled`);
+    }
+    for (const [ruleId, severity] of featherSeverityByRuleId) {
+        assertEquals(allRulesConfig.rules[ruleId], severity, `${ruleId} should use its recommended severity`);
+    }
 });
 
 void test("feather overlay still exposes the full manifest independently of recommended", () => {

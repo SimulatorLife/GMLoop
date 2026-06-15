@@ -41,22 +41,19 @@ This wires:
 
 `Lint.configs` exposes these immutable flat-config sets:
 
+- `all`: every `gml/*` and `feather/*` rule at its recommended level
 - `recommended`: all `gml/*` rules plus a conservative safe `feather/*` subset
 - `feather`: `feather/gm####` overlay rules from the feather manifest
 
-Example:
+Enable every lint rule with one config spread:
 
 ```js
 import * as LintWorkspace from "@gmloop/lint";
 
-export default [
-    ...LintWorkspace.Lint.configs.recommended,
-    ...LintWorkspace.Lint.configs.feather
-];
+export default [...LintWorkspace.Lint.configs.all];
 ```
 
-For a full "all rules enabled" config (including all `feather/*` rules), see:
-`docs/examples/example.eslint.all-rules.config.js`.
+The `all` config preserves each rule's recommended `"warn"` or `"error"` severity.
 
 ## Language Behavior
 
@@ -87,7 +84,7 @@ LintWorkspace.Lint;
 
 - `plugin`: ESLint plugin object for `gml/*` (`rules`, `languages`)
 - `featherPlugin`: ESLint plugin object for `feather/*` (`rules`)
-- `configs`: `recommended`, `feather`
+- `configs`: `all`, `recommended`, `feather`, `performance`
 - `ruleIds`: PascalCase map keys to canonical full IDs (`gml/...`, `feather/...`)
 - `services`: single-file-safe support values only; no project registries, project roots, or semantic indexes
 
@@ -108,6 +105,7 @@ Built-in `gml/*` rule short names:
 - `no-empty-regions`
 - `no-legacy-api`
 - `no-scientific-notation`
+- `no-unary-plus-on-identifier`
 - `no-unnecessary-string-interpolation`
 - `remove-default-comments`
 - `normalize-banner-comments`
@@ -189,7 +187,6 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
 ## TODO
 
 - **BUG**: When lint-fixing is run through the GMLoop CLI, if no eslint configuration file is detected in the target GameMaker project, the CLI should fall back to a default, "recommended" ruleset.
-- **FEAT**: Add a new "all" lint ruleset config that includes all `gml/*` and `feather/*` rules at their recommended levels (either "warn" or "error"), so users can easily enable every lint rule with a single config spread.
 - Add an ESLint auto-fix rule that detects simple numeric accumulation loops like `alpha += index` over a fixed range and replaces them with the equivalent arithmetic-series expression. Example: `for index = 0..9` can become `alpha += count * (count - 1) * 0.5`, avoiding unnecessary runtime iteration.
 - **BUG**: Split the large, multi-purpose `optimize-logical-flow` rule into multiple focused rules that each target a specific logical optimization pattern
 - **BUG**: Audit the lint auto-fix rules for conflicts. If a `gml/` rule conflicts with a `feather/` rule, the `gml/` auto-fix should take precedence and the `feather/` rule should be made **strictly report-only**.

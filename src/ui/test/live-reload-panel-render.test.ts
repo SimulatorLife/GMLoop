@@ -480,6 +480,7 @@ void test("GmLiveReloadPanel renders inactive after live reload is stopped", () 
 
 void test("GmAppShell forwards live fix progress snapshots while a fix run is pending", async () => {
     const shell = new TestableGmAppShell();
+    let requestedWorkflow: string | null = null;
     let resolveFixRun: ((result: GraphVisualizationFixRunResult) => void) | null = null;
     const runFixPromise = new Promise<GraphVisualizationFixRunResult>((resolve) => {
         resolveFixRun = resolve;
@@ -499,6 +500,7 @@ void test("GmAppShell forwards live fix progress snapshots while a fix run is pe
         onRegenerate: () => {},
         onSaveConfig: () => {},
         onRunFix: (options) => {
+            requestedWorkflow = options?.workflow ?? null;
             options?.onProgress({ logLines: ["[1/3 Refactor Codemods]"] });
             return runFixPromise;
         },
@@ -507,11 +509,17 @@ void test("GmAppShell forwards live fix progress snapshots while a fix run is pe
     };
 
     shell.connectedCallback();
-    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_FIX, { bubbles: true }));
+    shell.dispatchEvent(
+        new CustomEvent(GRAPH_UI_EVENT_TRIGGER_FIX, {
+            bubbles: true,
+            detail: { workflow: "refactor" }
+        })
+    );
     await Promise.resolve();
 
     const pendingRender = renderTemplateValue(shell.renderForTest());
     assert.match(pendingRender, /\[1\/3 Refactor Codemods\]/u);
+    assert.equal(requestedWorkflow, "refactor");
 
     if (!resolveFixRun) {
         assert.fail("Expected fix workflow completion callback to be captured.");

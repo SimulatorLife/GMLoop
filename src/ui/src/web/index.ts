@@ -294,7 +294,11 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 }, 1000);
 
                 try {
-                    const response = await fetch("/api/fix", { method: "POST" });
+                    const response = await fetch("/api/fix", {
+                        body: JSON.stringify({ workflow: options?.workflow ?? "fix" }),
+                        headers: { "Content-Type": "application/json" },
+                        method: "POST"
+                    });
                     const result = await readJsonResponse<FixApiResponse>(response);
                     if (!response.ok || result.ok !== true) {
                         throw new Error(result.error ?? "Fix workflow failed.");

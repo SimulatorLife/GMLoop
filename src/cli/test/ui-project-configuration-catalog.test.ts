@@ -49,9 +49,12 @@ void test("project configuration catalog exposes all lint rules and available ru
     const ruleLevels = new Set(catalog.lint.rules.map((rule) => rule.level));
 
     assert.ok(rulesetNames.has("recommended"));
+    assert.ok(rulesetNames.has("all"));
     assert.ok(rulesetNames.has("feather"));
     assert.ok(rulesetNames.has("performance"));
-    assert.ok(catalog.lint.rules.length > catalog.lint.rulesets[0].ruleIds.length);
+    const recommendedRuleset = catalog.lint.rulesets.find((ruleset) => ruleset.name === "recommended");
+    assert.ok(recommendedRuleset);
+    assert.ok(catalog.lint.rules.length > recommendedRuleset.ruleIds.length);
     assert.ok(catalog.lint.rules.some((rule) => rule.ruleId === "gml/no-globalvar" && rule.level === "warn"));
     assert.ok(ruleLevels.has("off"));
     assert.equal(catalog.gameMakerCli.available, true);
