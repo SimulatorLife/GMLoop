@@ -4,6 +4,6 @@
   },
   "fixture": {
     "kind": "lint",
-    "assertion": "transform"
+    "assertion": "idempotent"
   }
 }

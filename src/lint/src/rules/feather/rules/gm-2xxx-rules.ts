@@ -1,10 +1,6 @@
 import type { Rule } from "eslint";
 
-import {
-    appendLineIfMissing,
-    collectContiguousLeadingDocLinesAboveIndex,
-    createFullTextRewriteRule
-} from "../feather-rule-helpers.js";
+import { appendLineIfMissing, createFullTextRewriteRule } from "../feather-rule-helpers.js";
 import {
     DUPLICATE_GPU_POP_STATE_PATTERN,
     DUPLICATE_GPU_PUSH_STATE_PATTERN,
@@ -30,22 +26,6 @@ export function createGm2003Rule(entry: FeatherManifestEntry): Rule.RuleModule {
         }
 
         return appendLineIfMissing(sourceText, "shader_reset();");
-    });
-}
-
-export function createGm2004Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        let rewritten = sourceText;
-        rewritten = rewritten.replaceAll(/for\s*\(\s*var i = 0;\s*i < ([^;]+);\s*i \+= 1\s*\)\s*\{/g, "repeat ($1) {");
-        rewritten = rewritten.replaceAll(
-            /for\s*\(\s*count = 0;\s*count < ([^;]+);\s*\+\+count\s*\)\s*\{/g,
-            "repeat ($1) {"
-        );
-        rewritten = rewritten.replaceAll(
-            /for\s*\(\s*var step = 0;\s*step < ([^;]+);\s*step = step \+ 1\s*\)\s*\{/g,
-            "repeat ($1) {"
-        );
-        return rewritten;
     });
 }
 
@@ -418,24 +398,6 @@ export function createGm2043Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 export function createGm2044Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createFullTextRewriteRule(entry, (sourceText) => {
         let rewritten = sourceText;
-        rewritten = rewritten.replaceAll(
-            /^([ \t]*)function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\{/gm,
-            (
-                fullMatch: string,
-                indentation: string,
-                _functionName: string,
-                _parameterList: string,
-                offset: number,
-                fullText: string
-            ) => {
-                const leadingDocLines = collectContiguousLeadingDocLinesAboveIndex(fullText, offset);
-                if (leadingDocLines.some((line) => /^\/\/\/\s*@returns\b/u.test(line.trim()))) {
-                    return fullMatch;
-                }
-
-                return `${indentation}/// @returns {undefined}\n${fullMatch}`;
-            }
-        );
         rewritten = rewritten.replaceAll(
             /\bvar\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\1\s*\+\s*1\s*;/g,
             (_fullMatch, identifier: string) => `${identifier} = ${identifier} + 1;`

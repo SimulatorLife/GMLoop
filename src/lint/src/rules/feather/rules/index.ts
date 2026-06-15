@@ -1,10 +1,10 @@
 export type { FeatherRuleFactory } from "../feather-rule-types.js";
+export { createGm1017Rule, createGm1023Rule, createGm1024Rule } from "./deprecated-identifiers-rule.js";
 export {
     createGm1013Rule,
     createGm1032Rule,
     createGm1034Rule,
     createGm1036Rule,
-    createGm1056Rule,
     createGm1059Rule,
     createGm1062Rule
 } from "./gm-1xxx-extras.js";
@@ -22,12 +22,8 @@ export {
     createGm1014Rule,
     createGm1015Rule,
     createGm1016Rule,
-    createGm1017Rule,
     createGm1021Rule,
-    createGm1023Rule,
-    createGm1024Rule,
     createGm1026Rule,
-    createGm1028Rule,
     createGm1029Rule,
     createGm1030Rule,
     createGm1033Rule,
@@ -44,7 +40,6 @@ export {
 export {
     createGm2000Rule,
     createGm2003Rule,
-    createGm2004Rule,
     createGm2005Rule,
     createGm2007Rule,
     createGm2008Rule,
@@ -78,3 +73,6 @@ export {
     createGm2061Rule,
     createGm2064Rule
 } from "./gm-2xxx-rules.js";
+export { createGm1028Rule } from "./gm1028-rule.js";
+export { createGm1056Rule } from "./gm1056-rule.js";
+export { createGm2004Rule } from "./gm2004-rule.js";

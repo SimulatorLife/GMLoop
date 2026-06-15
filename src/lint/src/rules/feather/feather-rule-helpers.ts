@@ -11,7 +11,7 @@ import type { FeatherManifestEntry } from "./manifest.js";
 const { getDeprecatedIdentifierCatalogEntry } = gmlRuleDeprecatedIdentifierServices;
 
 export function createFeatherRuleMeta(entry: FeatherManifestEntry): Rule.RuleMetaData {
-    return Object.freeze({
+    const meta: Rule.RuleMetaData = {
         type: "suggestion",
         docs: Object.freeze({
             description: `Rule for ${entry.ruleId}.`,
@@ -21,9 +21,12 @@ export function createFeatherRuleMeta(entry: FeatherManifestEntry): Rule.RuleMet
         schema: Object.freeze([]),
         messages: Object.freeze({
             diagnostic: `${entry.ruleId} diagnostic.`
-        }),
-        fixable: "code"
-    });
+        })
+    };
+    if (entry.fixability !== "none") {
+        meta.fixable = "code";
+    }
+    return Object.freeze(meta);
 }
 
 export function appendLineIfMissing(sourceText: string, lineToAppend: string): string {

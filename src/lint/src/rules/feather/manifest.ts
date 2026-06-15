@@ -13,6 +13,7 @@ export type FeatherManifestEntry = Readonly<{
     fixability: FeatherFixability;
     requiresProjectContext: boolean;
     fixScope: "local-only";
+    conflictingGmlRuleIds: ReadonlyArray<`gml/${string}`>;
     messageIds: ReadonlyArray<"diagnostic" | "unsafeFix" | "missingProjectContext">;
 }>;
 
@@ -117,10 +118,17 @@ function toFeatherParityId(ruleId: FeatherRuleId): FeatherParityId {
 }
 
 const FEATHER_MESSAGE_IDS = Object.freeze(["diagnostic", "unsafeFix", "missingProjectContext"] as const);
+const FEATHER_GML_AUTOFIX_CONFLICTS: Readonly<Partial<Record<FeatherParityId, ReadonlyArray<`gml/${string}`>>>> =
+    Object.freeze({
+        GM1062: Object.freeze(["gml/normalize-doc-comments"] as const),
+        GM2061: Object.freeze(["gml/optimize-logical-flow"] as const)
+    });
+const REPORT_ONLY_FEATHER_IDS: ReadonlySet<FeatherParityId> = new Set(["GM1054", "GM1062", "GM2061"]);
 
 const entries: ReadonlyArray<FeatherManifestEntry> = Object.freeze(
-    FEATHER_PARITY_IDS.map((id) =>
-        Object.freeze({
+    FEATHER_PARITY_IDS.map((id) => {
+        const conflictingGmlRuleIds = FEATHER_GML_AUTOFIX_CONFLICTS[id] ?? Object.freeze([]);
+        return Object.freeze({
             id,
             ruleId: (() => {
                 const ruleId = toFeatherRuleId(id);
@@ -130,12 +138,13 @@ const entries: ReadonlyArray<FeatherManifestEntry> = Object.freeze(
                 return ruleId;
             })(),
             defaultSeverity: "warn",
-            fixability: "none",
+            fixability: REPORT_ONLY_FEATHER_IDS.has(id) ? "none" : "always",
             requiresProjectContext: false,
             fixScope: "local-only",
+            conflictingGmlRuleIds,
             messageIds: FEATHER_MESSAGE_IDS
-        })
-    )
+        });
+    })
 );
 
 /**

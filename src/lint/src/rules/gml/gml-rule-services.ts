@@ -9,7 +9,20 @@ import {
 } from "../../doc-comment/index.js";
 import { createLimitedRecoveryProjection } from "../../language/index.js";
 import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
-import { findMatchingBraceEndIndex, resolveLocFromIndex } from "./rule-base-helpers.js";
+import {
+    applySourceTextEdits,
+    findMatchingBraceEndIndex,
+    getVariableDeclarator,
+    isAssignmentExpressionNode,
+    isAstNodeRecord,
+    isIdentifierNode,
+    isMemberIndexExpressionNode,
+    isVariableDeclaratorNode,
+    reportFullTextRewrite,
+    resolveLocFromIndex,
+    walkAstNodes,
+    walkAstNodesWithParent
+} from "./rule-base-helpers.js";
 
 /**
  * Stable doc-comment contract for GML rule implementations.
@@ -100,6 +113,16 @@ export const gmlRuleAutofixServices = Object.freeze({
  * be imported from `./rule-base-helpers.js` directly.
  */
 export const gmlRuleBaseHelpersServices = Object.freeze({
+    applySourceTextEdits,
     findMatchingBraceEndIndex,
-    resolveLocFromIndex
+    getVariableDeclarator,
+    isAssignmentExpressionNode,
+    isAstNodeRecord,
+    isIdentifierNode,
+    isMemberIndexExpressionNode,
+    isVariableDeclaratorNode,
+    reportFullTextRewrite,
+    resolveLocFromIndex,
+    walkAstNodes,
+    walkAstNodesWithParent
 });

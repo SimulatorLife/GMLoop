@@ -154,10 +154,40 @@ const featherRuleFactoriesById: ReadonlyMap<string, FeatherRuleFactory> = new Ma
     ["GM2064", createGm2064Rule]
 ]);
 
+function createReportOnlyRuleContext(context: Rule.RuleContext): Rule.RuleContext {
+    const report = (descriptor: Rule.ReportDescriptor): void => {
+        const { fix: _fix, suggest: _suggest, ...reportOnlyDescriptor } = descriptor;
+        context.report(reportOnlyDescriptor);
+    };
+
+    return new Proxy(Object.create(null) as object, {
+        get(_target, property) {
+            return property === "report" ? report : Reflect.get(context, property);
+        }
+    }) as Rule.RuleContext;
+}
+
+function createReportOnlyFeatherRule(rule: Rule.RuleModule): Rule.RuleModule {
+    const meta = rule.meta;
+    let reportOnlyMeta: Rule.RuleMetaData | undefined;
+    if (meta !== undefined) {
+        const { fixable: _fixable, hasSuggestions: _hasSuggestions, ...remainingMeta } = meta;
+        reportOnlyMeta = Object.freeze(remainingMeta);
+    }
+
+    return Object.freeze({
+        ...(reportOnlyMeta === undefined ? {} : { meta: reportOnlyMeta }),
+        create(context) {
+            return rule.create(createReportOnlyRuleContext(context));
+        }
+    });
+}
+
 export function createFeatherRule(entry: FeatherManifestEntry): Rule.RuleModule {
     const createRule = featherRuleFactoriesById.get(entry.id);
     if (createRule) {
-        return createRule(entry);
+        const rule = createRule(entry);
+        return entry.fixability === "none" ? createReportOnlyFeatherRule(rule) : rule;
     }
 
     throw new Error(`Missing feather rule implementation for id '${entry.id}'.`);

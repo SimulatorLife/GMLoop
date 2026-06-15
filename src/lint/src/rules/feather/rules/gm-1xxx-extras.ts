@@ -1,6 +1,6 @@
 import type { Rule } from "eslint";
 
-import { gmlRuleBaseHelpersServices, gmlRuleDocCommentServices } from "../../gml/gml-rule-services.js";
+import { gmlRuleDocCommentServices } from "../../gml/gml-rule-services.js";
 import {
     createFullTextRewriteRule,
     extractFunctionParameterNames,
@@ -13,11 +13,6 @@ import type { FeatherManifestEntry } from "../manifest.js";
 // the doc-comment layer directly; the abstraction is the only surface that
 // rule implementations are allowed to depend on.
 const { normalizeDocParamName } = gmlRuleDocCommentServices;
-
-// Consume the base-helper service contract so this feather rule does not
-// reach two directory levels into the gml/ rules folder for
-// `findMatchingBraceEndIndex`. The facade keeps the gml/ layout encapsulated.
-const { findMatchingBraceEndIndex } = gmlRuleBaseHelpersServices;
 
 /**
  * Houses the GM1xxx rule factories that were added in a later pass on top of
@@ -59,7 +54,6 @@ export function createGm1013Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 export function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createFullTextRewriteRule(entry, (sourceText) => {
         let rewritten = sourceText;
-        rewritten = rewritten.replaceAll(/^\s*\/\/\/\s*@function\b[^\n]*\n?/gm, "");
         rewritten = rewritten.replaceAll(/\bargument\[\s*(\d+)\s*\]/g, "argument$1");
         rewritten = rewritten.replaceAll(
             /function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*\{([\s\S]*?)\n\}/g,
@@ -115,86 +109,6 @@ export function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                 return `function ${functionName}() {${rewrittenBody}\n}`;
             }
         );
-        rewritten = rewritten.replaceAll(
-            /((?:^[ \t]*\/\/\/[^\n]*\n)*)(^([ \t]*)function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\{)/gm,
-            (
-                fullMatch: string,
-                docBlock: string,
-                functionDeclaration: string,
-                indentation: string,
-                _functionName: string,
-                parameterList: string,
-                offset: number,
-                fullText: string
-            ) => {
-                const parameterNames = extractFunctionParameterNames(parameterList);
-                const functionDeclarationStart = offset + docBlock.length;
-                const openBraceIndex = fullText.indexOf("{", functionDeclarationStart);
-                if (openBraceIndex === -1) {
-                    return fullMatch;
-                }
-
-                const closeBraceEndIndex = findMatchingBraceEndIndex(fullText, openBraceIndex);
-                if (closeBraceEndIndex < 0) {
-                    return fullMatch;
-                }
-
-                const functionBody = fullText.slice(openBraceIndex + 1, closeBraceEndIndex - 1);
-                const argumentIndexes = [...functionBody.matchAll(/\bargument(\d+)\b/g)].map((match) =>
-                    Number.parseInt(match[1], 10)
-                );
-                const maxArgumentIndex = argumentIndexes.length === 0 ? -1 : Math.max(...argumentIndexes);
-
-                const aliasNamesByIndex = new Map<number, string>();
-                for (const match of functionBody.matchAll(
-                    /^\s*var\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*argument(\d+)\s*;\s*$/gm
-                )) {
-                    const aliasName = match[1];
-                    const aliasIndex = Number.parseInt(match[2], 10);
-                    aliasNamesByIndex.set(aliasIndex, aliasName);
-                }
-
-                const docLines =
-                    docBlock.length === 0
-                        ? []
-                        : docBlock
-                              .trimEnd()
-                              .split(/\r?\n/u)
-                              .filter((line) => line.length > 0);
-                const descriptionLines = docLines
-                    .filter((line) => /^\s*\/\/\/\s*@description\b/u.test(line))
-                    .map((line) => {
-                        const descriptionText = line.replace(/^\s*\/\/\/\s*@description\b\s*/u, "").trim();
-                        return `${indentation}/// @description${descriptionText.length > 0 ? ` ${descriptionText}` : ""}`;
-                    });
-                const returnsLines = docLines
-                    .filter((line) => /^\s*\/\/\/\s*@returns\b/u.test(line))
-                    .map((line) => `${indentation}/// @returns${line.replace(/^\s*\/\/\/\s*@returns\b/u, "")}`);
-
-                const parameterDocNames: Array<string> = [];
-                if (parameterNames.length > 0) {
-                    parameterDocNames.push(...parameterNames);
-                } else if (maxArgumentIndex >= 0) {
-                    for (let index = 0; index <= maxArgumentIndex; index += 1) {
-                        parameterDocNames.push(aliasNamesByIndex.get(index) ?? `argument${index}`);
-                    }
-                }
-
-                const parameterDocLines = parameterDocNames.map(
-                    (parameterName) => `${indentation}/// @param ${normalizeDocParamName(parameterName)}`
-                );
-                const canonicalDocLines = [...descriptionLines, ...parameterDocLines, ...returnsLines];
-                if (canonicalDocLines.length === 0) {
-                    return functionDeclaration;
-                }
-
-                return `${canonicalDocLines.join("\n")}\n${functionDeclaration}`;
-            }
-        );
-        rewritten = rewritten.replaceAll(/\}\n(?=\/\/\/\s*@description\b)/g, "}\n\n");
-        if (!rewritten.endsWith("\n")) {
-            rewritten = `${rewritten}\n`;
-        }
         return rewritten;
     });
 }
@@ -247,39 +161,6 @@ export function createGm1036Rule(entry: FeatherManifestEntry): Rule.RuleModule {
             "$1function $2($3) {"
         );
         return rewritten;
-    });
-}
-
-export function createGm1056Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        return sourceText.replaceAll(
-            /^([ \t]*)function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\{/gm,
-            (fullMatch: string, indentation: string, functionName: string, parameterList: string) => {
-                const parameterSegments = parameterList
-                    .split(",")
-                    .map((segment) => segment.trim())
-                    .filter((segment) => segment.length > 0);
-                if (parameterSegments.length === 0) {
-                    return fullMatch;
-                }
-
-                const firstOptionalIndex = parameterSegments.findIndex((segment) => segment.includes("="));
-                if (firstOptionalIndex === -1) {
-                    return fullMatch;
-                }
-
-                const normalizedParameters: Array<string> = [];
-                for (const [index, segment] of parameterSegments.entries()) {
-                    if (index >= firstOptionalIndex && !segment.includes("=")) {
-                        normalizedParameters.push(`${segment} = undefined`);
-                        continue;
-                    }
-
-                    normalizedParameters.push(segment);
-                }
-                return `${indentation}function ${functionName}(${normalizedParameters.join(", ")}) {`;
-            }
-        );
     });
 }
 

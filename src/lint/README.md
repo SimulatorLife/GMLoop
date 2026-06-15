@@ -94,7 +94,6 @@ Built-in `gml/*` rule short names:
 
 - `prefer-hoistable-loop-accessors` (includes former `prefer-loop-length-hoist` scenarios)
 - `prefer-loop-invariant-expressions`
-- `prefer-repeat-loops`
 - `prefer-struct-literal-assignments`
 - `prefer-array-push`
 - `prefer-compound-assignments`
@@ -103,7 +102,6 @@ Built-in `gml/*` rule short names:
 - `optimize-logical-flow`
 - `no-globalvar`
 - `no-empty-regions`
-- `no-legacy-api`
 - `no-scientific-notation`
 - `no-unary-plus-on-identifier`
 - `no-unnecessary-string-interpolation`
@@ -120,8 +118,6 @@ Built-in `gml/*` rule short names:
 - `prefer-string-interpolation`
 - `optimize-math-expressions`
 - `require-argument-separators`
-- `normalize-data-structure-accessors`
-- `require-trailing-optional-defaults`
 - `simplify-real-calls`
 
 `prefer-compound-assignments` rewrites safe self-assignment forms
@@ -150,17 +146,9 @@ comment-bearing statement spans.
 
 `remove-default-comments` removes default GameMaker placeholder and migration-banner comments.
 
-`no-legacy-api` reports deprecated built-ins and auto-fixes safe local direct
-renames, including deprecated replacements that were historically surfaced
-through Feather parity rules. Structural or project-wide migrations remain
-report-only and continue to belong in lint diagnostics or explicit refactor
-commands rather than unsafe autofixes.
-
 `normalize-banner-comments` canonicalizes decorative banner comments (line and block forms) and rewrites method-list `///` banner lines (outside of function declarations) to plain `//` comments.
 
 `normalize-doc-comments` canonicalizes doc tags/content within a single file, including removing `@param` separator hyphens (for example, `@param value - desc` to `@param value desc`). It synthesizes missing tags for declaration/assignment-style function docs. Constructors, including for inherited constructors (`function X(...) : Parent(...) constructor`). For struct/object literal property functions, the rule synthesizes docs, including `@returns`. Canonical ordering keeps non-param metadata tags before the param block, but preserves custom tags interleaved between `@param` lines when intentionally authored that way.
-
-`normalize-data-structure-accessors` only applies repairs when the syntax or surrounding code provides enough evidence. Multi-coordinate structured access is normalized to `[# ...]`, because grids are the only GameMaker data structure that support more than one coordinate. The rule intentionally does not guess list/map accessors from variable naming conventions, and any constructor-based accessor provenance is cleared immediately when the tracked variable is reassigned.
 
 `normalize-operator-aliases` is intentionally syntax-safety scoped: it repairs invalid `not` keyword usage to `!` in executable code (while skipping uses in comments and string literals), and avoids style rewrites.
 Logical operator style normalization (`&&`/`||`/`^^` vs `and`/`or`/`xor`) belongs to the formatter (`@gmloop/format`, `logicalOperatorsStyle`), so lint does not rewrite those forms.
@@ -174,6 +162,20 @@ Logical operator style normalization (`&&`/`||`/`^^` vs `and`/`or`/`xor`) belong
 Feather rules are exposed as `feather/gm####` and sourced from `Lint.services.featherManifest`. All feather-namespace lint rules follow the naming pattern `feather/gm####`, where the lint rule diagnoses/fixes specificy/only the issue for the associated Feather rule/diagnostic. For example, lint rule `feather/gm1000` identifies and fixes the specific issue described in Feather rule `gm1000`: "No enclosing loop from which to break" This creates a clear, traceable link between each Feather rule and its corresponding lint rule(s), and allows us to easily add new lint rules for new Feather rules as they are added to the manifest.
 
 `feather/gm1010` uses a conservative numeric-casting strategy: it only wraps `num*` identifiers with `real(...)` when they are directly added to a numeric literal (for example, `5 + numFive`), and leaves mixed string-concatenation chains untouched.
+
+Migrated Feather ownership is split by diagnostic category: `feather/gm1017`
+handles deprecated callable APIs, `feather/gm1023` deprecated constants,
+`feather/gm1024` deprecated built-in variables, `feather/gm1028`
+data-structure accessor correction, `feather/gm1056` trailing optional
+parameter defaults, and `feather/gm2004` safe unused-index `for` to `repeat`
+conversion. These rules retain scoped AST checks and only expose local fixes
+that can be proven safe.
+
+`gml/normalize-doc-comments` remains the canonical documentation normalizer,
+so overlapping `feather/gm1062` diagnostics are report-only.
+`gml/optimize-logical-flow` owns logical-flow rewrites, including nullish
+fallback condensation, so overlapping `feather/gm2061` diagnostics are also
+report-only.
 
 ## Development
 

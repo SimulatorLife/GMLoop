@@ -7,22 +7,21 @@ import {
 } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../index.js";
-import {
+import { gmlRuleBaseHelpersServices } from "../../gml/gml-rule-services.js";
+import { createFeatherRuleMeta } from "../feather-rule-helpers.js";
+import type { FeatherManifestEntry } from "../manifest.js";
+
+const {
     applySourceTextEdits,
-    type AssignmentExpressionNode,
-    createMeta,
     isAssignmentExpressionNode,
     isIdentifierNode,
     isMemberIndexExpressionNode,
     isVariableDeclaratorNode,
-    type MemberIndexExpressionNode,
     reportFullTextRewrite,
-    type VariableDeclaratorNode,
     walkAstNodes
-} from "../rule-base-helpers.js";
+} = gmlRuleBaseHelpersServices;
 
-type AccessorEventNode = AssignmentExpressionNode | MemberIndexExpressionNode | VariableDeclaratorNode;
+type AccessorEventNode = unknown;
 
 const EXPLICIT_DATA_STRUCTURE_CONSTRUCTOR_ACCESSORS = new Map<string, MemberAccessor>([
     ["ds_grid_create", MEMBER_ACCESSOR_GRID],
@@ -30,11 +29,17 @@ const EXPLICIT_DATA_STRUCTURE_CONSTRUCTOR_ACCESSORS = new Map<string, MemberAcce
     ["ds_map_create", MEMBER_ACCESSOR_MAP]
 ]);
 
-function getPropertyCount(node: MemberIndexExpressionNode): number {
+function getPropertyCount(node: unknown): number {
+    if (!isMemberIndexExpressionNode(node)) {
+        return 0;
+    }
     return Array.isArray(node.property) ? node.property.length : 0;
 }
 
-function shouldNormalizeMemberIndexAccessorToGrid(node: MemberIndexExpressionNode): boolean {
+function shouldNormalizeMemberIndexAccessorToGrid(node: unknown): boolean {
+    if (!isMemberIndexExpressionNode(node)) {
+        return false;
+    }
     return node.accessor !== "[#" && getPropertyCount(node) > 1;
 }
 
@@ -60,23 +65,26 @@ function resolveExplicitConstructorAccessor(node: unknown): MemberAccessor | nul
     return EXPLICIT_DATA_STRUCTURE_CONSTRUCTOR_ACCESSORS.get(callIdentifierName.toLowerCase()) ?? null;
 }
 
-function resolveAssignmentTargetIdentifierName(node: AssignmentExpressionNode | VariableDeclaratorNode): string | null {
+function resolveAssignmentTargetIdentifierName(node: unknown): string | null {
     if (isVariableDeclaratorNode(node)) {
         return getNormalizedIdentifierName(node.id);
     }
 
-    if (node.operator !== "=") {
+    if (!isAssignmentExpressionNode(node) || node.operator !== "=") {
         return null;
     }
 
     return getNormalizedIdentifierName(node.left);
 }
 
-function resolveAssignmentSource(node: AssignmentExpressionNode | VariableDeclaratorNode): unknown {
-    return isVariableDeclaratorNode(node) ? node.init : node.right;
+function resolveAssignmentSource(node: unknown): unknown {
+    if (isVariableDeclaratorNode(node)) {
+        return node.init;
+    }
+    return isAssignmentExpressionNode(node) ? node.right : null;
 }
 
-function getNodeOrderStart(node: AccessorEventNode): number | null {
+function getNodeOrderStart(node: unknown): number | null {
     const startIndex = Core.getNodeStartIndex(node);
     return typeof startIndex === "number" && Number.isFinite(startIndex) ? startIndex : null;
 }
@@ -98,9 +106,12 @@ function collectAccessorEventNodes(programNode: unknown): Array<AccessorEventNod
 }
 
 function resolveProvenAccessorForMemberIndex(
-    node: MemberIndexExpressionNode,
+    node: unknown,
     explicitConstructorAccessorsByIdentifier: ReadonlyMap<string, MemberAccessor>
 ): MemberAccessor | null {
+    if (!isMemberIndexExpressionNode(node)) {
+        return null;
+    }
     if (shouldNormalizeMemberIndexAccessorToGrid(node)) {
         return "[#";
     }
@@ -130,8 +141,11 @@ function resolveProvenAccessorForMemberIndex(
 
 function findMemberIndexAccessorRange(
     sourceText: string,
-    memberIndexExpression: MemberIndexExpressionNode
+    memberIndexExpression: unknown
 ): { start: number; end: number } | null {
+    if (!isMemberIndexExpressionNode(memberIndexExpression)) {
+        return null;
+    }
     const objectEnd = Core.getNodeEndIndex(memberIndexExpression.object);
     const nodeEnd = Core.getNodeEndIndex(memberIndexExpression);
     if (
@@ -154,9 +168,9 @@ function findMemberIndexAccessorRange(
     return { start, end: start + 2 };
 }
 
-export function createNormalizeDataStructureAccessorsRule(definition: GmlRuleDefinition): Rule.RuleModule {
+export function createGm1028Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return Object.freeze({
-        meta: createMeta(definition),
+        meta: createFeatherRuleMeta(entry),
         create(context) {
             return Object.freeze({
                 Program(programNode: unknown) {
@@ -185,7 +199,11 @@ export function createNormalizeDataStructureAccessorsRule(definition: GmlRuleDef
                             node,
                             explicitConstructorAccessorsByIdentifier
                         );
-                        if (!replacementAccessor || node.accessor === replacementAccessor) {
+                        if (
+                            !replacementAccessor ||
+                            !isMemberIndexExpressionNode(node) ||
+                            node.accessor === replacementAccessor
+                        ) {
                             continue;
                         }
 
@@ -202,7 +220,7 @@ export function createNormalizeDataStructureAccessorsRule(definition: GmlRuleDef
                     }
 
                     const rewrittenText = applySourceTextEdits(sourceText, edits);
-                    reportFullTextRewrite(context, definition.messageId, sourceText, rewrittenText);
+                    reportFullTextRewrite(context, "diagnostic", sourceText, rewrittenText);
                 }
             });
         }

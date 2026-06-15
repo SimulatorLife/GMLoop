@@ -4,7 +4,7 @@
   "lintRules": {
     "gml/normalize-doc-comments": "error",
     "gml/require-argument-separators": "error",
-    "gml/require-trailing-optional-defaults": "error",
+    "feather/gm1056": "error",
     "gml/prefer-is-undefined-check": "error",
     "gml/prefer-epsilon-comparisons": "error",
     "gml/optimize-math-expressions": "error"

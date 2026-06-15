@@ -515,7 +515,6 @@ void test("gml semantic fix rules do not reformat canonical macro declaration sp
     const semanticFixRuleNames = [
         "prefer-hoistable-loop-accessors",
         "prefer-loop-invariant-expressions",
-        "prefer-repeat-loops",
         "prefer-struct-literal-assignments",
         "prefer-compound-assignments",
         "prefer-direct-return",
@@ -532,9 +531,7 @@ void test("gml semantic fix rules do not reformat canonical macro declaration sp
         "normalize-operator-aliases",
         "prefer-string-interpolation",
         "optimize-math-expressions",
-        "require-argument-separators",
-        "normalize-data-structure-accessors",
-        "require-trailing-optional-defaults"
+        "require-argument-separators"
     ] as const;
 
     for (const ruleName of semanticFixRuleNames) {
@@ -543,7 +540,7 @@ void test("gml semantic fix rules do not reformat canonical macro declaration sp
     }
 });
 
-void test("normalize-data-structure-accessors only rewrites invalid multi-coordinate access to grid accessors", () => {
+void test("feather/gm1028 only rewrites invalid multi-coordinate access to grid accessors", () => {
     const input = [
         "var my_map = ds_map_create();",
         'var value = my_map[| "key"];',
@@ -565,19 +562,19 @@ void test("normalize-data-structure-accessors only rewrites invalid multi-coordi
         ""
     ].join("\n");
 
-    const result = lintWithRule("normalize-data-structure-accessors", input, {});
+    const result = lintWithRule("gm1028", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, expected);
 });
 
-void test("normalize-data-structure-accessors does not keep stale constructor inference after reassignment", () => {
+void test("feather/gm1028 does not keep stale constructor inference after reassignment", () => {
     const input = ["var my_map = ds_map_create();", "my_map = some_var;", 'var value = my_map[| "key"];', ""].join(
         "\n"
     );
 
-    const result = lintWithRule("normalize-data-structure-accessors", input, {});
+    const result = lintWithRule("gm1028", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, input);
 });
-void test("normalize-data-structure-accessors rewrites single-coordinate grid access with wrong accessor token", () => {
+void test("feather/gm1028 rewrites single-coordinate grid access with wrong accessor token", () => {
     // A grid created via ds_grid_create() should always be accessed with "[#".
     // When code mistakenly uses "[?" or "[|" for a single-coordinate grid access
     // (i.e., a misuse that compiles but is incorrect), the rule should normalize
@@ -587,21 +584,21 @@ void test("normalize-data-structure-accessors rewrites single-coordinate grid ac
     const inputMapStyle = ["var level_grid = ds_grid_create();", "var cell = level_grid[? 5];", ""].join("\n");
     const expectedMapStyle = ["var level_grid = ds_grid_create();", "var cell = level_grid[# 5];", ""].join("\n");
 
-    const resultMapStyle = lintWithRule("normalize-data-structure-accessors", inputMapStyle, {});
+    const resultMapStyle = lintWithRule("gm1028", inputMapStyle, {}, Lint.featherPlugin.rules);
     assertEquals(resultMapStyle.output, expectedMapStyle);
 
     // Grid accessed with "[|" (should be "[#")
     const inputListStyle = ["var game_grid = ds_grid_create();", "var val = game_grid[| 3];", ""].join("\n");
     const expectedListStyle = ["var game_grid = ds_grid_create();", "var val = game_grid[# 3];", ""].join("\n");
 
-    const resultListStyle = lintWithRule("normalize-data-structure-accessors", inputListStyle, {});
+    const resultListStyle = lintWithRule("gm1028", inputListStyle, {}, Lint.featherPlugin.rules);
     assertEquals(resultListStyle.output, expectedListStyle);
 });
 
-void test("normalize-data-structure-accessors ignores malformed identifier metadata without throwing", () => {
+void test("feather/gm1028 ignores malformed identifier metadata without throwing", () => {
     const sourceText = 'var value = my_map[| "key"];\n';
     const messages: Array<{ messageId: string }> = [];
-    const rule = Lint.plugin.rules["normalize-data-structure-accessors"];
+    const rule = Lint.featherPlugin.rules.gm1028;
 
     const context = {
         options: [{}],
@@ -673,7 +670,7 @@ void test("require-argument-separators preserves separator payload comments", ()
     assertEquals(result.output, "show_debug_message_ext(name, /* keep */ payload);\n");
 });
 
-void test("require-trailing-optional-defaults lifts leading argument_count ternary fallbacks into params", () => {
+void test("feather/gm1056 lifts leading argument_count ternary fallbacks into params", () => {
     const input = [
         "function greet() {",
         '    var name = argument_count > 0 ? argument[0] : "friend";',
@@ -684,11 +681,11 @@ void test("require-trailing-optional-defaults lifts leading argument_count terna
     ].join("\n");
     const expected = input;
 
-    const result = lintWithRule("require-trailing-optional-defaults", input, {});
+    const result = lintWithRule("gm1056", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, expected);
 });
 
-void test("require-trailing-optional-defaults condenses var+if argument_count fallback and adds trailing params", () => {
+void test("feather/gm1056 condenses var+if argument_count fallback and adds trailing params", () => {
     const input = [
         "function spring(a, b, dst, force) {",
         "    var push_out = true;",
@@ -714,11 +711,11 @@ void test("require-trailing-optional-defaults condenses var+if argument_count fa
         ""
     ].join("\n");
 
-    const result = lintWithRule("require-trailing-optional-defaults", input, {});
+    const result = lintWithRule("gm1056", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, expected);
 });
 
-void test("require-trailing-optional-defaults appends undefined defaults after existing optional params", () => {
+void test("feather/gm1056 appends undefined defaults after existing optional params", () => {
     const input = ["function demo(first, second = 1, third) {", "    return [first, second, third];", "}", ""].join(
         "\n"
     );
@@ -729,11 +726,11 @@ void test("require-trailing-optional-defaults appends undefined defaults after e
         ""
     ].join("\n");
 
-    const result = lintWithRule("require-trailing-optional-defaults", input, {});
+    const result = lintWithRule("gm1056", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, expected);
 });
 
-void test("require-trailing-optional-defaults preserves constructor bodies with nested static functions", () => {
+void test("feather/gm1056 preserves constructor bodies with nested static functions", () => {
     const input = [
         "function AttackProjectileCircle(knockback = 0, cooldown_max = random_range(0.9, 1.3), bonus_damage = 1, sound_attack, attack_range_max = infinity, attack_range_min = 0, projectile_index) : Attack(knockback, cooldown_max, bonus_damage, sound_attack, attack_range_max, attack_range_min) constructor {",
         "    self.projectile_index = projectile_index;",
@@ -755,7 +752,7 @@ void test("require-trailing-optional-defaults preserves constructor bodies with 
         ""
     ].join("\n");
 
-    const result = lintWithRule("require-trailing-optional-defaults", input, {});
+    const result = lintWithRule("gm1056", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, expected);
 });
 
@@ -1096,9 +1093,9 @@ void test("prefer-hoistable-loop-accessors is diagnostic-only and leaves source 
     assertEquals(result.output, input);
 });
 
-void test("prefer-repeat-loops skips conversion when loop iterator is used in body", () => {
+void test("feather/gm2004 skips conversion when loop iterator is used in body", () => {
     const input = ["for (var i = 0; i < array_length(items); i++) {", "    sum += i;", "}", ""].join("\n");
-    const result = lintWithRule("prefer-repeat-loops", input, {});
+    const result = lintWithRule("gm2004", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });

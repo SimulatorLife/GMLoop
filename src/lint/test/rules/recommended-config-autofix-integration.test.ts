@@ -28,7 +28,7 @@ function createMutableRecommendedConfig(): Array<Record<string, unknown>> {
 
 const backslash = String.fromCharCode(92);
 
-void test("recommended config auto-fixes simplify-real-calls and no-legacy-api together", async () => {
+void test("recommended config auto-fixes simplify-real-calls and feather/gm1017 together", async () => {
     CoreWorkspace.Core.setReservedIdentifierMetadataLoader(() => ({
         identifiers: {
             array_length_2d: {

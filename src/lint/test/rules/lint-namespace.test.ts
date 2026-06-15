@@ -32,7 +32,7 @@ void test("ruleIds contract keeps canonical ids with PascalCase keys", () => {
     }
 
     assertEquals((ruleIds as Record<string, string>).GmlNoGlobalvar, "gml/no-globalvar");
-    assertEquals((ruleIds as Record<string, string>).GmlNoLegacyApi, "gml/no-legacy-api");
+    assertEquals("GmlNoLegacyApi" in (ruleIds as Record<string, string>), false);
     assertEquals((ruleIds as Record<string, string>).GmlPreferArrayPush, "gml/prefer-array-push");
     assertEquals((ruleIds as Record<string, string>).GmlPreferCompoundAssignments, "gml/prefer-compound-assignments");
     assertEquals(
@@ -78,7 +78,6 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
     assertEquals(recommendedGml.plugins?.gml, Lint.plugin);
     assertEquals(recommendedGml.rules["gml/require-argument-separators"], "error");
     assertEquals(recommendedGml.rules["gml/no-empty-regions"], "warn");
-    assertEquals(recommendedGml.rules["gml/no-legacy-api"], "warn");
     assertEquals(recommendedGml.rules["gml/no-scientific-notation"], "error");
     assertEquals(recommendedGml.rules["gml/prefer-array-push"], "warn");
     assertEquals(recommendedGml.rules["gml/prefer-compound-assignments"], "warn");
@@ -86,21 +85,25 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
     assertEquals(recommendedGml.rules["gml/prefer-increment-decrement-operators"], "warn");
     assertEquals(recommendedGml.rules["gml/prefer-loop-invariant-expressions"], "warn");
     assertEquals(recommendedGml.rules["gml/remove-default-comments"], "warn");
-    assertEquals(recommendedGml.rules["gml/normalize-data-structure-accessors"], "warn");
     assertEquals(recommendedGml.rules["gml/require-region-pairs"], "error");
-    assertEquals(recommendedGml.rules["gml/require-trailing-optional-defaults"], "warn");
 
     assertEquals(recommendedFeather.plugins?.feather, Lint.featherPlugin);
     assertEquals(recommendedFeather.language, undefined);
     assertEquals(recommendedFeather.languageOptions, undefined);
     assertEquals(recommendedFeather.rules["feather/gm1003"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm1009"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm1017"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm1023"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm1024"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm1028"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm1033"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm1041"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm1051"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm1056"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm2004"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm2007"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm2020"], "warn");
-    assertEquals(Object.keys(recommendedFeather.rules).length, 7);
+    assertEquals(Object.keys(recommendedFeather.rules).length, 13);
 
     const [featherOverlay] = Lint.configs.feather;
     assertEquals(featherOverlay.plugins?.feather, Lint.featherPlugin);

@@ -42,12 +42,6 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         ])
     },
     {
-        mapKey: "GmlPreferRepeatLoops",
-        shortName: "prefer-repeat-loops",
-        fullId: "gml/prefer-repeat-loops",
-        messageId: "preferRepeatLoops"
-    },
-    {
         mapKey: "GmlPreferStructLiteralAssignments",
         shortName: "prefer-struct-literal-assignments",
         fullId: "gml/prefer-struct-literal-assignments",
@@ -121,12 +115,6 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         shortName: "no-empty-comments",
         fullId: "gml/no-empty-comments",
         messageId: "noEmptyComments"
-    },
-    {
-        mapKey: "GmlNoLegacyApi",
-        shortName: "no-legacy-api",
-        fullId: "gml/no-legacy-api",
-        messageId: "noLegacyApi"
     },
     {
         mapKey: "GmlNoScientificNotation",
@@ -229,18 +217,6 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         schema: Object.freeze([
             { type: "object", additionalProperties: false, properties: { repair: { type: "boolean", default: true } } }
         ])
-    },
-    {
-        mapKey: "GmlNormalizeDataStructureAccessors",
-        shortName: "normalize-data-structure-accessors",
-        fullId: "gml/normalize-data-structure-accessors",
-        messageId: "normalizeDataStructureAccessors"
-    },
-    {
-        mapKey: "GmlRequireTrailingOptionalDefaults",
-        shortName: "require-trailing-optional-defaults",
-        fullId: "gml/require-trailing-optional-defaults",
-        messageId: "requireTrailingOptionalDefaults"
     },
     {
         mapKey: "GmlSimplifyRealCalls",

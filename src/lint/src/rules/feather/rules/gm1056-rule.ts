@@ -1,17 +1,15 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../index.js";
-import {
-    applySourceTextEdits,
-    type AstNodeRecord,
-    createMeta,
-    getVariableDeclarator,
-    isAstNodeRecord,
-    reportFullTextRewrite,
-    type SourceTextEdit,
-    walkAstNodes
-} from "../rule-base-helpers.js";
+import { gmlRuleBaseHelpersServices } from "../../gml/gml-rule-services.js";
+import { createFeatherRuleMeta } from "../feather-rule-helpers.js";
+import type { FeatherManifestEntry } from "../manifest.js";
+
+const { applySourceTextEdits, getVariableDeclarator, isAstNodeRecord, reportFullTextRewrite, walkAstNodes } =
+    gmlRuleBaseHelpersServices;
+
+type AstNodeRecord = Readonly<{ type: string; [key: string]: unknown }>;
+type SourceTextEdit = Readonly<{ start: number; end: number; text: string }>;
 
 const { compactArray, getNodeStartIndex, getNodeEndIndex, unwrapParenthesizedExpression: unwrapParenthesized } = Core;
 
@@ -684,15 +682,15 @@ export function rewriteTrailingOptionalDefaultsProgram(sourceText: string, progr
     return applySourceTextEdits(sourceText, [...functionEdits, ...callEdits]);
 }
 
-export function createRequireTrailingOptionalDefaultsRule(definition: GmlRuleDefinition): Rule.RuleModule {
+export function createGm1056Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return Object.freeze({
-        meta: createMeta(definition),
+        meta: createFeatherRuleMeta(entry),
         create(context) {
             return Object.freeze({
                 Program(node) {
                     const sourceText = context.sourceCode.text;
                     const rewrittenText = rewriteTrailingOptionalDefaultsProgram(sourceText, node);
-                    reportFullTextRewrite(context, definition.messageId, sourceText, rewrittenText);
+                    reportFullTextRewrite(context, "diagnostic", sourceText, rewrittenText);
                 }
             });
         }

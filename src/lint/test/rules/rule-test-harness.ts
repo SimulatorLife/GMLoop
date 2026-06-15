@@ -1,3 +1,5 @@
+import { Parser } from "@gmloop/parser";
+
 /**
  * Represents a fixer operation that replaces a text range with new text.
  */
@@ -144,6 +146,20 @@ type LintPlugin = {
     rules: Record<string, { create: (context: never) => { Program?: (node: never) => void } }>;
 };
 
+function parseFeatherRuleProgram(code: string): object {
+    try {
+        return new Parser.GMLParser(code, {
+            astFormat: "gml",
+            asJSON: false,
+            getComments: true,
+            getLocations: true,
+            simplifyLocations: false
+        }).parse();
+    } catch {
+        return Object.freeze({ type: "Program" });
+    }
+}
+
 /**
  * Runs a feather rule against code and returns the messages and fixed output.
  * This is a shared test helper for testing feather lint rules.
@@ -182,7 +198,7 @@ export function lintWithFeatherRule(
     } as never;
 
     const listeners = rule.create(context);
-    listeners.Program?.({ type: "Program" } as never);
+    listeners.Program?.(parseFeatherRuleProgram(code) as never);
 
     const output = applyFixOperations(
         code,

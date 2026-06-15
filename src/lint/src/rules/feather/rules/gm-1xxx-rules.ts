@@ -1,15 +1,11 @@
 import type { Rule } from "eslint";
 
-import { gmlRuleBaseHelpersServices, gmlRuleDocCommentServices } from "../../gml/gml-rule-services.js";
+import { gmlRuleBaseHelpersServices } from "../../gml/gml-rule-services.js";
 import {
-    collapseAdjacentDuplicateParamDocs,
     createFeatherRuleMeta,
     createFullTextRewriteRule,
-    extractFunctionParameterNames,
     findEnumBlocks,
     findEnumDeclarations,
-    getDirectDeprecatedReplacement,
-    hasParamDocImmediatelyAbove,
     normalizeRedundantSemicolonRuns,
     removeTrailingMacroSemicolonIfSafe,
     splitMacroLineSegments
@@ -21,11 +17,6 @@ import {
 } from "../feather-rule-patterns.js";
 import type { EnumDeclarationMatch } from "../feather-rule-types.js";
 import type { FeatherManifestEntry } from "../manifest.js";
-
-// Consume the doc-comment service contract so this file does not reach into
-// the doc-comment layer directly; the abstraction is the only surface that
-// rule implementations are allowed to depend on.
-const { normalizeDocParamName } = gmlRuleDocCommentServices;
 
 // Consume the base-helper service contract so this feather rule does not
 // reach two directory levels into the gml/ rules folder for
@@ -254,32 +245,9 @@ export function createGm1010Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm1012Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        let rewritten = sourceText;
-        rewritten = rewritten.replaceAll(/return\s+([^;\n]+)\.length\s*;/g, "return string_length($1);");
-        rewritten = rewritten.replaceAll(
-            /^([ \t]*)function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\{/gm,
-            (
-                fullMatch: string,
-                indentation: string,
-                _functionName: string,
-                parameterList: string,
-                offset: number,
-                fullText: string
-            ) => {
-                const parameterNames = extractFunctionParameterNames(parameterList);
-                if (parameterNames.length === 0 || hasParamDocImmediatelyAbove(fullText, offset)) {
-                    return fullMatch;
-                }
-
-                const docs = parameterNames
-                    .map((parameterName) => `${indentation}/// @param ${normalizeDocParamName(parameterName)}`)
-                    .join("\n");
-                return `${docs}\n${fullMatch}`;
-            }
-        );
-        return collapseAdjacentDuplicateParamDocs(rewritten);
-    });
+    return createFullTextRewriteRule(entry, (sourceText) =>
+        sourceText.replaceAll(/return\s+([^;\n]+)\.length\s*;/g, "return string_length($1);")
+    );
 }
 
 export function createGm1014Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -341,31 +309,6 @@ export function createGm1016Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createFullTextRewriteRule(entry, (sourceText) => sourceText.replaceAll(/^\s*(?:true|false)\s*;\s*/gm, ""));
 }
 
-export function createGm1017Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        const deprecatedFunctionMatch =
-            /\/\/\/\s*@deprecated\s+Use\s+([A-Za-z_][A-Za-z0-9_]*)\s+instead\.[^\n]*\n\s*function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/.exec(
-                sourceText
-            );
-        if (!deprecatedFunctionMatch) {
-            return sourceText;
-        }
-
-        const replacementName = deprecatedFunctionMatch[1];
-        const deprecatedName = deprecatedFunctionMatch[2];
-        const callPattern = new RegExp(String.raw`\b${deprecatedName}\s*\(`, "g");
-        return sourceText.replaceAll(callPattern, (match, offset: number, fullText: string) => {
-            const prefix = fullText.slice(0, offset);
-            const functionDeclarationPrefix = /function\s+$/u;
-            if (functionDeclarationPrefix.test(prefix)) {
-                return match;
-            }
-
-            return `${replacementName}(`;
-        });
-    });
-}
-
 export function createGm1015Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createFullTextRewriteRule(entry, (sourceText) => {
         let rewritten = sourceText;
@@ -373,34 +316,6 @@ export function createGm1015Rule(entry: FeatherManifestEntry): Rule.RuleModule {
         rewritten = rewritten.replaceAll(/^\s*\w+\s*\/=\s*0\s*;\s*/gm, "");
         rewritten = rewritten.replaceAll(/%=\s*\(\s*-?0\s*\)/g, "%= -1");
         return rewritten;
-    });
-}
-
-export function createGm1023Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return Object.freeze({
-        meta: createFeatherRuleMeta(entry),
-        create(context) {
-            return Object.freeze({
-                Program() {
-                    const sourceText = context.sourceCode.text;
-                    const replacement = getDirectDeprecatedReplacement("os_win32");
-                    if (!replacement) {
-                        return;
-                    }
-
-                    const legacyOsSymbolPattern = /\bos_win32\b/g;
-                    for (const match of sourceText.matchAll(legacyOsSymbolPattern)) {
-                        const start = match.index ?? 0;
-                        const end = start + match[0].length;
-                        context.report({
-                            loc: resolveLocFromIndex(context, context.sourceCode.text, start),
-                            messageId: "diagnostic",
-                            fix: (fixer) => fixer.replaceTextRange([start, end], replacement)
-                        });
-                    }
-                }
-            });
-        }
     });
 }
 
@@ -414,17 +329,6 @@ export function createGm1021Rule(entry: FeatherManifestEntry): Rule.RuleModule {
             }
         )
     );
-}
-
-export function createGm1024Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        const declarationMatch = /(^|\n)(\s*)score\s*=/.exec(sourceText);
-        if (!declarationMatch) {
-            return sourceText;
-        }
-
-        return sourceText.replaceAll(/\bscore\b/g, "__featherFix_score");
-    });
 }
 
 export function createGm1026Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -441,12 +345,6 @@ export function createGm1026Rule(entry: FeatherManifestEntry): Rule.RuleModule {
             `${indentation}var __featherFix_pi = pi;\n${indentation}__featherFix_pi++;`
         );
     });
-}
-
-export function createGm1028Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) =>
-        sourceText.replaceAll(/\blst_\w*\[\?\s*/g, (prefix) => prefix.replace("[?", "[|"))
-    );
 }
 
 export function createGm1029Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -545,17 +443,32 @@ export function createGm1052Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm1054Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        const arrayLengthReplacement = getDirectDeprecatedReplacement("array_length_1d");
-        const arrayHeightReplacement = getDirectDeprecatedReplacement("array_height_2d");
-        let rewritten = sourceText;
-        if (arrayLengthReplacement) {
-            rewritten = rewritten.replaceAll(/\barray_length_1d\s*\(/g, `${arrayLengthReplacement}(`);
+    return Object.freeze({
+        meta: createFeatherRuleMeta(entry),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const declaredFunctions = new Set(
+                        [...sourceText.matchAll(/\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)\b/g)].map((match) => match[1])
+                    );
+                    for (const match of sourceText.matchAll(
+                        /\bfunction\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(/g
+                    )) {
+                        const parentFunctionName = match[1];
+                        if (declaredFunctions.has(parentFunctionName)) {
+                            continue;
+                        }
+
+                        const start = (match.index ?? 0) + match[0].lastIndexOf(parentFunctionName);
+                        context.report({
+                            loc: resolveLocFromIndex(context, sourceText, start),
+                            messageId: "diagnostic"
+                        });
+                    }
+                }
+            });
         }
-        if (arrayHeightReplacement) {
-            rewritten = rewritten.replaceAll(/\barray_height_2d\s*\(/g, `${arrayHeightReplacement}(`);
-        }
-        return rewritten;
     });
 }
 

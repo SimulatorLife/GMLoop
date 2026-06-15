@@ -69,12 +69,13 @@ export function parseProgramNode(code: string): Record<string, unknown> {
 export function lintWithRule(
     ruleName: string,
     code: string,
-    options: Record<string, unknown> = {}
+    options: Record<string, unknown> = {},
+    rules: Readonly<Record<string, { create: (context: never) => Record<string, unknown> }>> = Lint.plugin.rules
 ): {
     messages: Array<{ messageId: string; loc?: { line: number; column: number }; fix?: Array<RuleTestFixOperation> }>;
     output: string;
 } {
-    const rule = Lint.plugin.rules[ruleName];
+    const rule = rules[ruleName];
     const messages: Array<{
         messageId: string;
         loc?: { line: number; column: number };

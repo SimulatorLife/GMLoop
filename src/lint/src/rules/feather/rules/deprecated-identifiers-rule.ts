@@ -1,14 +1,16 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { gmlRuleDeprecatedIdentifierServices } from "../gml-rule-services.js";
-import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, isAstNodeWithType, walkAstNodesWithParent } from "../rule-base-helpers.js";
+import { gmlRuleBaseHelpersServices, gmlRuleDeprecatedIdentifierServices } from "../../gml/gml-rule-services.js";
+import { createFeatherRuleMeta } from "../feather-rule-helpers.js";
+import type { FeatherManifestEntry } from "../manifest.js";
 
 const { getDeprecatedIdentifierCatalogEntry } = gmlRuleDeprecatedIdentifierServices;
+const { walkAstNodesWithParent } = gmlRuleBaseHelpersServices;
 
 type AstNodeWithType = Readonly<{ type: string }>;
 type DeprecatedCatalogEntry = NonNullable<ReturnType<typeof getDeprecatedIdentifierCatalogEntry>>;
+type DeprecatedIdentifierRuleKind = "constant" | "function" | "variable";
 type DeclaredIdentifierScope = Readonly<{
     start: number;
     end: number;
@@ -16,9 +18,24 @@ type DeclaredIdentifierScope = Readonly<{
 }>;
 
 function isRuleOwnedCatalogEntry(
-    entry: ReturnType<typeof getDeprecatedIdentifierCatalogEntry>
+    entry: ReturnType<typeof getDeprecatedIdentifierCatalogEntry>,
+    ruleKind: DeprecatedIdentifierRuleKind
 ): entry is DeprecatedCatalogEntry {
-    return entry !== null && (entry.diagnosticOwner !== "feather" || entry.replacementKind === "direct-rename");
+    if (entry === null) {
+        return false;
+    }
+
+    if (ruleKind === "function") {
+        return entry.legacyUsage === "call" || entry.legacyUsage === "call-or-identifier";
+    }
+
+    if (ruleKind === "constant") {
+        return entry.type === "literal" && entry.legacyUsage === "identifier";
+    }
+
+    return (
+        entry.type === "variable" && (entry.legacyUsage === "identifier" || entry.legacyUsage === "indexed-identifier")
+    );
 }
 
 function canFixCatalogEntry(entry: DeprecatedCatalogEntry): boolean {
@@ -31,7 +48,7 @@ function readDeclaredPatternNames(node: unknown): ReadonlyArray<string> {
         return [identifierName.toLowerCase()];
     }
 
-    if (!isAstNodeWithType(node) || node.type !== "AssignmentPattern") {
+    if (!node || typeof node !== "object" || Reflect.get(node, "type") !== "AssignmentPattern") {
         return [];
     }
 
@@ -62,28 +79,29 @@ function collectScopedDeclaredIdentifiers(
             return;
         }
 
-        if (!isAstNodeWithType(node)) {
+        if (!node || typeof node !== "object" || typeof Reflect.get(node, "type") !== "string") {
             return;
         }
+        const typedNode = node as AstNodeWithType;
 
-        if (node.type === "VariableDeclarator") {
-            for (const declaredName of readDeclaredPatternNames((node as Readonly<{ id?: unknown }>).id)) {
+        if (typedNode.type === "VariableDeclarator") {
+            for (const declaredName of readDeclaredPatternNames((typedNode as Readonly<{ id?: unknown }>).id)) {
                 activeScope.names.add(declaredName);
             }
 
-            visitScope((node as Readonly<{ init?: unknown }>).init, activeScope, node);
+            visitScope((typedNode as Readonly<{ init?: unknown }>).init, activeScope, typedNode);
             return;
         }
 
-        if (node.type === "EnumDeclaration") {
-            const enumName = Core.getIdentifierName((node as Readonly<{ name?: unknown }>).name);
+        if (typedNode.type === "EnumDeclaration") {
+            const enumName = Core.getIdentifierName((typedNode as Readonly<{ name?: unknown }>).name);
             if (enumName) {
                 activeScope.names.add(enumName.toLowerCase());
             }
         }
 
-        if (Core.isFunctionLikeDeclaration(node)) {
-            const functionName = (node as Readonly<{ id?: unknown }>).id;
+        if (Core.isFunctionLikeDeclaration(typedNode)) {
+            const functionName = (typedNode as Readonly<{ id?: unknown }>).id;
             if (
                 typeof functionName === "string" &&
                 functionName.length > 0 &&
@@ -107,11 +125,11 @@ function collectScopedDeclaredIdentifiers(
                 }
             }
 
-            visitScope((node as Readonly<{ body?: unknown }>).body, nestedScope, node);
+            visitScope((typedNode as Readonly<{ body?: unknown }>).body, nestedScope, typedNode);
             return;
         }
 
-        Core.forEachNodeChild(node, (child) => visitScope(child, activeScope, node));
+        Core.forEachNodeChild(typedNode, (child) => visitScope(child, activeScope, typedNode));
     };
 
     visitScope(programNode, scopes[0], null);
@@ -195,7 +213,6 @@ function buildReplacementSuffix(entry: DeprecatedCatalogEntry): string {
 
 function reportIdentifierRange(
     context: Rule.RuleContext,
-    definition: GmlRuleDefinition,
     node: unknown,
     identifierName: string,
     entry: DeprecatedCatalogEntry
@@ -208,7 +225,7 @@ function reportIdentifierRange(
 
     context.report({
         node: node as Rule.Node,
-        messageId: definition.messageId,
+        messageId: "diagnostic",
         data: {
             identifier: identifierName,
             replacementSuffix: buildReplacementSuffix(entry)
@@ -217,48 +234,107 @@ function reportIdentifierRange(
     });
 }
 
-export function createNoLegacyApiRule(definition: GmlRuleDefinition): Rule.RuleModule {
+function collectDeprecatedUserFunctionReplacements(sourceText: string): ReadonlyMap<string, string> {
+    const replacements = new Map<string, string>();
+    for (const match of sourceText.matchAll(
+        /\/\/\/\s*@deprecated\s+Use\s+([A-Za-z_][A-Za-z0-9_]*)\s+instead\.[^\n]*\n\s*function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g
+    )) {
+        replacements.set(match[2], match[1]);
+    }
+    return replacements;
+}
+
+function createAvailableScoreReplacementName(sourceText: string): string {
+    const identifierNames = new Set(
+        [...sourceText.matchAll(/\b[A-Za-z_][A-Za-z0-9_]*\b/g)].map((match) => match[0].toLowerCase())
+    );
+    let candidate = "__feather_score";
+    let suffix = 2;
+    while (identifierNames.has(candidate.toLowerCase())) {
+        candidate = `__feather_score_${suffix}`;
+        suffix += 1;
+    }
+    return candidate;
+}
+
+function reportDirectIdentifierReplacement(
+    context: Rule.RuleContext,
+    node: unknown,
+    identifierName: string,
+    replacement: string
+): void {
+    const start = Core.getNodeStartIndex(node);
+    const end = Core.getNodeEndIndex(node);
+    if (typeof start !== "number" || typeof end !== "number") {
+        return;
+    }
+
+    context.report({
+        node: node as Rule.Node,
+        messageId: "diagnostic",
+        data: {
+            identifier: identifierName,
+            replacementSuffix: `; use '${replacement}' instead`
+        },
+        fix: (fixer) => fixer.replaceTextRange([start, end], replacement)
+    });
+}
+
+function createDeprecatedIdentifierRule(
+    entry: FeatherManifestEntry,
+    ruleKind: DeprecatedIdentifierRuleKind
+): Rule.RuleModule {
     return Object.freeze({
-        meta: createMeta(definition, {
-            messageText: "Legacy built-in '{{identifier}}' is deprecated{{replacementSuffix}}."
-        }),
+        meta: createFeatherRuleMeta(entry),
         create(context) {
             return Object.freeze({
                 Program(programNode) {
-                    const declaredIdentifierScopes = collectScopedDeclaredIdentifiers(
-                        programNode,
-                        context.sourceCode.text.length
-                    );
+                    const sourceText = context.sourceCode.text;
+                    const declaredIdentifierScopes = collectScopedDeclaredIdentifiers(programNode, sourceText.length);
+                    const userFunctionReplacements =
+                        ruleKind === "function" ? collectDeprecatedUserFunctionReplacements(sourceText) : new Map();
+                    const scoreReplacement =
+                        ruleKind === "variable" ? createAvailableScoreReplacementName(sourceText) : "";
 
                     walkAstNodesWithParent(programNode, ({ node, parent, parentKey }) => {
-                        if (!isAstNodeWithType(node)) {
+                        if (!node || typeof node !== "object" || typeof Reflect.get(node, "type") !== "string") {
                             return;
                         }
+                        const typedNode = node as AstNodeWithType;
 
-                        if (node.type === "CallExpression") {
-                            const callee = Core.getCallExpressionIdentifier(node);
+                        if (typedNode.type === "CallExpression") {
+                            const callee = Core.getCallExpressionIdentifier(typedNode);
                             const identifierName = callee?.name;
                             if (typeof identifierName !== "string") {
                                 return;
                             }
+
+                            const userFunctionReplacement = userFunctionReplacements.get(identifierName);
+                            if (userFunctionReplacement) {
+                                reportDirectIdentifierReplacement(
+                                    context,
+                                    callee,
+                                    identifierName,
+                                    userFunctionReplacement
+                                );
+                                return;
+                            }
+
                             if (isIdentifierShadowedByLocalScope(declaredIdentifierScopes, identifierName, callee)) {
                                 return;
                             }
 
-                            const entry = getDeprecatedIdentifierCatalogEntry(identifierName);
-                            if (
-                                !isRuleOwnedCatalogEntry(entry) ||
-                                (entry.legacyUsage !== "call" && entry.legacyUsage !== "call-or-identifier")
-                            ) {
+                            const catalogEntry = getDeprecatedIdentifierCatalogEntry(identifierName);
+                            if (!isRuleOwnedCatalogEntry(catalogEntry, ruleKind) || ruleKind !== "function") {
                                 return;
                             }
 
-                            reportIdentifierRange(context, definition, callee, identifierName, entry);
+                            reportIdentifierRange(context, callee, identifierName, catalogEntry);
                             return;
                         }
 
-                        if (node.type === "MemberIndexExpression") {
-                            const objectNode = (node as Readonly<{ object?: unknown }>).object;
+                        if (typedNode.type === "MemberIndexExpression") {
+                            const objectNode = (typedNode as Readonly<{ object?: unknown }>).object;
                             const identifierName = Core.getIdentifierName(objectNode);
                             if (typeof identifierName !== "string") {
                                 return;
@@ -269,16 +345,20 @@ export function createNoLegacyApiRule(definition: GmlRuleDefinition): Rule.RuleM
                                 return;
                             }
 
-                            const entry = getDeprecatedIdentifierCatalogEntry(identifierName);
-                            if (!isRuleOwnedCatalogEntry(entry) || entry.legacyUsage !== "indexed-identifier") {
+                            const catalogEntry = getDeprecatedIdentifierCatalogEntry(identifierName);
+                            if (
+                                !isRuleOwnedCatalogEntry(catalogEntry, ruleKind) ||
+                                ruleKind !== "variable" ||
+                                catalogEntry.legacyUsage !== "indexed-identifier"
+                            ) {
                                 return;
                             }
 
-                            reportIdentifierRange(context, definition, objectNode, identifierName, entry);
+                            reportIdentifierRange(context, objectNode, identifierName, catalogEntry);
                             return;
                         }
 
-                        if (node.type !== "Identifier") {
+                        if (typedNode.type !== "Identifier") {
                             return;
                         }
 
@@ -286,23 +366,44 @@ export function createNoLegacyApiRule(definition: GmlRuleDefinition): Rule.RuleM
                             return;
                         }
 
-                        const identifierName = Core.getIdentifierName(node);
+                        const identifierName = Core.getIdentifierName(typedNode);
                         if (!identifierName) {
                             return;
                         }
-                        if (isIdentifierShadowedByLocalScope(declaredIdentifierScopes, identifierName, node)) {
+                        if (isIdentifierShadowedByLocalScope(declaredIdentifierScopes, identifierName, typedNode)) {
                             return;
                         }
 
-                        const entry = getDeprecatedIdentifierCatalogEntry(identifierName);
-                        if (!isRuleOwnedCatalogEntry(entry) || entry.legacyUsage !== "identifier") {
+                        if (ruleKind === "variable" && identifierName.toLowerCase() === "score") {
+                            reportDirectIdentifierReplacement(context, typedNode, identifierName, scoreReplacement);
                             return;
                         }
 
-                        reportIdentifierRange(context, definition, node, identifierName, entry);
+                        const catalogEntry = getDeprecatedIdentifierCatalogEntry(identifierName);
+                        if (
+                            !isRuleOwnedCatalogEntry(catalogEntry, ruleKind) ||
+                            ruleKind === "function" ||
+                            catalogEntry.legacyUsage !== "identifier"
+                        ) {
+                            return;
+                        }
+
+                        reportIdentifierRange(context, typedNode, identifierName, catalogEntry);
                     });
                 }
             });
         }
     });
+}
+
+export function createGm1017Rule(entry: FeatherManifestEntry): Rule.RuleModule {
+    return createDeprecatedIdentifierRule(entry, "function");
+}
+
+export function createGm1023Rule(entry: FeatherManifestEntry): Rule.RuleModule {
+    return createDeprecatedIdentifierRule(entry, "constant");
+}
+
+export function createGm1024Rule(entry: FeatherManifestEntry): Rule.RuleModule {
+    return createDeprecatedIdentifierRule(entry, "variable");
 }

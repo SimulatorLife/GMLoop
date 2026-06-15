@@ -92,8 +92,7 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         fixtureDirectory: "gm1012",
         ruleName: "gm1012",
         assertOutput: (output) => {
-            assertEquals(output.includes("/// @param value"), true);
-            assertEquals(countOccurrences(output, "/// @param value"), 1);
+            assertEquals(output.includes("/// @param value"), false);
             assertEquals(output.includes("string_length("), true);
         }
     },
@@ -125,7 +124,7 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         fixtureDirectory: "gm1024",
         ruleName: "gm1024",
         assertOutput: (output) => {
-            assertEquals(output.includes("__featherFix_score"), true);
+            assertEquals(output.includes("__feather_score"), true);
             assertEquals(/\bscore\b\s*=/.test(output), false);
         }
     },
@@ -141,8 +140,10 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         fixtureDirectory: "gm1028",
         ruleName: "gm1028",
         assertOutput: (output) => {
-            assertEquals(output.includes("[?"), false);
-            assertEquals(output.includes("[|"), true);
+            assertEquals(output.includes('my_map[? "key"]'), true);
+            assertEquals(output.includes("level_grid[# 1, 2]"), true);
+            assertEquals(output.includes("lst_instances[| 0]"), true);
+            assertEquals(output.includes("passthrough = some_var[? 0]"), true);
         }
     },
     {
@@ -205,9 +206,8 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm1054",
         ruleName: "gm1054",
-        assertOutput: (output) => {
-            assertEquals(output.includes("array_length_1d("), false);
-            assertEquals(output.includes("array_length("), true);
+        assertOutput: (output, input) => {
+            assertEquals(output, input);
         }
     },
     {
@@ -253,7 +253,7 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         ruleName: "gm1032",
         assertOutput: (output) => {
             assertEquals(output.includes("function sample3(zero, one, two, three)"), true);
-            assertEquals(output.includes("/// @param argument0"), true);
+            assertEquals(output.includes("/// @param argument0"), false);
         }
     },
     {
@@ -291,9 +291,8 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm1062",
         ruleName: "gm1062",
-        assertOutput: (output) => {
-            assertEquals(output.includes("/// @description"), true);
-            assertEquals(output.includes("{Id.Instance}"), true);
+        assertOutput: (output, input) => {
+            assertEquals(output, input);
         }
     },
     {
@@ -485,7 +484,7 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         fixtureDirectory: "gm2044",
         ruleName: "gm2044",
         assertOutput: (output) => {
-            assertEquals(output.includes("/// @returns {undefined}"), true);
+            assertEquals(output.includes("/// @returns {undefined}"), false);
             assertEquals(output.includes("var total = total + 1;"), false);
         }
     },
@@ -555,9 +554,8 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm2061",
         ruleName: "gm2061",
-        assertOutput: (output) => {
-            assertEquals(output.includes("?? []"), true);
-            assertEquals(output.includes("== undefined"), false);
+        assertOutput: (output, input) => {
+            assertEquals(output, input);
         }
     },
     {
@@ -825,12 +823,13 @@ void test("gm2043 swaps declaration order exactly once across repeated fixer pas
     assertEquals(countOccurrences(secondPass, "var var"), 0);
 });
 
-void test("gm2044 inserts a single returns doc even across repeated fixer passes", () => {
-    const input = ["function demo() {", "    return;", "}", ""].join("\n");
+void test("gm2044 removes duplicate declarations without synthesizing documentation", () => {
+    const input = ["function demo() {", "    var total = 1;", "    var total = total + 1;", "}", ""].join("\n");
 
     const firstPass = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm2044", input).output;
     const secondPass = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm2044", firstPass).output;
 
-    assertEquals(countOccurrences(firstPass, "/// @returns {undefined}"), 1);
+    assertEquals(countOccurrences(firstPass, "/// @returns {undefined}"), 0);
+    assertEquals(firstPass.includes("var total = total + 1;"), false);
     assertEquals(firstPass, secondPass);
 });

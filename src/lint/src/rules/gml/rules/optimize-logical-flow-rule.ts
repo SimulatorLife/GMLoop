@@ -49,6 +49,22 @@ function isRangeInsideAnyRange(range: SourceTextRange, existingRanges: ReadonlyA
     return existingRanges.some((existingRange) => range.start >= existingRange.start && range.end <= existingRange.end);
 }
 
+function condenseNullishFallbackAssignments(sourceText: string): string {
+    let rewritten = sourceText.replaceAll(
+        /^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*;\s*\n\1if\s*\(\s*\2\s*==\s*undefined\s*\)\s*\2\s*=\s*(.+?)\s*;\s*$/gm,
+        (_fullMatch, indentation: string, target: string, expression: string, fallback: string) =>
+            `${indentation}${target} = ${expression} ?? ${fallback};`
+    );
+
+    rewritten = rewritten.replaceAll(
+        /^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*;\s*\n\1if\s*\(\s*(?:\2\s*==\s*undefined|is_undefined\s*\(\s*\2\s*\))\s*\)\s*\{\s*\n\1[ \t]+\2\s*=\s*(.+?)\s*;\s*\n\1\}\s*$/gm,
+        (_fullMatch, indentation: string, target: string, expression: string, fallback: string) =>
+            `${indentation}${target} = ${expression} ?? ${fallback};`
+    );
+
+    return rewritten;
+}
+
 export function createOptimizeLogicalFlowRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
@@ -56,6 +72,19 @@ export function createOptimizeLogicalFlowRule(definition: GmlRuleDefinition): Ru
             const rewrittenNodeRanges: SourceTextRange[] = [];
 
             return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const rewrittenText = condenseNullishFallbackAssignments(sourceText);
+                    if (rewrittenText === sourceText) {
+                        return;
+                    }
+
+                    context.report({
+                        loc: resolveLocFromIndex(context, sourceText, 0),
+                        messageId: definition.messageId,
+                        fix: (fixer) => fixer.replaceTextRange([0, sourceText.length], rewrittenText)
+                    });
+                },
                 "BlockStatement, LogicalExpression, BinaryExpression, UnaryExpression[operator='!'], IfStatement"(
                     node: any
                 ) {

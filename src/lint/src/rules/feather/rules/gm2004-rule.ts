@@ -1,8 +1,11 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, findMatchingBraceEndIndex } from "../rule-base-helpers.js";
+import { gmlRuleBaseHelpersServices } from "../../gml/gml-rule-services.js";
+import { createFeatherRuleMeta } from "../feather-rule-helpers.js";
+import type { FeatherManifestEntry } from "../manifest.js";
+
+const { findMatchingBraceEndIndex } = gmlRuleBaseHelpersServices;
 
 type RepeatLoopCandidate = Readonly<{
     limitExpression: string;
@@ -66,9 +69,9 @@ function collectRepeatLoopCandidates(sourceText: string): Array<RepeatLoopCandid
     return candidates;
 }
 
-export function createPreferRepeatLoopsRule(definition: GmlRuleDefinition): Rule.RuleModule {
+export function createGm2004Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return Object.freeze({
-        meta: createMeta(definition),
+        meta: createFeatherRuleMeta(entry),
         create(context) {
             return Object.freeze({
                 Program() {
@@ -77,7 +80,7 @@ export function createPreferRepeatLoopsRule(definition: GmlRuleDefinition): Rule
                     for (const loopCandidate of loopCandidates) {
                         context.report({
                             loc: context.sourceCode.getLocFromIndex(loopCandidate.loopStartIndex),
-                            messageId: definition.messageId,
+                            messageId: "diagnostic",
                             fix: (fixer) =>
                                 fixer.replaceTextRange(
                                     [loopCandidate.loopStartIndex, loopCandidate.loopHeaderEndIndex],
