@@ -72,6 +72,16 @@ then return here for deeper context.
   that builds on top of the formatter, lint, refactor, semantic, transpiler,
   runtime wrapper, CLI, UI, and MCP workspaces, including the HTML5 runtime
   fork, watcher pipeline, and hot-reload integration seams.
+- [Define directive fixing plan](define-directive-fixing.md) — Parser/
+  formatter/lint ownership plan for tolerating legacy `#define` spellings and
+  related legacy keywords, and producing a normalized macro representation.
+- [Stitch parser assessment](stitch-parser-assessment.md) — Comparative
+  evaluation of the Stitch (`bscotch/stitch`) Chevrotain-based GML parser and
+  project model, plus the decision notes for keeping the ANTLR-based pipeline.
+- [Project-index parsing flattening audit (2026-06-04)](architectural-audit-2026-06-04.md) —
+  Recent architectural audit of the semantic project-index parser-error
+  formatting seam, including the rationale for flattening the helper layout
+  under `src/semantic/src/project-index/`.
 - [Feather Data Plan](feather-data-plan.md) — Describes the scraping pipeline
   that collects built-in Feather debugger metadata and how the generated files
   are versioned.
@@ -83,3 +93,7 @@ then return here for deeper context.
 
 - [MCP workspace reference](../src/mcp/README.md) — Current
   `@gmloop/mcp` package docs for exposing CLI-adjacent workflows to AI tooling.
+- [Agent routing and cadence design](agent-routing-cadence-plan.md) — Design
+  for the scheduled agent routing policy in `.github/workflows/weights.json`,
+  covering task categories, weighted pair selection, cadence filtering, and
+  manual override behaviour.
