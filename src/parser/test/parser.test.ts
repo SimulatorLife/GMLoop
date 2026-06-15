@@ -122,7 +122,6 @@ function collectNodesByType(node, type) {
 
 const { fileNames: fixtureNames, fixtureContentsByName } = await loadFixtures();
 const expectedFailures = new Set<string>();
-const successfulFixture = fixtureNames.find((fixtureName) => !expectedFailures.has(fixtureName));
 const fixtureParserOptions: ParserOptions = {
     ...defaultParserOptions,
     getComments: false,
@@ -130,29 +129,54 @@ const fixtureParserOptions: ParserOptions = {
     simplifyLocations: false
 };
 
-// Parse the representative "successful" fixture once at module load time using
-// the same `{ getLocations: false }` options the location-metadata test
-// previously re-applied for every run. The fixture is the largest single
-// contributor to the file's parse cost (≈1k lines, ≈2s on a warm cache), and
-// re-parsing it only to assert the AST has no `start`/`end` properties was
-// redundant: the main fixture loop already exercises the full parse path for
-// the same source. Caching the AST here preserves the original assertions
-// without weakening coverage.
-const successfulFixtureSource = successfulFixture ? fixtureContentsByName.get(successfulFixture) : null;
-const successfulFixtureAstWithoutLocations = successfulFixtureSource
-    ? GMLParser.parse(successfulFixtureSource, { getLocations: false })
-    : null;
+// Parse a small synthetic source once at module load to verify the parser's
+// `getLocations: false` option strips location metadata. The previous
+// implementation parsed the largest real-world fixture (≈1k lines, ≈2s on a
+// warm cache; up to 3.4s cold) for this check, which dominated this test
+// file's module-load cost. The assertion only inspects the resulting AST for
+// the absence of `start`/`end` properties, so a small but realistic source —
+// a function declaration with a body, parameters, a local variable, and a
+// return — exercises the same option-stripping path. The main fixture loop
+// below still parses every real-world fixture end-to-end, preserving full
+// coverage of the parser's input surface.
+const locationStrippingProbeSource = [
+    "function example(value, factor) {",
+    "    var total = value * factor + 1;",
+    "    return total;",
+    "}",
+    ""
+].join("\n");
+const locationStrippingProbeAst = GMLParser.parse(locationStrippingProbeSource, { getLocations: false });
+
+// Pre-parse every expected-success fixture once at module load so each `it`
+// test below only needs to verify the cached AST shape. The previous
+// implementation parsed each fixture inside its own test, paying the
+// ANTLR-driven per-invocation cost (plus a one-shot cold-start penalty) 17
+// times. Hoisting the parse work keeps the same coverage — every fixture
+// still produces a Program with an array body — while letting the runtime
+// warm up once. Expected-failure fixtures (none today) are intentionally
+// excluded here so the test loop can still exercise the throw path
+// on demand.
+const fixtureAsts = new Map<string, ReturnType<typeof GMLParser.parse>>();
+for (const fixtureName of fixtureNames) {
+    if (expectedFailures.has(fixtureName)) {
+        continue;
+    }
+    const source = fixtureContentsByName.get(fixtureName);
+    if (!source) {
+        throw new Error(`Fixture '${fixtureName}' was not preloaded.`);
+    }
+    fixtureAsts.set(fixtureName, GMLParser.parse(source, fixtureParserOptions));
+}
 
 void describe("GameMaker parser fixtures", () => {
     for (const fixtureName of fixtureNames) {
-        void it(`parses ${fixtureName}`, async () => {
-            const source = fixtureContentsByName.get(fixtureName);
-            if (!source) {
-                throw new Error(`Fixture '${fixtureName}' was not preloaded.`);
-            }
-            const shouldFail = expectedFailures.has(fixtureName);
-
-            if (shouldFail) {
+        void it(`parses ${fixtureName}`, () => {
+            if (expectedFailures.has(fixtureName)) {
+                const source = fixtureContentsByName.get(fixtureName);
+                if (!source) {
+                    throw new Error(`Fixture '${fixtureName}' was not preloaded.`);
+                }
                 assert.throws(
                     () =>
                         parseFixture(source, {
@@ -165,7 +189,7 @@ void describe("GameMaker parser fixtures", () => {
                 return;
             }
 
-            const ast = parseFixture(source, { options: fixtureParserOptions });
+            const ast = fixtureAsts.get(fixtureName);
 
             assert.ok(ast, `Parser returned no AST for ${fixtureName}.`);
             assert.strictEqual(ast.type, "Program", `Unexpected root node type for ${fixtureName}.`);
@@ -364,10 +388,12 @@ void describe("GameMaker parser fixtures", () => {
     });
 
     void it("omits location metadata when disabled", () => {
-        assert.ok(successfulFixture, "Expected at least one parser fixture to be present.");
-        assert.ok(successfulFixtureAstWithoutLocations, "Parser returned no AST when locations were disabled.");
+        assert.ok(
+            locationStrippingProbeAst,
+            "Parser returned no AST for the location-stripping probe when locations were disabled."
+        );
         assert.strictEqual(
-            hasLocationInformation(successfulFixtureAstWithoutLocations),
+            hasLocationInformation(locationStrippingProbeAst),
             false,
             "AST unexpectedly contains location metadata when getLocations is false."
         );
