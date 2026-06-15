@@ -33,6 +33,8 @@ export function getFeatherMetadataPath(): string {
 
 export type FeatherDiagnostic = {
     id?: string | null;
+    title?: string | null;
+    description?: string | null;
     [key: string]: unknown;
 };
 

@@ -1516,7 +1516,33 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     }
 
     async function runServeVisualizationMode(): Promise<void> {
-        const documentationCatalogs = createDocumentationCatalogs();
+        const repoRoot = findRepoRootSync(path.dirname(fileURLToPath(import.meta.url)));
+        const featherMetadataPath = path.resolve(repoRoot, "resources/feather-metadata.json");
+        let featherMetadataWatcher: FSWatcher | null = null;
+        if (existsSync(featherMetadataPath)) {
+            try {
+                featherMetadataWatcher = watch(featherMetadataPath, (eventType) => {
+                    if (eventType === "change") {
+                        Core.clearFeatherMetadataCache();
+                        void (async () => {
+                            try {
+                                await refreshActiveVisualizationArtifacts(activeContext);
+                                markServeRevisionChanged();
+                                console.log("[graph visualize] feather-metadata.json changed. Reloading UI...");
+                            } catch (error) {
+                                console.error(
+                                    `[graph visualize] Failed to refresh catalog on metadata change: ${Core.getErrorMessage(error)}`
+                                );
+                            }
+                        })();
+                    }
+                });
+            } catch (error) {
+                console.error(
+                    `[graph visualize] Failed to watch feather-metadata.json: ${Core.getErrorMessage(error)}`
+                );
+            }
+        }
         let uiWatchRebuildInProgress = false;
         let uiWatchRebuildPending = false;
 
@@ -1862,13 +1888,17 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 markServeRevisionChanged();
             },
             renderBundle: async (isServerMode) => {
+                Core.clearFeatherMetadataCache();
+
                 const renderRevision = activeServeRevision;
                 if (isServerMode && activeServeBundleCache?.revision === renderRevision) {
                     return activeServeBundleCache.bundle;
                 }
 
+                const freshDocumentationCatalogs = createDocumentationCatalogs();
+
                 const bundle = await UI.renderGraphVisualizationBundle(exportVisualizationPayload(), {
-                    documentationCatalogs,
+                    documentationCatalogs: freshDocumentationCatalogs,
                     isServerMode,
                     lastFixRun: activeLastFixRun ?? undefined,
                     liveReload: activeLiveReloadSession.model ?? undefined,
@@ -1935,6 +1965,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             uiSourceWatcher = null;
             activeProjectStateWatcher?.stop();
             activeProjectStateWatcher = null;
+            featherMetadataWatcher?.close();
+            featherMetadataWatcher = null;
 
             void (async () => {
                 try {
@@ -1955,6 +1987,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             uiSourceWatcher = null;
             activeProjectStateWatcher?.stop();
             activeProjectStateWatcher = null;
+            featherMetadataWatcher?.close();
+            featherMetadataWatcher = null;
             void stopLiveReloadChildProcess();
         });
     }

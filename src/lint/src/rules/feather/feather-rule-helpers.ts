@@ -1,3 +1,4 @@
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { gmlRuleDeprecatedIdentifierServices } from "../gml/gml-rule-services.js";
@@ -14,7 +15,14 @@ export function createFeatherRuleMeta(entry: FeatherManifestEntry): Rule.RuleMet
     const meta: Rule.RuleMetaData = {
         type: "suggestion",
         docs: Object.freeze({
-            description: `Rule for ${entry.ruleId}.`,
+            get description(): string {
+                const diagnostic = Core.getFeatherDiagnosticById(entry.id);
+                return diagnostic &&
+                    typeof diagnostic.description === "string" &&
+                    diagnostic.description.trim().length > 0
+                    ? diagnostic.description
+                    : `Rule for ${entry.ruleId}.`;
+            },
             recommended: false,
             requiresProjectContext: entry.requiresProjectContext
         }),
