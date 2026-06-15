@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import type { PropertyValues, TemplateResult } from "lit";
+import type { PropertyValues } from "lit";
 
 import { GmCopyButton } from "../src/app/components/primitives/gm-copy-button.js";
-import { renderTemplateValue } from "./render-template-helpers.js";
+import {
+    findEventHandlerInTemplate,
+    type PropertyValuesForTest,
+    renderTemplateValue
+} from "./render-template-helpers.js";
 
 class TestableGmCopyButton extends GmCopyButton {
     public renderForTest(): unknown {
@@ -15,30 +19,6 @@ class TestableGmCopyButton extends GmCopyButton {
     public willUpdateForTest(changedProperties: PropertyValuesForTest): void {
         this.willUpdate(changedProperties as PropertyValues<this>);
     }
-}
-
-type PropertyValuesForTest = Map<PropertyKey, unknown>;
-
-type TemplateResultWithValues = TemplateResult & {
-    readonly values: readonly unknown[];
-};
-
-function isTemplateResult(value: unknown): value is TemplateResultWithValues {
-    if (typeof value !== "object" || value === null) {
-        return false;
-    }
-
-    return Array.isArray(Reflect.get(value, "strings")) && Array.isArray(Reflect.get(value, "values"));
-}
-
-function getClickHandler(rendered: unknown): () => void {
-    if (!isTemplateResult(rendered)) {
-        assert.fail("Expected a Lit template result.");
-    }
-
-    const handler = rendered.values.find((value): value is () => void => typeof value === "function");
-    assert.equal(typeof handler, "function");
-    return handler;
 }
 
 interface ClipboardHarness {
@@ -129,7 +109,7 @@ void test("GmCopyButton click writes the value through the Clipboard API and fli
         const button = new TestableGmCopyButton();
         button.value = '{"a":1}';
 
-        const clickHandler = getClickHandler(button.renderForTest());
+        const clickHandler = findEventHandlerInTemplate(button.renderForTest());
         clickHandler();
         await flushMicrotasks();
 
@@ -149,7 +129,7 @@ void test("GmCopyButton surfaces the error state when the Clipboard API rejects"
         const button = new TestableGmCopyButton();
         button.value = "data";
 
-        const clickHandler = getClickHandler(button.renderForTest());
+        const clickHandler = findEventHandlerInTemplate(button.renderForTest());
         clickHandler();
         await flushMicrotasks();
 
@@ -211,7 +191,7 @@ void test("GmCopyButton falls back to a hidden textarea when navigator.clipboard
     try {
         const button = new TestableGmCopyButton();
         button.value = "fallback-value";
-        const clickHandler = getClickHandler(button.renderForTest());
+        const clickHandler = findEventHandlerInTemplate(button.renderForTest());
         clickHandler();
         await flushMicrotasks();
 
@@ -241,7 +221,7 @@ void test("GmCopyButton returns to the idle label after the feedback window elap
         const button = new TestableGmCopyButton();
         button.value = "value";
 
-        const clickHandler = getClickHandler(button.renderForTest());
+        const clickHandler = findEventHandlerInTemplate(button.renderForTest());
         clickHandler();
         await flushMicrotasks();
 
@@ -279,7 +259,7 @@ void test("GmCopyButton exposes a polite live region describing the copy outcome
         const rendered = renderTemplateValue(button.renderForTest());
         assert.match(rendered, /role="status" aria-live="polite"/u);
 
-        const clickHandler = getClickHandler(button.renderForTest());
+        const clickHandler = findEventHandlerInTemplate(button.renderForTest());
         clickHandler();
         await flushMicrotasks();
 

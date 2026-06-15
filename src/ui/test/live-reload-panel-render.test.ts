@@ -10,7 +10,11 @@ import {
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
 } from "../src/app/components/index.js";
-import type { GraphVisualizationFixRunResult, GraphVisualizationUiModel } from "../src/app/contracts.js";
+import {
+    createNoopGraphVisualizationUiCallbacks,
+    type GraphVisualizationFixRunResult,
+    type GraphVisualizationUiModel
+} from "../src/app/contracts.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationLiveReloadStatusSnapshot } from "../src/graph/types.js";
@@ -122,6 +126,21 @@ function createMockState(): GraphVisualizationUiState {
         activePage: "live-reload",
         labelMode: "auto"
     };
+}
+
+async function dispatchStopLiveReloadFromShell(
+    shell: TestableGmAppShell,
+    onStopLiveReload: () => void | Promise<void>
+): Promise<void> {
+    shell.callbacks = {
+        ...createNoopGraphVisualizationUiCallbacks(),
+        onStopLiveReload
+    };
+
+    shell.connectedCallback();
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, { bubbles: true }));
+    await Promise.resolve();
+    shell.disconnectedCallback();
 }
 
 void test("GmLiveReloadPanel renders configured live-reload dashboard sections", () => {
@@ -380,21 +399,10 @@ void test("GmAppShell routes live-reload stop events through the host callback",
     const shell = new TestableGmAppShell();
     let stopCount = 0;
     shell.model = createMockModel(createStatusSnapshot());
-    shell.callbacks = {
-        onOpenProject: () => {},
-        onRegenerate: () => {},
-        onSaveConfig: () => {},
-        onRunFix: () => ({ logLines: [], status: "success" }),
-        onStartLiveReload: () => null,
-        onStopLiveReload: () => {
-            stopCount += 1;
-        }
-    };
 
-    shell.connectedCallback();
-    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, { bubbles: true }));
-    await Promise.resolve();
-    shell.disconnectedCallback();
+    await dispatchStopLiveReloadFromShell(shell, () => {
+        stopCount += 1;
+    });
 
     assert.equal(stopCount, 1);
 });
@@ -403,19 +411,8 @@ void test("GmAppShell clears live-reload model after stop callback succeeds", as
     const shell = new TestableGmAppShell();
     const modelWithSession = createMockModel(createStatusSnapshot());
     shell.model = modelWithSession;
-    shell.callbacks = {
-        onOpenProject: () => {},
-        onRegenerate: () => {},
-        onSaveConfig: () => {},
-        onRunFix: () => ({ logLines: [], status: "success" }),
-        onStartLiveReload: () => null,
-        onStopLiveReload: async () => {}
-    };
 
-    shell.connectedCallback();
-    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, { bubbles: true }));
-    await Promise.resolve();
-    shell.disconnectedCallback();
+    await dispatchStopLiveReloadFromShell(shell, async () => {});
 
     assert.equal(shell.model?.liveReload, null);
 });
@@ -427,21 +424,10 @@ void test("GmAppShell ignores live-reload stop events without an active session"
         ...createMockModel(null),
         liveReload: null
     };
-    shell.callbacks = {
-        onOpenProject: () => {},
-        onRegenerate: () => {},
-        onSaveConfig: () => {},
-        onRunFix: () => ({ logLines: [], status: "success" }),
-        onStartLiveReload: () => null,
-        onStopLiveReload: () => {
-            stopCount += 1;
-        }
-    };
 
-    shell.connectedCallback();
-    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, { bubbles: true }));
-    await Promise.resolve();
-    shell.disconnectedCallback();
+    await dispatchStopLiveReloadFromShell(shell, () => {
+        stopCount += 1;
+    });
 
     assert.equal(stopCount, 0);
     assert.equal(shell.model?.liveReload, null);

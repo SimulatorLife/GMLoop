@@ -1,22 +1,13 @@
 import assert from "node:assert/strict";
-import { mock, test } from "node:test";
+import { test } from "node:test";
 
 import { runLiveReloadBuildCommand, runLiveReloadPrepareCommand } from "../src/commands/live-reload.js";
+import { captureCliErrorOutput } from "./test-helpers/capture-cli-error-output.js";
 
 void test("runLiveReloadPrepareCommand routes prepare errors through handleCliError", async () => {
     const nonExistentOutput = "/tmp/non-existent-live-reload-prepare-12345";
-    const logged: string[] = [];
-    const exitCodes: Array<number | undefined> = [];
 
-    const restoreConsole = mock.method(console, "error", (...args) => {
-        logged.push(args.join(" "));
-    });
-    const restoreExit = mock.method(process, "exit", (code?: number) => {
-        exitCodes.push(code);
-        throw new Error(`process.exit called with code ${code ?? "undefined"}`);
-    });
-
-    try {
+    const { logged, exitCodes } = await captureCliErrorOutput(async () => {
         await assert.rejects(
             () =>
                 runLiveReloadPrepareCommand({
@@ -27,10 +18,7 @@ void test("runLiveReloadPrepareCommand routes prepare errors through handleCliEr
                 }),
             /process\.exit/u
         );
-    } finally {
-        restoreConsole.mock.restore();
-        restoreExit.mock.restore();
-    }
+    });
 
     assert.equal(exitCodes.length, 1);
     assert.equal(exitCodes[0], 1);
@@ -41,26 +29,13 @@ void test("runLiveReloadPrepareCommand routes prepare errors through handleCliEr
 
 void test("runLiveReloadBuildCommand routes build errors through handleCliError", async () => {
     const nonExistentPath = "/tmp/non-existent-live-reload-build-12345";
-    const logged: string[] = [];
-    const exitCodes: Array<number | undefined> = [];
 
-    const restoreConsole = mock.method(console, "error", (...args) => {
-        logged.push(args.join(" "));
-    });
-    const restoreExit = mock.method(process, "exit", (code?: number) => {
-        exitCodes.push(code);
-        throw new Error(`process.exit called with code ${code ?? "undefined"}`);
-    });
-
-    try {
+    const { logged, exitCodes } = await captureCliErrorOutput(async () => {
         await assert.rejects(
             () => runLiveReloadBuildCommand(nonExistentPath, { quiet: true, verbose: false }),
             /process\.exit/u
         );
-    } finally {
-        restoreConsole.mock.restore();
-        restoreExit.mock.restore();
-    }
+    });
 
     assert.equal(exitCodes.length, 1);
     assert.equal(exitCodes[0], 1);

@@ -60,6 +60,42 @@ async function createIgorProjectFixtures(
     await fs.writeFile(projectPath, JSON.stringify({ name: "Project" }), "utf8");
 }
 
+interface IgorTestProjectPaths {
+    readonly projectRoot: string;
+    readonly outputRoot: string;
+    readonly runtimeRoot: string;
+    readonly runtimeIgorPath: string;
+    readonly licenseFile: string;
+    readonly projectPath: string;
+}
+
+async function setupIgorTestProject(prefix: string): Promise<IgorTestProjectPaths> {
+    const projectRoot = await createTempDirectory(prefix);
+    const outputRoot = path.join(projectRoot, "build", "html5");
+    const runtimeRoot = path.join(projectRoot, "runtime-2026.1");
+    const runtimeIgorPath = path.join(runtimeRoot, "bin", "igor", "osx", "x64", "Igor.exe");
+    const licenseFile = path.join(projectRoot, "license.plist");
+    const projectPath = path.join(projectRoot, "Project.yyp");
+
+    await createIgorProjectFixtures(runtimeIgorPath, licenseFile, projectPath);
+
+    return { projectRoot, outputRoot, runtimeRoot, runtimeIgorPath, licenseFile, projectPath };
+}
+
+async function writePrefabProjectManifest(projectPath: string, prefabPackageName: string): Promise<void> {
+    await fs.writeFile(
+        projectPath,
+        [
+            "{",
+            '  "ForcedPrefabProjectReferences":[',
+            `    {"link":"${prefabPackageName}","name":"${prefabPackageName}","path":"${prefabPackageName}.yyp",},`,
+            "  ],",
+            "}"
+        ].join("\n"),
+        "utf8"
+    );
+}
+
 function restoreProcessEnvironmentValue(name: "APPDATA" | "HOME" | "USERPROFILE", value: string | undefined): void {
     if (value === undefined) {
         delete process.env[name];
@@ -220,16 +256,11 @@ void test("buildGameMakerHtml5Output prefers gm-cli in auto mode when HTML5 pack
 });
 
 void test("buildGameMakerHtml5Output fails when the selected backend does not produce index.html", async () => {
-    const projectRoot = await createTempDirectory("cli-live-reload-build-missing-index-");
-    const outputRoot = path.join(projectRoot, "build", "html5");
-    const runtimeRoot = path.join(projectRoot, "runtime-2026.1");
-    const runtimeIgorPath = path.join(runtimeRoot, "bin", "igor", "osx", "x64", "Igor.exe");
-    const licenseFile = path.join(projectRoot, "license.plist");
-    const projectPath = path.join(projectRoot, "Project.yyp");
+    const { projectRoot, outputRoot, runtimeRoot, licenseFile, projectPath } = await setupIgorTestProject(
+        "cli-live-reload-build-missing-index-"
+    );
 
     try {
-        await createIgorProjectFixtures(runtimeIgorPath, licenseFile, projectPath);
-
         await assert.rejects(
             () =>
                 buildGameMakerHtml5Output({
@@ -307,29 +338,15 @@ void test("buildGameMakerHtml5Output accepts Igor icon-copy failures after HTML5
 });
 
 void test("buildGameMakerHtml5Output exposes cached prefab packages to Igor builds", async () => {
-    const projectRoot = await createTempDirectory("cli-live-reload-build-igor-prefabs-");
-    const outputRoot = path.join(projectRoot, "build", "html5");
-    const runtimeRoot = path.join(projectRoot, "runtime-2026.1");
-    const runtimeIgorPath = path.join(runtimeRoot, "bin", "igor", "osx", "x64", "Igor.exe");
-    const licenseFile = path.join(projectRoot, "license.plist");
-    const projectPath = path.join(projectRoot, "Project.yyp");
+    const { projectRoot, outputRoot, runtimeRoot, licenseFile, projectPath } = await setupIgorTestProject(
+        "cli-live-reload-build-igor-prefabs-"
+    );
     const prefabPackageName = "io.gamemaker.gm_filter_tintfilter-1.0.0";
     const cachedPrefabPackageRoot = path.join(projectRoot, ".gmcache", "prefabs", prefabPackageName);
     const projectPrefabPackageRoot = path.join(projectRoot, "prefabs", prefabPackageName);
 
     try {
-        await createIgorProjectFixtures(runtimeIgorPath, licenseFile, projectPath);
-        await fs.writeFile(
-            projectPath,
-            [
-                "{",
-                '  "ForcedPrefabProjectReferences":[',
-                `    {"link":"${prefabPackageName}","name":"${prefabPackageName}","path":"${prefabPackageName}.yyp",},`,
-                "  ],",
-                "}"
-            ].join("\n"),
-            "utf8"
-        );
+        await writePrefabProjectManifest(projectPath, prefabPackageName);
         await fs.mkdir(path.join(cachedPrefabPackageRoot, "shaders"), { recursive: true });
         await fs.writeFile(path.join(cachedPrefabPackageRoot, "shaders", "shader.yy"), "{}", "utf8");
 
@@ -365,29 +382,15 @@ void test("buildGameMakerHtml5Output exposes cached prefab packages to Igor buil
 });
 
 void test("buildGameMakerHtml5Output cleans temporary cached prefab materialization after Igor failures", async () => {
-    const projectRoot = await createTempDirectory("cli-live-reload-build-igor-prefabs-failure-");
-    const outputRoot = path.join(projectRoot, "build", "html5");
-    const runtimeRoot = path.join(projectRoot, "runtime-2026.1");
-    const runtimeIgorPath = path.join(runtimeRoot, "bin", "igor", "osx", "x64", "Igor.exe");
-    const licenseFile = path.join(projectRoot, "license.plist");
-    const projectPath = path.join(projectRoot, "Project.yyp");
+    const { projectRoot, outputRoot, runtimeRoot, licenseFile, projectPath } = await setupIgorTestProject(
+        "cli-live-reload-build-igor-prefabs-failure-"
+    );
     const prefabPackageName = "io.gamemaker.gm_filter_tintfilter-1.0.0";
     const cachedPrefabPackageRoot = path.join(projectRoot, ".gmcache", "prefabs", prefabPackageName);
     const projectPrefabPackageRoot = path.join(projectRoot, "prefabs", prefabPackageName);
 
     try {
-        await createIgorProjectFixtures(runtimeIgorPath, licenseFile, projectPath);
-        await fs.writeFile(
-            projectPath,
-            [
-                "{",
-                '  "ForcedPrefabProjectReferences":[',
-                `    {"link":"${prefabPackageName}","name":"${prefabPackageName}","path":"${prefabPackageName}.yyp",},`,
-                "  ],",
-                "}"
-            ].join("\n"),
-            "utf8"
-        );
+        await writePrefabProjectManifest(projectPath, prefabPackageName);
         await fs.mkdir(cachedPrefabPackageRoot, { recursive: true });
 
         await assert.rejects(
@@ -423,16 +426,11 @@ void test("buildGameMakerHtml5Output cleans temporary cached prefab materializat
 });
 
 void test("buildGameMakerHtml5Output rejects Igor icon-copy failures when html5game directory is missing", async () => {
-    const projectRoot = await createTempDirectory("cli-live-reload-build-igor-incomplete-");
-    const outputRoot = path.join(projectRoot, "build", "html5");
-    const runtimeRoot = path.join(projectRoot, "runtime-2026.1");
-    const runtimeIgorPath = path.join(runtimeRoot, "bin", "igor", "osx", "x64", "Igor.exe");
-    const licenseFile = path.join(projectRoot, "license.plist");
-    const projectPath = path.join(projectRoot, "Project.yyp");
+    const { projectRoot, outputRoot, runtimeRoot, licenseFile, projectPath } = await setupIgorTestProject(
+        "cli-live-reload-build-igor-incomplete-"
+    );
 
     try {
-        await createIgorProjectFixtures(runtimeIgorPath, licenseFile, projectPath);
-
         await assert.rejects(
             () =>
                 buildGameMakerHtml5Output({

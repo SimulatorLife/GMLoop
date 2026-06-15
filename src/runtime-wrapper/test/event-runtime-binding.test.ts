@@ -63,6 +63,43 @@ const runtimeBindingPropertyNames = [
     "_0z"
 ] as const;
 
+function setupSpiderRuntimeForCreate(createImpl: (this: Record<string, unknown>) => void): {
+    instanceEntry: Record<string, unknown>;
+} {
+    function gml_Object_oSpider_Create_0(this: Record<string, unknown>) {
+        createImpl.call(this);
+    }
+
+    function gml_Object_oSpider_Step_0() {
+        return "original";
+    }
+
+    const objectEntry = {
+        Event: [] as Array<boolean>,
+        pName: "oSpider",
+        CreateEvent: gml_Object_oSpider_Create_0,
+        StepNormalEvent: gml_Object_oSpider_Step_0
+    };
+    const instanceEntry: Record<string, unknown> = {
+        Event: [],
+        _kx: objectEntry,
+        spiderColour: 32_768
+    };
+    const globals = globalThis as RuntimeBindingGlobals;
+    globals.JSON_game = {
+        GMObjects: [objectEntry],
+        ScriptNames: [],
+        Scripts: []
+    };
+    globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
+    globals._cx = {
+        _dx: {
+            "100000": instanceEntry
+        }
+    };
+    return { instanceEntry };
+}
+
 void test("event patches replace GameMaker object, instance, and pObject handlers", () => {
     const snapshot = snapshotGlobalProperties(runtimeBindingPropertyNames);
 
@@ -201,37 +238,9 @@ void test("object event patches refresh active instances through Create after ha
     const snapshot = snapshotGlobalProperties(runtimeBindingPropertyNames);
 
     try {
-        function gml_Object_oSpider_Create_0(this: Record<string, unknown>) {
+        const { instanceEntry } = setupSpiderRuntimeForCreate(function (this: Record<string, unknown>) {
             this.spiderColour = 255;
-        }
-
-        function gml_Object_oSpider_Step_0() {
-            return "original";
-        }
-
-        const objectEntry = {
-            Event: [] as Array<boolean>,
-            pName: "oSpider",
-            CreateEvent: gml_Object_oSpider_Create_0,
-            StepNormalEvent: gml_Object_oSpider_Step_0
-        };
-        const instanceEntry: Record<string, unknown> = {
-            Event: [],
-            _kx: objectEntry,
-            spiderColour: 32_768
-        };
-        const globals = globalThis as RuntimeBindingGlobals;
-        globals.JSON_game = {
-            GMObjects: [objectEntry],
-            ScriptNames: [],
-            Scripts: []
-        };
-        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
-        globals._cx = {
-            _dx: {
-                "100000": instanceEntry
-            }
-        };
+        });
 
         const wrapper = RuntimeWrapper.createRuntimeWrapper();
         wrapper.applyPatch({
@@ -732,38 +741,10 @@ void test("shadow validation does not run live runtime binding reconciliation", 
 
     try {
         let createCallCount = 0;
-        function gml_Object_oSpider_Create_0(this: Record<string, unknown>) {
+        const { instanceEntry } = setupSpiderRuntimeForCreate(function (this: Record<string, unknown>) {
             createCallCount += 1;
             this.spiderColour = 255;
-        }
-
-        function gml_Object_oSpider_Step_0() {
-            return "original";
-        }
-
-        const objectEntry = {
-            Event: [] as Array<boolean>,
-            pName: "oSpider",
-            CreateEvent: gml_Object_oSpider_Create_0,
-            StepNormalEvent: gml_Object_oSpider_Step_0
-        };
-        const instanceEntry: Record<string, unknown> = {
-            Event: [],
-            _kx: objectEntry,
-            spiderColour: 32_768
-        };
-        const globals = globalThis as RuntimeBindingGlobals;
-        globals.JSON_game = {
-            GMObjects: [objectEntry],
-            ScriptNames: [],
-            Scripts: []
-        };
-        globals.gml_Object_oSpider_Step_0 = gml_Object_oSpider_Step_0;
-        globals._cx = {
-            _dx: {
-                "100000": instanceEntry
-            }
-        };
+        });
 
         const wrapper = RuntimeWrapper.createRuntimeWrapper({ validateBeforeApply: true });
         wrapper.applyPatch({

@@ -109,6 +109,44 @@ function createLiveReloadStatusSnapshot() {
     };
 }
 
+interface MockReadableStreamMethods {
+    emit(event: string, ...args: unknown[]): void;
+    listenerCount(event: string): number;
+}
+
+function createMockReadableStream(): NodeJS.ReadableStream & MockReadableStreamMethods {
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+
+    const mockStream = {
+        setEncoding(_encoding: BufferEncoding): void {},
+        on(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            bucket.push(handler);
+            listeners.set(event, bucket);
+            return mockStream;
+        },
+        removeListener(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
+            const bucket = listeners.get(event) ?? [];
+            listeners.set(
+                event,
+                bucket.filter((h) => h !== handler)
+            );
+            return mockStream;
+        },
+        emit(event: string, ...args: unknown[]): void {
+            const bucket = listeners.get(event) ?? [];
+            for (const h of bucket) {
+                h(...args);
+            }
+        },
+        listenerCount(event: string): number {
+            return (listeners.get(event) ?? []).length;
+        }
+    };
+
+    return mockStream as NodeJS.ReadableStream & MockReadableStreamMethods;
+}
+
 void test("CLI command catalog includes graph leaf commands", async () => {
     const cliModule = await loadCliModule();
     const catalog = cliModule.getCliCommandCatalog();
@@ -782,35 +820,7 @@ void test("graph subcommands expose the force flag consistently", async () => {
 
 void test("streamProcessOutputByLine removes all listeners from stream after settling", async () => {
     const emittedLines = new Array<string>();
-
-    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
-
-    const mockStream = {
-        setEncoding(_encoding: BufferEncoding): void {},
-        on(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
-            const bucket = listeners.get(event) ?? [];
-            bucket.push(handler);
-            listeners.set(event, bucket);
-            return mockStream;
-        },
-        removeListener(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
-            const bucket = listeners.get(event) ?? [];
-            listeners.set(
-                event,
-                bucket.filter((h) => h !== handler)
-            );
-            return mockStream;
-        },
-        emit(event: string, ...args: unknown[]): void {
-            const bucket = listeners.get(event) ?? [];
-            for (const h of bucket) {
-                h(...args);
-            }
-        },
-        listenerCount(event: string): number {
-            return (listeners.get(event) ?? []).length;
-        }
-    } as unknown as NodeJS.ReadableStream;
+    const mockStream = createMockReadableStream();
 
     void __graphCommandTest__.streamProcessOutputByLine(mockStream, (line) => {
         emittedLines.push(line);
@@ -833,35 +843,7 @@ void test("streamProcessOutputByLine removes all listeners from stream after set
 
 void test("streamProcessOutputByLine removes all listeners on error", async () => {
     const error = new Error("stream error");
-
-    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
-
-    const mockStream = {
-        setEncoding(_encoding: BufferEncoding): void {},
-        on(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
-            const bucket = listeners.get(event) ?? [];
-            bucket.push(handler);
-            listeners.set(event, bucket);
-            return mockStream;
-        },
-        removeListener(event: string, handler: (...args: unknown[]) => void): typeof mockStream {
-            const bucket = listeners.get(event) ?? [];
-            listeners.set(
-                event,
-                bucket.filter((h) => h !== handler)
-            );
-            return mockStream;
-        },
-        emit(event: string, ...args: unknown[]): void {
-            const bucket = listeners.get(event) ?? [];
-            for (const h of bucket) {
-                h(...args);
-            }
-        },
-        listenerCount(event: string): number {
-            return (listeners.get(event) ?? []).length;
-        }
-    } as unknown as NodeJS.ReadableStream;
+    const mockStream = createMockReadableStream();
 
     const promise = __graphCommandTest__.streamProcessOutputByLine(mockStream, () => {});
 
