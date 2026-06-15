@@ -75,13 +75,13 @@ async function listBundleFiles(
 ): Promise<ReadonlyArray<string>> {
     const entries = await readdir(currentDirectory, { withFileTypes: true });
     const paths = await Promise.all(
-        entries.map(async (entry): Promise<ReadonlyArray<string>> => {
+        entries.map((entry): Promise<ReadonlyArray<string>> => {
             const absolutePath = path.join(currentDirectory, entry.name);
             if (entry.isDirectory()) {
-                return await listBundleFiles(rootDirectory, absolutePath);
+                return listBundleFiles(rootDirectory, absolutePath);
             }
 
-            return [path.relative(rootDirectory, absolutePath).split(path.sep).join("/")];
+            return Promise.resolve([path.relative(rootDirectory, absolutePath).split(path.sep).join("/")]);
         })
     );
 
@@ -198,7 +198,7 @@ async function readNewestModificationTime(directoryPath: string): Promise<number
         entries.map(async (entry) => {
             const entryPath = path.join(directoryPath, entry.name);
             if (entry.isDirectory()) {
-                return await readNewestModificationTime(entryPath);
+                return readNewestModificationTime(entryPath);
             }
             const entryStats = await stat(entryPath);
             return entryStats.mtimeMs;
@@ -247,7 +247,7 @@ async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<G
         (prebuiltWebDirectory.workspaceRoot === null ||
             (await isWorkspaceWebBundleFresh(prebuiltWebDirectory.workspaceRoot, prebuiltWebDirectory.path)))
     ) {
-        return await loadPrebuiltWebBundleFiles(prebuiltWebDirectory.path);
+        return loadPrebuiltWebBundleFiles(prebuiltWebDirectory.path);
     }
 
     const isTest =
@@ -338,11 +338,11 @@ async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<G
     }
 }
 
-async function getGraphVisualizationWebBundleFiles(
+function getGraphVisualizationWebBundleFiles(
     _options?: GraphVisualizationRenderOptions
 ): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
     staticWebBundleFilesPromise ??= createGraphVisualizationWebBundleFiles();
-    return await staticWebBundleFilesPromise;
+    return staticWebBundleFilesPromise;
 }
 
 /**
