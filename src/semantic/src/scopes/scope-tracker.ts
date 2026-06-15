@@ -1,6 +1,5 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
-import { ROLE_DEF, ROLE_REF } from "../symbols/scip.js";
 import { IdentifierCacheManager } from "./identifier-cache-manager.js";
 import {
     DEFAULT_LOOKUP_CACHE_MAX_ENTRIES,
@@ -25,12 +24,15 @@ import {
     recomputePathLastModified,
     updatePathLastModifiedForScope
 } from "./scope-tracker-index-helpers.js";
+import {
+    exportOccurrencesBySymbolsFromTracker,
+    exportScipOccurrencesFromTracker,
+    type ScipExportView
+} from "./scope-tracker-scip.js";
 import type {
     AllSymbolsSummaryItem,
     ExternalReference,
-    IdentifierOccurrences,
     Occurrence,
-    ScipOccurrence,
     ScopeDependency,
     ScopeDependent,
     ScopeDetails,
@@ -54,8 +56,13 @@ const EMPTY_INVALIDATION_SET: Array<{ scopeId: string; scopeKind: string; reason
 
 /**
  * Manages lexical and structural scopes, symbol declarations, and references.
+ *
+ * Implements {@link ScipExportView} as a structural contract: the SCIP export
+ * helpers consume the read-only `scopesById` and `symbolToScopesIndex` fields
+ * through this interface, which keeps the serialization layer decoupled from
+ * the tracker's own mutation logic.
  */
-export class ScopeTracker {
+export class ScopeTracker implements ScipExportView {
     private resolveScopeOverrideFromString(scopeOverride: string, currentScope: Scope | null): Scope | null {
         if (isScopeOverrideKeyword(scopeOverride)) {
             return scopeOverride === SCOPE_OVERRIDE_KEYWORD ? (this.getRootScope() ?? currentScope) : currentScope;
@@ -75,9 +82,22 @@ export class ScopeTracker {
     private scopeCounter: number = 0;
     private scopeStack: Scope[];
     private rootScope: Scope | null;
-    private scopesById: Map<string, Scope>;
+    /**
+     * Read-only view consumed by the SCIP export helpers (see
+     * `scope-tracker-scip.ts`). Exposed publicly so the decoupled export
+     * module can serialize scopes without taking a dependency on the
+     * tracker's mutation API. Treat the returned map as immutable.
+     */
+    public readonly scopesById: Map<string, Scope>;
     private scopeChildrenIndex: Map<string, Set<string>>;
-    private symbolToScopesIndex: Map<string, Map<string, ScopeSummary>>;
+    /**
+     * Read-only view consumed by the SCIP export helpers (see
+     * `scope-tracker-scip.ts`). Exposed publicly so the decoupled export
+     * module can locate scopes for a given symbol without taking a
+     * dependency on the tracker's mutation API. Treat the returned map as
+     * immutable.
+     */
+    public readonly symbolToScopesIndex: Map<string, Map<string, ScopeSummary>>;
     private pathToScopesIndex: Map<string, Set<string>>;
     private pathLastModifiedIndex: Map<string, number>;
     private enabled: boolean;
@@ -346,15 +366,6 @@ export class ScopeTracker {
      */
     public getScopeStack(): Scope[] {
         return this.scopeStack;
-    }
-
-    /**
-     * Helper method to get a single scope as an array, avoiding filter allocation.
-     * Returns empty array if scope doesn't exist.
-     */
-    private getSingleScopeArray(scopeId: string): Scope[] {
-        const scope = this.scopesById.get(scopeId);
-        return scope ? [scope] : [];
     }
 
     private getDescendantScopeIds(scopeId: string): Set<string> {
@@ -2162,50 +2173,6 @@ export class ScopeTracker {
         return cloneDeclarationMetadata(metadata);
     }
 
-    private defaultScipSymbolGenerator(name: string, scopeId: string): string {
-        return `${scopeId}::${name}`;
-    }
-
-    private toScipOccurrence(
-        occurrence: Occurrence,
-        symbolRoles: number,
-        getSymbol: (name: string, scopeId: string) => string | null
-    ): ScipOccurrence | null {
-        const start = occurrence?.start;
-        const end = occurrence?.end;
-
-        if (!start || !end) {
-            return null;
-        }
-
-        const startLine = typeof start.line === "number" ? start.line : null;
-        const startCol = typeof start.column === "number" ? start.column : 0;
-        const endLine = typeof end.line === "number" ? end.line : null;
-        const endCol = typeof end.column === "number" ? end.column : 0;
-
-        if (startLine === null || endLine === null) {
-            return null;
-        }
-
-        const name = occurrence?.name;
-        const occScopeId = occurrence?.scopeId;
-
-        if (!name || !occScopeId) {
-            return null;
-        }
-
-        const symbol = getSymbol(name, occScopeId);
-        if (!symbol) {
-            return null;
-        }
-
-        return {
-            range: [startLine, startCol, endLine, endCol],
-            symbol,
-            symbolRoles
-        };
-    }
-
     public exportScipOccurrences(
         options: {
             scopeId?: string | null;
@@ -2213,61 +2180,7 @@ export class ScopeTracker {
             symbolGenerator?: (name: string, scopeId: string) => string | null;
         } = {}
     ): ScopeScipOccurrences[] {
-        const { scopeId = null, includeReferences = true, symbolGenerator = null } = options;
-
-        const results: ScopeScipOccurrences[] = [];
-        const getSymbol = symbolGenerator ?? this.defaultScipSymbolGenerator.bind(this);
-
-        const scopesToProcess = scopeId ? this.getSingleScopeArray(scopeId) : Array.from(this.scopesById.values());
-
-        for (const scope of scopesToProcess) {
-            const occurrences: ScipOccurrence[] = [];
-
-            for (const entry of scope.occurrences.values()) {
-                this.appendScipDeclarations(entry, occurrences, getSymbol);
-                if (includeReferences) {
-                    this.appendScipReferences(entry, occurrences, getSymbol);
-                }
-            }
-
-            if (occurrences.length > 0) {
-                results.push({
-                    scopeId: scope.id,
-                    scopeKind: scope.kind,
-                    occurrences
-                });
-            }
-        }
-
-        // Sort in place using simple string comparison
-        results.sort((a, b) => (a.scopeId < b.scopeId ? -1 : a.scopeId > b.scopeId ? 1 : 0));
-        return results;
-    }
-
-    private appendScipDeclarations(
-        entry: IdentifierOccurrences,
-        occurrences: Array<ScipOccurrence>,
-        getSymbol: (name: string, scopeId: string) => string | null
-    ): void {
-        for (const declaration of entry.declarations) {
-            const scipOcc = this.toScipOccurrence(declaration, ROLE_DEF, getSymbol);
-            if (scipOcc) {
-                occurrences.push(scipOcc);
-            }
-        }
-    }
-
-    private appendScipReferences(
-        entry: IdentifierOccurrences,
-        occurrences: Array<ScipOccurrence>,
-        getSymbol: (name: string, scopeId: string) => string | null
-    ): void {
-        for (const reference of entry.references) {
-            const scipOcc = this.toScipOccurrence(reference, ROLE_REF, getSymbol);
-            if (scipOcc) {
-                occurrences.push(scipOcc);
-            }
-        }
+        return exportScipOccurrencesFromTracker(this, options);
     }
 
     public exportOccurrencesBySymbols(
@@ -2278,77 +2191,7 @@ export class ScopeTracker {
             symbolGenerator?: (name: string, scopeId: string) => string | null;
         } = {}
     ): ScopeScipOccurrences[] {
-        const { scopeId = null, includeReferences = true, symbolGenerator = null } = options;
-        const symbolSet = new Set(symbolNames);
-
-        if (symbolSet.size === 0) {
-            return [];
-        }
-
-        const results: ScopeScipOccurrences[] = [];
-        const getSymbol = symbolGenerator ?? this.defaultScipSymbolGenerator.bind(this);
-
-        const scopesToProcess = scopeId ? this.getSingleScopeArray(scopeId) : this.collectScopesForSymbols(symbolSet);
-
-        if (scopesToProcess.length === 0) {
-            return [];
-        }
-
-        for (const scope of scopesToProcess) {
-            const occurrences: ScipOccurrence[] = [];
-
-            for (const [name, entry] of scope.occurrences.entries()) {
-                if (!symbolSet.has(name)) {
-                    continue;
-                }
-
-                this.appendScipDeclarations(entry, occurrences, getSymbol);
-                if (includeReferences) {
-                    this.appendScipReferences(entry, occurrences, getSymbol);
-                }
-            }
-
-            if (occurrences.length > 0) {
-                results.push({
-                    scopeId: scope.id,
-                    scopeKind: scope.kind,
-                    occurrences
-                });
-            }
-        }
-
-        // Sort in place using simple string comparison
-        results.sort((a, b) => (a.scopeId < b.scopeId ? -1 : a.scopeId > b.scopeId ? 1 : 0));
-        return results;
-    }
-
-    private collectScopesForSymbols(symbolSet: Set<string>): Scope[] {
-        const scopeIds = new Set<string>();
-
-        for (const symbol of symbolSet) {
-            const scopeSummaryMap = this.symbolToScopesIndex.get(symbol);
-            if (!scopeSummaryMap) {
-                continue;
-            }
-
-            for (const scopeId of scopeSummaryMap.keys()) {
-                scopeIds.add(scopeId);
-            }
-        }
-
-        if (scopeIds.size === 0) {
-            return [];
-        }
-
-        const scopes: Scope[] = [];
-        for (const scopeId of scopeIds) {
-            const scope = this.scopesById.get(scopeId);
-            if (scope) {
-                scopes.push(scope);
-            }
-        }
-
-        return scopes;
+        return exportOccurrencesBySymbolsFromTracker(this, symbolNames, options);
     }
 
     /**

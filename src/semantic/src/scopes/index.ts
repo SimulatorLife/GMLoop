@@ -4,6 +4,7 @@ export * from "./lookup-cache-policy.js";
 export * from "./occurrence.js";
 export * from "./path-sorting.js";
 export * from "./scope-override-keywords.js";
+export * from "./scope-tracker-scip.js";
 export * from "./types.js";
 
 // Deliberately exclude `ScopeTracker` from the default public exports to enforce
