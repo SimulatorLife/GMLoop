@@ -190,3 +190,37 @@ void test("TempFileIdentifierSink reads remaining good records when some JSONL l
         sink.dispose();
     }
 });
+
+void test("TempFileIdentifierSink consumeAll releases retained records after snapshot read", () => {
+    const sink = new TempFileIdentifierSink({
+        enabled: true,
+        flushThreshold: 2,
+        retainedEntriesPerKey: 1,
+        readCacheMaxEntries: 2
+    });
+
+    try {
+        sink.append({ collection: "scripts", key: "script/release", role: "references", payload: { value: "v-1" } });
+        sink.append({ collection: "scripts", key: "script/release", role: "references", payload: { value: "v-2" } });
+
+        const internals = sink as unknown as {
+            filePathByKey: Map<string, string>;
+            inMemoryTailByKey: Map<string, Array<unknown>>;
+            parsedReadCacheByPath: Map<string, { records: Array<unknown> }>;
+        };
+        assert.equal(internals.filePathByKey.size, 1);
+        assert.equal(internals.inMemoryTailByKey.size, 1);
+
+        assert.deepEqual(sink.consumeAll("scripts", "script/release", "references"), [
+            { value: "v-1" },
+            { value: "v-2" }
+        ]);
+
+        assert.equal(internals.filePathByKey.size, 0);
+        assert.equal(internals.inMemoryTailByKey.size, 0);
+        assert.equal(internals.parsedReadCacheByPath.size, 0);
+        assert.deepEqual(sink.consumeAll("scripts", "script/release", "references"), []);
+    } finally {
+        sink.dispose();
+    }
+});

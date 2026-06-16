@@ -37,6 +37,11 @@ export type IdentifierSinkRecord = {
 export interface IdentifierSink {
     append(record: IdentifierSinkRecord): void;
     readAll(collection: string, key: string, role: IdentifierSinkRole): Array<unknown>;
+    /**
+     * Read all records for a role and release the sink-owned tail/cache state
+     * for that role immediately after the read.
+     */
+    consumeAll(collection: string, key: string, role: IdentifierSinkRole): Array<unknown>;
     getRetainedEntriesPerKey(): number;
     getStats(): {
         recordsAppended: number;
@@ -159,24 +164,11 @@ export class TempFileIdentifierSink implements IdentifierSink {
     }
 
     readAll(collection: string, key: string, role: IdentifierSinkRole): Array<unknown> {
-        if (this.disposed) {
-            return [];
-        }
+        return this.readRecords(collection, key, role, { releaseAfterRead: false });
+    }
 
-        const recordKey = createRecordKey(collection, key, role);
-        const tailRecords = this.inMemoryTailByKey.get(recordKey) ?? [];
-
-        if (!this.enabled) {
-            return [...tailRecords];
-        }
-
-        const filePath = this.filePathByKey.get(recordKey);
-        if (!filePath) {
-            return [...tailRecords];
-        }
-
-        const spilledRecords = this.readSpilledRecords(filePath);
-        return [...spilledRecords, ...tailRecords];
+    consumeAll(collection: string, key: string, role: IdentifierSinkRole): Array<unknown> {
+        return this.readRecords(collection, key, role, { releaseAfterRead: true });
     }
 
     getRetainedEntriesPerKey(): number {
@@ -207,6 +199,42 @@ export class TempFileIdentifierSink implements IdentifierSink {
         rmSync(this.tempRootPath, { recursive: true, force: true });
     }
 
+    private readRecords(
+        collection: string,
+        key: string,
+        role: IdentifierSinkRole,
+        options: { releaseAfterRead: boolean }
+    ): Array<unknown> {
+        if (this.disposed) {
+            return [];
+        }
+
+        const recordKey = createRecordKey(collection, key, role);
+        const tailRecords = this.inMemoryTailByKey.get(recordKey) ?? [];
+
+        if (!this.enabled) {
+            return [...tailRecords];
+        }
+
+        const filePath = this.filePathByKey.get(recordKey);
+        if (!filePath) {
+            const records = [...tailRecords];
+            if (options.releaseAfterRead) {
+                this.inMemoryTailByKey.delete(recordKey);
+            }
+            return records;
+        }
+
+        const spilledRecords = options.releaseAfterRead
+            ? this.readSpilledRecordsWithoutCaching(filePath)
+            : this.readSpilledRecords(filePath);
+        const records = [...spilledRecords, ...tailRecords];
+        if (options.releaseAfterRead) {
+            this.releaseRecordKey(recordKey, filePath);
+        }
+        return records;
+    }
+
     private appendRecordsToFile(recordKey: string, records: Array<unknown>): void {
         if (!this.enabled || this.disposed || records.length === 0 || !this.tempRootPath) {
             return;
@@ -228,6 +256,15 @@ export class TempFileIdentifierSink implements IdentifierSink {
         this.parsedReadCacheByPath.delete(filePath);
     }
 
+    private readSpilledRecordsWithoutCaching(filePath: string): Array<unknown> {
+        try {
+            return parseJsonLines(readFileSync(filePath, "utf8"));
+        } catch {
+            this.clearSpillPathMappings(filePath);
+            return [];
+        }
+    }
+
     private readSpilledRecords(filePath: string): Array<unknown> {
         const cached = this.parsedReadCacheByPath.get(filePath);
         if (cached) {
@@ -246,6 +283,13 @@ export class TempFileIdentifierSink implements IdentifierSink {
             this.clearSpillPathMappings(filePath);
             return [];
         }
+    }
+
+    private releaseRecordKey(recordKey: string, filePath: string): void {
+        this.inMemoryTailByKey.delete(recordKey);
+        this.filePathByKey.delete(recordKey);
+        this.recordKeyByFilePath.delete(filePath);
+        this.parsedReadCacheByPath.delete(filePath);
     }
 
     private clearSpillPathMappings(filePath: string): void {

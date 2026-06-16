@@ -1984,7 +1984,10 @@ function resolveIdentifierRoleRecords({
         return Core.cloneObjectEntries(fallbackRecords);
     }
 
-    return Core.toMutableArray(identifierSink.readAll(collection, key, role), { clone: true });
+    // Snapshot creation consumes each identifier role exactly once. Release the
+    // sink's in-memory tail and parsed spill cache immediately after cloning so
+    // large builds do not retain already-snapshotted records until final disposal.
+    return Core.toMutableArray(identifierSink.consumeAll(collection, key, role), { clone: true });
 }
 /**
  * Derive the final serializable project index payload from the populated
